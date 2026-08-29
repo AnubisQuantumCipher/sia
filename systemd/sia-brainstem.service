@@ -1,0 +1,15 @@
+[Unit]
+Description=SIA brainstem — the Omarchy Brain's resident daemon
+Documentation=https://github.com/AnubisQuantumCipher/sia
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/share/sia/bin/sia-brainstem
+Restart=on-failure
+RestartSec=10
+Nice=10
+IOSchedulingClass=idle
+Environment=SIA_PULSE_SEC=60
+
+[Install]
+WantedBy=default.target

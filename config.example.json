@@ -1,0 +1,38 @@
+{
+  "_comment": "SIA instance configuration — copy to ~/.config/sia/config.json",
+
+  "judge": {
+    "_comment": "LLM used ONLY for labeled synthesis (sia ponder) and take grading. backend: codex | claude (uses your existing CLI subscription; auto-detected when unset). model is passed to that CLI.",
+    "backend": "",
+    "model": ""
+  },
+
+  "senses": {
+    "_comment": "Optional integrations (jackal/sekhmet/custos/aegis/worldline/guardian) auto-activate when their data exists; list names here to force-disable any sense.",
+    "disable": []
+  },
+
+  "custom_senses": [
+    {
+      "_comment": "Point SIA at YOUR programs. type: lines | jsonl. 'match' is a regex; for jsonl, 'field' selects the message field.",
+      "name": "example-app",
+      "organ": "example-app",
+      "description": "my application's error log",
+      "path": "~/logs/app.log",
+      "type": "lines",
+      "match": "ERROR|FATAL",
+      "kind": "error",
+      "tags": ["failed"],
+      "_disabled": true
+    }
+  ],
+
+  "chains": [
+    {
+      "_comment": "Extra signed evidence chains to re-verify each sweep: name, ledger path, and the argv of ITS OWN verifier (exit 0 = pass).",
+      "_example_name": "mychain",
+      "_example_ledger": "~/.local/share/mychain/ledger.tsv",
+      "_example_verify": ["~/.local/bin/mychain-verify", "--quiet"]
+    }
+  ]
+}
