@@ -69,6 +69,7 @@ function kindKey(n) {
   if (n.t === "organ") return "organ"
   if (n.t === "event-day") return "day"
   if (n.t === "thought") return "thought"
+  if (n.t === "skill") return "skill"
   return "entity"
 }
 
