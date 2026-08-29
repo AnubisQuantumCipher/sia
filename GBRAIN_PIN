@@ -1,0 +1,8 @@
+# The memory engine SIA is verified against. install.sh installs this exact
+# commit; `sia verify` warns if the running gbrain drifts from it. gbrain is
+# github.com/garrytan/gbrain (MIT), by Garry Tan — SIA is a sense/cognition/
+# UI shell around it. Bump deliberately, re-run `sia bench` + `sia judge-audit`,
+# and record the new pin here.
+commit=7b7921d
+version=0.47.6.0
+verified=2026-08-29

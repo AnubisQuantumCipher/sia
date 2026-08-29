@@ -2,7 +2,13 @@
 
 ## 1.0.0 — 2026-08-29
 
-First public release.
+**First public cut** of a reference deployment — not settled science.
+The verification record in the whitepaper is a lab notebook (defects
+found and fixed in review, one take graded, a 13-question corpus-
+conditioned bench); calibration awaits a population of graded takes.
+Run it on a machine you can watch. The instruments (`sia bench`,
+`sia judge-audit`, `tests/`) are shipped so you can check it yourself,
+not take the notebook's word.
 
 - 6 base senses (pacman, journald, git, agent sessions, notifications,
   Quattro agent meters) + auto-detected optional integrations + config-

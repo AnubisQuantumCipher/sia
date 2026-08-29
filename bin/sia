@@ -219,12 +219,45 @@ def cmd_dream():
     return 0 if rep else 1
 
 
+def _gbrain_pin_check():
+    """Warn if the running gbrain drifts from the pinned commit SIA was
+    verified against. A loose memory engine is a silent-drift risk for a
+    system this obsessed with pins — so it is surfaced, not hidden."""
+    import glob
+    pins = glob.glob(sialib.os.path.expanduser(
+        "~/.config/omarchy/plugins/khephri.sia/GBRAIN_PIN")) or \
+        glob.glob(sialib.os.path.expanduser("~/Projects/sia/GBRAIN_PIN"))
+    if not pins:
+        return
+    try:
+        pin = dict(l.split("=", 1) for l in open(pins[0])
+                   if "=" in l and not l.startswith("#"))
+        want = pin.get("commit", "").strip()
+    except Exception:
+        return
+    ver = ""
+    try:
+        r = subprocess.run([sialib.GBRAIN, "--version"],
+                           env=sialib.GBRAIN_ENV, capture_output=True,
+                           text=True, timeout=30)
+        ver = r.stdout.strip().splitlines()[-1]
+    except Exception:
+        pass
+    exp = pin.get("version", "").strip()
+    if want and exp and exp not in ver:
+        print(f"  gbrain   DRIFT — running {ver!r}, pinned {exp} "
+              f"(commit {want}); re-run sia bench + sia judge-audit")
+    else:
+        print(f"  gbrain   {ver or 'unknown'} (pinned {want})")
+
+
 def cmd_verify():
     chains = sialib.verify_chains()
     bad = False
     for k, v in sorted(chains.items()):
         print(f"  {k:8s} {v}")
         bad |= v == "fail"
+    _gbrain_pin_check()
     print("VERDICT: " + ("CHAINS FAILED" if bad else "all present chains verified"))
     return 1 if bad else 0
 
