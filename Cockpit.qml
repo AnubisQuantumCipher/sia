@@ -1,0 +1,1428 @@
+// SIA COCKPIT — full-screen mission control for the Omarchy Brain.
+// Overlay kind: summoned from the bar widget or SUPER+SHIFT+B, dismissed
+// with Esc / ✕ / click on the header brand. Pixels only — renders the
+// brainstem's snapshots; the brain is gbrain + the signed corpus.
+
+import QtQuick
+import QtQuick.Controls
+import Quickshell
+import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
+import "Model.js" as Model
+
+Item {
+  id: root
+
+  property var shell: ({})
+  property var manifest: ({})
+  property bool opened: false
+
+  property var status: null
+  property var graph: null
+  property var thoughts: []
+  property bool stale: true
+  property real nowMs: Date.now()
+  property string hoverId: ""
+  property string selectedId: ""
+  property var hiddenKinds: ({})
+  property real revealT: 1.0
+  property bool playing: false
+  property string verifyMsg: ""
+
+  readonly property string effId: hoverId !== "" ? hoverId : selectedId
+  readonly property string statePath:
+    (Quickshell.env("HOME") || "") + "/.local/state/sia"
+  readonly property string fontFamily: Style.font.family
+  readonly property color fg: Color.foreground
+  readonly property color accent: Color.accent
+  readonly property color urgent: Color.urgent
+
+  readonly property var pal: ({
+    cortex:  root.fg,
+    organ:   root.accent,
+    day:     Qt.alpha(root.fg, 0.78),
+    thought: Qt.lighter(root.accent, 1.35),
+    entity:  Qt.alpha(root.fg, 0.5),
+    urgent:  root.urgent
+  })
+
+  readonly property string brainState:
+    stale ? "stale" : (status && status.state ? status.state : "unknown")
+  readonly property int eventsToday:
+    status && status.events_today ? status.events_today : 0
+  readonly property var snap:
+    graph && graph.snapshot ? graph.snapshot : null
+
+  function stateColor() {
+    if (root.stale) return Qt.alpha(root.fg, 0.4)
+    if (root.brainState === "failed") return root.urgent
+    if (root.brainState === "degraded") return Qt.alpha(root.urgent, 0.75)
+    if (root.brainState === "thinking") return root.accent
+    return root.fg
+  }
+
+  function nodeById(id) {
+    if (!root.graph || id === "") return null
+    for (var i = 0; i < root.graph.nodes.length; i++)
+      if (root.graph.nodes[i].id === id) return root.graph.nodes[i]
+    return null
+  }
+
+  function nodeVisible(n) {
+    if (root.hiddenKinds[Model.kindKey(n)]) return false
+    return (n.tsNorm || 0) <= root.revealT
+  }
+
+  function toggleKind(role) {
+    if (role === "cortex") return
+    var h = {}
+    for (var k in root.hiddenKinds) h[k] = root.hiddenKinds[k]
+    h[role] = !h[role]
+    root.hiddenKinds = h
+    graphCanvas.requestPaint()
+  }
+
+  function open(payloadJson) {
+    opened = true
+    verifyMsg = ""
+    statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
+    if (root.graph && graphCanvas.width > 0)
+      Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
+    Qt.callLater(function() {
+      keyCatcher.forceActiveFocus()
+      graphCanvas.requestPaint()
+    })
+  }
+
+  function dismiss() {
+    opened = false
+    playing = false
+    revealT = 1.0
+    hoverId = ""
+    if (shell && typeof shell.hide === "function") shell.hide("khephri.sia")
+  }
+
+  function applyStatus(text) {
+    try {
+      const parsed = JSON.parse(text)
+      root.status = parsed
+      const ts = Date.parse(parsed.ts)
+      root.stale = !(ts > 0) || (Date.now() - ts) > 240 * 1000
+    } catch (e) { }
+  }
+
+  function applyGraph(text) {
+    try {
+      const g = JSON.parse(text)
+      if (!g || !Array.isArray(g.nodes) || !Array.isArray(g.edges)
+          || g.pages_total === undefined) return
+      root.graph = g
+      if (graphCanvas.width > 0)
+        Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
+      graphCanvas.requestPaint()
+    } catch (e) { }
+  }
+
+  function applyThoughts(text) {
+    try {
+      const t = JSON.parse(text)
+      root.thoughts = (t.thoughts || []).slice(-40).reverse()
+    } catch (e) { }
+  }
+
+  FileView {
+    id: statusFile
+    path: root.statePath + "/status.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyStatus(text())
+    onFileChanged: statusApply.restart()
+  }
+  Timer { id: statusApply; interval: 150; repeat: false
+          onTriggered: { statusFile.reload(); root.applyStatus(statusFile.text()) } }
+
+  FileView {
+    id: graphFile
+    path: root.statePath + "/graph.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyGraph(text())
+    onFileChanged: graphApply.restart()
+  }
+  Timer { id: graphApply; interval: 200; repeat: false
+          onTriggered: { graphFile.reload(); root.applyGraph(graphFile.text()) } }
+
+  FileView {
+    id: thoughtsFile
+    path: root.statePath + "/thoughts.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyThoughts(text())
+    onFileChanged: thoughtsApply.restart()
+  }
+  Timer { id: thoughtsApply; interval: 200; repeat: false
+          onTriggered: { thoughtsFile.reload(); root.applyThoughts(thoughtsFile.text()) } }
+
+  Timer {
+    interval: 1000; running: root.opened; repeat: true
+    onTriggered: {
+      root.nowMs = Date.now()
+      if (root.status) {
+        const ts = Date.parse(root.status.ts)
+        root.stale = !(ts > 0) || (root.nowMs - ts) > 240 * 1000
+      }
+    }
+  }
+
+  Process {
+    id: verifyProc
+    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
+    stdout: StdioCollector { waitForEnd: true }
+    onExited: function(code) {
+      root.verifyMsg = code === 0
+        ? "all present chains re-verified ✓"
+        : "CHAIN VERIFICATION FAILED"
+    }
+  }
+
+  PanelWindow {
+    id: win
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: Color.background
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "sia-cockpit"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+    Item {
+      id: keyCatcher
+      anchors.fill: parent
+      focus: true
+      Keys.priority: Keys.BeforeItem
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape) { root.dismiss(); event.accepted = true }
+        else if (event.key === Qt.Key_R) {
+          if (root.playing) { root.playing = false; root.revealT = 1.0 }
+          else { root.revealT = 0.0; root.playing = true }
+          event.accepted = true
+        }
+      }
+
+      // ---------------------------------------------------------- header
+      Item {
+        id: header
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: Style.space(16)
+        height: Style.space(34)
+
+        Row {
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(14)
+          Text {
+            textFormat: Text.PlainText
+            text: Model.brainGlyph() + "  SIA — THE OMARCHY BRAIN"
+            color: root.fg
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+          }
+          Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            width: stateText.implicitWidth + Style.space(16)
+            height: stateText.implicitHeight + Style.space(6)
+            radius: height / 2
+            color: Qt.alpha(root.stateColor(), 0.12)
+            border.color: Qt.alpha(root.stateColor(), 0.5)
+            border.width: 1
+            Text {
+              textFormat: Text.PlainText
+              id: stateText
+              anchors.centerIn: parent
+              text: root.brainState.toUpperCase()
+              color: root.stateColor()
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+          }
+          Text {
+            textFormat: Text.PlainText
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.status
+              ? "pulse " + root.status.pulse_seq + " · "
+                + Model.timeAgo(root.status.ts, root.nowMs)
+              : "no status"
+            color: Qt.alpha(root.fg, 0.55)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
+        Row {
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(16)
+          Text {
+            textFormat: Text.PlainText
+            anchors.verticalCenter: parent.verticalCenter
+            text: Qt.formatTime(new Date(root.nowMs), "HH:mm:ss")
+            color: Qt.alpha(root.fg, 0.55)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Rectangle {
+            anchors.verticalCenter: parent.verticalCenter
+            width: closeText.implicitWidth + Style.space(16)
+            height: closeText.implicitHeight + Style.space(8)
+            radius: Style.cornerRadius
+            color: closeArea.containsMouse
+              ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
+            border.color: Qt.alpha(root.fg, 0.25)
+            border.width: 1
+            Text {
+              textFormat: Text.PlainText
+              id: closeText
+              anchors.centerIn: parent
+              text: "✕ close"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            MouseArea {
+              id: closeArea
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: root.dismiss()
+            }
+          }
+        }
+      }
+
+      // ---------------------------------------------------------- footer
+      Item {
+        id: footer
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: Style.space(16)
+        height: Style.space(20)
+        Text {
+          textFormat: Text.PlainText
+          id: keysHint
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          text: "hover = inspect · click = lock · R = replay · Esc = close · sia ask \"…\""
+          color: Qt.alpha(root.fg, 0.4)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+        Text {
+          textFormat: Text.PlainText
+          anchors.left: parent.left
+          anchors.right: keysHint.left
+          anchors.rightMargin: Style.space(24)
+          anchors.verticalCenter: parent.verticalCenter
+          elide: Text.ElideRight
+          text: {
+            var th = root.status && root.status.thought ? root.status.thought : null
+            return th && th.text
+              ? Model.thoughtMark(th.kind) + "  " + th.text : ""
+          }
+          color: Qt.alpha(root.fg, 0.6)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      // ---------------------------------------------------------- body
+      Item {
+        id: body
+        anchors.top: header.bottom
+        anchors.bottom: footer.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: Style.space(16)
+        anchors.topMargin: Style.space(10)
+        anchors.bottomMargin: Style.space(10)
+
+        readonly property real gap: Style.space(12)
+        readonly property real leftW: Style.space(230)
+        readonly property real rightW: Style.space(300)
+
+        // ================================================= LEFT: vitals
+        Flickable {
+          id: leftScroll
+          width: body.leftW
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          contentWidth: width
+          contentHeight: leftPane.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Column {
+          id: leftPane
+          width: leftScroll.width
+          spacing: body.gap
+
+          Rectangle {
+            width: parent.width
+            height: vitalsCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: vitalsCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(6)
+              Text {
+                textFormat: Text.PlainText
+                text: "VITALS"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Grid {
+                columns: 2
+                columnSpacing: Style.space(14)
+                rowSpacing: Style.space(2)
+                Text { textFormat: Text.PlainText; text: "memories"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: root.status ? String(root.status.pages) : "—"
+                       color: root.fg; font.bold: true
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: "links"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: root.status ? String(root.status.graph_edges) : "—"
+                       color: root.fg; font.bold: true
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: "events today"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: String(root.eventsToday)
+                       color: root.accent; font.bold: true
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: "thoughts kept"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: String(root.thoughts.length)
+                       color: root.fg; font.bold: true
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: "mind traces"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                Text { textFormat: Text.PlainText; text: root.status && root.status.mind
+                         ? root.status.mind.nodes + " · " + root.status.mind.edges + " bonds"
+                         : "—"
+                       color: root.fg; font.bold: true
+                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+              }
+
+              Text {
+
+                textFormat: Text.PlainText
+                text: "PULSE ACTIVITY"
+                topPadding: Style.space(6)
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Canvas {
+                id: sparkline
+                width: vitalsCol.width
+                height: Style.space(34)
+                onPaint: {
+                  var ctx = getContext("2d")
+                  ctx.reset(); ctx.clearRect(0, 0, width, height)
+                  var hist = root.status && root.status.history
+                    ? root.status.history : []
+                  if (!hist.length) return
+                  var n = Math.min(hist.length, 90)
+                  var bw = width / 90
+                  var maxV = 1
+                  for (var i = hist.length - n; i < hist.length; i++)
+                    maxV = Math.max(maxV, hist[i][1])
+                  for (i = 0; i < n; i++) {
+                    var v = hist[hist.length - n + i][1]
+                    var h = v > 0
+                      ? Math.max(2, (Math.log(1 + v) / Math.log(1 + maxV))
+                                 * (height - 4))
+                      : 1
+                    ctx.fillStyle = v > 0 ? Qt.alpha(root.accent, 0.85)
+                                          : Qt.alpha(root.fg, 0.15)
+                    ctx.fillRect(i * bw, height - h, Math.max(1, bw - 1.5), h)
+                  }
+                }
+                Connections {
+                  target: root
+                  function onStatusChanged() { sparkline.requestPaint() }
+                }
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: {
+                  var hist = root.status && root.status.history
+                    ? root.status.history : []
+                  if (!hist.length) return "no pulses yet"
+                  var tot = 0
+                  for (var i = Math.max(0, hist.length - 90); i < hist.length; i++)
+                    tot += hist[i][1]
+                  return "last " + Math.min(hist.length, 90) + " pulses · "
+                    + tot + " events"
+                }
+                color: Qt.alpha(root.fg, 0.4)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          // Global Workspace (Baars/Dehaene): the brain's 7±2 conscious
+          // slots — ignition-thresholded, laterally inhibited, hysteretic
+          Rectangle {
+            visible: !!(root.status && root.status.workspace
+                        && root.status.workspace.length)
+            width: parent.width
+            height: wsCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.accent, 0.05)
+            border.color: Qt.alpha(root.accent, 0.22)
+            border.width: 1
+            Column {
+              id: wsCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(3)
+              Text {
+                textFormat: Text.PlainText
+                text: "WORKSPACE — "
+                  + (root.status && root.status.workspace
+                     ? root.status.workspace.length : 0) + " OF 7 SLOTS"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Repeater {
+                model: root.status && root.status.workspace
+                  ? root.status.workspace : []
+                delegate: Item {
+                  id: wsRow
+                  required property var modelData
+                  width: wsCol.width
+                  height: wsText.implicitHeight + Style.space(2)
+                  Text {
+                    textFormat: Text.PlainText
+                    id: wsText
+                    text: "◉ " + Model.slugLabel(wsRow.modelData)
+                    color: root.selectedId === wsRow.modelData
+                      ? root.accent : Qt.alpha(root.fg, 0.75)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                      root.selectedId =
+                        (root.selectedId === wsRow.modelData)
+                          ? "" : wsRow.modelData
+                      graphCanvas.requestPaint()
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: organCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: organCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(3)
+              Text {
+                textFormat: Text.PlainText
+                text: "ORGANS"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                bottomPadding: Style.space(3)
+              }
+              Repeater {
+                model: {
+                  if (!root.status || !root.status.organs) return []
+                  var ks = Object.keys(root.status.organs)
+                  ks.sort(function(a, b) {
+                    return (root.status.organs[b].today || 0)
+                         - (root.status.organs[a].today || 0)
+                  })
+                  return ks
+                }
+                delegate: Item {
+                  id: organRow
+                  required property var modelData
+                  readonly property var o:
+                    (root.status && root.status.organs
+                     && root.status.organs[organRow.modelData]) || {}
+                  width: organCol.width
+                  height: organName.implicitHeight + Style.space(2)
+                  Text {
+                    textFormat: Text.PlainText
+                    id: organName
+                    anchors.left: parent.left
+                    text: organRow.modelData
+                    color: Qt.alpha(root.fg, 0.7)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    anchors.right: countText.left
+                    anchors.rightMargin: Style.space(8)
+                    text: organRow.o.last_ts
+                      ? Model.timeAgo(organRow.o.last_ts, root.nowMs) : ""
+                    color: Qt.alpha(root.fg, 0.35)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    id: countText
+                    anchors.right: parent.right
+                    text: String(organRow.o.today || 0)
+                    color: (organRow.o.today || 0) > 0
+                      ? root.accent : Qt.alpha(root.fg, 0.3)
+                    font.bold: (organRow.o.today || 0) > 0
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: chainCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: chainCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(4)
+              Text {
+                textFormat: Text.PlainText
+                text: "EVIDENCE CHAINS"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Repeater {
+                model: root.status && root.status.integrity
+                       && root.status.integrity.chains
+                  ? Object.keys(root.status.integrity.chains).sort() : []
+                delegate: Item {
+                  id: chainRow
+                  required property var modelData
+                  readonly property string v:
+                    ((root.status && root.status.integrity
+                      && root.status.integrity.chains) || {})[chainRow.modelData]
+                    || "absent"
+                  width: chainCol.width
+                  height: chainName.implicitHeight + Style.space(2)
+                  Text {
+                    textFormat: Text.PlainText
+                    id: chainName
+                    anchors.left: parent.left
+                    text: chainRow.modelData
+                    color: Qt.alpha(root.fg, 0.7)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    anchors.right: parent.right
+                    text: chainRow.v === "pass" ? "verified ✓"
+                        : chainRow.v === "absent" ? "absent –" : "FAILED ✗"
+                    color: chainRow.v === "pass" ? root.accent
+                         : chainRow.v === "absent" ? Qt.alpha(root.fg, 0.35)
+                                                   : root.urgent
+                    font.bold: chainRow.v === "fail"
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+              Item { width: 1; height: Style.space(2) }
+              Text {
+                textFormat: Text.PlainText
+                width: chainCol.width
+                text: Model.chainGlyph() + " ledger seq "
+                  + (root.status && root.status.ledger
+                     ? root.status.ledger.seq : "?")
+                  + " · " + (root.status && root.status.ledger
+                             ? root.status.ledger.head : "") + "…"
+                elide: Text.ElideRight
+                color: Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: !!(root.status && root.status.dream
+                            && root.status.dream.last)
+                text: Model.dreamGlyph() + " dreamed "
+                  + (root.status && root.status.dream
+                     ? Model.timeAgo(root.status.dream.last, root.nowMs) : "")
+                  + (root.status && root.status.dream
+                     && root.status.dream.status
+                     ? " · " + root.status.dream.status : "")
+                color: Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Rectangle {
+                width: verifyBtnText.implicitWidth + Style.space(16)
+                height: verifyBtnText.implicitHeight + Style.space(6)
+                radius: Style.cornerRadius
+                color: verifyBtnArea.containsMouse
+                  ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
+                border.color: Qt.alpha(root.fg, 0.25)
+                border.width: 1
+                Text {
+                  textFormat: Text.PlainText
+                  id: verifyBtnText
+                  anchors.centerIn: parent
+                  text: "verify now"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                MouseArea {
+                  id: verifyBtnArea
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  onClicked: verifyProc.running = true
+                }
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: root.verifyMsg !== ""
+                text: root.verifyMsg
+                color: root.verifyMsg.indexOf("FAILED") >= 0
+                  ? root.urgent : root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          // outcome learning: predictions → grades → calibration
+          Rectangle {
+            visible: !!(root.status && root.status.takes
+                        && (root.status.takes.open
+                            || root.status.takes.resolved))
+            width: parent.width
+            height: beliefCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: beliefCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(4)
+              Text {
+                textFormat: Text.PlainText
+                text: "BELIEFS"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Text {
+                textFormat: Text.PlainText
+                readonly property var tk:
+                  root.status && root.status.takes ? root.status.takes : ({})
+                width: beliefCol.width
+                text: (tk.open || 0) + " open prediction"
+                  + ((tk.open || 0) === 1 ? "" : "s")
+                  + ((tk.due || 0) > 0 ? " · " + tk.due + " DUE" : "")
+                  + " · " + (tk.resolved || 0) + " graded"
+                wrapMode: Text.WordWrap
+                color: (tk.due || 0) > 0 ? root.accent
+                                         : Qt.alpha(root.fg, 0.7)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: !!(root.status && root.status.takes
+                            && root.status.takes.brier !== null
+                            && root.status.takes.brier !== undefined)
+                text: "mean Brier "
+                  + (root.status && root.status.takes
+                     ? root.status.takes.brier : "")
+                  + "  (0 = prophet · 0.25 = coin-flip)"
+                color: Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: "graded when due by the judge · Brier is math"
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: healthCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: healthCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(4)
+              Text {
+                textFormat: Text.PlainText
+                text: "SOURCE HEALTH"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Text {
+                textFormat: Text.PlainText
+                width: healthCol.width
+                text: {
+                  if (!root.snap) return "no snapshot contract"
+                  if (root.snap.failed_ops && root.snap.failed_ops.length)
+                    return "snapshot PARTIAL — failed: "
+                      + root.snap.failed_ops.join(", ")
+                  var s = "snapshot complete · " + root.snap.window_days
+                    + "d window"
+                  if (root.snap.truncated)
+                    s = "truncated: " + root.snap.truncated + " over cap"
+                  return s
+                }
+                wrapMode: Text.WordWrap
+                color: root.snap && ((root.snap.failed_ops
+                        && root.snap.failed_ops.length) || root.snap.truncated)
+                  ? root.urgent : Qt.alpha(root.fg, 0.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: !!(root.snap && root.snap.aged_out)
+                width: healthCol.width
+                text: (root.snap ? root.snap.aged_out : 0)
+                  + " older memories beyond the display window (still in the brain)"
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Repeater {
+                model: root.snap && root.snap.counts_by_kind
+                  ? Object.keys(root.snap.counts_by_kind).sort() : []
+                delegate: Item {
+                  id: kindRow
+                  required property var modelData
+                  width: healthCol.width
+                  height: kindName.implicitHeight
+                  Text {
+                    textFormat: Text.PlainText
+                    id: kindName
+                    anchors.left: parent.left
+                    text: kindRow.modelData
+                    color: Qt.alpha(root.fg, 0.55)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    anchors.right: parent.right
+                    text: String(root.snap.counts_by_kind[kindRow.modelData])
+                    color: Qt.alpha(root.fg, 0.75)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+              Repeater {
+                model: root.status && root.status.errors
+                  ? Object.keys(root.status.errors).sort() : []
+                delegate: Text {
+                  id: errRow
+                  required property var modelData
+                  width: healthCol.width
+                  text: "✗ " + errRow.modelData + ": "
+                    + root.status.errors[errRow.modelData]
+                  wrapMode: Text.WordWrap
+                  color: root.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: !!(root.status && root.status.sync_note)
+                width: healthCol.width
+                text: "✗ sync: " + (root.status ? root.status.sync_note : "")
+                wrapMode: Text.WordWrap
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                visible: !root.stale && root.status
+                  && (!root.status.errors
+                      || Object.keys(root.status.errors).length === 0)
+                  && !(root.status && root.status.sync_note)
+                text: "all senses reporting ✓"
+                color: Qt.alpha(root.accent, 0.7)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+        }
+        }
+
+        // ================================================= CENTER: graph
+        Rectangle {
+          id: graphCard
+          anchors.left: leftScroll.right
+          anchors.right: rightPane.left
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          anchors.leftMargin: body.gap
+          anchors.rightMargin: body.gap
+          radius: Style.cornerRadius
+          color: Qt.alpha(root.fg, 0.03)
+          border.color: Qt.alpha(root.fg, 0.10)
+          border.width: 1
+          clip: true
+
+          Canvas {
+            id: graphCanvas
+            anchors.fill: parent
+            anchors.margins: 2
+            renderStrategy: Canvas.Cooperative
+
+            onWidthChanged: if (root.graph && width > 0)
+              Model.syncGraph(root.graph, width, height)
+            onHeightChanged: if (root.graph && width > 0)
+              Model.syncGraph(root.graph, width, height)
+
+            Timer {
+              interval: 40
+              running: root.opened && root.graph !== null
+              repeat: true
+              onTriggered: {
+                if (root.playing) {
+                  root.revealT = Math.min(1, root.revealT + 40 / 12000)
+                  if (root.revealT >= 1) root.playing = false
+                }
+                Model.step(root.graph, graphCanvas.width, graphCanvas.height)
+                graphCanvas.requestPaint()
+              }
+            }
+
+            onPaint: {
+              var ctx = getContext("2d")
+              ctx.reset()
+              ctx.clearRect(0, 0, width, height)
+              if (!root.graph || !root.graph.nodes) return
+              var now = root.nowMs > 0 ? root.nowMs : Date.now()
+              var nodes = root.graph.nodes, edges = root.graph.edges
+              var i, p, q, n
+              var eff = root.effId
+              var nbrs = eff !== "" ? Model.neighbors(eff) : null
+
+              var vis = {}
+              for (i = 0; i < nodes.length; i++)
+                vis[nodes[i].id] = root.nodeVisible(nodes[i])
+
+              var rings = Model.rings()
+              var cx = width / 2, cy = height / 2
+              ctx.lineWidth = 1
+              for (i = 0; i < rings.length; i++) {
+                ctx.strokeStyle = Qt.alpha(root.fg, 0.055)
+                ctx.beginPath()
+                ctx.arc(cx, cy, rings[i].r, 0, 2 * Math.PI)
+                ctx.stroke()
+              }
+              ctx.font = Style.font.caption + "px " + root.fontFamily
+              ctx.textAlign = "center"
+              for (i = 0; i < rings.length; i++) {
+                ctx.fillStyle = Qt.alpha(root.fg, 0.25)
+                ctx.fillText(rings[i].label, cx, cy - rings[i].r - 3)
+              }
+
+              for (i = 0; i < edges.length; i++) {
+                if (!vis[edges[i].s] || !vis[edges[i].d]) continue
+                p = Model.posOf(edges[i].s); q = Model.posOf(edges[i].d)
+                if (!p || !q) continue
+                var touching = eff !== "" &&
+                  (edges[i].s === eff || edges[i].d === eff)
+                if (eff !== "" && !touching)
+                  ctx.strokeStyle = Qt.alpha(root.fg, 0.035)
+                else if (touching)
+                  ctx.strokeStyle = Qt.alpha(root.accent, 0.55)
+                else
+                  ctx.strokeStyle = Qt.alpha(root.fg, 0.10)
+                ctx.lineWidth = touching ? 1.4 : 1
+                ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y)
+                ctx.stroke()
+              }
+              ctx.lineWidth = 1
+
+              for (i = 0; i < nodes.length; i++) {
+                n = nodes[i]
+                if (!vis[n.id]) continue
+                p = Model.posOf(n.id)
+                if (!p) continue
+                var dimmed = eff !== "" && n.id !== eff &&
+                  !(nbrs && nbrs[n.id])
+                var r = Model.nodeRadius(n)
+                var col = Model.nodeColor(n, root.pal)
+                var fresh = Model.freshness(n, now)
+                if (fresh > 0.02 && !dimmed) {
+                  var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
+                                                       + p.x * 0.05)
+                  ctx.fillStyle = Qt.alpha(root.accent, 0.28 * fresh * breathe)
+                  ctx.beginPath()
+                  ctx.arc(p.x, p.y, r + 5 + 4 * fresh, 0, 2 * Math.PI)
+                  ctx.fill()
+                }
+                ctx.fillStyle = dimmed ? Qt.alpha(col, 0.22) : col
+                ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 2 * Math.PI)
+                ctx.fill()
+                if (n.id === "sia/cortex" && !dimmed) {
+                  var halo = 0.35 + 0.20 * Math.sin(Model.phase())
+                  ctx.strokeStyle = Qt.alpha(root.fg, halo)
+                  ctx.lineWidth = 1.2
+                  ctx.beginPath()
+                  ctx.arc(p.x, p.y, r + 3.5, 0, 2 * Math.PI)
+                  ctx.stroke()
+                  ctx.lineWidth = 1
+                }
+                if (n.id === eff) {
+                  ctx.strokeStyle = root.fg
+                  ctx.beginPath()
+                  ctx.arc(p.x, p.y, r + 3, 0, 2 * Math.PI)
+                  ctx.stroke()
+                }
+              }
+
+              for (i = 0; i < nodes.length; i++) {
+                n = nodes[i]
+                if (!vis[n.id]) continue
+                var isEff = n.id === eff
+                var isNbr = nbrs && nbrs[n.id]
+                var anchorLbl = n.t === "organ" || n.id === "sia/cortex"
+                if (!anchorLbl && !isEff && !isNbr) continue
+                p = Model.posOf(n.id)
+                if (!p) continue
+                var alpha = isEff ? 1.0
+                  : isNbr ? 0.8
+                  : (eff !== "" ? 0.25
+                     : (n.id === "sia/cortex" ? 0.9 : 0.55))
+                ctx.fillStyle = Qt.alpha(root.fg, alpha)
+                ctx.fillText(Model.shortLabel(n), p.x,
+                             p.y - Model.nodeRadius(n) - 5)
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              function nearest(mx, my) {
+                if (!root.graph) return ""
+                var best = "", bd = 500
+                for (var i = 0; i < root.graph.nodes.length; i++) {
+                  var n = root.graph.nodes[i]
+                  if (!root.nodeVisible(n)) continue
+                  var p = Model.posOf(n.id)
+                  if (!p) continue
+                  var dx = p.x - mx, dy = p.y - my
+                  var d2 = dx * dx + dy * dy
+                  if (d2 < bd) { bd = d2; best = n.id }
+                }
+                return best
+              }
+              onPositionChanged: function(mouse) {
+                root.hoverId = nearest(mouse.x, mouse.y)
+              }
+              onExited: root.hoverId = ""
+              onClicked: function(mouse) {
+                var hit = nearest(mouse.x, mouse.y)
+                root.selectedId = (hit === root.selectedId) ? "" : hit
+                graphCanvas.requestPaint()
+              }
+            }
+          }
+
+          Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Style.space(10)
+            width: replayText.implicitWidth + Style.space(16)
+            height: replayText.implicitHeight + Style.space(8)
+            radius: Style.cornerRadius
+            color: replayArea.containsMouse
+              ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
+            border.color: Qt.alpha(root.fg, 0.25)
+            border.width: 1
+            Text {
+              textFormat: Text.PlainText
+              id: replayText
+              anchors.centerIn: parent
+              text: root.playing ? "◼ stop" : "⟲ replay growth"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            MouseArea {
+              id: replayArea
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: {
+                if (root.playing) { root.playing = false; root.revealT = 1.0 }
+                else { root.revealT = 0.0; root.playing = true }
+                graphCanvas.requestPaint()
+              }
+            }
+          }
+
+          Row {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.margins: Style.space(10)
+            spacing: Style.space(12)
+            Repeater {
+              model: [
+                { label: "cortex",  role: "cortex" },
+                { label: "organ",   role: "organ" },
+                { label: "memory",  role: "day" },
+                { label: "thought", role: "thought" },
+                { label: "entity",  role: "entity" }
+              ]
+              delegate: Item {
+                id: chip
+                required property var modelData
+                width: chipRow.implicitWidth
+                height: chipRow.implicitHeight
+                opacity: root.hiddenKinds[chip.modelData.role] ? 0.3 : 1.0
+                Row {
+                  id: chipRow
+                  spacing: Style.space(4)
+                  Rectangle {
+                    width: 8; height: 8; radius: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: root.pal[chip.modelData.role]
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    text: chip.modelData.label
+                    color: Qt.alpha(root.fg, 0.5)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(3)
+                  onClicked: root.toggleKind(chip.modelData.role)
+                }
+              }
+            }
+          }
+
+          Text {
+
+            textFormat: Text.PlainText
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: Style.space(10)
+            text: root.graph
+              ? root.graph.nodes.length + " of " + root.graph.pages_total
+                + " memories · " + root.graph.edges.length + " links · "
+                + (root.snap && root.snap.complete ? "complete" : "partial")
+              : "no graph snapshot yet"
+            color: Qt.alpha(root.fg, 0.45)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        // ================================================= RIGHT: inspect
+        Column {
+          id: rightPane
+          width: body.rightW
+          anchors.top: parent.top
+          anchors.bottom: parent.bottom
+          anchors.right: parent.right
+          spacing: body.gap
+
+          Rectangle {
+            id: inspectorCard
+            width: parent.width
+            height: Math.min(inspectorCol.implicitHeight + Style.space(20),
+                             rightPane.height * 0.44)
+            radius: Style.cornerRadius
+            color: root.effId !== ""
+              ? Qt.alpha(root.accent, 0.06) : Qt.alpha(root.fg, 0.04)
+            border.color: root.effId !== ""
+              ? Qt.alpha(root.accent, 0.3) : Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            clip: true
+
+            Flickable {
+              anchors.fill: parent
+              anchors.margins: Style.space(10)
+              contentWidth: width
+              contentHeight: inspectorCol.implicitHeight
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+
+              Column {
+                id: inspectorCol
+                width: parent.width
+                spacing: Style.space(4)
+                readonly property var n: root.nodeById(root.effId)
+
+                Text {
+
+                  textFormat: Text.PlainText
+                  text: "INSPECTOR"
+                  color: Qt.alpha(root.fg, 0.45)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  visible: !inspectorCol.n
+                  width: inspectorCol.width
+                  text: "hover a memory to inspect it — click to lock the "
+                    + "selection. every edge shows its type and the context "
+                    + "it was extracted from."
+                  wrapMode: Text.WordWrap
+                  color: Qt.alpha(root.fg, 0.45)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  visible: !!inspectorCol.n
+                  width: inspectorCol.width
+                  text: inspectorCol.n ? inspectorCol.n.title : ""
+                  wrapMode: Text.WordWrap
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  visible: !!inspectorCol.n
+                  width: inspectorCol.width
+                  text: inspectorCol.n
+                    ? inspectorCol.n.t + " · " + inspectorCol.n.id
+                    : ""
+                  wrapMode: Text.WrapAnywhere
+                  color: Qt.alpha(root.fg, 0.55)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  visible: !!inspectorCol.n
+                  text: inspectorCol.n
+                    ? "updated " + Model.timeAgo(inspectorCol.n.ts, root.nowMs)
+                      + " · " + (inspectorCol.n.din || 0) + " in / "
+                      + (inspectorCol.n.dout || 0) + " out"
+                      + (root.selectedId === root.effId ? " · LOCKED" : "")
+                    : ""
+                  color: Qt.alpha(root.fg, 0.55)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  visible: !!inspectorCol.n
+                  text: "CONNECTIONS"
+                  topPadding: Style.space(4)
+                  color: Qt.alpha(root.fg, 0.45)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Repeater {
+                  model: root.effId !== "" ? Model.nodeEdges(root.effId) : []
+                  delegate: Column {
+                    id: edgeRow
+                    required property var modelData
+                    width: inspectorCol.width
+                    spacing: 0
+                    Text {
+                      textFormat: Text.PlainText
+                      width: parent.width
+                      text: (edgeRow.modelData.out ? "→ " : "← ")
+                        + edgeRow.modelData.type + "  "
+                        + Model.slugLabel(edgeRow.modelData.other)
+                      elide: Text.ElideRight
+                      color: Qt.alpha(root.fg, 0.8)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
+                    Text {
+                      textFormat: Text.PlainText
+                      visible: edgeRow.modelData.why !== ""
+                      width: parent.width
+                      leftPadding: Style.space(12)
+                      text: "“" + edgeRow.modelData.why + "”"
+                      elide: Text.ElideRight
+                      color: Qt.alpha(root.fg, 0.4)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: rightPane.height - inspectorCard.height - body.gap
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            clip: true
+
+            Column {
+              id: thoughtHeader
+              anchors.top: parent.top
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.margins: Style.space(10)
+              Text {
+                textFormat: Text.PlainText
+                text: "THOUGHT STREAM — " + root.thoughts.length
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+            }
+
+            Flickable {
+              anchors.top: thoughtHeader.bottom
+              anchors.bottom: parent.bottom
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.margins: Style.space(10)
+              anchors.topMargin: Style.space(6)
+              contentWidth: width
+              contentHeight: thoughtCol.implicitHeight
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+              ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+              Column {
+                id: thoughtCol
+                width: parent.width
+                spacing: Style.space(8)
+                Repeater {
+                  model: root.thoughts
+                  delegate: Row {
+                    id: thoughtRow
+                    required property var modelData
+                    width: thoughtCol.width
+                    spacing: Style.space(8)
+                    Text {
+                      textFormat: Text.PlainText
+                      text: Model.thoughtMark(thoughtRow.modelData.kind)
+                      color: thoughtRow.modelData.urgent
+                        ? root.urgent : root.accent
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                      width: Style.space(12)
+                      horizontalAlignment: Text.AlignHCenter
+                    }
+                    Column {
+                      width: parent.width - Style.space(20)
+                      Text {
+                        textFormat: Text.PlainText
+                        width: parent.width
+                        text: thoughtRow.modelData.text
+                        wrapMode: Text.WordWrap
+                        color: thoughtRow.modelData.urgent
+                          ? root.urgent : Qt.alpha(root.fg, 0.85)
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                      }
+                      Text {
+                        textFormat: Text.PlainText
+                        text: thoughtRow.modelData.kind + " · "
+                          + Model.timeAgo(thoughtRow.modelData.ts, root.nowMs)
+                        color: Qt.alpha(root.fg, 0.35)
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

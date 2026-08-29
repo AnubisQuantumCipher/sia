@@ -1,0 +1,69 @@
+api_version: gbrain-schema-pack-v1
+name: sia-pack
+version: "1.0.0"
+description: SIA — the Omarchy Brain. Machine-evidence ontology over gbrain-base-v2.
+extends: gbrain-base-v2
+
+page_types:
+  - name: organ
+    primitive: entity
+    path_prefixes: [organs/]
+    extractable: false
+  - name: event-day
+    primitive: temporal
+    path_prefixes: [events/]
+    extractable: false
+  - name: epoch
+    primitive: temporal
+    path_prefixes: [epochs/]
+    extractable: false
+  - name: thought
+    primitive: annotation
+    path_prefixes: [thoughts/]
+    extractable: false
+  - name: synthesis
+    primitive: annotation
+    path_prefixes: [synthesis/]
+    extractable: false
+  - name: unit
+    primitive: entity
+    path_prefixes: [units/]
+    extractable: false
+  - name: package
+    primitive: entity
+    path_prefixes: [packages/]
+    extractable: false
+  - name: project
+    primitive: entity
+    path_prefixes: [projects/]
+    extractable: false
+  - name: take
+    primitive: annotation
+    path_prefixes: [takes/]
+    extractable: false
+  - name: note
+    primitive: annotation
+    path_prefixes: [notes/]
+    extractable: false
+
+link_types:
+  - name: verified_by
+    inference:
+      regex: "verified|attests?|chain.{0,20}pass"
+  - name: healed
+    inference:
+      regex: "heal(ed|ing)?|restart(ed)?|OUTCOME:"
+  - name: crashed
+    inference:
+      regex: "crash(ed)?|dumped core|coredump|SIGSEGV"
+  - name: upgraded
+    inference:
+      regex: "upgraded|installed|removed"
+  - name: refused
+    inference:
+      regex: "refus(ed|al)|declined to"
+
+# phases are NOT inherited — declare exactly the deterministic set SIA runs.
+# (LLM phases stay out: the chat lane is GPT-5.6-Sol-only and dormant
+# without an API key; nothing here should silently wait on a model.)
+phases: [lint, backlinks, sync, extract, recompute_emotional_weight, embed, orphans, purge]

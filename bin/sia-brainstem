@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""sia-brainstem — the resident daemon of SIA, the Omarchy Brain.
+
+Serialized single owner of the SIA gbrain (PGLite is single-writer): every
+pulse tails the box's evidence streams into the corpus, syncs the brain,
+verifies the signed chains, thinks, and exports widget snapshots. Dreams
+nightly at 03:33 local.
+"""
+
+import os, sys, signal, time, datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import sialib
+
+PULSE_SEC = int(os.environ.get("SIA_PULSE_SEC", "60"))
+DREAM_HOUR, DREAM_MIN = 3, 33
+
+_stop = False
+
+def _on_term(signum, frame):
+    global _stop
+    _stop = True
+
+def main():
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
+    sialib.ensure_dirs()
+    sialib.log(f"sia-brainstem {sialib.VERSION} waking up "
+               f"(pulse {PULSE_SEC}s, brain {sialib.SHARE})")
+    memo = sialib.read_json(sialib.MEMO_PATH, {})
+    seq = int(memo.get("pulse_seq", 0))
+    # dream.last is a UTC stamp; the 03:33 schedule is local — convert
+    last_dream_day = ""
+    stamp = memo.get("dream", {}).get("last", "")
+    if stamp:
+        try:
+            last_dream_day = datetime.datetime.strptime(
+                stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=datetime.timezone.utc).astimezone().strftime("%Y-%m-%d")
+        except ValueError:
+            last_dream_day = stamp[:10]
+    sialib.ledger_append("BOOT:brainstem", sialib.VERSION, f"pulse={PULSE_SEC}s")
+    while not _stop:
+        seq += 1
+        t0 = time.time()
+        try:
+            st = sialib.pulse(seq)
+            memo = sialib.read_json(sialib.MEMO_PATH, {})
+            memo["pulse_seq"] = seq
+            sialib.atomic_write(sialib.MEMO_PATH, __import__("json").dumps(memo))
+            if st["events_pulse"] or st["errors"]:
+                sialib.log(f"pulse {seq}: {st['events_pulse']} events, "
+                           f"state {st['state']}"
+                           + (f", errors {list(st['errors'])}" if st["errors"] else ""))
+        except Exception as e:
+            sialib.log(f"pulse {seq} FAILED: {e!r}")
+        now = datetime.datetime.now()
+        if (now.hour, now.minute) >= (DREAM_HOUR, DREAM_MIN) and \
+                last_dream_day != now.strftime("%Y-%m-%d"):
+            last_dream_day = now.strftime("%Y-%m-%d")
+            sialib.log("dreaming…")
+            try:
+                sialib.dream()
+            except Exception as e:
+                sialib.log(f"dream FAILED: {e!r}")
+        elapsed = time.time() - t0
+        for _ in range(int(max(5.0, PULSE_SEC - elapsed))):
+            if _stop:
+                break
+            time.sleep(1)
+    sialib.log("sia-brainstem going quiet")
+    sialib.ledger_append("HALT:brainstem", sialib.VERSION, "clean")
+
+if __name__ == "__main__":
+    main()

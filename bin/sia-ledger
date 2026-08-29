@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""sia-ledger — signed, hash-chained run ledger for the SIA Omarchy Brain.
+
+Format: attest-ledger v1 (the injective, length-prefixed scheme SEKHMET uses and
+the SPARK-proved `Attest.Ledger` package specifies). Each row is 9 tab-separated
+columns:
+
+    seq  stamp  action  arg1  arg2  contentHash(64hex)  size  prev(64hex)  sig(128hex)
+
+Entry_Hash(E) = SHA256( "attest-entry-v1"
+                      || u64be(seq)
+                      || u64be(len(stamp))  || stamp
+                      || u64be(len(action)) || action
+                      || u64be(len(arg1))   || arg1
+                      || u64be(len(arg2))   || arg2
+                      || contentHash(32 raw bytes)
+                      || u64be(size)
+                      || prev(32 raw bytes) )
+
+col 7 (prev) is the PREDECESSOR's Entry_Hash; genesis prev = SHA256("attest-genesis-v1").
+col 8 (sig) is Ed25519 over THIS entry's Entry_Hash (the 32 raw bytes).
+
+The chain + every signature were validated byte-for-byte against the live SEKHMET
+ledger before this tool shipped. `verify` replays the same rule the proved
+`Attest.Ledger.Feed` enforces: an entry is accepted only if it links (right seq,
+prev == expected) and its signature verifies; rejection is sticky.
+"""
+
+import sys, os, hashlib, datetime
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey, Ed25519PublicKey)
+
+GENESIS_TAG = b"attest-genesis-v1"
+ENTRY_TAG   = b"attest-entry-v1"
+
+def anchor() -> str:
+    return hashlib.sha256(GENESIS_TAG).hexdigest()
+
+def _u64be(x: int) -> bytes:
+    return int(x).to_bytes(8, "big")
+
+def _atext(s: str) -> bytes:
+    b = s.encode("utf-8")
+    return _u64be(len(b)) + b
+
+def entry_hash(seq, stamp, action, arg1, arg2, sum_hex, size, prev_hex) -> str:
+    c = bytearray(ENTRY_TAG)
+    c += _u64be(int(seq))
+    c += _atext(stamp)
+    c += _atext(action)
+    c += _atext(arg1)
+    c += _atext(arg2)
+    c += bytes.fromhex(sum_hex)
+    c += _u64be(int(size))
+    c += bytes.fromhex(prev_hex)
+    return hashlib.sha256(bytes(c)).hexdigest()
+
+def _paths(state):
+    return (os.path.join(state, "ledger.tsv"),
+            os.path.join(state, "key.hex"),
+            os.path.join(state, "pub.hex"),
+            os.path.join(state, "head.pin"))
+
+def _read_rows(ledger):
+    if not os.path.exists(ledger):
+        return []
+    rows = []
+    with open(ledger) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line:
+                rows.append(line.split("\t"))
+    return rows
+
+def _sk(keyfile):
+    seed = bytes.fromhex(open(keyfile).read().strip())
+    return Ed25519PrivateKey.from_private_bytes(seed)
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def _atomic_write(path, data):
+    tmp = path + ".new"
+    with open(tmp, "w") as f:
+        f.write(data)
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+def _append_row(state, action, arg1, arg2, sum_hex, size):
+    ledger, keyfile, pubfile, pinfile = _paths(state)
+    rows = _read_rows(ledger)
+    sk = _sk(keyfile)
+    if not rows:
+        seq, prev = 0, anchor()
+    else:
+        last = rows[-1]
+        seq = int(last[0]) + 1
+        prev = entry_hash(last[0], last[1], last[2], last[3], last[4],
+                          last[5], last[6], last[7])
+    stamp = _now()
+    eh = entry_hash(seq, stamp, action, arg1, arg2, sum_hex, size, prev)
+    sig = sk.sign(bytes.fromhex(eh)).hex()
+    row = "\t".join([str(seq), stamp, action, arg1, arg2, sum_hex, str(size), prev, sig])
+    with open(ledger, "a") as f:
+        f.write(row + "\n")
+        f.flush(); os.fsync(f.fileno())   # torn-tail hardening (vm reset 2026-08-29)
+    # head.pin: "<count> <chain-head = Entry_Hash of the new last entry>"
+    head = entry_hash(seq, stamp, action, arg1, arg2, sum_hex, size, prev)
+    _atomic_write(pinfile, f"{seq + 1} {head}\n")
+    return seq, head
+
+def cmd_init(state):
+    ledger, keyfile, pubfile, pinfile = _paths(state)
+    os.makedirs(state, exist_ok=True)
+    if not os.path.exists(keyfile):
+        sk = Ed25519PrivateKey.generate()
+        seed = sk.private_bytes_raw()
+        with open(os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            f.write(seed.hex() + "\n")
+        pub = sk.public_key().public_bytes_raw().hex()
+        _atomic_write(pubfile, pub + "\n")
+    if not os.path.exists(ledger) or not _read_rows(ledger):
+        gsum = hashlib.sha256(b"sia-ledger-genesis").hexdigest()
+        # genesis row written directly (seq 0, prev = anchor)
+        sk = _sk(keyfile)
+        stamp = _now()
+        eh = entry_hash(0, stamp, "GENESIS:init", "sia", "-", gsum, 0, anchor())
+        sig = sk.sign(bytes.fromhex(eh)).hex()
+        row = "\t".join(["0", stamp, "GENESIS:init", "sia", "-", gsum, "0", anchor(), sig])
+        _atomic_write(ledger, row + "\n")
+        _atomic_write(pinfile, f"1 {eh}\n")
+    print(f"sia-ledger: initialized at {state}")
+    print(f"  keeper {open(pubfile).read().strip()}")
+    return 0
+
+def cmd_append(state, action, arg1, arg2, sum_hex, size):
+    seq, head = _append_row(state, action, arg1, arg2, sum_hex, size)
+    print(f"sia-ledger: appended seq {seq}  head {head}")
+    return 0
+
+def cmd_head(state):
+    ledger, *_ = _paths(state)
+    rows = _read_rows(ledger)
+    if not rows:
+        print("0 " + ("0" * 64)); return 0
+    last = rows[-1]
+    head = entry_hash(last[0], last[1], last[2], last[3], last[4], last[5], last[6], last[7])
+    print(f"{len(rows)} {head}")
+    return 0
+
+def cmd_verify(state, quiet=False):
+    ledger, keyfile, pubfile, pinfile = _paths(state)
+    rows = _read_rows(ledger)
+    if not rows:
+        print("sia-ledger: EMPTY ledger", file=sys.stderr); return 1
+    pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(open(pubfile).read().strip()))
+    expected_seq = 0
+    expected_prev = anchor()
+    ok = True
+    for r in rows:
+        if len(r) != 9:
+            ok = False
+            if not quiet: print(f"  seq {r[0] if r else '?'}  MALFORMED ({len(r)} cols)")
+            break
+        seq, stamp, action, a1, a2, sum_hex, size, prev, sig = r
+        links = (int(seq) == expected_seq and prev == expected_prev)
+        eh = entry_hash(seq, stamp, action, a1, a2, sum_hex, size, prev)
+        try:
+            pub.verify(bytes.fromhex(sig), bytes.fromhex(eh))
+            sig_ok = True
+        except Exception:
+            sig_ok = False
+        if not (links and sig_ok):
+            ok = False
+            if not quiet:
+                why = []
+                if not links: why.append("CHAIN BROKEN")
+                if not sig_ok: why.append("SIG BAD")
+                print(f"  seq {seq}  " + "  ".join(why))
+            break
+        if not quiet:
+            print(f"  seq {seq}  ok  {action}")
+        expected_seq += 1
+        expected_prev = eh
+    # anti-rollback pin check
+    if ok and os.path.exists(pinfile):
+        try:
+            pc, ph = open(pinfile).read().split()
+            head = entry_hash(rows[-1][0], rows[-1][1], rows[-1][2], rows[-1][3],
+                              rows[-1][4], rows[-1][5], rows[-1][6], rows[-1][7])
+            if int(pc) != len(rows) or ph != head:
+                ok = False
+                if not quiet: print("  PIN MISMATCH — possible rollback")
+        except Exception:
+            pass
+    print("VERDICT: " + ("LEDGER VERIFIED." if ok else "LEDGER FAILED VERIFICATION."))
+    return 0 if ok else 1
+
+def main(argv):
+    if len(argv) >= 2 and argv[1] == "anchor":
+        print(anchor()); return 0
+    if len(argv) < 3:
+        print("usage: sia-ledger <init|append|verify|head|anchor> <statedir> [...]", file=sys.stderr)
+        return 2
+    cmd = argv[1]
+    state = argv[2]
+    if cmd == "init":   return cmd_init(state)
+    if cmd == "head":   return cmd_head(state)
+    if cmd == "verify": return cmd_verify(state, quiet=("--quiet" in argv))
+    if cmd == "append":
+        # sia-ledger append <state> <action> <arg1> <arg2> <contentHash> <size>
+        return cmd_append(state, argv[3], argv[4], argv[5], argv[6], int(argv[7]))
+    print(f"sia-ledger: unknown command {cmd}", file=sys.stderr)
+    return 2
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

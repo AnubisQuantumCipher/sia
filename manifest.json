@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "khephri.sia",
+  "name": "SIA",
+  "version": "1.0.0",
+  "author": "Khephri Labs",
+  "license": "MIT",
+  "description": "SIA — the Omarchy Brain. Live knowledge graph, thoughts, and evidence-chain integrity of the machine's own memory.",
+  "tags": ["brain", "memory", "graph", "evidence"],
+  "kinds": ["bar-widget", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": { "barWidget": "Panel.qml", "overlay": "Cockpit.qml" },
+  "barWidget": {
+    "displayName": "SIA",
+    "description": "The Omarchy Brain — what the machine remembers, thinks, and can prove.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": { "staleAfterSec": 240 },
+    "schema": [
+      {
+        "key": "staleAfterSec",
+        "type": "integer",
+        "label": "Stale after (seconds)",
+        "min": 120,
+        "max": 900,
+        "step": 30,
+        "defaultValue": 240,
+        "description": "Mark the brain stale when status.json is older than this."
+      }
+    ]
+  }
+}
