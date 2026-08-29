@@ -364,6 +364,7 @@ Item {
           contentWidth: width
           contentHeight: leftPane.implicitHeight
           clip: true
+          pixelAligned: true    // snap scroll to whole pixels — no text shimmer
           boundsBehavior: Flickable.StopAtBounds
           ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -1226,6 +1227,7 @@ Item {
               contentWidth: width
               contentHeight: inspectorCol.implicitHeight
               clip: true
+              pixelAligned: true
               boundsBehavior: Flickable.StopAtBounds
 
               Column {
@@ -1370,6 +1372,7 @@ Item {
               anchors.topMargin: Style.space(6)
               contentWidth: width
               contentHeight: thoughtCol.implicitHeight
+              pixelAligned: true
               clip: true
               boundsBehavior: Flickable.StopAtBounds
               ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
