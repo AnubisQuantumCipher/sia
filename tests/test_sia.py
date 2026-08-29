@@ -270,5 +270,169 @@ class EpochMerge(unittest.TestCase):
             self.assertEqual(c2["obs"], 12, "merge must sum, not replace")
 
 
+class HealHoldRate(unittest.TestCase):
+    """Auto-proposed take confidence is arithmetic over the corpus's own
+    heal history — thin history falls to the prior, never a model."""
+
+    def _mk(self, d, days):
+        droot = os.path.join(d, "events/sekhmet")
+        os.makedirs(droot, exist_ok=True)
+        for day in days:
+            open(os.path.join(droot, day + ".md"), "w").write(
+                "# sekhmet\n- 01:00Z outcome OUTCOME:restart_wireplumber "
+                "- ok\n")
+
+    def test_hold_rate_arithmetic(self):
+        st = _load("siatakes_h", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            # heal 01-05 repeats on 01-08 (broken); the other three hold
+            self._mk(d, ["2026-01-05", "2026-01-08", "2026-02-01",
+                         "2026-03-01"])
+            conf, judged, held = st.heal_hold_rate("restart_wireplumber",
+                                                   corpus=d)
+            self.assertEqual((judged, held), (4, 3))
+            self.assertAlmostEqual(conf, 0.75)
+
+    def test_thin_history_prior(self):
+        st = _load("siatakes_h2", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            self._mk(d, ["2026-01-05"])
+            conf, judged, held = st.heal_hold_rate("restart_wireplumber",
+                                                   corpus=d)
+            self.assertEqual(conf, st.HEAL_PRIOR)
+
+
+class AutoPropose(unittest.TestCase):
+    """Heals become PROPOSALS in the queue — never committed takes — and
+    the same action is not proposed twice while one is pending."""
+
+    class Ev:
+        def __init__(self, organ, summary):
+            self.organ, self.summary = organ, summary
+
+    def test_propose_and_dedup(self):
+        st = _load("siatakes_a", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.CORPUS = d
+            st.TAKES_DIR = os.path.join(d, "takes")
+            state = os.path.join(d, "state")
+            os.makedirs(state)
+            evs = [self.Ev("sekhmet", "OUTCOME:restart_wireplumber - ok"),
+                   self.Ev("pacman", "OUTCOME:not_a_heal ok"),
+                   self.Ev("sekhmet", "INTENT:restart_wireplumber - -")]
+            p1 = st.auto_propose_heals(evs, state)
+            self.assertEqual(len(p1), 1)
+            self.assertIn("`restart_wireplumber`", p1[0]["claim"])
+            self.assertTrue(p1[0]["proposed"].startswith("auto:heal-hold"))
+            # queued now -> second pulse with same heal proposes nothing
+            p2 = st.auto_propose_heals(evs, state)
+            self.assertEqual(p2, [])
+            # queue holds exactly one; no take page was minted
+            q = json.load(open(os.path.join(state,
+                                            "take-proposals.json")))
+            self.assertEqual(len(q), 1)
+            self.assertFalse(os.path.isdir(st.TAKES_DIR))
+
+    def test_hyphenated_action_never_truncates(self):
+        st = _load("siatakes_a2", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.CORPUS = d
+            st.TAKES_DIR = os.path.join(d, "takes")
+            state = os.path.join(d, "state")
+            os.makedirs(state)
+            # "ok" inside the action name must not truncate the capture
+            p = st.auto_propose_heals(
+                [self.Ev("sekhmet", "OUTCOME:probe-ok-net unit ok")],
+                state)
+            self.assertEqual(len(p), 1)
+            self.assertIn("`probe-ok-net`", p[0]["claim"])
+
+    def test_locked_proposals_serializes(self):
+        st = _load("siatakes_l", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.locked_proposals(d, lambda cur: cur + [{"claim": "a"}])
+            out = st.locked_proposals(d, lambda cur: cur + [{"claim": "b"}])
+            self.assertEqual([p["claim"] for p in out], ["a", "b"])
+
+
+def _intent_page(st):
+    for name in os.listdir(st.INTENTS_DIR):
+        if name.endswith(".md"):
+            return os.path.join(st.INTENTS_DIR, name)
+    raise AssertionError("no intent page")
+
+
+class Intents(unittest.TestCase):
+    """Prospective memory: create, surface by deadline, close on the
+    operator's word only."""
+
+    def test_lifecycle(self):
+        st = _load("siatakes_i", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.CORPUS = d
+            st.INTENTS_DIR = os.path.join(d, "intents")
+            it = st.create_intent("rotate ledger keys", "2099-01-01")
+            self.assertEqual(it["status"], "open")
+            opened = st.open_intents()
+            self.assertEqual(len(opened), 1)
+            self.assertGreater(opened[0]["days_left"], 0)
+            done = st.close_intent(it["id"][:6], "rotated")
+            self.assertEqual(done["status"], "done")
+            self.assertEqual(st.open_intents(), [])
+            body = open(_intent_page(st)).read()
+            self.assertIn("tags: [intent, done]", body)
+
+    def test_bad_date_raises(self):
+        st = _load("siatakes_i2", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.CORPUS = d
+            st.INTENTS_DIR = os.path.join(d, "intents")
+            with self.assertRaises(ValueError):
+                st.create_intent("x", "not-a-date")
+
+    def test_non_ascii_and_backslash_survive_close(self):
+        # regression: re.sub once treated the JSON as a template — em
+        # dashes crashed the close and backslashes were silently halved
+        st = _load("siatakes_i3", os.path.join(BIN, "siatakes.py"))
+        with tempfile.TemporaryDirectory() as d:
+            st.CORPUS = d
+            st.INTENTS_DIR = os.path.join(d, "intents")
+            it = st.create_intent("réviser — clean C:\\temp \\d dir",
+                                  "2099-01-01")
+            done = st.close_intent(it["id"][:6], "done — rotated ☑")
+            self.assertEqual(done["status"], "done")
+            self.assertEqual(done["text"], "réviser — clean C:\\temp \\d dir")
+            # page must round-trip: reload sees the closed intent intact
+            loaded = st.load_intents()
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0]["text"], done["text"])
+            self.assertEqual(loaded[0]["note"], "done — rotated ☑")
+
+
+class Coincidence(unittest.TestCase):
+    """Two organs spiking in the same window is an observation; the
+    thought states the coincidence and the sighting count, no cause."""
+
+    def test_pairs_counted(self):
+        sialib = _load("sialib_c", os.path.join(BIN, "sialib.py"))
+        mind = {}
+        f1 = [("journal", "spike", "x"), ("pacman", "spike", "y"),
+              ("jackal", "absence", "z")]
+        out = sialib.coincidence_findings(mind, f1, now=1000.0)
+        self.assertEqual(len(out), 1)
+        self.assertIn("first sighting", out[0][0])
+        self.assertIn("not a cause", out[0][0])
+        self.assertEqual(sorted(out[0][1]),
+                         ["organs/journal", "organs/pacman"])
+        out2 = sialib.coincidence_findings(mind, f1, now=2000.0)
+        self.assertIn("2nd sighting", out2[0][0])
+        self.assertEqual(mind["coincide"]["journal|pacman"]["n"], 2)
+
+    def test_single_organ_none(self):
+        sialib = _load("sialib_c2", os.path.join(BIN, "sialib.py"))
+        self.assertEqual(sialib.coincidence_findings(
+            {}, [("journal", "spike", "x")], now=1.0), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

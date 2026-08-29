@@ -34,6 +34,9 @@ function thoughtMark(kind) {
   if (kind === "grade")     return "⚖"
   if (kind === "calibration") return "◎"
   if (kind === "note")      return "✉"
+  if (kind === "coincidence") return "⋈"
+  if (kind === "intent")    return "➤"
+  if (kind === "bench")     return "≟"
   return "·"
 }
 

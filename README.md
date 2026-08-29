@@ -36,8 +36,15 @@ subscription).
 - **Outcome learning** — register falsifiable predictions with confidence
   and deadlines; an LLM judge grades them strictly against recalled
   evidence (TRUE / FALSE / UNRESOLVABLE — abstention audited); Brier
-  calibration is pure arithmetic. Your machine keeps score on its own
-  judgment, and on yours.
+  calibration is pure arithmetic. Successful self-heals auto-*propose*
+  hold-predictions with confidence computed from their own history — you
+  commit each one by hand. Your machine keeps score on its own judgment,
+  and on yours.
+- **Prospective memory** — `sia intend "rotate the keys" --by 2026-10-01`:
+  commitments the brain surfaces as their deadlines near and nags about
+  when overdue, closing only on your word. And every night the dream runs
+  a small recall **self-bench** whose trend the cockpit plots — the
+  historian keeps receipts on its own memory.
 - **A mission-control cockpit** — full-screen Quickshell overlay
   (`SUPER+SHIFT+B`): the living graph with radial time, hover
   neighborhoods, edge explanations, a thought stream, evidence-chain
@@ -84,6 +91,7 @@ sia status                          # the brain's vitals
 sia ask "what happened today"       # semantic recall, cited + labeled
 sia think                           # its inner monologue
 sia take "the build will go green" --confidence 0.8 --by 2026-09-05
+sia intend "rotate ledger keys" --by 2026-10-01   # prospective memory
 sia note "hard-won context" --from me    # a memory for future sessions
 ```
 

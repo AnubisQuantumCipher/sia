@@ -769,11 +769,16 @@ Item {
             }
           }
 
-          // outcome learning: predictions → grades → calibration
+          // outcome learning: predictions → grades → calibration —
+          // also shown when only the recall trend has data, so the
+          // self-bench line is never gated behind having takes
           Rectangle {
-            visible: !!(root.status && root.status.takes
-                        && (root.status.takes.open
-                            || root.status.takes.resolved))
+            visible: !!(root.status
+                        && ((root.status.takes
+                             && (root.status.takes.open
+                                 || root.status.takes.resolved))
+                            || (root.status.bench_trend
+                                && root.status.bench_trend.length)))
             width: parent.width
             height: beliefCol.implicitHeight + Style.space(20)
             radius: Style.cornerRadius
@@ -818,6 +823,8 @@ Item {
                 visible: !!(root.status && root.status.takes
                             && root.status.takes.brier !== null
                             && root.status.takes.brier !== undefined)
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
                 text: "mean Brier "
                   + (root.status && root.status.takes
                      ? root.status.takes.brier : "")
@@ -829,10 +836,140 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
                 text: "graded when due by the judge · Brier is math"
                 color: Qt.alpha(root.fg, 0.35)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: !!(root.status && root.status.bench_trend
+                            && root.status.bench_trend.length)
+                topPadding: Style.space(4)
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
+                text: "RECALL TREND — nightly self-bench, hit@5"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Canvas {
+                id: benchSpark
+                visible: !!(root.status && root.status.bench_trend
+                            && root.status.bench_trend.length)
+                width: beliefCol.width
+                height: Style.space(22)
+                onPaint: {
+                  var ctx = getContext("2d")
+                  ctx.reset(); ctx.clearRect(0, 0, width, height)
+                  var tr = root.status && root.status.bench_trend
+                    ? root.status.bench_trend : []
+                  if (!tr.length) return
+                  var n = Math.min(tr.length, 30)
+                  var step = width / 30
+                  ctx.strokeStyle = Qt.alpha(root.fg, 0.15)
+                  ctx.beginPath()
+                  ctx.moveTo(0, height - 2); ctx.lineTo(width, height - 2)
+                  ctx.stroke()
+                  ctx.fillStyle = root.accent
+                  ctx.strokeStyle = Qt.alpha(root.accent, 0.5)
+                  ctx.beginPath()
+                  var started = false
+                  for (var i = 0; i < n; i++) {
+                    var v = tr[tr.length - n + i].hit5
+                    if (typeof v !== "number") continue   // skip bad rows
+                    var x = i * step + step / 2
+                    var y = height - 2 - v * (height - 6)
+                    if (!started) { ctx.moveTo(x, y); started = true }
+                    else ctx.lineTo(x, y)
+                  }
+                  ctx.stroke()
+                  for (i = 0; i < n; i++) {
+                    v = tr[tr.length - n + i].hit5
+                    if (typeof v !== "number") continue
+                    x = i * step + step / 2
+                    y = height - 2 - v * (height - 6)
+                    ctx.fillRect(x - 1.5, y - 1.5, 3, 3)
+                  }
+                }
+                Connections {
+                  target: root
+                  function onStatusChanged() { benchSpark.requestPaint() }
+                }
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: benchSpark.visible
+                readonly property var bt:
+                  root.status && root.status.bench_trend
+                    ? root.status.bench_trend : []
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
+                text: bt.length
+                  ? "latest " + (typeof bt[bt.length - 1].hit5 === "number"
+                      ? bt[bt.length - 1].hit5.toFixed(2) : "—")
+                    + " · " + bt.length
+                    + (bt.length === 1 ? " night" : " nights")
+                    + " · a falling line says: run the full bench"
+                  : ""
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+
+          Rectangle {
+            visible: !!(root.status && root.status.intents
+                        && root.status.intents.length)
+            width: parent.width
+            height: intentCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.fg, 0.04)
+            border.color: Qt.alpha(root.fg, 0.10)
+            border.width: 1
+            Column {
+              id: intentCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(4)
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "INTENTS — prospective memory"
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Repeater {
+                model: root.status && root.status.intents
+                  ? root.status.intents : []
+                delegate: Text {
+                  required property var modelData
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  width: intentCol.width
+                  wrapMode: Text.WordWrap
+                  text: (modelData.days_left < 0
+                          ? "➤ OVERDUE " + (-modelData.days_left) + "d — "
+                          : modelData.days_left === 0
+                            ? "➤ due today — "
+                            : "➤ in " + modelData.days_left + "d — ")
+                        + modelData.text
+                  color: modelData.days_left < 0 ? root.urgent
+                    : modelData.days_left <= 2 ? root.accent
+                    : Qt.alpha(root.fg, 0.7)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
               }
             }
           }

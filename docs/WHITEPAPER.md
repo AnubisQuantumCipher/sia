@@ -1,6 +1,6 @@
 # SIA: An Evidence-Grounded Neurocognitive Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-08-29 · v1.0**
+**Khephri Labs · open source (MIT) · 2026-08-29 · v1.1**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 
@@ -69,7 +69,7 @@ connect across streams the way recall connects across experiences;
               novelty · surprisal ───┘   gbrain brain (PGLite,
               workspace · integrity      local 768-d embeddings,
                                          typed knowledge graph)
- nightly 03:33 dream: consolidation → musing → take grading → gbrain cycle
+ nightly 03:33 dream: consolidation → musing → grading → self-bench → gbrain cycle
 ```
 
 **Single-writer discipline.** PGLite admits one process; the brainstem
@@ -192,7 +192,15 @@ A **take** is a falsifiable prediction — claim, holder, confidence
 p ∈ (0,1), deadline, domain — stored as a corpus page (part of the
 graph, embedded, recallable). Takes originate from the user, from
 ponder syntheses (the model proposes at most two per reflection in a
-strict grammar), or from future deterministic rules. When due, a take
+strict grammar), or from deterministic evidence templates: a successful
+fabric heal auto-proposes "this heal will hold — no repeat within 7
+days," with confidence `clamp(held/judged, 0.55, 0.95)` computed from
+that action's own corpus history (prior 0.70 when fewer than three full
+windows exist). The history source is the sekhmet day pages, so its
+horizon is the episodic window plus verbatim (flashbulb) days — under
+that horizon the prior dominates by construction, which is the honest
+behavior for a young evidence base. Every origin lands in the same proposal queue; nothing
+becomes a take until a human runs `sia take --accept`. When due, a take
 is judged against deterministically gathered evidence (semantic recall,
 entity-matched organ records, and thoughts since creation) by the
 configured judge under a strict rubric:
@@ -203,6 +211,22 @@ record (mean Brier, directional accuracy) surfaced in the CLI, the
 cockpit, and — closing the loop — in ponder's own context, so future
 confidence is informed by measured past performance. The nightly dream
 grades up to three due takes; every grade is a signed ledger row.
+
+**Prospective memory.** Intents are dated commitments stored as corpus
+pages: the brain surfaces each one as its deadline approaches (a thought
+inside 48 h, an urgent daily nag when overdue) and closes it only on the
+operator's word. This is deliberately a due-date lane, not a cognitive
+mechanism — no scores, no model, no auto-close — because the faculty a
+historian lacks is remembering *to do*, and that faculty needs a diary,
+not a dopamine analogue.
+
+**Cross-organ coincidence.** When two or more organs exceed their own
+empirical bands (spikes) in the same detection window, the coincidence
+itself is recorded as a thought stating both counts and the pair's
+sighting ordinal — never a cause. Simultaneous *absences* are
+deliberately not paired: a suspend would pair every organ at once. Pair history accumulates deterministically;
+a future hypothesis lane would build on it only behind a measured gate,
+per the freeze rule in §11.
 
 ## 6. Model policy
 
@@ -267,6 +291,17 @@ checks are live-fire: a real JACKAL call traced from MCP through ledger,
 pulse, corpus, graph, and widget within one heartbeat; first take
 graded TRUE at Brier 0.01 while its sibling returned an honest
 UNRESOLVABLE when evidence recall failed.
+
+The review-established invariants now ship as an executable suite
+(`tests/`, run in CI on every push): cursor/replay semantics,
+epoch-merge idempotence, ledger tamper-rejection, PPR mass
+conservation, novelty-as-absence, empirical surprise including absence,
+redaction fail-closure, exogenous/endogenous touch weighting, heal
+hold-rate arithmetic, proposal deduplication, intent lifecycle, and
+coincidence pair-counting. The dream additionally runs a nightly
+retrieval self-bench (a date-seeded sample of the corpus-ground-truth
+question set) whose hit@5 trend the cockpit plots — regression in
+recall is designed to be *seen*, not asserted away.
 
 ## 10. Nomenclature
 
