@@ -1391,7 +1391,7 @@ def pulse(seq, opts=None):
                          salience if isinstance(salience, list) else [],
                          anomalies if isinstance(anomalies, list) else [])
 
-    # thoughts queued by out-of-band tools (e.g. `sia ponder` → GPT-5.6-Sol);
+    # thoughts queued by out-of-band tools (e.g. `sia ponder` → the judge);
     # the inbox keeps thoughts.json single-writer (this daemon)
     inbox_path = os.path.join(STATE, "thought-inbox.json")
     inbox = read_json(inbox_path, [])
@@ -1690,7 +1690,7 @@ def dream(memo_update=True):
     except Exception as e:
         ledger_append("DREAM:muse", "error", str(e)[:80])
         log(f"musing failed: {e!r}")
-    # outcome learning: grade due predictions (≤3/night; GPT-5.6-Sol judge,
+    # outcome learning: grade due predictions (≤3/night; configured judge,
     # deterministic Brier), then restate calibration
     try:
         graded_any = False
