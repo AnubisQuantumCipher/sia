@@ -917,7 +917,8 @@ def write_thought(thought):
             slug = f"{base}-{n}"
             n += 1
     tags = ["thought", thought["kind"]] + (["urgent"] if thought.get("urgent") else [])
-    links = " ".join(f"[[{l}]]" for l in thought.get("links", []))
+    links = " ".join(f"[[{l}]]"
+                     for l in (thought.get("links") or ["sia/cortex"]))
     write_page(slug,
                ["type: thought",
                 fm_title(clip(thought["text"], 70)),
