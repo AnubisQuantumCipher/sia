@@ -1204,20 +1204,54 @@ def think(store, memo, events, chains, salience, anomalies):
 STATUS_PATH = os.path.join(STATE, "status.json")
 GRAPH_PATH = os.path.join(STATE, "graph.json")
 
+def corpus_edges():
+    """Derive the edge set directly from the corpus's own wikilinks —
+    the daemon wrote every [[link]], so it need not ask the engine what
+    they are. Deterministic, O(files), immune to traversal blowup (the
+    engine's path-enumerating traverse_graph times out once a hub page
+    links a hundred entities — discovered 2026-08-29 when a package
+    burst created exactly that)."""
+    edges = []
+    for root, _, files in os.walk(CORPUS):
+        if ".git" in root:
+            continue
+        for fname in files:
+            if not fname.endswith(".md"):
+                continue
+            path = os.path.join(root, fname)
+            slug = os.path.relpath(path, CORPUS)[:-3]
+            try:
+                text = open(path, errors="replace").read()
+            except OSError:
+                continue
+            m = FM_RE.match(text)
+            body = text[m.end():] if m else text
+            for lm in re.finditer(r"\[\[([a-z0-9/._-]+)(?:\|[^\]]*)?\]\]",
+                                  body):
+                target = lm.group(1)
+                lo = max(0, lm.start() - 45)
+                why = re.sub(r"\s+", " ",
+                             body[lo:lm.end() + 45]).strip()[:90]
+                edges.append({"from_slug": slug, "to_slug": target,
+                              "link_type": "mentions", "context": why})
+    return edges
+
+
 def export_graph():
     """Graph snapshot v2 — carries its own truth boundary (the snapshot
     block says what is complete, what was truncated, and which reads
     failed), per-node in/out degrees, and per-edge type + extraction
-    context so the panel can answer 'why does this connection exist'."""
+    context so the panel can answer 'why does this connection exist'.
+    Edges come from the corpus itself (see corpus_edges)."""
     failed_ops = []
     pages = gbrain_call("list_pages", {"limit": 1000})
     if not isinstance(pages, list):
         failed_ops.append("list_pages")
         pages = []
-    paths = gbrain_call("traverse_graph",
-                        {"slug": "sia/cortex", "depth": 6, "direction": "both"})
-    if not isinstance(paths, list):
-        failed_ops.append("traverse_graph")
+    try:
+        paths = corpus_edges()
+    except Exception:
+        failed_ops.append("corpus_edges")
         paths = []
     cutoff = (utcnow() - datetime.timedelta(days=14)).isoformat()
     keep = {}
