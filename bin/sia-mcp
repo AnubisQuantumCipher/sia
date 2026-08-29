@@ -98,11 +98,6 @@ def call_tool(name, args):
         return run_sia(["note", str(args.get("text", ""))[:2000],
                         "--from", author])
     if name == "sia_propose_take":
-        pfile = os.path.join(STATE, "take-proposals.json")
-        try:
-            pending = json.load(open(pfile)) if os.path.exists(pfile) else []
-        except Exception:
-            pending = []
         prop = {"claim": " ".join(str(args.get("claim", "")).split())[:300],
                 "confidence": min(0.99, max(0.01,
                     float(args.get("confidence", 0.7)))),
@@ -112,11 +107,12 @@ def call_tool(name, args):
                 "proposed": str(args.get("author", "agent"))[:40]}
         if not prop["claim"] or not prop["deadline"]:
             return "claim and deadline are required", True
-        pending.append(prop)
-        tmp = pfile + ".new"
-        with open(tmp, "w") as f:
-            json.dump(pending, f)
-        os.replace(tmp, pfile)
+        sys.path.insert(0, os.path.join(
+            os.path.expanduser("~"), ".local/share/sia/bin"))
+        import siatakes
+        # same flock as the daemon and CLI — never a bare read/append
+        pending = siatakes.locked_proposals(STATE,
+                                            lambda cur: cur + [prop])
         return (f"proposed (position {len(pending)}). The operator commits "
                 f"with: sia take --accept {len(pending)}  — proposals are "
                 f"not memories until then."), False

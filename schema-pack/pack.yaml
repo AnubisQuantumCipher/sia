@@ -41,6 +41,10 @@ page_types:
     primitive: annotation
     path_prefixes: [takes/]
     extractable: false
+  - name: intent
+    primitive: annotation
+    path_prefixes: [intents/]
+    extractable: false
   - name: note
     primitive: annotation
     path_prefixes: [notes/]

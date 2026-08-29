@@ -155,6 +155,135 @@ def due_takes(takes=None):
             if t.get("status") == "open" and t.get("deadline", "9999") <= today]
 
 
+# ------------------------------------- evidence-derived proposals (heals)
+# When the fabric heals something, that is a natural falsifiable claim:
+# "this fix will hold." The template below PROPOSES such a take with a
+# confidence computed from the action's own history — no model involved,
+# and nothing is committed until a human accepts it. This is how the
+# calibration population grows without loosening the propose-don't-mint
+# rule.
+
+HEAL_HOLD_DAYS = 7
+HEAL_PRIOR = 0.7          # confidence when history is too thin (n < 3)
+HEAL_CONF_LO, HEAL_CONF_HI = 0.55, 0.95
+
+
+def _heal_history(action, corpus=None):
+    """All past UTC dates on which `action` produced an OUTCOME row, read
+    from the sekhmet day pages (the corpus is the evidence)."""
+    corpus = corpus or CORPUS
+    days = []
+    droot = os.path.join(corpus, "events/sekhmet")
+    if not os.path.isdir(droot):
+        return days
+    pat = re.compile(r"OUTCOME:" + re.escape(action) + r"\b")
+    for name in sorted(os.listdir(droot)):
+        if name.endswith(".md") and pat.search(
+                open(os.path.join(droot, name), errors="replace").read()):
+            days.append(name[:-3])
+    return days
+
+
+def heal_hold_rate(action, corpus=None, hold_days=HEAL_HOLD_DAYS):
+    """Deterministic confidence for 'this heal will hold': of past heals
+    of `action`, the fraction NOT followed by another heal of the same
+    action within hold_days. Thin history (fewer than 3 full windows)
+    falls back to the prior. History is read from sekhmet DAY pages, so
+    its horizon is the episodic window plus any verbatim (flashbulb)
+    days — stated, not hidden. Returns (confidence, judged, held)."""
+    days = _heal_history(action, corpus)
+    # judge each heal day except ones too recent to have had a full window
+    horizon = (_utcnow() - datetime.timedelta(days=hold_days))\
+        .strftime("%Y-%m-%d")
+    judged, held = 0, 0
+    dset = set(days)
+    for d in days:
+        if d > horizon:
+            continue
+        judged += 1
+        d0 = datetime.date.fromisoformat(d)
+        repeat = any((d0 + datetime.timedelta(days=k)).isoformat() in dset
+                     for k in range(1, hold_days + 1))
+        if not repeat:
+            held += 1
+    if judged < 3:
+        return HEAL_PRIOR, judged, held
+    return (min(HEAL_CONF_HI, max(HEAL_CONF_LO, held / judged)),
+            judged, held)
+
+
+def locked_proposals(state_dir, mutate):
+    """Serialized read-modify-write of take-proposals.json — the one
+    file written by the daemon (auto-proposals), the CLI (ponder,
+    --accept), AND the MCP server. An exclusive flock on a sidecar
+    lockfile closes the lost/resurrected-proposal race the adversarial
+    review demonstrated; the write stays atomic-rename + fsync."""
+    import fcntl
+    path = os.path.join(state_dir, "take-proposals.json")
+    with open(path + ".lock", "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            cur = json.load(open(path))
+            if not isinstance(cur, list):
+                cur = []
+        except Exception:
+            cur = []
+        out = mutate(list(cur))
+        tmp = path + ".new"
+        with open(tmp, "w") as f:
+            f.write(json.dumps(out))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    return out
+
+
+def auto_propose_heals(events, state_dir):
+    """Scan a pulse's committed events for successful fabric heals and
+    PROPOSE hold-takes for them (queue only — `sia take --accept`
+    commits). Deduped against open takes and pending proposals. Returns
+    the list of new proposals."""
+    heals = []
+    for ev in events:
+        if getattr(ev, "organ", "") != "sekhmet":
+            continue
+        # (?=\s|$) pins the action capture to a full token so a
+        # hyphenated action containing "ok" can never truncate the match
+        m = re.match(r"OUTCOME:([a-z0-9_\-]+)(?=\s|$)(?=.*\bok\b)",
+                     getattr(ev, "summary", ""), re.I | re.S)
+        if m and m.group(1).lower() not in ("ok", "noop"):
+            heals.append(m.group(1))
+    if not heals:
+        return []
+    new = []
+
+    def _mutate(pending):
+        open_claims = " ".join(t.get("claim", "") for t in load_takes()
+                               if t.get("status") == "open")
+        queued_claims = " ".join(p.get("claim", "") for p in pending)
+        for action in sorted(set(heals)):
+            marker = f"heal `{action}`"
+            if marker in open_claims or marker in queued_claims:
+                continue
+            conf, judged, held = heal_hold_rate(action)
+            due = (_utcnow() + datetime.timedelta(days=HEAL_HOLD_DAYS))\
+                .strftime("%Y-%m-%d")
+            basis = (f"held {held} of {judged} past windows on record"
+                     if judged >= 3
+                     else f"prior (only {judged} full windows on record)")
+            new.append({"claim": f"The fabric's heal `{action}` will "
+                                 f"hold: no repeat of the same action "
+                                 f"within {HEAL_HOLD_DAYS} days (by "
+                                 f"{due})",
+                        "confidence": round(conf, 2), "deadline": due,
+                        "domain": "fabric", "source": "organs/sekhmet",
+                        "proposed": f"auto:heal-hold({basis})"})
+        return pending + new
+
+    locked_proposals(state_dir, _mutate)
+    return new
+
+
 # ---------------------------------------------------------------- grading
 
 def _recall(query, k=6):
@@ -283,15 +412,17 @@ def _rewrite_take_page(t, verdict, justification):
     path = t["path"]
     text = open(path, errors="replace").read()
     meta = {k: v for k, v in t.items() if k not in ("slug", "path")}
-    text = re.sub(r"^sia_take: .*$",
-                  "sia_take: " + json.dumps(meta, sort_keys=True),
+    dumped = "sia_take: " + json.dumps(meta, sort_keys=True)
+    # replacement as a function: re.sub must never treat the JSON as a
+    # template (\uXXXX escapes and backslashes would crash or corrupt)
+    text = re.sub(r"^sia_take: .*$", lambda m: dumped,
                   text, count=1, flags=re.M)
     text = re.sub(r"^tags: \[take, open,",
                   f"tags: [take, {t['status']},", text, count=1, flags=re.M)
     text += (f"\n## Grade · {t['graded']}\n\n"
              f"**{verdict}**"
              + (f" · Brier {t['brier']}" if t["brier"] is not None else "")
-             + f" — judged by {PONDER_MODEL} (max reasoning) against "
+             + f" — judged by {PONDER_MODEL} against "
              f"recalled evidence; model-assisted, verify via the cited "
              f"memories.\n\n{justification}\n")
     tmp = path + ".new"
@@ -436,3 +567,113 @@ def summary(takes=None):
             "resolved": len(resolved),
             "brier": round(sum(t["brier"] for t in resolved)
                            / len(resolved), 3) if resolved else None}
+
+
+# --------------------------------------------- prospective memory (intents)
+# The one classical faculty a pure historian lacks: remembering TO DO,
+# not just what happened. An intent is a dated commitment that surfaces
+# as its deadline approaches and closes on the operator's word (or with
+# a note pointing at evidence). It is a due-date lane, not a cognitive
+# mechanism — no scores, no model, no auto-close.
+
+INTENTS_DIR = os.path.join(CORPUS, "intents")
+
+
+def create_intent(text, due, holder="user"):
+    text = " ".join(str(text).split())[:300]
+    due = str(due)[:10]
+    datetime.date.fromisoformat(due)          # validate or raise
+    created = _iso()
+    iid = hashlib.sha256(f"i|{text}|{created}".encode()).hexdigest()[:10]
+    meta = {"id": iid, "text": text, "due": due, "holder": holder,
+            "status": "open", "created": created, "closed": None,
+            "note": None}
+    os.makedirs(INTENTS_DIR, exist_ok=True)
+    body = (
+        "---\n"
+        "type: intent\n"
+        f"title: {json.dumps('intent: ' + text[:60], ensure_ascii=False)}\n"
+        f"tags: [intent, open]\n"
+        f"date: {created[:10]}\n"
+        f"sia_intent: {json.dumps(meta, sort_keys=True)}\n"
+        "---\n"
+        f"# intent · {iid}\n\n"
+        f"**{text}**\n\n"
+        f"Committed {created[:10]} by {holder} · due {due}. The brain "
+        f"surfaces this as the deadline approaches; it closes only on "
+        f"the operator's word.\n\n[[sia/cortex]]\n")
+    tmp = os.path.join(INTENTS_DIR, f".{iid}.new")
+    with open(tmp, "w") as f:
+        f.write(body)
+    os.replace(tmp, os.path.join(INTENTS_DIR, f"{created[:10]}-{iid}.md"))
+    meta["slug"] = f"intents/{created[:10]}-{iid}"
+    return meta
+
+
+def load_intents():
+    out = []
+    if not os.path.isdir(INTENTS_DIR):
+        return out
+    for name in sorted(os.listdir(INTENTS_DIR)):
+        if not name.endswith(".md"):
+            continue
+        try:
+            text = open(os.path.join(INTENTS_DIR, name),
+                        errors="replace").read()
+            m = re.search(r"^sia_intent: (.*)$", text, re.M)
+            if not m:
+                continue
+            it = json.loads(m.group(1))
+            it["slug"] = f"intents/{name[:-3]}"
+            it["path"] = os.path.join(INTENTS_DIR, name)
+            out.append(it)
+        except Exception:
+            continue
+    return out
+
+
+def close_intent(id_prefix, note=""):
+    """Close the unique open intent matching id_prefix. Returns the
+    updated meta, or None (no match / ambiguous)."""
+    matches = [it for it in load_intents()
+               if it.get("status") == "open"
+               and it.get("id", "").startswith(id_prefix)]
+    if len(matches) != 1:
+        return None
+    it = matches[0]
+    text = open(it["path"], errors="replace").read()
+    it2 = {k: v for k, v in it.items() if k not in ("slug", "path")}
+    it2["status"] = "done"
+    it2["closed"] = _iso()
+    it2["note"] = " ".join(str(note).split())[:200] or None
+    dumped = "sia_intent: " + json.dumps(it2, sort_keys=True)
+    # function replacement: JSON must never be a re template (crashes on
+    # \uXXXX from non-ASCII text, halves backslashes)
+    new = re.sub(r"^sia_intent: .*$", lambda m: dumped,
+                 text, count=1, flags=re.M)
+    new = new.replace("tags: [intent, open]", "tags: [intent, done]", 1)
+    new += (f"\n**Done** {it2['closed'][:10]}"
+            + (f" — {it2['note']}" if it2["note"] else "") + "\n")
+    tmp = it["path"] + ".new"
+    with open(tmp, "w") as f:
+        f.write(new)
+    os.replace(tmp, it["path"])
+    it2["slug"] = it["slug"]
+    return it2
+
+
+def open_intents(now=None):
+    """Open intents sorted by due date, each with days_left (negative =
+    overdue)."""
+    today = (now or _utcnow()).date()
+    out = []
+    for it in load_intents():
+        if it.get("status") != "open":
+            continue
+        try:
+            days = (datetime.date.fromisoformat(it["due"]) - today).days
+        except Exception:
+            continue
+        it["days_left"] = days
+        out.append(it)
+    return sorted(out, key=lambda x: x["due"])

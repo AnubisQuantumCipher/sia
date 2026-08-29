@@ -66,6 +66,7 @@ cp "$REPO"/bin/sialib.py "$REPO"/bin/siamind.py "$REPO"/bin/siatakes.py \
    "$REPO"/bin/sia-mcp "$BINDIR/"
 chmod +x "$BINDIR"/sia-brainstem "$BINDIR"/sia-ledger "$BINDIR"/sia-mcp
 install -m 0755 "$REPO/bin/sia" "$HOME/.local/bin/sia"
+[ -f "$REPO/GBRAIN_PIN" ] && cp "$REPO/GBRAIN_PIN" "$SHARE/GBRAIN_PIN"
 [ -f "$HOME/.config/sia/config.json" ] || cp "$REPO/config.example.json" "$HOME/.config/sia/config.json"
 
 step "4/9 the corpus (your memory, as files, in git)"

@@ -674,7 +674,10 @@ def sense_codex(cursors):
             continue
         st = sessions.get(sid)
         if st is None:
-            fresh = (time.time() - os.path.getmtime(f)) < 3600
+            try:
+                fresh = (time.time() - os.path.getmtime(f)) < 3600
+            except FileNotFoundError:
+                continue
             sessions[sid] = {"size": size, "announced": fresh}
             if fresh:
                 evs.append(Event("codex", utcnow(), "session",
@@ -1355,6 +1358,45 @@ def export_thoughts(store):
 
 MEMO_PATH = os.path.join(STATE, "memo.json")
 
+def coincidence_findings(mind, findings, now=None):
+    """Cross-organ coincidence: two or more DISTINCT organs spiking
+    out-of-band in the same detection window is itself an observation
+    worth a thought. Deterministic, and scrupulously causal-free: the
+    thought states the coincidence and the sighting count, never a
+    cause. Pair history accumulates in mind['coincide'] — the ground a
+    future (measured) hypothesis lane would build on."""
+    spikes = {o: t for o, k, t in findings if k == "spike"}
+    spiked = sorted(spikes)
+    if len(spiked) < 2:
+        return []
+    now = now or time.time()
+    co = mind.setdefault("coincide", {})
+
+    def _counts(organ):
+        # pull "produced X events … (previous max Y)" out of the spike
+        # text so the coincidence thought states both counts verbatim
+        m = re.search(r"produced (\d+) events.*previous max (\d+)",
+                      spikes.get(organ, ""))
+        return f" ({m.group(1)} vs max {m.group(2)})" if m else ""
+
+    out = []
+    for i in range(len(spiked)):
+        for j in range(i + 1, len(spiked)):
+            key = f"{spiked[i]}|{spiked[j]}"
+            rec = co.setdefault(key, {"n": 0, "last": 0})
+            rec["n"] += 1
+            rec["last"] = now
+            nth = {1: "first", 2: "2nd", 3: "3rd"}.get(
+                rec["n"], f"{rec['n']}th")
+            out.append((
+                f"Coincidence: {spiked[i]}{_counts(spiked[i])} and "
+                f"{spiked[j]}{_counts(spiked[j])} both went "
+                f"out-of-band in the same window — {nth} sighting of "
+                f"this pair. I state the coincidence, not a cause.",
+                [f"organs/{spiked[i]}", f"organs/{spiked[j]}"]))
+    return out[:2]                      # cap per pulse; pairs still counted
+
+
 def pulse(seq, opts=None):
     """One heartbeat. Returns the status dict it exported."""
     opts = opts or {}
@@ -1490,14 +1532,57 @@ def pulse(seq, opts=None):
                 new_thoughts.append(add_thought(store, "novelty",
                     f"Novel: {ev.summary} — {'; '.join(reasons[:2])} "
                     f"(novelty {score:.2f}).", sorted(ev.links)))
-        for s_organ, s_kind, s_text in siamind.surprisal_update(
-                mind, organ_counts):
+        findings = siamind.surprisal_update(mind, organ_counts)
+        for s_organ, s_kind, s_text in findings:
             new_thoughts.append(add_thought(store, "surprise", s_text,
                                             [f"organs/{s_organ}"]))
+        for c_text, c_links in coincidence_findings(mind, findings):
+            new_thoughts.append(add_thought(store, "coincidence",
+                                            c_text, c_links))
         ws = siamind.rebuild_workspace(mind, organ_arousal)
         siamind.save_mind(mind)
     except Exception as e:
         errors["siamind"] = str(e)[:160]
+
+    # evidence-derived take proposals: successful fabric heals become
+    # PROPOSED hold-predictions (deterministic confidence from the
+    # action's own history; queue only — `sia take --accept` commits)
+    try:
+        if write_ok:
+            props = siatakes.auto_propose_heals(committed_events, STATE)
+            for p in props:
+                new_thoughts.append(add_thought(store, "take",
+                    f"Proposed from evidence ({p['proposed']}): "
+                    f"“{p['claim']}” at {p['confidence']:.2f} — review "
+                    f"with `sia takes`, commit with `sia take --accept`.",
+                    ["organs/sekhmet"]))
+    except Exception as e:
+        errors["auto-propose"] = str(e)[:160]
+
+    # prospective memory: surface open intents as deadlines approach
+    # (once per stage: "soon" inside 48 h, then "overdue" once per day)
+    try:
+        nag = memo.setdefault("intent_nag", {})
+        open_ints = siatakes.open_intents()
+        for it in open_ints:
+            st_i = nag.setdefault(it["id"], {})
+            if 0 <= it["days_left"] <= 2 and not st_i.get("soon"):
+                st_i["soon"] = day
+                when = ("today" if it["days_left"] == 0
+                        else f"in {it['days_left']}d")
+                new_thoughts.append(add_thought(store, "intent",
+                    f"Intent due {when}: “{it['text']}” — close with "
+                    f"`sia intend --done {it['id'][:6]}`.", [it["slug"]]))
+            elif it["days_left"] < 0 and st_i.get("overdue") != day:
+                st_i["overdue"] = day
+                new_thoughts.append(add_thought(store, "intent",
+                    f"Intent OVERDUE by {-it['days_left']}d: "
+                    f"“{it['text']}”.", [it["slug"]], urgent=True))
+        for iid in list(nag):
+            if iid not in {i2["id"] for i2 in open_ints}:
+                del nag[iid]
+    except Exception as e:
+        errors["intents"] = str(e)[:160]
 
     # outcome learning: remind (once a day) when predictions come due
     takes_sum = {}
@@ -1536,6 +1621,20 @@ def pulse(seq, opts=None):
     atomic_write(MEMO_PATH, json.dumps(memo))
     export_thoughts(store)
 
+    try:
+        intents_open = siatakes.open_intents()
+    except Exception:
+        intents_open = []
+    bench_trend = []
+    try:
+        with open(os.path.join(STATE, "bench-trend.jsonl")) as f:
+            for line in f.readlines()[-30:]:
+                q = json.loads(line)
+                bench_trend.append({"date": q["date"],
+                                    "hit5": q.get("hit5_blend")})
+    except Exception:
+        pass
+
     lseq, lhead = ledger_head()
     failing = [k for k, v in chains.items() if v == "fail"]
     state = ("failed" if failing else
@@ -1567,6 +1666,13 @@ def pulse(seq, opts=None):
           "mind": {"nodes": len(mind.get("nodes", {})),
                    "edges": len(mind.get("edges", {}))},
           "takes": takes_sum,
+          "intents": [{"id": it.get("id", "?"),
+                       "text": clip(it.get("text", ""), 70),
+                       "due": it.get("due", ""),
+                       "days_left": it.get("days_left", 0)}
+                      for it in intents_open[:5]
+                      if it.get("id") and it.get("text")],
+          "bench_trend": bench_trend,
           "redactions": memo.get("redactions", {}),
           "sync_note": sync_note}
     export_status(st)
@@ -1706,8 +1812,9 @@ def consolidate_corpus():
 def dream(memo_update=True):
     """Nightly consolidation: run gbrain's deterministic dream cycle."""
     store0 = load_thoughts()
-    # the nightly job is FOUR units with separate ledgers and separate
-    # failure — a bad grade must never block an epoch merge
+    # the nightly job is FIVE units with separate ledgers and separate
+    # failure — a bad grade must never block an epoch merge, and a
+    # failed self-bench must never block the gbrain cycle
     try:
         ncomp, nepoch, nkept = consolidate_corpus()
         ledger_append("DREAM:consolidate", f"{ncomp}d>{nepoch}e",
@@ -1763,6 +1870,29 @@ def dream(memo_update=True):
     except Exception as e:
         ledger_append("DREAM:grade", "error", str(e)[:80])
         log(f"take grading failed: {e!r}")
+    # self-bench: the historian keeps receipts on its own recall. A small
+    # date-seeded sample nightly — a drift tripwire whose trend the
+    # cockpit plots; a falling line says "run the full sia bench".
+    try:
+        import siabench
+        q = siabench.run_quick()
+        if q:
+            trend_path = os.path.join(STATE, "bench-trend.jsonl")
+            with open(trend_path, "a") as f:
+                f.write(json.dumps(q) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            ledger_append("DREAM:bench",
+                          f"blend@5={q['hit5_blend']}",
+                          f"kw@5={q['hit5_keyword']} n={q['n']}")
+            add_thought(store0, "bench",
+                f"Nightly recall self-check: blend hit@5 "
+                f"{q['hit5_blend']:.2f}, keyword {q['hit5_keyword']:.2f} "
+                f"over {q['n']} sampled questions. My memory of my "
+                f"memory, measured.", ["sia/cortex"])
+    except Exception as e:
+        ledger_append("DREAM:bench", "error", str(e)[:80])
+        log(f"self-bench failed: {e!r}")
     export_thoughts(store0)
     r = gbrain(["dream", "--json"], timeout=900)
     rep = None

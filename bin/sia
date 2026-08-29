@@ -17,6 +17,9 @@
   sia take "claim" [--confidence 0.7] [--by YYYY-MM-DD] [--domain d]
                         register a falsifiable prediction (holder: user)
   sia takes             list predictions and their status
+  sia intend "task" --by YYYY-MM-DD
+                        prospective memory: a commitment the brain surfaces
+                        as its deadline nears (--list · --done <id> [note])
   sia grade [id]        grade due predictions now (configured judge,
                         deterministic Brier); with id, grade that one
   sia calibration       Brier scorecard per domain — how good the brain's
@@ -224,9 +227,10 @@ def _gbrain_pin_check():
     verified against. A loose memory engine is a silent-drift risk for a
     system this obsessed with pins — so it is surfaced, not hidden."""
     import glob
-    pins = glob.glob(sialib.os.path.expanduser(
-        "~/.config/omarchy/plugins/khephri.sia/GBRAIN_PIN")) or \
-        glob.glob(sialib.os.path.expanduser("~/Projects/sia/GBRAIN_PIN"))
+    pins = (glob.glob(sialib.os.path.expanduser(
+                "~/.local/share/sia/GBRAIN_PIN"))
+            or glob.glob(sialib.os.path.expanduser(
+                "~/.config/omarchy/plugins/khephri.sia/GBRAIN_PIN")))
     if not pins:
         return
     try:
@@ -354,9 +358,8 @@ Omit TAKE lines entirely if nothing is worth predicting."""
         except Exception:
             pass
     if props:
-        pfile = sialib.os.path.join(sialib.STATE, "take-proposals.json")
-        pending = sialib.read_json(pfile, []) + props
-        sialib.atomic_write(pfile, json.dumps(pending))
+        import siatakes as _st
+        _st.locked_proposals(sialib.STATE, lambda cur: cur + props)
         inbox.append({"kind": "take",
                       "text": f"{label} proposed {len(props)} "
                               f"prediction(s) — review with `sia takes`, "
@@ -377,26 +380,37 @@ def cmd_take(argv):
     import siatakes
     pfile = sialib.os.path.join(sialib.STATE, "take-proposals.json")
     if argv and argv[0] == "--accept":
-        pending = sialib.read_json(pfile, [])
-        if not pending:
+        which = argv[1] if len(argv) > 1 else "all"
+        committed = []
+
+        # accept under the same flock every proposal writer holds, so a
+        # daemon auto-proposal landing mid-accept is neither lost nor
+        # resurrected
+        def _accept(pending):
+            if not pending:
+                return pending
+            idxs = (list(range(len(pending))) if which == "all"
+                    else [int(which) - 1])
+            remaining = []
+            for i, p in enumerate(pending):
+                if i in idxs:
+                    committed.append(siatakes.create_take(
+                        p["claim"], confidence=p["confidence"],
+                        deadline=p["deadline"], domain=p["domain"],
+                        holder="sia",
+                        links=[p.get("source", "sia/cortex")]))
+                else:
+                    remaining.append(p)
+            return remaining
+
+        siatakes.locked_proposals(sialib.STATE, _accept)
+        if not committed:
             print("no pending proposals")
             return 0
-        which = argv[1] if len(argv) > 1 else "all"
-        idxs = (list(range(len(pending))) if which == "all"
-                else [int(which) - 1])
-        remaining = []
-        for i, p in enumerate(pending):
-            if i in idxs:
-                meta = siatakes.create_take(
-                    p["claim"], confidence=p["confidence"],
-                    deadline=p["deadline"], domain=p["domain"],
-                    holder="sia", links=[p.get("source", "sia/cortex")])
-                print(f"committed {meta['id']} (conf "
-                      f"{meta['confidence']:.2f}, due {meta['deadline']}): "
-                      f"{meta['claim'][:80]}")
-            else:
-                remaining.append(p)
-        sialib.atomic_write(pfile, json.dumps(remaining))
+        for meta in committed:
+            print(f"committed {meta['id']} (conf "
+                  f"{meta['confidence']:.2f}, due {meta['deadline']}): "
+                  f"{meta['claim'][:80]}")
         return 0
     claim, conf, by, domain = [], 0.7, None, "general"
     i = 0
@@ -551,6 +565,53 @@ def cmd_ledger():
                            "verify", sialib.SHARE, "--quiet"]).returncode
 
 
+def cmd_intend(argv):
+    """Prospective memory: remembering TO DO, not just what happened."""
+    import siatakes
+    if not argv or argv[0] == "--list":
+        ints = siatakes.open_intents()
+        if not ints:
+            print("no open intents.  sia intend \"...\" --by YYYY-MM-DD")
+            return 0
+        for it in ints:
+            d = it["days_left"]
+            when = (f"OVERDUE {-d}d" if d < 0 else
+                    "due today" if d == 0 else f"due in {d}d")
+            print(f"  {it['id'][:6]}  [{when:>11}]  {it['text'][:70]}")
+        return 0
+    if argv[0] == "--done":
+        if len(argv) < 2:
+            print("usage: sia intend --done <id> [note…]")
+            return 2
+        it = siatakes.close_intent(argv[1], " ".join(argv[2:]))
+        if not it:
+            print(f"no unique open intent matches “{argv[1]}” "
+                  f"(see sia intend --list)")
+            return 1
+        print(f"intent {it['id'][:6]} done: {it['text'][:70]}")
+        return 0
+    text, by = [], None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--by" and i + 1 < len(argv):
+            by = argv[i + 1]; i += 2
+        else:
+            text.append(argv[i]); i += 1
+    if not text or not by:
+        print("usage: sia intend \"what to do\" --by YYYY-MM-DD\n"
+              "       sia intend --list | --done <id> [note…]")
+        return 2
+    try:
+        it = siatakes.create_intent(" ".join(text), by)
+    except ValueError:
+        print(f"bad date: {by} (want YYYY-MM-DD)")
+        return 2
+    print(f"intent {it['id'][:6]} committed — due {it['due']}. The brain "
+          f"will surface it as the deadline nears; it joins memory on "
+          f"the next pulse.")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__.strip())
@@ -584,6 +645,8 @@ def main(argv):
         return cmd_take(argv[2:])
     if cmd == "takes":
         return cmd_takes()
+    if cmd == "intend":
+        return cmd_intend(argv[2:])
     if cmd == "grade":
         return cmd_grade(argv[2] if len(argv) > 2 else None)
     if cmd == "calibration":

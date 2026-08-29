@@ -113,6 +113,40 @@ def hit_rank(ranked_slugs, accepts, k=5):
     return None
 
 
+def run_quick(max_q=8, day=None):
+    """Nightly self-bench: a deterministic (date-seeded) sample of the
+    present-question set, scored hit@5/MRR@5 for keyword and blend.
+    Small on purpose — it is a drift tripwire, not the full instrument;
+    a falling trend says 'run the full sia bench', nothing more."""
+    import hashlib
+    day = day or sialib.today()
+    present, _ = build_questions()
+    if not present:
+        return None
+    # date-seeded stable sample: rank questions by SHA-256(day || question)
+    keyed = sorted(present, key=lambda qa: hashlib.sha256(
+        (day + qa[0]).encode()).hexdigest())[:max_q]
+    graph = sialib.read_json(sialib.GRAPH_PATH, None)
+    mind = siamind.load_mind()
+    out = {"date": day, "n": len(keyed)}
+    for name in ("keyword", "blend"):
+        ranks = []
+        for q, accepts in keyed:
+            if name == "keyword":
+                res = [(s, sc) for s, sc, _ in _dedupe(_engine(["search", q]))]
+            else:
+                dn = _dedupe(_engine(["query", q]))
+                res = siamind.ppr_rerank(
+                    graph, [(s, sc) for s, sc, _ in dn],
+                    mind=mind) if dn else []
+            ranks.append(hit_rank([s for s, _ in res], accepts))
+        out[f"hit5_{name}"] = round(sum(1 for r in ranks if r)
+                                    / len(keyed), 3)
+        out[f"mrr_{name}"] = round(sum(1 / r for r in ranks if r)
+                                   / len(keyed), 3)
+    return out
+
+
 def run():
     present, absent = build_questions()
     graph = sialib.read_json(sialib.GRAPH_PATH, None)

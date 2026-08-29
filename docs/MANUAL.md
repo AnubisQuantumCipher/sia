@@ -59,8 +59,12 @@ Summoned with SUPER+SHIFT+B; leaves with **Esc**, ✕, or
 - **EVIDENCE CHAINS** — per-chain verification verdicts, SIA's own signed
   ledger head, last dream, and a **verify now** button that re-runs the
   real verifiers live.
-- **BELIEFS** — open/due/graded predictions and mean Brier score
-  (0.0 = prophet, 0.25 = coin-flip).
+- **BELIEFS** — open/due/graded predictions, mean Brier score
+  (0.0 = prophet, 0.25 = coin-flip), and **RECALL TREND** — the nightly
+  self-bench line (hit@5 over a date-seeded sample). A falling line
+  says: run the full `sia bench`.
+- **INTENTS** — prospective memory: open commitments with their
+  countdowns; overdue turns urgent. (Panel appears once you have one.)
 - **SOURCE HEALTH** — the truth boundary: snapshot completeness, memory
   counts by kind, any sense errors or sync failures. If something failed,
   it says so here instead of quietly looking complete.
@@ -129,7 +133,7 @@ is labeled with the model that produced it.
 ```
 sia take "claim" --confidence 0.8 --by 2026-09-05 --domain crash-cause
 sia takes                     # list all predictions and status
-sia grade                     # grade everything due now (Sol as judge)
+sia grade                     # grade everything due now (configured judge)
 sia grade <id>                # grade one take regardless of due date
 sia calibration               # Brier scorecard per domain
 ```
@@ -139,6 +143,29 @@ or **UNRESOLVABLE** — the judge (configured in `~/.config/sia/config.json`: yo
 evidence lookup yields an honest UNRESOLVABLE, not a coin flip. Brier
 scoring and calibration are pure arithmetic. The nightly dream grades up
 to three due takes on its own.
+
+**Evidence-derived proposals.** When a self-healing integration reports
+a successful heal, the brain *proposes* a hold-take on its own: "this
+heal will hold — no repeat within 7 days," with a confidence computed
+arithmetically from that action's own history in the corpus (fraction
+of past heals that held; prior 0.70 under thin history). No model is
+involved, and nothing is committed until you run `sia take --accept` —
+this is how the calibration population grows without loosening the
+propose-don't-mint rule.
+
+### Intents (prospective memory)
+
+```
+sia intend "rotate the ledger keys" --by 2026-10-01
+sia intend --list             # open intents with countdowns
+sia intend --done <id> [note] # close one, on your word only
+```
+
+The one thing a pure historian lacks: remembering **to do**, not just
+what happened. An intent is a corpus page like any memory; the brain
+surfaces it as a thought when the deadline is within 48 hours and nags
+once a day when overdue (urgent, red). It never closes an intent
+itself — that is a due-date lane, not a mechanism.
 
 ### Integrity
 
@@ -154,7 +181,7 @@ sia ledger                    # SIA's own signed run ledger: head + verify
 systemctl --user stop sia-brainstem
 sia pulse                     # run one heartbeat by hand
 sia dream                     # run the nightly cycle now (consolidation,
-                              #   musing, take-grading, gbrain dream)
+                              #   musing, grading, self-bench, gbrain dream)
 systemctl --user start sia-brainstem
 ```
 
@@ -175,9 +202,13 @@ systemctl --user start sia-brainstem
 | ∞ | association | the nightly musing found two distant memories joined only by an obscure path |
 | ☾ | dream | the consolidation cycle's report |
 | ✦ | ponder | a judge-model synthesis landed |
-| ⊢ | take | a prediction was registered or came due |
+| ⊢ | take | a prediction was registered, proposed, or came due |
 | ⚖ | grade | a prediction was judged |
 | ◎ | calibration | the running scorecard was restated |
+| ⋈ | coincidence | two organs went out-of-band in the same window (a stated observation, never a cause) |
+| ➤ | intent | a prospective-memory commitment is due soon or overdue |
+| ≟ | bench | the nightly recall self-check reported its numbers |
+| ✉ | note | an agent or the operator left a labeled note for future sessions |
 
 Every thought is deterministic and cites its evidence — except ✦/⚖, which
 are explicitly model-assisted and labeled as such.
@@ -190,12 +221,21 @@ are explicitly model-assisted and labeled as such.
 - **Importance is learned from use** — ACT-R activation (recency +
   frequency, power-law decay) decides what surfaces and what sinks.
 - **Rhythms are learned** — per-organ hourly baselines make surprise
-  measurable in bits, including the surprise of silence.
+  measurable against each band's own history (count vs previous max vs
+  sample size), including the silence of a paced source; when two organs
+  exceed their bands in the same window, the coincidence itself becomes
+  a thought stating both counts — an observation, never a cause.
 - **Sleep turns episodes into knowledge** — day memories older than 14
   days consolidate into weekly epochs; crash/refusal/integrity days stay
   verbatim forever (flashbulb rule); originals always remain in git.
 - **Judgment is graded** — predictions meet outcomes; Brier calibration
-  accumulates; ponder sees its own track record.
+  accumulates; ponder sees its own track record. Successful heals
+  auto-*propose* hold-takes (deterministic confidence from their own
+  history) so the calibration population grows — you still commit
+  every one by hand.
+- **Recall is measured nightly** — the dream runs a small date-seeded
+  retrieval self-bench and plots the trend in the cockpit; the
+  historian keeps receipts on its own memory.
 
 ## 6. Where everything lives
 
