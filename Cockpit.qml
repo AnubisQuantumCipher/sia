@@ -226,6 +226,7 @@ Item {
           spacing: Style.space(14)
           Text {
             textFormat: Text.PlainText
+            renderType: Text.NativeRendering
             text: Model.brainGlyph() + "  SIA — THE OMARCHY BRAIN"
             color: root.fg
             font.family: root.fontFamily
@@ -242,6 +243,7 @@ Item {
             border.width: 1
             Text {
               textFormat: Text.PlainText
+              renderType: Text.NativeRendering
               id: stateText
               anchors.centerIn: parent
               text: root.brainState.toUpperCase()
@@ -253,6 +255,7 @@ Item {
           }
           Text {
             textFormat: Text.PlainText
+            renderType: Text.NativeRendering
             anchors.verticalCenter: parent.verticalCenter
             text: root.status
               ? "pulse " + root.status.pulse_seq + " · "
@@ -270,6 +273,7 @@ Item {
           spacing: Style.space(16)
           Text {
             textFormat: Text.PlainText
+            renderType: Text.NativeRendering
             anchors.verticalCenter: parent.verticalCenter
             text: Qt.formatTime(new Date(root.nowMs), "HH:mm:ss")
             color: Qt.alpha(root.fg, 0.55)
@@ -287,6 +291,7 @@ Item {
             border.width: 1
             Text {
               textFormat: Text.PlainText
+              renderType: Text.NativeRendering
               id: closeText
               anchors.centerIn: parent
               text: "✕ close"
@@ -314,6 +319,7 @@ Item {
         height: Style.space(20)
         Text {
           textFormat: Text.PlainText
+          renderType: Text.NativeRendering
           id: keysHint
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
@@ -324,6 +330,7 @@ Item {
         }
         Text {
           textFormat: Text.PlainText
+          renderType: Text.NativeRendering
           anchors.left: parent.left
           anchors.right: keysHint.left
           anchors.rightMargin: Style.space(24)
@@ -389,6 +396,7 @@ Item {
               spacing: Style.space(6)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "VITALS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -399,29 +407,29 @@ Item {
                 columns: 2
                 columnSpacing: Style.space(14)
                 rowSpacing: Style.space(2)
-                Text { textFormat: Text.PlainText; text: "memories"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: root.status ? String(root.status.pages) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status ? String(root.status.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: "links"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: root.status ? String(root.status.graph_edges) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status ? String(root.status.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: "events today"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: String(root.eventsToday)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
                        color: root.accent; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: "thoughts kept"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "thoughts kept"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: String(root.thoughts.length)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.thoughts.length)
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: "mind traces"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "mind traces"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; text: root.status && root.status.mind
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status && root.status.mind
                          ? root.status.mind.nodes + " · " + root.status.mind.edges + " bonds"
                          : "—"
                        color: root.fg; font.bold: true
@@ -431,6 +439,8 @@ Item {
               Text {
 
                 textFormat: Text.PlainText
+
+                renderType: Text.NativeRendering
                 text: "PULSE ACTIVITY"
                 topPadding: Style.space(6)
                 color: Qt.alpha(root.fg, 0.45)
@@ -471,6 +481,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: {
                   var hist = root.status && root.status.history
                     ? root.status.history : []
@@ -508,6 +519,7 @@ Item {
               spacing: Style.space(3)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "WORKSPACE — "
                   + (root.status && root.status.workspace
                      ? root.status.workspace.length : 0) + " OF 7 SLOTS"
@@ -526,6 +538,7 @@ Item {
                   height: wsText.implicitHeight + Style.space(2)
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     id: wsText
                     text: "◉ " + Model.slugLabel(wsRow.modelData)
                     color: root.selectedId === wsRow.modelData
@@ -563,6 +576,7 @@ Item {
               spacing: Style.space(3)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "ORGANS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -590,6 +604,7 @@ Item {
                   height: organName.implicitHeight + Style.space(2)
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     id: organName
                     anchors.left: parent.left
                     text: organRow.modelData
@@ -599,6 +614,7 @@ Item {
                   }
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     anchors.right: countText.left
                     anchors.rightMargin: Style.space(8)
                     text: organRow.o.last_ts
@@ -609,6 +625,7 @@ Item {
                   }
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     id: countText
                     anchors.right: parent.right
                     text: String(organRow.o.today || 0)
@@ -639,6 +656,7 @@ Item {
               spacing: Style.space(4)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "EVIDENCE CHAINS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -660,6 +678,7 @@ Item {
                   height: chainName.implicitHeight + Style.space(2)
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     id: chainName
                     anchors.left: parent.left
                     text: chainRow.modelData
@@ -669,6 +688,7 @@ Item {
                   }
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     anchors.right: parent.right
                     text: chainRow.v === "pass" ? "verified ✓"
                         : chainRow.v === "absent" ? "absent –" : "FAILED ✗"
@@ -684,6 +704,7 @@ Item {
               Item { width: 1; height: Style.space(2) }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 width: chainCol.width
                 text: Model.chainGlyph() + " ledger seq "
                   + (root.status && root.status.ledger
@@ -697,6 +718,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !!(root.status && root.status.dream
                             && root.status.dream.last)
                 text: Model.dreamGlyph() + " dreamed "
@@ -719,6 +741,7 @@ Item {
                 border.width: 1
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   id: verifyBtnText
                   anchors.centerIn: parent
                   text: "verify now"
@@ -735,6 +758,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: root.verifyMsg !== ""
                 text: root.verifyMsg
                 color: root.verifyMsg.indexOf("FAILED") >= 0
@@ -765,6 +789,7 @@ Item {
               spacing: Style.space(4)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "BELIEFS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -773,6 +798,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 readonly property var tk:
                   root.status && root.status.takes ? root.status.takes : ({})
                 width: beliefCol.width
@@ -788,6 +814,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !!(root.status && root.status.takes
                             && root.status.takes.brier !== null
                             && root.status.takes.brier !== undefined)
@@ -801,6 +828,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "graded when due by the judge · Brier is math"
                 color: Qt.alpha(root.fg, 0.35)
                 font.family: root.fontFamily
@@ -825,6 +853,7 @@ Item {
               spacing: Style.space(4)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "SOURCE HEALTH"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -833,6 +862,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 width: healthCol.width
                 text: {
                   if (!root.snap) return "no snapshot contract"
@@ -854,6 +884,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !!(root.snap && root.snap.aged_out)
                 width: healthCol.width
                 text: (root.snap ? root.snap.aged_out : 0)
@@ -873,6 +904,7 @@ Item {
                   height: kindName.implicitHeight
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     id: kindName
                     anchors.left: parent.left
                     text: kindRow.modelData
@@ -882,6 +914,7 @@ Item {
                   }
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     anchors.right: parent.right
                     text: String(root.snap.counts_by_kind[kindRow.modelData])
                     color: Qt.alpha(root.fg, 0.75)
@@ -907,6 +940,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !!(root.status && root.status.sync_note)
                 width: healthCol.width
                 text: "✗ sync: " + (root.status ? root.status.sync_note : "")
@@ -917,6 +951,7 @@ Item {
               }
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !root.stale && root.status
                   && (!root.status.errors
                       || Object.keys(root.status.errors).length === 0)
@@ -1119,6 +1154,7 @@ Item {
             border.width: 1
             Text {
               textFormat: Text.PlainText
+              renderType: Text.NativeRendering
               id: replayText
               anchors.centerIn: parent
               text: root.playing ? "◼ stop" : "⟲ replay growth"
@@ -1167,6 +1203,7 @@ Item {
                   }
                   Text {
                     textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
                     text: chip.modelData.label
                     color: Qt.alpha(root.fg, 0.5)
                     font.family: root.fontFamily
@@ -1185,6 +1222,8 @@ Item {
           Text {
 
             textFormat: Text.PlainText
+
+            renderType: Text.NativeRendering
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.margins: Style.space(10)
@@ -1239,6 +1278,8 @@ Item {
                 Text {
 
                   textFormat: Text.PlainText
+
+                  renderType: Text.NativeRendering
                   text: "INSPECTOR"
                   color: Qt.alpha(root.fg, 0.45)
                   font.family: root.fontFamily
@@ -1247,6 +1288,7 @@ Item {
                 }
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   visible: !inspectorCol.n
                   width: inspectorCol.width
                   text: "hover a memory to inspect it — click to lock the "
@@ -1259,6 +1301,7 @@ Item {
                 }
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   visible: !!inspectorCol.n
                   width: inspectorCol.width
                   text: inspectorCol.n ? inspectorCol.n.title : ""
@@ -1270,6 +1313,7 @@ Item {
                 }
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   visible: !!inspectorCol.n
                   width: inspectorCol.width
                   text: inspectorCol.n
@@ -1282,6 +1326,7 @@ Item {
                 }
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   visible: !!inspectorCol.n
                   text: inspectorCol.n
                     ? "updated " + Model.timeAgo(inspectorCol.n.ts, root.nowMs)
@@ -1295,6 +1340,7 @@ Item {
                 }
                 Text {
                   textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   visible: !!inspectorCol.n
                   text: "CONNECTIONS"
                   topPadding: Style.space(4)
@@ -1312,6 +1358,7 @@ Item {
                     spacing: 0
                     Text {
                       textFormat: Text.PlainText
+                      renderType: Text.NativeRendering
                       width: parent.width
                       text: (edgeRow.modelData.out ? "→ " : "← ")
                         + edgeRow.modelData.type + "  "
@@ -1323,6 +1370,7 @@ Item {
                     }
                     Text {
                       textFormat: Text.PlainText
+                      renderType: Text.NativeRendering
                       visible: edgeRow.modelData.why !== ""
                       width: parent.width
                       leftPadding: Style.space(12)
@@ -1355,6 +1403,7 @@ Item {
               anchors.margins: Style.space(10)
               Text {
                 textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: "THOUGHT STREAM — " + root.thoughts.length
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -1390,6 +1439,7 @@ Item {
                     spacing: Style.space(8)
                     Text {
                       textFormat: Text.PlainText
+                      renderType: Text.NativeRendering
                       text: Model.thoughtMark(thoughtRow.modelData.kind)
                       color: thoughtRow.modelData.urgent
                         ? root.urgent : root.accent
@@ -1402,6 +1452,7 @@ Item {
                       width: parent.width - Style.space(20)
                       Text {
                         textFormat: Text.PlainText
+                        renderType: Text.NativeRendering
                         width: parent.width
                         text: thoughtRow.modelData.text
                         wrapMode: Text.WordWrap
@@ -1412,6 +1463,7 @@ Item {
                       }
                       Text {
                         textFormat: Text.PlainText
+                        renderType: Text.NativeRendering
                         text: thoughtRow.modelData.kind + " · "
                           + Model.timeAgo(thoughtRow.modelData.ts, root.nowMs)
                         color: Qt.alpha(root.fg, 0.35)
