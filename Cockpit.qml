@@ -45,6 +45,7 @@ Item {
     day:     Qt.alpha(root.fg, 0.78),
     thought: Qt.lighter(root.accent, 1.35),
     entity:  Qt.alpha(root.fg, 0.5),
+    skill:   Qt.darker(root.accent, 1.45),
     urgent:  root.urgent
   })
 
@@ -1322,7 +1323,8 @@ Item {
                 { label: "organ",   role: "organ" },
                 { label: "memory",  role: "day" },
                 { label: "thought", role: "thought" },
-                { label: "entity",  role: "entity" }
+                { label: "entity",  role: "entity" },
+                { label: "skill",   role: "skill" }
               ]
               delegate: Item {
                 id: chip
@@ -1363,7 +1365,9 @@ Item {
             renderType: Text.NativeRendering
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.margins: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+            // one line above the legend chips — six kinds now reach this far
+            anchors.bottomMargin: Style.space(28)
             text: root.graph
               ? root.graph.nodes.length + " of " + root.graph.pages_total
                 + " memories · " + root.graph.edges.length + " links · "

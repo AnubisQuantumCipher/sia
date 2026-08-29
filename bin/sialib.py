@@ -72,6 +72,8 @@ OPTIONAL_ORGANS = {
                   ".local/state/omarchy-guardian"),
     "codex":     ("Codex",     "Codex CLI sessions on this box",
                   ".codex/sessions"),
+    "skills":    ("Skills",    "agent skills installed on this box",
+                  ".claude/skills"),
 }
 
 def _build_organs():
@@ -772,6 +774,95 @@ def sense_agents(cursors):
     return evs
 
 
+# Personal skill roots, in the precedence order the agent loaders use.
+# One graph node per skill NAME: the same slug in several roots is one
+# skill installed in several places, not several skills.
+SKILL_ROOTS = [os.path.join(HOME, p) for p in CONFIG.get(
+    "skills", {}).get("roots", [
+        ".claude/skills", ".agents/skills", ".omp/skills",
+        ".copilot/skills", ".config/agents/skills"])]
+
+def _skill_description(name):
+    """description: line of the skill's SKILL.md frontmatter, first root
+    that has it. clip() neutralizes wikilink/markdown syntax, so a hostile
+    description cannot inject links or structure into the corpus."""
+    for root in SKILL_ROOTS:
+        try:
+            with open(os.path.join(root, name, "SKILL.md")) as f:
+                head = f.read(8192)
+        except OSError:
+            continue
+        m = re.search(r"^description:\s*(.*)$", head, re.M)
+        if not m:
+            continue
+        val = m.group(1).strip().strip('"')
+        if val in (">", ">-", "|", "|-", ""):   # YAML block scalar: the
+            lines = []                          # value is the indented lines
+            for line in head[m.end():].splitlines()[1:]:
+                if line[:1] in (" ", "\t"):
+                    lines.append(line.strip())
+                elif line.strip():
+                    break
+            val = " ".join(lines)
+        if val:
+            return redact(clip(val, 220), "skills")
+    return ""
+
+
+def sense_skills(cursors):
+    """Agent skills installed in the personal skill roots. Scans for
+    <root>/<name>/SKILL.md, diffs against the last snapshot, and emits
+    cataloged/installed/updated/removed events linking [[skills/<name>]]
+    entities. Snapshot rides in cursors, so it commits only after the
+    corpus write — a failed pulse re-diffs and the day-page idempotence
+    gate absorbs the replay."""
+    snap = {}
+    for root in SKILL_ROOTS:
+        try:
+            entries = os.listdir(root)
+        except OSError:
+            continue
+        for name in entries:
+            try:
+                mtime = int(os.stat(  # follows skill symlinks
+                    os.path.join(root, name, "SKILL.md")).st_mtime)
+            except OSError:
+                continue
+            cur = snap.setdefault(sanitize_slugpart(name),
+                                  {"mtime": 0, "roots": []})
+            cur["mtime"] = max(cur["mtime"], mtime)
+            cur["roots"].append(root.replace(HOME, "~"))
+    prev = cursors.get("skills.snapshot")
+    cursors["skills.snapshot"] = snap
+    ts = utcnow()
+    if prev is None:
+        if not snap:
+            return []
+        shown = ", ".join(f"[[skills/{s}|{s}]]" for s in sorted(snap)[:8])
+        extra = f" and {len(snap) - 8} more" if len(snap) > 8 else ""
+        return [Event("skills", ts, "cataloged",
+                      f"cataloged {len(snap)} installed skills: {shown}{extra}",
+                      {"organs/skills"} | {f"skills/{s}" for s in snap},
+                      {"skills", "cataloged"})]
+    evs = []
+    for kind, names in (("installed", sorted(set(snap) - set(prev))),
+                        ("removed", sorted(set(prev) - set(snap))),
+                        ("updated", sorted(s for s in set(snap) & set(prev)
+                                           if snap[s]["mtime"] != prev[s]["mtime"]))):
+        for s in names[:20]:
+            desc = _skill_description(s) if kind != "removed" else ""
+            evs.append(Event("skills", ts, kind,
+                             f"skill {kind}: [[skills/{s}|{s}]]"
+                             + (f" — {desc}" if desc else ""),
+                             {"organs/skills", f"skills/{s}"},
+                             {"skills", kind}))
+        if len(names) > 20:
+            evs.append(Event("skills", ts, kind,
+                             f"+{len(names) - 20} more skills {kind}",
+                             {"organs/skills"}, {"skills", kind}))
+    return evs
+
+
 def sense_custom(cursors):
     """User-defined evidence streams from config custom_senses: tail a
     log (lines or jsonl), match a pattern, emit events into the user's
@@ -818,13 +909,13 @@ _SENSE_ORGAN = {
     "sense_pacman": "pacman", "sense_journal": "journal",
     "sense_git": "projects", "sense_claude": "claude-code",
     "sense_codex": "codex", "sense_notify": "notify",
-    "sense_agents": "agents",
+    "sense_agents": "agents", "sense_skills": "skills",
 }
 
 _ALL_SENSES = [sense_jackal, sense_sekhmet, sense_custos, sense_aegis,
                sense_worldline, sense_pacman, sense_journal,
                sense_guardian, sense_git, sense_claude, sense_codex,
-               sense_notify, sense_agents]
+               sense_notify, sense_agents, sense_skills]
 
 # only senses whose organ is active on THIS machine run
 SENSES = [s for s in _ALL_SENSES
@@ -950,6 +1041,13 @@ def ensure_event_entities(events):
             elif l.startswith("projects/"):
                 made |= ensure_entity(l, "project", l.split("/", 1)[1],
                                       ["Repository under ~/Projects. Watched by [[organs/projects]].", ""])
+            elif l.startswith("skills/"):
+                name = l.split("/", 1)[1]
+                desc = _skill_description(name)
+                made |= ensure_entity(l, "skill", name,
+                                      ([desc] if desc else []) +
+                                      ["Agent skill installed on this box. "
+                                       "Watched by [[organs/skills]].", ""])
     return made
 
 

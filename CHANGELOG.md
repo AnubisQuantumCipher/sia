@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0 — 2026-08-29
+
+The skills-organ release: the brain now knows what its agents can do.
+
+- **Skills organ (15th sense)** — `sense_skills` scans the personal
+  skill roots (`~/.claude/skills`, `~/.agents/skills`, `~/.omp/skills`,
+  `~/.copilot/skills`, `~/.config/agents/skills`; override via config
+  `skills.roots`) every pulse, dedups by skill name, and diffs against
+  a snapshot carried in the cursor state — so the snapshot commits only
+  after the corpus write, like every other sense. Installs, updates
+  (SKILL.md mtime), and removals become events under `organs/skills`,
+  and every skill is its own evidence page `skills/<name>` carrying the
+  `description:` from its frontmatter (YAML block scalars `>`/`|`
+  handled). First catalog on this box: 35 skills, one pulse.
+- **Skill nodes in the cockpit graph** — pages of type `skill` get
+  their own color and a sixth legend/filter chip; the graph status line
+  moved one line up so the wider legend row no longer collides with it.
+- Skill descriptions pass `clip()`/`redact()` at the sense boundary, so
+  a hostile SKILL.md cannot inject wikilinks, markdown structure, or
+  secret-shaped spans into the corpus.
+
+
 ## 1.1.0 — 2026-08-29
 
 The "grows the proof, not the costume" release. Four additions, each
