@@ -11,9 +11,12 @@ seeded from evidence (date ‖ ledger head) so behavior is replayable.
                           specificity 1/deg, dense-seeded, uncertainty
                           fallback to pure dense ranking.
   Novelty (dopamine gate) Lisman & Grace (2005) + von Restorff isolation.
-  Surprisal anomalies     Shannon surprisal in bits against an EWMA Poisson
-                          baseline per (organ, time-band) cohort, with
-                          absence-surprise (prediction error proper).
+  Surprise (empirical)    per (organ, time-band) cohort, the distribution
+                          of observed hourly counts; a spike exceeds every
+                          count the band has shown (≥30 samples), an absence
+                          is a zero hour in a band that is otherwise active.
+                          No Poisson, no "bits" — the estimator reports only
+                          the count, the previous max, and the sample size.
   Global workspace        Baars/Dehaene: K=7 slots, ignition threshold,
                           per-organ cap (lateral inhibition), hysteresis.
   DMN musing              seeded association walk between distant
@@ -38,8 +41,8 @@ PPR_DAMPING = 0.5     # HippoRAG's tuned damping factor
 PPR_ITers = 30
 EPISODIC_DAYS = int(os.environ.get("SIA_EPISODIC_DAYS", "14"))
 WORKSPACE_K = 7
-SURPRISAL_BITS = 8.0  # thought threshold (tail prob < 0.4%)
-EWMA_HALFLIFE_H = 168.0  # 7 days, in hours
+# (surprise uses an empirical count distribution per band — see
+# surprisal_update; there is deliberately no Poisson rate or bit threshold)
 
 # McGaugh/Kensinger arousal map: consequence, not sentiment. Drives
 # workspace scoring, replay priority, and verbatim preservation.

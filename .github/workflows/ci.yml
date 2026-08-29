@@ -1,0 +1,17 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: dependencies
+        run: pip install cryptography
+      - name: compile all python
+        run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp
+      - name: shellcheck scripts
+        run: bash -n install.sh uninstall.sh
+      - name: unit tests (cursor/replay, epoch-merge, ledger, PPR, novelty, surprise, redaction, touch weighting)
+        run: python3 -m unittest -v tests.test_sia

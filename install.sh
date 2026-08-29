@@ -33,8 +33,12 @@ step "1/9 bun + gbrain (the memory engine, by Garry Tan)"
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 have bun || curl -fsSL https://bun.sh/install | bash
 export PATH="$HOME/.bun/bin:$PATH"
-have gbrain || bun install -g github:garrytan/gbrain
+PIN="$(grep '^commit=' "$REPO/GBRAIN_PIN" 2>/dev/null | cut -d= -f2)"
+if ! have gbrain; then
+  bun install -g "github:garrytan/gbrain${PIN:+#$PIN}"
+fi
 gbrain --version | tail -1
+[ -n "$PIN" ] && echo "  (verified against gbrain commit $PIN)"
 
 step "2/9 ollama (local embeddings — nothing leaves the machine)"
 if ! have ollama && [ ! -x "$HOME/opt/ollama/bin/ollama" ]; then

@@ -104,6 +104,16 @@ Point it at your own programs in `~/.config/sia/config.json`:
   citation, the measurement instruments (`sia bench`,
   `sia judge-audit`), and the verification record.
 
+## What this is (and is not)
+
+A local, git-backed, origin-labeled memory that refuses to pretend a
+language model is a witness. **It is not a brain** — it is a disciplined
+historian with a small associative index and a cockpit. That is better
+than a brain: a brain you cannot audit, a historian you can. The
+cognitive-science names in the design are *ancestry, not warrants* —
+every mechanism is a small, named, deterministic approximation, and the
+whitepaper's rename test governs them.
+
 ## Honesty principles (the actual design)
 
 1. Every answer declares what kind of answer it is.

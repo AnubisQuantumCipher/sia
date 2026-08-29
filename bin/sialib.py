@@ -51,7 +51,7 @@ CONFIG = load_config()
 BASE_ORGANS = {
     "pacman":      ("pacman",      "package manager"),
     "journal":     ("journal",     "systemd journal (errors and faults)"),
-    "claude-code": ("Claude Code", "agent sessions on this box"),
+    "claude-code": ("Claude Code", "Claude agent sessions on this box"),
     "projects":    ("Projects",    "git activity under ~/Projects"),
     "notify":      ("Notifications", "desktop notification stream"),
     "agents":      ("Agents",       "AI-agent usage meters (Omarchy Quattro)"),
@@ -70,6 +70,8 @@ OPTIONAL_ORGANS = {
                   ".local/state/worldline"),
     "guardian":  ("Guardian",  "Omarchy preflight and checkpoint tool",
                   ".local/state/omarchy-guardian"),
+    "codex":     ("Codex",     "Codex CLI sessions on this box",
+                  ".codex/sessions"),
 }
 
 def _build_organs():
@@ -654,6 +656,47 @@ def sense_claude(cursors):
     return evs
 
 
+def sense_codex(cursors):
+    """Codex CLI sessions — metadata only (existence, growth), never
+    payload bodies. Dated tree: ~/.codex/sessions/YYYY/MM/DD/*.jsonl.
+    Closes the coverage gap where MCP advertised Codex but only Claude
+    was a first-class session organ."""
+    evs = []
+    sessions = cursors.setdefault("codex.sessions", {})
+    files = glob.glob(os.path.join(HOME, ".codex/sessions/*/*/*/*.jsonl"))
+    seen = set()
+    for f in files:
+        sid = os.path.basename(f).replace("rollout-", "")[:-6]
+        seen.add(sid)
+        try:
+            size = os.path.getsize(f)
+        except FileNotFoundError:
+            continue
+        st = sessions.get(sid)
+        if st is None:
+            fresh = (time.time() - os.path.getmtime(f)) < 3600
+            sessions[sid] = {"size": size, "announced": fresh}
+            if fresh:
+                evs.append(Event("codex", utcnow(), "session",
+                                 f"new Codex session {sid[:8]}…",
+                                 {"organs/codex"}, {"codex"}))
+            continue
+        if size > st["size"] and st.get("announced"):
+            evs.append(Event("codex", utcnow(), "activity",
+                             f"Codex session {sid[:8]}… active",
+                             {"organs/codex"}, {"codex"}))
+        elif size > st["size"] and not st.get("announced"):
+            st["announced"] = True
+            evs.append(Event("codex", utcnow(), "session",
+                             f"Codex session {sid[:8]}… resumed",
+                             {"organs/codex"}, {"codex"}))
+        st["size"] = size
+    for sid in list(sessions):
+        if sid not in seen:
+            del sessions[sid]
+    return evs
+
+
 def sense_notify(cursors):
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/notifications/history")
@@ -771,13 +814,14 @@ _SENSE_ORGAN = {
     "sense_worldline": "worldline", "sense_guardian": "guardian",
     "sense_pacman": "pacman", "sense_journal": "journal",
     "sense_git": "projects", "sense_claude": "claude-code",
-    "sense_notify": "notify", "sense_agents": "agents",
+    "sense_codex": "codex", "sense_notify": "notify",
+    "sense_agents": "agents",
 }
 
 _ALL_SENSES = [sense_jackal, sense_sekhmet, sense_custos, sense_aegis,
                sense_worldline, sense_pacman, sense_journal,
-               sense_guardian, sense_git, sense_claude, sense_notify,
-               sense_agents]
+               sense_guardian, sense_git, sense_claude, sense_codex,
+               sense_notify, sense_agents]
 
 # only senses whose organ is active on THIS machine run
 SENSES = [s for s in _ALL_SENSES

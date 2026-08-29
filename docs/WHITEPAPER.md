@@ -217,6 +217,14 @@ inherits deterministic authority. Offline chat models are excluded by default (t
 the embedding encoder), keeping quality of judgment tied to the
 operator's chosen frontier model rather than whatever fits in RAM.
 
+**What the judge is not.** A frontier model behind a VERDICT regex is
+not a verifier. It keeps score on *what the judge said about what recall
+returned* — never on reality. That is precisely why agents propose and
+only a human commits, why grades are origin-class `derived`, and why
+abstention correctness is a first-class audited metric. No surface may
+imply the machine is keeping honest score on the world; it keeps
+auditable score on its own evidence, and says which.
+
 ## 7. Privacy design
 
 The formative negative example is Microsoft Recall: content capture
