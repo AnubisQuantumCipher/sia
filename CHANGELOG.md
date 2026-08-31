@@ -67,12 +67,16 @@
   patterns plus the currently enumerated import-time mutable paths so covered
   fixture defaults no longer point into the resident brain. New runtime modules
   or import-time path constants must be added to those enumerations.
-  The extracted gbrain-bootstrap installer harness now sources a temporary test
-  script instead of embedding the growing function bundle in `bash -c`, keeping
-  the complete CI run below the host argument-size boundary. Installer and
-  uninstaller process runners now use the already registered pollable pidfd as
-  their non-reaping exit notification, retaining `P_PID` plus `WNOWAIT` only as
-  the fallback; they no longer issue a redundant `waitid(P_PIDFD)` probe that
+  The extracted gbrain-bootstrap and corpus-bootstrap installer harnesses now
+  source owner-private temporary test scripts instead of passing growing
+  function bundles through `bash -c` or standard input, keeping the complete CI
+  run independent of host argument-size and script-pipe behavior. The
+  descendant-exit regression probe now treats a process that vanishes during
+  its own `/proc` state read as completed rather than as a false test error.
+  Installer and uninstaller process runners now use the already registered
+  pollable pidfd as their non-reaping exit notification, retaining `P_PID` plus
+  `WNOWAIT` only as the fallback; they no longer issue a redundant
+  `waitid(P_PIDFD)` probe that
   was the interpreter crash site on one clean Python 3.12 runner.
 
 - **Explicit readiness attestation and convergent bounded publication** —
