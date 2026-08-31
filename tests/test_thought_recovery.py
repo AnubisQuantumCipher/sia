@@ -5,8 +5,14 @@ import importlib.util
 import json
 import os
 import tempfile
+import time
 import unittest
 from unittest import mock
+
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +46,10 @@ class ThoughtRecovery(unittest.TestCase):
         self.sialib.THOUGHT_INBOX_LOCK = os.path.join(
             self.state, "thought-inbox.lock")
         self.sialib.siamind.MIND_PATH = os.path.join(self.state, "mind.json")
+        self.sialib.LIFECYCLE_LOCK = os.path.join(
+            self.state, "lifecycle.lock")
+        self.sialib.LIFECYCLE_TOMBSTONE = os.path.join(
+            self.state, "lifecycle-removed")
 
     def tearDown(self):
         self.root.cleanup()
@@ -71,6 +81,78 @@ class ThoughtRecovery(unittest.TestCase):
         self.sialib.atomic_write(
             self.sialib.THOUGHT_INBOX_PATH,
             json.dumps(rows, separators=(",", ":")))
+
+    def test_legacy_thought_inbox_upgrade_is_stable_across_claim_rename(self):
+        rows = [
+            {"kind": "note", "text": "legacy note",
+             "links": ["mind/native"], "urgent": True},
+            {"kind": "ponder", "text": "legacy ponder",
+             "links": [], "urgent": False},
+            {"kind": "take", "text": "legacy take proposal",
+             "links": ["sia/cortex"], "urgent": False},
+        ]
+        self.sialib.atomic_write(
+            self.sialib.THOUGHT_INBOX_PATH,
+            json.dumps(rows, separators=(",", ":")))
+        before = os.stat(self.sialib.THOUGHT_INBOX_PATH)
+        expected_queued_at = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(before.st_mtime))
+
+        first = self.sialib._read_thought_inbox(
+            self.sialib.THOUGHT_INBOX_PATH)
+        second = self.sialib._read_thought_inbox(
+            self.sialib.THOUGHT_INBOX_PATH)
+        claim = self.sialib._thought_inbox_claim_path()
+        os.replace(self.sialib.THOUGHT_INBOX_PATH, claim)
+        claimed = self.sialib._read_thought_inbox(claim)
+
+        self.assertEqual(first, second)
+        self.assertEqual(first, claimed)
+        self.assertEqual(
+            len({row["_queue_id"] for row in first}), len(first))
+        self.assertTrue(all(
+            row["_queued_at"] == expected_queued_at for row in first))
+        self.assertTrue(all(row["origin"] == "model" for row in first))
+
+    def test_legacy_thought_inbox_partial_metadata_is_refused(self):
+        for metadata in (
+                {"_queue_id": "a" * 32},
+                {"_queued_at": "2026-01-02T03:04:05Z"}):
+            with self.subTest(metadata=metadata):
+                row = {"kind": "note", "text": "legacy",
+                       "links": [], "urgent": False, **metadata}
+                self.sialib.atomic_write(
+                    self.sialib.THOUGHT_INBOX_PATH,
+                    json.dumps([row], separators=(",", ":")))
+                with self.assertRaisesRegex(
+                        ValueError, "thought inbox metadata is incomplete"):
+                    self.sialib._read_thought_inbox(
+                        self.sialib.THOUGHT_INBOX_PATH)
+
+    def test_modern_thought_inbox_metadata_remains_authoritative(self):
+        modern = {
+            "kind": "note", "text": "modern", "links": [],
+            "urgent": False, "origin": "model", "_queue_id": "b" * 32,
+            "_queued_at": "2026-01-02T03:04:05Z",
+        }
+        self.sialib.atomic_write(
+            self.sialib.THOUGHT_INBOX_PATH,
+            json.dumps([modern], separators=(",", ":")))
+        with mock.patch.object(
+                self.sialib.time, "gmtime",
+                side_effect=AssertionError("modern queue entered migration")):
+            self.assertEqual(
+                self.sialib._read_thought_inbox(
+                    self.sialib.THOUGHT_INBOX_PATH)[0]["_queue_id"],
+                modern["_queue_id"])
+        modern["_queue_id"] = "not-canonical"
+        self.sialib.atomic_write(
+            self.sialib.THOUGHT_INBOX_PATH,
+            json.dumps([modern], separators=(",", ":")))
+        with self.assertRaisesRegex(
+                ValueError, "thought queue identity is invalid"):
+            self.sialib._read_thought_inbox(
+                self.sialib.THOUGHT_INBOX_PATH)
 
     def _index_partial_legacy_page(self, record):
         """Durably index one page while leaving the baseline incomplete."""

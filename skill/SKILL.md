@@ -19,6 +19,7 @@ sia ask "question"        # semantic recall, cited, origin-labeled
 sia ask "question" --no-touch  # audit/eval read that does not reinforce memory
 sia recall <slug>         # one memory page verbatim
 sia status                # brain state, chains, organs
+sia ready                 # live exit-status gate for reconciled memory
 sia think                 # recent thoughts (its inner monologue)
 sia note "text" --from <you>      # leave a labeled note for future sessions
 sia takes / sia calibration       # predictions and the Brier scorecard
@@ -57,14 +58,18 @@ sia bench                         # signed-ledger held-out memory self-benchmark
   `[derived]`, and `[model]`. Missing, malformed, or ambiguous legacy metadata
   is surfaced as `[legacy-unlabeled]`; it is never evidence and is weighted
   conservatively like `[model]`. Never cite model or legacy-unlabeled memory as
-  evidence. Judge-grade/ponder thoughts and agent/operator notes are model;
-  deterministic transition and Brier arithmetic do not relabel the verdict.
+  evidence. Judge-grade/ponder thoughts, take-proposal notifications, and
+  agent/operator notes are model; deterministic transition and Brier arithmetic
+  do not relabel the verdict.
 - Typed domain relations come from event/epoch evidence or an explicitly
   `[derived]` integrity/healing/crash/refusal thought. Model and
   legacy-unlabeled thoughts may link pages only with generic `mentions`.
 - Every `sia ask` answer ends with a truth-boundary line (sense
   freshness, chain verdicts, recall mode). Repeat degradations to the
   user; never present an answer over a stale brain as current.
+- `sia status` remains available during recovery and labels its live
+  readiness reason; its pulse and graph fields are the last published
+  snapshot. Use `sia ready` when automation needs a success/failure gate.
 - **Absence of recall is not evidence of absence.**
 - Never touch `~/.local/share/sia/.gbrain/` directly. PGLite admits one
   owner, so every SIA-managed daemon/CLI/MCP/benchmark operation uses the

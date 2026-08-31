@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 — 2026-08-30
+## 1.3.0 — 2026-08-31
 
 - **Race-closed systemd lifecycle barrier** — Install and uninstall no longer
   depend on a runtime mask that a local `~/.config/systemd/user` unit outranks.
@@ -18,6 +18,70 @@
   incomplete removal. The documentation names the mechanism's same-UID,
   coordination-only threat boundary.
 
+- **Crash-recoverable launch fence and owned-tree publication** — before an
+  upgrade can mutate dependencies, the installer journals the exact existing
+  CLI, brainstem, and MCP launcher generations and changes those inodes to
+  mode `000`. Retried installs validate a lifecycle tombstone, an exact journal
+  schema, unique bound paths, and the fenced inode identities. Single-file CAS
+  recovery now runs before CLI ownership preflight and can validate an
+  unreadable fenced file only from its metadata plus a journal-bound digest;
+  moved generations tolerate only rename-induced metadata changes. Runtime and
+  CLI preflights run again after the fence so their later CAS tokens include
+  the `chmod` generation, and an already fenced CLI is not copied into another
+  retained backup. Interrupted archive and publication phases recover the
+  exact old or new generation while preserving independent replacements.
+  Descriptor-rooted tree CAS now accepts the relative shared-library links in
+  official runtime archives, but only when the private owned tree is stable,
+  every regular file is single-link and non-group/world-writable, each symlink
+  inode is itself stable/current-user-owned/single-link, each link is relative
+  and non-escaping, and its complete chain ends at such a safe regular file.
+  A post-walk pass now reopens every captured directory generation and rereads
+  every link generation and target before and after referent acceptance, so a
+  nested replacement cannot be accepted through a cached link target.
+  Absolute, escaping, dangling, group/world-writable, hard-linked, and special
+  entries refuse. gbrain self-upgrade verification now accepts only
+  the pinned CLI's exact combined `off` plus provenance output, including its
+  one exact DB-plane-shadowed variant; unexpected stdout or stderr refuses.
+
+- **Legacy-state convergence without provenance guessing** — the graph
+  projector now treats the corpus-root `README.md` as repository metadata,
+  not a memory page. It retires only the byte-exact obsolete README refusal
+  from an older projection state and preserves every candidate and unrelated
+  error. A pre-v1.3 thought inbox whose rows lack both queue metadata fields
+  receives deterministic identities from stable file bytes, modification
+  time, and row position, plus a queued timestamp from that file time; the
+  result is unchanged when the inbox is renamed into its draining claim.
+  Fully modern and metadata-free legacy rows may coexist row by row. When
+  origin is absent, legacy `note`, `ponder`, and `grade` prose plus `take`
+  proposal notifications default to `model`, while other admitted kinds retain
+  the historical `derived` default;
+  an explicitly present canonical origin is validated and preserved. Partial
+  queue metadata, unknown fields, and malformed modern identities still refuse
+  the whole inbox.
+  Runtime-loading tests now activate one process-wide temporary home before
+  importing SIA, and a regression guard checks recognized runtime-loading
+  patterns plus the currently enumerated import-time mutable paths so covered
+  fixture defaults no longer point into the resident brain. New runtime modules
+  or import-time path constants must be added to those enumerations.
+  The extracted gbrain-bootstrap installer harness now sources a temporary test
+  script instead of embedding the growing function bundle in `bash -c`, keeping
+  the complete CI run below the host argument-size boundary.
+
+- **Explicit readiness attestation and convergent bounded publication** —
+  `sia ready` now evaluates the live memory-readiness predicate while holding
+  the corpus-owner lease, emits a stable ready/not-ready line, and exposes the
+  verdict as its process exit status. The installer calls that exact newly
+  published CLI after its fatal first-light pulse and before desktop, MCP, or
+  service activation. First light's `SIA_BACKFILL=1` path now advances both
+  take and intent natural-history authorities until their scan/sweep and shared
+  audit work converge, with a finite generation ceiling. Graph publication no
+  longer advances only one cursor page outside first light: every normal
+  publication holds the corpus lease while draining successive bounded pages
+  to a complete generation, also under a finite aggregate ceiling. Large
+  active corpora therefore do not alternate between a recovery-only partial
+  graph and the next pulse's newly dirtied graph; churn or permanent refusal
+  remains named publication debt.
+
 - **GitHub release documentation and clean-runner closure** — the README and
   manual now expose the completed v1.3 capability map, dual typed-edge lanes,
   exact Claude/Codex/Grok MCP registration commands and durable generic-client
@@ -25,6 +89,12 @@
   benchmark chain selection, readiness recovery taxonomy, and graceful-
   degradation matrix. The whitepaper now states the actual always-on
   release-selected PPR policy and installer-controlled index rebuild boundary.
+  The public docs also record community-directory readiness without claiming a
+  listing: the public repository has the required root artifacts, documents the
+  successful local release-preparation validation as non-commit-bound, and
+  requires a rerun against the exact approval-gated Omarchy submission commit.
+  Its ownership checklist still requires explicit maintainer confirmation, and
+  validation is not a security review.
   `sia calibration --cursor` and the MCP tool's optional `cursor` now make the
   documented bounded domain continuation usable. The signed-ledger projection
   fixture binds the checkout keeper so a clean CI runner cannot depend on an
@@ -34,13 +104,14 @@
 
 - **Non-destructive stability and rehearsal** — nodes and learned edges now
   carry an exponential retention lens that changes retrieval salience, never
-  evidence retention. Safety-class and operator-pinned pages enter a
-  deterministic SM-2 schedule; interaction-derived quality tiers are labeled
-  as proxies, and schedule/reinforcement state advances only after a
-  successful re-embedding. `sia memory`, pin/unpin, and `sia rehearse` expose
-  the state without introducing another mind-state writer. Numeric state is
-  finite and operationally capped, pin-only review state disappears on unpin,
-  and interval calculation/lapse behavior follows the original SM-2 ordering.
+  evidence retention. Operator-pinned or high-arousal pages—including pages
+  raised by safety-class and urgent signals—enter a deterministic SM-2
+  schedule; interaction-derived quality tiers are labeled as proxies, and
+  schedule/reinforcement state advances only after a successful re-embedding.
+  `sia memory`, pin/unpin, and `sia rehearse` expose the state without
+  introducing another mind-state writer. Numeric state is finite and
+  operationally capped, pin-only review state disappears on unpin, and
+  interval calculation/lapse behavior follows the original SM-2 ordering.
 - **Resident-agent memory surface** — the stdio MCP server now advertises
   static status/thought/calibration/cortex resources plus the guarded
   `sia://memory/{slug}` template. Tools carry bounded schemas, behavior
@@ -113,19 +184,25 @@
   bytes have an observable signed grade, and readiness/calibration refuse
   incomplete or unstable authority checkpoints. Ready take and intent
   checkpoints now enter a shared, explicitly incomplete audit cycle before
-  reading any row. Their catalog limits and directory identities are pinned
-  across crash-resumable slices; tombstones advance each cursor, a faster
-  participant waits ready for its sibling instead of rotating independently,
-  and global ready returns only after stable reloads find no catalog growth or
-  pending transaction.
+  reading any row. Only the paired scheduler's leader may open a fresh cycle;
+  its follower joins or finishes the active cycle and cannot immediately reopen
+  another. Catalog limits and directory identities are pinned across
+  crash-resumable slices; tombstones advance each cursor, a faster participant
+  waits ready for its sibling, and global ready returns only after stable
+  reloads find no catalog growth or pending transaction.
   Same-inode edits after the final observation remain an explicit nonclaim
   until a later pinned audit reaches them.
 - **Explicit origin boundary** — new persisted memories use only `evidence`,
-  `derived`, or `model`; outside the signed take cutover below, missing,
+  `derived`, or `model`; outside the signed take cutover below and the bounded
+  pre-publication thought-inbox compatibility mapping above, missing,
   malformed, or ambiguous legacy metadata is exposed as `legacy-unlabeled`,
-  never promoted to evidence, and weighted like model prose.
-  Judge-grade/ponder thoughts and agent/operator notes are
-  `model`; deterministic Brier and ledger-transition arithmetic remain
+  never promoted to evidence, and weighted like model prose. When an inbox row
+  has no origin, the compatibility default maps known model-prose producer kinds
+  to `model` and retains the historical `derived` default for its other
+  accepted kinds; that default never mints `evidence`. An explicitly supplied
+  canonical origin is validated and preserved.
+  Judge-grade/ponder thoughts, take-proposal notifications, and agent/operator
+  notes are `model`; deterministic Brier and ledger-transition arithmetic remain
   separate derived operations. Model and legacy-unlabeled thoughts cannot
   mint typed relations. JACKAL convenience-ledger rows and receipt filenames
   are explicitly unverified `derived` observations: claimed formal status is
@@ -209,9 +286,11 @@
   crash relation), only explicitly `derived` integrity/healing/crash/refusal
   thoughts can inherit their cited evidence sentence, and model/legacy thoughts
   and entity-description pages remain neutral. A malformed/unsafe pack falls
-  back to `mentions` while marking the graph snapshot partial. The standard
-  gbrain person/company gazetteer lane now runs separately after each sync
-  (`--by-mention --ner`, source-scoped to SIA).
+  back to `mentions` while marking the graph snapshot partial. That fallback is
+  exclusive to the schema-regex lane. The standard gbrain person/company
+  gazetteer lane now runs separately after each sync (`--by-mention --ner`,
+  source-scoped to SIA); its failure fails brain sync and retains publication
+  debt instead of invoking the regex fallback.
 - **Bounded long-horizon projections** — the nightly slug tripwire now probes
   only its fixed pages and bounded organ directories, with no recursive corpus
   walk and an explicit refusal when a negative probe cannot be established.

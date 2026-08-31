@@ -19,6 +19,11 @@ import unittest
 import warnings
 from unittest import mock
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIA_PATH = os.path.join(REPO, "bin", "sia")
@@ -493,6 +498,22 @@ class HonestStatusLanguage(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             self.assertEqual(sia.cmd_status(), 0)
         self.assertIn("[origin:model] [grade] judged", output.getvalue())
+
+    def test_ready_is_an_exit_status_health_gate(self):
+        output = io.StringIO()
+        with mock.patch.object(
+                sia.sialib, "corpus_owner",
+                return_value=contextlib.nullcontext()), \
+                mock.patch.object(
+                    sia.sialib, "memory_readiness",
+                    side_effect=[(True, ""),
+                                 (False, "projection pending")]), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(sia.cmd_ready(), 0)
+            self.assertEqual(sia.cmd_ready(), 1)
+        rendered = output.getvalue()
+        self.assertIn("SIA memory ready", rendered)
+        self.assertIn("SIA memory not ready: projection pending", rendered)
 
     def test_thought_output_carries_origin_or_explicit_legacy_boundary(self):
         thoughts = {"thoughts": [

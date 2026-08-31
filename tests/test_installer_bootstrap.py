@@ -194,12 +194,24 @@ raise SystemExit(21)
         active_environment = os.environ.copy()
         if environment:
             active_environment.update(environment)
-        return subprocess.run(
-            ["bash", "-c", "set -euo pipefail\n" +
-             (functions or self.functions) + variables,
-             "gbrain-bootstrap-test"],
-            env=active_environment, text=True, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, check=False, timeout=30)
+        script_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    "w", encoding="utf-8", dir=home,
+                    prefix=".gbrain-bootstrap-test-", suffix=".sh",
+                    delete=False) as stream:
+                script_path = stream.name
+                stream.write("set -euo pipefail\n")
+                stream.write(functions or self.functions)
+                stream.write(variables)
+            return subprocess.run(
+                ["bash", "-c", 'source "$1"',
+                 "gbrain-bootstrap-test", script_path],
+                env=active_environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False, timeout=30)
+        finally:
+            if script_path is not None:
+                os.unlink(script_path)
 
     def test_partial_external_init_is_retried_from_exact_intent(self):
         with tempfile.TemporaryDirectory() as home:

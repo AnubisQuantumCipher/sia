@@ -1,6 +1,6 @@
 # SIA: An Evidence-Grounded Neurocognitive Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-08-30 · v1.3**
+**Khephri Labs · open source (MIT) · 2026-08-31 · v1.3**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 
@@ -115,15 +115,17 @@ origin-labeled prose exceptions to evidence-backed event memory; they are
 recallable context, not witnesses.
 
 New persisted origin metadata has three canonical classes: `evidence`,
-`derived`, and `model`. Missing, invalid, duplicated, or otherwise ambiguous
-legacy metadata crosses an explicit `legacy-unlabeled` read boundary: it is
+`derived`, and `model`. Outside the bounded compatibility lanes below,
+missing, invalid, duplicated, or otherwise ambiguous legacy metadata crosses
+an explicit `legacy-unlabeled` read boundary: it is
 never promoted to evidence and receives the same conservative retrieval weight
-as `model`. Judge grades, ponder syntheses, and agent/operator notes are model
-output and persist as `model`; deterministic Brier recomputation and signed
+as `model`. Judge grades, ponder syntheses, take-proposal notifications, and
+agent/operator notes are model output and persist as `model`; deterministic
+Brier recomputation and signed
 transition handling are separate derived operations, not a relabeling of the
 verdict.
 
-There is one bounded compatibility exception to the legacy-unlabeled rule.
+There are two bounded compatibility exceptions to the legacy-unlabeled rule.
 During the v1.3 first-light pulse, a current-schema pre-origin open take is
 migrated to `origin: derived`, while a resolved one is migrated to
 `origin: model` and its historical judge explanation is rendered as inert
@@ -131,6 +133,20 @@ prose. Pages outside the current schema are admitted only when every byte-level
 shape check matches the v1.2 producer; those pages are compatibility-normalized
 and retain source-field digests plus corpus git history. A malformed legacy
 graded page refuses the cutover rather than receiving a guessed origin.
+
+The second exception exists before corpus publication. A legacy shared thought
+inbox can contain producer rows with neither queue identity nor queued time.
+After one bounded, no-follow, stable-file read, SIA derives each identity from
+the captured bytes, file modification time, and row position and derives the
+queued timestamp from that same file time. Renaming the inode into the draining
+claim therefore preserves the result across retry. Fully modern and
+metadata-free legacy rows may coexist and are handled row by row. When origin
+is absent, known `note`, `ponder`, and `grade` prose plus `take` proposal
+notifications map to `model`, while other admitted historical kinds retain the
+old deterministic `derived` default; that compatibility default never maps to
+`evidence`. An explicitly
+present canonical origin is validated and preserved. Partial queue metadata,
+unknown fields, or malformed modern identity on any row refuses the batch.
 
 This is a publication protocol, not an in-place relabel. An owner-private
 journal under `~/.local/state/sia/take-migrations/` binds source and target
@@ -160,6 +176,15 @@ corpus lease from the readiness predicate through its returned result, and an
 MCP memory request inherits that subprocess boundary. The predicate and answer
 therefore observe the same corpus generation.
 
+The predicate is also exposed directly as `sia ready`: under the corpus-owner
+lease it emits a stable ready/not-ready line and maps that result to process
+success/failure. Installer first light runs one fatal `SIA_BACKFILL=1` pulse,
+which advances the take and intent authorities together through scan/sweep and
+their paired audit until neither is pending (or a finite generation ceiling
+refuses), then calls the newly published readiness gate before any later
+integration or activation. A successful pulse exit is therefore necessary but
+not sufficient for installation success.
+
 **Truth-boundary contract.** Graph snapshots carry their own completeness
 declaration — failed reads, display omission counts, aged-out counts, per-kind totals
 — and the cockpit renders it as SOURCE HEALTH. A snapshot that fails
@@ -172,7 +197,15 @@ The exporter does not enumerate the resident corpus into memory. It advances
 an owner-private, generation-bound directory cursor, retains only the bounded
 cockpit candidate window, and then opens only those selected pages no-follow
 under their observed digests for edge extraction. Supported corpus writers
-restart the projection durably before mutation. An incomplete cursor,
+restart the projection durably before mutation. The corpus-root `README.md` is
+bootstrap/repository metadata rather than a canonical page; the scanner skips
+that exact root name. Upgrade recovery removes only the byte-exact obsolete
+README failure emitted by the former projector, leaving all candidates and
+unrelated failures intact. A publication retains the corpus lease while it
+drains successive individually bounded cursor pages; a finite aggregate
+generation ceiling converts churn or excessive size into retained debt. Thus
+an active corpus larger than one page cannot alternate indefinitely between a
+partial recovery pass and the next publication's conservative restart. An incomplete cursor,
 capacity refusal, changed generation, or selected-page mismatch is therefore
 debt, never an absence claim; publication and readiness remain closed.
 Once that authoritative scan is complete, deterministic node and unique display-edge
@@ -315,8 +348,9 @@ spreading. Stability is capped at 36500 days; SM-2 intervals use the same cap,
 and ease is capped at 5.0. Those are operational overflow bounds, not memory
 science claims. None of these transitions deletes or rewrites corpus evidence.
 
-Safety-class or operator-pinned pages receive an SM-2 review record. The
-nightly scheduler uses SIA interaction signals as explicit quality adapters:
+Operator-pinned or high-arousal pages—including pages raised by safety-class
+and urgent signals—receive an SM-2 review record. The nightly scheduler uses
+SIA interaction signals as explicit quality adapters:
 a post-review user ask/rehearsal signal maps to `q=5`, a
 thought/ponder/muse/grade reference maps to `q=4`, and no qualifying signal
 maps to `q=0`. These are SIA interaction classes, not human-memory
@@ -327,8 +361,8 @@ for the next repetition, and a quality below three restarts the repetition
 sequence after that ease update. The scheduler state, recall touch, and incident-edge reinforcement
 commit only after that same page is successfully re-embedded; a missing page
 or failed engine call remains due. Removing the last pin removes a pin-only
-review record; safety-class arousal remains independently eligible. These
-quality tiers are system-event proxies, not observed human recall
+review record; a qualifying high-arousal signal remains independently eligible.
+These quality tiers are system-event proxies, not observed human recall
 scores, and the mechanism makes no claim that it improves human memory or
 semantic answer quality.
 
@@ -389,10 +423,12 @@ supported take or intent create/mutation first has a durable intent; after the
 page transition, an idempotent event updates a digest-bound direct record, a
 capped open-set projection, and an append-only cursor-paginated catalog.
 Overall calibration is an exact Decimal sufficient-statistic projection;
-domain statistics are sharded and their domain catalog is paginated. Only a
-settled grade whose exact signed `GRADE:take` target is observable contributes
-to scored totals. UNRESOLVABLE, malformed, inconsistent, and unsigned legacy
-resolutions remain explicitly counted outside the score denominator.
+domain statistics are sharded and their domain catalog is paginated. Every
+page repeats the complete overall population totals and exclusions; only the
+domain rows are cursor-paginated. Only a settled grade whose exact signed
+`GRADE:take` target is observable contributes to scored totals. UNRESOLVABLE,
+malformed, inconsistent, and unsigned legacy resolutions remain explicitly
+counted outside the score denominator.
 
 Legacy pages are admitted through a fixed resumable baseline. Its Linux
 directory cookie is bound to device, inode, size, modification time, and change
@@ -419,11 +455,12 @@ unit of that same transaction, including exact claim application when reached;
 the marker is applied, signed, and cleared only after source removals and the
 post-removal scan converge, so readiness cannot expose a partial generation.
 A ready state does not repeatedly launch that full generation. Instead, once
-both take and intent authorities are ready, the next pass persists a shared
-incomplete `audit` cycle, pinning each catalog limit and directory checkpoint
-before it validates any direct row. Bounded calls advance only within each
-half-open pinned range; a participant that finishes first remains ready until
-its sibling completes rather than independently starting another cycle;
+both take and intent authorities are ready, the paired scheduler's leader
+persists a shared incomplete `audit` cycle, pinning each catalog limit and
+directory checkpoint before it validates any direct row. The follower may join
+or finish that active cycle but cannot immediately open another after
+completion. Bounded calls advance only within each half-open pinned range; a
+participant that finishes first remains ready until its sibling completes;
 tombstones consume audit positions and readiness/calibration remain closed for
 the whole phase. Global ready is republished only after separate reloads
 observe both generations at their limits, unchanged catalog heads and
@@ -515,6 +552,33 @@ event-day / epoch / thought / synthesis / take / intent / note / unit /
 package / project / skill types, typed link verbs), graph-aware retrieval mode, and
 Ollama `nomic-embed-text` embeddings served at 127.0.0.1:11434.
 
+Installation is a journaled publication protocol rather than an in-place copy.
+Before the first dependency mutation, a launch-fence record binds the old CLI,
+brainstem, and MCP launcher inodes, modes, and digests; those exact files are
+then mode `000`. On retry, the lifecycle tombstone and strict, duplicate-free
+journal authorize metadata-only inspection of those otherwise unreadable
+generations. Single-file CAS recovery precedes CLI ownership preflight, and
+runtime/CLI preflight is repeated after the fence so its changed mode/change
+time cannot leave a stale publication token. Post-rename recovery accepts only
+the journal-bound old/new digest and the rename-induced metadata transition;
+independent replacements remain preserved refusals.
+
+Tree CAS is descriptor-rooted and generation-bound. Parent, root, directories,
+and regular files must be current-user-owned and non-group/world-writable;
+regular files must have one link. Each symlink inode must itself be stable,
+current-user-owned, and single-link. Tree CAS admits only relative symlinks
+whose lexical target stays inside the tree and whose complete in-tree chain
+resolves to such a safe regular file, binding link text and metadata into the
+tree digest. A post-walk pass reopens every captured directory from the root
+descriptor and rereads each link generation and target before and after
+referent acceptance, so nested replacement refuses. This admits the official
+Ollama archive's relative soname links while refusing absolute, escaping,
+dangling, group/world-writable, hard-linked-file, and special entries. After
+configuring gbrain, installation accepts only the
+pinned CLI's exact combined `off` plus file/env-plane provenance output (or its
+one exact DB-plane-shadowed form), so stderr drift is not hidden by a correct stdout
+value.
+
 ## 9. Verification
 
 The build was adversarially reviewed twice by independent agent panels
@@ -549,6 +613,19 @@ surface: upgrade reads only a stable owned no-follow tail, discards incomplete
 or malformed legacy rows, retains the declared recent complete window, and
 publishes a legacy-truncation boundary. Such compaction cannot block settlement
 of the separately durable DREAM receipt.
+
+Runtime-loading tests install a process-wide temporary home-expansion fixture
+before importing SIA. A structural regression check recognizes currently
+enumerated syntactic runtime-loading patterns and checks the currently
+enumerated runtime modules' import-time mutable paths beneath that fixture.
+Those module and path enumerations must be extended when the code adds another
+runtime module or import-time path constant. This contains covered test-state
+side effects away from the resident brain; it does not prove that arbitrary
+test code cannot explicitly name another path. The recovery suite also exercises
+mode-`000` CAS interruption before and after rename, strict launch-fence
+schema/path validation, safe and escaping/dangling tree symlinks, stable legacy
+inbox identity across a claim rename, partial-metadata refusal, and the root
+README graph migration.
 
 The full memory instrument is a signed-ledger QA benchmark patterned after
 LongMemEval's separation of extraction, temporal reasoning, knowledge updates,
@@ -625,8 +702,11 @@ and all `model` or `legacy-unlabeled` thoughts neutral, and permits typed
 thought edges only when a safety-lane integrity/healing/crash/refusal thought
 is explicitly persisted as `derived`. It prefers evidence-bearing typed
 occurrences over generic duplicates, and degrades to `mentions` with a partial snapshot when the pack
-cannot be safely loaded. These relations are lexical inferences over explicit
-links, not proofs of the underlying relationship. Calibration data remain operator-selected and
+cannot be safely loaded. That fallback is exclusive to the schema-regex lane;
+a failure in gbrain's separate gazetteer/NER extraction fails brain sync and
+retains publication debt instead of crossing lanes. These relations are lexical
+inferences over explicit links, not proofs of the underlying relationship.
+Calibration data remain operator-selected and
 model-assisted; population growth improves descriptive monitoring but cannot
 turn it into a representative sample. The signed-ledger benchmark is a local
 regression population whose coverage depends on retained corpus pages; it is
@@ -675,10 +755,15 @@ hostile same-user filesystem snapshot after the final observation.
 
 The v1.3 release includes the manifest, installation/removal documentation,
 and graceful-degradation states needed for an Omarchy community directory
-submission. Directory publication remains a separate, approval-gated
-maintainer workflow: the owner must confirm the submission checklist, open the
-marketplace issue, and await review. A directory listing provides discovery,
-not a security review.
+submission. Release preparation included a successful local
+`omarchy plugin validate .` run, but that result is not bound to a future
+submission commit and must be rerun against the exact public commit. Directory
+publication remains a separate, approval-gated maintainer workflow under the
+[official publishing guide](https://plugins.omarchy.org/publish.html): the
+owner must confirm every checklist statement and asset right, approve the exact
+issue, open it, and await automated validation plus maintainer review. SIA does
+not claim to be listed. A directory listing provides discovery and manifest
+compatibility, not a security review.
 
 ## References
 

@@ -24,6 +24,11 @@ from unittest import mock
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin")
 sys.path.insert(0, BIN)
@@ -1845,6 +1850,58 @@ class NaturalHistoryProjection(unittest.TestCase):
                 self.assertEqual(
                     take_authority["audit_cycle"],
                     intent_authority["audit_cycle"])
+
+    def test_paired_recovery_closes_interrupted_cycle_without_reopening(self):
+        with tempfile.TemporaryDirectory() as root, \
+                self.projection_roots(root):
+            fake_sialib = types.SimpleNamespace(
+                ledger_contains=lambda *_row: False,
+                ledger_append=lambda *_row, **_kwargs: None)
+            with mock.patch.dict(sys.modules, {"sialib": fake_sialib}):
+                siatakes.create_take(
+                    "interrupted audit", confidence=0.8,
+                    deadline="2099-01-01")
+                siatakes.create_intent(
+                    "interrupted audit follower", "2099-01-01")
+
+                _audited, errors, inspected = \
+                    siatakes.audit_natural_history_authority(
+                        "intent", limit=1)
+                self.assertEqual(errors, [])
+                self.assertEqual(inspected, 1)
+                interrupted_take = siatakes._load_history_state(
+                    "take")["authority"]
+                completed_intent = siatakes._load_history_state(
+                    "intent")["authority"]
+                self.assertEqual(interrupted_take["phase"], "audit")
+                self.assertEqual(interrupted_take["audit_cursor"], 0)
+                self.assertEqual(completed_intent["phase"], "ready")
+                self.assertEqual(
+                    interrupted_take["audit_cycle"],
+                    completed_intent["audit_cycle"])
+
+                _takes, take_errors = \
+                    siatakes.migrate_legacy_take_pages()
+                _intents, intent_errors = \
+                    siatakes.advance_intent_history(
+                        start_audit_cycle=False)
+                self.assertEqual(take_errors, [])
+                self.assertEqual(intent_errors, [])
+
+                ready_take = siatakes._load_history_state(
+                    "take")["authority"]
+                ready_intent = siatakes._load_history_state(
+                    "intent")["authority"]
+                self.assertEqual(ready_take["phase"], "ready")
+                self.assertEqual(ready_intent["phase"], "ready")
+                self.assertEqual(
+                    ready_take["audit_cycle"],
+                    interrupted_take["audit_cycle"])
+                self.assertEqual(
+                    ready_intent["audit_cycle"],
+                    interrupted_take["audit_cycle"])
+                self.assertFalse(siatakes.natural_history_debt("take"))
+                self.assertFalse(siatakes.natural_history_debt("intent"))
 
     def test_retirement_recovery_subtracts_exactly_once_after_tombstone(self):
         with tempfile.TemporaryDirectory() as root, \

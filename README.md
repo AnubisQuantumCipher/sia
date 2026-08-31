@@ -45,7 +45,10 @@ cannot control what those callers do with returned content.
   degrades the affected edges to `mentions` and marks the graph snapshot
   partial instead of guessing a type. That partial graph is diagnostic only:
   publication debt keeps memory-dependent reads closed until the pack is
-  repaired and a pulse publishes a complete snapshot.
+  repaired and a pulse publishes a complete snapshot. This `mentions`
+  fallback belongs only to SIA's schema-regex lane. If gbrain's separate
+  gazetteer/NER extraction fails, brain sync fails and retains publication debt;
+  the regex projector does not impersonate that lane.
   SIA also projects keeper-verified lifecycle rows from its own signed ledger
   into `events/sia/`, excluding `PULSE:*`, `DREAM:bench`, and terminal
   `SOURCE:refuse` rows so ingestion, evaluation, and source-capacity refusals
@@ -108,6 +111,13 @@ cannot control what those callers do with returned content.
   spool; the brainstem alone materializes them and acknowledges each exact
   request only after commit and index sync. Agent and operator notes are
   explicitly `model`-origin prose exceptions to evidence-backed event memory.
+  Separately, pre-v1.3 thought-inbox rows that lack both queue fields remain
+  recoverable: their stable file bytes, modification time, and row position
+  derive a repeatable queue identity and queued time, including after the inbox is
+  atomically renamed for draining. Fully modern and metadata-free legacy rows
+  may coexist and are handled row by row. A row with only one queue field,
+  unknown fields, or malformed modern metadata refuses the whole inbox instead
+  of being guessed.
   Notes persist and may be returned to configured consumers, so do not put
   credentials, secrets, or private content in them; pattern-based redaction is
   defense in depth, not a secrecy guarantee. Agents may *propose*
@@ -115,11 +125,17 @@ cannot control what those callers do with returned content.
 - **Evidence culture** — SIA keeps its own Ed25519 hash-chained run
   ledger; every `sia ask`/search answer carries a truth-boundary line and one
   of the three canonical persisted origin labels: `evidence` / `derived` /
-  `model`. Outside the narrow signed take-upgrade lane described below,
-  missing, invalid, or ambiguous legacy origin metadata is surfaced as the
-  explicit `legacy-unlabeled` boundary, never promoted to evidence, and
-  weighted conservatively like `model`. Judge grades, ponder output, and
-  agent/operator notes are `model`; deterministic transition handling and
+  `model`. Outside the narrow signed take-upgrade lane described below and the
+  pre-publication legacy thought-inbox mapping described above, missing,
+  invalid, or ambiguous legacy origin metadata is surfaced as the explicit
+  `legacy-unlabeled` boundary, never promoted to evidence, and weighted
+  conservatively like `model`. When origin is absent, the inbox compatibility
+  default labels known `note`/`ponder`/`grade` prose and `take` proposal
+  notifications as `model`, and other accepted producer kinds as `derived`;
+  that default never mints `evidence`.
+  An explicitly present canonical origin is validated and preserved. Judge
+  grades, ponder output, take-proposal notifications, and agent/operator notes
+  are `model`; deterministic transition handling and
   Brier recomputation remain separately derived operations and do not upgrade
   a model verdict. JACKAL integration records are a narrower boundary: SIA
   observes the bounded convenience ledger and receipt filenames as `derived`,
@@ -133,9 +149,9 @@ cannot control what those callers do with returned content.
 
 | Former future-work area | Shipped release behavior |
 |---|---|
-| Typed-NER and domain edges | gbrain's person/company gazetteer and SIA's bounded schema-regex lane run separately, with origin gates and an explicit partial/`mentions` fallback. |
-| Stability and rehearsal | Node/edge stability decay is live; pins and safety signals feed a transaction-safe SM-2 schedule that advances only after successful re-embedding. |
-| Calibration | Signed grades feed population-aware descriptive Brier reports; single cases, exclusions, sparse bins, sampling limits, and pageable domain rows stay visible. |
+| Gazetteer NER and domain-relation edges | gbrain's person/company gazetteer and SIA's bounded schema-regex lane run separately, with origin gates and a partial/`mentions` fallback only for the regex lane. A gazetteer/NER failure instead fails sync. |
+| Stability and rehearsal | Node/edge stability decay is live; operator pins and high-arousal signals—including safety-class and urgent events—feed a transaction-safe SM-2 schedule that advances only after successful re-embedding. |
+| Calibration | Signed grades feed population-aware descriptive Brier reports; single cases, exclusions, sparse bins, and sampling limits stay visible. Complete overall totals repeat on every response; only the domain rows are cursor-paginated. |
 | Long-memory self-evaluation | `sia bench` generates keeper-verified extraction, temporal, update, aggregation, and abstention questions with public/private answer separation and normalized answer scoring. It is a local regression instrument, not the curated LongMemEval benchmark. |
 | Resident-agent memory | The stdio MCP server exposes bounded tools/resources; immutable note requests go through the brainstem, and every SIA-managed PGLite operation shares the single-owner lease instead of creating a multi-writer database. |
 | Publication and recovery | Corpus Markdown, git, PGLite, and graph snapshots publish behind durable debt/readiness barriers; installer adoption, root-bound receipts, signed grades, queues, and bounded scans have crash-recovery journals and named refusals. |
@@ -261,8 +277,11 @@ generation.
 
 The installer's first-light pulse is a required upgrade transaction, not
 background cleanup. Before desktop changes, MCP registration, or brainstem
-enablement, it reconciles old take pages while the resident brainstem is
-stopped. A current-schema pre-origin open take becomes `origin: derived`; a
+enablement, it runs with `SIA_BACKFILL=1` while the resident brainstem is
+stopped. That mode repeatedly advances both take and intent natural-history
+authorities through their scan/sweep and paired audit phases until neither
+reports pending work, subject to a finite generation ceiling. A current-schema
+pre-origin open take becomes `origin: derived`; a
 pre-origin resolved take becomes `origin: model`, and its historical judge
 justification is rewritten as `Model justification (inert prose): ...` so
 Markdown, wikilinks, and HTML-like controls cannot act as graph input. Pages
@@ -278,6 +297,14 @@ durably set and the page atomically replaced. The pulse commits the corpus,
 syncs PGLite, publishes the graph, and clears `sync_needed` last. Recovery
 reuses the journal and exact signed row, so a crash does not require a second
 signature.
+
+After that pulse, the installer invokes `sia ready` through the newly published
+runtime before it touches desktop or agent integrations. This command holds the
+corpus-owner lease, prints either `SIA memory ready` or the exact
+`SIA memory not ready: REASON`, and exposes success/failure through its process
+exit status. An incomplete authority, publication journal, graph generation,
+or other readiness debt therefore aborts installation rather than being hidden
+behind a successful pulse command.
 
 Take and intent corpus pages remain the source of truth, but resident paths no
 longer rescan their complete directories. Owner-private natural-history state
@@ -304,12 +331,13 @@ observable `GRADE:take` row. Readiness and calibration consult bounded debt
 and directory-checkpoint metadata and stay closed during an incomplete or
 unstable scan/sweep. A resolved legacy page without an observable exact signed
 grade remains visible as `invalid_resolved` and never enters a score
-denominator. On the next resident authority pass, the ready take and intent
-checkpoints enter one shared incomplete `audit` cycle: each catalog limit and
-directory checkpoint is pinned once, and readiness/calibration remain closed
-across every bounded slice, including tombstones. A participant that finishes
-first stays ready while its sibling completes; neither starts another cycle
-alone. Global ready is republished only
+denominator. On the next resident paired-authority pass, the leader opens one
+shared incomplete `audit` cycle and the follower may only join or finish that
+active cycle; it cannot immediately reopen another cycle after completing the
+first. Each catalog limit and directory checkpoint is pinned once, and
+readiness/calibration remain closed across every bounded slice, including
+tombstones. A participant that finishes first stays ready while its sibling
+completes. Global ready is republished only
 after the same generation reaches that limit, the catalog head still equals
 the pin, no transaction is pending, and the directory checkpoint is unchanged.
 Parent-directory churn restarts reconciliation immediately. An in-place
@@ -321,7 +349,16 @@ The cockpit graph and weekly consolidation have the same long-horizon rule.
 Graph export advances an owner-private, generation-bound corpus cursor and
 retains only its capped display window; it opens selected pages no-follow and
 digest-checks them again while extracting edges. Every supported corpus writer
-restarts the projection before mutation. Consolidation advances a separate
+restarts the projection before mutation. Each normal publication keeps the
+corpus lease and drains successive individually bounded cursor pages until the
+generation is ready; a finite aggregate ceiling turns a churning or
+unexpectedly large generation into retained debt instead of an unbounded loop.
+This prevents a corpus larger than one scan page from alternating between a
+partial recovery pulse and a newly dirtied publication. The corpus-root `README.md` is
+repository/bootstrap metadata rather than a memory page and is skipped
+explicitly; upgrade recovery removes only the byte-exact obsolete refusal that
+older graph state recorded for that file, preserving every real candidate and
+other failure. Consolidation advances a separate
 durable cursor, then records an exact bounded day/source claim before it may
 write an epoch or unlink a shard. Neither path infers absence from a partial
 directory page. If one DREAM invocation cannot finish the generation, its
@@ -359,6 +396,7 @@ their MCP tools/resources inherit the same refusal and generation boundary.
 They report `SIA memory read refused` until a successful `sia pulse` reconciles
 the debt. `sia status` and `sia://status` remain available: their readiness line
 is live, while the pulse/graph fields and cockpit are last-published snapshots.
+`sia ready` is the scriptable exit-status gate for that same live predicate.
 Note and take-proposal writes may queue without exposing indexed memory.
 
 If first light reports `legacy take migration refused`, do not delete the
@@ -378,10 +416,14 @@ verifies their published SHA-256 digests before extraction. It checks out the
 full gbrain commit in `GBRAIN_PIN`, verifies the pinned upstream `bun.lock`,
 installs with `--frozen-lockfile`, compiles the executable, and binds its
 receipt to the commit, lock, version, and binary digest under
-`~/.local/share/sia/toolchain`. The Ollama service must use SIA's exact unit
-without drop-ins, report the pinned runtime version, and expose only a
-service-owned loopback listener. Because the pinned Ollama release cannot pull a
-registry manifest by digest, SIA pulls the semantic
+`~/.local/share/sia/toolchain`. After setting gbrain's file-plane
+`self_upgrade.mode`, the installer accepts only the pinned CLI's exact combined
+stdout/stderr form: `off` on stdout plus its file/env-plane provenance line on
+stderr, optionally followed by the exact DB-plane-shadowed suffix. Any other
+value, diagnostic, or output shape refuses activation. The Ollama service must
+use SIA's exact unit without drop-ins, report the pinned runtime version, and
+expose only a service-owned loopback listener. Because the pinned Ollama
+release cannot pull a registry manifest by digest, SIA pulls the semantic
 `nomic-embed-text:v1.5` tag, then requires the pinned manifest digest in the
 running service's effective `OLLAMA_MODELS` directory and hashes every
 referenced blob. Existing untagged gbrain databases remain compatible through
@@ -415,16 +457,49 @@ absent canonical name; a concurrent replacement is preserved and makes the
 install refuse. `.git`, tests, caches, and runtime state are not copied. The
 prior tree is retained under a printed hidden sibling path so local files are
 recoverable; review and remove that backup manually after the upgrade. The
-installed multi-file runtime uses the same journaled publication rule. After
-host dependency, architecture, Python-cryptography, corpus, and brainstem-unit
-ownership preflights pass, an upgrade stops an active owned/adoptable
-brainstem before private toolchain and Ollama validation or mutation. A failure
+installed multi-file runtime uses the same journaled publication rule. Its
+tree generation requires a private current-user-owned parent, root, and
+directories plus current-user-owned, single-link, non-group/world-writable
+regular files. Each admitted symbolic-link inode must itself be stable,
+current-user-owned, and single-link. A link must be relative, its lexical target
+must stay inside the tree, and its complete chain must terminate at such a safe
+regular file; link text and metadata are generation-bound. After traversal,
+SIA reopens every recorded directory path from the descriptor root and rereads
+each link's generation and text both before and after accepting its referent.
+A nested directory or link replacement therefore refuses. Absolute, escaping,
+dangling, special-entry, hard-linked-file, or group/world-writable tree shapes
+also refuse. This narrow lane admits release archives such as Ollama's relative
+shared-library links without treating arbitrary links as owned content.
+
+After host dependency, architecture, Python-cryptography, corpus, and
+brainstem-unit ownership preflights pass, an upgrade stops an active owned/adoptable
+brainstem before private toolchain and Ollama validation or mutation. Before
+any dependency mutation, a durable launch-fence journal binds the old CLI,
+brainstem, and MCP launch inodes, modes, and digests; those exact files are
+changed to mode `000` so a process cannot enter through an old launcher while
+the upgrade is in flight. Retry requires the lifecycle tombstone plus the
+strict journal schema and unique bound paths. It can inspect an exact fenced
+generation through metadata-only descriptors and the journal's retained
+digest, recovers a pending single-file CAS before CLI ownership preflight, and
+re-runs both CLI and runtime preflight after fencing so the later publications
+use the post-`chmod` generation rather than a stale token. Journal recovery
+allows only the expected rename-induced metadata transition; an independently
+changed canonical or backup file is preserved and refused. A failure
 before the first successful installer mutation restores its prior
 enablement/activity; after that mutation, a failure leaves the brainstem
 disabled and stopped
 instead of restarting it against mixed dependencies. Fix the reported cause
 and rerun `install.sh`. Prior runtime trees are retained at the printed hidden
 sibling path.
+
+Repository tests that import SIA runtime modules activate a process-wide
+temporary home before import. A structural regression guard checks recognized
+runtime-loading import/file-reference patterns and the currently enumerated
+import-time mutable paths, so covered fixture defaults cannot silently land in
+the resident corpus/state. Contributors must extend its module and path
+allowlists when adding a runtime module or import-time path constant. This is
+fixture containment, not a sandbox against a test that explicitly names
+another path.
 
 The shared agent skill never overwrites an unmarked or locally modified
 `~/.claude/skills/sia/SKILL.md`. Use the printed repository path manually, or
@@ -512,6 +587,7 @@ repair the markers manually.
 
 ```bash
 sia status                          # the brain's vitals
+sia ready                           # exit nonzero unless memory is reconciled
 sia ask "what happened today"       # semantic recall, cited + labeled
 sia think                           # its inner monologue
 sia take "the build will go green" --confidence 0.8 --by 2026-09-05
@@ -568,6 +644,22 @@ rendered into memory.
   model, every cognitive mechanism with its published formula and
   citation, the measurement instruments (`sia bench`,
   `sia judge-audit`), and the verification record.
+
+### Community directory status
+
+SIA's public repository, root `manifest.json`, README, MIT license,
+installation/removal paths, and explicit degradation states provide the
+repository-side artifacts requested by the publishing guide. Release
+preparation included a successful local `omarchy plugin validate .` run; that
+result is not a commit-bound attestation, so rerun it against the exact public
+submission commit. The intended listing identity remains `khephri.sia`,
+category `System`. Publication is not automatic, and SIA is not claiming to be
+listed: the maintainer must review the exact submission and asset-ownership
+checklist, approve it, then open the issue through the
+[official Omarchy publishing workflow](https://plugins.omarchy.org/publish.html).
+Marketplace validation and any eventual listing establish discoverability and
+Quattro manifest compatibility, not a security review; plugins still run
+unsandboxed as the installing user.
 
 ## Remove
 

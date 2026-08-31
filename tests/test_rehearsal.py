@@ -13,6 +13,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin")
 

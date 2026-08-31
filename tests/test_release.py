@@ -9,12 +9,18 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from unittest import mock
+
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -152,6 +158,20 @@ def _runtime_barrier_shell(script):
     body = script.split("brainstem_runtime_barrier_file() {", 1)[1].split(
         "\nPY\n}", 1)[0]
     return "brainstem_runtime_barrier_file() {" + body + "\nPY\n}\n"
+
+
+def _publication_receipt_recovery_shell(script):
+    body = script.split(
+        "recover_publication_receipts_from_fence() {", 1)[1].split(
+            "\n}\n\narm_install_launch_fence", 1)[0]
+    return "recover_publication_receipts_from_fence() {" + body + "\n}\n"
+
+
+def _fenced_runtime_authorization_shell(script):
+    body = script.split(
+        "fenced_runtime_authorized() {", 1)[1].split(
+            "\n}\n\nwrite_runtime_receipt", 1)[0]
+    return "fenced_runtime_authorized() {" + body + "\n}\n"
 
 
 class ReleaseContract(unittest.TestCase):
@@ -413,7 +433,10 @@ class ReleaseContract(unittest.TestCase):
         self.assertNotIn('gbrain config set self_upgrade.mode off', installer)
         self.assertIn('self_upgrade["mode"] = "off"', installer)
         self.assertIn('"$GBRAIN_BIN" config get self_upgrade.mode', installer)
-        self.assertIn('[ "$GBRAIN_SELF_UPGRADE_MODE" = "off" ]', installer)
+        self.assertIn("source: file/env plane", installer)
+        self.assertIn("GBRAIN_SELF_UPGRADE_OUTPUT", installer)
+        self.assertNotIn(
+            '[ "$GBRAIN_SELF_UPGRADE_MODE" = "off" ]', installer)
         self.assertIn('"$GBRAIN_BIN" sources list --json', installer)
         self.assertNotIn(
             'gbrain sources add sia --path "$SHARE/corpus" 2>/dev/null || true',
@@ -446,11 +469,15 @@ class ReleaseContract(unittest.TestCase):
                          installer)
         first_light = installer.index(
             'SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse')
+        readiness_attestation = installer.index(
+            'python3 "$BINDIR/sia-cli" ready', first_light)
         brainstem_release = installer.index(
             'flock -u "$SIA_BRAINSTEM_LOCK_FD"')
         brainstem_reacquire = installer.index(
             '"brainstem after first light"')
         self.assertLess(brainstem_release, first_light)
+        self.assertLess(first_light, readiness_attestation)
+        self.assertLess(readiness_attestation, brainstem_reacquire)
         self.assertLess(first_light, brainstem_reacquire)
         first_light_block = installer[
             installer.index('step "7/9 first light'):
@@ -836,6 +863,293 @@ class ReleaseContract(unittest.TestCase):
             self.assertEqual(_read_path(tombstone),
                              "removed-by=khephri.sia\n")
 
+    def test_install_fence_recovery_preserves_empty_runtime_named_field(self):
+        recovery = _publication_receipt_recovery_shell(_read("install.sh"))
+        with tempfile.TemporaryDirectory() as root:
+            home = os.path.join(root, "home")
+            bindir = os.path.join(home, ".local/share/sia/bin")
+            cli = os.path.join(home, ".local/bin/sia")
+            managed = os.path.join(
+                home, ".local/state/sia/managed-install")
+            journal = os.path.join(managed, "launch-fence.json")
+            tombstone = os.path.join(
+                home, ".local/state/sia.lifecycle-removed")
+            trace = os.path.join(root, "unexpected-call")
+            os.makedirs(bindir)
+            _write(cli, "old fenced launcher\n", 0o755)
+            with open(cli, "rb") as stream:
+                fenced_digest = hashlib.sha256(stream.read()).hexdigest()
+            cli_info = os.lstat(cli)
+            os.chmod(cli, 0)
+            desired_digest = hashlib.sha256(
+                b"desired replacement launcher\n").hexdigest()
+            self.assertNotEqual(desired_digest, fenced_digest)
+            payload = {
+                "schema": "sia-launch-fence-v1",
+                "runtime_before_digest": "",
+                "runtime_digest": "",
+                "cli_digest": desired_digest,
+                "entries": [{
+                    "path": cli,
+                    "device": cli_info.st_dev,
+                    "inode": cli_info.st_ino,
+                    "mode": stat.S_IMODE(cli_info.st_mode),
+                    "sha256": fenced_digest,
+                }],
+            }
+            _write(journal, json.dumps(
+                payload, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            script = recovery + r'''
+set -u
+LAUNCH_FENCE_JOURNAL="$JOURNAL"
+LIFECYCLE_TOMBSTONE="$TOMBSTONE"
+BINDIR="$TEST_BINDIR"
+CLI_PATH="$TEST_CLI"
+RUNTIME_RECEIPT="$TEST_MANAGED/runtime"
+CLI_RECEIPT="$TEST_MANAGED/sia-cli"
+runtime_tree_digest() {
+  printf '%s\n' runtime-tree-digest >> "$TRACE"
+  return 91
+}
+owned_metadata() {
+  printf '%s\n' owned-metadata-digest >> "$TRACE"
+  return 92
+}
+write_managed_receipt() {
+  printf '%s\n' receipt-publication >> "$TRACE"
+  return 0
+}
+recover_publication_receipts_from_fence || exit 93
+printf '%s\n' recovery-complete
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "HOME": home,
+                "JOURNAL": journal,
+                "TOMBSTONE": tombstone,
+                "TEST_BINDIR": bindir,
+                "TEST_CLI": cli,
+                "TEST_MANAGED": managed,
+                "TRACE": trace,
+            })
+            result = subprocess.run(
+                ["bash", "-c", script], env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "recovery-complete\n")
+            self.assertFalse(os.path.lexists(trace))
+            self.assertEqual(stat.S_IMODE(os.lstat(cli).st_mode), 0)
+
+    def test_install_fence_recovery_rejects_bad_named_field_output(self):
+        recovery = _publication_receipt_recovery_shell(_read("install.sh"))
+        malformed_outputs = {
+            "duplicate": (
+                "runtime_digest=\nruntime_digest=duplicate\n"
+                "cli_digest=desired\nfenced_cli=fenced\n"),
+            "unknown": (
+                "runtime_digest=\ncli_digest=desired\n"
+                "fenced_cli=fenced\nunexpected=value\n"),
+            "missing": "runtime_digest=\ncli_digest=desired\n",
+        }
+        for case, recovered_fields in malformed_outputs.items():
+            with self.subTest(case=case), \
+                    tempfile.TemporaryDirectory() as root:
+                journal = os.path.join(root, "launch-fence.json")
+                _write(journal, "present\n", 0o600)
+                script = recovery + r'''
+set -u
+LAUNCH_FENCE_JOURNAL="$JOURNAL"
+LIFECYCLE_TOMBSTONE="$JOURNAL"
+BINDIR="$WORK/runtime"
+CLI_PATH="$WORK/sia"
+RUNTIME_RECEIPT="$WORK/runtime-receipt"
+CLI_RECEIPT="$WORK/cli-receipt"
+python3() { printf '%s' "$RECOVERED_FIELDS"; }
+recover_publication_receipts_from_fence
+'''
+                environment = os.environ.copy()
+                environment.update({
+                    "JOURNAL": journal,
+                    "WORK": root,
+                    "RECOVERED_FIELDS": recovered_fields,
+                })
+                result = subprocess.run(
+                    ["bash", "-c", script], env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_fenced_runtime_authorization_requires_exact_journal_and_tombstone(
+            self):
+        function = _fenced_runtime_authorization_shell(_read("install.sh"))
+        with tempfile.TemporaryDirectory() as root:
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            entries = []
+            for name in ("sia-brainstem", "sia-mcp"):
+                path = os.path.join(runtime, name)
+                _write(path, name + "\n", 0o755)
+                current = os.lstat(path)
+                with open(path, "rb") as stream:
+                    digest = hashlib.sha256(stream.read()).hexdigest()
+                entries.append({
+                    "path": path,
+                    "device": current.st_dev,
+                    "inode": current.st_ino,
+                    "mode": stat.S_IMODE(current.st_mode),
+                    "sha256": digest,
+                })
+                os.chmod(path, 0)
+            before_digest = hashlib.sha256(b"prior runtime").hexdigest()
+            payload = {
+                "schema": "sia-launch-fence-v1",
+                "runtime_before_digest": before_digest,
+                "runtime_digest": "",
+                "cli_digest": "",
+                "entries": entries,
+            }
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+
+            script = function + r'''
+set -u
+LAUNCH_FENCE_JOURNAL="$JOURNAL"
+LIFECYCLE_TOMBSTONE="$TOMBSTONE"
+RUNTIME_RECEIPT="$RECEIPT"
+BINDIR="$RUNTIME"
+fenced_runtime_authorized
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "JOURNAL": journal,
+                "TOMBSTONE": tombstone,
+                "RECEIPT": receipt,
+                "RUNTIME": runtime,
+            })
+
+            def authorize(candidate, marker="regular"):
+                _write(
+                    journal,
+                    json.dumps(candidate, sort_keys=True,
+                               separators=(",", ":")) + "\n",
+                    0o600)
+                if os.path.lexists(tombstone):
+                    os.unlink(tombstone)
+                if marker == "regular":
+                    _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+                elif marker == "symlink":
+                    os.symlink(receipt, tombstone)
+                return subprocess.run(
+                    ["bash", "-c", script], env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False)
+
+            result = authorize(payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            unexpected = json.loads(json.dumps(payload))
+            unexpected["unexpected"] = "field"
+            self.assertNotEqual(authorize(unexpected).returncode, 0)
+
+            malformed = json.loads(json.dumps(payload))
+            malformed["entries"][0]["device"] = True
+            self.assertNotEqual(authorize(malformed).returncode, 0)
+
+            duplicate = json.loads(json.dumps(payload))
+            duplicate["entries"].append(dict(duplicate["entries"][0]))
+            self.assertNotEqual(authorize(duplicate).returncode, 0)
+
+            self.assertNotEqual(authorize(payload, marker="absent").returncode,
+                                0)
+            self.assertNotEqual(authorize(payload, marker="symlink").returncode,
+                                0)
+
+    def test_retry_does_not_retain_an_already_fenced_cli_twice(self):
+        installer = _read("install.sh")
+        fenced_body = installer.split(
+            "fenced_managed_file_authorized() {", 1)[1].split(
+                "\n}\n\nfenced_runtime_authorized", 1)[0]
+        retain_body = installer.split(
+            "retain_unowned_cli_before_fence() {", 1)[1].split(
+                "\n}\n\ninstall_preflighted_cli", 1)[0]
+        functions = (
+            "fenced_managed_file_authorized() {" + fenced_body + "\n}\n" +
+            "retain_unowned_cli_before_fence() {" + retain_body + "\n}\n")
+
+        with tempfile.TemporaryDirectory() as root:
+            home = os.path.join(root, "home")
+            cli = os.path.join(home, ".local/bin/sia")
+            managed = os.path.join(
+                home, ".local/state/sia/managed-install")
+            journal = os.path.join(managed, "launch-fence.json")
+            tombstone = os.path.join(
+                home, ".local/state/sia.lifecycle-removed")
+            trace = os.path.join(root, "unexpected-copy")
+            _write(cli, "already retained before fence\n", 0o755)
+            with open(cli, "rb") as stream:
+                digest = hashlib.sha256(stream.read()).hexdigest()
+            before = os.lstat(cli)
+            os.chmod(cli, 0)
+            payload = {
+                "schema": "sia-launch-fence-v1",
+                "runtime_before_digest": "",
+                "runtime_digest": "",
+                "cli_digest": hashlib.sha256(
+                    b"desired replacement\n").hexdigest(),
+                "entries": [{
+                    "path": cli,
+                    "device": before.st_dev,
+                    "inode": before.st_ino,
+                    "mode": stat.S_IMODE(before.st_mode),
+                    "sha256": digest,
+                }],
+            }
+            _write(journal, json.dumps(
+                payload, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            script = functions + r'''
+set -u
+LAUNCH_FENCE_JOURNAL="$JOURNAL"
+LIFECYCLE_TOMBSTONE="$TOMBSTONE"
+CLI_PATH="$TEST_CLI"
+CLI_RECEIPT="$MANAGED/sia-cli.receipt"
+SIA_STABLE_LAUNCHER="$WORK/desired"
+SIA_REPLACE_SIA_CLI=1
+managed_receipt_matches() { return 1; }
+owned_metadata() { return 1; }
+cp() { printf '%s\n' called > "$TRACE"; return 97; }
+retain_unowned_cli_before_fence
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "HOME": home,
+                "JOURNAL": journal,
+                "TOMBSTONE": tombstone,
+                "TEST_CLI": cli,
+                "MANAGED": managed,
+                "WORK": root,
+                "TRACE": trace,
+            })
+            result = subprocess.run(
+                ["bash", "-c", script], env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(os.path.lexists(trace))
+            self.assertEqual(stat.S_IMODE(os.lstat(cli).st_mode), 0)
+            self.assertFalse([
+                name for name in os.listdir(os.path.dirname(cli))
+                if name.startswith(".sia-cli.previous.")])
+
     def test_inherited_lifecycle_handoff_preserves_tombstone_and_nesting(self):
         cli = _load("sia_lifecycle_valid", os.path.join(REPO, "bin/sia"))
         library = _load(
@@ -1191,6 +1505,18 @@ sia_install_cleanup
             self.assertNotIn("--user start sia-brainstem.service", calls)
             self.assertIn("--user disable --now ollama.service", calls)
             self.assertIn("install failed after mutation", result.stderr)
+
+    def test_successful_barrier_discard_clears_recovery_debt(self):
+        installer = _read("install.sh")
+        body = installer.split(
+            "discard_install_brainstem_retired_barrier() {", 1)[1].split(
+                "\n}", 1)[0]
+        self.assertIn(
+            "SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=0", body)
+        final_activation = installer.split(
+            "retire_install_brainstem_runtime_barrier\n", 1)[1]
+        self.assertIn(
+            "discard_install_brainstem_retired_barrier", final_activation)
 
     def test_final_activation_failure_rearms_barrier_before_disable(self):
         installer = _read("install.sh")
@@ -1697,9 +2023,10 @@ preflight_corpus locked
             environment = os.environ.copy()
             if extra_environment:
                 environment.update(extra_environment)
+            script = ("set -euo pipefail\n" + active_prefix + variables
+                      + selected_block)
             return subprocess.run(
-                ["bash", "-c", "set -euo pipefail\n" + active_prefix +
-                 variables + selected_block, "corpus-bootstrap-test"],
+                ["bash", "-s", "corpus-bootstrap-test"], input=script,
                 env=environment, text=True, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False, timeout=30)
 
@@ -2078,11 +2405,12 @@ SIA_CORPUS_EARLY_RECEIPT_GENERATION=""
 SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
 '''
             locked_preflight = "preflight_corpus read-only\n" if locked else ""
+            script = ("set -euo pipefail\n" + selected_metadata + tree
+                      + selected_functions + variables + locked_preflight
+                      + command)
             return subprocess.run(
-                ["bash", "-c", "set -euo pipefail\n" + selected_metadata +
-                 tree + selected_functions + variables + locked_preflight +
-                 command,
-                 "corpus-receipt-test"], text=True,
+                ["bash", "-s", "corpus-receipt-test"], input=script,
+                text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
                 timeout=30)
 
@@ -2251,14 +2579,14 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
         crash_point = (
             "            rename_noreplace(target_name, archive_name)\n"
             "            sync_parent()\n"
-            "            archived = token(archive_name)")
+            "            archived = token(\n")
         self.assertIn(crash_point, metadata)
         interrupted_metadata = metadata.replace(
             crash_point,
             "            rename_noreplace(target_name, archive_name)\n"
             "            sync_parent()\n"
             "            raise SystemExit('fixture crash after archival')\n"
-            "            archived = token(archive_name)", 1)
+            "            archived = token(\n", 1)
         with tempfile.TemporaryDirectory() as home:
             _, managed, _, receipt, _ = prepare(home)
             interrupted = run(
@@ -2303,14 +2631,14 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
             archive_crash_point = (
                 "        rename_noreplace(archive_name, staged_name)\n"
                 "        sync_parent()\n"
-                "        if not moved_token_matches(token(staged_name), expected)")
+                "        if not moved_token_matches(\n")
             self.assertIn(archive_crash_point, metadata)
             archive_interrupted_metadata = metadata.replace(
                 archive_crash_point,
                 "        rename_noreplace(archive_name, staged_name)\n"
                 "        sync_parent()\n"
                 "        raise SystemExit('fixture crash after archive')\n"
-                "        if not moved_token_matches(token(staged_name), expected)",
+                "        if not moved_token_matches(\n",
                 1)
             retired = os.path.join(managed, ".corpus.receipt.retired")
             retirement_interrupted = run(
@@ -2617,6 +2945,144 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
                 name for name in os.listdir(root)
                 if name.startswith(".sia-cas-journal-stage.")])
 
+    def test_owned_file_cas_replaces_exact_fenced_mode_zero_generation(self):
+        installer = _read("install.sh")
+        body = installer.split("owned_file_cas() {", 1)[1].split(
+            "\n}\n\nwrite_lifecycle_tombstone", 1)[0]
+        function = "owned_file_cas() {" + body + "\n}\n"
+        python_source = installer.split(
+            "owned_file_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
+                "\nPY\n}", 1)[0]
+
+        def fenced_token(path, content):
+            current = os.lstat(path)
+            return "present:" + ":".join(str(value) for value in (
+                current.st_dev, current.st_ino, current.st_mode,
+                current.st_uid, current.st_size, current.st_mtime_ns,
+                current.st_ctime_ns, hashlib.sha256(content).hexdigest()))
+
+        def recover(target):
+            return subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_file_cas recover "$1"',
+                 "fenced-file-cas-test", target],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "sia")
+            stage = os.path.join(root, ".stage")
+            prior = b"fenced prior launcher\n"
+            _write(target, prior.decode("ascii"))
+            os.chmod(target, 0)
+            expected = fenced_token(target, prior)
+            _write(stage, "desired launcher\n", 0o755)
+
+            published = subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_file_cas publish "$1" "$2" "$3"',
+                 "fenced-file-cas-test", stage, target, expected],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+            self.assertEqual(published.returncode, 0, published.stderr)
+            self.assertEqual(_read_path(target), "desired launcher\n")
+            self.assertTrue(os.path.isfile(stage))
+            self.assertEqual(stat.S_IMODE(os.lstat(stage).st_mode), 0)
+            os.chmod(stage, 0o600)
+            self.assertEqual(_read_path(stage), prior.decode("ascii"))
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "sia")
+            stage = os.path.join(root, ".stage")
+            prior = b"canonical one\n"
+            changed = prior.replace(b"one", b"two")
+            _write(target, prior.decode("ascii"))
+            os.chmod(target, 0)
+            expected = fenced_token(target, prior)
+            before = os.lstat(target)
+            os.chmod(target, 0o600)
+            _write(target, changed.decode("ascii"))
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            os.chmod(target, 0)
+            after = os.lstat(target)
+            self.assertNotEqual(after.st_ctime_ns, before.st_ctime_ns)
+            _write(stage, "desired launcher\n", 0o755)
+
+            refused = subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_file_cas publish "$1" "$2" "$3"',
+                 "fenced-file-cas-test", stage, target, expected],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertTrue(os.path.isfile(stage))
+            self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0)
+            os.chmod(target, 0o600)
+            self.assertEqual(_read_path(target), changed.decode("ascii"))
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "sia")
+            stage = os.path.join(root, ".stage")
+            prior = b"fenced prior launcher\n"
+            _write(target, prior.decode("ascii"))
+            os.chmod(target, 0)
+            expected = fenced_token(target, prior)
+            _write(stage, "desired launcher\n", 0o755)
+            archive_needle = (
+                "            rename_noreplace(target_name, archive_name)\n"
+                "            sync_parent()")
+            self.assertIn(archive_needle, python_source)
+            crashed_source = python_source.replace(
+                archive_needle, archive_needle +
+                '\n            raise RuntimeError("fenced archive crash")', 1)
+            with mock.patch.object(sys, "argv", [
+                    "owned-file-cas", "publish", stage, target, expected]), \
+                    self.assertRaises(RuntimeError):
+                exec(compile(crashed_source, "owned-file-cas", "exec"), {})
+            self.assertFalse(os.path.lexists(target))
+
+            recovered = recover(target)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(stat.S_IMODE(os.lstat(target).st_mode), 0)
+            os.chmod(target, 0o600)
+            self.assertEqual(_read_path(target), prior.decode("ascii"))
+            self.assertEqual(_read_path(stage), "desired launcher\n")
+            self.assertFalse([
+                name for name in os.listdir(root)
+                if name.startswith(".sia-cas-journal-")])
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "sia")
+            stage = os.path.join(root, ".stage")
+            prior = b"fenced prior launcher\n"
+            _write(target, prior.decode("ascii"))
+            os.chmod(target, 0)
+            expected = fenced_token(target, prior)
+            _write(stage, "desired launcher\n", 0o755)
+            publish_needle = (
+                "            rename_noreplace(staged_name, target_name)\n"
+                "            sync_parent()")
+            self.assertIn(publish_needle, python_source)
+            crashed_source = python_source.replace(
+                publish_needle, publish_needle +
+                '\n            raise RuntimeError("fenced publication crash")', 1)
+            with mock.patch.object(sys, "argv", [
+                    "owned-file-cas", "publish", stage, target, expected]), \
+                    self.assertRaises(RuntimeError):
+                exec(compile(crashed_source, "owned-file-cas", "exec"), {})
+            self.assertEqual(_read_path(target), "desired launcher\n")
+            self.assertFalse(os.path.lexists(stage))
+
+            recovered = recover(target)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(_read_path(target), "desired launcher\n")
+            self.assertEqual(stat.S_IMODE(os.lstat(stage).st_mode), 0)
+            os.chmod(stage, 0o600)
+            self.assertEqual(_read_path(stage), prior.decode("ascii"))
+            self.assertFalse([
+                name for name in os.listdir(root)
+                if name.startswith(".sia-cas-journal-")])
+
     def test_owned_tree_cas_is_generation_bound_and_crash_recoverable(self):
         installer = _read("install.sh")
         body = installer.split("owned_tree_cas() {", 1)[1].split(
@@ -2709,6 +3175,252 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
             self.assertFalse([
                 name for name in os.listdir(root)
                 if name.startswith(".sia-tree-cas-journal-")])
+
+    def test_owned_tree_cas_preserves_safe_relative_file_symlinks(self):
+        installer = _read("install.sh")
+        body = installer.split("owned_tree_cas() {", 1)[1].split(
+            "\n}\n\nowned_tree_generation()", 1)[0]
+        function = "owned_tree_cas() {" + body + "\n}\n"
+        python_source = installer.split(
+            "owned_tree_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
+                "\nPY\n}", 1)[0]
+
+        def populate(tree, value):
+            library = os.path.join(tree, "lib/ollama")
+            binary = os.path.join(tree, "bin")
+            os.makedirs(library)
+            os.makedirs(binary)
+            _write(os.path.join(library, "libllama.so.0.3.0"), value)
+            os.symlink("libllama.so.0.3.0",
+                       os.path.join(library, "libllama.so.0"))
+            os.symlink("libllama.so.0",
+                       os.path.join(library, "libllama.so"))
+            os.symlink("../lib/ollama/libllama.so",
+                       os.path.join(binary, "ollama"))
+
+        def invoke(*arguments):
+            return subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_tree_cas "$@"', "tree-symlink-test",
+                 *arguments], text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "runtime")
+            stage = os.path.join(root, ".stage")
+            backup = os.path.join(root, ".backup")
+            populate(target, "operator original\n")
+            populate(stage, "installer desired\n")
+
+            expected_result = invoke("generation", target)
+            self.assertEqual(expected_result.returncode, 0,
+                             expected_result.stderr)
+            expected = expected_result.stdout.strip()
+            published = invoke("publish", stage, target, backup, expected)
+            self.assertEqual(published.returncode, 0, published.stderr)
+            installed = published.stdout.strip().split("\t", 1)[0]
+            current = invoke("generation", target)
+            self.assertEqual(current.returncode, 0, current.stderr)
+            self.assertEqual(current.stdout.strip(), installed)
+            self.assertEqual(
+                os.readlink(os.path.join(target, "lib/ollama/libllama.so")),
+                "libllama.so.0")
+            self.assertEqual(
+                os.readlink(os.path.join(target, "bin/ollama")),
+                "../lib/ollama/libllama.so")
+            self.assertEqual(_read_path(os.path.join(target, "bin/ollama")),
+                             "installer desired\n")
+            prior = invoke("generation", backup)
+            self.assertEqual(prior.returncode, 0, prior.stderr)
+
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "runtime")
+            stage = os.path.join(root, ".stage")
+            backup = os.path.join(root, ".backup")
+            populate(target, "operator original\n")
+            populate(stage, "installer desired\n")
+            expected_result = invoke("generation", target)
+            self.assertEqual(expected_result.returncode, 0,
+                             expected_result.stderr)
+            archive_needle = (
+                "        rename_noreplace(target_name, archive)\n"
+                "        sync_parent()")
+            self.assertIn(archive_needle, python_source)
+            crashed_source = python_source.replace(
+                archive_needle, archive_needle +
+                '\n        raise RuntimeError("simulated symlink tree crash")',
+                1)
+            with mock.patch.object(sys, "argv", [
+                    "owned-tree-cas", "publish", stage, target, backup,
+                    expected_result.stdout.strip()]), \
+                    self.assertRaises(RuntimeError):
+                exec(compile(crashed_source, "owned-tree-cas", "exec"), {})
+            self.assertFalse(os.path.lexists(target))
+
+            recovered = invoke("recover", target)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(
+                os.readlink(os.path.join(target, "lib/ollama/libllama.so")),
+                "libllama.so.0")
+            self.assertEqual(_read_path(os.path.join(target, "bin/ollama")),
+                             "operator original\n")
+            recovered_token = invoke("generation", target)
+            self.assertEqual(recovered_token.returncode, 0,
+                             recovered_token.stderr)
+            self.assertFalse([
+                name for name in os.listdir(root)
+                if name.startswith(".sia-tree-cas-journal-")])
+
+    def test_owned_tree_cas_rejects_nested_symlink_generation_races(self):
+        installer = _read("install.sh")
+        python_source = installer.split(
+            "owned_tree_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
+                "\nPY\n}", 1)[0]
+
+        nested_walk = "                    walk(child_fd, child_relative)\n"
+        completed_walk = '        walk(root_fd, "")\n'
+        self.assertIn(nested_walk, python_source)
+        self.assertIn(completed_walk, python_source)
+        mutations = (
+            (
+                "after-nested-walk",
+                nested_walk,
+                nested_walk
+                + '                    if child_relative == "bin":\n'
+                + '                        os.unlink(os.path.join('
+                  'target, "bin", "ollama"))\n'
+                + '                        os.symlink("../../outside", '
+                  'os.path.join(target, "bin", "ollama"))\n',
+            ),
+            (
+                "before-final-link-validation",
+                completed_walk,
+                completed_walk
+                + '        os.unlink(os.path.join(target, "bin", "ollama"))\n'
+                + '        os.symlink("../../outside", os.path.join('
+                  'target, "bin", "ollama"))\n',
+            ),
+        )
+
+        for label, needle, replacement in mutations:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
+                tree = os.path.join(root, "runtime")
+                os.makedirs(os.path.join(tree, "bin"))
+                _write(os.path.join(tree, "payload"), "owned payload\n")
+                _write(os.path.join(root, "outside"), "outside payload\n")
+                os.symlink("../payload", os.path.join(tree, "bin", "ollama"))
+                raced_source = python_source.replace(
+                    needle, replacement, 1)
+                result = subprocess.run(
+                    [sys.executable, "-c", raced_source, "generation", tree],
+                    text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False)
+                self.assertNotEqual(
+                    result.returncode, 0,
+                    "nested symbolic-link mutation was accepted: " + label)
+
+    def test_owned_tree_cas_rejects_unsafe_links_modes_and_link_counts(self):
+        installer = _read("install.sh")
+        body = installer.split("owned_tree_cas() {", 1)[1].split(
+            "\n}\n\nowned_tree_generation()", 1)[0]
+        function = "owned_tree_cas() {" + body + "\n}\n"
+
+        def generation(path):
+            return subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_tree_cas generation "$1"',
+                 "tree-unsafe-entry-test", path], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+
+        cases = (
+            "absolute-symlink",
+            "escaping-symlink",
+            "dangling-symlink",
+            "directory-symlink",
+            "group-writable-directory",
+            "world-writable-directory",
+            "group-writable-file",
+            "world-writable-file",
+            "multiply-linked-file",
+        )
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as root:
+                tree = os.path.join(root, "runtime")
+                os.mkdir(tree)
+                payload = os.path.join(tree, "payload")
+                _write(payload, "owned payload\n")
+
+                if case == "absolute-symlink":
+                    os.symlink(payload, os.path.join(tree, "unsafe"))
+                elif case == "escaping-symlink":
+                    outside = os.path.join(root, "outside")
+                    _write(outside, "outside payload\n")
+                    os.symlink("../outside", os.path.join(tree, "unsafe"))
+                elif case == "dangling-symlink":
+                    os.symlink("missing", os.path.join(tree, "unsafe"))
+                elif case == "directory-symlink":
+                    os.mkdir(os.path.join(tree, "directory"))
+                    os.symlink("directory", os.path.join(tree, "unsafe"))
+                elif case in {"group-writable-directory",
+                              "world-writable-directory"}:
+                    directory = os.path.join(tree, "directory")
+                    os.mkdir(directory)
+                    mode = stat.S_IMODE(os.stat(directory).st_mode)
+                    writable = (stat.S_IWGRP if case.startswith("group")
+                                else stat.S_IWOTH)
+                    os.chmod(directory, mode | writable)
+                elif case in {"group-writable-file",
+                              "world-writable-file"}:
+                    mode = stat.S_IMODE(os.stat(payload).st_mode)
+                    writable = (stat.S_IWGRP if case.startswith("group")
+                                else stat.S_IWOTH)
+                    os.chmod(payload, mode | writable)
+                else:
+                    os.link(payload, os.path.join(tree, "second-name"))
+
+                result = generation(tree)
+                self.assertNotEqual(result.returncode, 0,
+                                    "unsafe tree was accepted: " + case)
+
+    def test_owned_tree_generation_accepts_safe_mode_zero_launch_file(self):
+        installer = _read("install.sh")
+        body = installer.split("owned_tree_cas() {", 1)[1].split(
+            "\n}\n\nowned_tree_generation()", 1)[0]
+        function = "owned_tree_cas() {" + body + "\n}\n"
+        python_source = installer.split(
+            "owned_tree_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
+                "\nPY\n}", 1)[0]
+        self.assertIn('getattr(os, "O_PATH", os.O_RDONLY)', python_source)
+        self.assertIn("file_flags if synchronize else path_flags",
+                      python_source)
+
+        def generation(path):
+            return subprocess.run(
+                ["bash", "-c", function +
+                 '\nowned_tree_cas generation "$1"',
+                 "tree-mode-zero-test", path], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+
+        with tempfile.TemporaryDirectory() as root:
+            tree = os.path.join(root, "runtime")
+            os.mkdir(tree)
+            launcher = os.path.join(tree, "sia-brainstem")
+            _write(launcher, "fenced launch file\n", 0)
+
+            fenced = generation(tree)
+            self.assertEqual(fenced.returncode, 0, fenced.stderr)
+            self.assertTrue(fenced.stdout.startswith("tree:"))
+
+            os.chmod(launcher, stat.S_IWGRP)
+            writable = generation(tree)
+            self.assertNotEqual(writable.returncode, 0)
+
+            os.chmod(launcher, 0)
+            os.link(launcher, os.path.join(tree, "second-launch-name"))
+            hardlinked = generation(tree)
+            self.assertNotEqual(hardlinked.returncode, 0)
 
     def test_uninstall_archives_are_generation_bound_and_preserve_writers(self):
         uninstaller = _read("uninstall.sh")
