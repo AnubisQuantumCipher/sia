@@ -14,6 +14,11 @@ import unittest
 from contextlib import ExitStack, nullcontext
 from unittest import mock
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin")
@@ -33,7 +38,9 @@ class DreamPublication(unittest.TestCase):
         self.state_root = tempfile.TemporaryDirectory()
         self.old_state_paths = (
             self.sialib.STATE, self.sialib.CORPUS_OWNER_LOCK,
-            self.sialib.THOUGHTS_PATH, self.sialib.siamind.MIND_PATH)
+            self.sialib.THOUGHTS_PATH, self.sialib.siamind.MIND_PATH,
+            self.sialib.LIFECYCLE_LOCK,
+            self.sialib.LIFECYCLE_TOMBSTONE)
         self.sialib.STATE = self.state_root.name
         self.sialib.CORPUS_OWNER_LOCK = os.path.join(
             self.state_root.name, "corpus-owner.lock")
@@ -41,6 +48,10 @@ class DreamPublication(unittest.TestCase):
             self.state_root.name, "thoughts.json")
         self.sialib.siamind.MIND_PATH = os.path.join(
             self.state_root.name, "mind.json")
+        self.sialib.LIFECYCLE_LOCK = os.path.join(
+            self.state_root.name, "lifecycle.lock")
+        self.sialib.LIFECYCLE_TOMBSTONE = os.path.join(
+            self.state_root.name, "lifecycle-removed")
         self.memo = {
             "dream": {"last": "previous-success"},
             "ready": {
@@ -59,7 +70,8 @@ class DreamPublication(unittest.TestCase):
     def tearDown(self):
         (self.sialib.STATE, self.sialib.CORPUS_OWNER_LOCK,
          self.sialib.THOUGHTS_PATH,
-         self.sialib.siamind.MIND_PATH) = self.old_state_paths
+         self.sialib.siamind.MIND_PATH, self.sialib.LIFECYCLE_LOCK,
+         self.sialib.LIFECYCLE_TOMBSTONE) = self.old_state_paths
         self.state_root.cleanup()
 
     def _run(self, *, result, commit="clean", sync=(True, ""),
@@ -818,7 +830,9 @@ class ThoughtOrigins(unittest.TestCase):
         self.state_root = tempfile.TemporaryDirectory()
         self.old_state_paths = (
             self.sialib.STATE, self.sialib.CORPUS_OWNER_LOCK,
-            self.sialib.THOUGHTS_PATH, self.sialib.siamind.MIND_PATH)
+            self.sialib.THOUGHTS_PATH, self.sialib.siamind.MIND_PATH,
+            self.sialib.LIFECYCLE_LOCK,
+            self.sialib.LIFECYCLE_TOMBSTONE)
         self.sialib.STATE = self.state_root.name
         self.sialib.CORPUS_OWNER_LOCK = os.path.join(
             self.state_root.name, "corpus-owner.lock")
@@ -826,11 +840,16 @@ class ThoughtOrigins(unittest.TestCase):
             self.state_root.name, "thoughts.json")
         self.sialib.siamind.MIND_PATH = os.path.join(
             self.state_root.name, "mind.json")
+        self.sialib.LIFECYCLE_LOCK = os.path.join(
+            self.state_root.name, "lifecycle.lock")
+        self.sialib.LIFECYCLE_TOMBSTONE = os.path.join(
+            self.state_root.name, "lifecycle-removed")
 
     def tearDown(self):
         (self.sialib.STATE, self.sialib.CORPUS_OWNER_LOCK,
          self.sialib.THOUGHTS_PATH,
-         self.sialib.siamind.MIND_PATH) = self.old_state_paths
+         self.sialib.siamind.MIND_PATH, self.sialib.LIFECYCLE_LOCK,
+         self.sialib.LIFECYCLE_TOMBSTONE) = self.old_state_paths
         self.state_root.cleanup()
 
     def test_inbox_preserves_explicit_origin_and_defaults_new_rows(self):

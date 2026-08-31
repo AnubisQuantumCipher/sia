@@ -2882,7 +2882,7 @@ def _history_enter_audit_cycle(kind, state, cycle):
     return True
 
 
-def _coordinate_history_audit_cycle():
+def _coordinate_history_audit_cycle(*, start_cycle=True):
     """Start/join one crash-resumable take+intent audit generation.
 
     A participant that has already reached ready for the active cycle waits
@@ -2913,6 +2913,13 @@ def _coordinate_history_audit_cycle():
     else:
         if any(authorities[kind]["phase"] != "ready" for kind in kinds):
             return None
+        # A paired caller advances take first and intent second.  The first
+        # participant is allowed to open the fresh cycle; the follower may
+        # only join that cycle.  Otherwise the follower sees both siblings
+        # ready after completing the first cycle and immediately opens the
+        # next one, leaving the pair permanently half-ready.
+        if not start_cycle:
+            return None
         cycle = uuid.uuid4().hex
 
     # Check every ready participant before mutating either file. A race after
@@ -2942,7 +2949,7 @@ def _coordinate_history_audit_cycle():
 
 
 def audit_natural_history_authority(
-        kind, limit=MAX_HISTORY_BASELINE_SCAN):
+        kind, limit=MAX_HISTORY_BASELINE_SCAN, *, start_cycle=True):
     """Advance one pinned, explicitly incomplete direct-row audit.
 
     Once both kinds are ``ready``, the coordinator first persists their shared
@@ -2965,7 +2972,7 @@ def audit_natural_history_authority(
         return [], [], 0
     if authority["phase"] in ("scan", "sweep"):
         return [], [], 0
-    cycle = _coordinate_history_audit_cycle()
+    cycle = _coordinate_history_audit_cycle(start_cycle=start_cycle)
     state = _load_history_state(kind, create=True)
     authority = state["authority"]
     if cycle is None or authority["phase"] == "ready":
@@ -3079,7 +3086,8 @@ def audit_natural_history_authority(
 
 
 def advance_natural_history_authority(
-        kind, limit=MAX_HISTORY_BASELINE_SCAN, before_publish=None):
+        kind, limit=MAX_HISTORY_BASELINE_SCAN, before_publish=None, *,
+        start_audit_cycle=True):
     """Advance one bounded scan/sweep of corpus authority.
 
     The source scan marks exact live direct rows with a fresh generation.
@@ -3103,7 +3111,8 @@ def advance_natural_history_authority(
     authority = state["authority"]
     if authority["phase"] in ("ready", "audit"):
         _audited, audit_errors, inspected = \
-            audit_natural_history_authority(kind, limit=remaining)
+            audit_natural_history_authority(
+                kind, limit=remaining, start_cycle=start_audit_cycle)
         errors.extend(audit_errors)
         remaining -= inspected
         state = _load_history_state(kind, create=True)
@@ -4766,7 +4775,8 @@ def open_intents(now=None):
 
 
 def advance_intent_history(before_publish=None,
-                           limit=MAX_HISTORY_BASELINE_SCAN):
+                           limit=MAX_HISTORY_BASELINE_SCAN, *,
+                           start_audit_cycle=True):
     """Import one bounded page of the fixed legacy-intent baseline."""
     if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0 \
             or limit > MAX_HISTORY_BASELINE_SCAN:
@@ -4849,7 +4859,8 @@ def advance_intent_history(before_publish=None,
         if state["legacy"]["complete"]:
             _audited, audit_errors, audit_inspected = \
                 audit_natural_history_authority(
-                    "intent", limit=remaining)
+                    "intent", limit=remaining,
+                    start_cycle=start_audit_cycle)
             errors.extend(audit_errors)
             remaining -= audit_inspected
             _authority_changed, authority_errors = ([], [])
@@ -4860,7 +4871,8 @@ def advance_intent_history(before_publish=None,
                 _authority_changed, authority_errors = \
                     advance_natural_history_authority(
                         "intent", limit=remaining,
-                        before_publish=before_publish)
+                        before_publish=before_publish,
+                        start_audit_cycle=start_audit_cycle)
             errors.extend(authority_errors)
     return imported, errors
 

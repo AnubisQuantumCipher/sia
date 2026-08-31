@@ -2,6 +2,7 @@
 """sia — talk to the Omarchy Brain.
 
   sia status            what the brain knows right now
+  sia ready             exit successfully only when memory is reconciled
   sia ask "question" [--no-touch]
                         query the brain; ordinary results strengthen memory
   sia recall <slug> [--no-touch]
@@ -325,6 +326,17 @@ def _cmd_status_owned():
     if sialib.CONFIG_ERRORS:
         print(f"  config   {sialib.CONFIG_ERRORS}")
     return 0
+
+
+def cmd_ready():
+    """Machine-readable health gate for installers and operators."""
+    with sialib.corpus_owner():
+        ready, reason = sialib.memory_readiness()
+    if ready:
+        print("SIA memory ready")
+        return 0
+    print("SIA memory not ready: " + reason)
+    return 1
 
 
 def _gbrain_read(args, timeout=None):
@@ -1411,6 +1423,8 @@ def _main_under_lifecycle(argv):
 def _dispatch(argv, cmd):
     if cmd == "status":
         return cmd_status()
+    if cmd == "ready":
+        return cmd_ready()
     if cmd in ("ask", "query") and len(argv) > 2:
         ask_args = argv[2:]
         no_touch = "--no-touch" in ask_args

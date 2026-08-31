@@ -71,13 +71,30 @@ root-to-EOF generation. These checks protect SIA's conclusions; they are not a
 filesystem access-control boundary against arbitrary same-user code.
 
 Persisted origin metadata is restricted to `evidence`, `derived`, and `model`.
-Outside the narrow signed legacy-take cutover, missing, invalid, or ambiguous
-legacy metadata is exposed as `legacy-unlabeled`, never promoted to evidence,
-and weighted conservatively like model prose. Judge-grade/ponder thoughts and
-agent/operator notes are `model`; deterministic Brier recomputation or
+Outside the narrow signed legacy-take cutover and bounded pre-publication
+thought-inbox compatibility lane, missing, invalid, or ambiguous legacy
+metadata is exposed as `legacy-unlabeled`, never promoted to evidence, and
+weighted conservatively like model prose. The inbox lane admits a stable,
+bounded JSON list whose fully modern and metadata-free legacy rows may coexist.
+For each row lacking both queue fields, it derives a repeatable queue identity
+from the stable file bytes, modification time, and row position and a canonical
+queued time from that file time, so an atomic rename into the draining claim
+does not change identity. When origin is absent, `note`, `ponder`, and `grade`
+prose plus `take` proposal notifications default to `model`, while other
+accepted historical producer kinds retain the deterministic `derived` default;
+that compatibility default never mints
+`evidence`. An explicitly present canonical origin is validated and preserved.
+Supplying only one queue field, malformed modern metadata, or an unknown field
+on any row refuses the whole inbox instead of mixing guessed and authoritative
+identity.
+Judge-grade/ponder thoughts, take-proposal notifications, and agent/operator
+notes are `model`; deterministic Brier recomputation or
 ledger-transition handling does not upgrade the model verdict. Likewise, model
 and legacy-unlabeled thoughts cannot mint typed domain relations. Only explicit
 `derived` safety thoughts can use that lane; other links remain `mentions`.
+The partial-graph `mentions` fallback applies only to SIA's schema-regex
+projector. Failure of gbrain's separate person/company gazetteer/NER extraction
+fails brain sync and retains publication debt rather than crossing lanes.
 
 The take cutover addresses a narrower historical risk: pre-origin judge prose
 could contain Markdown, wikilinks, or HTML-like controls. SIA's own graph
@@ -115,12 +132,33 @@ visible, as well as pending legacy migration. A gated CLI request retains the
 lease through its returned result; MCP-backed memory reads inherit that child
 process boundary, keeping readiness and output in the same corpus generation.
 
+Graph publication does not yield after one durable directory page and let a
+later corpus mutation dirty the projection again. While still holding the
+corpus transaction/owner boundary, it advances successive individually bounded
+cursor pages until the generation is complete. A finite aggregate generation
+ceiling preserves churn, an unexpectedly large tree, or permanent refusal as
+named debt instead of looping without bound. During installer first light,
+`SIA_BACKFILL=1` similarly advances the take and intent natural-history
+authorities together until their scan/sweep and shared audit phases converge,
+or refuses at its finite ceiling. Within the paired scheduler, only the leader
+may open a fresh audit; the follower may join or finish an active cycle but
+cannot immediately reopen another after completing it. This convergence is
+coordination among SIA writers, not a hostile same-user snapshot.
+
 While publication is pending, those memory-dependent CLI commands and MCP
 tools/resources refuse. `sia status` and `sia://status` remain available: their
 readiness line is live, while pulse/graph fields and the cockpit are diagnostic
 last-published snapshots. Note/proposal writes may still queue without exposing
 indexed memory. The gate is not an access-control boundary: same-user code can
 bypass SIA and read corpus or state files directly.
+
+`sia ready` exposes that same live predicate as an operator/automation health
+gate. It acquires the corpus-owner lease, prints a stable ready line or the
+exact not-ready reason, and exits unsuccessfully for debt or malformed state.
+The installer executes the newly published command after first light and before
+later integrations; a zero pulse exit alone is therefore insufficient to
+activate SIA. The command attests observed SIA readiness, not filesystem
+integrity against same-UID interference after the lease is released.
 
 Installer and uninstaller quiescence uses an exact systemd runtime start
 barrier rather than a runtime mask, because SIA's local user unit has higher
@@ -144,6 +182,42 @@ drop-in directory or an operator-owned drop-in. Failure retains or restores the
 active barrier, or preserves the exact retired recovery copy after the main
 unit has already been removed.
 
+The systemd barrier is paired with a filesystem launch fence. Before the first
+dependency mutation, the installer durably records the old CLI, brainstem, and
+MCP launcher inodes, modes, and digests and changes those exact files to mode
+`000`. Retry trusts an unreadable generation only when the lifecycle tombstone,
+strict launch-fence schema, unique path entry, inode identity, and retained
+digest all agree. Pending single-file CAS recovery runs before CLI ownership
+preflight. Because fencing changes mode and change time, runtime and CLI
+ownership are preflighted again afterward; later publication never reuses the
+pre-fence generation token. File-CAS recovery distinguishes an exact canonical
+pre-operation generation from the same journal-bound file after rename, where
+only the expected rename-induced metadata change is tolerated. A concurrent or
+independently modified canonical, stage, or backup generation is preserved and
+refuses. These checks coordinate SIA's own installer; the retained digest is
+not a privilege boundary against arbitrary same-UID code.
+
+Descriptor-rooted multi-file publication accepts symbolic links only for the
+narrow archive shape needed by managed runtimes. The tree parent, root, and
+directories must be current-user-owned and non-group/world-writable; regular
+files must additionally have one link. A symbolic link must itself be stable,
+current-user-owned, single-link, relative, and lexically contained, and its
+complete in-tree chain must terminate at a current-user-owned, single-link,
+non-group/world-writable regular file. Link text and metadata participate in
+the generation digest. After the initial walk, every recorded directory path
+is reopened from the descriptor root and matched to its captured generation;
+every symlink generation and target text is reread before and after its
+referent is accepted. Nested replacement therefore refuses. Absolute,
+escaping, dangling, special, group/world-writable, and hard-linked-file shapes
+refuse rather than being normalized.
+
+gbrain's self-upgrade switch is verified through the pinned executable after
+configuration. The bounded command helper captures stdout and stderr together;
+the installer accepts only the exact combined form consisting of `off` plus
+gbrain's file/env-plane provenance line, with or without its one exact
+DB-plane-shadowed suffix. Extra diagnostics, a changed provenance string, or a
+different value refuse activation.
+
 This protocol closes SIA's own systemd lifecycle race; it is not privilege
 separation from arbitrary code already running under the same UID. Such code
 can modify user-owned runtime files or bypass the installer. Descriptor,
@@ -166,7 +240,11 @@ unrelated programs can bypass SIA and must not be described as serialized.
 Graph page-read and extraction gaps remain visible as a partial SOURCE HEALTH
 snapshot. A graph-publication exception is exposed and signed as
 `PULSE:ingest ... graph-fail`; the signed row records the failure, not a claim
-that a graph was published. Skill discovery uses no-follow descriptor opens
+that a graph was published. The installer-created corpus-root `README.md` is
+repository metadata rather than a canonical memory page and is skipped by
+exact name at the graph root. Upgrade recovery removes only the byte-exact
+obsolete README refusal emitted by the old projector; it cannot erase another
+failure or a candidate page. Skill discovery uses no-follow descriptor opens
 and admits only real, directly contained skill directories with real, directly
 contained regular `SKILL.md` files. Each admitted manifest has a single bounded
 content capture whose before/after/current-path identity is checked again after
@@ -176,6 +254,22 @@ An unstable manifest makes the root partial and preserves prior rows instead
 of asserting absence. This blocks symlink traversal and mixed-read publication
 in that sense; it does not make installed skill content trustworthy or exclude
 a same-user mutation after the final observation.
+
+Tests that import runtime modules activate a process-wide temporary home before
+those imports. A regression test checks recognized syntactic runtime-loading
+patterns and the currently enumerated import-time mutable paths. Its module and
+path enumerations must be extended when contributors add another runtime module
+or import-time path constant. This prevents covered fixtures from inheriting
+the operator's resident SIA paths; it is a test-harness containment control,
+not a runtime sandbox or a proof that arbitrary future test code cannot name an
+external path explicitly.
+
+The repository-side Omarchy directory contract is publication metadata, not a
+security claim. Local manifest validation must be rerun against the exact
+submission commit; that result, automated marketplace validation, and any
+eventual listing establish compatibility/discoverability only. Submission
+remains maintainer-approval-gated, and the official marketplace explicitly does
+not treat a listing as a security review.
 
 **Reporting**: open a GitHub issue for non-sensitive matters; for
 sensitive reports, use GitHub's private vulnerability reporting on this

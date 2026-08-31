@@ -16,6 +16,11 @@ from unittest import mock
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin")
 
@@ -5528,8 +5533,13 @@ class BoundedGraphProjection(unittest.TestCase):
         self.state = os.path.join(self.tmp.name, "state")
         os.makedirs(os.path.join(self.corpus, "events", "journal"))
         os.makedirs(self.state)
+        self.sialib.STATE = self.state
         self.sialib.CORPUS = self.corpus
         self.sialib.GRAPH_PATH = os.path.join(self.state, "graph.json")
+        self.sialib.LIFECYCLE_LOCK = os.path.join(
+            self.state, "lifecycle.lock")
+        self.sialib.LIFECYCLE_TOMBSTONE = os.path.join(
+            self.state, "lifecycle-removed")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -5563,6 +5573,30 @@ class BoundedGraphProjection(unittest.TestCase):
         self.assertTrue(complete, failure)
         self.assertEqual({page["slug"] for page in pages}, {
             "events/journal/first", "events/journal/second"})
+
+    def test_root_genesis_readme_is_repository_metadata_not_a_page(self):
+        with open(os.path.join(self.corpus, "README.md"), "w",
+                  encoding="utf-8") as stream:
+            stream.write("# SIA memory corpus\n")
+        self._page("events/journal/first")
+
+        for _attempt in range(20):
+            pages, complete, failure = self.sialib.gbrain_all_pages(
+                batch_size=1)
+            if complete:
+                break
+        self.assertTrue(complete, failure)
+        self.assertEqual(
+            [page["slug"] for page in pages], ["events/journal/first"])
+
+        state = self.sialib._load_graph_projection_state()
+        state["failed_ops"] = [self.sialib.LEGACY_GRAPH_README_FAILURE]
+        self.sialib._save_graph_projection_state(state)
+        migrated = self.sialib._load_graph_projection_state()
+        self.assertEqual(migrated["failed_ops"], [])
+        with open(self.sialib._graph_projection_state_path(),
+                  encoding="utf-8") as stream:
+            self.assertEqual(json.load(stream)["failed_ops"], [])
 
     def test_supported_mutation_restarts_projection_before_page_write(self):
         self._page("events/journal/first")
@@ -5711,13 +5745,12 @@ class BoundedGraphProjection(unittest.TestCase):
             "events/journal/aged",
             {node["id"] for node in graph["nodes"]})
 
-    def test_first_light_drains_pending_but_not_permanent_or_churning_state(self):
+    def test_graph_publication_drains_pending_but_not_permanent_or_churning_state(self):
         pending = self.sialib.GraphProjectionPending("pending")
         scanning = self.sialib._fresh_graph_projection_state()
-        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
-                mock.patch.object(
-                    self.sialib, "export_graph",
-                    side_effect=[pending, pending, (1, 2, 3)]) as export, \
+        with mock.patch.object(
+                self.sialib, "export_graph",
+                side_effect=[pending, pending, (1, 2, 3)]) as export, \
                 mock.patch.object(
                     self.sialib, "_load_graph_projection_state",
                     return_value=scanning):
@@ -5726,16 +5759,14 @@ class BoundedGraphProjection(unittest.TestCase):
             self.assertEqual(export.call_count, 3)
         permanent = dict(scanning, phase="ready", queue=[],
                          failed_ops=["refused"])
-        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
-                mock.patch.object(
-                    self.sialib, "export_graph", side_effect=pending), \
+        with mock.patch.object(
+                self.sialib, "export_graph", side_effect=pending), \
                 mock.patch.object(
                     self.sialib, "_load_graph_projection_state",
                     return_value=permanent), \
                 self.assertRaises(self.sialib.GraphProjectionPending):
             self.sialib._export_graph_publication()
-        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
-                mock.patch.object(self.sialib, "MAX_EVENT_LOOKUP_PAGES", 2), \
+        with mock.patch.object(self.sialib, "MAX_EVENT_LOOKUP_PAGES", 2), \
                 mock.patch.object(
                     self.sialib, "export_graph", side_effect=pending), \
                 mock.patch.object(
@@ -5745,6 +5776,44 @@ class BoundedGraphProjection(unittest.TestCase):
                     self.sialib.GraphProjectionPending,
                     "generation ceiling"):
             self.sialib._export_graph_publication()
+
+    def test_first_light_converges_legacy_memory_authority(self):
+        take_pending = mock.Mock(side_effect=[True, False])
+        intent_pending = mock.Mock(return_value=False)
+        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
+                mock.patch.object(
+                    self.sialib.siatakes, "migrate_legacy_take_pages",
+                    return_value=([], [])) as take_advance, \
+                mock.patch.object(
+                    self.sialib.siatakes, "advance_intent_history",
+                    return_value=([], [])) as intent_advance, \
+                mock.patch.object(
+                    self.sialib.siatakes, "take_migration_required",
+                    take_pending), \
+                mock.patch.object(
+                    self.sialib.siatakes, "intent_history_required",
+                    intent_pending):
+            self.sialib._reconcile_legacy_memory_authority({})
+        self.assertEqual(take_advance.call_count, 2)
+        self.assertEqual(intent_advance.call_count, 2)
+
+    def test_first_light_legacy_authority_has_a_generation_ceiling(self):
+        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
+                mock.patch.object(
+                    self.sialib, "MAX_EVENT_LOOKUP_PAGES", 2), \
+                mock.patch.object(
+                    self.sialib.siatakes, "migrate_legacy_take_pages",
+                    return_value=([], [])) as take_advance, \
+                mock.patch.object(
+                    self.sialib.siatakes, "advance_intent_history",
+                    return_value=([], [])), \
+                mock.patch.object(
+                    self.sialib.siatakes, "take_migration_required",
+                    return_value=True), \
+                self.assertRaisesRegex(
+                    RuntimeError, "backfill exceeded its generation ceiling"):
+            self.sialib._reconcile_legacy_memory_authority({})
+        self.assertEqual(take_advance.call_count, 2)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

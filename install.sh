@@ -914,6 +914,9 @@ if expected is not None and expected != "absent" \
     raise SystemExit("invalid CAS generation")
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
+path_flags = (getattr(os, "O_PATH", os.O_RDONLY)
+              | getattr(os, "O_CLOEXEC", 0)
+              | getattr(os, "O_NOFOLLOW", 0))
 parent_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
                 | getattr(os, "O_DIRECTORY", 0)
                 | getattr(os, "O_NOFOLLOW", 0))
@@ -930,9 +933,11 @@ def generation(value):
             value.st_size, value.st_mtime_ns, value.st_ctime_ns)
 
 
-def token(name, allow_absent=False):
+def token(name, allow_absent=False, trusted=(), moved_trusted=False):
+    if isinstance(trusted, str):
+        trusted = (trusted,)
     try:
-        descriptor = os.open(name, flags, dir_fd=parent_fd)
+        descriptor = os.open(name, path_flags, dir_fd=parent_fd)
     except FileNotFoundError:
         if allow_absent:
             try:
@@ -940,6 +945,36 @@ def token(name, allow_absent=False):
             except FileNotFoundError:
                 return "absent"
         raise
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) \
+            or before.st_uid != os.geteuid() \
+            or before.st_size > MAX_BYTES:
+        os.close(descriptor)
+        raise ValueError("unsafe or oversized CAS file")
+    if stat.S_IMODE(before.st_mode) == 0:
+        try:
+            after = os.fstat(descriptor)
+            current = os.stat(
+                name, dir_fd=parent_fd, follow_symlinks=False)
+            if generation(before) != generation(after) \
+                    or generation(after) != generation(current):
+                raise ValueError("fenced CAS file changed while inspected")
+            metadata = tuple(str(value) for value in generation(current))
+            trusted_digests = set()
+            for candidate in trusted:
+                match = token_pattern.fullmatch(candidate)
+                if match is not None \
+                        and match.groups()[:6 if moved_trusted else 7] \
+                        == metadata[:6 if moved_trusted else 7]:
+                    trusted_digests.add(match.group(8))
+            if len(trusted_digests) == 1:
+                fields = (*generation(current), trusted_digests.pop())
+                return "present:" + ":".join(str(value) for value in fields)
+            raise ValueError("fenced CAS file lacks its trusted generation")
+        finally:
+            os.close(descriptor)
+    os.close(descriptor)
+    descriptor = os.open(name, flags, dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
@@ -1132,9 +1167,15 @@ def recover_journal():
     prior_stage = record["staged"]
     prior = record["expected"]
     desired = record["desired"]
-    current = token(target_name, allow_absent=True)
-    archived = token(archive, allow_absent=True)
-    staged_current = token(prior_stage, allow_absent=True)
+    current = token(
+        target_name, allow_absent=True, trusted=(prior, desired),
+        moved_trusted=True)
+    archived = token(
+        archive, allow_absent=True, trusted=(prior, desired),
+        moved_trusted=True)
+    staged_current = token(
+        prior_stage, allow_absent=True, trusted=(prior, desired),
+        moved_trusted=True)
     if operation == "publish" and prior == "absent":
         if current == "absent" and moved_token_matches(staged_current, desired):
             clear_journal()
@@ -1209,7 +1250,7 @@ try:
         desired_token = "absent"
     else:
         raise SystemExit("unknown CAS operation")
-    current = token(target_name, allow_absent=True)
+    current = token(target_name, allow_absent=True, trusted=(expected,))
     if current != expected:
         raise SystemExit("CAS target changed before operation")
     archive_name = unique_name(".sia-cas-prior.")
@@ -1221,7 +1262,8 @@ try:
         if expected != "absent":
             rename_noreplace(target_name, archive_name)
             sync_parent()
-            archived = token(archive_name)
+            archived = token(
+                archive_name, trusted=(expected,), moved_trusted=True)
             if not moved_token_matches(archived, expected):
                 try:
                     rename_noreplace(archive_name, target_name)
@@ -1250,7 +1292,9 @@ try:
                 retained(record, "CAS could not return the prior generation")
                 clear_journal()
                 raise SystemExit("CAS backup path changed during publication")
-            if not moved_token_matches(token(staged_name), expected) \
+            if not moved_token_matches(
+                    token(staged_name, trusted=(expected,),
+                          moved_trusted=True), expected) \
                     or not moved_token_matches(token(target_name), installed):
                 conflict_name = unique_name(".sia-cas-conflict.")
                 try:
@@ -1273,7 +1317,9 @@ try:
         write_journal(record)
         rename_noreplace(target_name, archive_name)
         sync_parent()
-        if not moved_token_matches(token(archive_name), expected):
+        if not moved_token_matches(
+                token(archive_name, trusted=(expected,),
+                      moved_trusted=True), expected):
             try:
                 rename_noreplace(archive_name, target_name)
                 sync_parent()
@@ -1287,7 +1333,9 @@ try:
             raise SystemExit("CAS target changed during archival")
         rename_noreplace(archive_name, staged_name)
         sync_parent()
-        if not moved_token_matches(token(staged_name), expected) \
+        if not moved_token_matches(
+                token(staged_name, trusted=(expected,),
+                      moved_trusted=True), expected) \
                 or token(target_name, allow_absent=True) != "absent":
             conflict_name = unique_name(".sia-cas-conflict.")
             try:
@@ -2098,24 +2146,28 @@ PY
 preflight_owned_file() {
   local source="$1" target="$2" receipt="$3" kind="$4" consent_var="$5"
   local output_variable="${6:-}" expected
+  owned_file_cas recover "$target" || return 1
   if [ -e "$target" ] || [ -L "$target" ]; then
     if [ ! -f "$target" ] || [ -L "$target" ]; then
       echo "refusing unsafe managed $kind path: $target" >&2
       return 1
     fi
-    if fenced_managed_file_authorized "$receipt" "$kind" "$target" \
-        || managed_receipt_matches "$receipt" "$kind" "$target" \
+    if expected="$(fenced_managed_file_authorized \
+        "$receipt" "$kind" "$target" generation)"; then
+      :
+    elif managed_receipt_matches "$receipt" "$kind" "$target" \
         || { owned_metadata same-content "$source" "$target" \
              && [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; } \
         || [ "${!consent_var:-0}" = "1" ]; then
       expected="$(owned_metadata generation "$target")" || return 1
-      [ -z "$output_variable" ] \
-        || printf -v "$output_variable" '%s' "$expected"
-      return 0
+    else
+      echo "existing $kind is unowned or locally modified; preserved" >&2
+      echo "explicit replacement requires $consent_var=1 ./install.sh" >&2
+      return 1
     fi
-    echo "existing $kind is unowned or locally modified; preserved" >&2
-    echo "explicit replacement requires $consent_var=1 ./install.sh" >&2
-    return 1
+    [ -z "$output_variable" ] \
+      || printf -v "$output_variable" '%s' "$expected"
+    return 0
   fi
   if [ -e "$receipt" ] || [ -L "$receipt" ]; then
     echo "stale or unsafe $kind ownership receipt; refusing install" >&2
@@ -2131,7 +2183,9 @@ retain_unowned_cli_before_fence() {
     return 0
   fi
   if fenced_managed_file_authorized \
-      "$CLI_RECEIPT" sia-cli "$CLI_PATH" \
+      "$CLI_RECEIPT" sia-cli "$CLI_PATH" generation >/dev/null \
+      || fenced_managed_file_authorized \
+        "$CLI_RECEIPT" sia-cli "$CLI_PATH" \
       || managed_receipt_matches "$CLI_RECEIPT" sia-cli "$CLI_PATH"; then
     return 0
   fi
@@ -2142,7 +2196,10 @@ retain_unowned_cli_before_fence() {
   [ "${SIA_REPLACE_SIA_CLI:-0}" = 1 ] || return 1
   backup="$(mktemp "$(dirname "$CLI_PATH")/.sia-cli.previous.XXXXXX")" \
     || return 1
-  cp -a -- "$CLI_PATH" "$backup"
+  if ! cp -a -- "$CLI_PATH" "$backup"; then
+    rm -f -- "$backup"
+    return 1
+  fi
   echo "  previous sia-cli retained at $backup"
 }
 
@@ -2406,7 +2463,12 @@ retire_install_brainstem_runtime_barrier() {
 }
 
 discard_install_brainstem_retired_barrier() {
-  brainstem_runtime_barrier_file discard >/dev/null
+  brainstem_runtime_barrier_file discard >/dev/null || return 1
+  # An installer resumed from an already active/retired barrier marks it for
+  # retention before ownership is known.  Successful final activation and
+  # discard discharge that recovery debt; do not emit failed-activation
+  # guidance from the successful EXIT path.
+  SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=0
 }
 
 inspect_install_brainstem_for_lifecycle() {
@@ -4561,13 +4623,17 @@ runtime_receipt_valid() {
 }
 
 fenced_managed_file_authorized() {
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$1" "$2" "$3" <<'PY'
+  local action="${4:-check}"
+  case "$action" in check|generation) ;; *) return 1 ;; esac
+  python3 - "$LAUNCH_FENCE_JOURNAL" "$1" "$2" "$3" "$action" \
+      "$LIFECYCLE_TOMBSTONE" <<'PY'
 import json
 import os
+import re
 import stat
 import sys
 
-journal, receipt, kind, target = sys.argv[1:]
+journal, receipt, kind, target, action, tombstone = sys.argv[1:]
 uid = os.geteuid()
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
@@ -4607,34 +4673,76 @@ def read_owned(path, limit):
 
 try:
     payload = json.loads(read_owned(journal, 1_048_576))
-    entry = next(value for value in payload.get("entries", [])
-                 if value.get("path") == target)
     current = os.lstat(target)
-    contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
-except (FileNotFoundError, StopIteration, OSError, ValueError,
+    marker = os.lstat(tombstone)
+except (FileNotFoundError, OSError, ValueError, TypeError,
         json.JSONDecodeError):
     raise SystemExit(1)
-expected = (f"managed-by=khephri.sia\nkind={kind}\npath={target}\n"
-            f"sha256={entry.get('sha256', '')}\n")
-if payload.get("schema") != "sia-launch-fence-v1" \
+if action not in {"check", "generation"} \
+        or not isinstance(payload, dict) \
+        or set(payload) != {"schema", "runtime_before_digest",
+                            "runtime_digest", "cli_digest", "entries"} \
+        or payload["schema"] != "sia-launch-fence-v1" \
+        or not isinstance(payload["entries"], list) \
+        or not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
         or not stat.S_ISREG(current.st_mode) \
-        or current.st_uid != os.geteuid() \
-        or stat.S_IMODE(current.st_mode) != 0 \
-        or (current.st_dev, current.st_ino) != (
-            entry.get("device"), entry.get("inode")) \
-        or contents != expected:
+        or current.st_uid != uid \
+        or stat.S_IMODE(current.st_mode) != 0:
+    raise SystemExit(1)
+for key in ("runtime_before_digest", "runtime_digest", "cli_digest"):
+    value = payload[key]
+    if not isinstance(value, str) \
+            or value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise SystemExit(1)
+entries = {}
+for candidate in payload["entries"]:
+    if not isinstance(candidate, dict) \
+            or set(candidate) != {
+                "path", "device", "inode", "mode", "sha256"} \
+            or not isinstance(candidate["path"], str) \
+            or candidate["path"] in entries \
+            or any(isinstance(candidate[key], bool)
+                   or not isinstance(candidate[key], int)
+                   or candidate[key] < 0
+                   for key in ("device", "inode", "mode")) \
+            or candidate["mode"] > 0o7777 \
+            or not isinstance(candidate["sha256"], str) \
+            or re.fullmatch(r"[0-9a-f]{64}",
+                            candidate["sha256"]) is None:
+        raise SystemExit(1)
+    entries[candidate["path"]] = candidate
+entry = entries.get(target)
+if entry is None or (current.st_dev, current.st_ino) != (
+        entry["device"], entry["inode"]):
+    raise SystemExit(1)
+stable = os.lstat(target)
+if generation(stable) != generation(current):
+    raise SystemExit(1)
+if action == "generation":
+    fields = (*generation(stable), entry["sha256"])
+    print("present:" + ":".join(str(value) for value in fields))
+    raise SystemExit(0)
+try:
+    contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
+except (FileNotFoundError, OSError, UnicodeError, ValueError):
+    raise SystemExit(1)
+expected = (f"managed-by=khephri.sia\nkind={kind}\npath={target}\n"
+            f"sha256={entry['sha256']}\n")
+if contents != expected:
     raise SystemExit(1)
 PY
 }
 
 fenced_runtime_authorized() {
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$RUNTIME_RECEIPT" "$BINDIR" <<'PY'
+  python3 - "$LAUNCH_FENCE_JOURNAL" "$RUNTIME_RECEIPT" "$BINDIR" \
+      "$LIFECYCLE_TOMBSTONE" <<'PY'
 import json
 import os
+import re
 import stat
 import sys
 
-journal, receipt, runtime = sys.argv[1:]
+journal, receipt, runtime, tombstone = sys.argv[1:]
 uid = os.geteuid()
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
@@ -4674,30 +4782,68 @@ def read_owned(path, limit):
 
 try:
     payload = json.loads(read_owned(journal, 1_048_576))
-    before_digest = payload["runtime_before_digest"]
-    contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
-except (FileNotFoundError, OSError, ValueError, KeyError,
+    marker = os.lstat(tombstone)
+except (FileNotFoundError, OSError, ValueError, TypeError,
         json.JSONDecodeError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) \
+        or set(payload) != {"schema", "runtime_before_digest",
+                            "runtime_digest", "cli_digest", "entries"} \
+        or payload["schema"] != "sia-launch-fence-v1" \
+        or not isinstance(payload["entries"], list) \
+        or not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid:
+    raise SystemExit(1)
+for key in ("runtime_before_digest", "runtime_digest", "cli_digest"):
+    value = payload[key]
+    if not isinstance(value, str) \
+            or value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise SystemExit(1)
+before_digest = payload["runtime_before_digest"]
+if not before_digest:
+    raise SystemExit(1)
+entries = {}
+for candidate in payload["entries"]:
+    if not isinstance(candidate, dict) \
+            or set(candidate) != {
+                "path", "device", "inode", "mode", "sha256"} \
+            or not isinstance(candidate["path"], str) \
+            or candidate["path"] in entries \
+            or any(isinstance(candidate[key], bool)
+                   or not isinstance(candidate[key], int)
+                   or candidate[key] < 0
+                   for key in ("device", "inode", "mode")) \
+            or candidate["mode"] > 0o7777 \
+            or not isinstance(candidate["sha256"], str) \
+            or re.fullmatch(r"[0-9a-f]{64}",
+                            candidate["sha256"]) is None:
+        raise SystemExit(1)
+    entries[candidate["path"]] = candidate
+try:
+    contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
+except (FileNotFoundError, OSError, UnicodeError, ValueError):
     raise SystemExit(1)
 expected = (f"managed-by=khephri.sia\nkind=runtime\npath={runtime}\n"
             f"sha256={before_digest}\n")
-if payload.get("schema") != "sia-launch-fence-v1" \
-        or not isinstance(before_digest, str) or not before_digest \
-        or contents != expected:
+if contents != expected:
     raise SystemExit(1)
-entries = {entry.get("path"): entry for entry in payload.get("entries", [])
-           if isinstance(entry, dict)}
 for name in ("sia-brainstem", "sia-mcp"):
     path = os.path.join(runtime, name)
-    if not os.path.lexists(path):
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
         continue
     entry = entries.get(path)
-    current = os.lstat(path)
     if entry is None or not stat.S_ISREG(current.st_mode) \
-            or current.st_uid != os.geteuid() \
+            or current.st_uid != uid \
             or stat.S_IMODE(current.st_mode) != 0 \
             or (current.st_dev, current.st_ino) != (
-                entry.get("device"), entry.get("inode")):
+                entry["device"], entry["inode"]):
+        raise SystemExit(1)
+    try:
+        stable = os.lstat(path)
+    except OSError:
+        raise SystemExit(1)
+    if generation(stable) != generation(current):
         raise SystemExit(1)
 PY
 }
@@ -4736,7 +4882,7 @@ preflight_runtime() {
       return 1
     fi
     before="$(owned_tree_generation "$BINDIR")" || return 1
-    if runtime_receipt_valid || fenced_runtime_authorized; then
+    if fenced_runtime_authorized || runtime_receipt_valid; then
       authorized=1
     elif [ "${SIA_REPLACE_RUNTIME:-0}" = "1" ]; then
       authorized=1
@@ -4761,7 +4907,8 @@ preflight_runtime() {
 }
 
 recover_publication_receipts_from_fence() {
-  local recovered desired_runtime desired_cli fenced_cli current
+  local recovered desired_runtime desired_cli fenced_cli current line
+  local seen_runtime=0 seen_cli=0 seen_fenced_cli=0
   if [ ! -e "$LAUNCH_FENCE_JOURNAL" ] \
       && [ ! -L "$LAUNCH_FENCE_JOURNAL" ]; then
     return 0
@@ -4826,10 +4973,12 @@ for key in ("runtime_before_digest", "runtime_digest", "cli_digest"):
     if not isinstance(value, str) \
             or value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
         raise SystemExit("invalid install launch-fence digest")
+seen_paths = set()
 for entry in payload["entries"]:
     if not isinstance(entry, dict) \
             or set(entry) != {"path", "device", "inode", "mode", "sha256"} \
             or not isinstance(entry["path"], str) \
+            or entry["path"] in seen_paths \
             or any(isinstance(entry[key], bool)
                    or not isinstance(entry[key], int) or entry[key] < 0
                    for key in ("device", "inode", "mode")) \
@@ -4837,6 +4986,7 @@ for entry in payload["entries"]:
             or not isinstance(entry["sha256"], str) \
             or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None:
         raise SystemExit("invalid install launch-fence entry")
+    seen_paths.add(entry["path"])
 fenced_cli = ""
 for entry in payload["entries"]:
     if os.path.abspath(entry["path"]) == os.path.abspath(
@@ -4851,11 +5001,34 @@ for entry in payload["entries"]:
                     entry["device"], entry["inode"]):
             fenced_cli = entry["sha256"]
         break
-print(payload["runtime_digest"] + "\t" + payload["cli_digest"]
-      + "\t" + fenced_cli)
+print("runtime_digest=" + payload["runtime_digest"])
+print("cli_digest=" + payload["cli_digest"])
+print("fenced_cli=" + fenced_cli)
 PY
   )" || return 1
-  IFS=$'\t' read -r desired_runtime desired_cli fenced_cli <<< "$recovered"
+  while IFS= read -r line; do
+    case "$line" in
+      runtime_digest=*)
+        [ "$seen_runtime" -eq 0 ] || return 1
+        desired_runtime="${line#runtime_digest=}"
+        seen_runtime=1
+        ;;
+      cli_digest=*)
+        [ "$seen_cli" -eq 0 ] || return 1
+        desired_cli="${line#cli_digest=}"
+        seen_cli=1
+        ;;
+      fenced_cli=*)
+        [ "$seen_fenced_cli" -eq 0 ] || return 1
+        fenced_cli="${line#fenced_cli=}"
+        seen_fenced_cli=1
+        ;;
+      *) return 1 ;;
+    esac
+  done <<< "$recovered"
+  [ "$seen_runtime" -eq 1 ] \
+    && [ "$seen_cli" -eq 1 ] \
+    && [ "$seen_fenced_cli" -eq 1 ] || return 1
   if [ -n "$desired_runtime" ] \
       && [ -d "$BINDIR" ] && [ ! -L "$BINDIR" ]; then
     current="$(runtime_tree_digest "$BINDIR" 2>/dev/null || true)"
@@ -4867,7 +5040,7 @@ PY
   fi
   if [ -n "$desired_cli" ] \
       && [ -f "$CLI_PATH" ] && [ ! -L "$CLI_PATH" ]; then
-    if [ "$desired_cli" = "$fenced_cli" ]; then
+    if [ -n "$fenced_cli" ]; then
       current="$fenced_cli"
     else
       current="$(owned_metadata digest "$CLI_PATH")" || return 1
@@ -5354,12 +5527,16 @@ directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
                    | getattr(os, "O_NOFOLLOW", 0))
 file_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
               | getattr(os, "O_NOFOLLOW", 0))
+path_flags = (getattr(os, "O_PATH", os.O_RDONLY)
+              | getattr(os, "O_CLOEXEC", 0)
+              | getattr(os, "O_NOFOLLOW", 0))
 parent_fd = os.open(parent, directory_flags)
 parent_info = os.fstat(parent_fd)
 if not stat.S_ISDIR(parent_info.st_mode) \
-        or parent_info.st_uid != os.geteuid():
+        or parent_info.st_uid != os.geteuid() \
+        or stat.S_IMODE(parent_info.st_mode) & 0o022:
     os.close(parent_fd)
-    raise SystemExit("tree CAS parent is not an owned directory")
+    raise SystemExit("tree CAS parent is not a private owned directory")
 
 
 def generation(value):
@@ -5377,6 +5554,14 @@ def update_record(digest, kind, relative, value):
     digest.update(b"\n")
 
 
+def update_symlink_record(digest, relative, value, target):
+    update_record(digest, b"L", relative, value)
+    encoded = os.fsencode(target)
+    digest.update(len(encoded).to_bytes(4, "big"))
+    digest.update(encoded)
+    digest.update(b"\n")
+
+
 def tree_token(name, allow_absent=False, synchronize=False):
     try:
         root_fd = os.open(name, directory_flags, dir_fd=parent_fd)
@@ -5389,12 +5574,75 @@ def tree_token(name, allow_absent=False, synchronize=False):
         raise
     digest = hashlib.sha256()
     count = [0]
+    directories = {}
+    symlinks = []
+
+    def resolve_symlink_target(relative, target):
+        if not target or os.path.isabs(target):
+            raise ValueError("tree symbolic link is not relative")
+        resolved = os.path.normpath(os.path.join(
+            os.path.dirname(relative), target))
+        if resolved == os.pardir \
+                or resolved.startswith(os.pardir + os.sep):
+            raise ValueError("tree symbolic link escapes the tree")
+        return resolved
+
+    def read_live_symlink(descriptor, name, relative):
+        try:
+            observed = os.stat(
+                name, dir_fd=descriptor, follow_symlinks=False)
+            target = os.readlink(name, dir_fd=descriptor)
+            current = os.stat(
+                name, dir_fd=descriptor, follow_symlinks=False)
+        except OSError as error:
+            raise ValueError(
+                f"tree symbolic link changed while inspected: {relative}") \
+                from error
+        if not stat.S_ISLNK(observed.st_mode) \
+                or observed.st_uid != os.geteuid() \
+                or observed.st_nlink != 1 \
+                or generation(observed) != generation(current):
+            raise ValueError(
+                f"tree symbolic link changed while inspected: {relative}")
+        return current, target
+
+    def open_relative_directory(relative):
+        descriptor = os.dup(root_fd)
+        try:
+            expected_root = directories.get("")
+            if expected_root is None \
+                    or generation(os.fstat(descriptor)) != expected_root:
+                raise ValueError("tree directory path changed")
+            current_relative = ""
+            if not relative:
+                return descriptor
+            for component in relative.split(os.sep):
+                current_relative = component if not current_relative \
+                    else os.path.join(current_relative, component)
+                next_descriptor = os.open(
+                    component, directory_flags, dir_fd=descriptor)
+                try:
+                    expected = directories.get(current_relative)
+                    if expected is None \
+                            or generation(os.fstat(next_descriptor)) != expected:
+                        raise ValueError("tree directory path changed")
+                except BaseException:
+                    os.close(next_descriptor)
+                    raise
+                os.close(descriptor)
+                descriptor = next_descriptor
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
 
     def walk(descriptor, relative):
         before = os.fstat(descriptor)
         if not stat.S_ISDIR(before.st_mode) \
-                or before.st_uid != os.geteuid():
+                or before.st_uid != os.geteuid() \
+                or stat.S_IMODE(before.st_mode) & 0o022:
             raise ValueError("tree contains an unsafe directory")
+        directories[relative] = generation(before)
         names = []
         with os.scandir(descriptor) as entries:
             for entry in entries:
@@ -5421,16 +5669,22 @@ def tree_token(name, allow_absent=False, synchronize=False):
                     after_child = os.fstat(child_fd)
                     current_child = os.stat(
                         child, dir_fd=descriptor, follow_symlinks=False)
-                    if generation(after_child) != generation(current_child):
+                    if generation(opened) != generation(after_child) \
+                            or generation(after_child) != generation(current_child):
                         raise ValueError("tree directory path changed")
                 finally:
                     os.close(child_fd)
             elif stat.S_ISREG(observed.st_mode):
-                child_fd = os.open(child, file_flags, dir_fd=descriptor)
+                child_fd = os.open(
+                    child, file_flags if synchronize else path_flags,
+                    dir_fd=descriptor)
                 try:
                     opened = os.fstat(child_fd)
                     if not stat.S_ISREG(opened.st_mode) \
                             or opened.st_uid != os.geteuid() \
+                            or stat.S_IMODE(opened.st_mode) & 0o022 \
+                            or observed.st_nlink != 1 \
+                            or opened.st_nlink != 1 \
                             or generation(opened) != generation(observed):
                         raise ValueError("tree file changed before open")
                     if synchronize:
@@ -5439,11 +5693,30 @@ def tree_token(name, allow_absent=False, synchronize=False):
                     current_child = os.stat(
                         child, dir_fd=descriptor, follow_symlinks=False)
                     if generation(opened) != generation(after_child) \
-                            or generation(after_child) != generation(current_child):
+                            or generation(after_child) != generation(current_child) \
+                            or after_child.st_nlink != 1 \
+                            or current_child.st_nlink != 1:
                         raise ValueError("tree file changed while inspected")
                     update_record(digest, b"F", child_relative, opened)
                 finally:
                     os.close(child_fd)
+            elif stat.S_ISLNK(observed.st_mode):
+                if observed.st_uid != os.geteuid() \
+                        or observed.st_nlink != 1:
+                    raise ValueError("tree contains an unsafe symbolic link")
+                target = os.readlink(child, dir_fd=descriptor)
+                resolve_symlink_target(child_relative, target)
+                current_child = os.stat(
+                    child, dir_fd=descriptor, follow_symlinks=False)
+                if not stat.S_ISLNK(current_child.st_mode) \
+                        or current_child.st_uid != os.geteuid() \
+                        or current_child.st_nlink != 1 \
+                        or generation(observed) != generation(current_child):
+                    raise ValueError("tree symbolic link changed while inspected")
+                update_symlink_record(
+                    digest, child_relative, current_child, target)
+                symlinks.append((
+                    child_relative, generation(current_child), target))
             else:
                 raise ValueError("tree contains a symbolic or special entry")
         if synchronize:
@@ -5455,9 +5728,45 @@ def tree_token(name, allow_absent=False, synchronize=False):
     try:
         root_before = os.fstat(root_fd)
         if not stat.S_ISDIR(root_before.st_mode) \
-                or root_before.st_uid != os.geteuid():
+                or root_before.st_uid != os.geteuid() \
+                or stat.S_IMODE(root_before.st_mode) & 0o022:
             raise ValueError("tree root is unsafe")
         walk(root_fd, "")
+        for relative, recorded_generation, recorded_target in symlinks:
+            parent_descriptor = open_relative_directory(
+                os.path.dirname(relative))
+            try:
+                link_name = os.path.basename(relative)
+                current_link, current_target = read_live_symlink(
+                    parent_descriptor, link_name, relative)
+                if generation(current_link) != recorded_generation \
+                        or current_target != recorded_target:
+                    raise ValueError(
+                        f"tree symbolic link changed while inspected: {relative}")
+                resolved = resolve_symlink_target(relative, current_target)
+                try:
+                    referent = os.stat(resolved, dir_fd=root_fd)
+                except OSError as error:
+                    raise ValueError(
+                        f"tree symbolic link is dangling: {relative}") \
+                        from error
+                if not stat.S_ISREG(referent.st_mode) \
+                        or referent.st_uid != os.geteuid() \
+                        or stat.S_IMODE(referent.st_mode) & 0o022 \
+                        or referent.st_nlink != 1:
+                    raise ValueError(
+                        f"tree symbolic link target is unsafe: {relative}")
+                final_link, final_target = read_live_symlink(
+                    parent_descriptor, link_name, relative)
+                if generation(final_link) != recorded_generation \
+                        or final_target != recorded_target:
+                    raise ValueError(
+                        f"tree symbolic link changed while inspected: {relative}")
+            finally:
+                os.close(parent_descriptor)
+        for relative in sorted(directories, key=os.fsencode):
+            descriptor = open_relative_directory(relative)
+            os.close(descriptor)
         root_after = os.fstat(root_fd)
         root_current = os.stat(name, dir_fd=parent_fd,
                                follow_symlinks=False)
@@ -6455,6 +6764,12 @@ SIA_RESTORE_LIFECYCLE_TOMBSTONE=1
 # CLI/direct-brainstem/MCP admissions now fail at open(2); the second drain
 # proves that every process admitted before the fence is gone.
 arm_install_launch_fence
+# chmod(2) is part of the fence and therefore changes both file and tree
+# generations. Re-run the ownership preflights against the exact fenced state
+# before retaining either token for later CAS publication.
+preflight_runtime
+preflight_owned_file "$SIA_STABLE_LAUNCHER" "$CLI_PATH" "$CLI_RECEIPT" \
+  sia-cli SIA_REPLACE_SIA_CLI SIA_CLI_EXPECTED
 drain_legacy_launchers
 # Block every newly launched reader before the first managed engine, model,
 # runtime, schema, or ledger byte can change. This standalone writer works on
@@ -7338,16 +7653,23 @@ case "$GBRAIN_CONFIG_ACTION" in
     exit 1
     ;;
 esac
-if ! GBRAIN_SELF_UPGRADE_MODE="$(bounded_command_capture \
+if ! GBRAIN_SELF_UPGRADE_OUTPUT="$(bounded_command_capture \
     "$GBRAIN_BIN" config get self_upgrade.mode)"; then
   echo "could not verify that gbrain self-upgrade is disabled" >&2
   exit 1
 fi
-[ "$GBRAIN_SELF_UPGRADE_MODE" = "off" ] || {
+case "$GBRAIN_SELF_UPGRADE_OUTPUT" in
+  $'off\n[config] source: file/env plane (~/.gbrain/config.json or env)' \
+  |$'off\n[config] source: file/env plane (~/.gbrain/config.json or env) — a DB-plane value also exists and is shadowed at runtime')
+    :
+    ;;
+  *)
   echo "gbrain self-upgrade is not disabled after configuration" >&2
-  printf '  observed mode: %s\n' "$GBRAIN_SELF_UPGRADE_MODE" >&2
-  exit 1
-}
+    printf '  observed bounded output: %s\n' \
+      "$GBRAIN_SELF_UPGRADE_OUTPUT" >&2
+    exit 1
+    ;;
+esac
 if ! SIA_SOURCES_JSON="$(bounded_command_capture \
     "$GBRAIN_BIN" sources list --json)"; then
   echo "could not inspect gbrain source registration" >&2
@@ -7440,6 +7762,8 @@ exec {SIA_BRAINSTEM_LOCK_FD}>&-
 SIA_BRAINSTEM_LOCK_FD=""
 SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
   SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse
+SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
+  python3 "$BINDIR/sia-cli" ready
 acquire_owner_lock "$STATE/brainstem-owner.lock" SIA_BRAINSTEM_LOCK_FD \
   "brainstem after first light"
 

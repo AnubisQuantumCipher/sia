@@ -848,7 +848,7 @@ def _canonical_thought_inbox_item(item, *, queued):
     # that label. A pre-upgrade queued model-prose kind has stronger lexical
     # evidence, so recover it as model rather than laundering it as derived.
     default_origin = ("model" if queued and "origin" not in item
-                      and kind in {"grade", "ponder", "note"}
+                      and kind in {"grade", "ponder", "note", "take"}
                       else "derived")
     origin = _canonical_thought_origin(item.get("origin", default_origin))
     if not isinstance(text, str) or not text.strip() \
@@ -897,7 +897,31 @@ def _read_thought_inbox(path):
         raise ValueError("thought inbox is malformed") from exc
     if not isinstance(inbox, list) or len(inbox) > MAX_THOUGHT_INBOX_ITEMS:
         raise ValueError("thought inbox is not a bounded list")
-    return [_canonical_thought_inbox_item(row, queued=True) for row in inbox]
+    legacy_basis = None
+    legacy_queued_at = None
+    canonical = []
+    for index, row in enumerate(inbox):
+        if isinstance(row, dict):
+            has_queue_id = "_queue_id" in row
+            has_queued_at = "_queued_at" in row
+            if has_queue_id != has_queued_at:
+                raise ValueError("thought inbox metadata is incomplete")
+            if not has_queue_id:
+                if legacy_basis is None:
+                    legacy_basis = hashlib.sha256(
+                        b"sia-thought-inbox-legacy\0"
+                        + str(before.st_mtime_ns).encode("ascii")
+                        + b"\0" + raw).digest()
+                    legacy_queued_at = time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ",
+                        time.gmtime(before.st_mtime))
+                row = dict(row)
+                row["_queue_id"] = hashlib.sha256(
+                    legacy_basis + b"\0"
+                    + str(index).encode("ascii")).hexdigest()[:32]
+                row["_queued_at"] = legacy_queued_at
+        canonical.append(_canonical_thought_inbox_item(row, queued=True))
+    return canonical
 
 
 def append_thought_inbox(item):
@@ -8445,6 +8469,8 @@ def think(store, memo, events, chains, salience, anomalies, event_day=None):
 STATUS_PATH = os.path.join(STATE, "status.json")
 GRAPH_PATH = os.path.join(STATE, "graph.json")
 GRAPH_PROJECTION_SCHEMA = "sia-graph-projection-v1"
+LEGACY_GRAPH_README_FAILURE = (
+    "graph_page_refused:README:corpus slug is not canonical")
 MAX_GRAPH_NODES = 260
 MAX_GRAPH_EDGES = MAX_EVENT_LOOKUP_PAGES
 MAX_GRAPH_SCAN_ENTRIES = MAX_SOURCE_SCAN_ENTRIES
@@ -8591,7 +8617,16 @@ def _load_graph_projection_state():
         raise
     if not value:
         return _fresh_graph_projection_state()
-    return _canonical_graph_projection_state(value)
+    state = _canonical_graph_projection_state(value)
+    failures = [failure for failure in state["failed_ops"]
+                if failure != LEGACY_GRAPH_README_FAILURE]
+    if failures != state["failed_ops"]:
+        # Older first-light scans recorded the installer-owned root README as
+        # refusal debt. It was never a page candidate, so removing only this
+        # byte-exact obsolete diagnostic preserves the completed generation.
+        state = _save_graph_projection_state(
+            dict(state, failed_ops=failures))
+    return state
 
 
 def _save_graph_projection_state(value):
@@ -8762,6 +8797,11 @@ def _advance_graph_projection(state, limit):
                               "page": {}})
                 continue
             if not entry["name"].endswith(".md"):
+                continue
+            if not frame["relative"] and entry["name"] == "README.md":
+                # The installer-created corpus genesis document describes the
+                # repository; it is not a typed memory page and deliberately
+                # has no frontmatter or canonical lowercase page slug.
                 continue
             if not stat.S_ISREG(entry["mode"]):
                 failure = "graph_nonregular_page:" + relative
@@ -9391,20 +9431,26 @@ def export_graph(require_complete=True):
 
 
 def _export_graph_publication():
-    """Require a complete graph; first-light drains bounded generations."""
+    """Require a complete graph and drain its bounded durable cursor.
+
+    Corpus mutation conservatively restarts the projection. Returning after
+    only one directory page would make an active corpus larger than that page
+    alternate forever between recovery and new publication debt. Keep the
+    corpus lease, advance independently bounded pages, and retain a finite
+    aggregate ceiling for churn or an unexpectedly large tree.
+    """
     attempts = 0
     while True:
         try:
             return export_graph()
         except GraphProjectionPending:
             state = _load_graph_projection_state()
-            if os.environ.get("SIA_BACKFILL") != "1" \
-                    or state["phase"] == "ready":
+            if state["phase"] == "ready":
                 raise
             attempts += 1
             if attempts >= MAX_EVENT_LOOKUP_PAGES:
                 raise GraphProjectionPending(
-                    "graph first-light backfill exceeded its generation "
+                    "graph publication exceeded its generation "
                     "ceiling") from None
 
 
@@ -11319,17 +11365,7 @@ def _recover_before_pulse(memo, store):
     if grade_recovery_errors:
         raise RuntimeError(
             f"grade recovery refused: {grade_recovery_errors}")
-    _take_migrated, take_migration_errors = \
-        siatakes.migrate_legacy_take_pages(
-            before_publish=lambda: _mark_external_corpus_mutation(memo))
-    if take_migration_errors:
-        raise RuntimeError(
-            f"legacy take migration refused: {take_migration_errors}")
-    _intent_imported, intent_history_errors = \
-        siatakes.advance_intent_history()
-    if intent_history_errors:
-        raise RuntimeError(
-            f"legacy intent projection refused: {intent_history_errors}")
+    _reconcile_legacy_memory_authority(memo)
     mind_replay = siamind.load_mind()
     if _pending_source_replay_marker(memo) is None \
             and (mind_replay.get("event_applied")
@@ -11359,6 +11395,34 @@ def _recover_before_pulse(memo, store):
     _settle_pending_publication(
         memo, "publish pending corpus migration before pulse")
     return _ledger_recovered, []
+
+
+def _reconcile_legacy_memory_authority(memo):
+    """Advance upgrade provenance once, or converge it at first light."""
+    attempts = 0
+    while True:
+        _take_migrated, take_migration_errors = \
+            siatakes.migrate_legacy_take_pages(
+                before_publish=lambda: _mark_external_corpus_mutation(memo))
+        if take_migration_errors:
+            raise RuntimeError(
+                f"legacy take migration refused: {take_migration_errors}")
+        _intent_imported, intent_history_errors = \
+            siatakes.advance_intent_history(
+                before_publish=lambda: _mark_external_corpus_mutation(memo),
+                start_audit_cycle=False)
+        if intent_history_errors:
+            raise RuntimeError(
+                f"legacy intent projection refused: {intent_history_errors}")
+        if os.environ.get("SIA_BACKFILL") != "1" \
+                or not (siatakes.take_migration_required()
+                        or siatakes.intent_history_required()):
+            return
+        attempts += 1
+        if attempts >= MAX_EVENT_LOOKUP_PAGES:
+            raise RuntimeError(
+                "legacy memory authority backfill exceeded its generation "
+                "ceiling")
 
 
 def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
@@ -13422,17 +13486,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
             before_publish=lambda: _mark_external_corpus_mutation(memo))
     if grade_recovery_errors:
         raise RuntimeError(f"grade recovery refused: {grade_recovery_errors}")
-    _take_migrated, take_migration_errors = \
-        siatakes.migrate_legacy_take_pages(
-            before_publish=lambda: _mark_external_corpus_mutation(memo))
-    if take_migration_errors:
-        raise RuntimeError(
-            f"legacy take migration refused: {take_migration_errors}")
-    _intent_imported, intent_history_errors = \
-        siatakes.advance_intent_history()
-    if intent_history_errors:
-        raise RuntimeError(
-            f"legacy intent projection refused: {intent_history_errors}")
+    _reconcile_legacy_memory_authority(memo)
     if _pending_source_replay_marker(memo) is not None:
         raise RuntimeError(
             "dream refused while evidence source replay is pending")
