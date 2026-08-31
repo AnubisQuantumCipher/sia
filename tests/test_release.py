@@ -5118,6 +5118,11 @@ remove_managed_skill
         self.assertNotIn("hyprctl dispatch", cockpit)
         self.assertIn("cockpitWorkspace", panel)
 
+        # Native Qt tooltips use a bright default surface. Cockpit hover help
+        # must use Omarchy's themed primitive, including the readiness detail.
+        self.assertEqual(cockpit.count("PanelToolTip {"), 2)
+        self.assertIn("panelForeground: root.fg", cockpit)
+
         # Grid column widths, rather than the rail width, constrain the
         # values so strings such as "demoted" are allowed to wrap in place.
         self.assertIn("width: vitalsCol.width", cockpit)

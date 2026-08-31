@@ -706,7 +706,10 @@ Item {
               hoverEnabled: true
               onClicked: root.toggleWorkspaceLock()
             }
-            ToolTip {
+            // Use Omarchy's themed surface rather than Qt Quick Controls'
+            // bright default tooltip. The lock lives in a deliberately dark,
+            // instrument-like header and its hover help should belong to it.
+            PanelToolTip {
               id: workspaceLockTooltip
               parent: workspaceLockArea
               visible: workspaceLockArea.containsMouse
@@ -722,14 +725,9 @@ Item {
                       + "; it hides elsewhere."
                     : "Workspace lock needs a focused Hyprland workspace."
               y: workspaceLockArea.height + Style.space(4)
-              contentItem: Text {
-                textFormat: Text.PlainText
-                renderType: Text.NativeRendering
-                text: workspaceLockTooltip.text
-                color: root.fg
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
+              panelForeground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
             }
           }
           Rectangle {
@@ -839,7 +837,9 @@ Item {
             }
             // `sia ready` diagnostics cross a process boundary, so keep the
             // tooltip on the same plain-text rendering contract as snapshots.
-            ToolTip {
+            // Keep every cockpit hover surface on the same dark Omarchy
+            // palette; the detailed readiness diagnostic remains plain text.
+            PanelToolTip {
               id: readyTooltip
               parent: liveReadyArea
               visible: liveReadyArea.containsMouse
@@ -847,6 +847,9 @@ Item {
               text: root.readyDetail
               x: Math.min(0, liveReadyArea.width - width)
               y: liveReadyArea.height + Style.space(4)
+              panelForeground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
               contentItem: Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
@@ -854,6 +857,10 @@ Item {
                 color: root.fg
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+                leftPadding: Style.spacing.controlPaddingX
+                rightPadding: Style.spacing.controlPaddingX
+                topPadding: Style.spacing.controlPaddingY
+                bottomPadding: Style.spacing.controlPaddingY
               }
             }
           }

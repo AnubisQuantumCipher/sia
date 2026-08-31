@@ -206,6 +206,12 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.3.6 cockpit finish
+
+v1.3.6 brings the workspace lock's hover help into the cockpit itself. Its
+explanation and the live-readiness detail now use Omarchy's dark themed
+tooltip surface, so the header has no bright default Qt tooltip bar.
+
 ### v1.3.5 workspace lock
 
 v1.3.5 lets the graph-first cockpit become a deliberate mission-control
