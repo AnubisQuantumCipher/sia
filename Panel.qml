@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 BarWidget {
   id: root
@@ -25,6 +26,10 @@ BarWidget {
     stale ? "stale" : (status && status.state ? status.state : "unknown")
   readonly property int eventsToday:
     status && status.events_today ? status.events_today : 0
+  readonly property real staleAfterSec:
+    Model.validStaleAfterSec(
+      root.setting("staleAfterSec", Model.staleAfterDefaultSec()),
+      Model.staleAfterDefaultSec())
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -45,7 +50,7 @@ BarWidget {
       root.status = parsed
       const ts = Date.parse(parsed.ts)
       root.stale = !(ts > 0) ||
-        (Date.now() - ts) > root.setting("staleAfterSec", 240) * 1000
+        (Date.now() - ts) > root.staleAfterSec * 1000
     } catch (e) { /* mid-replace read; keep last-known-good */ }
   }
 
@@ -70,7 +75,7 @@ BarWidget {
       if (root.status) {
         const ts = Date.parse(root.status.ts)
         root.stale = !(ts > 0) ||
-          (root.nowMs - ts) > root.setting("staleAfterSec", 240) * 1000
+          (root.nowMs - ts) > root.staleAfterSec * 1000
       }
     }
   }

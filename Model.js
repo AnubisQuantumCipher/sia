@@ -10,6 +10,26 @@
 // only handles angular spacing; timestamps own the radius.
 .pragma library
 
+// Keep this policy paired with manifest.json's staleAfterSec schema. Both UI
+// entry points call the same validator so hand-edited shell configuration
+// cannot bypass the declared integer range.
+function staleAfterMinSec() { return 120 }
+function staleAfterMaxSec() { return 900 }
+function staleAfterDefaultSec() { return 240 }
+
+function validStaleAfterSec(value, fallback) {
+  var parsed = Number(value)
+  if (isFinite(parsed) && Math.floor(parsed) === parsed
+      && parsed >= staleAfterMinSec() && parsed <= staleAfterMaxSec())
+    return parsed
+  var safeFallback = Number(fallback)
+  if (isFinite(safeFallback) && Math.floor(safeFallback) === safeFallback
+      && safeFallback >= staleAfterMinSec()
+      && safeFallback <= staleAfterMaxSec())
+    return safeFallback
+  return staleAfterDefaultSec()
+}
+
 // ---------------------------------------------------------------- glyphs
 
 function brainGlyph()   { return String.fromCodePoint(0xF09D1) }  // nf-md-brain
@@ -25,7 +45,6 @@ function thoughtMark(kind) {
   if (kind === "anomaly")   return "σ"
   if (kind === "attention") return "◉"
   if (kind === "crash")     return "✖"
-  if (kind === "formal")    return "∎"
   if (kind === "ponder")    return "✦"
   if (kind === "novelty")   return "✧"
   if (kind === "surprise")  return "Δ"

@@ -2,16 +2,22 @@
 """sia — talk to the Omarchy Brain.
 
   sia status            what the brain knows right now
-  sia ask "question"    query the brain (keyword hybrid search, cited)
-  sia recall <slug>     read one memory page
+  sia ask "question" [--no-touch]
+                        query the brain; ordinary results strengthen memory
+  sia recall <slug> [--no-touch]
+                        read one page; ordinary reads strengthen it
+  sia memory [slug]     inspect stability decay + SM-2 schedule
+  sia memory --pin <slug> | --unpin <slug>
+                        queue an operator pin change for the daemon
+  sia rehearse [slug]   list due reviews, or recall one page deliberately
   sia think             recent thoughts
   sia graph             graph statistics
   sia pulse             run one brainstem pulse by hand (daemon must be off)
   sia dream             run the consolidation cycle now (daemon must be off)
   sia verify            re-verify every signed evidence chain with attest
   sia ledger            show SIA's own signed run ledger head + verify
-  sia ponder [question] deep reflection by the configured judge over the brain's
-                        memories, via your Codex subscription; writes a
+  sia ponder [question] deep reflection by the configured, tool-free Claude
+                        judge over recalled memories; writes a
                         clearly-labeled synthesis page + thought — and may
                         propose falsifiable takes
   sia take "claim" [--confidence 0.7] [--by YYYY-MM-DD] [--domain d]
@@ -22,29 +28,268 @@
                         as its deadline nears (--list · --done <id> [note])
   sia grade [id]        grade due predictions now (configured judge,
                         deterministic Brier); with id, grade that one
-  sia calibration       Brier scorecard per domain — how good the brain's
-                        (and your) judgment actually is
+  sia calibration       descriptive Brier scorecard over resolved takes,
+                        with population sizes and domain breakdowns
 """
 
-import json, os, subprocess, sys
+import contextlib, fcntl, json, math, os, re, stat, subprocess, sys
 
-sys.path.insert(0, os.path.expanduser("~/.local/share/sia/bin"))
-import sialib
+
+_INHERITED_LIFECYCLE_FD_ENV = "SIA_INHERITED_LIFECYCLE_FD"
+_LAUNCHER_ABI = "sia-launch-v1"
+_LAUNCHER_ABI_ENV = "SIA_LAUNCHER_ABI"
+_LAUNCHER_LIFECYCLE_FD_ENV = "SIA_LAUNCHER_LIFECYCLE_FD"
+_LAUNCHER_TARGET_FD_ENV = "SIA_LAUNCHER_TARGET_FD"
+_LAUNCHER_TARGET_PATH_ENV = "SIA_LAUNCHER_TARGET_PATH"
+
+
+def _validated_inherited_lifecycle_fd(lock):
+    """Validate the installer's exclusive lifecycle open-file description.
+
+    The independent probe establishes that a conflicting lock exists.  The
+    nonblocking exclusive operation on the inherited descriptor then proves
+    that this exact open-file description owns that lock; a separately opened
+    descriptor aimed at the same inode cannot impersonate the handoff.
+    """
+    raw = os.environ.get(_INHERITED_LIFECYCLE_FD_ENV)
+    if raw is None:
+        return None
+    if not raw or not raw.isascii() or not raw.isdigit():
+        raise RuntimeError("invalid inherited SIA lifecycle descriptor")
+    try:
+        inherited_fd = int(raw, 10)
+        inherited = os.fstat(inherited_fd)
+        target = os.lstat(lock)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            "invalid inherited SIA lifecycle descriptor") from exc
+    if not stat.S_ISREG(inherited.st_mode) \
+            or inherited.st_uid != os.geteuid() \
+            or not stat.S_ISREG(target.st_mode) \
+            or target.st_uid != os.geteuid() \
+            or (inherited.st_dev, inherited.st_ino) != \
+               (target.st_dev, target.st_ino):
+        raise RuntimeError(
+            "inherited SIA lifecycle descriptor is not the owned lease")
+
+    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        probe_fd = os.open(lock, flags)
+    except OSError as exc:
+        raise RuntimeError("could not probe inherited SIA lifecycle lease") \
+            from exc
+    try:
+        probe = os.fstat(probe_fd)
+        if not stat.S_ISREG(probe.st_mode) \
+                or probe.st_uid != os.geteuid() \
+                or (probe.st_dev, probe.st_ino) != \
+                   (inherited.st_dev, inherited.st_ino):
+            raise RuntimeError("SIA lifecycle lease changed during handoff")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError(
+                "inherited SIA lifecycle descriptor has no conflicting lease")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError(
+                "inherited SIA lifecycle descriptor is not exclusively held")
+        try:
+            fcntl.flock(inherited_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                "inherited SIA lifecycle descriptor does not own the lease") \
+                from exc
+    finally:
+        os.close(probe_fd)
+    return inherited_fd
+
+
+def _validated_launcher_lifecycle_fd(lock, expected_target):
+    """Validate the stable launcher's shared lease and pinned target."""
+    names = (_LAUNCHER_ABI_ENV, _LAUNCHER_LIFECYCLE_FD_ENV,
+             _LAUNCHER_TARGET_FD_ENV, _LAUNCHER_TARGET_PATH_ENV)
+    values = tuple(os.environ.get(name) for name in names)
+    if all(value is None for value in values):
+        return None
+    abi, lifecycle_raw, target_raw, target_path = values
+    if abi != _LAUNCHER_ABI \
+            or lifecycle_raw is None or target_raw is None \
+            or not lifecycle_raw.isascii() or not lifecycle_raw.isdigit() \
+            or not target_raw.isascii() or not target_raw.isdigit() \
+            or target_path is None \
+            or os.path.abspath(target_path) != os.path.abspath(expected_target) \
+            or os.path.abspath(__file__) != os.path.abspath(expected_target):
+        raise RuntimeError("invalid SIA stable-launcher handoff")
+    try:
+        lifecycle_fd = int(lifecycle_raw, 10)
+        target_fd = int(target_raw, 10)
+        inherited = os.fstat(lifecycle_fd)
+        lock_target = os.lstat(lock)
+        pinned_target = os.fstat(target_fd)
+        current_target = os.lstat(expected_target)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("invalid SIA stable-launcher handoff") from exc
+    if not stat.S_ISREG(inherited.st_mode) \
+            or inherited.st_uid != os.geteuid() \
+            or not stat.S_ISREG(lock_target.st_mode) \
+            or lock_target.st_uid != os.geteuid() \
+            or (inherited.st_dev, inherited.st_ino) != \
+               (lock_target.st_dev, lock_target.st_ino) \
+            or not stat.S_ISREG(pinned_target.st_mode) \
+            or pinned_target.st_uid != os.geteuid() \
+            or not stat.S_ISREG(current_target.st_mode) \
+            or current_target.st_uid != os.geteuid() \
+            or (pinned_target.st_dev, pinned_target.st_ino) != \
+               (current_target.st_dev, current_target.st_ino):
+        raise RuntimeError("SIA stable-launcher handoff changed generation")
+
+    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        probe_fd = os.open(lock, flags)
+    except OSError as exc:
+        raise RuntimeError("could not probe SIA stable-launcher lease") \
+            from exc
+    try:
+        probe = os.fstat(probe_fd)
+        if not stat.S_ISREG(probe.st_mode) \
+                or probe.st_uid != os.geteuid() \
+                or (probe.st_dev, probe.st_ino) != \
+                   (inherited.st_dev, inherited.st_ino):
+            raise RuntimeError("SIA stable-launcher lease changed")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError("SIA stable launcher holds no shared lease")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("SIA stable launcher inherited an exclusive lease") \
+                from exc
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+        try:
+            fcntl.flock(lifecycle_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("SIA stable-launcher lease is not shared") \
+                from exc
+    finally:
+        os.close(probe_fd)
+    return lifecycle_fd
+
+
+def _runtime_module_dir(script_path=None, home=None):
+    """Find SIA's Python modules in a checkout or an installed runtime."""
+    script_dir = os.path.dirname(os.path.abspath(script_path or __file__))
+    installed_dir = os.path.join(
+        home if home is not None else os.path.expanduser("~"),
+        ".local", "share", "sia", "bin")
+    for candidate in (script_dir, installed_dir):
+        if os.path.isfile(os.path.join(candidate, "sialib.py")):
+            return candidate
+    raise ImportError(
+        "SIA runtime modules not found beside the CLI or under "
+        "~/.local/share/sia/bin; reinstall SIA")
+
+
+@contextlib.contextmanager
+def _runtime_generation_lease(home=None):
+    """Pin one installed runtime generation before importing its modules."""
+    home = home if home is not None else os.path.expanduser("~")
+    parent = os.path.join(home, ".local", "state")
+    lock = os.path.join(parent, "sia.lifecycle.lock")
+    tombstone = os.path.join(parent, "sia.lifecycle-removed")
+    os.makedirs(parent, exist_ok=True)
+    if _validated_inherited_lifecycle_fd(lock) is not None:
+        # The installer keeps both its exclusive lease and, on a purged
+        # reinstall, the public tombstone.  Only this validated child may run
+        # first light inside that otherwise closed generation.
+        yield
+        return
+    expected_target = os.path.join(
+        home, ".local", "share", "sia", "bin", "sia-cli")
+    if _validated_launcher_lifecycle_fd(lock, expected_target) is not None:
+        if os.path.lexists(tombstone):
+            marker = os.lstat(tombstone)
+            if not stat.S_ISREG(marker.st_mode) \
+                    or marker.st_uid != os.geteuid():
+                raise RuntimeError("SIA lifecycle removal marker is unsafe")
+            raise RuntimeError(
+                "SIA runtime was removed; reinstall before using it")
+        yield
+        return
+    flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    fd = os.open(lock, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise RuntimeError("SIA lifecycle lease is not an owned regular file")
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        try:
+            if os.path.lexists(tombstone):
+                marker = os.lstat(tombstone)
+                if not stat.S_ISREG(marker.st_mode) \
+                        or marker.st_uid != os.geteuid():
+                    raise RuntimeError("SIA lifecycle removal marker is unsafe")
+                raise RuntimeError(
+                    "SIA runtime was removed; reinstall before using it")
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+# Importing launchers in the test harness keeps the existing module surface.
+# Executed launchers defer this import until the generation lease is held.
+sialib = None
+if __name__ != "__main__":
+    sys.path.insert(0, _runtime_module_dir())
+    import sialib as _sialib
+    sialib = _sialib
 
 
 def daemon_running():
-    r = subprocess.run(["systemctl", "--user", "is-active", "sia-brainstem"],
-                       capture_output=True, text=True)
+    r = sialib._run_bounded_text_process(
+        ["systemctl", "--user", "is-active", "sia-brainstem"],
+        env=None, timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=None,
+        label="systemctl status")
     return r.stdout.strip() == "active"
 
 
 def cmd_status():
+    with sialib.corpus_owner():
+        return _cmd_status_owned()
+
+
+def _cmd_status_owned():
     st = sialib.read_json(sialib.STATUS_PATH, None)
     if not st:
         print("SIA has no status yet — is sia-brainstem running?")
+        if sialib.CONFIG_ERRORS:
+            print(f"  config   {sialib.CONFIG_ERRORS}")
         return 1
     ic = st.get("integrity", {})
     print(f"SIA · state {st['state']} · pulse {st['pulse_seq']} · {st['ts']}")
+    ready, readiness_reason = sialib.memory_readiness()
+    if ready:
+        print("  readiness READY — corpus, PGLite, and graph reconciled")
+    else:
+        print(f"  readiness BLOCKED — {readiness_reason}")
     print(f"  memory   {st.get('pages', '?')} pages · graph "
           f"{st.get('graph_nodes', '?')} nodes / {st.get('graph_edges', '?')} edges")
     per_organ = ", ".join(f"{k}:{v.get('today', 0)}"
@@ -55,34 +300,77 @@ def cmd_status():
           f"({', '.join(f'{k}:{v}' for k, v in sorted(ic.get('chains', {}).items()))})")
     print(f"  ledger   seq {st.get('ledger', {}).get('seq', '?')} · "
           f"head {st.get('ledger', {}).get('head', '?')}…")
+    mind = st.get("mind", {})
+    if mind:
+        print(f"  decay    {mind.get('decay_active', '?')} active / "
+              f"{mind.get('decay_demoted', '?')} demoted bonds · evidence kept")
+        print(f"  review   {mind.get('rehearsal_due', '?')} due / "
+              f"{mind.get('rehearsal_eligible', '?')} eligible · "
+              f"{mind.get('pinned', '?')} pinned")
     th = st.get("thought", {})
     if th.get("text"):
-        print(f"  thought  [{th.get('kind')}] {th['text']}")
+        origin = th.get("origin")
+        if origin not in {"evidence", "derived", "model"}:
+            origin = "legacy-unlabeled"
+        print(f"  thought  [origin:{origin}] "
+              f"[{sialib.clip(th.get('kind'), 30)}] "
+              f"{sialib.inert_summary(th['text'])}")
     dr = st.get("dream", {})
     if dr.get("last"):
         print(f"  dream    {dr.get('last', '')[:16]} {dr.get('status', '')} "
               f"{dr.get('summary', '')}")
     if st.get("errors"):
         print(f"  errors   {st['errors']}")
+    if sialib.CONFIG_ERRORS:
+        print(f"  config   {sialib.CONFIG_ERRORS}")
     return 0
 
 
-def _gbrain_query(q, json_out=False):
+def _gbrain_read(args, timeout=None):
     import time
-    args = [sialib.GBRAIN, "query", q, "--source", "sia"]
-    if json_out:
-        args.append("--json")
     for attempt in range(3):
-        r = subprocess.run(args, env=sialib.GBRAIN_ENV, text=True,
-                           capture_output=True)
+        # sialib.gbrain holds SIA's cross-process PGLite owner lease.
+        r = (sialib.gbrain(args, timeout=timeout) if timeout is not None
+             else sialib.gbrain(args))
         if r.returncode == 0 or "already open" not in (r.stdout + r.stderr):
             break
         time.sleep(2)      # brainstem pulse holds the brain briefly; retry
     return r
 
 
-def _health_footer(keyword_only=False):
-    """Every answer carries its truth boundary — the same grain the
+def _gbrain_query(q, json_out=False):
+    args = ["query", q, "--source", "sia"]
+    if json_out:
+        args.append("--json")
+    return _gbrain_read(args)
+
+
+def _canonical_slug(slug):
+    return (isinstance(slug, str) and 0 < len(slug) <= 200
+            and "//" not in slug
+            and re.fullmatch(r"[a-z0-9][a-z0-9/._-]*", slug) is not None
+            and all(part not in {"", ".", ".."}
+                    for part in slug.split("/")))
+
+
+def _existing_corpus_page(slug):
+    """Accept only a real Markdown page contained by the corpus root."""
+    if not _canonical_slug(slug):
+        return False
+    path = sialib.corpus_path(slug)
+    try:
+        import stat
+        corpus_root = os.path.realpath(sialib.CORPUS)
+        resolved = os.path.realpath(path)
+        if os.path.commonpath((corpus_root, resolved)) != corpus_root:
+            return False
+        return stat.S_ISREG(os.stat(path, follow_symlinks=False).st_mode)
+    except (OSError, ValueError):
+        return False
+
+
+def _health_footer(keyword_only=False, recall_degraded=""):
+    """Every recall answer carries its truth boundary — the same grain the
     cockpit shows: sense freshness, chain state, snapshot completeness,
     recall mode. An answer over a degraded brain must say so inline."""
     import datetime as _dt
@@ -111,66 +399,212 @@ def _health_footer(keyword_only=False):
         bits.append(f"{sum(red.values())} span(s) redacted at ingest")
     bits.append("keyword-only recall" if keyword_only
                 else "semantic recall")
+    if recall_degraded:
+        bits.append(recall_degraded)
     bits.append("absence of recall ≠ evidence of absence")
     return "boundary: " + " · ".join(bits)
 
 
-def cmd_ask(q):
+def cmd_ask(q, touch=True):
     """Semantic recall upgraded with hippocampal-style completion: dense
     hits seed Personalized PageRank over the typed graph (HippoRAG,
     damping 0.5, 1/deg specificity) blended with ACT-R activation."""
     import siamind
     r = _gbrain_query(q, json_out=True)
     try:
+        if r.returncode != 0:
+            raise RuntimeError("memory engine query did not complete")
         i = r.stdout.index("[")
-        results = json.loads(r.stdout[i:])
-        assert isinstance(results, list) and results
-        dense, seen, meta = [], set(), {}
+        try:
+            results = json.loads(r.stdout[i:])
+        except (UnicodeError, ValueError, RecursionError) as exc:
+            raise ValueError("memory engine JSON is malformed") from exc
+        if not isinstance(results, list):
+            raise ValueError("memory engine result is not a list")
+        dense, seen, meta, origins = [], set(), {}, {}
         for res in results:
+            if not isinstance(res, dict):
+                raise ValueError("memory engine result row is not an object")
             slug = res.get("slug")
-            if not slug or slug in seen:
+            if not isinstance(slug, str) or not _canonical_slug(slug):
+                raise ValueError("memory engine returned an invalid slug")
+            if slug in seen:
                 continue
+            try:
+                score = float(res.get("score") or 0)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("memory engine returned an invalid score") \
+                    from exc
+            if not math.isfinite(score):
+                raise ValueError("memory engine returned a non-finite score")
             seen.add(slug)
-            dense.append((slug, float(res.get("score") or 0)))
+            dense.append((slug, score))
             meta[slug] = res
-        graph = sialib.read_json(sialib.GRAPH_PATH, None)
-        mind = siamind.load_mind()
-        ranked = siamind.ppr_rerank(graph, dense, mind=mind)
+            origins[slug] = sialib.corpus_origin(
+                slug, res.get("type", ""))
+        if not dense:
+            print("(no matches — try other words or `sia recall <slug>`)")
+            print(_health_footer(keyword_only="keyword-only"
+                                 in (r.stderr or "")))
+            return 0
+        recall_degraded = ""
+        try:
+            graph = sialib.read_json(sialib.GRAPH_PATH, None)
+            mind = siamind.load_mind()
+            ranked = siamind.ppr_rerank(
+                graph, dense, mind=mind, origins=origins)
+        except Exception:
+            ranked = siamind.ppr_rerank(None, dense, origins=origins)
+            recall_degraded = "associative rerank unavailable; origin-safe fallback"
         for slug, score in ranked[:8]:
             m = meta.get(slug, {})
-            oc = siamind.origin_class(slug, m.get("type", ""))
-            excerpt = " ".join(str(m.get("chunk_text", "")).split())[:104]
-            print(f"[{score:.3f}] [{oc}] {slug} — {m.get('title', '')}")
+            oc = origins[slug]
+            title = sialib.neutralize_unverified_jackal_recall(
+                slug, m.get("title", ""))
+            excerpt = sialib.clip(
+                sialib.neutralize_unverified_jackal_recall(
+                    slug, m.get("chunk_text", "")), 104)
+            print(f"[{score:.3f}] [{oc}] {slug} — "
+                  f"{sialib.clip(title, 120)}")
             if excerpt:
                 print(f"        {excerpt}")
-        siamind.queue_touches([s for s, _ in ranked[:5]], src="user-ask")
+        if touch:
+            if not siamind.queue_touches(
+                    [s for s, _ in ranked[:5]], src="user-ask"):
+                print("reinforcement refused: touch queue is unavailable",
+                      file=sys.stderr)
         print()
         print(_health_footer(keyword_only="keyword-only"
-                             in (r.stderr or "")))
+                             in (r.stderr or ""),
+                             recall_degraded=recall_degraded))
         return 0
-    except Exception:
-        # honest fallback: plain gbrain output
-        r2 = _gbrain_query(q)
-        sys.stdout.write(r2.stdout)
-        sys.stderr.write(r2.stderr)
-        if "No results" in r2.stdout:
-            print("(no matches — try other words or `sia recall <slug>`)")
+    except Exception as exc:
+        print("SIA recall refused: origin-labeled result admission failed "
+              f"({sialib.clip(exc, 120)})", file=sys.stderr)
         print(_health_footer(keyword_only="keyword-only"
-                             in (r2.stderr or "")))
-        return r2.returncode
+                             in (r.stderr or ""),
+                             recall_degraded="result admission refused"))
+        return 1
 
 
-def cmd_recall(slug):
-    r = subprocess.run([sialib.GBRAIN, "get", slug, "--source", "sia"],
-                       env=sialib.GBRAIN_ENV, text=True)
+def cmd_recall(slug, touch=True):
+    import siamind
+    if not _canonical_slug(slug):
+        print("slug must be a canonical SIA corpus slug without traversal")
+        return 2
+    if not sialib.page_exists(slug):
+        print(f"memory not found: {slug}")
+        return 3
+    if sialib.unverified_jackal_recall_page(slug):
+        print(f"[origin:{sialib.corpus_origin(slug)}] {slug}")
+        print(sialib.UNVERIFIED_JACKAL_RECALL_NOTICE)
+        return 0
+    r = _gbrain_read(["get", slug, "--source", "sia"])
+    if r.returncode == 0:
+        print(f"[origin:{sialib.corpus_origin(slug)}] {slug}")
+    sys.stdout.write(sialib.strip_controls(r.stdout))
+    sys.stderr.write(sialib.strip_controls(r.stderr))
+    if r.returncode == 0 and touch:
+        if not siamind.queue_touches([slug], src="user-recall"):
+            print("reinforcement refused: touch queue is unavailable",
+                  file=sys.stderr)
+            return 1
     return r.returncode
+
+
+def _stamp(ts):
+    import datetime
+    if not ts:
+        return "never"
+    return datetime.datetime.fromtimestamp(
+        float(ts), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def cmd_memory(argv):
+    import siamind
+    if argv and argv[0] in ("--pin", "--unpin"):
+        if len(argv) != 2:
+            print(f"usage: sia memory {argv[0]} <slug>")
+            return 2
+        if not _canonical_slug(argv[1]):
+            print("slug must be a canonical SIA corpus slug without traversal")
+            return 2
+        pinned = argv[0] == "--pin"
+        if pinned and not _existing_corpus_page(argv[1]):
+            print(f"no canonical corpus page for {argv[1]} — "
+                  "pins apply only to existing memories")
+            return 1
+        if not siamind.queue_pin(argv[1], pinned=pinned):
+            print("could not queue pin change")
+            return 1
+        print(f"queued {'pin' if pinned else 'unpin'} for {argv[1]} — "
+              "the brainstem applies it on the next pulse")
+        return 0
+    mind = siamind.load_mind()
+    now = __import__("time").time()
+    if argv and not argv[0].startswith("--"):
+        slug = argv[0]
+        if not _canonical_slug(slug):
+            print("slug must be a canonical SIA corpus slug without traversal")
+            return 2
+        node = mind.get("nodes", {}).get(slug)
+        if node is None:
+            print(f"no stability state for {slug} (pin it to begin tracking)")
+            return 1
+        r = siamind.retention(node, now)
+        print(f"{slug}\n  stability {node.get('s', 0):.3f} days · "
+              f"retention {r:.6f} · last touch {_stamp(node.get('last_touch'))}")
+        print(f"  arousal {node.get('arousal', 0):.2f} · "
+              f"pins {','.join(node.get('pins', [])) or 'none'}")
+        review = node.get("review")
+        if review:
+            print(f"  SM-2 q={review.get('last_quality')} · "
+                  f"EF {review.get('ef', 0):.3f} · reps {review.get('reps', 0)} "
+                  f"· interval {review.get('interval_days', 0)}d · "
+                  f"due {_stamp(review.get('due_at'))}")
+        else:
+            print("  SM-2 not eligible (needs arousal ≥ 0.7 or an operator pin)")
+        return 0
+    summary = siamind.memory_summary(mind, now)
+    print(f"memory state v{summary['v']} · {summary['nodes']} nodes · "
+          f"{summary['edges']} associative edges")
+    print(f"stability lens · {summary['active_edges']} active · "
+          f"{summary['demoted_edges']} demoted below R="
+          f"{summary['threshold']} · no evidence deleted")
+    print(f"SM-2 · {summary['due']} due · {summary['eligible']} eligible · "
+          f"{summary['pinned']} pinned")
+    due = []
+    for slug, node in mind.get("nodes", {}).items():
+        review = node.get("review")
+        if review and float(review.get("due_at", now)) <= now and \
+                siamind.is_important(node):
+            due.append((float(review.get("due_at", 0)), slug,
+                        review.get("last_quality")))
+    for _, slug, quality in sorted(due):
+        print(f"  due  {slug} (last q={quality})")
+    return 0
+
+
+def cmd_rehearse(argv):
+    if not argv:
+        return cmd_memory(["--due"])
+    rc = cmd_recall(argv[0])
+    if rc == 0:
+        print(f"\nrehearsal touch queued for {argv[0]}; the next due dream "
+              "grades this deterministic user recall as q=5")
+    return rc
 
 
 def cmd_think():
     store = sialib.load_thoughts()
     for t in store["thoughts"][-15:]:
         mark = "!" if t.get("urgent") else "·"
-        print(f"{t['ts']} {mark} [{t['kind']}] {t['text']}")
+        origin = t.get("origin")
+        if origin not in {"evidence", "derived", "model"}:
+            origin = "legacy-unlabeled"
+        print(f"{sialib.strip_controls(t['ts'])} {mark} "
+              f"[origin:{origin}] [{sialib.clip(t['kind'], 30)}] "
+              f"{sialib.inert_summary(t['text'])}")
     if not store["thoughts"]:
         print("No thoughts yet.")
     return 0
@@ -191,23 +625,47 @@ def cmd_graph():
     return 0
 
 
-def _guard_daemon():
-    if daemon_running():
-        print("sia-brainstem is running — it owns the brain. "
-              "Stop it first: systemctl --user stop sia-brainstem")
-        return False
-    return True
+def _print_owner_refusal():
+    print("sia-brainstem or another manual operation owns the brain. "
+          "Stop the resident service before running a manual pulse or dream: "
+          "systemctl --user stop sia-brainstem")
 
 
 def cmd_pulse():
-    if not _guard_daemon():
+    try:
+        with sialib.brainstem_owner():
+            return _cmd_pulse_owned()
+    except sialib.OwnerBusy:
+        _print_owner_refusal()
         return 1
-    memo = sialib.read_json(sialib.MEMO_PATH, {})
-    seq = int(memo.get("pulse_seq", 0)) + 1
-    st = sialib.pulse(seq)
-    memo = sialib.read_json(sialib.MEMO_PATH, {})
-    memo["pulse_seq"] = seq
-    sialib.atomic_write(sialib.MEMO_PATH, json.dumps(memo))
+    except ValueError as exc:
+        print(f"manual pulse refused: {exc}")
+        return 1
+
+
+def _memo_pulse_sequence(memo):
+    if not isinstance(memo, dict):
+        raise ValueError("brainstem memo must be an object")
+    seq = memo.get("pulse_seq", 0)
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        raise ValueError("brainstem pulse sequence is invalid")
+    if not isinstance(memo.get("sync_needed", False), bool):
+        raise ValueError("brainstem sync-needed state is invalid")
+    return seq
+
+
+def _cmd_pulse_owned():
+    # The corpus lease spans both the whole-memo sequence reservation and the
+    # heartbeat. This preserves a concurrent manual writer's sync_needed bit
+    # and prevents an old publication callback from rolling pulse_seq back.
+    with sialib.corpus_owner():
+        memo = sialib.load_memo()
+        seq = _memo_pulse_sequence(memo) + 1
+        # Durable allocation comes before effects: interruption can create a
+        # gap, never reuse the same pulse sequence.
+        memo["pulse_seq"] = seq
+        sialib._write_memo(memo)
+        st = sialib._pulse_transaction(seq)
     print(json.dumps({k: st[k] for k in
                       ("state", "events_pulse", "pages", "graph_nodes",
                        "graph_edges", "integrity")}, indent=1))
@@ -215,55 +673,109 @@ def cmd_pulse():
 
 
 def cmd_dream():
-    if not _guard_daemon():
+    try:
+        with sialib.brainstem_owner():
+            return _cmd_dream_owned()
+    except sialib.OwnerBusy:
+        _print_owner_refusal()
         return 1
+
+
+def _cmd_dream_owned():
     rep = sialib.dream()
     print(json.dumps(rep, indent=1) if rep else "dream failed")
     return 0 if rep else 1
 
 
-def _gbrain_pin_check():
-    """Warn if the running gbrain drifts from the pinned commit SIA was
-    verified against. A loose memory engine is a silent-drift risk for a
-    system this obsessed with pins — so it is surfaced, not hidden."""
-    import glob
-    pins = (glob.glob(sialib.os.path.expanduser(
-                "~/.local/share/sia/GBRAIN_PIN"))
-            or glob.glob(sialib.os.path.expanduser(
-                "~/.config/omarchy/plugins/khephri.sia/GBRAIN_PIN")))
+def _gbrain_pin_check(pin_paths=None):
+    """Compare the runtime's exposed version with SIA's expected pin.
+
+    ``gbrain --version`` does not expose a source commit, so this check never
+    claims that the installed executable's commit was verified.
+    """
+    pins = pin_paths
+    if pins is None:
+        pins = []
+        for candidate in (
+                sialib.os.path.expanduser(
+                    "~/.local/share/sia/GBRAIN_PIN"),
+                sialib.os.path.expanduser(
+                    "~/.config/omarchy/plugins/khephri.sia/GBRAIN_PIN")):
+            try:
+                if stat.S_ISREG(os.lstat(candidate).st_mode):
+                    pins.append(candidate)
+                    break
+            except OSError:
+                continue
     if not pins:
         return
     try:
-        pin = dict(l.split("=", 1) for l in open(pins[0])
-                   if "=" in l and not l.startswith("#"))
+        pin = {}
+        path = pins[0]
+        fd = sialib._open_source_nofollow(path, os.O_RDONLY)
+        with os.fdopen(fd, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) \
+                    or before.st_uid != os.geteuid() \
+                    or before.st_size > sialib.MAX_CONFIG_BYTES:
+                return
+            raw = stream.read(sialib.MAX_CONFIG_BYTES + 1)
+            after = os.fstat(stream.fileno())
+            current = sialib._source_path_identity(path, os.O_RDONLY)
+        observed = (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns)
+        finished = (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)
+        target = (current.st_dev, current.st_ino, current.st_size,
+                  current.st_mtime_ns, current.st_ctime_ns)
+        if observed != finished or finished != target \
+                or len(raw) > sialib.MAX_CONFIG_BYTES:
+            return
+        for raw_line in raw.decode("utf-8", errors="strict").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            pin[key.strip()] = value.strip()
         want = pin.get("commit", "").strip()
-    except Exception:
+    except (OSError, UnicodeError):
         return
     ver = ""
     try:
-        r = subprocess.run([sialib.GBRAIN, "--version"],
-                           env=sialib.GBRAIN_ENV, capture_output=True,
-                           text=True, timeout=30)
-        ver = r.stdout.strip().splitlines()[-1]
+        r = sialib._run_bounded_text_process(
+            [sialib.GBRAIN, "--version"], env=sialib.GBRAIN_ENV,
+            timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=None,
+            label="gbrain version",
+            output_limit=sialib.MAX_GBRAIN_OUTPUT_BYTES)
+        reported = (r.stdout or r.stderr or "").strip().splitlines()
+        ver = reported[-1] if reported else ""
     except Exception:
         pass
     exp = pin.get("version", "").strip()
-    if want and exp and exp not in ver:
-        print(f"  gbrain   DRIFT — running {ver!r}, pinned {exp} "
-              f"(commit {want}); re-run sia bench + sia judge-audit")
+    commit_note = (f"; expected source commit {want} is not self-verifiable "
+                   "from gbrain --version" if want else "")
+    if not ver:
+        expectation = f"; expected version {exp}" if exp else ""
+        print(f"  gbrain   runtime version unavailable{expectation}"
+              f"{commit_note}")
+    elif exp and exp not in ver:
+        print(f"  gbrain   VERSION DRIFT — running {ver!r}, expected {exp}"
+              f"{commit_note}; re-run sia bench + sia judge-audit")
     else:
-        print(f"  gbrain   {ver or 'unknown'} (pinned {want})")
+        version_note = f"; version matches expected pin {exp}" if exp else ""
+        print(f"  gbrain   {ver}{version_note}{commit_note}")
 
 
 def cmd_verify():
     chains = sialib.verify_chains()
-    bad = False
+    incomplete = False
     for k, v in sorted(chains.items()):
         print(f"  {k:8s} {v}")
-        bad |= v == "fail"
+        incomplete |= v != "pass"
     _gbrain_pin_check()
-    print("VERDICT: " + ("CHAINS FAILED" if bad else "all present chains verified"))
-    return 1 if bad else 0
+    print("VERDICT: " + ("CHAINS INCOMPLETE" if incomplete
+                         else "all registered chains verified"))
+    return 1 if incomplete else 0
 
 
 def _judge():
@@ -278,17 +790,19 @@ def cmd_ponder(question):
     q = question or ("What patterns, risks, or connections do you see in "
                      "this machine's recent life that a rule would miss?")
     store = sialib.load_thoughts()
-    recent = "\n".join(f"- [{t['kind']}] {t['ts']} {t['text']}"
-                       for t in store["thoughts"][-20:])
+    recent = "\n".join(
+        f"- [origin:{t.get('origin', 'legacy-unlabeled')}] "
+        f"[{t['kind']}] {t['ts']} "
+        f"{sialib.neutralize_unverified_jackal_output(t['text'])}"
+        for t in store["thoughts"][-20:])
     st = sialib.read_json(sialib.STATUS_PATH, {})
     organs = ", ".join(f"{k}:{v.get('today', 0)}"
                        for k, v in sorted(st.get("organs", {}).items()))
     chains = ", ".join(f"{k}:{v}" for k, v in sorted(
         st.get("integrity", {}).get("chains", {}).items()))
-    r = subprocess.run([sialib.GBRAIN, "query", q, "--source", "sia"],
-                       env=sialib.GBRAIN_ENV, capture_output=True, text=True,
-                       timeout=180)
-    recall = (r.stdout or "")[:5000]
+    r = _gbrain_read(["query", q, "--source", "sia"], timeout=180)
+    recall = sialib.neutralize_unverified_jackal_output(
+        r.stdout or "")[:5000]
     prompt = f"""You are SIA, the associative memory of an Omarchy Linux machine
 ("the Omarchy Brain"). Below is genuine material from your memory: recent
 deterministic thoughts, today's per-organ event counts, signed-chain
@@ -320,58 +834,81 @@ Omit TAKE lines entirely if nothing is worth predicting."""
     if not out:
         print("ponder failed:", (err or "")[-300:])
         return 1
+    out = sialib.bounded_model_output(out)
+    stored_out = sialib.inert_model_block(out)
+    stored_question = sialib.inert_summary(q)
     now = sialib.utcnow()
-    slug = f"synthesis/{now.strftime('%Y-%m-%d-%H%M')}-ponder"
-    sialib.write_page(slug,
-        ["type: synthesis",
-         sialib.fm_title(sialib.clip(q, 70)),
-         "tags: [synthesis, ponder]",
-         f"date: {now.strftime('%Y-%m-%d')}"],
-        f"# ponder · {now.strftime('%Y-%m-%d %H:%MZ')}\n\n"
-        f"**Model-assisted synthesis — {label}, via the configured "
-        f"judge backend. NOT a deterministic thought; verify claims against "
-        f"the cited memories.**\n\n"
-        f"**Question:** {q}\n\n{out}\n\n[[sia/cortex]]\n")
+    with sialib.corpus_owner(), sialib.corpus_publication():
+        base = f"synthesis/{now.strftime('%Y-%m-%d-%H%M')}-ponder"
+        slug = base
+        suffix = 2
+        collision_checks = 0
+        while sialib.page_exists(slug):
+            if collision_checks >= sialib.MAX_THOUGHT_RECOVERY_RECORDS:
+                print("ponder refused: synthesis path collision search "
+                      "reached its bound")
+                return 1
+            collision_checks += 1
+            slug = f"{base}-{suffix}"
+            suffix += 1
+        sialib.write_page(slug,
+            ["type: synthesis",
+             sialib.fm_title(sialib.clip(q, 70)),
+             "tags: [synthesis, ponder]",
+             "origin: model",
+             f"date: {now.strftime('%Y-%m-%d')}"],
+            f"# ponder · {now.strftime('%Y-%m-%d %H:%MZ')}\n\n"
+            f"**Model-assisted synthesis — {label}, via the configured "
+            f"judge backend. NOT a deterministic thought; verify claims against "
+            f"the cited memories.**\n\n"
+            f"**Question:** {stored_question}\n\n"
+            f"<pre class=\"sia-model-output\">{stored_out}</pre>\n\n"
+            f"[[sia/cortex]]\n")
     first = out.splitlines()[0].strip() if out.splitlines() else ""
-    inbox_path = sialib.os.path.join(sialib.STATE, "thought-inbox.json")
-    inbox = sialib.read_json(inbox_path, [])
-    inbox.append({"kind": "ponder",
-                  "text": f"I pondered with {label}: "
-                          f"{sialib.clip(first, 120)} (full synthesis in "
-                          f"⟦{slug}⟧)",
-                  "links": [slug, "sia/cortex"], "urgent": False})
+    ponder_thought = {"kind": "ponder", "origin": "model",
+                      "text": f"I pondered with {label}: "
+                              f"{sialib.clip(first, 120)} (full synthesis in "
+                              f"⟦{slug}⟧)",
+                      "links": [slug, "sia/cortex"], "urgent": False}
     # the model may PROPOSE predictions; only the operator commits them.
     # (a model that mints the takes it will later help grade is too neat
     # a loop — proposals wait in a queue for `sia take --accept`)
     import re as _re
+    import siatakes as _st
     props = []
     for tm in _re.finditer(
             r"^TAKE:\s*confidence=([0-9.]+)\s+deadline=(\S+)\s+"
             r"domain=(\S+)\s+claim=(.+)$", out, _re.M):
         try:
-            props.append({"confidence": min(0.99, max(0.01,
-                              float(tm.group(1)))),
-                          "deadline": tm.group(2)[:10],
-                          "domain": tm.group(3).lower(),
-                          "claim": " ".join(tm.group(4).split())[:300],
-                          "source": slug, "proposed": label})
+            props.append(_st.validate_proposal({
+                "confidence": min(0.99, max(0.01, float(tm.group(1)))),
+                "deadline": tm.group(2)[:10],
+                "domain": tm.group(3).lower(),
+                "claim": sialib.inert_summary(
+                    " ".join(tm.group(4).split())[:300]),
+                "source": slug, "proposed": label}, require_future=True))
+            if len(props) >= 2:
+                break
         except Exception:
             pass
     if props:
-        import siatakes as _st
         _st.locked_proposals(sialib.STATE, lambda cur: cur + props)
-        inbox.append({"kind": "take",
-                      "text": f"{label} proposed {len(props)} "
-                              f"prediction(s) — review with `sia takes`, "
-                              f"commit with `sia take --accept`.",
-                      "links": [slug], "urgent": False})
-    sialib.atomic_write(inbox_path, json.dumps(inbox))
-    print(f"\n{out}\n\nsaved → {slug} (thought lands on the next pulse)")
-    for i, p2 in enumerate(props):
-        print(f"proposed take [{i + 1}] (conf {p2['confidence']:.2f}, due "
-              f"{p2['deadline']}, {p2['domain']}): {p2['claim'][:90]}")
+    sialib.append_thought_inbox(ponder_thought)
     if props:
-        print("commit with: sia take --accept <n>|all   (proposals are "
+        sialib.append_thought_inbox({
+            "kind": "take", "origin": "model",
+            "text": f"{label} proposed {len(props)} prediction(s) — review "
+                    f"with `sia takes`, commit with `sia take --accept`.",
+            "links": [slug], "urgent": False})
+    print(f"\n{sialib.strip_controls(out)}\n\nsaved → {slug} "
+          "(thought lands on the next pulse)")
+    for p2 in props:
+        print(f"proposed take [{p2['proposal_id']}] "
+              f"(conf {p2['confidence']:.2f}, due "
+              f"{p2['deadline']}, {sialib.clip(p2['domain'], 30)}): "
+              f"{sialib.clip(p2['claim'], 90)}")
+    if props:
+        print("commit with: sia take --accept <proposal-id>|all   (proposals are "
               "not memories until you do)")
     return 0
 
@@ -389,21 +926,44 @@ def cmd_take(argv):
         def _accept(pending):
             if not pending:
                 return pending
-            idxs = (list(range(len(pending))) if which == "all"
-                    else [int(which) - 1])
+            if which == "all":
+                idxs = set(range(len(pending)))
+            else:
+                if not re.fullmatch(r"[0-9a-f]{6,20}", which):
+                    raise ValueError(
+                        "proposal selector must be an id prefix or all")
+                matches = [i for i, row in enumerate(pending)
+                           if row["proposal_id"].startswith(which)]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "proposal id prefix is absent or ambiguous")
+                idxs = {matches[0]}
+            # Validate every selected record before the first corpus write.
+            selected_rows = {i: siatakes.validate_proposal(
+                                 pending[i], require_future=True)
+                             for i in idxs}
             remaining = []
             for i, p in enumerate(pending):
                 if i in idxs:
+                    p = selected_rows[i]
                     committed.append(siatakes.create_take(
                         p["claim"], confidence=p["confidence"],
                         deadline=p["deadline"], domain=p["domain"],
                         holder="sia",
-                        links=[p.get("source", "sia/cortex")]))
+                        links=[p.get("source", "sia/cortex")],
+                        proposal_id=p["proposal_id"],
+                        before_publish=before_publish))
                 else:
                     remaining.append(p)
             return remaining
 
-        siatakes.locked_proposals(sialib.STATE, _accept)
+        try:
+            with sialib.corpus_owner(), \
+                    sialib.corpus_publication() as before_publish:
+                siatakes.locked_proposals(sialib.STATE, _accept)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"proposal acceptance refused: {exc}")
+            return 2
         if not committed:
             print("no pending proposals")
             return 0
@@ -417,7 +977,7 @@ def cmd_take(argv):
     while i < len(argv):
         a = argv[i]
         if a == "--confidence" and i + 1 < len(argv):
-            conf = float(argv[i + 1]); i += 2
+            conf = argv[i + 1]; i += 2
         elif a == "--by" and i + 1 < len(argv):
             by = argv[i + 1]; i += 2
         elif a == "--domain" and i + 1 < len(argv):
@@ -428,59 +988,176 @@ def cmd_take(argv):
         print("usage: sia take \"claim\" [--confidence 0.7] "
               "[--by YYYY-MM-DD] [--domain d]")
         return 2
-    meta = siatakes.create_take(" ".join(claim), confidence=conf,
-                                deadline=by, domain=domain, holder="user")
+    try:
+        with sialib.corpus_owner(), \
+                sialib.corpus_publication() as before_publish:
+            meta = siatakes.create_take(" ".join(claim), confidence=conf,
+                                        deadline=by, domain=domain,
+                                        holder="user",
+                                        before_publish=before_publish)
+    except (TypeError, ValueError) as exc:
+        print(f"take refused: {exc}")
+        return 2
     print(f"take {meta['id']} registered (conf {meta['confidence']:.2f}, "
           f"due {meta['deadline']}, domain {meta['domain']}).\n"
           f"It joins the brain on the next pulse; grading happens when due.")
     return 0
 
 
-def cmd_takes():
+def cmd_takes(argv=()):
     import siatakes
-    pending = sialib.read_json(
-        sialib.os.path.join(sialib.STATE, "take-proposals.json"), [])
-    for i, p in enumerate(pending):
-        print(f"? [{i + 1}] PROPOSED by {p.get('proposed', 'model')} "
+    limit = getattr(siatakes, "DEFAULT_HISTORY_PAGE_LIMIT", 64)
+    cursor = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--limit" and i + 1 < len(argv):
+            try:
+                limit = int(argv[i + 1])
+            except ValueError:
+                print("takes refused: --limit must be an integer")
+                return 2
+            i += 2
+        elif argv[i] == "--cursor" and i + 1 < len(argv):
+            cursor = argv[i + 1]
+            i += 2
+        else:
+            print("usage: sia takes [--limit N] [--cursor CURSOR]")
+            return 2
+    try:
+        pending = siatakes.read_proposals(sialib.STATE)
+    except (OSError, ValueError) as exc:
+        print(f"proposal queue refused: {exc}")
+        pending = []
+    for p in pending:
+        print(f"? [{p['proposal_id']}] PROPOSED by "
+              f"{sialib.clip(p.get('proposed', 'model'), 40)} "
               f"(conf {p['confidence']:.2f}, due {p['deadline']}, "
-              f"{p['domain']}): {p['claim'][:90]}")
+              f"{sialib.clip(p['domain'], 30)}): "
+              f"{sialib.clip(p['claim'], 90)}")
     if pending:
-        print("   commit with: sia take --accept <n>|all\n")
-    takes = siatakes.load_takes()
+        print("   commit with: sia take --accept <proposal-id>|all\n")
+    try:
+        if hasattr(siatakes, "list_takes_page"):
+            page = siatakes.list_takes_page(limit=limit, cursor=cursor)
+            takes = page["items"]
+        else:
+            takes = siatakes.load_takes()
+            page = {"items": takes, "next_cursor": None,
+                    "legacy_debt": False}
+    except (OSError, ValueError) as exc:
+        print(f"take history refused: {exc}")
+        return 2
     if not takes:
-        print("No predictions yet. Make one: sia take \"...\" "
-              "— or let ponder propose them.")
+        if page["legacy_debt"]:
+            print("Take history baseline is still settling; run a pulse and "
+                  "retry this page.")
+        else:
+            print("No predictions yet. Make one: sia take \"...\" "
+                  "— or let ponder propose them.")
         return 0
     today = sialib.utcnow().strftime("%Y-%m-%d")
     for t in takes:
+        if t.get("status") == "invalid-record":
+            print(f"? invalid take record {sialib.clip(t.get('slug', '?'), 80)} — "
+                  f"{sialib.clip(t.get('invalid_reason', 'malformed metadata'), 120)}")
+            continue
         mark = {"open": "○", "resolved-true": "✓", "resolved-false": "✗",
                 "unresolvable": "–"}.get(t.get("status"), "?")
         due = t.get("deadline", "?")
-        duestr = f"due {due}" + (" (DUE)" if t.get("status") == "open"
-                                 and due <= today else "")
+        deadline_blocked = (isinstance(t.get("legacy_v1"), dict)
+                            and t["legacy_v1"].get("deadline_state")
+                            == "invalid-open-blocked")
+        if deadline_blocked:
+            original = sialib.inert_summary(
+                t["legacy_v1"].get("original_deadline", "invalid"))
+            duestr = (f"legacy deadline {original} is not a calendar date "
+                      "(grading blocked)")
+        else:
+            duestr = f"due {due}" + (
+                " (DUE)" if t.get("status") == "open" and due <= today
+                else "")
         brier = (f" Brier {t['brier']}" if t.get("brier") is not None
                  else "")
-        print(f"{mark} {t['id']}  [{t.get('holder','?')}·"
-              f"{t.get('domain','?')}] conf {t.get('confidence',0):.2f} "
-              f"{duestr}{brier}\n    {t.get('claim','')}")
-    s = siatakes.summary(takes)
+        print(f"{mark} {t['id']}  "
+              f"[{sialib.clip(t.get('holder','?'), 30)}·"
+              f"{sialib.clip(t.get('domain','?'), 30)}] "
+              f"conf {t.get('confidence',0):.2f} "
+              f"{duestr}{brier}\n    {sialib.inert_summary(t.get('claim',''))}")
+    try:
+        s = siatakes.summary()
+    except TypeError:
+        s = siatakes.summary(takes)
     print(f"\n{s['open']} open ({s['due']} due) · {s['resolved']} resolved"
           + (f" · mean Brier {s['brier']}" if s["brier"] is not None else ""))
+    if page["next_cursor"] is not None:
+        print("next page: sia takes --cursor " + page["next_cursor"])
+    if page["legacy_debt"]:
+        print("history boundary: legacy baseline is incomplete; counts are "
+              "bounded projections of settled rows only")
     return 0
 
 
 def cmd_grade(tid=None):
     import siatakes
-    takes = siatakes.load_takes()
-    targets = ([t for t in takes if t["id"] == tid] if tid
-               else siatakes.due_takes(takes))
+    try:
+        with sialib.corpus_owner():
+            memo = sialib.load_memo()
+            with sialib.corpus_publication(memo) as before_publish:
+                _history_recovered, history_errors = \
+                    siatakes.recover_natural_history_transactions(
+                        before_publish=before_publish)
+                _recovered, recovery_errors = \
+                    siatakes.recover_grade_transactions(
+                        before_publish=before_publish)
+            recovery_errors = history_errors + recovery_errors
+            if not recovery_errors:
+                sialib._settle_pending_publication(
+                    memo, "publish recovered manual grades before judging")
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"grade recovery publication pending: {exc}")
+        return 2
+    if recovery_errors:
+        print("grade recovery refused: " + json.dumps(recovery_errors))
+        return 2
+    try:
+        target = siatakes.get_take(tid) if tid else None
+    except ValueError:
+        target = None
+    try:
+        if tid and target is None:
+            target = next((row for row in siatakes.load_takes()
+                           if row.get("id") == tid), None)
+        targets = ([target] if target is not None
+                   and target.get("status") == "open" else []) \
+            if tid else siatakes.due_takes()
+    except (OSError, ValueError) as exc:
+        print(f"grade target refused: {exc}")
+        return 2
     if not targets:
         print("nothing to grade" + (f" (no take {tid})" if tid else
                                     " — no open takes are due"))
         return 0
+
+    def _persist_grade(row, verdict, justification, evidence_snapshots):
+        with sialib.corpus_owner():
+            memo = sialib.load_memo()
+            with sialib.corpus_publication(memo) as before_publish:
+                siatakes.commit_grade_transition(
+                    row, verdict, justification, evidence_snapshots,
+                    before_publish=before_publish)
+            sialib._settle_pending_publication(
+                memo, "publish manual grade before continuing")
+
+    grade_failed = False
     for t in targets:
-        print(f"grading {t['id']} “{t['claim'][:70]}…” with the judge…")
-        gt = siatakes.grade_take(t)
+        print(f"grading {t['id']} “{sialib.clip(t['claim'], 70)}…” "
+              "with the judge…")
+        try:
+            gt = siatakes.grade_take(t, persist=_persist_grade)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"  grade not completed or publication pending: {exc}")
+            grade_failed = True
+            break
         if not gt:
             print("  grading failed (judge unavailable)")
             continue
@@ -489,14 +1166,13 @@ def cmd_grade(tid=None):
         brier = (f" · Brier {gt['brier']}" if gt["brier"] is not None
                  else "")
         print(f"  → {mark}{brier}")
-        inbox_path = sialib.os.path.join(sialib.STATE, "thought-inbox.json")
-        inbox = sialib.read_json(inbox_path, [])
-        inbox.append({"kind": "grade",
-                      "text": f"Graded my prediction "
-                              f"“{sialib.clip(gt['claim'], 80)}”: "
-                              f"{mark}{brier}.",
-                      "links": [gt["slug"]], "urgent": False})
-        sialib.atomic_write(inbox_path, json.dumps(inbox))
+        sialib.append_thought_inbox({
+            "kind": "grade", "origin": "model",
+            "text": f"Graded my prediction "
+                    f"“{sialib.clip(gt['claim'], 80)}”: {mark}{brier}.",
+            "links": [gt["slug"]], "urgent": False})
+    if grade_failed:
+        return 1
     for line in siatakes.calibration_text():
         print("calibration · " + line)
     return 0
@@ -508,8 +1184,8 @@ def cmd_calibration():
     if not lines:
         print("No takes yet — nothing to calibrate against.")
         return 0
-    print("How good is the judgment, measured against outcomes "
-          "(Brier: 0.0 = prophet, 0.25 = coin-flip):")
+    print("Descriptive calibration over the resolved-take population "
+          "(sample sizes and domain breakdowns follow):")
     for line in lines:
         print("  " + line)
     return 0
@@ -518,12 +1194,19 @@ def cmd_calibration():
 def cmd_note(argv):
     """Agent reciprocity: any session may leave a labeled note for its
     successors. Notes are model-origin memories — recallable, graphed,
-    and permanently marked as agent prose, never evidence."""
+    and permanently marked as agent prose, never evidence. The caller only
+    spools an immutable request; the brainstem alone materializes queued
+    agent notes. Corpus transactions and PGLite operations use separate
+    cross-process owner leases."""
     author, text = "agent", []
     i = 0
     while i < len(argv):
-        if argv[i] == "--from" and i + 1 < len(argv):
-            author = argv[i + 1][:40]; i += 2
+        if argv[i] == "--from":
+            if i + 1 >= len(argv):
+                print("usage: sia note \"what the next session should know\" "
+                      "[--from <author>]")
+                return 2
+            author = argv[i + 1]; i += 2
         else:
             text.append(argv[i]); i += 1
     body = " ".join(text).strip()
@@ -531,43 +1214,86 @@ def cmd_note(argv):
         print("usage: sia note \"what the next session should know\" "
               "[--from <author>]")
         return 2
-    now = sialib.utcnow()
-    slug = f"notes/{now.strftime('%Y-%m-%d-%H%M')}-{sialib.sanitize_slugpart(author)}"
-    n = 2
-    base = slug
-    while sialib.page_exists(slug):
-        slug = f"{base}-{n}"; n += 1
-    sialib.write_page(slug,
-        ["type: note",
-         sialib.fm_title(sialib.clip(body, 70)),
-         f"tags: [note, agent, {sialib.sanitize_slugpart(author)}]",
-         f"date: {now.strftime('%Y-%m-%d')}"],
-        f"# note · from {author} · {now.strftime('%Y-%m-%d %H:%MZ')}\n\n"
-        f"**Agent-authored memory — model-origin, not evidence. A message "
-        f"from one session to the next.**\n\n{body}\n\n"
-        f"[[organs/claude-code]] [[sia/cortex]]\n")
-    inbox_path = sialib.os.path.join(sialib.STATE, "thought-inbox.json")
-    inbox = sialib.read_json(inbox_path, [])
-    inbox.append({"kind": "note",
-                  "text": f"{author} left a note for future sessions: "
-                          f"{sialib.clip(body, 100)} (⟦{slug}⟧)",
-                  "links": [slug, "organs/claude-code"], "urgent": False})
-    sialib.atomic_write(inbox_path, json.dumps(inbox))
-    print(f"noted → {slug} (joins the brain on the next pulse)")
+    if len(body) > 2000:
+        print("note text must be between 1 and 2000 characters")
+        return 2
+    if not author.strip() or len(author) > 40:
+        print("note author must be between 1 and 40 characters")
+        return 2
+    import siaqueue
+    safe_author = sialib.clip(sialib.redact(author, "agent-note"), 40)
+    safe_body = sialib.redact(body, "agent-note").strip()
+    if not safe_author or not safe_body:
+        print("note author and text must remain non-empty after redaction")
+        return 2
+    try:
+        receipt = siaqueue.enqueue_note(sialib.STATE, safe_author, safe_body)
+    except (TypeError, ValueError) as exc:
+        print(f"note rejected: {exc}")
+        return 2
+    except OSError as exc:
+        print(f"could not queue note: {exc}")
+        return 1
+    print(f"note queued · request {receipt['request_id']} · "
+          f"{receipt['queued_at']} (the brainstem materializes it on the "
+          f"next pulse)")
+    return 0
+
+
+def cmd_agent_propose(raw):
+    """Queue one validated model-origin take through the lifecycle CLI."""
+    import siatakes
+    try:
+        value = json.loads(raw)
+    except (UnicodeError, ValueError, RecursionError):
+        print("proposal rejected: payload is malformed JSON")
+        return 2
+    try:
+        if not isinstance(value, dict):
+            raise ValueError("proposal payload must be an object")
+        proposal = siatakes.validate_proposal(value, require_future=True)
+        siatakes.locked_proposals(
+            sialib.STATE, lambda current: current + [proposal])
+    except (TypeError, ValueError) as exc:
+        print(f"proposal rejected: {exc}")
+        return 2
+    print(f"proposed ({proposal['proposal_id']}). The operator commits with: "
+          f"sia take --accept {proposal['proposal_id']}  — proposals are "
+          "not memories until then.")
     return 0
 
 
 def cmd_ledger():
     n, h = sialib.ledger_head()
     print(f"sia ledger: seq {n} · head {h[:16]}…")
-    return subprocess.run([sys.executable,
-                           os.path.join(sialib.BIN, "sia-ledger"),
-                           "verify", sialib.SHARE, "--quiet"]).returncode
+    try:
+        result = sialib._run_bounded_text_process(
+            [sys.executable, os.path.join(sialib.BIN, "sia-ledger"),
+             "verify", sialib.SHARE, "--quiet"],
+            env=None, timeout=60, cwd=None, label="SIA ledger verifier",
+            output_limit=sialib.MAX_CONFIG_BYTES)
+    except Exception as exc:
+        print(f"ledger verification refused: {exc}", file=sys.stderr)
+        return 1
+    return result.returncode
 
 
 def cmd_intend(argv):
     """Prospective memory: remembering TO DO, not just what happened."""
     import siatakes
+    if argv and argv[0] == "--history":
+        cursor = argv[2] if len(argv) >= 3 and argv[1] == "--cursor" else None
+        if len(argv) not in (1, 3) or len(argv) == 3 and argv[1] != "--cursor":
+            print("usage: sia intend --history [--cursor CURSOR]")
+            return 2
+        page = siatakes.list_intents_page(cursor=cursor)
+        for it in page["items"]:
+            print(f"  {it['id'][:6]}  [{it['status']}]  "
+                  f"{sialib.clip(it['text'], 70)}")
+        if page["next_cursor"] is not None:
+            print("next page: sia intend --history --cursor "
+                  + page["next_cursor"])
+        return 0
     if not argv or argv[0] == "--list":
         ints = siatakes.open_intents()
         if not ints:
@@ -577,18 +1303,23 @@ def cmd_intend(argv):
             d = it["days_left"]
             when = (f"OVERDUE {-d}d" if d < 0 else
                     "due today" if d == 0 else f"due in {d}d")
-            print(f"  {it['id'][:6]}  [{when:>11}]  {it['text'][:70]}")
+            print(f"  {it['id'][:6]}  [{when:>11}]  "
+                  f"{sialib.clip(it['text'], 70)}")
         return 0
     if argv[0] == "--done":
         if len(argv) < 2:
             print("usage: sia intend --done <id> [note…]")
             return 2
-        it = siatakes.close_intent(argv[1], " ".join(argv[2:]))
+        with sialib.corpus_owner(), \
+                sialib.corpus_publication() as before_publish:
+            it = siatakes.close_intent(
+                argv[1], " ".join(argv[2:]),
+                before_publish=before_publish)
         if not it:
             print(f"no unique open intent matches “{argv[1]}” "
                   f"(see sia intend --list)")
             return 1
-        print(f"intent {it['id'][:6]} done: {it['text'][:70]}")
+        print(f"intent {it['id'][:6]} done: {sialib.clip(it['text'], 70)}")
         return 0
     text, by = [], None
     i = 0
@@ -602,7 +1333,10 @@ def cmd_intend(argv):
               "       sia intend --list | --done <id> [note…]")
         return 2
     try:
-        it = siatakes.create_intent(" ".join(text), by)
+        with sialib.corpus_owner(), \
+                sialib.corpus_publication() as before_publish:
+            it = siatakes.create_intent(
+                " ".join(text), by, before_publish=before_publish)
     except ValueError:
         print(f"bad date: {by} (want YYYY-MM-DD)")
         return 2
@@ -612,17 +1346,64 @@ def cmd_intend(argv):
     return 0
 
 
+READINESS_GATED_COMMANDS = frozenset({
+    "ask", "query", "recall", "memory", "rehearse", "think", "graph",
+    "ponder", "deep", "takes", "grade", "calibration", "bench",
+    "judge-audit", "context", "intend",
+})
+
+
 def main(argv):
+    try:
+        with sialib._lifecycle_reader():
+            return _main_under_lifecycle(argv)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"SIA unavailable: {exc}")
+        return 1
+
+
+def _main_under_lifecycle(argv):
     if len(argv) < 2:
         print(__doc__.strip())
         return 2
     cmd = argv[1]
+    command_args = argv[2:]
+    recovery_safe_unpin = (cmd == "memory" and len(command_args) == 2
+                           and command_args[0] == "--unpin")
+    if cmd in READINESS_GATED_COMMANDS and not recovery_safe_unpin:
+        # Keep the readiness predicate and every byte returned to the caller
+        # in the same corpus generation. Nested corpus owners in ponder/grade
+        # are context-local reentrant scopes over this lease.
+        with sialib.corpus_owner():
+            ready, reason = sialib.memory_readiness()
+            if not ready:
+                print("SIA memory read refused: " + reason + ". Run or wait "
+                      "for a successful `sia pulse` to finish migration and "
+                      "sync.")
+                return 1
+            return _dispatch(argv, cmd)
+    return _dispatch(argv, cmd)
+
+
+def _dispatch(argv, cmd):
     if cmd == "status":
         return cmd_status()
     if cmd in ("ask", "query") and len(argv) > 2:
-        return cmd_ask(" ".join(argv[2:]))
+        ask_args = argv[2:]
+        no_touch = "--no-touch" in ask_args
+        ask_args = [a for a in ask_args if a != "--no-touch"]
+        return cmd_ask(" ".join(ask_args), touch=not no_touch) \
+            if ask_args else 2
     if cmd == "recall" and len(argv) > 2:
-        return cmd_recall(argv[2])
+        recall_args = argv[2:]
+        no_touch = "--no-touch" in recall_args
+        recall_args = [a for a in recall_args if a != "--no-touch"]
+        return cmd_recall(recall_args[0], touch=not no_touch) \
+            if len(recall_args) == 1 else 2
+    if cmd == "memory":
+        return cmd_memory(argv[2:])
+    if cmd == "rehearse":
+        return cmd_rehearse(argv[2:])
     if cmd == "think":
         return cmd_think()
     if cmd == "graph":
@@ -635,6 +1416,8 @@ def main(argv):
         return cmd_verify()
     if cmd == "note":
         return cmd_note(argv[2:])
+    if cmd == "agent-propose" and len(argv) == 3:
+        return cmd_agent_propose(argv[2])
     if cmd == "ledger":
         return cmd_ledger()
     if cmd == "ponder":
@@ -644,7 +1427,7 @@ def main(argv):
     if cmd == "take":
         return cmd_take(argv[2:])
     if cmd == "takes":
-        return cmd_takes()
+        return cmd_takes(argv[2:])
     if cmd == "intend":
         return cmd_intend(argv[2:])
     if cmd == "grade":
@@ -653,8 +1436,7 @@ def main(argv):
         return cmd_calibration()
     if cmd == "bench":
         import siabench
-        siabench.run()
-        return 0
+        return siabench.main(argv[2:])
     if cmd == "judge-audit":
         import siatakes
         print("attacking the judge with 6 engineered evidence states "
@@ -682,14 +1464,22 @@ def main(argv):
         st = sialib.read_json(sialib.STATUS_PATH, {})
         organs = sorted({s.split("/")[1] for s in st.get("workspace", [])
                          if s.startswith("events/")})[:6] or ["jackal"]
-        r = subprocess.run([sialib.GBRAIN, "context-pack",
-                            "--entities", ",".join(organs),
-                            "--budget-tokens", "4000"],
-                           env=sialib.GBRAIN_ENV, text=True)
+        r = _gbrain_read(["context-pack", "--entities", ",".join(organs),
+                          "--budget-tokens", "4000"])
+        sys.stdout.write(sialib.strip_controls(r.stdout))
+        sys.stderr.write(sialib.strip_controls(r.stderr))
         return r.returncode
     print(__doc__.strip())
     return 2
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        with _runtime_generation_lease():
+            sys.path.insert(0, _runtime_module_dir())
+            import sialib as _sialib
+            sialib = _sialib
+            sys.exit(main(sys.argv))
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"sia: refused: {exc}", file=sys.stderr)
+        sys.exit(1)

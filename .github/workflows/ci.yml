@@ -1,17 +1,49 @@
 name: ci
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       - name: dependencies
-        run: pip install cryptography
+        # Immutable wheel hashes copied from the official PyPI JSON records on
+        # 2026-08-30:
+        # https://pypi.org/pypi/cryptography/50.0.1/json
+        # https://pypi.org/pypi/cffi/2.0.0/json
+        # https://pypi.org/pypi/pycparser/3.0/json
+        run: |
+          printf '%s\n' \
+            'cryptography==50.0.1 --hash=sha256:ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef --hash=sha256:51593d180cf6d179bde5c5d065bed81386b1f381656ae7d042b7ffc87a9895ad --hash=sha256:51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a --hash=sha256:e22dfed744bd4002e909464cb23d2f0b05c6f3113a79ef2e9864a53db737c733 --hash=sha256:407fe2b6db00939c05c0e945e9914238f2f0a430974839429dafc82b1ee6bee5 --hash=sha256:9dde0a357190eb3b1da1bb9ab750e9c85cba82ca5977aa0836cbb94e92611239' \
+            'cffi==2.0.0 --hash=sha256:3e17ed538242334bf70832644a32a7aae3d83b57567f9fd60a26257e992b79ba' \
+            'pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992' \
+            > "$RUNNER_TEMP/sia-ci-requirements.txt"
+          python -m pip install --only-binary=:all: --require-hashes \
+            -r "$RUNNER_TEMP/sia-ci-requirements.txt"
       - name: compile all python
         run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp
-      - name: shellcheck scripts
+      - name: shell syntax
         run: bash -n install.sh uninstall.sh
-      - name: unit tests (cursor/replay, epoch-merge, ledger, PPR, novelty, surprise, redaction, touch weighting)
-        run: python3 -m unittest -v tests.test_sia
+      - name: release artifact contracts
+        run: |
+          python3 -m json.tool manifest.json >/dev/null
+          python3 -m json.tool config.example.json >/dev/null
+          test -s schema-pack/pack.yaml
+          test -s preview.png
+          git diff --check
+      - name: shell semantics
+        run: |
+          docker run --rm --network none --cap-drop all \
+            --security-opt no-new-privileges --read-only \
+            -v "$PWD:/mnt:ro" \
+            koalaman/shellcheck-alpine@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
+            shellcheck /mnt/install.sh /mnt/uninstall.sh
+      - name: unit and contract tests
+        env:
+          PYTHONWARNINGS: error::ResourceWarning
+        run: python3 -m unittest discover -s tests -v

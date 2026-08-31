@@ -4,89 +4,391 @@ agent harness (Claude Code, Codex, Grok, OMP, anything MCP-capable).
 
 Architecture contract: this server NEVER opens the brain's database.
 Reads shell out to the `sia` CLI (which retries around the daemon's
-brief pulse locks); writes go to the append-only queues the daemon
-drains (notes, take proposals, recall touches). The brainstem remains
-the single writer; agents are queue clients. Model-origin content is
+brief ownership lease); writes go to serialized filesystem queues
+(notes, take proposals, recall touches). The brainstem materializes agent
+notes and remains the PGLite writer; agents are queue clients. Model-origin content is
 labeled and weighted below evidence by construction.
 """
 
-import json, os, subprocess, sys, time
+import datetime, json, math, os, re, selectors, signal, subprocess, sys, time
+import urllib.parse
 
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
 STATE = os.path.join(HOME, ".local/state/sia")
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.3.0"
+MODERN_PROTOCOL = "2026-07-28"
+LEGACY_PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26",
+                    "2024-11-05")
+SUPPORTED_PROTOCOLS = (MODERN_PROTOCOL,) + LEGACY_PROTOCOLS
+BATCH_PROTOCOLS = ("2025-03-26",)
+SERVER_INFO = {"name": "sia", "title": "SIA — the Omarchy Brain",
+               "version": SERVER_VERSION}
+SERVER_INSTRUCTIONS = (
+    "Recall before re-deriving machine history. Carry origin labels and the "
+    "truth-boundary line; absence of recall is not evidence of absence. "
+    "Agent notes are model-origin prose, never evidence.")
+# JACKAL exact: parsed=256*1024 exact=262144 (not formal-bounded).
+MAX_SIA_OUTPUT_BYTES = 262_144
+READ_CHUNK_BYTES = 65_536
+MAX_REQUEST_BYTES = 262_144
+MAX_BATCH_ITEMS = 8
+# JACKAL exact: parsed=1024*1024 exact=1048576 (not formal-bounded).
+MAX_RESPONSE_BYTES = 1_048_576
+
+TEXT_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"text": {"type": "string"}},
+    "required": ["text"],
+    "additionalProperties": False,
+}
+
+
+def _await_exit_unreaped(process, deadline, command, timeout):
+    """Wait through pidfd so the leader remains the stable PGID owner."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(command, timeout)
+    try:
+        pidfd = os.pidfd_open(process.pid, 0)
+    except (AttributeError, OSError) as exc:
+        raise RuntimeError(
+            "cannot establish stable sia child process identity") from exc
+    watcher = selectors.DefaultSelector()
+    try:
+        watcher.register(pidfd, selectors.EVENT_READ)
+        if not watcher.select(remaining):
+            raise subprocess.TimeoutExpired(command, timeout)
+    finally:
+        watcher.close()
+        os.close(pidfd)
+
+
+def _signal_and_reap_group(process):
+    """Terminate the identity-bound group before reaping its leader."""
+    if process is None:
+        return None
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            process.kill()
+        except OSError:
+            pass
+    try:
+        return process.wait(timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _tool(name, title, description, properties=None, required=None,
+          *, read_only, idempotent):
+    """Build one consistently annotated, dependency-free tool descriptor."""
+    return {
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": {
+            "type": "object",
+            "properties": properties or {},
+            "required": required or [],
+            "additionalProperties": False,
+        },
+        "outputSchema": TEXT_OUTPUT_SCHEMA,
+        "annotations": {
+            "title": title,
+            "readOnlyHint": read_only,
+            "destructiveHint": False,
+            "idempotentHint": idempotent,
+            "openWorldHint": False,
+        },
+    }
 
 
 def run_sia(args, timeout=240):
+    """Run one CLI request while bounding captured output and lifetime."""
+    process = None
+    selector = None
+    group_reaped = False
     try:
-        r = subprocess.run([SIA] + args, capture_output=True, text=True,
-                           timeout=timeout)
-        out = (r.stdout or "") + (("\n" + r.stderr) if r.stderr.strip()
-                                  else "")
-        return out.strip() or "(no output)", r.returncode != 0
+        process = subprocess.Popen(
+            [SIA] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True)
+        selector = selectors.DefaultSelector()
+        streams = {process.stdout: bytearray(), process.stderr: bytearray()}
+        for stream in streams:
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ)
+        deadline = time.monotonic() + timeout
+        captured = 0
+        exceeded = False
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired([SIA] + args, timeout)
+            ready = selector.select(remaining)
+            if not ready:
+                raise subprocess.TimeoutExpired([SIA] + args, timeout)
+            for key, _mask in ready:
+                budget = MAX_SIA_OUTPUT_BYTES - captured
+                try:
+                    chunk = os.read(key.fileobj.fileno(),
+                                    min(READ_CHUNK_BYTES, budget + 1))
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if len(chunk) > budget:
+                    streams[key.fileobj].extend(chunk[:budget])
+                    exceeded = True
+                    break
+                streams[key.fileobj].extend(chunk)
+                captured += len(chunk)
+            if exceeded:
+                break
+        if exceeded:
+            raise OverflowError(
+                f"sia output exceeded {MAX_SIA_OUTPUT_BYTES}-byte limit")
+        command = [SIA] + args
+        _await_exit_unreaped(process, deadline, command, timeout)
+        returncode = _signal_and_reap_group(process)
+        group_reaped = True
+        if returncode is None:
+            raise subprocess.TimeoutExpired(command, timeout)
+        stdout = bytes(streams[process.stdout]).decode(
+            "utf-8", errors="strict")
+        stderr = bytes(streams[process.stderr]).decode(
+            "utf-8", errors="strict")
+        out = stdout + (("\n" + stderr) if stderr.strip() else "")
+        out = out[:MAX_SIA_OUTPUT_BYTES]
+        # Preserve the CLI status code: callers that only need tool-result
+        # semantics use its truthiness, while resources distinguish a
+        # canonical missing page from infrastructure failure.
+        return out.strip() or "(no output)", returncode
+    except OverflowError as exc:
+        return str(exc), -1
+    except subprocess.TimeoutExpired:
+        return f"sia unavailable: command timed out after {timeout}s", -1
+    except UnicodeError:
+        return "sia unavailable: command output is not valid UTF-8", -1
     except Exception as e:
-        return f"sia unavailable: {e}", True
+        return f"sia unavailable: {e}", -1
+    finally:
+        if selector is not None:
+            selector.close()
+        if process is not None:
+            if not group_reaped:
+                # Signal while the unreaped leader still pins its PID/PGID.
+                _signal_and_reap_group(process)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
 
 
 TOOLS = [
-    {"name": "sia_ask",
-     "description": "Semantic recall over the machine's memory (evidence "
+    _tool("sia_ask", "Ask SIA",
+     "Semantic recall over the machine's memory (evidence "
         "ledgers, events, thoughts). Results are labeled by origin class "
         "(evidence/derived/model) and every answer ends with a truth-"
         "boundary line (sense freshness, chain state, recall mode). "
         "Absence of recall is not evidence of absence. Recalling "
         "strengthens the returned memories.",
-     "inputSchema": {"type": "object", "properties": {
-         "question": {"type": "string"}}, "required": ["question"]}},
-    {"name": "sia_recall",
-     "description": "Read one memory page verbatim by slug (e.g. "
+     {"question": {"type": "string", "minLength": 1,
+                   "maxLength": 500,
+                   "description": "Question to answer from SIA memory."}},
+     ["question"], read_only=False, idempotent=False),
+    _tool("sia_search", "Search SIA Without Reinforcement",
+     "Read-only semantic search over SIA memory. It returns the same "
+        "origin labels and truth boundary as sia_ask but does not queue "
+        "recall/reconsolidation touches; use it for audits and evaluations.",
+     {"question": {"type": "string", "minLength": 1,
+                   "maxLength": 500,
+                   "description": "Question to search in SIA memory."}},
+     ["question"], read_only=True, idempotent=True),
+    _tool("sia_recall", "Recall SIA Memory",
+     "Read one memory page verbatim by slug (e.g. "
         "'organs/sekhmet', 'events/jackal/2026-08-29', 'sia/cortex').",
-     "inputSchema": {"type": "object", "properties": {
-         "slug": {"type": "string"}}, "required": ["slug"]}},
-    {"name": "sia_status",
-     "description": "One-screen state of the brain: pulse, memories, "
+     {"slug": {"type": "string", "minLength": 1, "maxLength": 200,
+               "pattern": r"^[a-z0-9][a-z0-9/._-]*$",
+               "description": "Corpus slug returned by SIA recall."}},
+     ["slug"], read_only=True, idempotent=True),
+    _tool("sia_status", "Read SIA Status",
+     "One-screen state of the brain: pulse, memories, "
         "per-organ activity today, signed-chain verdicts, latest thought.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "sia_think",
-     "description": "The brain's recent thoughts (deterministic, "
-        "evidence-cited; ✦/⚖ entries are labeled model-assisted).",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "sia_note",
-     "description": "Leave a labeled note for future agent sessions. "
+     read_only=True, idempotent=True),
+    _tool("sia_think", "Read SIA Thoughts",
+     "The brain's recent thoughts. Deterministic generator entries cite "
+        "evidence; ✦/⚖ are labeled model-assisted and ✉ notes are "
+        "labeled model-origin prose; pre-origin records carry an explicit "
+        "legacy-unlabeled boundary.",
+     read_only=True, idempotent=True),
+    _tool("sia_note", "Leave SIA Note",
+     "Leave a labeled note for future agent sessions. "
         "Notes are model-origin memories: recallable and graphed, but "
         "permanently marked as agent prose and weighted below evidence. "
-        "Use for hard-won context worth passing on, not scratch.",
-     "inputSchema": {"type": "object", "properties": {
-         "text": {"type": "string"},
-         "author": {"type": "string",
+        "They persist and may be returned to configured consumers; never "
+        "include credentials, secrets, or private content. Pattern-based "
+        "redaction is not a secrecy guarantee. Use for hard-won context "
+        "worth passing on, not scratch.",
+     {"text": {"type": "string", "minLength": 1, "maxLength": 2000},
+         "author": {"type": "string", "minLength": 1, "maxLength": 40,
                     "description": "who is writing (e.g. codex, grok, "
                                    "claude-fable-5)"}},
-         "required": ["text", "author"]}},
-    {"name": "sia_propose_take",
-     "description": "PROPOSE a falsifiable prediction (claim + confidence "
+     ["text", "author"], read_only=False, idempotent=False),
+    _tool("sia_propose_take", "Propose SIA Take",
+     "PROPOSE a falsifiable prediction (claim + confidence "
         "+ deadline). Proposals wait in a queue; only the human operator "
         "commits them with `sia take --accept` — agents never mint the "
         "predictions they may later help grade.",
-     "inputSchema": {"type": "object", "properties": {
-         "claim": {"type": "string"},
+     {"claim": {"type": "string", "minLength": 1, "maxLength": 300},
          "confidence": {"type": "number", "minimum": 0.01, "maximum": 0.99},
-         "deadline": {"type": "string", "description": "YYYY-MM-DD"},
-         "domain": {"type": "string"},
-         "author": {"type": "string"}},
-         "required": ["claim", "confidence", "deadline"]}},
-    {"name": "sia_calibration",
-     "description": "Brier scorecard per domain — the measured track "
-        "record of predictions (0.0 = prophet, 0.25 = coin-flip).",
-     "inputSchema": {"type": "object", "properties": {}}},
+         "deadline": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                      "description": "Resolution deadline in YYYY-MM-DD."},
+         "domain": {"type": "string", "minLength": 1, "maxLength": 30,
+                    "pattern": r"^[a-z0-9_-]+$"},
+         "author": {"type": "string", "minLength": 1, "maxLength": 40}},
+     ["claim", "confidence", "deadline"],
+     read_only=False, idempotent=False),
+    _tool("sia_calibration", "Read SIA Calibration",
+     "Read the population-aware Brier scorecard. Single cases and sparse "
+        "series remain descriptive; the output states its sampling and "
+        "world-truth boundaries.", read_only=True, idempotent=True),
 ]
+
+
+RESOURCES = [
+    {"uri": "sia://status", "name": "SIA status",
+     "description": "Current brain pulse, source health, signed-chain "
+                    "verdicts, and truth-boundary state.",
+     "mimeType": "text/plain"},
+    {"uri": "sia://thoughts", "name": "SIA thoughts",
+     "description": "Recent evidence-derived generator thoughts plus "
+                    "clearly labeled model-origin thoughts and explicit "
+                    "legacy-unlabeled records.",
+     "mimeType": "text/plain"},
+    {"uri": "sia://calibration", "name": "SIA calibration",
+     "description": "Population-aware prediction calibration scorecard.",
+     "mimeType": "text/plain"},
+    {"uri": "sia://cortex", "name": "SIA cortex",
+     "description": "The root memory page describing this SIA instance.",
+     "mimeType": "text/markdown"},
+]
+
+RESOURCE_TEMPLATES = [
+    {"uriTemplate": "sia://memory/{slug}", "name": "SIA memory",
+     "description": "Read one origin-labeled corpus memory by its SIA slug. "
+                    "The slug must come from a recall result; path traversal "
+                    "and arbitrary filesystem access are rejected.",
+     "mimeType": "text/markdown"},
+]
+
+
+def _memory_slug(uri):
+    prefix = "sia://memory/"
+    if not isinstance(uri, str) or not uri.startswith(prefix):
+        return None
+    slug = urllib.parse.unquote(uri[len(prefix):])
+    if (not slug or len(slug) > 200 or "//" in slug
+            or not re.fullmatch(r"[a-z0-9][a-z0-9/._-]*", slug)
+            or any(part in {"", ".", ".."} for part in slug.split("/"))):
+        return None
+    return slug
+
+
+def read_resource(uri):
+    if not isinstance(uri, str):
+        return None, {"kind": "invalid",
+                      "message": "invalid resource arguments",
+                      "detail": "uri must be a string"}
+    commands = {
+        "sia://status": (["status"], "text/plain"),
+        "sia://thoughts": (["think"], "text/plain"),
+        "sia://calibration": (["calibration"], "text/plain"),
+        "sia://cortex": (["recall", "sia/cortex", "--no-touch"],
+                         "text/markdown"),
+    }
+    if uri in commands:
+        argv, mime = commands[uri]
+    else:
+        slug = _memory_slug(uri)
+        if slug is None:
+            if uri.startswith("sia://memory/"):
+                return None, {"kind": "invalid",
+                              "message": "invalid SIA memory resource URI"}
+            return None, {"kind": "not-found",
+                          "message": "unknown SIA resource URI"}
+        argv, mime = ["recall", slug, "--no-touch"], "text/markdown"
+    out, returncode = run_sia(argv)
+    if returncode:
+        kind = ("not-found" if argv[0] == "recall" and returncode == 3
+                else "unavailable")
+        message = ("SIA memory resource does not exist"
+                   if kind == "not-found"
+                   else "SIA resource temporarily unavailable")
+        return None, {"kind": kind, "message": message,
+                      "detail": out[:500]}
+    return {"contents": [{"uri": uri, "mimeType": mime,
+                           "text": out}]}, None
+
+
+def _validate_tool_args(name, args):
+    """Validate the JSON-Schema subset used by this server's descriptors."""
+    descriptor = next((tool for tool in TOOLS if tool["name"] == name), None)
+    if descriptor is None:
+        return f"unknown tool {name!r}; call tools/list for available names"
+    if not isinstance(args, dict):
+        return "arguments must be a JSON object"
+    schema = descriptor["inputSchema"]
+    properties = schema["properties"]
+    unexpected = sorted(set(args) - set(properties))
+    if unexpected:
+        return "unexpected argument(s): " + ", ".join(unexpected)
+    missing = [key for key in schema.get("required", []) if key not in args]
+    if missing:
+        return "missing required argument(s): " + ", ".join(missing)
+    for key, value in args.items():
+        rule = properties[key]
+        kind = rule.get("type")
+        if kind == "string":
+            if not isinstance(value, str):
+                return f"{key} must be a string"
+            if len(value) < rule.get("minLength", 0):
+                return f"{key} is too short"
+            if len(value) > rule.get("maxLength", len(value)):
+                return f"{key} is too long"
+            if rule.get("pattern") and not re.fullmatch(rule["pattern"], value):
+                return f"{key} has an invalid format"
+        elif kind == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(value):
+                return f"{key} must be a finite number"
+            if value < rule.get("minimum", value) \
+                    or value > rule.get("maximum", value):
+                return f"{key} is outside the allowed range"
+    if name == "sia_recall" and _memory_slug("sia://memory/" + args["slug"]) \
+            is None:
+        return "slug must be a canonical SIA corpus slug without traversal"
+    if name == "sia_propose_take":
+        try:
+            datetime.date.fromisoformat(args["deadline"])
+        except ValueError:
+            return "deadline must be a real calendar date in YYYY-MM-DD"
+    return None
 
 
 def call_tool(name, args):
     if name == "sia_ask":
         return run_sia(["ask", str(args.get("question", ""))[:500]])
+    if name == "sia_search":
+        return run_sia(["ask", "--no-touch",
+                        str(args.get("question", ""))[:500]])
     if name == "sia_recall":
-        return run_sia(["recall", str(args.get("slug", ""))[:200]])
+        return run_sia(["recall", str(args.get("slug", ""))[:200],
+                        "--no-touch"])
     if name == "sia_status":
         return run_sia(["status"])
     if name == "sia_think":
@@ -107,63 +409,492 @@ def call_tool(name, args):
                 "proposed": str(args.get("author", "agent"))[:40]}
         if not prop["claim"] or not prop["deadline"]:
             return "claim and deadline are required", True
-        sys.path.insert(0, os.path.join(
-            os.path.expanduser("~"), ".local/share/sia/bin"))
-        import siatakes
-        # same flock as the daemon and CLI — never a bare read/append
-        pending = siatakes.locked_proposals(STATE,
-                                            lambda cur: cur + [prop])
-        return (f"proposed (position {len(pending)}). The operator commits "
-                f"with: sia take --accept {len(pending)}  — proposals are "
-                f"not memories until then."), False
+        return run_sia(["agent-propose", json.dumps(
+            prop, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False)])
     return f"unknown tool {name}", True
 
 
-def reply(msg_id, result=None, error=None):
-    out = {"jsonrpc": "2.0", "id": msg_id}
+def _response(msg_id, result=None, error=None):
+    """Build one JSON-RPC response without coupling dispatch to stdio."""
+    out = {"jsonrpc": "2.0"}
+    # MCP request/response IDs are never null. Error responses may omit the
+    # ID only when it could not be read from a malformed request.
+    if _valid_request_id(msg_id):
+        out["id"] = msg_id
     if error is not None:
         out["error"] = error
     else:
         out["result"] = result
-    sys.stdout.write(json.dumps(out) + "\n")
+    return out
+
+
+def _valid_request_id(value):
+    """MCP request IDs are strings or non-Boolean integers."""
+    return isinstance(value, str) or (
+        isinstance(value, int) and not isinstance(value, bool))
+
+
+def _modern_result(result, cache_scope=None):
+    result = dict(result)
+    result.setdefault("resultType", "complete")
+    metadata = dict(result.get("_meta", {}))
+    metadata.setdefault("io.modelcontextprotocol/serverInfo", SERVER_INFO)
+    result["_meta"] = metadata
+    if cache_scope is not None:
+        result.setdefault("ttlMs", 0)
+        result.setdefault("cacheScope", cache_scope)
+    return result
+
+
+def _valid_uri(value):
+    """Validate the absolute-URI shape used by MCP Implementation metadata."""
+    if not isinstance(value, str) or not value or not value.isascii() \
+            or re.search(r"%(?![0-9A-Fa-f]{2})", value):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        # urlsplit is deliberately permissive.  Constrain each component to
+        # RFC 3986's ASCII productions after checking every percent triplet.
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*", parsed.scheme):
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9._~!$&'()*+,;=:%@\[\]-]*",
+                            parsed.netloc):
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9._~!$&'()*+,;=:%@/\-]*",
+                            parsed.path):
+            return False
+        query_fragment = r"[A-Za-z0-9._~!$&'()*+,;=:%@/?\-]*"
+        if not re.fullmatch(query_fragment, parsed.query) \
+                or not re.fullmatch(query_fragment, parsed.fragment):
+            return False
+        authority = parsed.netloc.rsplit("@", 1)[-1]
+        if authority.startswith("["):
+            closing = authority.find("]")
+            suffix = authority[closing + 1:]
+            if suffix and (not suffix.startswith(":")
+                           or not suffix[1:].isdigit()):
+                return False
+        elif ":" in authority:
+            port = authority.rsplit(":", 1)[1]
+            if port and not port.isdigit():
+                return False
+        if parsed.scheme.lower() in {"http", "https"} \
+                and not parsed.hostname:
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_icon(value):
+    if not isinstance(value, dict) or not _valid_uri(value.get("src")):
+        return False
+    if "mimeType" in value and not isinstance(value["mimeType"], str):
+        return False
+    if "sizes" in value and (not isinstance(value["sizes"], list)
+                             or not all(isinstance(size, str)
+                                        for size in value["sizes"])):
+        return False
+    if "theme" in value and (not isinstance(value["theme"], str)
+                             or value["theme"] not in {"light", "dark"}):
+        return False
+    return True
+
+
+def _valid_client_info(value):
+    """Validate every standard field in MCP's Implementation schema."""
+    if not isinstance(value, dict) \
+            or not isinstance(value.get("name"), str) \
+            or not isinstance(value.get("version"), str):
+        return False
+    for key in ("title", "description"):
+        if key in value and not isinstance(value[key], str):
+            return False
+    if "websiteUrl" in value and not _valid_uri(value["websiteUrl"]):
+        return False
+    if "icons" in value and (not isinstance(value["icons"], list)
+                             or not all(_valid_icon(icon)
+                                        for icon in value["icons"])):
+        return False
+    return True
+
+
+def _modern_request_version(params):
+    metadata = params.get("_meta")
+    if not isinstance(metadata, dict):
+        return None, {"code": -32602,
+                      "message": "missing modern request metadata"}
+    version = metadata.get("io.modelcontextprotocol/protocolVersion")
+    capabilities = metadata.get(
+        "io.modelcontextprotocol/clientCapabilities")
+    client_info_key = "io.modelcontextprotocol/clientInfo"
+    client_info = metadata.get(client_info_key)
+    if not isinstance(version, str) or not isinstance(capabilities, dict) \
+            or (client_info_key in metadata
+                and not _valid_client_info(client_info)):
+        return None, {"code": -32602,
+                      "message": "invalid modern request metadata"}
+    if version != MODERN_PROTOCOL:
+        return None, {
+            "code": -32022,
+            "message": "Unsupported protocol version",
+            "data": {"supported": [MODERN_PROTOCOL],
+                     "requested": version},
+        }
+    return version, None
+
+
+def _message_protocol_hint(msg):
+    """Return the protocol revision explicitly selected by one message."""
+    if not isinstance(msg, dict):
+        return None
+    method = msg.get("method")
+    params = msg.get("params")
+    if method == "server/discover":
+        return MODERN_PROTOCOL
+    if not isinstance(params, dict):
+        return None
+    if method == "initialize" and isinstance(params.get("protocolVersion"),
+                                                str):
+        return params["protocolVersion"]
+    metadata = params.get("_meta")
+    if isinstance(metadata, dict) and isinstance(metadata.get(
+            "io.modelcontextprotocol/protocolVersion"), str):
+        return metadata["io.modelcontextprotocol/protocolVersion"]
+    return None
+
+
+def _dispatch(msg, protocol_version=None, require_initialization=False):
+    """Dispatch one decoded JSON-RPC value and return a response or None."""
+    if not isinstance(msg, dict):
+        return _response(None, error={"code": -32600,
+                                      "message": "invalid request"})
+
+    has_id = "id" in msg
+    if has_id and not _valid_request_id(msg["id"]):
+        return _response(None, error={"code": -32600,
+                                      "message": "invalid request ID"})
+
+    if msg.get("jsonrpc") != "2.0" \
+            or not isinstance(msg.get("method"), str):
+        request_id = msg["id"] if has_id else None
+        return _response(request_id, error={"code": -32600,
+                                            "message": "invalid request"})
+
+    request_id = msg.get("id")
+    is_notification = not has_id
+
+    def respond(result=None, error=None):
+        if is_notification:
+            return None
+        return _response(request_id, result=result, error=error)
+
+    raw_params = msg.get("params", {})
+    if not isinstance(raw_params, dict):
+        return respond(error={"code": -32602,
+                              "message": "invalid params"})
+    params = raw_params
+    method = msg["method"]
+
+    # MCP defines a closed set of client notifications. Request-only methods
+    # sent without an ID must never execute, especially write-capable tools.
+    # Unknown notifications are ignored per JSON-RPC and have no response.
+    if is_notification and method not in {
+            "notifications/initialized", "notifications/cancelled",
+            "notifications/progress", "notifications/roots/list_changed"}:
+        return None
+
+    if protocol_version is not None \
+            and protocol_version not in SUPPORTED_PROTOCOLS:
+        return respond(error={
+            "code": -32022,
+            "message": "Unsupported protocol version",
+            "data": {"supported": list(SUPPORTED_PROTOCOLS),
+                     "requested": protocol_version},
+        })
+
+    metadata = params.get("_meta")
+    asks_modern = method == "server/discover" or (
+        isinstance(metadata, dict)
+        and "io.modelcontextprotocol/protocolVersion" in metadata)
+    if protocol_version in LEGACY_PROTOCOLS and asks_modern:
+        return respond(error={
+            "code": -32602,
+            "message": "request protocol version does not match the "
+                       "negotiated legacy session",
+            "data": {"negotiated": protocol_version,
+                     "requested": _message_protocol_hint(msg)},
+        })
+
+    modern = protocol_version == MODERN_PROTOCOL or (
+        protocol_version is None and asks_modern)
+    if modern:
+        _version, protocol_error = _modern_request_version(params)
+        if protocol_error:
+            return respond(error=protocol_error)
+
+    if require_initialization and protocol_version is None and not modern \
+            and method not in {"initialize", "ping"}:
+        return respond(error={
+            "code": -32600,
+            "message": "legacy MCP requires initialize before operation",
+        })
+
+    def complete(result, cache_scope=None):
+        return respond(_modern_result(result, cache_scope)
+                       if modern else result)
+
+    if method == "initialize":
+        if protocol_version is not None:
+            return respond(error={
+                "code": -32600,
+                "message": "MCP session is already initialized",
+            })
+        requested = params.get("protocolVersion")
+        if not isinstance(requested, str) \
+                or not isinstance(params.get("capabilities"), dict) \
+                or not _valid_client_info(params.get("clientInfo")):
+            return respond(error={
+                "code": -32602,
+                "message": "initialize requires protocolVersion, "
+                           "capabilities, and clientInfo",
+            })
+        if requested == MODERN_PROTOCOL:
+            return respond(error={
+                "code": -32602,
+                "message": "modern MCP uses server/discover, not initialize",
+                "data": {"supported": [MODERN_PROTOCOL]},
+            })
+        proto = (requested if requested in LEGACY_PROTOCOLS
+                 else LEGACY_PROTOCOLS[0])
+        return respond({
+            "protocolVersion": proto,
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"subscribe": False,
+                              "listChanged": False},
+            },
+            "serverInfo": SERVER_INFO,
+            "instructions": SERVER_INSTRUCTIONS})
+    if method == "server/discover":
+        return complete({
+            # Discovery belongs to the stateless/per-request era.  Legacy
+            # revisions remain available through the initialize fallback but
+            # must not be selected from this modern response.
+            "supportedVersions": [MODERN_PROTOCOL],
+            "capabilities": {"tools": {}, "resources": {}},
+            "instructions": SERVER_INSTRUCTIONS,
+        }, cache_scope="public")
+    if method == "notifications/initialized":
+        return respond({})
+    if method == "ping":
+        if modern:
+            return respond(error={"code": -32601,
+                                  "message": "method not found: ping"})
+        return respond({})
+    if method == "tools/list":
+        return complete({"tools": TOOLS}, cache_scope="public")
+    if method == "tools/call":
+        name = params.get("name")
+        if not isinstance(name, str) or not name:
+            return respond(error={
+                "code": -32602,
+                "message": "invalid tool arguments",
+                "data": {"detail": "name must be a non-empty string"},
+            })
+        if not any(tool["name"] == name for tool in TOOLS):
+            return respond(error={
+                "code": -32602,
+                "message": f"unknown tool: {name}",
+                "data": {"detail": "call tools/list for available names"},
+            })
+        arguments = params.get("arguments", {})
+        if not isinstance(arguments, dict):
+            return respond(error={
+                "code": -32602,
+                "message": "invalid tool arguments",
+                "data": {"detail": "arguments must be a JSON object"},
+            })
+        validation_error = _validate_tool_args(name, arguments)
+        if validation_error:
+            text = "Invalid tool input: " + validation_error
+            return complete({
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": {"text": text},
+                "isError": True})
+        try:
+            text, is_err = call_tool(name, arguments)
+        except Exception as exc:
+            text, is_err = f"SIA tool failed: {exc}", True
+        return complete({
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": {"text": text},
+            "isError": bool(is_err)})
+    if method == "resources/list":
+        return complete({"resources": RESOURCES}, cache_scope="public")
+    if method == "resources/templates/list":
+        return complete({"resourceTemplates": RESOURCE_TEMPLATES},
+                        cache_scope="public")
+    if method == "resources/read":
+        result, err = read_resource(params.get("uri"))
+        if err is not None:
+            kind = err.get("kind") if isinstance(err, dict) else "invalid"
+            message = (err.get("message", "resource read failed")
+                       if isinstance(err, dict) else str(err))
+            if kind == "unavailable":
+                code = -32603
+            elif kind == "invalid":
+                code = -32602
+            else:
+                code = -32602 if modern else -32002
+            error = {"code": code, "message": message}
+            if isinstance(err, dict) and err.get("detail"):
+                error["data"] = {"detail": err["detail"]}
+            return respond(error=error)
+        return complete(result, cache_scope="private")
+    return respond(error={"code": -32601,
+                          "message": f"method not found: {method}"})
+
+
+def handle_message(payload, protocol_version=None,
+                   require_initialization=False):
+    """Handle one JSON-RPC message with revision-aware batch framing."""
+    if not isinstance(payload, list):
+        return _dispatch(payload, protocol_version=protocol_version,
+                         require_initialization=require_initialization)
+    if not payload:
+        return _response(None, error={"code": -32600,
+                                      "message": "invalid request"})
+    if len(payload) > MAX_BATCH_ITEMS:
+        return _response(None, error={
+            "code": -32600,
+            "message": "JSON-RPC batch exceeds the server item limit",
+        })
+    if any(isinstance(message, dict)
+           and message.get("method") == "initialize"
+           for message in payload):
+        return _response(None, error={
+            "code": -32600,
+            "message": "initialize must not be sent in a JSON-RPC batch",
+        })
+    requested = [version for version in map(_message_protocol_hint, payload)
+                 if version]
+    incompatible = next((version for version in requested
+                         if version not in BATCH_PROTOCOLS), None)
+    batch_version = protocol_version
+    if batch_version is None:
+        batch_version = (incompatible or requested[0]
+                         if requested else BATCH_PROTOCOLS[0])
+    elif batch_version in BATCH_PROTOCOLS and incompatible is not None:
+        batch_version = incompatible
+    if batch_version not in BATCH_PROTOCOLS:
+        return _response(None, error={
+            "code": -32600,
+            "message": "JSON-RPC batching is not supported by this MCP "
+                       "revision",
+        })
+    responses = []
+    dispatch_version = (batch_version if not require_initialization
+                        else protocol_version)
+    for message in payload:
+        response = _dispatch(
+            message, protocol_version=dispatch_version,
+            require_initialization=require_initialization)
+        if response is not None:
+            responses.append(response)
+    return responses or None
+
+
+def _write_message(payload):
+    if payload is None:
+        return
+    # JSON permits escaped lone surrogates even though UTF-8 does not encode
+    # them as Unicode scalar values.  ASCII escaping therefore keeps every
+    # decoded request value serializable, including values reflected in a
+    # protocol error, without weakening the response byte ceiling.
+    encoded = json.dumps(payload, ensure_ascii=True).encode("ascii")
+    if len(encoded) > MAX_RESPONSE_BYTES:
+        error = {"code": -32603,
+                 "message": "MCP response exceeds the server byte limit"}
+        if isinstance(payload, list):
+            payload = [
+                _response(item.get("id") if isinstance(item, dict) else None,
+                          error=error)
+                for item in payload
+            ]
+        else:
+            payload = _response(
+                payload.get("id") if isinstance(payload, dict) else None,
+                error=error)
+        encoded = json.dumps(payload, ensure_ascii=True).encode("ascii")
+        if len(encoded) > MAX_RESPONSE_BYTES:
+            payload = _response(None, error=error)
+            encoded = json.dumps(payload).encode("ascii")
+    output = getattr(sys.stdout, "buffer", None)
+    if output is not None:
+        output.write(encoded + b"\n")
+        output.flush()
+        return
+    sys.stdout.write(encoded.decode("utf-8") + "\n")
     sys.stdout.flush()
 
 
+def _read_message_line():
+    """Read one newline-delimited request without allocating past its cap."""
+    stream = getattr(sys.stdin, "buffer", sys.stdin)
+    raw = stream.readline(MAX_REQUEST_BYTES + 1)
+    if raw in (b"", ""):
+        return None, False
+    encoded = raw if isinstance(raw, bytes) else raw.encode("utf-8")
+    too_large = len(encoded) > MAX_REQUEST_BYTES
+    ended = raw.endswith(b"\n" if isinstance(raw, bytes) else "\n")
+    if too_large and not ended:
+        while True:
+            tail = stream.readline(READ_CHUNK_BYTES)
+            if tail in (b"", "") or tail.endswith(
+                    b"\n" if isinstance(tail, bytes) else "\n"):
+                break
+    if too_large:
+        return "", True
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return "\x00", False
+    return raw.strip(), False
+
+
 def main():
-    for line in sys.stdin:
-        line = line.strip()
+    protocol_version = None
+    while True:
+        line, too_large = _read_message_line()
+        if line is None:
+            break
+        if too_large:
+            _write_message(_response(None, error={
+                "code": -32600,
+                "message": "request exceeds the server byte limit",
+            }))
+            continue
         if not line:
             continue
         try:
-            msg = json.loads(line)
-        except Exception:
+            payload = json.loads(line)
+        # The stdlib parser can also reject a deeply nested value or an
+        # integer token beyond Python's configured digit ceiling.  Both are
+        # malformed protocol input, not reasons to terminate the server.
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            _write_message(_response(
+                None, error={"code": -32700, "message": "parse error"}))
             continue
-        method = msg.get("method", "")
-        msg_id = msg.get("id")
-        if method == "initialize":
-            proto = (msg.get("params") or {}).get("protocolVersion",
-                                                  "2024-11-05")
-            reply(msg_id, {
-                "protocolVersion": proto,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "sia",
-                               "title": "SIA — the Omarchy Brain",
-                               "version": SERVER_VERSION}})
-        elif method == "notifications/initialized":
-            pass
-        elif method == "ping":
-            reply(msg_id, {})
-        elif method == "tools/list":
-            reply(msg_id, {"tools": TOOLS})
-        elif method == "tools/call":
-            params = msg.get("params") or {}
-            text, is_err = call_tool(params.get("name", ""),
-                                     params.get("arguments") or {})
-            reply(msg_id, {"content": [{"type": "text", "text": text}],
-                           "isError": bool(is_err)})
-        elif msg_id is not None:
-            reply(msg_id, error={"code": -32601,
-                                 "message": f"method not found: {method}"})
+        response = handle_message(
+            payload, protocol_version=protocol_version,
+            require_initialization=True)
+        _write_message(response)
+        if isinstance(payload, dict) and payload.get("method") == "initialize" \
+                and isinstance(response, dict) and "result" in response:
+            protocol_version = response["result"].get("protocolVersion")
 
 
 if __name__ == "__main__":

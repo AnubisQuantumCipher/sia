@@ -1,6 +1,6 @@
 api_version: gbrain-schema-pack-v1
 name: sia-pack
-version: "1.0.0"
+version: "1.1.0"
 description: SIA — the Omarchy Brain. Machine-evidence ontology over gbrain-base-v2.
 extends: gbrain-base-v2
 
@@ -37,6 +37,10 @@ page_types:
     primitive: entity
     path_prefixes: [projects/]
     extractable: false
+  - name: skill
+    primitive: entity
+    path_prefixes: [skills/]
+    extractable: false
   - name: take
     primitive: annotation
     path_prefixes: [takes/]
@@ -68,6 +72,6 @@ link_types:
       regex: "refus(ed|al)|declined to"
 
 # phases are NOT inherited — declare exactly the deterministic set SIA runs.
-# (LLM phases stay out: the chat lane is GPT-5.6-Sol-only and dormant
-# without an API key; nothing here should silently wait on a model.)
+# The optional, tool-free Claude grading lane is separate from gbrain's dream
+# phases; nothing here should silently wait on a model.
 phases: [lint, backlinks, sync, extract, recompute_emotional_weight, embed, orphans, purge]
