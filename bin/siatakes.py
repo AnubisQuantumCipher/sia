@@ -40,6 +40,7 @@ MAX_LEGACY_TAKE_PAGE_BYTES = 1_048_576
 MAX_HISTORY_OPEN_RECORDS = 1024
 MAX_HISTORY_PAGE_LIMIT = 256
 DEFAULT_HISTORY_PAGE_LIMIT = 64
+MAX_HISTORY_CURSOR_DIGITS = 256
 MAX_HISTORY_BASELINE_SCAN = 64
 MAX_TRANSACTION_RECOVERY_BATCH = 64
 # Matches sialib's operator-config intake ceiling. JACKAL status=exact,
@@ -2426,7 +2427,9 @@ def _history_cursor(value):
         return 0
     if isinstance(value, int) and not isinstance(value, bool):
         index = value
-    elif isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+    elif isinstance(value, str) \
+            and len(value) <= MAX_HISTORY_CURSOR_DIGITS \
+            and re.fullmatch(r"[0-9]+", value):
         index = int(value)
     else:
         raise ValueError("natural-history cursor is invalid")
@@ -4459,7 +4462,7 @@ def _calibration_population(takes):
     }
 
 
-def calibration_report(takes=None):
+def calibration_report(takes=None, domain_cursor=None):
     """Population-aware, non-inferential calibration report.
 
     The policy block makes the display gates machine-readable.  It is
@@ -4471,7 +4474,7 @@ def calibration_report(takes=None):
             raise ValueError(
                 "take natural-history authority reconciliation is pending")
         state = _load_history_state("take")
-        domain_page = list_calibration_domains_page()
+        domain_page = list_calibration_domains_page(cursor=domain_cursor)
         return {
             "schema": "sia-calibration-v2",
             "policy": {
@@ -4489,6 +4492,9 @@ def calibration_report(takes=None):
             "authority_generation": state["authority"]["generation"],
             "non_claims": list(CALIBRATION_NON_CLAIMS),
         }
+    if domain_cursor not in (None, ""):
+        raise ValueError(
+            "calibration domain cursor requires natural-history state")
     takes = list(takes)
     grouped = {}
     for t in takes:
@@ -4514,17 +4520,23 @@ def calibration(takes=None):
     return calibration_report(takes)["domains"]
 
 
-def calibration_text(cal=None):
+def calibration_text(cal=None, domain_cursor=None):
     domain_next_cursor = None
     if cal is None:
-        report = calibration_report()
+        report = calibration_report(domain_cursor=domain_cursor)
         groups = [("overall", report["overall"])] \
                  + list(report["domains"].items())
         domain_next_cursor = report.get("domain_next_cursor")
     elif "overall" in cal and "domains" in cal:
+        if domain_cursor not in (None, ""):
+            raise ValueError(
+                "calibration domain cursor cannot page supplied statistics")
         groups = [("overall", cal["overall"])] + list(cal["domains"].items())
         domain_next_cursor = cal.get("domain_next_cursor")
     else:
+        if domain_cursor not in (None, ""):
+            raise ValueError(
+                "calibration domain cursor cannot page supplied statistics")
         groups = list(cal.items())
     lines = []
     for dom, d in sorted(groups, key=lambda x: (x[0] != "overall", x[0])):

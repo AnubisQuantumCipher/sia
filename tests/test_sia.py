@@ -2285,6 +2285,11 @@ class SignedSiaLedgerProjection(unittest.TestCase):
         self.sialib = _load("sialib_sia_projection",
                             os.path.join(BIN, "sialib.py"))
         self.sialib.SHARE = self.temp.name
+        # Exercise the keeper shipped by this checkout.  A developer machine
+        # may already have SIA installed under ~/.local/share/sia/bin, while a
+        # clean CI runner does not; leaving BIN at its import-time default
+        # makes this fixture accidentally depend on that ambient installation.
+        self.sialib.BIN = BIN
         self.keeper = os.path.join(BIN, "sia-ledger")
         subprocess.run([sys.executable, self.keeper, "init", self.temp.name],
                        check=True, capture_output=True, text=True)

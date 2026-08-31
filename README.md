@@ -35,6 +35,17 @@ cannot control what those callers do with returned content.
   (*the corpus IS the brain*; the database is a rebuildable index), wired
   into a typed knowledge graph by [gbrain](https://github.com/garrytan/gbrain)
   with local `nomic-embed-text:v1.5` embeddings via Ollama.
+  Typed relation inference has two separate lanes: after each sync, gbrain runs
+  its person/company gazetteer NER pass, while SIA evaluates every validated
+  `link_types[].inference.regex` rule from its schema pack only around explicit
+  corpus wikilinks at Markdown-record scope. Event-day/epoch evidence pages
+  and explicitly `derived` safety-lane thoughts may mint those domain
+  relations; `model` and
+  `legacy-unlabeled` thoughts remain neutral. An unsafe or unavailable pack
+  degrades the affected edges to `mentions` and marks the graph snapshot
+  partial instead of guessing a type. That partial graph is diagnostic only:
+  publication debt keeps memory-dependent reads closed until the pack is
+  repaired and a pulse publishes a complete snapshot.
   SIA also projects keeper-verified lifecycle rows from its own signed ledger
   into `events/sia/`, excluding `PULSE:*`, `DREAM:bench`, and terminal
   `SOURCE:refuse` rows so ingestion, evaluation, and source-capacity refusals
@@ -118,6 +129,21 @@ cannot control what those callers do with returned content.
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### What v1.3.0 completed
+
+| Former future-work area | Shipped release behavior |
+|---|---|
+| Typed-NER and domain edges | gbrain's person/company gazetteer and SIA's bounded schema-regex lane run separately, with origin gates and an explicit partial/`mentions` fallback. |
+| Stability and rehearsal | Node/edge stability decay is live; pins and safety signals feed a transaction-safe SM-2 schedule that advances only after successful re-embedding. |
+| Calibration | Signed grades feed population-aware descriptive Brier reports; single cases, exclusions, sparse bins, sampling limits, and pageable domain rows stay visible. |
+| Long-memory self-evaluation | `sia bench` generates keeper-verified extraction, temporal, update, aggregation, and abstention questions with public/private answer separation and normalized answer scoring. It is a local regression instrument, not the curated LongMemEval benchmark. |
+| Resident-agent memory | The stdio MCP server exposes bounded tools/resources; immutable note requests go through the brainstem, and every SIA-managed PGLite operation shares the single-owner lease instead of creating a multi-writer database. |
+| Publication and recovery | Corpus Markdown, git, PGLite, and graph snapshots publish behind durable debt/readiness barriers; installer adoption, root-bound receipts, signed grades, queues, and bounded scans have crash-recovery journals and named refusals. |
+
+The operational commands and refusal/recovery paths are in the
+[Field Manual](docs/MANUAL.md); measurement design and remaining non-claims are
+in the [Whitepaper](docs/WHITEPAPER.md).
+
 ## Install (Omarchy)
 
 ```bash
@@ -146,6 +172,28 @@ relying on that registration. Any entry in that directory conservatively
 preserves the CLI/runtime during uninstall; remove it only after retiring the
 corresponding external consumer. Rerunning the installer after a manual named-
 harness registration lets it inspect and guard the exact external registration.
+
+After installation, the supported clients can be registered explicitly with
+the same stdio command the installer prints:
+
+```bash
+claude mcp add --scope user sia -- python3 ~/.local/share/sia/bin/sia-mcp
+codex mcp add sia -- python3 ~/.local/share/sia/bin/sia-mcp
+grok mcp add --scope user sia -- python3 ~/.local/share/sia/bin/sia-mcp
+```
+
+Use only the command for the client you intend to configure. Rerun
+`./install.sh` afterward so SIA can inspect that named registration and create
+its non-ownership guard. For a generic or uninspectable resident client, make
+the dependency explicit yourself:
+
+```bash
+install -d -m 0700 ~/.local/state/sia/mcp-consumer-guards
+install -m 0600 /dev/null \
+  ~/.local/state/sia/mcp-consumer-guards/my-resident-agent
+```
+
+Remove that guard only after the external consumer is retired.
 It does not replace a desktop
 binding by default. To explicitly consent to replacing Omarchy's
 `SUPER+SHIFT+B` Browser
@@ -433,6 +481,7 @@ sia note "hard-won context" --from me    # a memory for future sessions
 sia memory                          # stability, pins, and reviews due
 sia memory --pin organs/journal     # protect/qualify a page for rehearsal
 sia calibration                    # population-aware descriptive scorecard
+sia calibration --cursor NEXT_CURSOR  # continue bounded domain rows
 sia bench generate --out /tmp/sia-qa  # signed-ledger QA + private MCP eval
 ```
 
@@ -442,6 +491,28 @@ Point it at your own programs in `~/.config/sia/config.json`:
 { "custom_senses": [
     { "name": "myapp", "path": "~/logs/app.log", "type": "lines",
       "match": "ERROR|FATAL", "kind": "error", "tags": ["failed"] } ] }
+```
+
+Skill discovery roots are configurable too. Relative entries are interpreted
+beneath your home directory; SIA admits only real direct child skill
+directories with a real directly contained `SKILL.md`. Symlinked child
+directories/manifests are skipped; an unreadable or changing root makes the
+source partial and preserves prior rows rather than treating them as absent:
+
+```json
+{ "skills": { "roots": [
+    ".claude/skills", ".agents/skills", ".omp/skills",
+    ".copilot/skills", ".config/agents/skills"
+] } }
+```
+
+The CLI reloads `~/.config/sia/config.json` on its next invocation. Restart the
+resident writer after changing senses, skill roots, or judge settings, then
+check its reported source health:
+
+```bash
+systemctl --user restart sia-brainstem.service
+sia status
 ```
 
 `match` is a bounded list of literal substrings separated by `|`; regular

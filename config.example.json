@@ -13,6 +13,17 @@
     "disable": []
   },
 
+  "skills": {
+    "_comment": "Skill roots are checked in this precedence order. Relative entries are interpreted beneath HOME; each admitted skill must be a real direct child directory containing a real directly contained regular SKILL.md. Symlinked children/manifests are skipped; unreadable or unstable roots are partial. Restart sia-brainstem.service after changing config.",
+    "roots": [
+      ".claude/skills",
+      ".agents/skills",
+      ".omp/skills",
+      ".copilot/skills",
+      ".config/agents/skills"
+    ]
+  },
+
   "custom_senses": [
     {
       "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' accepts bounded literal alternatives separated by | (not regex); for jsonl, 'field' selects the message field.",

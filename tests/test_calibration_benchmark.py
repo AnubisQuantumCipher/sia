@@ -2220,6 +2220,29 @@ class CalibrationPopulation(unittest.TestCase):
         self.assertIsNone(overall["brier"])
         self.assertEqual(siatakes.calibration_text({}), [])
 
+    def test_natural_history_report_forwards_domain_cursor(self):
+        state = {
+            "overall": {},
+            "legacy": {"complete": True},
+            "authority": {"generation": 9},
+        }
+        page = {"items": [], "next_cursor": None}
+        with mock.patch.object(
+                siatakes, "natural_history_debt", return_value=False), \
+                mock.patch.object(
+                    siatakes, "_load_history_state", return_value=state), \
+                mock.patch.object(
+                    siatakes, "list_calibration_domains_page",
+                    return_value=page) as domains:
+            report = siatakes.calibration_report(domain_cursor="17")
+        domains.assert_called_once_with(cursor="17")
+        self.assertEqual(report["domains"], {})
+
+    def test_history_cursor_has_a_digit_bound(self):
+        with self.assertRaisesRegex(ValueError, "cursor is invalid"):
+            siatakes._history_cursor(
+                "1" * (siatakes.MAX_HISTORY_CURSOR_DIGITS + 1))
+
 
 class TakeDeadlineIntegrity(unittest.TestCase):
     NOW = siatakes.datetime.datetime(

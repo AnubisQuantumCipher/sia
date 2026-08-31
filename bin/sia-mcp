@@ -256,7 +256,14 @@ TOOLS = [
     _tool("sia_calibration", "Read SIA Calibration",
      "Read the population-aware Brier scorecard. Single cases and sparse "
         "series remain descriptive; the output states its sampling and "
-        "world-truth boundaries.", read_only=True, idempotent=True),
+        "world-truth boundaries. Pass a returned decimal cursor to read the "
+        "next bounded domain page.",
+     {"cursor": {"type": "string", "minLength": 1,
+                 "maxLength": 256,
+                 "pattern": r"^[0-9]+$",
+                 "description": "Optional next cursor printed by a prior "
+                                "calibration page."}},
+     read_only=True, idempotent=True),
 ]
 
 
@@ -394,7 +401,9 @@ def call_tool(name, args):
     if name == "sia_think":
         return run_sia(["think"])
     if name == "sia_calibration":
-        return run_sia(["calibration"])
+        cursor = args.get("cursor")
+        return run_sia(["calibration"] if cursor is None else
+                       ["calibration", "--cursor", str(cursor)])
     if name == "sia_note":
         author = str(args.get("author", "agent"))[:40]
         return run_sia(["note", str(args.get("text", ""))[:2000],

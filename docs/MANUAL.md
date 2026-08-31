@@ -106,6 +106,14 @@ touched.
   `mentions` while SOURCE HEALTH marks the snapshot partial. This supplements,
   and does not replace, the person/company entity gazetteer that runs in a
   separate source-scoped NER pass after each sync.
+  The installed rule file is
+  `~/.local/share/sia/.gbrain/schema-packs/sia-pack/pack.yaml`; the installer
+  ownership-marks its exact shipped content. A local modification is preserved
+  and stops replacement unless you deliberately rerun with
+  `SIA_REPLACE_SCHEMA_PACK=1` after reviewing the diff.
+  A refused pack can still produce a diagnostic partial graph of explicit
+  `mentions`, but it cannot satisfy the publication barrier. Repair or restore
+  the pack and complete a pulse before memory-dependent reads become ready.
 - **Graph failures stay visible.** Corpus-page read failures and other export
   gaps mark the snapshot partial in SOURCE HEALTH. If graph publication throws,
   the pulse exposes the error and signs `PULSE:ingest ... graph-fail` rather
@@ -180,9 +188,18 @@ about biological memory. Later intervals use the incoming ease; every response
 updates ease for the next repetition, while a lapse also restarts the
 repetition sequence. SIA maps observed interaction classes
 to review-quality tiers; those tiers are deterministic system signals, not
-measurements of human recall. A failed or missing embedding does not advance
+measurements of human recall. A successful `sia rehearse <slug>` queues a
+`user-recall` signal; when that page next becomes due, DREAM maps it to
+`q=5`. A later thought/ponder/muse/grade reference maps to `q=4`, and no
+qualifying post-review signal maps to `q=0`. The command does not update the
+schedule immediately: the due DREAM performs re-embedding first. A failed or
+missing embedding does not advance
 the scheduler state, recall touch, or incident-edge reinforcement, so the page
 remains due for retry until that same page is successfully re-embedded.
+Legacy JACKAL pages whose formal-looking assurance has not been re-verified
+through JACKAL's front door are recall-visible but deliberately excluded from
+reinforcement; `sia rehearse` names that exclusion and does not claim a queued
+touch.
 
 ### Deep thinking (the configured tool-free Claude CLI judge)
 
@@ -216,7 +233,8 @@ sia takes                     # first bounded prediction-history page
 sia takes --limit 64 --cursor CURSOR
 sia grade                     # grade everything due now (configured judge)
 sia grade <id>                # grade one take regardless of due date
-sia calibration               # population-aware descriptive Brier scorecard
+sia calibration                         # first bounded domain page
+sia calibration --cursor NEXT_CURSOR    # continue from the printed cursor
 ```
 
 A take is graded strictly against recalled evidence: **TRUE**, **FALSE**,
@@ -246,10 +264,13 @@ at least 5 in each outcome class) is an anti-overclaiming UI policy, **not** a
 sample-size proof: passing it still describes an operator-selected,
 model-graded stream and supplies no confidence interval, significance test,
 or claim about truth in the world. Domain statistics come from a bounded,
-cursor-paginated catalog; when the human CLI/MCP view has another page, it
-prints an explicit omission line and the next catalog cursor rather than
-presenting the first page as complete. The nightly dream grades up to three
-due takes on its own.
+cursor-paginated catalog. When another page exists, CLI and MCP output prints
+an explicit omission line and the next catalog cursor rather than presenting
+the current page as complete. Pass that value to
+`sia calibration --cursor NEXT_CURSOR`, or as the optional `cursor` argument
+of the `sia_calibration` MCP tool. The static `sia://calibration` resource
+remains the first page. The nightly dream grades up to three due takes on its
+own.
 
 Corpus pages are authoritative; `~/.local/state/sia/natural-history/` is a
 recoverable read model, not a second memory store. It contains digest-bound
@@ -297,10 +318,17 @@ propose-don't-mint rule.
 
 ```
 sia bench                              # held-out retrieval + abstention run
+sia bench run --chain sia --chain custos
 sia bench generate --out /tmp/sia-qa  # question file + private answer key
+sia bench generate --chain sia --out /tmp/sia-qa
 sia bench score --dataset /tmp/sia-qa --answers predictions.jsonl
 sia bench legacy                       # older hand-authored corpus probes
 ```
+
+`--chain` is repeatable on `run` and `generate`; omitting it selects every
+available configured chain and preserves any rejection as a named diagnostic.
+The default run writes its Markdown report to
+`~/.local/share/sia/research/ledger-bench-YYYY-MM-DD.md` after printing it.
 
 The generator opens ledger and verifier files without following symlinks,
 requires their observed bytes, inode, size, modification metadata, and digest
@@ -484,6 +512,18 @@ one crash-resumable bounded unit under that same DREAM ledger identity. The
 marker clears only after scan cursors, candidate days, exact claims, admitted
 source removals, and the resulting conservative rescan all converge.
 
+The live readiness reason names the retained recovery lane. Preserve the
+named state; deleting a marker or journal does not turn an incomplete
+publication into a valid one.
+
+| Readiness reason family | Retained authority | Recovery action |
+|---|---|---|
+| Corpus publication pending, graph projection debt, or no successful publication receipt | `memo.json`, corpus git state, PGLite, graph cursor | Run or wait for one successful `sia pulse`; repair the named git/index/graph refusal first if it repeats. |
+| Pulse, DREAM, consolidation, source-replay, or thought recovery pending | `memo.json`, consolidation/source/thought cursors and claims | Keep the marker and run a pulse; SIA resumes the exact bounded transaction. |
+| Evidence cursor replay guard or DREAM mind transition pending | `mind.json` plus the bound event/DREAM transition | Keep mind state intact and run a pulse so the recorded transition can settle idempotently. |
+| Take/intent projection, signed grade, or legacy provenance migration pending | `natural-history/`, `grade-transactions/`, or `take-migrations/` | Preserve the journal and authoritative page; run a pulse, or rerun first-light installation for a migration refusal after repairing the named provenance issue. |
+| Readiness check refused or malformed state | The exact file named by `sia status` | Restore or repair that owner file from known-good state; do not bypass the refusal or delete signing/publication history. |
+
 ## 5. How it learns (the short version)
 
 - **The graph wires itself** — wikilinks in event/epoch evidence may become
@@ -530,6 +570,7 @@ source removals, and the resulting conservative rescan all converge.
 |---|---|
 | The memory itself (markdown, git) | `~/.local/share/sia/corpus/` |
 | The brain index (gbrain/PGLite) | `~/.local/share/sia/.gbrain/` |
+| Installed typed-relation schema pack | `~/.local/share/sia/.gbrain/schema-packs/sia-pack/pack.yaml` |
 | Daemon + engine code | `~/.local/share/sia/bin/` |
 | Private Bun + compiled gbrain | `~/.local/share/sia/toolchain/` |
 | Signed run ledger | `~/.local/share/sia/ledger.tsv` |
@@ -606,6 +647,27 @@ the checkout used for installation; if that checkout is unavailable, use
 `sia --help` and the MCP tool/resource descriptions rather than assuming the
 Omarchy plugin path exists.
 
+Copyable user-scope registration commands for the supported clients are:
+
+```bash
+claude mcp add --scope user sia -- python3 ~/.local/share/sia/bin/sia-mcp
+codex mcp add sia -- python3 ~/.local/share/sia/bin/sia-mcp
+grok mcp add --scope user sia -- python3 ~/.local/share/sia/bin/sia-mcp
+```
+
+Run only the command for the client you intend to configure, then rerun
+`./install.sh` so SIA can inspect it and create the appropriate durable
+non-ownership guard. For a generic client, create an explicit guard before
+depending on SIA's runtime surviving uninstall:
+
+```bash
+install -d -m 0700 ~/.local/state/sia/mcp-consumer-guards
+install -m 0600 /dev/null \
+  ~/.local/state/sia/mcp-consumer-guards/my-resident-agent
+```
+
+Remove that guard only after the external consumer is retired.
+
 When Omarchy is installed, plugin enablement is a required installation step.
 The installer requests a shell plugin rescan and requires the exact
 `khephri.sia` catalog ID before enablement; a discovery or enablement error
@@ -655,9 +717,29 @@ indexed memory.
 
 The skills sense likewise admits only a real skill directory directly beneath
 a configured root containing a real, directly contained regular `SKILL.md`.
-It opens the root, child directory, and manifest with no-follow semantics;
-symlinked roots, skill directories, and manifests are skipped rather than
-cataloged. Each manifest's bounded frontmatter head is captured once, with
+Configure precedence-ordered roots in `~/.config/sia/config.json`; relative
+entries are interpreted beneath your home directory:
+
+```json
+{ "skills": { "roots": [
+    ".claude/skills", ".agents/skills", ".omp/skills",
+    ".copilot/skills", ".config/agents/skills"
+] } }
+```
+
+The CLI reloads configuration on its next invocation. The brainstem is a
+resident process and keeps its import-time configuration, so after changing
+custom senses, skill roots, or judge settings run:
+
+```bash
+systemctl --user restart sia-brainstem.service
+sia status
+```
+
+It opens the root, child directory, and manifest with no-follow semantics.
+A symlinked or unopenable root makes that root incomplete and the aggregate
+source partial; symlinked child directories or manifests are skipped rather
+than cataloged. Each manifest's bounded frontmatter head is captured once, with
 before/after/current-path identity checks both at capture and after root
 validation. The sanitized description, head digest, and file metadata are kept
 together in the cursor snapshot, so event rendering never reopens the file and
@@ -694,6 +776,17 @@ bytes, batches at eight items, and a serialized response at 1048576 bytes;
 oversize input/output refuses instead of being parsed or returned partially.
 
 ## 8. Troubleshooting
+
+Graceful degradation remains explicit; each fallback preserves the origin and
+absence boundary instead of silently claiming equivalent retrieval.
+
+| Failure | Observable behavior | What remains trustworthy |
+|---|---|---|
+| Ollama/embedding search unavailable | `sia ask` reports keyword-only retrieval | Returned chunks and origin labels; ranking is no longer semantic. |
+| Graph or mind snapshot cannot support associative reranking | Recall reports `associative rerank unavailable; origin-safe fallback` | Dense ordering with conservative origin weighting; no PPR/activation claim. |
+| Schema pack is missing, invalid, or changes during export | Affected relations fall back to `mentions`; SOURCE HEALTH marks the graph partial and publication debt keeps memory reads closed | The diagnostic partial graph, explicit links, and retained PGLite memory—not the missing typed inference; repair the pack and complete a pulse. |
+| Publication or recovery debt exists | Memory-dependent CLI/MCP reads refuse; live status and queued note/proposal writes remain available | The refusal reason and retained journals; last-published cockpit fields are diagnostic snapshots. |
+| Touch queue has a torn or malformed record | The suffix is digest-bound before repair, or a complete malformed record remains visible claim debt | The complete durable prefix; no silent cursor advance or invented touch. |
 
 - **Bar icon dim / "brainstem not reporting"** —
   `systemctl --user status sia-brainstem`, then `journalctl --user -u
