@@ -5090,6 +5090,46 @@ remove_managed_skill
         self.assertIn("function edgeColor", model)
         self.assertIn("function originLabel", model)
 
+    def test_cockpit_workspace_lock_and_memory_lens_fit(self):
+        cockpit = _read("Cockpit.qml")
+        panel = _read("Panel.qml")
+        manifest = json.loads(_read("manifest.json"))
+        defaults = manifest["barWidget"]["defaults"]
+        self.assertEqual(defaults["cockpitWorkspace"], "")
+        workspace_schema = next(
+            item for item in manifest["barWidget"]["schema"]
+            if item["key"] == "cockpitWorkspace")
+        self.assertEqual(workspace_schema["type"], "string")
+        self.assertEqual(workspace_schema["defaultValue"], "")
+
+        # Layer-shell surfaces have no native Hyprland workspace assignment.
+        # The cockpit must gate its own visibility and input focus, keep its
+        # settings entry intact, and expose an ordinary host close lifecycle.
+        self.assertIn("import Quickshell.Hyprland", cockpit)
+        self.assertIn("Hyprland.focusedWorkspace", cockpit)
+        self.assertIn("workspaceLockMismatch", cockpit)
+        self.assertIn("visible: root.cockpitVisible", cockpit)
+        self.assertIn("WlrKeyboardFocus.None", cockpit)
+        self.assertIn("function toggleWorkspaceLock()", cockpit)
+        self.assertIn("function close()", cockpit)
+        self.assertIn("function configuredPluginSettings()", cockpit)
+        self.assertIn("root.clearWorkspaceLock()", cockpit)
+        self.assertNotIn("Hyprland.dispatch", cockpit)
+        self.assertNotIn("hyprctl dispatch", cockpit)
+        self.assertIn("cockpitWorkspace", panel)
+
+        # Grid column widths, rather than the rail width, constrain the
+        # values so strings such as "demoted" are allowed to wrap in place.
+        self.assertIn("width: vitalsCol.width", cockpit)
+        self.assertIn("readonly property real labelWidth", cockpit)
+        self.assertIn("readonly property real valueWidth", cockpit)
+        self.assertIn("width: memoryLens.valueWidth; wrapMode: Text.WordWrap",
+                      cockpit)
+
+        for document in (_read("README.md"), _read("docs/MANUAL.md"),
+                         _read("CHANGELOG.md")):
+            self.assertIn("workspace lock", document.casefold())
+
     def test_recovery_boundaries_are_operator_visible(self):
         readme = _read("README.md")
         manual = _read("docs/MANUAL.md")

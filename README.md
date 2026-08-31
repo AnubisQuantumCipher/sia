@@ -158,7 +158,10 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   last-published graph/ledger/debt snapshot from an explicitly requested live
   `sia ready` check; it also shows stability and SM-2 review state, the
   last-published resident-agent handoff receipt, and bounded-display/off-map
-  state. Plus a bar widget with the live event count.
+  state. Its reversible `LOCK TO <workspace>` latch keeps the cockpit on a
+  focused Hyprland workspace—hidden elsewhere, restored when you return—while
+  `UNLOCK`, Close, or a fresh summon elsewhere releases it. Plus a bar widget
+  with the live event count.
 - **Agents everywhere** — an MCP server mountable in the documented Claude
   Code, Codex CLI, and Grok integrations, plus compatible explicitly configured
   stdio MCP clients and a skill for skill-reading
@@ -202,6 +205,17 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   evidence; verification must be rerun through JACKAL's own front door.
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
+
+### v1.3.5 workspace lock
+
+v1.3.5 lets the graph-first cockpit become a deliberate mission-control
+workspace without turning it into a compositor fiction: `LOCK TO <workspace>`
+stores the current focused Hyprland workspace, keeps the full-screen layer
+visible there, and hides it on the others. It returns when you return; use
+`UNLOCK`, **Esc**, ✕, or summon it on another workspace to release the latch.
+The MEMORY LENS also constrains and wraps its values inside the established
+left rail, so `demoted` and longer review values remain fully readable rather
+than clipping at the edge.
 
 ### v1.3.3 cockpit runtime hotfix
 

@@ -30,10 +30,17 @@ BarWidget {
     Model.validStaleAfterSec(
       root.setting("staleAfterSec", Model.staleAfterDefaultSec()),
       Model.staleAfterDefaultSec())
+  readonly property string cockpitWorkspace:
+    root.normalizedSetting("cockpitWorkspace")
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return value === undefined || value === null ? fallback : value
+  }
+
+  function normalizedSetting(name) {
+    var value = root.setting(name, "")
+    return typeof value === "string" ? value.trim() : ""
   }
 
   function stateColor() {
@@ -93,10 +100,13 @@ BarWidget {
       : Math.max(slotSize, glyphPaintedWidth + Style.spaceReal(8))
     fontSize: Style.font.caption
     foreground: root.stateColor()
-    tooltipText: root.stale
-      ? "SIA — brainstem not reporting"
-      : "SIA — " + root.brainState + " · " + root.eventsToday
-        + " events today · click for the cockpit"
+    tooltipText: root.cockpitWorkspace !== ""
+      ? "SIA — cockpit locked to workspace " + root.cockpitWorkspace
+        + " · return there to unlock"
+      : root.stale
+        ? "SIA — brainstem not reporting"
+        : "SIA — " + root.brainState + " · " + root.eventsToday
+          + " events today · click for the cockpit"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) { statusFile.reload(); return }
       if (root.bar && root.bar.shell)
