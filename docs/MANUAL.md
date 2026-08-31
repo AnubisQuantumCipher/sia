@@ -69,7 +69,9 @@ not call a snapshot live readiness. Click **check live readiness** to run the
 real `sia ready` predicate once; a pass or refusal is a result of that explicit
 check, not an inference from the graph. That result clears when the cockpit
 closes or a new status/graph snapshot arrives. If debt data is unavailable,
-the ribbon says `DEBT UNKNOWN`, never `clear`.
+the ribbon says `DEBT UNKNOWN`, never `clear`. If the local readiness command
+cannot start, the control says `LIVE BLOCKED`; that never prevents the cockpit
+itself from loading.
 
 **Left rail** (scrolls):
 - **VITALS** — memories, links, events today, thoughts kept, mind traces

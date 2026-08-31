@@ -228,6 +228,7 @@ Item {
     opened = true
     verifyMsg = ""
     verifyOk = false
+    readyProc.cancel()
     clearReadyCheck()
     statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
     if (root.graph && graphCanvas.width > 0)
@@ -243,7 +244,7 @@ Item {
     playing = false
     revealT = 1.0
     hoverId = ""
-    if (readyProc.running) readyProc.running = false
+    readyProc.cancel()
     clearReadyCheck()
     if (shell && typeof shell.hide === "function") shell.hide("khephri.sia")
   }
@@ -258,6 +259,7 @@ Item {
       }
       root.status = parsed
       root.statusBoundary = ""
+      readyProc.cancel()
       root.clearReadyCheck()
       const ts = Date.parse(parsed.ts)
       root.stale = !(ts > 0) ||
@@ -282,6 +284,7 @@ Item {
       }
       root.graph = g
       root.graphBoundary = ""
+      readyProc.cancel()
       root.clearReadyCheck()
       if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
         root.selectedId = ""
@@ -372,9 +375,54 @@ Item {
     property bool outDone: false
     property bool errDone: false
     property bool launchFailed: false
+    // A failed exec does not produce an `exited` signal in Quickshell 0.3,
+    // so retain the start boundary independently of normal completion.
+    property bool launchPending: false
+    property bool startedForAttempt: false
+    property bool discardResult: false
+    property bool checking: false
     command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "ready"]
+
+    function startCheck() {
+      if (checking || running) return
+      outText = ""
+      errText = ""
+      exitCode = 0
+      exited = false
+      outDone = false
+      errDone = false
+      launchFailed = false
+      launchPending = true
+      startedForAttempt = false
+      discardResult = false
+      checking = true
+      root.clearReadyCheck()
+      running = true
+    }
+
+    function cancel() {
+      // Snapshot and overlay boundaries must not later acquire a result from
+      // an earlier process/collector callback.
+      discardResult = true
+      launchPending = false
+      checking = false
+      if (running) running = false
+    }
+
+    function markLaunchFailure() {
+      if (discardResult || launchFailed) return
+      launchPending = false
+      launchFailed = true
+      checking = false
+      root.readyChecked = true
+      root.readyOk = false
+      root.readyDetail = "could not start the local sia readiness command"
+    }
+
     function settle() {
-      if (launchFailed || !exited || !outDone || !errDone) return
+      if (discardResult || launchFailed || !exited || !outDone || !errDone)
+        return
+      checking = false
       var detail = (outText + "\n" + errText)
         .replace(/^\s+|\s+$/g, "")
       root.readyChecked = true
@@ -398,22 +446,17 @@ Item {
         readyProc.settle()
       }
     }
-    onRunningChanged: if (running) {
-      readyProc.outText = ""
-      readyProc.errText = ""
-      readyProc.exitCode = 0
-      readyProc.exited = false
-      readyProc.outDone = false
-      readyProc.errDone = false
-      readyProc.launchFailed = false
-      root.clearReadyCheck()
+    // Quickshell's Process reports a failed exec as a transition back to
+    // !running without an exited signal. Its public `started` signal lets us
+    // distinguish that from a process which started and later completed.
+    onStarted: {
+      readyProc.startedForAttempt = true
+      readyProc.launchPending = false
     }
-    onErrorOccurred: function(error) {
-      if (readyProc.launchFailed) return
-      readyProc.launchFailed = true
-      root.readyChecked = true
-      root.readyOk = false
-      root.readyDetail = "could not start the local sia readiness command"
+    onRunningChanged: {
+      if (!running && readyProc.launchPending
+          && !readyProc.startedForAttempt)
+        readyProc.markLaunchFailure()
     }
     onExited: function(code) {
       readyProc.exitCode = code
@@ -603,7 +646,7 @@ Item {
               anchors.centerIn: parent
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
-              text: readyProc.running ? "checking live readiness…"
+              text: readyProc.checking ? "checking live readiness…"
                 : root.readyChecked
                   ? (root.readyOk ? "LIVE READY ✓" : "LIVE BLOCKED")
                   : "check live readiness"
@@ -617,8 +660,8 @@ Item {
               id: liveReadyArea
               anchors.fill: parent
               hoverEnabled: true
-              enabled: !readyProc.running
-              onClicked: readyProc.running = true
+              enabled: !readyProc.checking && !readyProc.running
+              onClicked: readyProc.startCheck()
             }
             // `sia ready` diagnostics cross a process boundary, so keep the
             // tooltip on the same plain-text rendering contract as snapshots.
