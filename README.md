@@ -8,9 +8,11 @@ self-consolidating memory system for your Linux desktop. A resident daemon
 tails the evidence your machine already produces — package installs,
 journal errors, git commits, agent sessions, notifications, and any log
 you point it at — into a git-versioned markdown corpus, indexed into a
-typed knowledge graph with **local** embeddings. It remembers, connects,
-thinks, dreams nightly, makes falsifiable predictions, and is **graded**
-on them. You can watch it think, and you can ask it anything.
+typed knowledge graph with **local** embeddings. It retains, links, and
+retrieves admitted memories, and runs a deterministic nightly
+"dream" consolidation cycle. It helps you propose and commit falsifiable
+predictions, then records how they are graded. You can watch its thought stream
+and ask it about the memory it has admitted.
 
 ![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
 
@@ -27,6 +29,56 @@ memory it requests over stdio and may forward that content to its own
 model/provider, whose data terms apply. The same boundary applies to scripts,
 pipes, and agents that capture memory printed by the local `sia` CLI; SIA
 cannot control what those callers do with returned content.
+
+## SIA today: the whole system, in one view
+
+SIA is an owner-local, evidence-grounded memory architecture — not a cloud
+assistant and not an opaque database. The Markdown corpus and its Git history
+are the source of truth; gbrain/PGLite, local embeddings, and the cockpit graph
+are rebuildable projections. Every SIA-managed PGLite operation shares a
+single-owner lease, and the resident **brainstem** alone materializes agent
+notes. It publishes a generation only after the corpus is committed or verified
+clean, index sync succeeds, and graph export succeeds; otherwise
+memory-dependent reads refuse with named projection debt instead of presenting
+stale memory as current.
+
+```text
+machine evidence + explicit owner / agent notes
+          │  bounded senses · redaction · origin labels · immutable note queue
+          ▼
+git-versioned Markdown corpus  ← source of truth / recoverable history
+          │  one SIA-managed PGLite lease · publication barrier · live readiness gate
+          ▼
+local gbrain + PGLite + Ollama embeddings  ← rebuildable index + typed graph
+          │
+          ├── Quickshell cockpit + bar widget
+          ├── local `sia` CLI
+          └── stdio MCP tools and resources for resident agents
+
+Ed25519 hash-chained lifecycle ledger: signed transitions and results
+```
+
+Everything below is shipped behavior or an explicit operating boundary — not a
+roadmap. The optional Claude judge remains opt-in and isolated; all other
+memory content stays local unless an operator-configured caller chooses to
+receive it.
+
+| System layer | What SIA does now | What it does **not** silently claim |
+|---|---|---|
+| **Evidence and integrity** | Ingests bounded machine records and explicit notes; redacts secret-shaped spans; keeps `evidence`, `derived`, `model`, and `legacy-unlabeled` origins distinct; signs its lifecycle ledger; and gates memory-dependent reads behind `sia ready`. | Recall absence is never evidence of absence. A published graph snapshot is not a live readiness verdict. |
+| **Associative memory** | Builds local semantic recall and a typed graph through gbrain's entity-gazetteer lane plus SIA's bounded schema-regex lane; applies ACT-R salience, Hebbian co-recall, graph-aware retrieval, novelty/surprisal, workspace attention, consolidation, stability decay, pins, and SM-2 rehearsal. | These are named deterministic retrieval policies and lexical link inferences — not proof of human cognition or real-world relationships. |
+| **Prospective memory** | Keeps operator-created `sia intend` commitments, surfaces them as their deadlines approach or pass, and closes them only on the operator's word; a nightly slug-retrieval drift tripwire signals when to run the full benchmark. | It does not infer task completion, and its drift signal is a heuristic — not an answer-quality score. |
+| **Outcome learning and evaluation** | Lets people commit future-dated predictions; optionally obtains tool-isolated evidence judgments; records signed grades and population-aware descriptive Brier calibration; and runs `sia bench`, a signed-ledger QA benchmark that scores abstention. | Calibration is not a representative population claim, and `sia bench` is a local regression instrument — not the curated LongMemEval benchmark. |
+| **Resident agents** | Exposes local memory through bounded stdio MCP tools/resources and `sia context` packs. Agents queue immutable note requests; the brainstem alone materializes and indexes them before acknowledgement. | Agents do not receive a database handle. Their notes remain `model`-origin prose, and each MCP consumer remains its own disclosure boundary. |
+| **Mission control** | Presents the graph, thought stream, evidence chain, source health, memory lens, agent relay, and a deliberate on-demand live-readiness check in the Quickshell cockpit. | The cockpit labels last-published diagnostics separately from an explicit live check, and labels bounded display omissions rather than implying memory is missing. |
+
+For the exact operating paths and recovery behavior, use the
+[Field Manual](docs/MANUAL.md). For the design, measurements, and remaining
+non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
+
+**New here?** [Install](#install-omarchy) ·
+[Try it](#sixty-seconds-after-install) ·
+[Field Manual](docs/MANUAL.md) · [Whitepaper](docs/WHITEPAPER.md)
 
 ## What you get
 
@@ -97,8 +149,9 @@ cannot control what those callers do with returned content.
   pre-bounded legacy trend is upgraded from a stable no-follow tail: only
   recent complete rows survive, and any discarded history is declared in
   SOURCE HEALTH without blocking the DREAM receipt or memory readiness.
-- **A mission-control cockpit** — full-screen Quickshell overlay
-  (`SUPER+SHIFT+B`): the living graph with radial time, hover
+- **A mission-control cockpit** — full-screen Quickshell overlay (open it
+  from the bar widget, or use `SUPER+SHIFT+B` when you opt into that binding):
+  the living graph with radial time, hover
   neighborhoods, edge explanations, origin labels, a thought stream,
   evidence-chain verdicts, and a SOURCE HEALTH truth boundary that admits
   incompleteness instead of hiding it. Its compact truth ribbon separates the
@@ -106,8 +159,9 @@ cannot control what those callers do with returned content.
   `sia ready` check; it also shows stability and SM-2 review state, the
   last-published resident-agent handoff receipt, and bounded-display/off-map
   state. Plus a bar widget with the live event count.
-- **Agents everywhere** — an MCP server mountable in Claude Code, Codex
-  CLI, Grok, and anything MCP-capable, plus a skill for skill-reading
+- **Agents everywhere** — an MCP server mountable in the documented Claude
+  Code, Codex CLI, and Grok integrations, plus compatible explicitly configured
+  stdio MCP clients and a skill for skill-reading
   harnesses. Tools support reinforcing recall, a read-only search lane for
   audits/evaluations, and carefully labeled writes; MCP
   resources mount status, thoughts, calibration, the cortex, and
@@ -636,6 +690,7 @@ sia status                          # the brain's vitals
 sia ready                           # exit nonzero unless memory is reconciled
 sia ask "what happened today"       # semantic recall, cited + labeled
 sia think                           # its inner monologue
+sia context                         # bounded handoff pack for agents/sessions
 sia take "the build will go green" --confidence 0.8 --by 2026-09-05
 sia intend "rotate ledger keys" --by 2026-10-01   # prospective memory
 sia note "hard-won context" --from me    # a memory for future sessions
