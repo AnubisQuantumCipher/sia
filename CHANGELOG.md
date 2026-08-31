@@ -57,7 +57,11 @@
   the historical `derived` default;
   an explicitly present canonical origin is validated and preserved. Partial
   queue metadata, unknown fields, and malformed modern identities still refuse
-  the whole inbox.
+  the whole inbox. When a current source row collides byte-for-byte with a
+  pre-identity event line, SIA still refuses to mint a guessed occurrence ID;
+  it now signs a `legacy-event-identity` terminal refusal before advancing that
+  source cursor, instead of retrying the unresolvable compatibility boundary
+  forever.
   Runtime-loading tests now activate one process-wide temporary home before
   importing SIA, and a regression guard checks recognized runtime-loading
   patterns plus the currently enumerated import-time mutable paths so covered
@@ -65,7 +69,11 @@
   or import-time path constants must be added to those enumerations.
   The extracted gbrain-bootstrap installer harness now sources a temporary test
   script instead of embedding the growing function bundle in `bash -c`, keeping
-  the complete CI run below the host argument-size boundary.
+  the complete CI run below the host argument-size boundary. Installer and
+  uninstaller process runners now use the already registered pollable pidfd as
+  their non-reaping exit notification, retaining `P_PID` plus `WNOWAIT` only as
+  the fallback; they no longer issue a redundant `waitid(P_PIDFD)` probe that
+  was the interpreter crash site on one clean Python 3.12 runner.
 
 - **Explicit readiness attestation and convergent bounded publication** —
   `sia ready` now evaluates the live memory-readiness predicate while holding
@@ -236,10 +244,13 @@
   same corpus generation. Pulse sequence reservation shares the heartbeat's
   lease, and DREAM settles between memory-backed phases and around each grade
   before later indexed-memory work.
-- **Custom-sense field privacy** — JSONL custom senses now refuse and
-  digest-bind a physical record whose configured field is absent. They never
-  fall back to rendering the raw object or unrelated fields, and the next
-  record remains reachable after the refusal is signed.
+- **Custom-sense field privacy and bounded exclusion** — JSONL custom senses
+  now refuse and digest-bind a physical record whose configured field is
+  absent. They never fall back to rendering the raw object or unrelated
+  fields, and the next record remains reachable after the refusal is signed.
+  `match` and the new `exclude` field use the same finite literal-alternative
+  grammar; neither evaluates regular expressions, and invalid configuration
+  leaves the source cursor unchanged.
 - **Fail-closed grading evidence** — completed-empty evidence retrieval may be
   judged UNRESOLVABLE, while a failed or malformed retrieval now refuses
   before invoking the judge, writes no grade, and leaves the take open.

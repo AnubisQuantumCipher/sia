@@ -429,7 +429,7 @@ selector = selectors.DefaultSelector()
 os.set_blocking(process.stdout.fileno(), False)
 selector.register(process.stdout, selectors.EVENT_READ, "stdout")
 pidfd = None
-if hasattr(os, "pidfd_open") and hasattr(os, "P_PIDFD"):
+if hasattr(os, "pidfd_open"):
     try:
         pidfd = os.pidfd_open(process.pid, 0)
     except OSError:
@@ -439,10 +439,12 @@ if pidfd is not None:
 
 
 def leader_exited():
-    id_type = os.P_PIDFD if pidfd is not None else os.P_PID
-    identifier = pidfd if pidfd is not None else process.pid
+    # A registered pidfd is itself the non-reaping exit notification. Avoid a
+    # second waitid(P_PIDFD) syscall; the selector branch below observes it.
+    if pidfd is not None:
+        return False
     result = os.waitid(
-        id_type, identifier, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     return result is not None
 
 
@@ -559,7 +561,7 @@ except OSError as error:
     print(f"could not execute bounded command: {error}", file=sys.stderr)
     raise SystemExit(127)
 pidfd = None
-if hasattr(os, "pidfd_open") and hasattr(os, "P_PIDFD"):
+if hasattr(os, "pidfd_open"):
     try:
         pidfd = os.pidfd_open(process.pid, 0)
     except OSError:
@@ -570,10 +572,10 @@ if pidfd is not None:
 
 
 def leader_exited():
-    id_type = os.P_PIDFD if pidfd is not None else os.P_PID
-    identifier = pidfd if pidfd is not None else process.pid
+    if pidfd is not None:
+        return bool(selector.select(0))
     result = os.waitid(
-        id_type, identifier, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     return result is not None
 
 
@@ -597,8 +599,8 @@ try:
         else:
             time.sleep(min(remaining, LEADER_POLL_SECONDS))
 finally:
-    # WNOWAIT keeps the leader's PID/PGID pinned until all descendants have
-    # received SIGKILL. Only then may subprocess reap the leader.
+    # Polling a pidfd never reaps; the fallback WNOWAIT check also preserves
+    # the leader's PID/PGID until every descendant has received SIGKILL.
     kill_group()
     status = process.wait()
     selector.close()

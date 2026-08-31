@@ -527,6 +527,9 @@ summaries, and session-file *metadata* (existence, size changes, freshness,
 and an identifier — never message bodies). Built-in senses do not open private
 keys, clipboards, or password stores. Operator-configured custom senses read
 the exact file/field named in config and must not target secret/content stores.
+Their optional inclusion and exclusion filters are finite literal alternatives,
+not a general regular-expression evaluator; malformed filters refuse without
+advancing that source cursor.
 The distinct signed-ledger keeper reads
 SIA's signing key only to authorize ledger transitions. The memory-content
 runtime — ingestion, indexing, retrieval, and embedding — remains on the

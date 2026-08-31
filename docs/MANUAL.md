@@ -31,11 +31,13 @@ programs with custom senses in `~/.config/sia/config.json`:
       "match": "ERROR|FATAL", "kind": "error", "tags": ["failed"] } ] }
 ```
 
-`match` uses bounded literal alternatives separated by `|`, not regular
-expressions. Invalid configuration is surfaced in SOURCE HEALTH and does not
-advance that source cursor. A `jsonl` custom sense reads only its configured
-`field`; a physical record missing that field advances only through a signed,
-named refusal and never falls back to the raw object or unrelated fields.
+`match` includes bounded literal alternatives separated by `|`; `exclude`
+omits records containing any of its bounded literal alternatives. Neither
+field accepts regular expressions. Invalid configuration is surfaced in
+SOURCE HEALTH and does not advance that source cursor. A `jsonl` custom sense
+reads only its configured `field`; a physical record missing that field
+advances only through a signed, named refusal and never falls back to the raw
+object or unrelated fields.
 
 ---
 

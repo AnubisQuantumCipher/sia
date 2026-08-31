@@ -365,6 +365,13 @@ class SourceReplayJournal(unittest.TestCase):
         self.assertEqual(payload["source"], "sense_custom:demo")
         self.assertEqual(kwargs, {"order": int(event_id, 16)})
 
+    def test_legacy_event_identity_collision_is_a_signed_refusal_class(self):
+        refusal = self.sialib._source_refusal_code(ValueError(
+            "legacy event cannot be identity-upgraded automatically"))
+        self.assertEqual(refusal, "legacy-event-identity")
+        self.assertIsNone(self.sialib._source_refusal_code(ValueError(
+            "event identity conflicts with its day page")))
+
     def test_source_preflight_memo_refusal_has_no_corpus_side_effect(self):
         with tempfile.TemporaryDirectory() as corpus, \
                 mock.patch.object(self.sialib, "CORPUS", corpus), \
@@ -3121,6 +3128,36 @@ class EvidenceCursorHealth(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual([event.summary for event in events],
                              ["ERROR reachable"])
+        finally:
+            self.sialib.CONFIG = old_config
+            os.unlink(path)
+
+    def test_custom_exclude_is_literal_bounded_and_preserves_cursor_safety(self):
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write("completed\nFAILED integrity\n")
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        cursors = {"custom.fixture": 0}
+        try:
+            self.sialib.CONFIG = {"custom_senses": [{
+                "name": "fixture", "path": path,
+                "exclude": "FAILED|FATAL"}]}
+            events, errors = self.sialib.sense_custom(cursors)
+            self.assertEqual(errors, [])
+            self.assertEqual([event.summary for event in events],
+                             ["completed"])
+
+            cursors = {"custom.fixture": 0}
+            self.sialib.CONFIG = {"custom_senses": [{
+                "name": "fixture", "path": path,
+                "exclude": "^(?!.*FAILED)"}]}
+            with mock.patch.object(
+                    self.sialib.re, "compile",
+                    side_effect=AssertionError("custom regex executed")):
+                events, errors = self.sialib.sense_custom(cursors)
+            self.assertEqual(events, [])
+            self.assertIn("literal alternatives only", errors[0]["error"])
+            self.assertEqual(cursors, {"custom.fixture": 0})
         finally:
             self.sialib.CONFIG = old_config
             os.unlink(path)

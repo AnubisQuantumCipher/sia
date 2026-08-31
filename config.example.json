@@ -26,7 +26,7 @@
 
   "custom_senses": [
     {
-      "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' accepts bounded literal alternatives separated by | (not regex); for jsonl, 'field' selects the message field.",
+      "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' includes and 'exclude' omits bounded literal alternatives separated by | (neither accepts regex); for jsonl, 'field' selects the message field.",
       "name": "example-app",
       "organ": "example-app",
       "description": "my application's error log",
