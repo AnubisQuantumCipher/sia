@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.6 — 2026-08-31
+
+- **Cockpit-native hover help** — the workspace latch and live-readiness
+  hint now use Omarchy's themed dark tooltip surface and delayed hover timing.
+  They no longer fall back to Qt Quick Controls' bright white tooltip bar.
+
 ## 1.3.5 — 2026-08-31
 
 - **Cockpit workspace lock** — the full-screen mission-control surface now
