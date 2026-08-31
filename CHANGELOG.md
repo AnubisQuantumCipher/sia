@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.7 — 2026-08-31
+
+- **Omarchy marketplace hardening** — the sensing subsystem is now an
+  explicit, audited `siasenses.py` runtime module rather than an oversized
+  core file. The core remains the single owner of configuration and mutable
+  state; an alias-safe, re-entrant façade binds that state per call, preserves
+  parent test seams, and keeps the Cockpit and bar layout unchanged.
+
+- **Safe runtime evolution** — installed modern v2 runtime receipts continue
+  to validate for ordinary upgrade. The release writes a versioned v3 digest
+  only when the new sensing member is present, so a partial/rolled-back
+  runtime cannot be misclassified as an older valid tree. Install and
+  uninstall both enforce the same complete member set.
+
+- **Marketplace lifecycle docs** — installation now distinguishes Omarchy's
+  plugin clone/enable action from SIA's explicit resident-runtime installer;
+  update and complete-removal paths are documented alongside the directory
+  submission model and its unsandboxed trust boundary.
+
 ## 1.3.6 — 2026-08-31
 
 - **Cockpit-native hover help** — the workspace latch and live-readiness

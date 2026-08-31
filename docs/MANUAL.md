@@ -866,17 +866,28 @@ oversize input/output refuses instead of being parsed or returned partially.
 ### Community-directory publication
 
 The public repository contains the required root `manifest.json`, README,
-license, and installation/removal documentation. Release preparation included
-a successful local `omarchy plugin validate .` run, but that result is not
-bound to a future submission commit; rerun it against the exact public commit.
-Its intended marketplace identity is `khephri.sia` in category `System`. This
-is submission readiness, not a claim that SIA is already listed. Follow the
-[official publishing guide](https://plugins.omarchy.org/publish.html): prepare
-the exact issue title/body, confirm every checklist statement—including rights
-to the plugin and preview assets—and obtain the maintainer's explicit approval
-before creating the issue. Automated validation checks the submitted commit's
-manifest/Quattro compatibility. Neither that result nor a listing is a
-security review; installed community plugins run unsandboxed as the user.
+license, preview asset, and installation/removal documentation. Its intended
+marketplace identity is `khephri.sia` in category `System`, with `AI`, `Bar`,
+and `Quickshell` as directory tags. This is submission readiness, not a claim
+that SIA is already listed. Follow the
+[official publishing guide](https://plugins.omarchy.org/publish.html), validate
+the exact public commit with `omarchy plugin validate .`, and confirm every
+submission checklist statement—including rights to the plugin and preview
+assets—before creating the issue. Automated validation checks the submitted
+commit's manifest/Quickshell compatibility. Neither that result nor a listing
+is a security review; installed community plugins run unsandboxed as the user.
+
+Marketplace `omarchy plugin add … --enable` validates, clones, and enables the
+QML plugin only. It does not run SIA's installer. Run `./install.sh` from the
+cloned plugin directory afterward, and run it again after
+`omarchy plugin update khephri.sia` so the resident runtime and its receipt
+match the plugin release. For complete removal, run `./uninstall.sh` while the
+plugin directory still exists. On a successful uninstall, SIA disables the QML
+surface and archives the plugin checkout as part of the teardown. Do not follow
+it with `omarchy plugin remove khephri.sia`: that command expects an installed
+checkout and removes it itself, but does not remove SIA's resident runtime or
+user service. If Quickshell retains a stale entry after uninstall, force a
+rescan with `omarchy-shell shell rescanPlugins`.
 
 For contributors, every test module that loads a SIA runtime module must import
 `tests/sia_test_home.py` first. It redirects import-time home expansion into one
@@ -1192,7 +1203,10 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The previous tree remains at the printed backup path. Before any
+the install. The current v3 member set includes `siasenses.py`; the receipt
+reader still recognizes a complete older v1/v2 set when that member is absent,
+but it never accepts a tree that contains the child under an older digest. The
+previous tree remains at the printed backup path. Before any
 desktop mutation, MCP inspection, or service enablement,
 the installer temporarily releases its brainstem/PGLite/corpus locks, runs a
 fatal `SIA_BACKFILL=1` first-light pulse, executes `sia ready`, and reacquires

@@ -77,14 +77,20 @@ def _managed_file_receipt(path, kind):
 def _runtime_digest(root):
     legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
                     "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-    modern_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                    "siamind.py", "siaqueue.py", "siatakes.py")
+    modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
+                       "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+                       "siamind.py", "siaqueue.py", "siatakes.py")
+    modern_v3_names = modern_v2_names + ("siasenses.py",)
     modern = any(os.path.lexists(os.path.join(root, name))
                  for name in ("sia-brainstem.py", "sia-cli"))
-    names = modern_names if modern else legacy_names
-    digest = hashlib.sha256(
-        b"sia-runtime-v2\0" if modern else b"sia-runtime-v1\0")
+    v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
+    if v3:
+        names, salt = modern_v3_names, b"sia-runtime-v3\0"
+    elif modern:
+        names, salt = modern_v2_names, b"sia-runtime-v2\0"
+    else:
+        names, salt = legacy_names, b"sia-runtime-v1\0"
+    digest = hashlib.sha256(salt)
     for name in names:
         with open(os.path.join(root, name), "rb") as stream:
             content = stream.read()
@@ -278,6 +284,27 @@ class ReleaseContract(unittest.TestCase):
                            "iproute2"):
             self.assertIn(dependency, readme)
 
+    def test_marketplace_scanned_source_files_fit_the_static_limit(self):
+        # Observed from the marketplace baseline's source-snapshot guard.
+        cap = 524288
+        extensions = {".js", ".py", ".qml", ".sh"}
+        extensionless = {
+            os.path.join("bin", name) for name in (
+                "sia", "sia-brainstem", "sia-ledger", "sia-mcp")}
+        for directory, subdirectories, filenames in os.walk(REPO):
+            subdirectories[:] = [
+                name for name in subdirectories
+                if name not in {".git", "assets", "__pycache__"}]
+            for filename in filenames:
+                absolute = os.path.join(directory, filename)
+                relative = os.path.relpath(absolute, REPO)
+                if (os.path.splitext(filename)[1] not in extensions
+                        and relative not in extensionless):
+                    continue
+                with self.subTest(path=relative):
+                    self.assertFalse(os.path.islink(absolute))
+                    self.assertLessEqual(os.path.getsize(absolute), cap)
+
     def test_operator_docs_state_installer_and_removal_boundaries(self):
         readme = _read("README.md")
         manual = _read("docs/MANUAL.md")
@@ -293,6 +320,11 @@ class ReleaseContract(unittest.TestCase):
         self.assertIn("valid top-level-list JSON", manual)
         self.assertIn("SIA does not silently delete", manual)
         self.assertIn("SIA does not guess", manual)
+        for document in (readme, manual):
+            self.assertIn("archives the plugin checkout", document)
+            self.assertIn("omarchy-shell shell rescanPlugins", document)
+            self.assertNotIn("then run `omarchy plugin remove khephri.sia`",
+                             document)
         self.assertIn("For a standalone install", _read("skill/SKILL.md"))
         self.assertIn("not access-control or egress controls",
                       _read("SECURITY.md"))
@@ -402,6 +434,8 @@ class ReleaseContract(unittest.TestCase):
         self.assertTrue(checksums)
         self.assertTrue(all(len(value) == 64 for value in checksums))
         self.assertIn('siabench.py siaqueue.py', installer)
+        self.assertIn('bin/siasenses.py', installer)
+        self.assertIn('siasenses.py siamind.py', installer)
         self.assertIn('SIA_INSTALL_KEYBINDING:-0', installer)
         self.assertIn('SIA_BRAINSTEM_WAS_ACTIVE=1', installer)
         self.assertIn('SIA_INSTALL_MUTATED=1', installer)
@@ -821,7 +855,7 @@ class ReleaseContract(unittest.TestCase):
             os.makedirs(fake_bin)
             for name in (
                     "sia-brainstem", "sia-brainstem.py", "sia-cli",
-                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py", "siasenses.py",
                     "siamind.py", "siaqueue.py", "siatakes.py"):
                 _write(os.path.join(runtime, name), name + "\n", 0o755)
             _write(cli, "new stable launcher\n", 0o755)
@@ -980,6 +1014,147 @@ recover_publication_receipts_from_fence
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     check=False)
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_runtime_v3_digest_migrates_without_replacing_valid_v2_tree(self):
+        installer = _read("install.sh")
+        digest_function = "runtime_tree_digest() {" + installer.split(
+            "runtime_tree_digest() {", 1)[1].split(
+                "\n}\n\nruntime_receipt_valid", 1)[0] + "\n}\n"
+        receipt_function = "runtime_receipt_valid() {" + installer.split(
+            "runtime_receipt_valid() {", 1)[1].split(
+                "\n}\n\nfenced_managed_file_authorized", 1)[0] + "\n}\n"
+        preflight_function = "preflight_runtime() {" + installer.split(
+            "preflight_runtime() {", 1)[1].split(
+                "\n}\n\nrecover_publication_receipts_from_fence", 1)[0] \
+            + "\n}\n"
+        functions = digest_function + receipt_function + preflight_function
+        modern_v2_names = (
+            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
+            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
+            "siaqueue.py", "siatakes.py")
+        with tempfile.TemporaryDirectory() as root:
+            share = os.path.join(root, "share")
+            runtime = os.path.join(share, "bin")
+            receipt = os.path.join(root, "managed", "runtime")
+            for name in modern_v2_names:
+                _write(os.path.join(runtime, name), name + "\n", 0o644)
+
+            def write_receipt():
+                _write(
+                    receipt,
+                    "managed-by=khephri.sia\nkind=runtime\n"
+                    f"path={runtime}\nsha256={_runtime_digest(runtime)}\n",
+                    0o600)
+
+            script = functions + r'''
+set -u
+SHARE="$TEST_SHARE"
+BINDIR="$TEST_RUNTIME"
+RUNTIME_RECEIPT="$TEST_RECEIPT"
+SIA_REPLACE_RUNTIME=0
+SIA_RUNTIME_TREE_EXPECTED=
+owned_tree_cas() { [ "$1" = recover ]; }
+owned_tree_generation() { printf '%s\n' stable-runtime-generation; }
+fenced_runtime_authorized() { return 1; }
+owned_metadata() {
+  local kind="$1" receipt="$2" path="$3" digest="$4" expected
+  [ "$kind" = runtime ] || return 1
+  expected="$(printf 'managed-by=khephri.sia\nkind=runtime\npath=%s\nsha256=%s\n' "$path" "$digest")"
+  [ "$(cat -- "$receipt")" = "$expected" ]
+}
+preflight_runtime
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "TEST_SHARE": share,
+                "TEST_RUNTIME": runtime,
+                "TEST_RECEIPT": receipt,
+            })
+
+            def preflight():
+                return subprocess.run(
+                    ["bash", "-c", script], env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False)
+
+            # A receipt from the currently published modern-v2 runtime stays
+            # valid, so its normal upgrade path never requires replacement.
+            write_receipt()
+            result = preflight()
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            # The child file changes the membership version. It cannot be
+            # smuggled into a v2 receipt, and the v3 receipt then validates.
+            _write(os.path.join(runtime, "siasenses.py"), "child\n", 0o644)
+            self.assertNotEqual(preflight().returncode, 0)
+            write_receipt()
+            result = preflight()
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            # A v3 receipt never authorizes an incomplete/rolled-back tree.
+            os.unlink(os.path.join(runtime, "siasenses.py"))
+            self.assertNotEqual(preflight().returncode, 0)
+
+    def test_uninstaller_fence_requires_complete_v3_runtime(self):
+        uninstaller = _read("uninstall.sh")
+        function = "fenced_runtime_authorized() {" + uninstaller.split(
+            "fenced_runtime_authorized() {", 1)[1].split(
+                "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
+        modern_v3_names = (
+            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
+            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
+            "siaqueue.py", "siatakes.py", "siasenses.py")
+        with tempfile.TemporaryDirectory() as root:
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            for name in modern_v3_names:
+                _write(os.path.join(runtime, name), name + "\n", 0o644)
+            digest = _runtime_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": digest,
+                    "runtime_digest": digest,
+                    "cli_digest": "",
+                    "entries": [],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            script = function + r'''
+set -u
+LAUNCH_FENCE_JOURNAL="$TEST_JOURNAL"
+LIFECYCLE_TOMBSTONE="$TEST_TOMBSTONE"
+RUNTIME_RECEIPT="$TEST_RECEIPT"
+RUNTIME_BIN_DIR="$TEST_RUNTIME"
+fenced_runtime_authorized
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "TEST_JOURNAL": journal,
+                "TEST_TOMBSTONE": tombstone,
+                "TEST_RECEIPT": receipt,
+                "TEST_RUNTIME": runtime,
+            })
+
+            def authorize():
+                return subprocess.run(
+                    ["bash", "-c", script], env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False)
+
+            result = authorize()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            os.unlink(os.path.join(runtime, "siasenses.py"))
+            self.assertNotEqual(authorize().returncode, 0)
 
     def test_fenced_runtime_authorization_requires_exact_journal_and_tombstone(
             self):
@@ -1296,7 +1471,7 @@ retain_unowned_cli_before_fence
                 process.communicate(timeout=2)
 
             _write(target, _read("bin/sia"), 0o644)
-            for name in ("sialib.py", "siamind.py", "siatakes.py",
+            for name in ("sialib.py", "siasenses.py", "siamind.py", "siatakes.py",
                          "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
@@ -1359,7 +1534,7 @@ retain_unowned_cli_before_fence
     def test_new_sialib_rejects_loaded_old_installed_launchers(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
-            for name in ("sialib.py", "siamind.py", "siatakes.py",
+            for name in ("sialib.py", "siasenses.py", "siamind.py", "siatakes.py",
                          "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
