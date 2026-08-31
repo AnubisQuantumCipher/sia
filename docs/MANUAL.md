@@ -911,6 +911,62 @@ Durable external-consumer guards live under
 config removals are attempted independently, and a later failure does not roll
 back an earlier removal. Back up all retained categories before using it.
 
+### Brainstem service lifecycle barrier
+
+A locally installed user unit under `~/.config/systemd/user` outranks a runtime
+systemd mask, so `install.sh` and `uninstall.sh` do not use a runtime mask as
+their quiescence primitive. Once preflight proves an existing unit and receipt
+are SIA-owned, or proves the managed unit path is safely absent, they create
+exactly
+`$XDG_RUNTIME_DIR/systemd/user/sia-brainstem.service.d/sia-lifecycle-barrier.conf`.
+The helper opens the canonical mode-0700 runtime root and every descendant by
+descriptor without following links. It requires current-user-owned,
+non-group/world-writable directories and an exact mode-0644, single-link,
+stable-generation regular barrier file. Its content is:
+
+```ini
+[Unit]
+RefuseManualStart=yes
+ConditionPathExists=
+ConditionPathExists=!/
+```
+
+The empty assignment clears prior path conditions; the negated root condition
+is structurally false on a running host, blocking indirect activation before
+`ExecStart` or its hooks. `RefuseManualStart=yes` independently rejects an
+explicit start. After a manager reload, SIA accepts the barrier only when one
+bounded `systemctl show` reports the exact managed fragment, that sole drop-in,
+an inactive service with no main PID, no pending job, and the effective
+manual-start refusal. Foreign runtime fragments, extra operator drop-ins,
+links, modes, owners, content, or changing generations are never normalized or
+deleted to make the check pass.
+
+A fresh install first publishes the drop-in as an orphan while the main unit is
+absent. It then publishes the owned main unit, reloads the user manager, stops
+and resets any failed state, and attests the complete barrier before first
+light. An upgrade arms and attests the same barrier before replacing runtime or
+integration artifacts. At final activation, the installer uses
+`renameat2(RENAME_NOREPLACE)` to retire only its exact `.conf` file to the
+non-drop-in `sia-lifecycle-barrier.retired` sibling. It reloads and verifies the
+unit is unbarriered, enables and starts it, verifies the live Python executable
+and exact brainstem argument, and only then discards the retired copy. An exit
+or activation failure restores that copy atomically to the active `.conf`
+name, reloads systemd, and leaves the daemon stopped behind the barrier.
+
+Uninstall uses the same exact barrier before disabling and stopping the unit.
+Successful cleanup retires only the SIA-owned `.conf`, reloads and attests the
+unbarriered/absent unit, then discards the retired copy. It does not recursively
+remove the `.service.d` directory or clean up an operator's drop-ins. If any
+uninstall step fails, it retains either the active barrier or, once the main
+unit is already absent, the exact retired recovery copy. A retry verifies the
+absent/reloaded state before discarding that retired copy.
+
+The barrier coordinates SIA and systemd within one user lifecycle; it is not a
+hostile same-UID sandbox. Another process running as the account can modify
+user-owned runtime files or bypass SIA entirely. The no-follow and generation
+checks turn interference observed at their boundaries into a refusal, but do
+not establish privilege separation from that process.
+
 Installer reproducibility is fail-closed: Bun is installed in SIA's private
 toolchain, and gbrain is compiled from the full pinned commit using its
 SHA-256-bound upstream lock with a frozen production install. Receipts bind

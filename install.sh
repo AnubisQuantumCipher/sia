@@ -31,6 +31,16 @@ SIA_CANONICAL_HOME="$(cd -P -- "$HOME" 2>/dev/null && pwd)" || {
 }
 HOME="$SIA_CANONICAL_HOME"
 export HOME
+case "${XDG_RUNTIME_DIR:-}" in
+  /*) ;;
+  *) echo "refusing install with an unsafe XDG_RUNTIME_DIR" >&2; exit 2 ;;
+esac
+case "$XDG_RUNTIME_DIR" in
+  *$'\n'*|*$'\r'*|*[[:space:]\\]*)
+    echo "refusing install with an unsafe XDG_RUNTIME_DIR" >&2
+    exit 2
+    ;;
+esac
 export GBRAIN_SKIP_STARTUP_HOOKS=1
 unset SIA_INHERITED_LIFECYCLE_FD \
   SIA_LAUNCHER_ABI SIA_LAUNCHER_LIFECYCLE_FD \
@@ -50,6 +60,7 @@ TOOLCHAIN="$SHARE/toolchain"
 MANAGED_DIR="$STATE/managed-install"
 BRAINSTEM_UNIT="$SYSTEMD_USER_DIR/sia-brainstem.service"
 BRAINSTEM_RECEIPT="$MANAGED_DIR/sia-brainstem.service"
+BRAINSTEM_RUNTIME_BARRIER="$XDG_RUNTIME_DIR/systemd/user/sia-brainstem.service.d/sia-lifecycle-barrier.conf"
 CORPUS_RECEIPT="$MANAGED_DIR/corpus"
 CORPUS_BOOTSTRAP_INTENT="$MANAGED_DIR/corpus-bootstrap"
 CORPUS_ADOPTION_INTENT="$MANAGED_DIR/corpus-adoption"
@@ -79,10 +90,10 @@ SIA_GBRAIN_LOCK_FD=""
 SIA_RESTORE_LIFECYCLE_TOMBSTONE=0
 SIA_LIFECYCLE_TOMBSTONE_CLEARED=0
 SIA_LIFECYCLE_ACQUIRE_ATTEMPTS=8
-SIA_BRAINSTEM_RUNTIME_MASKED=0
-SIA_BRAINSTEM_MASK_DEFERRED=0
-SIA_BRAINSTEM_FINAL_UNMASKED=0
-SIA_KEEP_BRAINSTEM_RUNTIME_MASK=0
+SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
+SIA_BRAINSTEM_BARRIER_DEFERRED=0
+SIA_BRAINSTEM_FINAL_UNBARRIERED=0
+SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=0
 SIA_STABLE_LAUNCHER=""
 SIA_CLI_EXPECTED=""
 SIA_RUNTIME_TREE_EXPECTED=""
@@ -1467,7 +1478,7 @@ sia_install_cleanup() {
   [ -z "$SIA_GBRAIN_STAGE" ] || rm -rf -- "$SIA_GBRAIN_STAGE"
   if [ "$status" -ne 0 ]; then
     # Restore every public failure gate and stop a mutated generation while
-    # the exclusive lifecycle lease and runtime mask still exclude entrants.
+    # the exclusive lifecycle lease and runtime barrier still exclude entrants.
     if [ "$SIA_RESTORE_LIFECYCLE_TOMBSTONE" -eq 1 ] \
         && [ "$SIA_LIFECYCLE_TOMBSTONE_CLEARED" -eq 1 ]; then
       write_lifecycle_tombstone || \
@@ -1486,31 +1497,29 @@ sia_install_cleanup() {
       echo "rejected Ollama service left disabled; inspect retained backups before restoring it" >&2
     fi
     if [ "$SIA_INSTALL_MUTATED" -eq 1 ]; then
-      # The successful tail deliberately drops the transaction mask before
+      # The successful tail deliberately drops the transaction barrier before
       # starting the completed generation. If reload/start/attestation then
       # fails, re-establish and verify that start barrier before a one-shot
       # disable/stop can be described as containment.
-      if [ "$SIA_BRAINSTEM_FINAL_UNMASKED" -eq 1 ] \
-          && [ "$SIA_BRAINSTEM_RUNTIME_MASKED" -eq 0 ]; then
-        if install_brainstem_runtime_mask; then
-          echo "re-established sia-brainstem runtime mask after final activation failure" >&2
+      if [ "$SIA_BRAINSTEM_FINAL_UNBARRIERED" -eq 1 ] \
+          && [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 0 ]; then
+        if install_brainstem_runtime_barrier; then
+          echo "re-established sia-brainstem runtime barrier after final activation failure" >&2
         else
-          echo "WARNING: sia-brainstem runtime mask could not be re-established" >&2
+          echo "WARNING: sia-brainstem runtime barrier could not be re-established" >&2
         fi
       fi
-      if [ "$SIA_BRAINSTEM_RUNTIME_MASKED" -eq 1 ] \
-          && verify_install_brainstem_runtime_mask; then
+      if [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 1 ] \
+          && verify_install_brainstem_runtime_barrier; then
         brainstem_contained=1
-        if [ "$SIA_BRAINSTEM_FINAL_UNMASKED" -eq 1 ]; then
-          # The completed generation failed its live systemd/argv attestation.
-          # A disabled unit is still manually startable, so keep the verified
-          # runtime mask as a durable repair barrier after this installer exits.
-          SIA_KEEP_BRAINSTEM_RUNTIME_MASK=1
-        fi
+        # Any mutated generation requires an explicit recovery rerun. A
+        # disabled unit remains manually startable, so retain the verified
+        # barrier rather than reopening a partially completed installation.
+        SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=1
       fi
       if run_with_deadline 120 systemctl --user disable --now \
           sia-brainstem.service; then
-        if [ "$SIA_BRAINSTEM_FINAL_UNMASKED" -eq 0 ] \
+        if [ "$SIA_BRAINSTEM_FINAL_UNBARRIERED" -eq 0 ] \
             || [ "$brainstem_contained" -eq 1 ]; then
           echo "install failed after mutation; sia-brainstem was disabled and stopped" >&2
         else
@@ -1546,15 +1555,17 @@ sia_install_cleanup() {
     eval "exec ${SIA_INSTALL_LOCK_FD}>&-"
     SIA_INSTALL_LOCK_FD=""
   fi
-  if [ "$SIA_BRAINSTEM_RUNTIME_MASKED" -eq 1 ] \
-      && [ "$SIA_KEEP_BRAINSTEM_RUNTIME_MASK" -eq 0 ]; then
-    remove_install_brainstem_runtime_mask || \
-      echo "WARNING: installer runtime mask could not be removed" >&2
-  elif [ "$SIA_KEEP_BRAINSTEM_RUNTIME_MASK" -eq 1 ]; then
-    echo "sia-brainstem.service remains runtime-masked after failed activation; inspect it, then rerun install.sh" >&2
+  if [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 1 ] \
+      && [ "$SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER" -eq 0 ]; then
+    remove_install_brainstem_runtime_barrier || \
+      echo "WARNING: installer runtime barrier could not be removed" >&2
+  elif [ "$SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER" -eq 1 ]; then
+    echo "sia-brainstem.service retains its runtime start barrier after failed activation; inspect it, then rerun install.sh" >&2
   fi
   if [ "$status" -ne 0 ]; then
-    if [ "$SIA_INSTALL_MUTATED" -eq 0 ]; then
+    if [ "$SIA_INSTALL_MUTATED" -eq 0 ] \
+        && [ "$SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER" -eq 0 ] \
+        && [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 0 ]; then
       case "$SIA_BRAINSTEM_ENABLE_STATE" in
         enabled)
           run_with_deadline 120 systemctl --user enable sia-brainstem.service \
@@ -1663,23 +1674,263 @@ managed_receipt_matches() {
   owned_metadata managed-file "$receipt" "$kind" "$target"
 }
 
+# A runtime `systemctl mask --user` is lower-precedence than a unit installed
+# in ~/.config/systemd/user and therefore cannot stop that local unit from
+# loading. Publish one exact runtime drop-in instead. Its structurally false
+# condition blocks indirect activation and RefuseManualStart blocks explicit
+# activation before service hooks can run.
+brainstem_runtime_barrier_file() {
+  python3 - "$1" "$XDG_RUNTIME_DIR" \
+      "$BRAINSTEM_RUNTIME_BARRIER" <<'PY'
+import ctypes
+import errno
+import os
+import stat
+import sys
+
+action, runtime, barrier = sys.argv[1:]
+if action not in {"state", "install", "retire", "restore", "discard",
+                  "remove"}:
+    raise SystemExit("invalid brainstem runtime barrier action")
+if not runtime.startswith("/") or runtime == "/" \
+        or os.path.realpath(runtime) != runtime:
+    raise SystemExit("XDG_RUNTIME_DIR is not a canonical private directory")
+runtime_info = os.lstat(runtime)
+if not stat.S_ISDIR(runtime_info.st_mode) \
+        or runtime_info.st_uid != os.geteuid() \
+        or stat.S_IMODE(runtime_info.st_mode) != 0o700:
+    raise SystemExit("XDG_RUNTIME_DIR is not a canonical private directory")
+expected_barrier = os.path.join(
+    runtime, "systemd", "user", "sia-brainstem.service.d",
+    "sia-lifecycle-barrier.conf")
+if barrier != expected_barrier:
+    raise SystemExit("brainstem runtime barrier path is invalid")
+active_name = "sia-lifecycle-barrier.conf"
+retired_name = "sia-lifecycle-barrier.retired"
+
+content = (
+    "[Unit]\n"
+    "RefuseManualStart=yes\n"
+    "ConditionPathExists=\n"
+    "ConditionPathExists=!/\n"
+).encode("utf-8")
+directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                   | getattr(os, "O_DIRECTORY", 0)
+                   | getattr(os, "O_NOFOLLOW", 0))
+read_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+              | getattr(os, "O_NOFOLLOW", 0)
+              | getattr(os, "O_NONBLOCK", 0))
+
+
+def generation(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+            info.st_gid, info.st_nlink, info.st_size, info.st_mtime_ns,
+            info.st_ctime_ns)
+
+
+def child_directory(parent, name, create):
+    try:
+        descriptor = os.open(name, directory_flags, dir_fd=parent)
+    except FileNotFoundError:
+        if not create:
+            return None
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+        descriptor = os.open(name, directory_flags, dir_fd=parent)
+        os.fsync(parent)
+    info = os.fstat(descriptor)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+            or stat.S_IMODE(info.st_mode) & 0o022:
+        os.close(descriptor)
+        raise ValueError(f"unsafe runtime systemd directory: {name}")
+    return descriptor
+
+
+def open_parent(create):
+    descriptors = [os.open(runtime, directory_flags)]
+    try:
+        runtime_open = os.fstat(descriptors[0])
+        if not stat.S_ISDIR(runtime_open.st_mode) \
+                or runtime_open.st_uid != os.geteuid() \
+                or stat.S_IMODE(runtime_open.st_mode) != 0o700:
+            raise ValueError("XDG_RUNTIME_DIR changed during inspection")
+        for name in ("systemd", "user", "sia-brainstem.service.d"):
+            descriptor = child_directory(descriptors[-1], name, create)
+            if descriptor is None:
+                return None, descriptors
+            descriptors.append(descriptor)
+            if name == "user":
+                try:
+                    os.stat("sia-brainstem.service", dir_fd=descriptor,
+                            follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise ValueError(
+                        "foreign runtime sia-brainstem unit fragment exists")
+        return descriptors[-1], descriptors
+    except Exception:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        raise
+
+
+def read_barrier(parent, name):
+    try:
+        descriptor = os.open(name, read_flags, dir_fd=parent)
+    except FileNotFoundError:
+        return None
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != 0o644 \
+                or before.st_size != len(content):
+            raise ValueError("brainstem runtime barrier is foreign or unstable")
+        chunks = []
+        remaining = len(content) + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        observed = b"".join(chunks)
+        after = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(after.st_mode) \
+                or after.st_uid != os.geteuid() or after.st_nlink != 1 \
+                or stat.S_IMODE(after.st_mode) != 0o644 \
+                or generation(before) != generation(after) \
+                or generation(after) != generation(current) \
+                or observed != content or after.st_size != len(content):
+            raise ValueError("brainstem runtime barrier is foreign or unstable")
+        return generation(after)
+    finally:
+        os.close(descriptor)
+
+
+def require_unchanged(parent, name, expected):
+    current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if generation(current) != expected:
+        raise ValueError("brainstem runtime barrier changed before mutation")
+
+
+def rename_noreplace(parent, source, target):
+    libc = ctypes.CDLL(None, use_errno=True)
+    operation = getattr(libc, "renameat2", None)
+    if operation is None:
+        raise OSError(errno.ENOSYS, "renameat2 is unavailable")
+    operation.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_uint]
+    operation.restype = ctypes.c_int
+    result = operation(parent, os.fsencode(source), parent,
+                       os.fsencode(target), 1)
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), target)
+    os.fsync(parent)
+
+
+parent = None
+descriptors = []
+try:
+    parent, descriptors = open_parent(action == "install")
+    if parent is None:
+        if action not in {"state", "discard", "remove"}:
+            raise ValueError("brainstem runtime barrier directory is absent")
+        print("absent")
+        raise SystemExit(0)
+    active = read_barrier(parent, active_name)
+    retired = read_barrier(parent, retired_name)
+    if active is not None and retired is not None:
+        raise ValueError("active and retired brainstem barriers both exist")
+    if action == "state":
+        if active is not None:
+            print("active")
+        elif retired is not None:
+            print("retired")
+        else:
+            print("absent")
+    elif action == "install":
+        if retired is not None:
+            raise ValueError("retired brainstem barrier requires recovery")
+        if active is None:
+            flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | getattr(os, "O_CLOEXEC", 0)
+                     | getattr(os, "O_NOFOLLOW", 0))
+            descriptor = os.open(active_name, flags, 0o644, dir_fd=parent)
+            try:
+                os.fchmod(descriptor, 0o644)
+                view = memoryview(content)
+                while view:
+                    written = os.write(descriptor, view)
+                    if written <= 0:
+                        raise OSError("short brainstem runtime barrier write")
+                    view = view[written:]
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.fsync(parent)
+            read_barrier(parent, active_name)
+        print("active")
+    elif action == "retire":
+        if active is None or retired is not None:
+            raise ValueError("brainstem runtime barrier cannot be retired")
+        require_unchanged(parent, active_name, active)
+        rename_noreplace(parent, active_name, retired_name)
+        read_barrier(parent, retired_name)
+        print("retired")
+    elif action == "restore":
+        if retired is None or active is not None:
+            raise ValueError("brainstem runtime barrier cannot be restored")
+        require_unchanged(parent, retired_name, retired)
+        rename_noreplace(parent, retired_name, active_name)
+        read_barrier(parent, active_name)
+        print("active")
+    elif action == "discard":
+        if active is not None:
+            raise ValueError("active brainstem runtime barrier cannot be discarded")
+        if retired is not None:
+            require_unchanged(parent, retired_name, retired)
+            os.unlink(retired_name, dir_fd=parent)
+            os.fsync(parent)
+        print("absent")
+    else:
+        if retired is not None:
+            raise ValueError("retired brainstem runtime barrier requires recovery")
+        if active is not None:
+            require_unchanged(parent, active_name, active)
+            os.unlink(active_name, dir_fd=parent)
+            os.fsync(parent)
+        print("absent")
+finally:
+    for descriptor in reversed(descriptors):
+        os.close(descriptor)
+PY
+}
+
 # Inspect one user unit through a single `show` query.  Unlike `is-active` and
 # `is-enabled`, this distinguishes a genuinely absent/inactive unit from an
 # unreachable user manager.  Callers must treat a refusal as fail-closed.
 inspect_user_unit() {
-  local unit="$1" prefix="$2" output key count
+  local unit="$1" prefix="$2" expected_drop_in_paths="${3:-}" output key count
   local load_state active_state fragment_path unit_file_state
-  local drop_in_paths main_pid
+  local drop_in_paths main_pid refuse_manual_start job
   if ! output="$(bounded_command_capture systemctl --user show "$unit" \
       --property=LoadState --property=ActiveState \
       --property=FragmentPath --property=UnitFileState \
-      --property=DropInPaths --property=MainPID)"; then
+      --property=DropInPaths --property=MainPID \
+      --property=RefuseManualStart --property=Job)"; then
     printf '%s\n' "$output" >&2
     echo "could not inspect user service $unit" >&2
     return 1
   fi
   for key in LoadState ActiveState FragmentPath UnitFileState \
-      DropInPaths MainPID; do
+      DropInPaths MainPID RefuseManualStart Job; do
     count="$(printf '%s\n' "$output" | grep -c "^${key}=" || true)"
     [ "$count" = 1 ] || {
       echo "incomplete systemd inspection for $unit ($key)" >&2
@@ -1692,6 +1943,8 @@ inspect_user_unit() {
   unit_file_state="$(printf '%s\n' "$output" | sed -n 's/^UnitFileState=//p')"
   drop_in_paths="$(printf '%s\n' "$output" | sed -n 's/^DropInPaths=//p')"
   main_pid="$(printf '%s\n' "$output" | sed -n 's/^MainPID=//p')"
+  refuse_manual_start="$(printf '%s\n' "$output" | sed -n 's/^RefuseManualStart=//p')"
+  job="$(printf '%s\n' "$output" | sed -n 's/^Job=//p')"
   case "$load_state" in loaded|not-found|masked) ;; *)
     echo "unsafe systemd load state for $unit: $load_state" >&2; return 1;;
   esac
@@ -1705,20 +1958,37 @@ inspect_user_unit() {
     echo "unsupported systemd enablement state for $unit: $unit_file_state" >&2
     return 1;;
   esac
-  [ -z "$drop_in_paths" ] || {
-    echo "refusing systemd drop-ins for $unit: $drop_in_paths" >&2
+  [ "$drop_in_paths" = "$expected_drop_in_paths" ] || {
+    echo "unexpected systemd drop-ins for $unit: $drop_in_paths" >&2
     return 1
   }
   [[ "$main_pid" =~ ^[0-9]+$ ]] || {
     echo "invalid systemd MainPID for $unit" >&2
     return 1
   }
+  [ -z "$job" ] || {
+    echo "systemd job is still pending for $unit: $job" >&2
+    return 1
+  }
+  if [ -n "$expected_drop_in_paths" ]; then
+    [ "$refuse_manual_start" = yes ] || {
+      echo "systemd start refusal is not armed for $unit" >&2
+      return 1
+    }
+  else
+    [ "$refuse_manual_start" = no ] || {
+      echo "unexpected systemd start refusal for $unit" >&2
+      return 1
+    }
+  fi
   printf -v "${prefix}_LOAD_STATE" '%s' "$load_state"
   printf -v "${prefix}_ACTIVE_STATE" '%s' "$active_state"
   printf -v "${prefix}_FRAGMENT_PATH" '%s' "$fragment_path"
   printf -v "${prefix}_UNIT_FILE_STATE" '%s' "$unit_file_state"
   printf -v "${prefix}_DROP_IN_PATHS" '%s' "$drop_in_paths"
   printf -v "${prefix}_MAIN_PID" '%s' "$main_pid"
+  printf -v "${prefix}_REFUSE_MANUAL_START" '%s' "$refuse_manual_start"
+  printf -v "${prefix}_JOB" '%s' "$job"
 }
 
 write_stable_generation_launcher() {
@@ -2028,40 +2298,126 @@ prepare_and_lock_install() {
   fi
 }
 
-verify_install_brainstem_runtime_mask() {
-  inspect_user_unit sia-brainstem.service BRAINSTEM_MASKED || return 1
-  if [ "$BRAINSTEM_MASKED_LOAD_STATE" != masked ] \
-      || [ "$BRAINSTEM_MASKED_ACTIVE_STATE" != inactive ] \
-      || [ "$BRAINSTEM_MASKED_FRAGMENT_PATH" != /dev/null ] \
-      || [ "$BRAINSTEM_MASKED_UNIT_FILE_STATE" != masked-runtime ] \
-      || [ "$BRAINSTEM_MASKED_MAIN_PID" != 0 ]; then
-    echo "sia-brainstem.service runtime mask did not verify" >&2
+verify_install_brainstem_runtime_barrier() {
+  local barrier_state
+  barrier_state="$(brainstem_runtime_barrier_file state)" || return 1
+  [ "$barrier_state" = active ] || {
+    echo "sia-brainstem runtime barrier is not active" >&2
+    return 1
+  }
+  inspect_user_unit sia-brainstem.service BRAINSTEM_BARRIER \
+    "$BRAINSTEM_RUNTIME_BARRIER" || return 1
+  if [ "$BRAINSTEM_BARRIER_LOAD_STATE" != loaded ] \
+      || [ "$BRAINSTEM_BARRIER_ACTIVE_STATE" != inactive ] \
+      || [ "$BRAINSTEM_BARRIER_FRAGMENT_PATH" != "$BRAINSTEM_UNIT" ] \
+      || [ "$BRAINSTEM_BARRIER_MAIN_PID" != 0 ]; then
+    echo "sia-brainstem.service runtime barrier did not verify" >&2
     return 1
   fi
+  case "$BRAINSTEM_BARRIER_UNIT_FILE_STATE" in
+    disabled|enabled|enabled-runtime) ;;
+    *)
+      echo "sia-brainstem.service has an unsafe barrier enablement state" >&2
+      return 1
+      ;;
+  esac
 }
 
-install_brainstem_runtime_mask() {
-  # The initial snapshot rejected any pre-existing mask. Arm cleanup before
-  # asking systemd to create this installer-owned runtime-only start barrier.
-  SIA_BRAINSTEM_RUNTIME_MASKED=1
-  run_with_deadline 120 systemctl --user mask --runtime --now \
-    sia-brainstem.service || return 1
-  verify_install_brainstem_runtime_mask
+install_brainstem_runtime_barrier() {
+  local barrier_state
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=1
+  barrier_state="$(brainstem_runtime_barrier_file state)" || return 1
+  case "$barrier_state" in
+    active) ;;
+    retired)
+      brainstem_runtime_barrier_file restore >/dev/null || return 1
+      ;;
+    absent)
+      brainstem_runtime_barrier_file install >/dev/null || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  run_with_deadline 120 systemctl --user daemon-reload || return 1
+  if [ -e "$BRAINSTEM_UNIT" ] || [ -L "$BRAINSTEM_UNIT" ]; then
+    run_with_deadline 120 systemctl --user stop \
+      sia-brainstem.service || return 1
+    run_with_deadline 120 systemctl --user reset-failed \
+      sia-brainstem.service >/dev/null 2>&1 || true
+    verify_install_brainstem_runtime_barrier
+  else
+    inspect_user_unit sia-brainstem.service BRAINSTEM_ORPHAN || return 1
+    [ "$BRAINSTEM_ORPHAN_LOAD_STATE" = not-found ] \
+      && [ "$BRAINSTEM_ORPHAN_ACTIVE_STATE" = inactive ] \
+      && [ -z "$BRAINSTEM_ORPHAN_FRAGMENT_PATH" ] \
+      && [ "$BRAINSTEM_ORPHAN_MAIN_PID" = 0 ]
+  fi
 }
 
-remove_install_brainstem_runtime_mask() {
-  if [ "$SIA_BRAINSTEM_RUNTIME_MASKED" -ne 1 ]; then
+remove_install_brainstem_runtime_barrier() {
+  local barrier_state restore_failed=0
+  if [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -ne 1 ]; then
     return 0
   fi
-  run_with_deadline 120 systemctl --user unmask --runtime \
-    sia-brainstem.service || return 1
-  SIA_BRAINSTEM_RUNTIME_MASKED=0
+  barrier_state="$(brainstem_runtime_barrier_file state)" || return 1
+  [ "$barrier_state" = active ] || return 1
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
+  if brainstem_runtime_barrier_file retire >/dev/null \
+      && run_with_deadline 120 systemctl --user daemon-reload \
+      && inspect_user_unit sia-brainstem.service BRAINSTEM_UNBARRIERED \
+      && [ "$BRAINSTEM_UNBARRIERED_LOAD_STATE" = loaded ] \
+      && [ "$BRAINSTEM_UNBARRIERED_ACTIVE_STATE" = inactive ] \
+      && [ "$BRAINSTEM_UNBARRIERED_FRAGMENT_PATH" = "$BRAINSTEM_UNIT" ] \
+      && [ "$BRAINSTEM_UNBARRIERED_MAIN_PID" = 0 ] \
+      && brainstem_runtime_barrier_file discard >/dev/null; then
+    return 0
+  fi
+  barrier_state="$(brainstem_runtime_barrier_file state)" || return 1
+  case "$barrier_state" in
+    retired)
+      brainstem_runtime_barrier_file restore >/dev/null || restore_failed=1
+      ;;
+    active) ;;
+    *) restore_failed=1 ;;
+  esac
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=1
+  run_with_deadline 120 systemctl --user daemon-reload \
+    >/dev/null 2>&1 || restore_failed=1
+  if [ "$restore_failed" -eq 0 ]; then
+    verify_install_brainstem_runtime_barrier >/dev/null 2>&1 \
+      || restore_failed=1
+  fi
+  [ "$restore_failed" -eq 0 ] || \
+    echo "WARNING: installer start barrier recovery did not verify" >&2
+  return 1
+}
+
+retire_install_brainstem_runtime_barrier() {
+  # Set the recovery markers before the atomic rename. EXIT can then restore
+  # either side of a failure at every point in final activation.
+  SIA_BRAINSTEM_FINAL_UNBARRIERED=1
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
+  brainstem_runtime_barrier_file retire >/dev/null || return 1
+  run_with_deadline 120 systemctl --user daemon-reload || return 1
+  inspect_user_unit sia-brainstem.service BRAINSTEM_UNBARRIERED || return 1
+  [ "$BRAINSTEM_UNBARRIERED_LOAD_STATE" = loaded ] \
+    && [ "$BRAINSTEM_UNBARRIERED_ACTIVE_STATE" = inactive ] \
+    && [ "$BRAINSTEM_UNBARRIERED_FRAGMENT_PATH" = "$BRAINSTEM_UNIT" ] \
+    && [ "$BRAINSTEM_UNBARRIERED_MAIN_PID" = 0 ]
+}
+
+discard_install_brainstem_retired_barrier() {
+  brainstem_runtime_barrier_file discard >/dev/null
 }
 
 inspect_install_brainstem_for_lifecycle() {
-  local prefix="$1"
+  local prefix="$1" expected_drop_in_paths=""
   local load_var active_var fragment_var unit_state_var main_pid_var
-  inspect_user_unit sia-brainstem.service "$prefix" || return 1
+  if [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 1 ] \
+      && [ "$SIA_BRAINSTEM_BARRIER_DEFERRED" -eq 0 ]; then
+    expected_drop_in_paths="$BRAINSTEM_RUNTIME_BARRIER"
+  fi
+  inspect_user_unit sia-brainstem.service "$prefix" \
+    "$expected_drop_in_paths" || return 1
   load_var="${prefix}_LOAD_STATE"
   active_var="${prefix}_ACTIVE_STATE"
   fragment_var="${prefix}_FRAGMENT_PATH"
@@ -2094,8 +2450,9 @@ inspect_install_brainstem_for_lifecycle() {
 }
 
 quiesce_install_brainstem_for_lifecycle() {
-  if [ "$SIA_BRAINSTEM_RUNTIME_MASKED" -eq 1 ]; then
-    verify_install_brainstem_runtime_mask
+  if [ "$SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED" -eq 1 ] \
+      && [ "$SIA_BRAINSTEM_BARRIER_DEFERRED" -eq 0 ]; then
+    verify_install_brainstem_runtime_barrier
     return
   fi
   inspect_install_brainstem_for_lifecycle BRAINSTEM_HANDOFF || return 1
@@ -5996,7 +6353,29 @@ preflight_owned_file "$SIA_STABLE_LAUNCHER" "$CLI_PATH" "$CLI_RECEIPT" \
 # use SIA's service name. An exact current unit is safely adoptable; an older
 # receipt-bound unit is an owned upgrade. Everything else needs explicit
 # replacement consent before install-wide quiescence begins.
-inspect_user_unit sia-brainstem.service BRAINSTEM_INSPECT || exit 1
+BRAINSTEM_BARRIER_STATE="$(brainstem_runtime_barrier_file state)" || exit 1
+BRAINSTEM_EXPECTED_DROP_IN=""
+case "$BRAINSTEM_BARRIER_STATE" in
+  active)
+    SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=1
+    SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=1
+    if [ -e "$BRAINSTEM_UNIT" ] || [ -L "$BRAINSTEM_UNIT" ]; then
+      BRAINSTEM_EXPECTED_DROP_IN="$BRAINSTEM_RUNTIME_BARRIER"
+    fi
+    run_with_deadline 120 systemctl --user daemon-reload
+    ;;
+  retired)
+    SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=1
+    # Normalize a crash between atomic retirement and daemon-reload. The
+    # exact retired copy remains available for restoration after ownership is
+    # proven below.
+    run_with_deadline 120 systemctl --user daemon-reload
+    ;;
+  absent) ;;
+  *) echo "unexpected sia-brainstem barrier state" >&2; exit 1 ;;
+esac
+inspect_user_unit sia-brainstem.service BRAINSTEM_INSPECT \
+  "$BRAINSTEM_EXPECTED_DROP_IN" || exit 1
 if [ "$BRAINSTEM_INSPECT_LOAD_STATE" = masked ] \
     || [ "$BRAINSTEM_INSPECT_UNIT_FILE_STATE" = masked-runtime ]; then
   echo "pre-existing sia-brainstem.service runtime mask preserved" >&2
@@ -6034,11 +6413,18 @@ if [ "$BRAINSTEM_INSPECT_ACTIVE_STATE" = active ]; then
 fi
 if [ -e "$BRAINSTEM_UNIT" ] || [ -L "$BRAINSTEM_UNIT" ] \
     || [ "$BRAINSTEM_INSPECT_LOAD_STATE" = loaded ]; then
-  install_brainstem_runtime_mask
+  install_brainstem_runtime_barrier
 else
-  # A genuinely fresh install has no launcher to queue yet. Install the mask
-  # immediately before the unit first becomes visible.
-  SIA_BRAINSTEM_MASK_DEFERRED=1
+  if [ "$BRAINSTEM_BARRIER_STATE" = retired ]; then
+    # Recover a power loss after an uninstall retired the barrier but before
+    # its exact recovery copy was discarded. It remains an ignored orphan
+    # until the new main unit is published below.
+    install_brainstem_runtime_barrier
+  fi
+  # A genuinely fresh install has no launcher to queue yet. Provision the
+  # barrier immediately before the unit first becomes visible, then attest it
+  # after the main unit and drop-in enter the manager in one reload.
+  SIA_BRAINSTEM_BARRIER_DEFERRED=1
 fi
 acquire_install_lifecycle
 acquire_owner_lock "$STATE/brainstem-owner.lock" SIA_BRAINSTEM_LOCK_FD \
@@ -7025,13 +7411,17 @@ sialib.durable_ledger_append(
 PY
 
 step "7/9 first light — backfilling YOUR machine's history"
-if [ "$SIA_BRAINSTEM_MASK_DEFERRED" -eq 1 ]; then
-  install_brainstem_runtime_mask
-  SIA_BRAINSTEM_MASK_DEFERRED=0
+if [ "$SIA_BRAINSTEM_BARRIER_DEFERRED" -eq 1 ]; then
+  install_brainstem_runtime_barrier
 fi
 install_owned_file "$REPO/systemd/sia-brainstem.service" "$BRAINSTEM_UNIT" \
   0644 "$BRAINSTEM_RECEIPT" brainstem-unit SIA_REPLACE_BRAINSTEM_UNIT
 run_with_deadline 120 systemctl --user daemon-reload
+SIA_BRAINSTEM_BARRIER_DEFERRED=0
+run_with_deadline 120 systemctl --user stop sia-brainstem.service
+run_with_deadline 120 systemctl --user reset-failed \
+  sia-brainstem.service >/dev/null 2>&1 || true
+verify_install_brainstem_runtime_barrier
 # The new CLI acquires these exact leases itself. Release the inherited
 # quiescence leases before launching it. The parent keeps the lifecycle lease
 # exclusive and a purged install keeps its tombstone. The child can cross both
@@ -7846,9 +8236,7 @@ SIA_BRAINSTEM_LOCK_FD=""
 flock -u "$SIA_INSTALL_LOCK_FD"
 exec {SIA_INSTALL_LOCK_FD}>&-
 SIA_INSTALL_LOCK_FD=""
-remove_install_brainstem_runtime_mask
-SIA_BRAINSTEM_FINAL_UNMASKED=1
-run_with_deadline 120 systemctl --user daemon-reload
+retire_install_brainstem_runtime_barrier
 run_with_deadline 120 systemctl --user enable sia-brainstem.service
 run_with_deadline 120 systemctl --user start sia-brainstem.service
 inspect_user_unit sia-brainstem.service BRAINSTEM_LIVE || {
@@ -7878,6 +8266,7 @@ if (actual_executable != expected_executable
         or os.path.realpath(argv[1]) != os.path.realpath(runtime)):
     raise SystemExit("sia-brainstem.service is not running the exact managed runtime")
 PY
+discard_install_brainstem_retired_barrier
 echo "  brainstem: active (verified executable and argv)"
 
 step "done — your machine has a brain"

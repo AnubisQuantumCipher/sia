@@ -55,6 +55,7 @@ ABSENT_USER_UNIT = (
     '  echo "LoadState=not-found"; echo "ActiveState=inactive"\n'
     '  echo "FragmentPath="; echo "UnitFileState="\n'
     '  echo "DropInPaths="; echo "MainPID=0"\n'
+    '  echo "RefuseManualStart=no"; echo "Job="\n'
     '  exit 0\n'
     'fi\n'
     'exit 0\n')
@@ -147,7 +148,90 @@ def _owned_metadata_python(script):
                             "\nPY\n}", 1)[0]
 
 
+def _runtime_barrier_shell(script):
+    body = script.split("brainstem_runtime_barrier_file() {", 1)[1].split(
+        "\nPY\n}", 1)[0]
+    return "brainstem_runtime_barrier_file() {" + body + "\nPY\n}\n"
+
+
 class ReleaseContract(unittest.TestCase):
+    def setUp(self):
+        self._xdg_runtime = tempfile.TemporaryDirectory(
+            prefix="sia-release-runtime-")
+        os.chmod(self._xdg_runtime.name, 0o700)
+        self.addCleanup(self._xdg_runtime.cleanup)
+        previous = os.environ.get("XDG_RUNTIME_DIR")
+        os.environ["XDG_RUNTIME_DIR"] = self._xdg_runtime.name
+
+        def restore_xdg_runtime():
+            if previous is None:
+                os.environ.pop("XDG_RUNTIME_DIR", None)
+            else:
+                os.environ["XDG_RUNTIME_DIR"] = previous
+
+        self.addCleanup(restore_xdg_runtime)
+
+    def test_runtime_barrier_artifact_lifecycle_and_refusals(self):
+        installer_function = _runtime_barrier_shell(_read("install.sh"))
+        self.assertEqual(
+            installer_function,
+            _runtime_barrier_shell(_read("uninstall.sh")))
+        barrier = os.path.join(
+            self._xdg_runtime.name, "systemd", "user",
+            "sia-brainstem.service.d", "sia-lifecycle-barrier.conf")
+        retired = os.path.splitext(barrier)[0] + ".retired"
+        environment = os.environ.copy()
+        environment["BRAINSTEM_RUNTIME_BARRIER"] = barrier
+
+        def action(name):
+            return subprocess.run(
+                ["bash", "-c", installer_function +
+                 '\nbrainstem_runtime_barrier_file "$1"',
+                 "runtime-barrier-test", name],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+
+        result = action("state")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "absent\n")
+
+        result = action("install")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "active\n")
+        self.assertEqual(
+            _read_path(barrier),
+            "[Unit]\nRefuseManualStart=yes\nConditionPathExists=\n"
+            "ConditionPathExists=!/\n")
+        self.assertEqual(os.stat(barrier).st_mode & 0o777, 0o644)
+        self.assertEqual(action("state").stdout, "active\n")
+
+        result = action("retire")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.lexists(barrier))
+        self.assertTrue(os.path.isfile(retired))
+        self.assertEqual(action("state").stdout, "retired\n")
+
+        result = action("restore")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.isfile(barrier))
+        self.assertFalse(os.path.lexists(retired))
+        result = action("remove")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "absent\n")
+        self.assertFalse(os.path.lexists(barrier))
+
+        target = os.path.join(self._xdg_runtime.name, "foreign")
+        _write(target, "foreign\n", 0o644)
+        os.symlink(target, barrier)
+        result = action("state")
+        self.assertNotEqual(result.returncode, 0)
+        os.unlink(barrier)
+
+        _write(barrier, "[Unit]\nRefuseManualStart=no\n", 0o644)
+        result = action("state")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("foreign or unstable", result.stderr)
+
     def test_manifest_entrypoints_and_versions_are_consistent(self):
         manifest = json.loads(_read("manifest.json"))
         self.assertEqual(manifest["schemaVersion"], 1)
@@ -379,19 +463,26 @@ class ReleaseContract(unittest.TestCase):
                          first_light_block)
         self.assertIn('flock -n "$SIA_INSTALL_LOCK_FD"', installer)
         self.assertNotIn('flock "$SIA_INSTALL_LOCK_FD"', installer)
-        runtime_mask = ordered_installer.index(
-            'systemctl --user mask --runtime --now sia-brainstem.service')
-        lifecycle_acquire = ordered_installer.index(
+        main_installer = ordered_installer[
+            ordered_installer.index('SIA_RELEASE_FILES=('):]
+        runtime_barrier = main_installer.index(
+            'install_brainstem_runtime_barrier')
+        lifecycle_acquire = main_installer.index(
             'acquire_install_lifecycle ')
-        final_lifecycle_release = ordered_installer.rindex(
+        final_lifecycle_release = main_installer.rindex(
             'flock -u "$SIA_INSTALL_LOCK_FD"')
-        runtime_unmask = ordered_installer.rindex(
-            'remove_install_brainstem_runtime_mask')
-        final_start = ordered_installer.rindex(
+        runtime_unbarrier = main_installer.rindex(
+            'retire_install_brainstem_runtime_barrier')
+        final_start = main_installer.rindex(
             'systemctl --user start sia-brainstem.service')
-        self.assertLess(runtime_mask, lifecycle_acquire)
-        self.assertLess(final_lifecycle_release, runtime_unmask)
-        self.assertLess(runtime_unmask, final_start)
+        self.assertLess(runtime_barrier, lifecycle_acquire)
+        self.assertLess(final_lifecycle_release, runtime_unbarrier)
+        self.assertLess(runtime_unbarrier, final_start)
+        self.assertIn('RefuseManualStart=yes', installer)
+        self.assertIn('ConditionPathExists=!/', installer)
+        self.assertIn('sia-lifecycle-barrier.conf', installer)
+        self.assertNotIn('systemctl --user mask --runtime', installer)
+        self.assertNotIn('systemctl --user unmask --runtime', installer)
 
     def test_installer_rejects_home_that_resolves_to_root(self):
         environment = os.environ.copy()
@@ -1077,9 +1168,9 @@ SIA_GBRAIN_STAGE=""
 SIA_INSTALL_MUTATED=1
 SIA_RESTORE_LIFECYCLE_TOMBSTONE=0
 SIA_LIFECYCLE_TOMBSTONE_CLEARED=0
-SIA_BRAINSTEM_FINAL_UNMASKED=0
-SIA_BRAINSTEM_RUNTIME_MASKED=0
-SIA_KEEP_BRAINSTEM_RUNTIME_MASK=0
+SIA_BRAINSTEM_FINAL_UNBARRIERED=0
+SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
+SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=0
 SIA_BRAINSTEM_WAS_ACTIVE=1
 SIA_BRAINSTEM_WAS_ENABLED=1
 SIA_OLLAMA_SERVICE_MUTATED=1
@@ -1101,7 +1192,7 @@ sia_install_cleanup
             self.assertIn("--user disable --now ollama.service", calls)
             self.assertIn("install failed after mutation", result.stderr)
 
-    def test_final_activation_failure_rearms_mask_before_disable(self):
+    def test_final_activation_failure_rearms_barrier_before_disable(self):
         installer = _read("install.sh")
         body = installer.split("sia_install_cleanup() {", 1)[1].split(
             "\n}\ntrap sia_install_cleanup EXIT", 1)[0]
@@ -1111,14 +1202,14 @@ sia_install_cleanup
             trace = os.path.join(root, "trace")
             script = function + r'''
 run_with_deadline() { shift; "$@"; }
-install_brainstem_runtime_mask() {
-  echo mask >> "$TRACE"
-  SIA_BRAINSTEM_RUNTIME_MASKED=1
+install_brainstem_runtime_barrier() {
+  echo barrier >> "$TRACE"
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=1
 }
-verify_install_brainstem_runtime_mask() { echo verify >> "$TRACE"; }
-remove_install_brainstem_runtime_mask() {
-  echo unmask >> "$TRACE"
-  SIA_BRAINSTEM_RUNTIME_MASKED=0
+verify_install_brainstem_runtime_barrier() { echo verify >> "$TRACE"; }
+remove_install_brainstem_runtime_barrier() {
+  echo unbarrier >> "$TRACE"
+  SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
 }
 systemctl() { printf 'systemctl %s\n' "$*" >> "$TRACE"; }
 SIA_INSTALL_TMP="$WORK/install-tmp"
@@ -1127,8 +1218,8 @@ SIA_OLLAMA_STAGE="" SIA_PLUGIN_STAGE="" SIA_RUNTIME_STAGE=""
 SIA_BUN_STAGE="" SIA_GBRAIN_STAGE=""
 SIA_INSTALL_MUTATED=1 SIA_OLLAMA_SERVICE_MUTATED=0
 SIA_RESTORE_LIFECYCLE_TOMBSTONE=0 SIA_LIFECYCLE_TOMBSTONE_CLEARED=0
-SIA_BRAINSTEM_FINAL_UNMASKED=1 SIA_BRAINSTEM_RUNTIME_MASKED=0
-SIA_KEEP_BRAINSTEM_RUNTIME_MASK=0
+SIA_BRAINSTEM_FINAL_UNBARRIERED=1 SIA_BRAINSTEM_RUNTIME_BARRIER_ARMED=0
+SIA_KEEP_BRAINSTEM_RUNTIME_BARRIER=0
 SIA_GBRAIN_LOCK_FD="" SIA_CORPUS_LOCK_FD=""
 SIA_BRAINSTEM_LOCK_FD="" SIA_INSTALL_LOCK_FD=""
 false
@@ -1141,15 +1232,15 @@ sia_install_cleanup
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(result.returncode, 0)
             calls = _read_path(trace).splitlines()
-            mask = calls.index("mask")
+            barrier = calls.index("barrier")
             disable = calls.index(
                 "systemctl --user disable --now sia-brainstem.service")
-            self.assertLess(mask, disable)
-            self.assertNotIn("unmask", calls)
-            self.assertIn("re-established sia-brainstem runtime mask",
+            self.assertLess(barrier, disable)
+            self.assertNotIn("unbarrier", calls)
+            self.assertIn("re-established sia-brainstem runtime barrier",
                           result.stderr)
             self.assertIn("disabled and stopped", result.stderr)
-            self.assertIn("remains runtime-masked", result.stderr)
+            self.assertIn("retains its runtime start barrier", result.stderr)
 
     def test_ollama_runtime_and_model_store_are_fail_closed(self):
         installer = _read("install.sh")
@@ -3432,30 +3523,33 @@ remove_managed_skill
                 fake_bin, "systemctl",
                 'echo "systemctl $*" >> "$TRACE"\n'
                 'if [ "$1 $2" = "--user show" ]; then\n'
-                '  if [ -f "$HOME/.brainstem-masked" ]; then\n'
-                '    echo "LoadState=masked"; echo "ActiveState=inactive"\n'
-                '    echo "UnitFileState=masked-runtime"\n'
-                '    fragment=/dev/null; main_pid=0\n'
+                '  unit=$HOME/.config/systemd/user/sia-brainstem.service\n'
+                '  barrier=$XDG_RUNTIME_DIR/systemd/user/'
+                'sia-brainstem.service.d/sia-lifecycle-barrier.conf\n'
+                '  if [ ! -f "$unit" ]; then\n'
+                '    echo "LoadState=not-found"\n'
+                '    echo "ActiveState=inactive"; echo "UnitFileState="\n'
+                '    fragment=; main_pid=0\n'
                 '  elif [ -f "$HOME/.brainstem-disabled" ]; then\n'
                 '    echo "LoadState=loaded"\n'
                 '    echo "ActiveState=inactive"; echo "UnitFileState=disabled"\n'
-                '    fragment=$HOME/.config/systemd/user/sia-brainstem.service\n'
+                '    fragment=$unit\n'
                 '    main_pid=0\n'
                 '  else\n'
                 '    echo "LoadState=loaded"\n'
                 '    echo "ActiveState=active"; echo "UnitFileState=enabled"\n'
-                '    fragment=$HOME/.config/systemd/user/sia-brainstem.service\n'
+                '    fragment=$unit\n'
                 '    main_pid=123\n'
                 '  fi\n'
                 '  echo "FragmentPath=$fragment"\n'
-                '  echo "DropInPaths="; echo "MainPID=$main_pid"\n'
+                '  if [ -f "$barrier" ] && [ -f "$unit" ]; then\n'
+                '    echo "DropInPaths=$barrier"\n'
+                '    echo "RefuseManualStart=yes"\n'
+                '  else\n'
+                '    echo "DropInPaths="; echo "RefuseManualStart=no"\n'
+                '  fi\n'
+                '  echo "MainPID=$main_pid"; echo "Job="\n'
                 '  exit 0\n'
-                'fi\n'
-                'if [ "$1 $2 $3" = "--user mask --runtime" ]; then\n'
-                '  touch "$HOME/.brainstem-masked" "$HOME/.brainstem-disabled"\n'
-                'fi\n'
-                'if [ "$1 $2 $3" = "--user unmask --runtime" ]; then\n'
-                '  mv "$HOME/.brainstem-masked" "$HOME/.brainstem-unmasked"\n'
                 'fi\n'
                 'if [ "$1 $2 $3" = "--user disable --now" ]; then\n'
                 '  touch "$HOME/.brainstem-disabled"\n'
@@ -3545,6 +3639,94 @@ remove_managed_skill
             self.assertIn("hyprctl reload", calls)
             self.assertIn("hyprctl configerrors", calls)
             self.assertIn("uninstall completed successfully", result.stdout)
+
+    def test_uninstaller_recovers_exact_retired_brainstem_barrier(self):
+        barrier_content = (
+            "[Unit]\nRefuseManualStart=yes\nConditionPathExists=\n"
+            "ConditionPathExists=!/\n")
+        for inject_failure in (False, True):
+            with self.subTest(inject_failure=inject_failure), \
+                    tempfile.TemporaryDirectory() as root:
+                home = os.path.join(root, "home")
+                runtime = os.path.join(root, "runtime")
+                fake_bin = os.path.join(root, "bin")
+                os.makedirs(home)
+                os.makedirs(runtime, mode=0o700)
+                os.chmod(runtime, 0o700)
+                os.makedirs(fake_bin)
+                active = os.path.join(
+                    runtime, "systemd", "user",
+                    "sia-brainstem.service.d",
+                    "sia-lifecycle-barrier.conf")
+                retired = os.path.splitext(active)[0] + ".retired"
+                _write(retired, barrier_content, 0o644)
+                _fake_command(
+                    fake_bin, "systemctl",
+                    'if [ "$1 $2" = "--user daemon-reload" ]; then\n'
+                    '  if [ -f "$TRACE_DIR/reload-seen" ]; then\n'
+                    '    : > "$TRACE_DIR/retry-reload"\n'
+                    '  else\n'
+                    '    : > "$TRACE_DIR/reload-seen"\n'
+                    '  fi\n'
+                    '  exit 0\n'
+                    'fi\n'
+                    'if [ "$1 $2" = "--user show" ]; then\n'
+                    '  if [ -f "$TRACE_DIR/retry-reload" ]; then\n'
+                    '    : > "$TRACE_DIR/absence-attested"\n'
+                    '  fi\n'
+                    '  echo "LoadState=not-found"\n'
+                    '  echo "ActiveState=inactive"; echo "FragmentPath="\n'
+                    '  echo "UnitFileState="; echo "DropInPaths="\n'
+                    '  echo "MainPID=0"; echo "RefuseManualStart=no"\n'
+                    '  echo "Job="; exit 0\n'
+                    'fi\n'
+                    'exit 0\n')
+                for client in ("claude", "codex"):
+                    _fake_command(
+                        fake_bin, client,
+                        'echo "No MCP server named sia" >&2\nexit 1\n')
+                _fake_command(fake_bin, "grok", 'echo "[]"\n')
+                if inject_failure:
+                    _write(
+                        os.path.join(home, ".config/hypr/bindings.lua"),
+                        "-- BEGIN SIA\nincomplete managed block\n")
+                environment = os.environ.copy()
+                environment.update({
+                    "HOME": home,
+                    "PATH": fake_bin + os.pathsep + environment["PATH"],
+                    "TRACE_DIR": root,
+                    "XDG_RUNTIME_DIR": runtime,
+                })
+                result = subprocess.run(
+                    ["bash", os.path.join(REPO, "uninstall.sh")],
+                    cwd=REPO, env=environment, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    check=False)
+
+                self.assertTrue(os.path.isfile(
+                    os.path.join(root, "reload-seen")),
+                    result.stdout + result.stderr)
+                self.assertFalse(os.path.lexists(active))
+                if inject_failure:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertTrue(os.path.isfile(retired))
+                    self.assertEqual(_read_path(retired), barrier_content)
+                    self.assertFalse(os.path.lexists(
+                        os.path.join(root, "retry-reload")))
+                    self.assertFalse(os.path.lexists(
+                        os.path.join(root, "absence-attested")))
+                    self.assertIn(
+                        "retired sia-brainstem barrier recovery copy retained",
+                        result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(os.path.lexists(retired))
+                    self.assertTrue(os.path.isfile(
+                        os.path.join(root, "retry-reload")))
+                    self.assertTrue(os.path.isfile(
+                        os.path.join(root, "absence-attested")))
+                    self.assertIn(
+                        "uninstall completed successfully", result.stdout)
 
     def test_uninstaller_holds_owner_leases_through_verified_purge(self):
         with tempfile.TemporaryDirectory() as root:
@@ -3990,9 +4172,10 @@ remove_managed_skill
                 '  echo "LoadState=loaded"; echo "ActiveState=active"\n'
                 '  echo "FragmentPath=$HOME/.config/systemd/user/sia-brainstem.service"\n'
                 '  echo "UnitFileState=enabled"; echo "DropInPaths="\n'
-                '  echo "MainPID=123"; exit 0\n'
+                '  echo "MainPID=123"; echo "RefuseManualStart=no"\n'
+                '  echo "Job="; exit 0\n'
                 'fi\n'
-                'case "$*" in *"mask --runtime --now sia-brainstem.service"*) '
+                'case "$*" in *"disable --now sia-brainstem.service"*) '
                 'exit 1;; esac\nexit 0\n')
             retained = (
                 ".local/share/sia/bin/sialib.py",
@@ -4025,7 +4208,7 @@ remove_managed_skill
             self.assertIn("runtime preserved", result.stderr)
             self.assertIn("purge blocked", result.stderr)
             self.assertIn(
-                "--user mask --runtime --now sia-brainstem.service",
+                "--user disable --now sia-brainstem.service",
                 _read_path(trace))
 
     def test_uninstaller_preserves_incomplete_keybinding_block_and_tail(self):
