@@ -5074,6 +5074,8 @@ remove_managed_skill
         self.assertIn("readyProc.startCheck()", cockpit)
         self.assertIn("readyProc.cancel()", cockpit)
         self.assertNotIn("onErrorOccurred", cockpit)
+        self.assertIn("anchors.rightMargin: wsMapState.visible", cockpit)
+        self.assertNotIn("width: visible ? implicitWidth : 0", cockpit)
         self.assertIn("projectionDebtKeys", cockpit)
         self.assertIn("projectionDebtKnown", cockpit)
         self.assertIn("DEBT UNKNOWN", cockpit)

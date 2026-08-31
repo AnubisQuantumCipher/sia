@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.4 — 2026-08-31
+
+- **Cockpit polish** — the bounded-workspace `off-map` marker now reserves
+  graph-list space only while it is visible, removing the Quickshell text-width
+  binding-loop warning without changing the graph-first cockpit layout.
+
 ## 1.3.3 — 2026-08-31
 
 - **Cockpit runtime compatibility hotfix** — the explicit live-readiness
