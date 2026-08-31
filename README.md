@@ -145,6 +145,15 @@ cannot control what those callers do with returned content.
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.3.1 maintenance repair
+
+v1.3.1 repairs a v1.3.0 resident-agent queue self-deadlock: a brainstem with
+an existing agent request could block on a second handle to its own queue lock
+after publishing first-pulse status, leaving readiness honestly stale. The
+queue snapshot now owns exactly one lease; the durable agent request remains
+retryable through the normal installer lifecycle barrier. The regression test
+fails immediately if that lock becomes nested again.
+
 ### What v1.3.0 completed
 
 | Former future-work area | Shipped release behavior |
