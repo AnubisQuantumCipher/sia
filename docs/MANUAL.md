@@ -61,17 +61,31 @@ Summoned from the bar (or with SUPER+SHIFT+B after an install using
 `SIA_INSTALL_KEYBINDING=1`); leaves with **Esc**, ✕, or
 `omarchy-shell shell hide khephri.sia`.
 
-**Header** — name, live state chip (`OK` / `THINKING` / `DEGRADED` /
-`FAILED` / `STALE`), pulse number and age, clock.
+**Header** — name, last-published state chip (`OK` / `THINKING` /
+`DEGRADED` / `FAILED` / `STALE`), pulse number and age, clock, and a compact
+truth ribbon. The ribbon reports the age/completeness of the *published graph
+snapshot*, the ledger-transition state, and declared projection debt. It does
+not call a snapshot live readiness. Click **check live readiness** to run the
+real `sia ready` predicate once; a pass or refusal is a result of that explicit
+check, not an inference from the graph. That result clears when the cockpit
+closes or a new status/graph snapshot arrives. If debt data is unavailable,
+the ribbon says `DEBT UNKNOWN`, never `clear`.
 
 **Left rail** (scrolls):
 - **VITALS** — memories, links, events today, thoughts kept, mind traces
-  (ACT-R–tracked memories) and Hebbian bonds.
+  (ACT-R–tracked memories) and Hebbian bonds. The **MEMORY LENS** makes the
+  shipped stability state legible: active/demoted associations, SM-2
+  due/eligible review, and operator pins. Demotion changes retrieval weight;
+  it never deletes evidence. **AGENT RELAY** reports the previous published
+  pulse's materialized / acknowledged / refused requests; it is a receipt, not
+  a queue-depth probe. Acknowledgement follows corpus commit and index sync.
 - **PULSE ACTIVITY** — sparkline of the last ~90 heartbeats.
 - **WORKSPACE — n OF 7 SLOTS** — the brain's *conscious contents*: the few
   memories that currently win the competition for attention (Global
   Workspace theory: ignition threshold, max two slots per organ,
-  incumbents resist eviction). Click a slot to lock it in the graph.
+  incumbents resist eviction). Click an in-window slot to lock it in the
+  graph. `off-map` entries are retained in the mind but outside the bounded
+  display window, so the cockpit does not pretend they can be selected there.
 - **ORGANS** — every sense, sorted by today's activity, with last-event age.
 - **EVIDENCE CHAINS** — per-chain verification verdicts, SIA's own signed
   ledger head, last dream, and a **verify now** button that re-runs the
@@ -82,9 +96,11 @@ Summoned from the bar (or with SUPER+SHIFT+B after an install using
   says to run the full signed-ledger `sia bench`.
 - **INTENTS** — prospective memory: open commitments with their
   countdowns; overdue turns urgent. (Panel appears once you have one.)
-- **SOURCE HEALTH** — the truth boundary: snapshot completeness, memory
-  counts by kind, any sense errors or sync failures. If something failed,
-  it says so here instead of quietly looking complete.
+- **SOURCE HEALTH** — the truth boundary: snapshot completeness, publication
+  ledger state, any graph/consolidation debt, memory counts by kind, retained
+  redaction counts, sense errors, or sync failures. If a malformed replacement
+  arrives, the cockpit keeps the last good snapshot and says so instead of
+  quietly treating it as current or complete.
 
 **Center — the living graph.** Time is radial: the cortex at the center,
 organs on the inner ring, every memory at a radius set by its age (oldest
@@ -95,9 +111,11 @@ touched.
   else dims.
 - **Click** a node → lock the selection (click empty space to release).
 - **Inspector** (right rail) → the locked/hovered memory's title, type,
-  age, in/out degree, and every connection with its type *and the text it
-  was extracted from* — why the edge exists.
-- **Typed edge labels** come from SIA's schema-pack domain regexes, evaluated
+  persisted origin (`evidence` / `derived` / `model` / `legacy-unlabeled`),
+  age, in/out degree, and every connection with its type *and the text it was
+  extracted from* — why the edge exists. The inspected neighborhood subtly
+  colors relation types while the unselected full map stays calm.
+- **Corpus-linked typed edge labels** come from SIA's schema-pack domain regexes, evaluated
   deterministically on the Markdown record containing each explicit
   wikilink. Entity names are masked before matching, entity-description pages
   stay neutral, and `model` or `legacy-unlabeled` thoughts stay generic. Only
@@ -139,7 +157,7 @@ touched.
   surface. Installer first-light can drain successive bounded batches, but
   refuses at its fixed convergence ceiling rather than looping indefinitely
   under corpus churn.
-- **Legend chips** are filters — click `memory`, `thought`, `entity`… to
+- **Legend chips** are filters — click `memory`, `thought`, `record`… to
   hide that kind.
 - **⟲ replay** (or the **R** key) — animate the brain growing from its
   oldest memory to now.

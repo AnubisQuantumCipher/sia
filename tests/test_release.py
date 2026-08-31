@@ -5054,6 +5054,33 @@ remove_managed_skill
         self.assertIn("root.staleAfterSec * 1000", panel)
         self.assertNotRegex(cockpit, r">\s*240\s*\*\s*1000")
 
+    def test_cockpit_exposes_snapshot_and_live_memory_boundaries(self):
+        cockpit = _read("Cockpit.qml")
+        model = _read("Model.js")
+        # Snapshot diagnostics cannot impersonate `sia ready`. The cockpit
+        # must retain its graph-first design while keeping this boundary and
+        # the v1.3 cognitive/agent projections visible to the operator.
+        self.assertIn('"ready"', cockpit)
+        self.assertIn("id: readyProc", cockpit)
+        self.assertIn("id: readyTooltip", cockpit)
+        self.assertIn("PUBLISHED SNAPSHOT", cockpit)
+        self.assertIn("check live readiness", cockpit)
+        self.assertIn("clearReadyCheck", cockpit)
+        self.assertIn("onErrorOccurred", cockpit)
+        self.assertIn("projectionDebtKeys", cockpit)
+        self.assertIn("projectionDebtKnown", cockpit)
+        self.assertIn("DEBT UNKNOWN", cockpit)
+        self.assertIn("validStatusSnapshot", cockpit)
+        self.assertIn("MEMORY LENS", cockpit)
+        self.assertIn("AGENT RELAY — last published pulse", cockpit)
+        self.assertIn("off-map", cockpit)
+        self.assertIn("retained in mind", cockpit)
+        self.assertIn("CORPUS-LINKED RELATIONS", cockpit)
+        self.assertIn("Model.originLabel", cockpit)
+        self.assertIn('return "record"', model)
+        self.assertIn("function edgeColor", model)
+        self.assertIn("function originLabel", model)
+
     def test_recovery_boundaries_are_operator_visible(self):
         readme = _read("README.md")
         manual = _read("docs/MANUAL.md")

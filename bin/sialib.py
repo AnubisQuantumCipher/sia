@@ -238,7 +238,7 @@ ORGANS = _build_organs()
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication

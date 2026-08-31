@@ -89,13 +89,40 @@ function kindKey(n) {
   if (n.t === "event-day") return "day"
   if (n.t === "thought") return "thought"
   if (n.t === "skill") return "skill"
-  return "entity"
+  // The graph also carries package, project, note, take, intent, and other
+  // corpus records. Calling all of those entities made the legend claim a
+  // taxonomy the snapshot does not actually provide.
+  return "record"
 }
 
 // ---------------------------------------------------------------- colors
 
 function nodeColor(n, pal) {
-  return pal[kindKey(n)] || pal.entity
+  return pal[kindKey(n)] || pal.record
+}
+
+// Edge types are evidence about how a corpus link was projected, not a claim
+// that every NER relationship is present in this display. The canvas only
+// surfaces these colors for the selected neighborhood, keeping the full map
+// calm while making the inspected relation legible.
+function edgeColor(kind, pal) {
+  if (kind === "crashed") return pal.urgent
+  if (kind === "upgraded") return pal.organ
+  if (kind === "mentions") return pal.record
+  return pal.thought
+}
+
+function originLabel(origin) {
+  if (origin === "evidence" || origin === "derived" || origin === "model")
+    return origin
+  return "legacy-unlabeled"
+}
+
+function originColor(origin, pal) {
+  if (origin === "evidence") return pal.organ
+  if (origin === "derived") return pal.thought
+  if (origin === "model") return pal.record
+  return pal.urgent
 }
 
 function nodeRadius(n) {

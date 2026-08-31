@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.2 — 2026-08-31
+
+- **Cockpit fidelity pass** — preserves the graph-first Hermes Star Map and
+  three-column layout while making the v1.3 cognitive and publication model
+  visible at its real truth boundaries. A compact header ribbon now calls out
+  the last-published graph snapshot, ledger transition, and projection debt;
+  an explicit control runs the live `sia ready` predicate once instead of
+  treating a healthy-looking snapshot as memory-read authorization. The UI
+  retains and labels a last-known-good status/graph when an incoming snapshot
+  is malformed; a live-check result is invalidated on close or new snapshot,
+  missing debt is `unknown`, and a failed local readiness-command launch
+  becomes an explicit blocked result rather than a stuck check.
+
+- **Mind and agent operations made legible** — VITALS now surfaces active vs.
+  demoted stability associations, SM-2 due/eligible review, pins, and the
+  last-published durable agent handoff receipt. Workspace memories outside the
+  graph's deterministic display window are marked `off-map` and remain
+  unselectable there, rather than implying a missing graph node was selected.
+  SOURCE HEALTH now carries publication debt, ledger-transition state, and
+  nonempty retained-redaction counts.
+
+- **Graph provenance and taxonomy** — the cockpit calls the displayed links
+  corpus-linked relations, colors their type only for the inspected
+  neighborhood, shows each node's persisted origin, and labels non-special
+  graph records honestly instead of calling every package/project/note an
+  entity. The full signed-ledger QA benchmark remains separately invoked by
+  `sia bench`; the heuristic drift display does not impersonate answer scoring.
+
 ## 1.3.1 — 2026-08-31
 
 - **Resident agent-queue deadlock repair** — the native thought-replay
