@@ -1102,10 +1102,12 @@ user-owned runtime files or bypass SIA entirely. The no-follow and generation
 checks turn interference observed at their boundaries into a refusal, but do
 not establish privilege separation from that process.
 
-Installer reproducibility is fail-closed: Bun is installed in SIA's private
-toolchain, and gbrain is compiled from the full pinned commit using its
-SHA-256-bound upstream lock with a frozen production install. Receipts bind
-the resulting executables. Before replacing or activating managed payloads,
+Installer reproducibility is fail-closed: each release archive is materialized
+to a private artifact file and checked against the installer-embedded SHA-256
+before extraction; SIA never pipes a remote response to a shell. Bun is
+installed in SIA's private toolchain, and gbrain is compiled from the full
+pinned commit using its SHA-256-bound upstream lock with a frozen production
+install. Receipts bind the resulting executables. Before replacing or activating managed payloads,
 the installer exercises the runtime's actual pidfd, Ed25519,
 `renameat2(RENAME_NOREPLACE)`, and share-
 filesystem `O_TMPFILE`/`linkat(AT_EMPTY_PATH)` capabilities; an import-only or

@@ -1638,13 +1638,13 @@ sia_install_cleanup() {
 }
 trap sia_install_cleanup EXIT
 download_verified() {
-  local url="$1" out="$2" expected="$3"
+  local url="$1" artifact_file="$2" expected="$3"
   # status=exact parsed=2^31 exact=2147483648; not formal-bounded. This is a
   # transfer/materialization ceiling, not a claim about expected asset size.
   run_with_deadline 1800 curl -fL --proto '=https' --tlsv1.2 \
     --connect-timeout 120 --max-time 1800 --max-filesize 2147483648 \
-    -o "$out" "$url"
-  printf '%s  %s\n' "$expected" "$out" | sha256sum -c -
+    -o "$artifact_file" "$url"
+  printf '%s  %s\n' "$expected" "$artifact_file" | sha256sum -c -
 }
 
 assert_safe_managed_roots() {

@@ -206,6 +206,13 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.3.8 marketplace baseline clarity
+
+v1.3.8 preserves the verified-download contract—pinned SHA-256, HTTPS/TLS,
+bounded transfer, then staged extraction—but makes the artifact path explicit
+enough for marketplace static analysis to distinguish it from unrelated process
+output. The Cockpit and runtime behavior are unchanged.
+
 ### v1.3.7 marketplace hardening
 
 v1.3.7 prepares SIA's public Omarchy plugin release without changing the
