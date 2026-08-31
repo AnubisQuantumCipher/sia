@@ -13,10 +13,13 @@
   sia rehearse [slug]   list due reviews, or recall one page deliberately
   sia think             recent thoughts
   sia graph             graph statistics
+  sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
   sia dream             run the consolidation cycle now (daemon must be off)
   sia verify            re-verify every signed evidence chain with attest
   sia ledger            show SIA's own signed run ledger head + verify
+  sia note "text" [--from author]
+                        queue a labeled, model-origin note for the brainstem
   sia ponder [question] deep reflection by the configured, tool-free Claude
                         judge over recalled memories; writes a
                         clearly-labeled synthesis page + thought — and may
@@ -32,6 +35,10 @@
   sia calibration [--cursor N]
                         descriptive Brier scorecard over resolved takes,
                         with bounded, pageable domain breakdowns
+  sia bench [run|generate|score|legacy] ...
+                        signed-ledger retrieval and abstention benchmark
+  sia judge-audit       exercise the configured judge against engineered
+                        evidence states; writes an owner-private report
 """
 
 import contextlib, fcntl, json, math, os, re, stat, subprocess, sys
