@@ -31,6 +31,11 @@ Item {
   property bool playing: false
   property string verifyMsg: ""
   property bool verifyOk: false
+  property string graphBoundary: ""
+  property string statusBoundary: ""
+  property bool readyChecked: false
+  property bool readyOk: false
+  property string readyDetail: ""
 
   readonly property string effId: hoverId !== "" ? hoverId : selectedId
   readonly property string statePath:
@@ -45,7 +50,7 @@ Item {
     organ:   root.accent,
     day:     Qt.alpha(root.fg, 0.78),
     thought: Qt.lighter(root.accent, 1.35),
-    entity:  Qt.alpha(root.fg, 0.5),
+    record:  Qt.alpha(root.fg, 0.5),
     skill:   Qt.darker(root.accent, 1.45),
     urgent:  root.urgent
   })
@@ -57,6 +62,101 @@ Item {
   readonly property var snap:
     graph && graph.snapshot ? graph.snapshot : null
   readonly property real staleAfterSec: configuredStaleAfterSec()
+
+  function isNonNegativeCount(value) {
+    return typeof value === "number" && isFinite(value)
+      && Math.floor(value) === value && value >= 0
+  }
+
+  function isPlainRecord(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value)
+  }
+
+  function validMindSummary(mind) {
+    if (!root.isPlainRecord(mind)) return false
+    var fields = ["nodes", "edges", "decay_active", "decay_demoted",
+                  "rehearsal_eligible", "rehearsal_due", "pinned"]
+    for (var i = 0; i < fields.length; i++)
+      if (!root.isNonNegativeCount(mind[fields[i]])) return false
+    return true
+  }
+
+  function validAgentRelay(relay) {
+    if (!root.isPlainRecord(relay)) return false
+    var fields = ["materialized", "refused", "acknowledged"]
+    for (var i = 0; i < fields.length; i++)
+      if (!root.isNonNegativeCount(relay[fields[i]])) return false
+    return true
+  }
+
+  function validStatusSnapshot(snapshot) {
+    return root.isPlainRecord(snapshot)
+      && typeof snapshot.ts === "string" && typeof snapshot.state === "string"
+      && root.projectionDebtKnownFor(snapshot)
+      && root.validMindSummary(snapshot.mind)
+      && root.validAgentRelay(snapshot.agent_queue)
+  }
+
+  function graphHasNode(id) {
+    return root.nodeById(id) !== null
+  }
+
+  function projectionDebtKeys() {
+    var debt = root.status && root.status.projection_debt
+      ? root.status.projection_debt : null
+    if (!debt || typeof debt !== "object") return []
+    var keys = []
+    for (var key in debt) {
+      var value = debt[key]
+      if ((typeof value === "string" && value.trim() !== "")
+          || (typeof value !== "string" && !!value))
+        keys.push(key)
+    }
+    return keys.sort()
+  }
+
+  function projectionDebtKnown() {
+    return root.projectionDebtKnownFor(root.status)
+  }
+
+  function projectionDebtKnownFor(snapshot) {
+    if (!snapshot || !root.isPlainRecord(snapshot.projection_debt))
+      return false
+    var debt = snapshot.projection_debt
+    return typeof debt.graph === "string"
+      && typeof debt.consolidation === "string"
+  }
+
+  function clearReadyCheck() {
+    root.readyChecked = false
+    root.readyOk = false
+    root.readyDetail = ""
+  }
+
+  function projectionDebtDetail() {
+    var keys = root.projectionDebtKeys()
+    if (!keys.length) return ""
+    var debt = root.status.projection_debt
+    var parts = []
+    for (var i = 0; i < keys.length; i++)
+      parts.push(keys[i] + ": " + String(debt[keys[i]]))
+    return parts.join(" · ")
+  }
+
+  function graphSnapshotText() {
+    if (root.graphBoundary !== "") return root.graphBoundary
+    if (!root.graph || !root.graph.ts) return "no graph snapshot"
+    var complete = root.snap && root.snap.complete === true
+    return "graph published " + Model.timeAgo(root.graph.ts, root.nowMs)
+      + " · " + (complete ? "complete" : "partial")
+  }
+
+  function ledgerTransitionText() {
+    var transition = root.status && root.status.ledger_transition
+      ? root.status.ledger_transition : null
+    if (!transition || !transition.state) return "ledger transition unknown"
+    return "ledger " + transition.state
+  }
 
   function configuredStaleAfterSec() {
     var fallback = Model.staleAfterDefaultSec()
@@ -128,6 +228,7 @@ Item {
     opened = true
     verifyMsg = ""
     verifyOk = false
+    clearReadyCheck()
     statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
@@ -142,29 +243,57 @@ Item {
     playing = false
     revealT = 1.0
     hoverId = ""
+    if (readyProc.running) readyProc.running = false
+    clearReadyCheck()
     if (shell && typeof shell.hide === "function") shell.hide("khephri.sia")
   }
 
   function applyStatus(text) {
     try {
       const parsed = JSON.parse(text)
+      if (!root.validStatusSnapshot(parsed)) {
+        root.statusBoundary = root.status
+          ? "last good status; latest status rejected" : "no valid status"
+        return
+      }
       root.status = parsed
+      root.statusBoundary = ""
+      root.clearReadyCheck()
       const ts = Date.parse(parsed.ts)
       root.stale = !(ts > 0) ||
         (Date.now() - ts) > root.staleAfterSec * 1000
-    } catch (e) { }
+    } catch (e) {
+      root.statusBoundary = root.status
+        ? "last good status; latest status rejected" : "no valid status"
+    }
   }
 
   function applyGraph(text) {
     try {
       const g = JSON.parse(text)
       if (!g || !Array.isArray(g.nodes) || !Array.isArray(g.edges)
-          || g.pages_total === undefined) return
+          || g.pages_total === undefined || typeof g.ts !== "string"
+          || !root.isPlainRecord(g.snapshot)
+          || typeof g.snapshot.complete !== "boolean"
+          || !Array.isArray(g.snapshot.failed_ops)) {
+        root.graphBoundary = root.graph
+          ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+        return
+      }
       root.graph = g
+      root.graphBoundary = ""
+      root.clearReadyCheck()
+      if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
+        root.selectedId = ""
+      if (root.hoverId !== "" && !root.graphHasNode(root.hoverId))
+        root.hoverId = ""
       if (graphCanvas.width > 0)
         Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       graphCanvas.requestPaint()
-    } catch (e) { }
+    } catch (e) {
+      root.graphBoundary = root.graph
+        ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+    }
   }
 
   function applyThoughts(text) {
@@ -231,6 +360,68 @@ Item {
     }
   }
 
+  // `sia ready` is the only live memory-readiness predicate. Status and graph
+  // are intentionally last-published snapshots, so this process runs solely
+  // on an explicit cockpit action and never infers readiness from a snapshot.
+  Process {
+    id: readyProc
+    property string outText: ""
+    property string errText: ""
+    property int exitCode: 0
+    property bool exited: false
+    property bool outDone: false
+    property bool errDone: false
+    property bool launchFailed: false
+    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "ready"]
+    function settle() {
+      if (launchFailed || !exited || !outDone || !errDone) return
+      var detail = (outText + "\n" + errText)
+        .replace(/^\s+|\s+$/g, "")
+      root.readyChecked = true
+      root.readyOk = exitCode === 0
+      root.readyDetail = detail || (root.readyOk
+        ? "sia ready returned success" : "sia ready returned a refusal")
+    }
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        readyProc.outText = String(text || "")
+        readyProc.outDone = true
+        readyProc.settle()
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        readyProc.errText = String(text || "")
+        readyProc.errDone = true
+        readyProc.settle()
+      }
+    }
+    onRunningChanged: if (running) {
+      readyProc.outText = ""
+      readyProc.errText = ""
+      readyProc.exitCode = 0
+      readyProc.exited = false
+      readyProc.outDone = false
+      readyProc.errDone = false
+      readyProc.launchFailed = false
+      root.clearReadyCheck()
+    }
+    onErrorOccurred: function(error) {
+      if (readyProc.launchFailed) return
+      readyProc.launchFailed = true
+      root.readyChecked = true
+      root.readyOk = false
+      root.readyDetail = "could not start the local sia readiness command"
+    }
+    onExited: function(code) {
+      readyProc.exitCode = code
+      readyProc.exited = true
+      readyProc.settle()
+    }
+  }
+
   PanelWindow {
     id: win
     visible: root.opened
@@ -262,11 +453,11 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: Style.space(16)
-        height: Style.space(34)
+        height: Style.space(52)
 
         Row {
           anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
+          anchors.top: parent.top
           spacing: Style.space(14)
           Text {
             textFormat: Text.PlainText
@@ -313,7 +504,7 @@ Item {
 
         Row {
           anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
+          anchors.top: parent.top
           spacing: Style.space(16)
           Text {
             textFormat: Text.PlainText
@@ -348,6 +539,105 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               onClicked: root.dismiss()
+            }
+          }
+        }
+
+        // Snapshot truth is intentionally separated from the explicit live
+        // readiness probe below. This keeps a healthy-looking graph from
+        // silently standing in for a memory-read authorization.
+        Row {
+          id: truthRibbon
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          spacing: Style.space(12)
+          Text {
+            textFormat: Text.PlainText
+            renderType: Text.NativeRendering
+            text: "PUBLISHED SNAPSHOT · " + root.graphSnapshotText()
+            color: root.graphBoundary !== "" || (root.snap
+              && root.snap.complete !== true)
+              ? root.urgent : Qt.alpha(root.fg, 0.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Text {
+            textFormat: Text.PlainText
+            renderType: Text.NativeRendering
+            text: root.ledgerTransitionText().toUpperCase()
+            color: root.status && root.status.ledger_transition
+              && root.status.ledger_transition.state === "pending"
+              ? root.urgent
+              : root.status && root.status.ledger_transition
+                && root.status.ledger_transition.state === "signed"
+                ? Qt.alpha(root.accent, 0.8) : Qt.alpha(root.fg, 0.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Text {
+            textFormat: Text.PlainText
+            renderType: Text.NativeRendering
+            text: !root.projectionDebtKnown() ? "DEBT UNKNOWN"
+              : root.projectionDebtKeys().length
+                ? "DEBT · " + root.projectionDebtKeys().join(", ")
+                : "DEBT CLEAR IN SNAPSHOT"
+            color: !root.projectionDebtKnown()
+              || root.projectionDebtKeys().length
+                ? root.urgent : Qt.alpha(root.fg, 0.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Rectangle {
+            width: readyText.implicitWidth + Style.space(14)
+            height: readyText.implicitHeight + Style.space(6)
+            radius: height / 2
+            color: liveReadyArea.containsMouse
+              ? Qt.alpha(root.fg, 0.16) : Qt.alpha(root.fg, 0.07)
+            border.color: root.readyChecked
+              ? Qt.alpha(root.readyOk ? root.accent : root.urgent, 0.65)
+              : Qt.alpha(root.fg, 0.22)
+            border.width: 1
+            Text {
+              id: readyText
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: readyProc.running ? "checking live readiness…"
+                : root.readyChecked
+                  ? (root.readyOk ? "LIVE READY ✓" : "LIVE BLOCKED")
+                  : "check live readiness"
+              color: root.readyChecked
+                ? (root.readyOk ? root.accent : root.urgent) : root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: root.readyChecked
+            }
+            MouseArea {
+              id: liveReadyArea
+              anchors.fill: parent
+              hoverEnabled: true
+              enabled: !readyProc.running
+              onClicked: readyProc.running = true
+            }
+            // `sia ready` diagnostics cross a process boundary, so keep the
+            // tooltip on the same plain-text rendering contract as snapshots.
+            ToolTip {
+              id: readyTooltip
+              parent: liveReadyArea
+              visible: liveReadyArea.containsMouse
+                && root.readyDetail !== ""
+              text: root.readyDetail
+              x: Math.min(0, liveReadyArea.width - width)
+              y: liveReadyArea.height + Style.space(4)
+              contentItem: Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: readyTooltip.text
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
             }
           }
         }
@@ -482,6 +772,91 @@ Item {
               }
 
               Text {
+                visible: !!(root.status && root.status.mind)
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "MEMORY LENS"
+                topPadding: Style.space(6)
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Grid {
+                id: memoryLens
+                visible: !!(root.status && root.status.mind)
+                columns: 2
+                columnSpacing: Style.space(14)
+                rowSpacing: Style.space(2)
+                readonly property var mind:
+                  root.status && root.status.mind ? root.status.mind : ({})
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "stability"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.decay_active || 0) + " active · " + (memoryLens.mind.decay_demoted || 0) + " demoted"
+                       color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "SM-2 review"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.rehearsal_due || 0) + " due / " + (memoryLens.mind.rehearsal_eligible || 0) + " eligible"
+                       color: (memoryLens.mind.rehearsal_due || 0) > 0 ? root.accent : root.fg
+                       font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "operator pins"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(memoryLens.mind.pinned || 0)
+                       color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+              }
+              Text {
+                visible: !!(root.status && root.status.mind)
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                width: vitalsCol.width
+                wrapMode: Text.WordWrap
+                text: "stability changes retrieval weight; evidence stays retained"
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                visible: !!(root.status && root.status.agent_queue)
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "AGENT RELAY — last published pulse"
+                topPadding: Style.space(6)
+                color: Qt.alpha(root.fg, 0.45)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Text {
+                visible: !!(root.status && root.status.agent_queue)
+                readonly property var relay:
+                  root.status && root.status.agent_queue
+                    ? root.status.agent_queue : ({})
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                width: vitalsCol.width
+                wrapMode: Text.WordWrap
+                text: (relay.materialized || 0) + " materialized · "
+                  + (relay.acknowledged || 0) + " acknowledged · "
+                  + (relay.refused || 0) + " refused"
+                color: (relay.refused || 0) > 0
+                  ? root.urgent : Qt.alpha(root.fg, 0.65)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: !!(root.status && root.status.agent_queue)
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                width: vitalsCol.width
+                wrapMode: Text.WordWrap
+                text: "acknowledgement follows corpus commit and index sync"
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
 
                 textFormat: Text.PlainText
 
@@ -579,6 +954,8 @@ Item {
                 delegate: Item {
                   id: wsRow
                   required property var modelData
+                  readonly property bool onMap:
+                    root.graphHasNode(wsRow.modelData)
                   width: wsCol.width
                   height: wsText.implicitHeight + Style.space(2)
                   Text {
@@ -586,13 +963,31 @@ Item {
                     renderType: Text.NativeRendering
                     id: wsText
                     text: "◉ " + Model.slugLabel(wsRow.modelData)
-                    color: root.selectedId === wsRow.modelData
+                    anchors.left: parent.left
+                    anchors.right: wsMapState.left
+                    anchors.rightMargin: Style.space(6)
+                    elide: Text.ElideRight
+                    color: !wsRow.onMap ? Qt.alpha(root.fg, 0.45)
+                      : root.selectedId === wsRow.modelData
                       ? root.accent : Qt.alpha(root.fg, 0.75)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    id: wsMapState
+                    visible: !wsRow.onMap
+                    anchors.right: parent.right
+                    width: visible ? implicitWidth : 0
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: "off-map"
+                    color: Qt.alpha(root.fg, 0.35)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                   }
                   MouseArea {
                     anchors.fill: parent
+                    enabled: wsRow.onMap
                     onClicked: {
                       root.selectedId =
                         (root.selectedId === wsRow.modelData)
@@ -601,6 +996,16 @@ Item {
                     }
                   }
                 }
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                width: wsCol.width
+                text: "off-map entries remain retained in mind; the graph is a bounded display window"
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
             }
           }
@@ -978,6 +1383,16 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
+                text: "SIGNED-LEDGER QA · not projected in this snapshot; run `sia bench` for scored retrieval and abstention checks"
+                color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !!(root.status && root.status.bench_trend_boundary
                             && root.status.bench_trend_boundary.legacy_truncated)
                 width: beliefCol.width
@@ -1070,6 +1485,8 @@ Item {
                 width: healthCol.width
                 text: {
                   if (!root.snap) return "no snapshot contract"
+                  if (root.snap.complete !== true)
+                    return "snapshot PARTIAL — publication boundary incomplete"
                   if (root.snap.failed_ops && root.snap.failed_ops.length)
                     return "snapshot PARTIAL — failed: "
                       + root.snap.failed_ops.join(", ")
@@ -1085,9 +1502,62 @@ Item {
                   return s
                 }
                 wrapMode: Text.WordWrap
-                color: root.snap && root.snap.failed_ops
-                        && root.snap.failed_ops.length
+                color: root.snap && (root.snap.complete !== true
+                        || (root.snap.failed_ops
+                            && root.snap.failed_ops.length))
                   ? root.urgent : Qt.alpha(root.fg, 0.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: !!(root.status && root.status.ledger_transition)
+                width: healthCol.width
+                text: "publication ledger · " + root.ledgerTransitionText()
+                wrapMode: Text.WordWrap
+                color: root.status && root.status.ledger_transition
+                  && root.status.ledger_transition.state === "signed"
+                  ? Qt.alpha(root.accent, 0.75)
+                  : root.status && root.status.ledger_transition
+                    && root.status.ledger_transition.state === "pending"
+                    ? root.urgent : Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: root.projectionDebtKeys().length > 0
+                width: healthCol.width
+                text: "PUBLISHED SNAPSHOT DEBT — "
+                  + root.projectionDebtDetail()
+                  + " · memory reads remain closed until reconciliation"
+                wrapMode: Text.WordWrap
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: !!root.status && !root.projectionDebtKnown()
+                width: healthCol.width
+                text: "PUBLISHED SNAPSHOT DEBT — unknown; use the live check before memory reads"
+                wrapMode: Text.WordWrap
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: root.graphBoundary !== "" || root.statusBoundary !== ""
+                width: healthCol.width
+                text: [root.graphBoundary, root.statusBoundary]
+                  .filter(function(value) { return value !== "" }).join(" · ")
+                wrapMode: Text.WordWrap
+                color: root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -1163,6 +1633,26 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
+                visible: !!(root.status && root.status.redactions
+                            && Object.keys(root.status.redactions).length)
+                width: healthCol.width
+                text: {
+                  var redactions = root.status && root.status.redactions
+                    ? root.status.redactions : ({})
+                  var parts = []
+                  var names = Object.keys(redactions).sort()
+                  for (var i = 0; i < names.length; i++)
+                    parts.push(names[i] + ": " + redactions[names[i]])
+                  return "redactions retained · " + parts.join(" · ")
+                }
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.5)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 visible: !root.stale && root.status
                   && (!root.status.errors
                       || Object.keys(root.status.errors).length === 0)
@@ -1170,7 +1660,10 @@ Item {
                   && root.snap && root.snap.complete === true
                   && (!root.snap.failed_ops
                       || root.snap.failed_ops.length === 0)
-                text: "all senses reporting ✓"
+                  && root.projectionDebtKnown()
+                  && root.projectionDebtKeys().length === 0
+                  && root.graphBoundary === "" && root.statusBoundary === ""
+                text: "published snapshot sensors reporting ✓ · use live check for memory reads"
                 color: Qt.alpha(root.accent, 0.7)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -1260,10 +1753,11 @@ Item {
                 if (eff !== "" && !touching)
                   ctx.strokeStyle = Qt.alpha(root.fg, 0.035)
                 else if (touching)
-                  ctx.strokeStyle = Qt.alpha(root.accent, 0.55)
+                  ctx.strokeStyle = Qt.alpha(
+                    Model.edgeColor(edges[i].t, root.pal), 0.72)
                 else
                   ctx.strokeStyle = Qt.alpha(root.fg, 0.10)
-                ctx.lineWidth = touching ? 1.4 : 1
+                ctx.lineWidth = touching ? 1.5 : 1
                 ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y)
                 ctx.stroke()
               }
@@ -1355,6 +1849,19 @@ Item {
             }
           }
 
+          Text {
+            textFormat: Text.PlainText
+            renderType: Text.NativeRendering
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.margins: Style.space(10)
+            text: "CORPUS-LINKED RELATIONS · hover or lock to reveal type"
+            color: Qt.alpha(root.fg, 0.38)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+
           Rectangle {
             anchors.right: parent.right
             anchors.top: parent.top
@@ -1399,7 +1906,7 @@ Item {
                 { label: "organ",   role: "organ" },
                 { label: "memory",  role: "day" },
                 { label: "thought", role: "thought" },
-                { label: "entity",  role: "entity" },
+                { label: "record",  role: "record" },
                 { label: "skill",   role: "skill" }
               ]
               delegate: Item {
@@ -1546,6 +2053,21 @@ Item {
                   renderType: Text.NativeRendering
                   visible: !!inspectorCol.n
                   text: inspectorCol.n
+                    ? "ORIGIN · " + Model.originLabel(inspectorCol.n.origin)
+                    : ""
+                  color: inspectorCol.n
+                    ? Qt.alpha(Model.originColor(inspectorCol.n.origin,
+                                                 root.pal), 0.85)
+                    : Qt.alpha(root.fg, 0.55)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  visible: !!inspectorCol.n
+                  text: inspectorCol.n
                     ? "updated " + Model.timeAgo(inspectorCol.n.ts, root.nowMs)
                       + " · " + (inspectorCol.n.din || 0) + " in / "
                       + (inspectorCol.n.dout || 0) + " out"
@@ -1581,7 +2103,8 @@ Item {
                         + edgeRow.modelData.type + "  "
                         + Model.slugLabel(edgeRow.modelData.other)
                       elide: Text.ElideRight
-                      color: Qt.alpha(root.fg, 0.8)
+                      color: Qt.alpha(Model.edgeColor(
+                        edgeRow.modelData.type, root.pal), 0.9)
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                     }

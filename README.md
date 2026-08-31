@@ -99,9 +99,13 @@ cannot control what those callers do with returned content.
   SOURCE HEALTH without blocking the DREAM receipt or memory readiness.
 - **A mission-control cockpit** — full-screen Quickshell overlay
   (`SUPER+SHIFT+B`): the living graph with radial time, hover
-  neighborhoods, edge explanations, a thought stream, evidence-chain
-  verdicts, and a SOURCE HEALTH truth boundary that admits incompleteness
-  instead of hiding it. Plus a bar widget with the live event count.
+  neighborhoods, edge explanations, origin labels, a thought stream,
+  evidence-chain verdicts, and a SOURCE HEALTH truth boundary that admits
+  incompleteness instead of hiding it. Its compact truth ribbon separates the
+  last-published graph/ledger/debt snapshot from an explicitly requested live
+  `sia ready` check; it also shows stability and SM-2 review state, the
+  last-published resident-agent handoff receipt, and bounded-display/off-map
+  state. Plus a bar widget with the live event count.
 - **Agents everywhere** — an MCP server mountable in Claude Code, Codex
   CLI, Grok, and anything MCP-capable, plus a skill for skill-reading
   harnesses. Tools support reinforcing recall, a read-only search lane for
@@ -144,6 +148,26 @@ cannot control what those callers do with returned content.
   evidence; verification must be rerun through JACKAL's own front door.
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
+
+### v1.3.2 cockpit fidelity pass
+
+v1.3.2 keeps the established Hermes Star Map and three-column cockpit rather
+than redesigning it. The graph remains a calm, radial-time display while a
+truth ribbon now distinguishes its last-published diagnostic snapshot from an
+on-demand, real `sia ready` predicate. The cockpit names publication debt and
+ledger-transition state above the fold; retains the last known good graph or
+status if a replacement snapshot is malformed; exposes the live memory lens
+(stability decay, SM-2 review, and pins); and makes each last-published agent
+handoff visible without opening the queue itself. Workspace items outside the
+bounded graph are plainly `off-map` and remain retained in mind rather than
+pretending a click can select a node that is not displayed. The graph calls
+its connections corpus-linked relations, reveals relation color only in the
+inspected neighborhood, labels record nodes honestly, and shows each node's
+persisted origin. The full signed-ledger QA benchmark remains a separate
+`sia bench` flow until a bounded last-run projection is intentionally added.
+An explicit readiness result is invalidated when the cockpit closes or a new
+published status/graph arrives; missing debt data remains `unknown`, never
+silently clear.
 
 ### v1.3.1 maintenance repair
 

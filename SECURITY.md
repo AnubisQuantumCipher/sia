@@ -229,8 +229,8 @@ sandbox.
 
 The daemon runs unsandboxed as your user (like any Omarchy plugin — read
 the code before installing). The QML surfaces render dynamic snapshot strings
-with `Text.PlainText`; the cockpit's sole process action is a fixed
-`~/.local/bin/sia verify` invocation. PGLite admits one owner: all SIA-managed
+with `Text.PlainText`; the cockpit's only process actions are fixed
+`~/.local/bin/sia verify` and `~/.local/bin/sia ready` invocations. PGLite admits one owner: all SIA-managed
 daemon, CLI, benchmark, and MCP-derived operations share an advisory
 cross-process lease. Whole pulse/dream cycles and explicit operator corpus
 mutations share a separate transaction lease, and a lifetime brainstem lease
