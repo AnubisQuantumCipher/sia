@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bounded, crash-safe thought-page recovery invariants."""
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -81,6 +82,36 @@ class ThoughtRecovery(unittest.TestCase):
         self.sialib.atomic_write(
             self.sialib.THOUGHT_INBOX_PATH,
             json.dumps(rows, separators=(",", ":")))
+
+    def test_agent_queue_snapshot_does_not_reenter_its_lease(self):
+        """The native-replay finalizer must let ``pending`` own queue locking.
+
+        Linux ``flock`` leases are attached to open file descriptions.  A
+        second exclusive lock opened by the same process blocks rather than
+        acting re-entrant, so make a nested acquisition fail immediately in
+        this regression test instead of allowing a test runner to hang.
+        """
+        receipt = self.sialib.siaqueue.enqueue_note(
+            self.state, "test agent", "preserve this queue identity")
+        held = []
+
+        @contextlib.contextmanager
+        def non_reentrant_queue_lock(queue_dir):
+            if held:
+                raise AssertionError("agent queue lease was re-entered")
+            held.append(queue_dir)
+            try:
+                yield
+            finally:
+                held.pop()
+
+        with mock.patch.object(
+                self.sialib.siaqueue, "_queue_lock",
+                non_reentrant_queue_lock):
+            observed = self.sialib._pending_external_thought_queue_ids()
+
+        self.assertEqual(observed, {receipt["request_id"]})
+        self.assertEqual(held, [])
 
     def test_legacy_thought_inbox_upgrade_is_stable_across_claim_rename(self):
         rows = [

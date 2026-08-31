@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.1 — 2026-08-31
+
+- **Resident agent-queue deadlock repair** — the native thought-replay
+  finalizer no longer opens a second exclusive lease for
+  `agent-inbox/.queue.lock` before calling the queue's already
+  lock-serialized `pending()` snapshot API. On Linux, independent `flock`
+  file descriptions are not re-entrant: a brainstem that encountered an
+  existing agent queue could block forever on its own lock after first-pulse
+  status and memo publication, leaving memory truthfully stale. The repair
+  takes exactly one queue lease and adds a regression guard that fails
+  immediately on any nested acquisition rather than allowing a runner to
+  hang. Existing request files remain authoritative retry input; deployment
+  replaces the blocked brainstem through the normal lifecycle barrier.
+
 ## 1.3.0 — 2026-08-31
 
 - **Race-closed systemd lifecycle barrier** — Install and uninstall no longer

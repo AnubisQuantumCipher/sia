@@ -872,11 +872,18 @@ absence boundary instead of silently claiming equivalent retrieval.
 | Touch queue has a torn or malformed record | The suffix is digest-bound before repair, or a complete malformed record remains visible claim debt | The complete durable prefix; no silent cursor advance or invented touch. |
 | Legacy thought inbox is valid but lacks both queue fields | The brainstem deterministically supplies compatibility identity/time, then continues through the ordinary batch transaction | Stable captured bytes, file time, row order, and either the validated explicit origin or missing-origin compatibility default; a claim rename does not change them. |
 | Thought inbox has partial/invalid metadata or changes while read | The batch refuses and its draining claim remains for retry | The exact retained file and named refusal; no subset is silently materialized. |
+| A v1.3.0 brainstem becomes stale just after a restart with an existing agent-note queue | Its native replay finalizer can block on a second handle to its own queue lease after publishing the first status/memo image | The immutable request files and replay receipts remain durable retry input. After updating this checkout or plugin source to v1.3.1, rerun `./install.sh`; its lifecycle barrier replaces the blocked brainstem and the queue snapshot then takes one lease. |
 | Installer exits after arming its launch fence | Old CLI/brainstem/MCP launcher inodes remain mode `000`, the lifecycle tombstone and CAS journals remain, and the brainstem stays disabled/stopped behind its systemd barrier | The retained journal-bound generations and printed backups; rerun the same repaired installer rather than `chmod`-ing or deleting recovery state. |
 
 - **Bar icon dim / "brainstem not reporting"** —
   `systemctl --user status sia-brainstem`, then `journalctl --user -u
   sia-brainstem -n 30`.
+- **Memory remains stale immediately after a v1.3.0 restart while an agent
+  note is queued** — after updating this checkout or plugin source to v1.3.1,
+  run `./install.sh`. Do not delete
+  `~/.local/state/sia/agent-inbox/`: its request files are the durable retry
+  authority. The installer replaces the blocked daemon through its lifecycle
+  barrier; v1.3.1's snapshot path opens the queue lease only once.
 - **`sia ask` says keyword-only** — ollama is down:
   `systemctl --user restart ollama`.
 - **"already open through gbrain serve"** — an unrelated program bypassed

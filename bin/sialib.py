@@ -238,7 +238,7 @@ ORGANS = _build_organs()
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -6661,8 +6661,10 @@ def _pending_external_thought_queue_ids():
     else:
         if not stat.S_ISDIR(queue_info.st_mode):
             raise ValueError("agent thought producer is not a directory")
-        with siaqueue._queue_lock(queue_dir):
-            agent_requests, agent_errors = siaqueue.pending(STATE)
+        # ``pending`` owns the queue lease for its bounded snapshot.  Taking
+        # the same flock here as well would open a second file description in
+        # this process and block forever on our own exclusive lock.
+        agent_requests, agent_errors = siaqueue.pending(STATE)
     serious_agent_errors = [
         row for row in agent_errors
         if row.get("error") != "agent queue reached its bounded capacity"]
