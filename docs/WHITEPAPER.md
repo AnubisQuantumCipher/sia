@@ -102,8 +102,12 @@ into the cognitive layer is gated on the same durability (bullet-level
 idempotence), so crash replay does not double-count a memory.
 
 **The corpus is the brain.** Every memory is a markdown page with YAML
-frontmatter in a git repository; the database is a disposable index
-rebuilt by one sync. Compaction is view-level: git history retains every
+frontmatter in a git repository; the database is a rebuildable derived index,
+but rebuilding it is an installer-controlled bootstrap rather than a delete-
+and-sync shortcut. A genuinely absent store is initialized off-path, source
+registration and sync run under the lifecycle/PGLite/corpus leases, the result
+is front-door health-probed, and only then is its generation published.
+Compaction is view-level: git history retains every
 original byte, and the consolidation pass refuses to unlink any file it
 cannot prove committed (`git ls-files` + clean porcelain, gated behind a
 successful pre-consolidation commit). Agent and operator notes are explicit,
@@ -243,8 +247,11 @@ origin weighting that demotes model prose below evidence and treats
 instrumented, not asserted: on the historical 13-probe heuristic slug set, an
 earlier additive blend scored slug match@5 0.77 versus 0.92 and was replaced;
 the tie-breaker blend matched dense at slug match@5 0.92 and did not beat it. Those probes
-are a retrieval-drift tripwire, not answer ground truth; the graph earns rank
-influence only while the instrument does not regress (see §9). Score-threshold abstention was
+are a retrieval-drift tripwire, not answer ground truth. The shipped runtime
+does not automatically gate PPR on that nightly tripwire: graph influence is
+the tested release-selected policy, while a later tripwire regression is an
+operator-visible warning that must be investigated before a future policy is
+accepted (see §9). Score-threshold abstention was
 also measured and found unidentifiable on this stack (present/absent
 score distributions overlap); abstention therefore lives in the judge
 and the answer's truth-boundary footer, not in a cutoff.
@@ -310,7 +317,10 @@ science claims. None of these transitions deletes or rewrites corpus evidence.
 
 Safety-class or operator-pinned pages receive an SM-2 review record. The
 nightly scheduler uses SIA interaction signals as explicit quality adapters:
-operator retrieval, labeled internal thought/reference, or no new signal. It
+a post-review user ask/rehearsal signal maps to `q=5`, a
+thought/ponder/muse/grade reference maps to `q=4`, and no qualifying signal
+maps to `q=0`. These are SIA interaction classes, not human-memory
+measurements. It
 then applies the published ease/interval recurrence and re-embeds
 the page: later intervals use the incoming E-Factor, the response updates ease
 for the next repetition, and a quality below three restarts the repetition

@@ -226,6 +226,27 @@ class DispatchAndOwnership(unittest.TestCase):
         self.assertNotIn("rehearsal touch queued", output.getvalue())
         self.assertIn("reinforcement refused", errors.getvalue())
 
+    def test_unverified_jackal_rehearsal_is_not_reported_as_queued(self):
+        output = io.StringIO()
+        mind = __import__("siamind")
+        with mock.patch.object(sia.sialib, "page_exists", return_value=True), \
+                mock.patch.object(
+                    sia.sialib, "unverified_jackal_recall_page",
+                    return_value=True), \
+                mock.patch.object(sia.sialib, "corpus_origin",
+                                  return_value="derived"), \
+                mock.patch.object(
+                    sia, "_gbrain_read",
+                    side_effect=AssertionError("suppressed page must not query")), \
+                mock.patch.object(
+                    mind, "queue_touches",
+                    side_effect=AssertionError("suppressed page must not touch")), \
+                contextlib.redirect_stdout(output):
+            status = sia.cmd_rehearse(["events/jackal/legacy"])
+        self.assertEqual(status, 0)
+        self.assertNotIn("rehearsal touch queued", output.getvalue())
+        self.assertIn("intentionally excluded", output.getvalue())
+
     def test_bench_forwards_subcommand_arguments_to_siabench_main(self):
         calls = []
         result = object()
@@ -544,6 +565,37 @@ class HonestStatusLanguage(unittest.TestCase):
         self.assertIn("population", rendered)
         self.assertNotIn("judgment", rendered)
         self.assertNotIn("prophet", rendered)
+
+    def test_calibration_accepts_only_an_explicit_decimal_cursor(self):
+        previous = sys.modules.get("siatakes")
+        seen = []
+
+        def calibration_text(*, domain_cursor=None):
+            seen.append(domain_cursor)
+            return ["domain continuation complete"]
+
+        sys.modules["siatakes"] = types.SimpleNamespace(
+            calibration_text=calibration_text,
+            MAX_HISTORY_CURSOR_DIGITS=256)
+        printed = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(printed):
+                self.assertEqual(
+                    sia.cmd_calibration(["--cursor", "17"]), 0)
+                self.assertEqual(
+                    sia.cmd_calibration(["--cursor", "not-a-cursor"]), 2)
+                self.assertEqual(sia.cmd_calibration([
+                    "--cursor",
+                    "1" * (__import__("siatakes")
+                           .MAX_HISTORY_CURSOR_DIGITS + 1),
+                ]), 2)
+        finally:
+            if previous is None:
+                sys.modules.pop("siatakes", None)
+            else:
+                sys.modules["siatakes"] = previous
+        self.assertEqual(seen, ["17"])
+        self.assertIn("usage: sia calibration", printed.getvalue())
 
     def test_malformed_take_is_reported_without_crashing_list(self):
         previous = sys.modules.get("siatakes")

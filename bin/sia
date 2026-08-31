@@ -28,8 +28,9 @@
                         as its deadline nears (--list · --done <id> [note])
   sia grade [id]        grade due predictions now (configured judge,
                         deterministic Brier); with id, grade that one
-  sia calibration       descriptive Brier scorecard over resolved takes,
-                        with population sizes and domain breakdowns
+  sia calibration [--cursor N]
+                        descriptive Brier scorecard over resolved takes,
+                        with bounded, pageable domain breakdowns
 """
 
 import contextlib, fcntl, json, math, os, re, stat, subprocess, sys
@@ -487,8 +488,11 @@ def cmd_ask(q, touch=True):
         return 1
 
 
-def cmd_recall(slug, touch=True):
+def cmd_recall(slug, touch=True, touch_result=None):
     import siamind
+    if isinstance(touch_result, dict):
+        touch_result.clear()
+        touch_result["queued"] = False
     if not _canonical_slug(slug):
         print("slug must be a canonical SIA corpus slug without traversal")
         return 2
@@ -496,6 +500,8 @@ def cmd_recall(slug, touch=True):
         print(f"memory not found: {slug}")
         return 3
     if sialib.unverified_jackal_recall_page(slug):
+        if isinstance(touch_result, dict):
+            touch_result["reason"] = "unverified-jackal-page"
         print(f"[origin:{sialib.corpus_origin(slug)}] {slug}")
         print(sialib.UNVERIFIED_JACKAL_RECALL_NOTICE)
         return 0
@@ -509,6 +515,8 @@ def cmd_recall(slug, touch=True):
             print("reinforcement refused: touch queue is unavailable",
                   file=sys.stderr)
             return 1
+        if isinstance(touch_result, dict):
+            touch_result["queued"] = True
     return r.returncode
 
 
@@ -588,10 +596,14 @@ def cmd_memory(argv):
 def cmd_rehearse(argv):
     if not argv:
         return cmd_memory(["--due"])
-    rc = cmd_recall(argv[0])
-    if rc == 0:
+    touch_result = {}
+    rc = cmd_recall(argv[0], touch_result=touch_result)
+    if rc == 0 and touch_result.get("queued"):
         print(f"\nrehearsal touch queued for {argv[0]}; the next due dream "
               "grades this deterministic user recall as q=5")
+    elif rc == 0 and touch_result.get("reason") == "unverified-jackal-page":
+        print("\nrehearsal touch not queued: an unverified JACKAL page is "
+              "recall-visible but intentionally excluded from reinforcement")
     return rc
 
 
@@ -1178,9 +1190,20 @@ def cmd_grade(tid=None):
     return 0
 
 
-def cmd_calibration():
+def cmd_calibration(argv=None):
     import siatakes
-    lines = siatakes.calibration_text()
+    argv = list(argv or [])
+    cursor = None
+    if argv:
+        if len(argv) != 2 or argv[0] != "--cursor" \
+                or len(argv[1]) > siatakes.MAX_HISTORY_CURSOR_DIGITS \
+                or re.fullmatch(r"[0-9]+", argv[1]) is None:
+            print("usage: sia calibration [--cursor N]")
+            return 2
+        cursor = argv[1]
+    lines = (siatakes.calibration_text()
+             if cursor is None
+             else siatakes.calibration_text(domain_cursor=cursor))
     if not lines:
         print("No takes yet — nothing to calibrate against.")
         return 0
@@ -1433,7 +1456,7 @@ def _dispatch(argv, cmd):
     if cmd == "grade":
         return cmd_grade(argv[2] if len(argv) > 2 else None)
     if cmd == "calibration":
-        return cmd_calibration()
+        return cmd_calibration(argv[2:])
     if cmd == "bench":
         import siabench
         return siabench.main(argv[2:])

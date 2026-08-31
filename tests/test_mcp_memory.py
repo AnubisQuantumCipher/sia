@@ -718,6 +718,37 @@ class McpResources(unittest.TestCase):
         self.assertIn("content for", text)
         self.assertEqual(self.calls[-1],
                          ["ask", "--no-touch", "audit memory"])
+        self.assertIsNone(siamcp._validate_tool_args(
+            "sia_calibration", {"cursor": "17"}))
+        text, is_error = siamcp.call_tool(
+            "sia_calibration", {"cursor": "17"})
+        self.assertFalse(is_error)
+        self.assertIn("content for", text)
+        self.assertEqual(self.calls[-1],
+                         ["calibration", "--cursor", "17"])
+        self.assertIsNotNone(siamcp._validate_tool_args(
+            "sia_calibration", {"cursor": "not-a-cursor"}))
+        cursor_rule = next(
+            tool for tool in siamcp.TOOLS
+            if tool["name"] == "sia_calibration"
+        )["inputSchema"]["properties"]["cursor"]
+        self.assertIsNotNone(siamcp._validate_tool_args(
+            "sia_calibration",
+            {"cursor": "1" * (cursor_rule["maxLength"] + 1)}))
+        calls_before = list(self.calls)
+        rejected = siamcp.handle_message({
+            "jsonrpc": "2.0", "id": "long-cursor",
+            "method": "tools/call", "params": {
+                "name": "sia_calibration",
+                "arguments": {
+                    "cursor": "1" * (cursor_rule["maxLength"] + 1),
+                },
+            },
+        }, protocol_version="2025-03-26")
+        self.assertTrue(rejected["result"]["isError"])
+        self.assertIn("cursor is too long",
+                      rejected["result"]["structuredContent"]["text"])
+        self.assertEqual(self.calls, calls_before)
         self.assertIsNotNone(siamcp._validate_tool_args(
             "sia_ask", {"question": "", "extra": True}))
         self.assertIsNotNone(siamcp._validate_tool_args(

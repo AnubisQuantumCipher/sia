@@ -33,6 +33,10 @@ jobs:
         run: |
           python3 -m json.tool manifest.json >/dev/null
           python3 -m json.tool config.example.json >/dev/null
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            version="$(python3 -c 'import json,pathlib; print(json.loads(pathlib.Path("manifest.json").read_text(encoding="utf-8"))["version"])')"
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
           test -s schema-pack/pack.yaml
           test -s preview.png
           git diff --check

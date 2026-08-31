@@ -2,6 +2,20 @@
 
 ## 1.3.0 — 2026-08-30
 
+- **GitHub release documentation and clean-runner closure** — the README and
+  manual now expose the completed v1.3 capability map, dual typed-edge lanes,
+  exact Claude/Codex/Grok MCP registration commands and durable generic-client
+  guard, configurable skill roots, calibration-domain continuation, repeatable
+  benchmark chain selection, readiness recovery taxonomy, and graceful-
+  degradation matrix. The whitepaper now states the actual always-on
+  release-selected PPR policy and installer-controlled index rebuild boundary.
+  `sia calibration --cursor` and the MCP tool's optional `cursor` now make the
+  documented bounded domain continuation usable. The signed-ledger projection
+  fixture binds the checkout keeper so a clean CI runner cannot depend on an
+  ambient installed SIA. Cursor length is bounded at the MCP, CLI, and history
+  parser boundaries, and rehearsing a suppressed unverified-JACKAL page now
+  reports its no-reinforcement boundary instead of claiming a queued touch.
+
 - **Non-destructive stability and rehearsal** — nodes and learned edges now
   carry an exponential retention lens that changes retrieval salience, never
   evidence retention. Safety-class and operator-pinned pages enter a
