@@ -630,11 +630,12 @@ systemctl --user restart sia-brainstem.service
 sia status
 ```
 
-`match` is a bounded list of literal substrings separated by `|`; regular
-expression operators are refused so a configured pattern cannot monopolize
-the resident writer. For `type: "jsonl"`, SIA admits only the exact configured
-`field`; a record missing it is a named refusal and its other fields are never
-rendered into memory.
+`match` includes a bounded list of literal substrings separated by `|`, while
+`exclude` omits records containing any literal in the same finite grammar.
+Regular-expression operators are refused in both fields so a configured
+pattern cannot monopolize the resident writer. For `type: "jsonl"`, SIA admits
+only the exact configured `field`; a record missing it is a named refusal and
+its other fields are never rendered into memory.
 
 ## Documentation
 

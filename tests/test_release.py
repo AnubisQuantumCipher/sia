@@ -3847,6 +3847,7 @@ remove_managed_skill
             self.assertIn("os.killpg(process.pid, signal.SIGKILL)", function)
             self.assertIn("os.pidfd_open(process.pid, 0)", function)
             self.assertIn("os.WNOWAIT", function)
+            self.assertNotIn("os.P_PIDFD", function)
             self.assertLess(
                 function.index("kill_group()\n    status = process.wait()"),
                 function.index("selector.close()"))
@@ -3905,6 +3906,7 @@ remove_managed_skill
             deadline = "run_with_deadline() {" + deadline_body + "\n}\n"
             self.assertIn("os.WNOWAIT", deadline)
             self.assertIn("os.pidfd_open(process.pid, 0)", deadline)
+            self.assertNotIn("os.P_PIDFD", deadline)
             self.assertLess(
                 deadline.index("kill_group()\n    status = process.wait()"),
                 deadline.index("selector.close()"))

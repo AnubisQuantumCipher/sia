@@ -4601,27 +4601,29 @@ def _custom_json_record_refusal(line):
     return _parse_custom_json_record(line)[1]
 
 
-def _custom_match_literals(value):
-    """Validate the finite custom match grammar and return literals.
+def _custom_match_literals(value, *, field="match"):
+    """Validate one finite custom inclusion/exclusion grammar.
 
     Compatibility intentionally covers the shipped ``ERROR|FATAL`` shape.
     Regex operators are refused instead of being silently reinterpreted or
     evaluated with attacker-controlled backtracking cost.
     """
+    if field not in {"match", "exclude"}:
+        raise ValueError("custom literal field is invalid")
     if value is None or value == "":
         return ()
     if not _strict_config_string(value, limit=MAX_CONFIG_TEXT_CHARS):
-        raise ValueError("match must be a bounded string")
+        raise ValueError(f"{field} must be a bounded string")
     alternatives = value.split("|")
     if len(alternatives) > MAX_CONFIG_TAGS \
             or any(not literal for literal in alternatives):
         raise ValueError(
-            "match must contain bounded non-empty literal alternatives")
+            f"{field} must contain bounded non-empty literal alternatives")
     regex_operators = set(r"\.^$*+?{}[]()")
     if any(regex_operators.intersection(literal)
            for literal in alternatives):
         raise ValueError(
-            "match supports literal alternatives only, not regex syntax")
+            f"{field} supports literal alternatives only, not regex syntax")
     return tuple(alternatives)
 
 
@@ -4701,6 +4703,8 @@ def sense_custom(cursors, include_sources=False, *, entry_index=None,
             if stream_type not in {"lines", "jsonl"}:
                 raise ValueError("type must be lines or jsonl")
             match_literals = _custom_match_literals(cs.get("match"))
+            exclude_literals = _custom_match_literals(
+                cs.get("exclude"), field="exclude")
             field = cs.get("field", "message")
             if not _strict_config_string(
                     field, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
@@ -4777,6 +4781,10 @@ def sense_custom(cursors, include_sources=False, *, entry_index=None,
                 if match_literals \
                         and not any(literal in text
                                     for literal in match_literals):
+                    continue
+                if exclude_literals \
+                        and any(literal in text
+                                for literal in exclude_literals):
                     continue
                 count += 1
                 if count <= 10:
@@ -10550,6 +10558,8 @@ def _preflight_source_admission_image(
 
 def _source_refusal_code(exc):
     message = str(exc)
+    if message == "legacy event cannot be identity-upgraded automatically":
+        return "legacy-event-identity"
     if "brainstem memo exceeds its byte bound" in message:
         return "memo-capacity"
     if any(fragment in message for fragment in (

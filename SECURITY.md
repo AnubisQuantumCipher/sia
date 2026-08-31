@@ -9,6 +9,8 @@ falls back to ingesting the raw object or unrelated fields. Do not point a
 custom sense at message bodies, clipboards, password stores,
 keys, or other secret-bearing content. The separate SIA ledger keeper
 necessarily reads its own signing key for authorized signed transitions.
+Custom-sense `match` and `exclude` filters admit only bounded literal
+alternatives; regular-expression syntax refuses without advancing the cursor.
 Secret-shaped spans (key blocks, JWTs,
 tokens, `.ssh` paths, password fields) are redacted at the sense
 boundary, before anything reaches the corpus or git; every omission is
