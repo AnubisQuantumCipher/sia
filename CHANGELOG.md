@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.5 — 2026-08-31
+
+- **Cockpit workspace lock** — the full-screen mission-control surface now
+  has a compact `LOCK TO <workspace>` latch beside Close. It persists the
+  focused Hyprland workspace in SIA's bar entry, hides the layer on other
+  workspaces without grabbing their input, and restores it on return.
+  `UNLOCK`, Esc, Close, or a direct summon elsewhere releases the latch. The
+  implementation intentionally gates visibility instead of misrepresenting a
+  layer-shell surface as a native Hyprland workspace window.
+
+- **Memory lens fit** — stability, SM-2 review, and pin values now share the
+  available left-rail width and wrap within it. Long values no longer clip the
+  final letters of `demoted` at the rail edge.
+
 ## 1.3.4 — 2026-08-31
 
 - **Cockpit polish** — the bounded-workspace `off-map` marker now reserves

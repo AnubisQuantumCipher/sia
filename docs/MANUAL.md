@@ -73,6 +73,16 @@ the ribbon says `DEBT UNKNOWN`, never `clear`. If the local readiness command
 cannot start, the control says `LIVE BLOCKED`; that never prevents the cockpit
 itself from loading.
 
+**Workspace lock** — click `LOCK TO <workspace>` beside Close, or press **L**,
+to keep the open cockpit on the currently focused Hyprland workspace. It hides
+on other workspaces without taking their keyboard focus and returns when you
+come back. Click `UNLOCK`, press **Esc**, use ✕, or summon the cockpit from a
+different workspace to release it. The setting is stored in SIA's bar entry
+so it survives a plugin reload, but Close deliberately clears it. This is a
+visibility latch, not Hyprland's `pin`: a layer-shell surface has no native
+workspace assignment, and the lock follows the global focused workspace rather
+than claiming a per-output attachment.
+
 **Left rail** (scrolls):
 - **VITALS** — memories, links, events today, thoughts kept, mind traces
   (ACT-R–tracked memories) and Hebbian bonds. The **MEMORY LENS** makes the

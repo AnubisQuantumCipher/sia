@@ -6,6 +6,7 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
@@ -18,6 +19,9 @@ Item {
   property var shell: ({})
   property var manifest: ({})
   property bool opened: false
+  property bool workspaceLockLoaded: false
+  property string workspaceLockName: ""
+  property string workspaceLockFeedback: ""
 
   property var status: null
   property var graph: null
@@ -62,6 +66,17 @@ Item {
   readonly property var snap:
     graph && graph.snapshot ? graph.snapshot : null
   readonly property real staleAfterSec: configuredStaleAfterSec()
+  readonly property string pluginId:
+    root.manifest && typeof root.manifest.id === "string"
+      && root.manifest.id !== "" ? root.manifest.id : "khephri.sia"
+  readonly property string focusedWorkspaceName:
+    root.workspaceName(Hyprland.focusedWorkspace)
+  readonly property bool workspaceLockActive: root.workspaceLockName !== ""
+  readonly property bool workspaceLockMismatch:
+    root.workspaceLockActive && root.focusedWorkspaceName !== ""
+      && root.focusedWorkspaceName !== root.workspaceLockName
+  readonly property bool cockpitVisible:
+    root.opened && !root.workspaceLockMismatch
 
   function isNonNegativeCount(value) {
     return typeof value === "number" && isFinite(value)
@@ -158,16 +173,11 @@ Item {
     return "ledger " + transition.state
   }
 
-  function configuredStaleAfterSec() {
-    var fallback = Model.staleAfterDefaultSec()
-    if (root.manifest && root.manifest.barWidget
-        && root.manifest.barWidget.defaults)
-      fallback = Model.validStaleAfterSec(
-        root.manifest.barWidget.defaults.staleAfterSec, fallback)
-
+  function configuredPluginSettings() {
     const config = root.shell ? root.shell.shellConfig : null
     const layout = config && config.bar ? config.bar.layout : null
     const sections = ["left", "center", "right"]
+    const pluginId = Util.canonicalWidgetId(root.pluginId)
     if (layout) {
       for (var s = 0; s < sections.length; s++) {
         const entries = layout[sections[s]]
@@ -176,9 +186,8 @@ Item {
           const entry = entries[i]
           const id = Util.canonicalWidgetId(String(
             entry && entry.id !== undefined ? entry.id : entry || ""))
-          if (id === "khephri.sia")
-            return Model.validStaleAfterSec(
-              entry && entry.staleAfterSec, fallback)
+          if (id === pluginId)
+            return root.copyPluginSettings(entry)
         }
       }
     }
@@ -188,11 +197,88 @@ Item {
       for (var p = 0; p < plugins.length; p++) {
         const entry = plugins[p]
         if (entry && Util.canonicalWidgetId(String(entry.id || ""))
-            === "khephri.sia")
-          return Model.validStaleAfterSec(entry.staleAfterSec, fallback)
+            === pluginId)
+          return root.copyPluginSettings(entry)
       }
     }
-    return fallback
+    return ({})
+  }
+
+  function copyPluginSettings(entry) {
+    var settings = ({})
+    if (!root.isPlainRecord(entry)) return settings
+    for (var key in entry)
+      if (key !== "id") settings[key] = entry[key]
+    return settings
+  }
+
+  function configuredStaleAfterSec() {
+    var fallback = Model.staleAfterDefaultSec()
+    if (root.manifest && root.manifest.barWidget
+        && root.manifest.barWidget.defaults)
+      fallback = Model.validStaleAfterSec(
+        root.manifest.barWidget.defaults.staleAfterSec, fallback)
+    return Model.validStaleAfterSec(
+      root.configuredPluginSettings().staleAfterSec, fallback)
+  }
+
+  function normalizeWorkspaceName(value) {
+    if (typeof value !== "string" && typeof value !== "number") return ""
+    return String(value).trim()
+  }
+
+  function workspaceName(workspace) {
+    if (!workspace) return ""
+    var name = root.normalizeWorkspaceName(workspace.name)
+    return name !== "" ? name : root.normalizeWorkspaceName(workspace.id)
+  }
+
+  function configuredWorkspaceLockName() {
+    return root.normalizeWorkspaceName(
+      root.configuredPluginSettings().cockpitWorkspace)
+  }
+
+  function loadWorkspaceLock() {
+    if (root.workspaceLockLoaded) return
+    root.workspaceLockName = root.configuredWorkspaceLockName()
+    root.workspaceLockLoaded = true
+  }
+
+  function persistWorkspaceLock() {
+    if (!root.shell || typeof root.shell.updateEntryInline !== "function") {
+      root.workspaceLockFeedback = "This shell cannot save the workspace lock; it will last only until the cockpit closes."
+      return
+    }
+    var settings = root.configuredPluginSettings()
+    settings.id = root.pluginId
+    settings.cockpitWorkspace = root.workspaceLockName
+    root.shell.updateEntryInline(root.pluginId, settings)
+    root.workspaceLockFeedback = ""
+  }
+
+  function setWorkspaceLock(name) {
+    var next = root.normalizeWorkspaceName(name)
+    if (root.workspaceLockLoaded && root.workspaceLockName === next) return
+    root.workspaceLockName = next
+    root.workspaceLockLoaded = true
+    root.persistWorkspaceLock()
+  }
+
+  function clearWorkspaceLock() {
+    if (root.workspaceLockActive) root.setWorkspaceLock("")
+  }
+
+  function toggleWorkspaceLock() {
+    root.loadWorkspaceLock()
+    if (root.workspaceLockActive) {
+      root.clearWorkspaceLock()
+      return
+    }
+    if (root.focusedWorkspaceName === "") {
+      root.workspaceLockFeedback = "Workspace lock unavailable: Hyprland did not report a focused workspace."
+      return
+    }
+    root.setWorkspaceLock(root.focusedWorkspaceName)
   }
 
   function stateColor() {
@@ -225,7 +311,13 @@ Item {
   }
 
   function open(payloadJson) {
+    root.loadWorkspaceLock()
+    // A layer-shell surface is not a Hyprland toplevel, so the lock gates
+    // visibility against the live focused workspace rather than claiming a
+    // compositor workspace assignment. A direct summon elsewhere releases it.
+    if (root.workspaceLockMismatch) root.clearWorkspaceLock()
     opened = true
+    workspaceLockFeedback = ""
     verifyMsg = ""
     verifyOk = false
     readyProc.cancel()
@@ -234,19 +326,34 @@ Item {
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
-      keyCatcher.forceActiveFocus()
+      if (root.cockpitVisible) keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
     })
   }
 
-  function dismiss() {
+  function close() {
     opened = false
     playing = false
     revealT = 1.0
     hoverId = ""
     readyProc.cancel()
     clearReadyCheck()
-    if (shell && typeof shell.hide === "function") shell.hide("khephri.sia")
+    root.clearWorkspaceLock()
+    workspaceLockFeedback = ""
+  }
+
+  function dismiss() {
+    root.close()
+    if (shell && typeof shell.hide === "function") shell.hide(root.pluginId)
+  }
+
+  onCockpitVisibleChanged: {
+    if (!root.cockpitVisible) return
+    Qt.callLater(function() {
+      if (!root.cockpitVisible) return
+      keyCatcher.forceActiveFocus()
+      graphCanvas.requestPaint()
+    })
   }
 
   function applyStatus(text) {
@@ -467,13 +574,14 @@ Item {
 
   PanelWindow {
     id: win
-    visible: root.opened
+    visible: root.cockpitVisible
     anchors { top: true; bottom: true; left: true; right: true }
     color: Color.background
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "sia-cockpit"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.cockpitVisible
+      ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     Item {
       id: keyCatcher
@@ -482,6 +590,10 @@ Item {
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) { root.dismiss(); event.accepted = true }
+        else if (event.key === Qt.Key_L) {
+          root.toggleWorkspaceLock()
+          event.accepted = true
+        }
         else if (event.key === Qt.Key_R) {
           if (root.playing) { root.playing = false; root.revealT = 1.0 }
           else { root.revealT = 0.0; root.playing = true }
@@ -557,6 +669,68 @@ Item {
             color: Qt.alpha(root.fg, 0.55)
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+          }
+          Rectangle {
+            id: workspaceLockControl
+            readonly property real maximumTextWidth: Style.space(180)
+            anchors.verticalCenter: parent.verticalCenter
+            width: workspaceLockText.width + Style.space(16)
+            height: workspaceLockText.implicitHeight + Style.space(8)
+            radius: Style.cornerRadius
+            color: workspaceLockArea.containsMouse
+              ? Qt.alpha(root.workspaceLockActive ? root.accent : root.fg, 0.18)
+              : Qt.alpha(root.workspaceLockActive ? root.accent : root.fg, 0.08)
+            border.color: Qt.alpha(
+              root.workspaceLockActive ? root.accent : root.fg, 0.25)
+            border.width: 1
+            Text {
+              id: workspaceLockText
+              anchors.centerIn: parent
+              width: Math.min(implicitWidth, workspaceLockControl.maximumTextWidth)
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: root.workspaceLockActive
+                ? "UNLOCK " + root.workspaceLockName
+                : root.focusedWorkspaceName !== ""
+                  ? "LOCK TO " + root.focusedWorkspaceName
+                  : "WS LOCK UNAVAILABLE"
+              color: root.workspaceLockActive ? root.accent : root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: root.workspaceLockActive
+            }
+            MouseArea {
+              id: workspaceLockArea
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: root.toggleWorkspaceLock()
+            }
+            ToolTip {
+              id: workspaceLockTooltip
+              parent: workspaceLockArea
+              visible: workspaceLockArea.containsMouse
+              text: root.workspaceLockFeedback !== ""
+                ? root.workspaceLockFeedback
+                : root.workspaceLockActive
+                  ? "The cockpit stays visible only on workspace "
+                    + root.workspaceLockName
+                    + ". Switch back here to see it, or click to unlock."
+                  : root.focusedWorkspaceName !== ""
+                    ? "Keep this full-screen cockpit on workspace "
+                      + root.focusedWorkspaceName
+                      + "; it hides elsewhere."
+                    : "Workspace lock needs a focused Hyprland workspace."
+              y: workspaceLockArea.height + Style.space(4)
+              contentItem: Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: workspaceLockTooltip.text
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
           }
           Rectangle {
             anchors.verticalCenter: parent.verticalCenter
@@ -700,7 +874,7 @@ Item {
           id: keysHint
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          text: "hover = inspect · click = lock · R = replay · Esc = close · sia ask \"…\""
+          text: "hover = inspect · click = lock · L = workspace lock · R = replay · Esc = close · sia ask \"…\""
           color: Qt.alpha(root.fg, 0.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -828,23 +1002,36 @@ Item {
               Grid {
                 id: memoryLens
                 visible: !!(root.status && root.status.mind)
+                width: vitalsCol.width
                 columns: 2
                 columnSpacing: Style.space(14)
                 rowSpacing: Style.space(2)
                 readonly property var mind:
                   root.status && root.status.mind ? root.status.mind : ({})
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "stability"; color: Qt.alpha(root.fg, 0.55)
+                readonly property real labelWidth: Math.max(
+                  stabilityLabel.implicitWidth, reviewLabel.implicitWidth,
+                  pinsLabel.implicitWidth)
+                readonly property real valueWidth: Math.max(0,
+                  memoryLens.width - memoryLens.labelWidth
+                    - memoryLens.columnSpacing)
+                Text { id: stabilityLabel; width: memoryLens.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "stability"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.decay_active || 0) + " active · " + (memoryLens.mind.decay_demoted || 0) + " demoted"
+                Text { width: memoryLens.valueWidth; wrapMode: Text.WordWrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.decay_active || 0) + " active · " + (memoryLens.mind.decay_demoted || 0) + " demoted"
                        color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "SM-2 review"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: reviewLabel; width: memoryLens.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "SM-2 review"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.rehearsal_due || 0) + " due / " + (memoryLens.mind.rehearsal_eligible || 0) + " eligible"
+                Text { width: memoryLens.valueWidth; wrapMode: Text.WordWrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: (memoryLens.mind.rehearsal_due || 0) + " due / " + (memoryLens.mind.rehearsal_eligible || 0) + " eligible"
                        color: (memoryLens.mind.rehearsal_due || 0) > 0 ? root.accent : root.fg
                        font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "operator pins"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: pinsLabel; width: memoryLens.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "operator pins"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(memoryLens.mind.pinned || 0)
+                Text { width: memoryLens.valueWidth; wrapMode: Text.WordWrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(memoryLens.mind.pinned || 0)
                        color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
               }
               Text {
