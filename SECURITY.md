@@ -122,6 +122,35 @@ last-published snapshots. Note/proposal writes may still queue without exposing
 indexed memory. The gate is not an access-control boundary: same-user code can
 bypass SIA and read corpus or state files directly.
 
+Installer and uninstaller quiescence uses an exact systemd runtime start
+barrier rather than a runtime mask, because SIA's local user unit has higher
+fragment precedence than such a mask. The barrier is one no-follow-verified
+regular file under the canonical private `XDG_RUNTIME_DIR`; validation binds
+its exact owner, mode, link count, bytes, and stable generation and refuses a
+foreign runtime unit fragment or any unexpected drop-in. Its reset plus false
+`ConditionPathExists=!/` blocks indirect activation before service hooks, and
+`RefuseManualStart=yes` blocks an explicit manager start. The user manager must
+then attest the exact fragment/drop-in set, inactive zero-PID state, empty job,
+and effective refusal.
+
+Fresh installation publishes that drop-in while the main unit is absent, then
+publishes the unit, reloads, and re-attests the combined state. To open the
+final activation window, SIA atomically renames only its exact `.conf` file to
+a non-`.conf` retired sibling, reloads, and verifies the unit is unbarriered.
+The retired copy remains available for atomic restoration through live
+executable/argument attestation and is discarded only after success. Uninstall
+uses the same barrier and targeted retirement/removal; it never removes the
+drop-in directory or an operator-owned drop-in. Failure retains or restores the
+active barrier, or preserves the exact retired recovery copy after the main
+unit has already been removed.
+
+This protocol closes SIA's own systemd lifecycle race; it is not privilege
+separation from arbitrary code already running under the same UID. Such code
+can modify user-owned runtime files or bypass the installer. Descriptor,
+generation, and manager-state checks make interference visible at observed
+boundaries and fail closed, but do not turn the daemon into a hostile same-user
+sandbox.
+
 The daemon runs unsandboxed as your user (like any Omarchy plugin — read
 the code before installing). The QML surfaces render dynamic snapshot strings
 with `Text.PlainText`; the cockpit's sole process action is a fixed

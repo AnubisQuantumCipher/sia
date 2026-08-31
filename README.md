@@ -201,6 +201,45 @@ binding (Browser remains on `SUPER+SHIFT+RETURN`), run
 `SIA_INSTALL_KEYBINDING=1 ./install.sh`; the cockpit is always available from
 the bar widget.
 
+### Brainstem lifecycle start barrier
+
+Install and uninstall do not rely on `systemctl --user mask --runtime`: a
+runtime mask is lower-precedence than SIA's local user unit under
+`~/.config/systemd/user`. After proving that an existing unit is SIA-owned or
+that the managed unit path is safely absent, both operations instead publish
+one exact runtime drop-in at
+`$XDG_RUNTIME_DIR/systemd/user/sia-brainstem.service.d/sia-lifecycle-barrier.conf`.
+Descriptor-relative, no-follow validation requires a canonical private runtime
+root and checks every traversed directory plus the barrier's owner, mode, link
+count, content, and stable generation. A foreign runtime unit fragment,
+unexpected drop-in, symlink, hard link, or changed generation is preserved and
+makes the operation refuse.
+
+The drop-in clears inherited path conditions, sets
+`ConditionPathExists=!/` (a structurally false start condition), and sets
+`RefuseManualStart=yes`. The false condition blocks dependency/socket/timer
+activation before service hooks can run; the refusal blocks an explicit
+`systemctl start`. SIA reloads the user manager and requires the exact main
+fragment and sole drop-in, an inactive zero-PID service, no queued job, and the
+effective manual-start refusal before mutable lifecycle work continues.
+
+On a fresh install, SIA creates the drop-in while the main unit is still absent,
+then publishes the unit, reloads systemd, and attests the combined generation.
+For final activation it atomically renames the `.conf` barrier to the non-drop-in
+`.retired` sibling, reloads and attests the unbarriered unit, then retains that
+exact retired copy until the started daemon's executable and arguments pass
+live verification. Any failure restores the active filename and reloads the
+manager. Uninstall arms the same barrier before disablement and removes only
+that exact SIA file after successful removal; it never deletes the drop-in
+directory or an operator-owned drop-in. An incomplete uninstall retains either
+the active barrier or, once the main unit is already absent, its exact retired
+recovery copy for a safe retry.
+
+This is same-user lifecycle coordination, not an access-control boundary.
+Arbitrary code already running as the account can bypass SIA or mutate its
+runtime state; exact checks make observed interference a refusal, not a claim
+that a hostile same-UID process has been sandboxed.
+
 ### v1.3 publication barrier and legacy-take cutover
 
 SIA treats corpus Markdown, its git commit, the PGLite index, and the exported

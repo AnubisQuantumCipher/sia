@@ -2,6 +2,22 @@
 
 ## 1.3.0 — 2026-08-30
 
+- **Race-closed systemd lifecycle barrier** — Install and uninstall no longer
+  depend on a runtime mask that a local `~/.config/systemd/user` unit outranks.
+  After exact unit-ownership-or-absence preflight they publish a descriptor-
+  verified, no-follow runtime drop-in whose cleared/false
+  `ConditionPathExists` blocks indirect activation and whose
+  `RefuseManualStart` blocks explicit starts.
+  Fresh installation provisions the drop-in while the unit is absent, then
+  publishes, reloads, and attests the combined manager state before first
+  light. Final activation atomically retires the `.conf` to a non-drop-in
+  sibling, restores it on failure, and keeps that recovery copy until the live
+  daemon executable and arguments are verified. Uninstall uses the same
+  barrier and targeted exact-file cleanup, preserving operator drop-ins and
+  retaining either the active guard or its exact retired recovery copy after
+  incomplete removal. The documentation names the mechanism's same-UID,
+  coordination-only threat boundary.
+
 - **GitHub release documentation and clean-runner closure** — the README and
   manual now expose the completed v1.3 capability map, dual typed-edge lanes,
   exact Claude/Codex/Grok MCP registration commands and durable generic-client
