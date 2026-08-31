@@ -30,6 +30,7 @@ Item {
   property real revealT: 1.0
   property bool playing: false
   property string verifyMsg: ""
+  property bool verifyOk: false
 
   readonly property string effId: hoverId !== "" ? hoverId : selectedId
   readonly property string statePath:
@@ -55,6 +56,44 @@ Item {
     status && status.events_today ? status.events_today : 0
   readonly property var snap:
     graph && graph.snapshot ? graph.snapshot : null
+  readonly property real staleAfterSec: configuredStaleAfterSec()
+
+  function configuredStaleAfterSec() {
+    var fallback = Model.staleAfterDefaultSec()
+    if (root.manifest && root.manifest.barWidget
+        && root.manifest.barWidget.defaults)
+      fallback = Model.validStaleAfterSec(
+        root.manifest.barWidget.defaults.staleAfterSec, fallback)
+
+    const config = root.shell ? root.shell.shellConfig : null
+    const layout = config && config.bar ? config.bar.layout : null
+    const sections = ["left", "center", "right"]
+    if (layout) {
+      for (var s = 0; s < sections.length; s++) {
+        const entries = layout[sections[s]]
+        if (!Array.isArray(entries)) continue
+        for (var i = 0; i < entries.length; i++) {
+          const entry = entries[i]
+          const id = Util.canonicalWidgetId(String(
+            entry && entry.id !== undefined ? entry.id : entry || ""))
+          if (id === "khephri.sia")
+            return Model.validStaleAfterSec(
+              entry && entry.staleAfterSec, fallback)
+        }
+      }
+    }
+
+    const plugins = config ? config.plugins : null
+    if (Array.isArray(plugins)) {
+      for (var p = 0; p < plugins.length; p++) {
+        const entry = plugins[p]
+        if (entry && Util.canonicalWidgetId(String(entry.id || ""))
+            === "khephri.sia")
+          return Model.validStaleAfterSec(entry.staleAfterSec, fallback)
+      }
+    }
+    return fallback
+  }
 
   function stateColor() {
     if (root.stale) return Qt.alpha(root.fg, 0.4)
@@ -88,6 +127,7 @@ Item {
   function open(payloadJson) {
     opened = true
     verifyMsg = ""
+    verifyOk = false
     statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
@@ -110,7 +150,8 @@ Item {
       const parsed = JSON.parse(text)
       root.status = parsed
       const ts = Date.parse(parsed.ts)
-      root.stale = !(ts > 0) || (Date.now() - ts) > 240 * 1000
+      root.stale = !(ts > 0) ||
+        (Date.now() - ts) > root.staleAfterSec * 1000
     } catch (e) { }
   }
 
@@ -172,7 +213,8 @@ Item {
       root.nowMs = Date.now()
       if (root.status) {
         const ts = Date.parse(root.status.ts)
-        root.stale = !(ts > 0) || (root.nowMs - ts) > 240 * 1000
+        root.stale = !(ts > 0) ||
+          (root.nowMs - ts) > root.staleAfterSec * 1000
       }
     }
   }
@@ -182,9 +224,10 @@ Item {
     command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
     stdout: StdioCollector { waitForEnd: true }
     onExited: function(code) {
+      root.verifyOk = code === 0
       root.verifyMsg = code === 0
-        ? "all present chains re-verified ✓"
-        : "CHAIN VERIFICATION FAILED"
+        ? "all registered chains re-verified ✓"
+        : "CHAIN VERIFICATION INCOMPLETE"
     }
   }
 
@@ -340,7 +383,8 @@ Item {
           text: {
             var th = root.status && root.status.thought ? root.status.thought : null
             return th && th.text
-              ? Model.thoughtMark(th.kind) + "  " + th.text : ""
+              ? Model.thoughtMark(th.kind) + "  [origin:"
+                + (th.origin || "legacy-unlabeled") + "] " + th.text : ""
           }
           color: Qt.alpha(root.fg, 0.6)
           font.family: root.fontFamily
@@ -745,7 +789,7 @@ Item {
                   renderType: Text.NativeRendering
                   id: verifyBtnText
                   anchors.centerIn: parent
-                  text: "verify now"
+                  text: verifyProc.running ? "verifying…" : "verify now"
                   color: root.fg
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -754,7 +798,12 @@ Item {
                   id: verifyBtnArea
                   anchors.fill: parent
                   hoverEnabled: true
-                  onClicked: verifyProc.running = true
+                  enabled: !verifyProc.running
+                  onClicked: {
+                    root.verifyMsg = ""
+                    root.verifyOk = false
+                    verifyProc.running = true
+                  }
                 }
               }
               Text {
@@ -762,17 +811,15 @@ Item {
                 renderType: Text.NativeRendering
                 visible: root.verifyMsg !== ""
                 text: root.verifyMsg
-                color: root.verifyMsg.indexOf("FAILED") >= 0
-                  ? root.urgent : root.accent
+                color: root.verifyOk ? root.accent : root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
             }
           }
 
-          // outcome learning: predictions → grades → calibration —
-          // also shown when only the recall trend has data, so the
-          // self-bench line is never gated behind having takes
+          // Outcome learning plus the separate heuristic retrieval-drift
+          // instrument. The latter stays visible even before any takes exist.
           Rectangle {
             visible: !!(root.status
                         && ((root.status.takes
@@ -811,7 +858,9 @@ Item {
                 text: (tk.open || 0) + " open prediction"
                   + ((tk.open || 0) === 1 ? "" : "s")
                   + ((tk.due || 0) > 0 ? " · " + tk.due + " DUE" : "")
-                  + " · " + (tk.resolved || 0) + " graded"
+                  + " · " + (tk.resolved || 0) + " resolved"
+                  + ((tk.unresolvable || 0) > 0
+                     ? " · " + tk.unresolvable + " unresolvable" : "")
                 wrapMode: Text.WordWrap
                 color: (tk.due || 0) > 0 ? root.accent
                                          : Qt.alpha(root.fg, 0.7)
@@ -829,7 +878,9 @@ Item {
                 text: "mean Brier "
                   + (root.status && root.status.takes
                      ? root.status.takes.brier : "")
-                  + "  (0 = prophet · 0.25 = coin-flip)"
+                  + " · " + (root.status && root.status.takes
+                     ? (root.status.takes.calibration_status || "descriptive")
+                     : "descriptive")
                 color: Qt.alpha(root.fg, 0.55)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -839,7 +890,7 @@ Item {
                 renderType: Text.NativeRendering
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
-                text: "graded when due by the judge · Brier is math"
+                text: "operator-selected population · model-assisted grades"
                 color: Qt.alpha(root.fg, 0.35)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -852,7 +903,7 @@ Item {
                 topPadding: Style.space(4)
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
-                text: "RECALL TREND — nightly self-bench, hit@5"
+                text: "SLUG DRIFT — heuristic blend match@5"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -881,7 +932,7 @@ Item {
                   ctx.beginPath()
                   var started = false
                   for (var i = 0; i < n; i++) {
-                    var v = tr[tr.length - n + i].hit5
+                    var v = tr[tr.length - n + i].slug_match_at_5
                     if (typeof v !== "number") continue   // skip bad rows
                     var x = i * step + step / 2
                     var y = height - 2 - v * (height - 6)
@@ -890,7 +941,7 @@ Item {
                   }
                   ctx.stroke()
                   for (i = 0; i < n; i++) {
-                    v = tr[tr.length - n + i].hit5
+                    v = tr[tr.length - n + i].slug_match_at_5
                     if (typeof v !== "number") continue
                     x = i * step + step / 2
                     y = height - 2 - v * (height - 6)
@@ -912,13 +963,28 @@ Item {
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
                 text: bt.length
-                  ? "latest " + (typeof bt[bt.length - 1].hit5 === "number"
-                      ? bt[bt.length - 1].hit5.toFixed(2) : "—")
+                  ? "latest blend "
+                    + (typeof bt[bt.length - 1].slug_match_at_5 === "number"
+                      ? bt[bt.length - 1].slug_match_at_5.toFixed(2) : "—")
                     + " · " + bt.length
-                    + (bt.length === 1 ? " night" : " nights")
-                    + " · a falling line says: run the full bench"
+                    + (bt.length === 1 ? " observation" : " observations")
+                    + " · heuristic only; no answer scoring"
+                    + " · drift says: run the signed-ledger bench"
                   : ""
                 color: Qt.alpha(root.fg, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: !!(root.status && root.status.bench_trend_boundary
+                            && root.status.bench_trend_boundary.legacy_truncated)
+                width: beliefCol.width
+                wrapMode: Text.WordWrap
+                text: "legacy SLUG DRIFT display history was tail-compacted; "
+                  + "this is not scored memory evidence"
+                color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -1009,13 +1075,18 @@ Item {
                       + root.snap.failed_ops.join(", ")
                   var s = "snapshot complete · " + root.snap.window_days
                     + "d window"
-                  if (root.snap.truncated)
-                    s = "truncated: " + root.snap.truncated + " over cap"
+                  var omittedNodes = root.snap.omitted_nodes
+                    || root.snap.truncated || 0
+                  var omittedEdges = root.snap.omitted_edges || 0
+                  if (omittedNodes || omittedEdges)
+                    s += " · display cap omitted " + omittedNodes
+                      + " nodes / " + omittedEdges
+                      + " edges (not an absence claim)"
                   return s
                 }
                 wrapMode: Text.WordWrap
-                color: root.snap && ((root.snap.failed_ops
-                        && root.snap.failed_ops.length) || root.snap.truncated)
+                color: root.snap && root.snap.failed_ops
+                        && root.snap.failed_ops.length
                   ? root.urgent : Qt.alpha(root.fg, 0.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -1068,6 +1139,8 @@ Item {
                   id: errRow
                   required property var modelData
                   width: healthCol.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
                   text: "✗ " + errRow.modelData + ": "
                     + root.status.errors[errRow.modelData]
                   wrapMode: Text.WordWrap
@@ -1094,6 +1167,9 @@ Item {
                   && (!root.status.errors
                       || Object.keys(root.status.errors).length === 0)
                   && !(root.status && root.status.sync_note)
+                  && root.snap && root.snap.complete === true
+                  && (!root.snap.failed_ops
+                      || root.snap.failed_ops.length === 0)
                 text: "all senses reporting ✓"
                 color: Qt.alpha(root.accent, 0.7)
                 font.family: root.fontFamily
@@ -1605,7 +1681,9 @@ Item {
                       Text {
                         textFormat: Text.PlainText
                         renderType: Text.NativeRendering
-                        text: thoughtRow.modelData.kind + " · "
+                        text: thoughtRow.modelData.kind + " · origin:"
+                          + (thoughtRow.modelData.origin
+                             || "legacy-unlabeled") + " · "
                           + Model.timeAgo(thoughtRow.modelData.ts, root.nowMs)
                         color: Qt.alpha(root.fg, 0.35)
                         font.family: root.fontFamily

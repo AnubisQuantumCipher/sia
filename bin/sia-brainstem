@@ -1,19 +1,59 @@
 #!/usr/bin/env python3
 """sia-brainstem — the resident daemon of SIA, the Omarchy Brain.
 
-Serialized single owner of the SIA gbrain (PGLite is single-writer): every
-pulse tails the box's evidence streams into the corpus, syncs the brain,
-verifies the signed chains, thinks, and exports widget snapshots. Dreams
-nightly at 03:33 local.
+The lifetime resident lease refuses a second brainstem. Each whole pulse or
+dream also takes SIA's corpus transaction lease, while every PGLite operation
+shares the separate cross-process gbrain lease with the CLI, MCP surface, and
+benchmark. A pulse tails the box's evidence streams into the corpus, syncs the
+brain, verifies the signed chains, thinks, and exports widget snapshots.
+Dreams nightly at 03:33 local.
 """
 
-import os, sys, signal, time, datetime
+import contextlib, datetime, fcntl, os, signal, stat, sys, time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import sialib
+
+@contextlib.contextmanager
+def _runtime_generation_lease(home=None):
+    """Pin one installed runtime generation before importing its modules."""
+    home = home if home is not None else os.path.expanduser("~")
+    parent = os.path.join(home, ".local", "state")
+    lock = os.path.join(parent, "sia.lifecycle.lock")
+    tombstone = os.path.join(parent, "sia.lifecycle-removed")
+    os.makedirs(parent, exist_ok=True)
+    flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    fd = os.open(lock, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise RuntimeError("SIA lifecycle lease is not an owned regular file")
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        try:
+            if os.path.lexists(tombstone):
+                marker = os.lstat(tombstone)
+                if not stat.S_ISREG(marker.st_mode) \
+                        or marker.st_uid != os.geteuid():
+                    raise RuntimeError("SIA lifecycle removal marker is unsafe")
+                raise RuntimeError(
+                    "SIA runtime was removed; reinstall before using it")
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+sialib = None
+if __name__ != "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import sialib as _sialib
+    sialib = _sialib
 
 PULSE_SEC = int(os.environ.get("SIA_PULSE_SEC", "60"))
 DREAM_HOUR, DREAM_MIN = 3, 33
+DREAM_RETRY_SEC = max(
+    1, int(os.environ.get("SIA_DREAM_RETRY_SEC", "3600")))
 
 _stop = False
 
@@ -21,55 +61,161 @@ def _on_term(signum, frame):
     global _stop
     _stop = True
 
+
+def _publish_failure(seq, exc):
+    """Keep SOURCE HEALTH truthful when a pulse cannot safely start."""
+    try:
+        status = sialib.read_json(sialib.STATUS_PATH, {})
+        if not isinstance(status, dict):
+            status = {}
+        errors = status.get("errors", {})
+        if not isinstance(errors, dict):
+            errors = {}
+        errors["brainstem"] = sialib.clip(str(exc), 160)
+        status.update({"v": 1, "ts": sialib.iso(), "state": "failed",
+                       "pulse_seq": seq, "errors": errors})
+        sialib.export_status(status)
+    except Exception as status_exc:
+        sialib.log(f"SOURCE HEALTH export FAILED: {status_exc!r}")
+
+
+def _dream_due(now, last_dream_day, next_attempt, monotonic_now=None):
+    monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+    return ((now.hour, now.minute) >= (DREAM_HOUR, DREAM_MIN)
+            and last_dream_day != now.strftime("%Y-%m-%d")
+            and monotonic_now >= next_attempt)
+
+
+def _attempt_dream(now, last_dream_day):
+    sialib.log("dreaming…")
+    try:
+        sialib.dream()
+        return _durable_dream_day(last_dream_day), 0.0
+    except Exception as exc:
+        next_attempt = time.monotonic() + DREAM_RETRY_SEC
+        sialib.log(f"dream FAILED: {exc!r}; retry is rate-limited")
+        return _durable_dream_day(last_dream_day), next_attempt
+
+
+def _reserved_pulse(seq):
+    """Allocate a sequence and pulse under one corpus/memo transaction."""
+    with sialib.corpus_owner():
+        memo = sialib.load_memo()
+        current, _last_dream_day = _startup_state(memo)
+        if seq <= current:
+            raise ValueError("brainstem pulse sequence was reused or rolled back")
+        memo["pulse_seq"] = seq
+        sialib._write_memo(memo)
+        return sialib._pulse_transaction(seq)
+
+
+def _startup_state(memo):
+    if not isinstance(memo, dict):
+        raise ValueError("brainstem memo must be an object")
+    seq = memo.get("pulse_seq", 0)
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        raise ValueError("brainstem pulse sequence is invalid")
+    if not isinstance(memo.get("sync_needed", False), bool):
+        raise ValueError("brainstem sync-needed state is invalid")
+    dream = memo.get("dream", {})
+    if not isinstance(dream, dict):
+        raise ValueError("brainstem dream state is invalid")
+    stamp = dream.get("last", "")
+    if not isinstance(stamp, str):
+        raise ValueError("brainstem dream timestamp is invalid")
+    last_dream_day = ""
+    if stamp:
+        parsed = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ") \
+            .replace(tzinfo=datetime.timezone.utc)
+        if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != stamp:
+            raise ValueError("brainstem dream timestamp is not canonical UTC")
+        last_dream_day = parsed.astimezone().strftime("%Y-%m-%d")
+    return seq, last_dream_day
+
+
+def _durable_dream_day(fallback):
+    """Refresh scheduler state after pulse recovery or a partial DREAM."""
+    try:
+        _seq, persisted = _startup_state(sialib.load_memo())
+        return persisted
+    except Exception as exc:
+        sialib.log(f"dream schedule refresh refused: {exc!r}")
+        return fallback
+
 def main():
+    try:
+        with sialib.brainstem_owner():
+            return _run_owned()
+    except sialib.OwnerBusy as exc:
+        sialib.log(f"sia-brainstem REFUSED: {exc}")
+        return 1
+
+
+def _run_owned():
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
     sialib.ensure_dirs()
     sialib.log(f"sia-brainstem {sialib.VERSION} waking up "
                f"(pulse {PULSE_SEC}s, brain {sialib.SHARE})")
-    memo = sialib.read_json(sialib.MEMO_PATH, {})
-    seq = int(memo.get("pulse_seq", 0))
-    # dream.last is a UTC stamp; the 03:33 schedule is local — convert
-    last_dream_day = ""
-    stamp = memo.get("dream", {}).get("last", "")
-    if stamp:
-        try:
-            last_dream_day = datetime.datetime.strptime(
-                stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
-                tzinfo=datetime.timezone.utc).astimezone().strftime("%Y-%m-%d")
-        except ValueError:
-            last_dream_day = stamp[:10]
-    sialib.ledger_append("BOOT:brainstem", sialib.VERSION, f"pulse={PULSE_SEC}s")
+    try:
+        memo = sialib.load_memo()
+        seq, last_dream_day = _startup_state(memo)
+    except Exception as exc:
+        sialib.log(f"brainstem startup REFUSED: {exc!r}")
+        _publish_failure(0, exc)
+        return 1
+    next_dream_attempt = 0.0
+    try:
+        _recovered, recovery_errors = sialib.recover_ledger_transitions()
+        if recovery_errors:
+            raise RuntimeError(f"ledger recovery refused: {recovery_errors}")
+        sialib.durable_ledger_append(
+            "BOOT:brainstem", sialib.VERSION, f"pulse={PULSE_SEC}s")
+    except Exception as exc:
+        sialib.log(f"brainstem startup REFUSED: {exc!r}")
+        _publish_failure(seq, exc)
+        return 1
     while not _stop:
         seq += 1
         t0 = time.time()
         try:
-            st = sialib.pulse(seq)
-            memo = sialib.read_json(sialib.MEMO_PATH, {})
-            memo["pulse_seq"] = seq
-            sialib.atomic_write(sialib.MEMO_PATH, __import__("json").dumps(memo))
+            # Reserve the sequence before any effects. A crash may leave a
+            # gap, but it can never cause a signed/publication sequence reuse.
+            st = _reserved_pulse(seq)
             if st["events_pulse"] or st["errors"]:
                 sialib.log(f"pulse {seq}: {st['events_pulse']} events, "
                            f"state {st['state']}"
                            + (f", errors {list(st['errors'])}" if st["errors"] else ""))
         except Exception as e:
             sialib.log(f"pulse {seq} FAILED: {e!r}")
+            _publish_failure(seq, e)
+        last_dream_day = _durable_dream_day(last_dream_day)
         now = datetime.datetime.now()
-        if (now.hour, now.minute) >= (DREAM_HOUR, DREAM_MIN) and \
-                last_dream_day != now.strftime("%Y-%m-%d"):
-            last_dream_day = now.strftime("%Y-%m-%d")
-            sialib.log("dreaming…")
-            try:
-                sialib.dream()
-            except Exception as e:
-                sialib.log(f"dream FAILED: {e!r}")
+        if _dream_due(now, last_dream_day, next_dream_attempt):
+            last_dream_day, next_dream_attempt = _attempt_dream(
+                now, last_dream_day)
         elapsed = time.time() - t0
         for _ in range(int(max(5.0, PULSE_SEC - elapsed))):
             if _stop:
                 break
             time.sleep(1)
     sialib.log("sia-brainstem going quiet")
-    sialib.ledger_append("HALT:brainstem", sialib.VERSION, "clean")
+    try:
+        sialib.durable_ledger_append(
+            "HALT:brainstem", sialib.VERSION, "clean")
+    except Exception as exc:
+        sialib.log(f"brainstem halt ledger REFUSED: {exc!r}")
+        _publish_failure(seq, exc)
+        return 1
+    return 0
 
 if __name__ == "__main__":
-    main()
+    try:
+        with _runtime_generation_lease():
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import sialib as _sialib
+            sialib = _sialib
+            sys.exit(main())
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"sia-brainstem: refused: {exc}", file=sys.stderr)
+        sys.exit(1)

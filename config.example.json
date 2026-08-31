@@ -1,9 +1,10 @@
 {
   "_comment": "SIA instance configuration — copy to ~/.config/sia/config.json",
+  "_egress_trust_boundary": "The local memory runtime and embeddings do not make cloud calls. This file can opt the separate Claude CLI judge into sending recalled context. Independently, any script, pipe, agent, or configured MCP client that receives sia CLI/MCP output can forward it to another provider; SIA cannot enforce that caller's billing, retention, or data terms.",
 
   "judge": {
-    "_comment": "LLM used ONLY for labeled synthesis (sia ponder) and take grading. backend: codex | claude (uses your existing CLI subscription; auto-detected when unset). model is passed to that CLI.",
-    "backend": "",
+    "_comment": "Disabled by default: no recalled memory leaves the machine. To opt in, set backend to claude and choose an explicit model identifier; Claude runs tool-free through your configured CLI authentication/account/provider, whose normal billing and data terms apply. Codex is refused because its documented read-only mode still permits local reads.",
+    "backend": "none",
     "model": ""
   },
 
@@ -14,25 +15,27 @@
 
   "custom_senses": [
     {
-      "_comment": "Point SIA at YOUR programs. type: lines | jsonl. 'match' is a regex; for jsonl, 'field' selects the message field.",
+      "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' accepts bounded literal alternatives separated by | (not regex); for jsonl, 'field' selects the message field.",
       "name": "example-app",
       "organ": "example-app",
       "description": "my application's error log",
       "path": "~/logs/app.log",
       "type": "lines",
+      "enabled": false,
       "match": "ERROR|FATAL",
       "kind": "error",
-      "tags": ["failed"],
-      "_disabled": true
+      "tags": ["failed"]
     }
   ],
 
   "chains": [
     {
-      "_comment": "Extra signed evidence chains to re-verify each sweep: name, ledger path, and the argv of ITS OWN verifier (exit 0 = pass).",
-      "_example_name": "mychain",
-      "_example_ledger": "~/.local/share/mychain/ledger.tsv",
-      "_example_verify": ["~/.local/bin/mychain-verify", "--quiet"]
+      "_comment": "Extra signed evidence chains to re-verify each sweep. The verifier must be the exact executed program, or the immediate script operand of SIA's current Python interpreter; the ledger must also appear as an exact argv element.",
+      "enabled": false,
+      "name": "mychain",
+      "ledger": "~/.local/share/mychain/ledger.tsv",
+      "verifier": "~/.local/bin/mychain-verify",
+      "verify": ["~/.local/bin/mychain-verify", "~/.local/share/mychain/ledger.tsv", "--quiet"]
     }
   ]
 }

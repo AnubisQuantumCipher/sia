@@ -1,8 +1,10 @@
 # The memory engine SIA is verified against. install.sh installs this exact
-# commit; `sia verify` warns if the running gbrain drifts from it. gbrain is
+# commit; `sia verify` warns on a self-reported version mismatch (gbrain does
+# not expose its source commit at runtime). gbrain is
 # github.com/garrytan/gbrain (MIT), by Garry Tan — SIA is a sense/cognition/
 # UI shell around it. Bump deliberately, re-run `sia bench` + `sia judge-audit`,
 # and record the new pin here.
-commit=7b7921d
+commit=7b7921d86141c4e4086e50828de9a867a6814247
 version=0.47.6.0
-verified=2026-08-29
+bun_lock_sha256=d9f9ac4f848d7e3c8a92be4ede6e82285aa5677dcd3844aa600fc714ddf6d1cc
+verified=2026-08-30

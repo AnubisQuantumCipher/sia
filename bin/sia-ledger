@@ -24,14 +24,32 @@ The chain + every signature were validated byte-for-byte against the live SEKHME
 ledger before this tool shipped. `verify` replays the same rule the proved
 `Attest.Ledger.Feed` enforces: an entry is accepted only if it links (right seq,
 prev == expected) and its signature verifies; rejection is sticky.
+
+Storage boundary: ledger.tsv is capped at 67,108,864 bytes.  Append first
+publishes one bounded, signed row to a durable sibling journal, appends that row
+in place, fsyncs it, advances head.pin atomically, and then removes the journal.
+Recovery may complete that exact journaled row or advance a pin over an already
+complete signed tail; it never invents, truncates, or rotates authenticated
+history merely to stay below the ceiling.
 """
 
-import sys, os, hashlib, datetime
+import contextlib, ctypes, datetime, fcntl, hashlib, os, re, stat, sys
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 
 GENESIS_TAG = b"attest-genesis-v1"
 ENTRY_TAG   = b"attest-entry-v1"
+# JACKAL exact: status=exact parsed=64*1024*1024 exact=67108864.
+# This is an operational resource ceiling, not a retention policy or an
+# assurance claim about available disk space.
+MAX_LEDGER_BYTES = 67_108_864
+# JACKAL exact: status=exact parsed=16*1024 exact=16384; formal=false.
+# This exact rational result is not formal-bounded and has no Lean-checked
+# certificate; it sets a resource limit and makes no code-correctness claim.
+MAX_LEDGER_ROW_BYTES = 16_384
+MAX_CONTROL_FILE_BYTES = MAX_LEDGER_ROW_BYTES
+PENDING_NAME = "ledger.pending"
 
 def anchor() -> str:
     return hashlib.sha256(GENESIS_TAG).hexdigest()
@@ -61,152 +79,853 @@ def _paths(state):
             os.path.join(state, "pub.hex"),
             os.path.join(state, "head.pin"))
 
-def _read_rows(ledger):
-    if not os.path.exists(ledger):
-        return []
+def _pending_path(state):
+    return os.path.join(state, PENDING_NAME)
+
+
+def _same_file(left, right):
+    return (left.st_dev, left.st_ino, left.st_size,
+            left.st_mtime_ns, left.st_ctime_ns) == \
+           (right.st_dev, right.st_ino, right.st_size,
+            right.st_mtime_ns, right.st_ctime_ns)
+
+
+def _read_regular_bytes(path, label, limit, *, missing_ok=False):
+    """Read one bounded regular file through its no-follow descriptor."""
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        if missing_ok:
+            return None, None
+        raise ValueError(f"{label} is missing") from None
+    except OSError as exc:
+        raise ValueError(
+            f"{label} cannot be opened as a no-follow regular file: {exc}") \
+            from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f"{label} is not a regular file")
+        if before.st_uid != os.geteuid():
+            raise ValueError(f"{label} is not owned by this user")
+        if before.st_nlink != 1:
+            raise ValueError(f"{label} has an unsafe link count")
+        if stat.S_IMODE(before.st_mode) & 0o022:
+            raise ValueError(f"{label} is writable by group or other")
+        if before.st_size > limit:
+            if label == "ledger.tsv":
+                raise ValueError(
+                    f"LEDGER SIZE LIMIT exceeded: {before.st_size} bytes; "
+                    f"maximum is {MAX_LEDGER_BYTES}; archive or migrate under "
+                    "an operator-approved retention policy")
+            raise ValueError(f"{label} exceeds its bounded file size")
+        data = bytearray()
+        while len(data) <= limit:
+            chunk = os.read(fd, limit + 1 - len(data))
+            if not chunk:
+                break
+            data.extend(chunk)
+        after = os.fstat(fd)
+        try:
+            current = os.stat(path, follow_symlinks=False)
+        except FileNotFoundError:
+            raise ValueError(f"{label} changed while it was read") from None
+        if not stat.S_ISREG(current.st_mode) \
+                or current.st_uid != os.geteuid() \
+                or not _same_file(before, after) \
+                or not _same_file(after, current) \
+                or len(data) != after.st_size:
+            raise ValueError(f"{label} changed while it was read")
+        if len(data) > limit:
+            if label == "ledger.tsv":
+                raise ValueError(
+                    f"LEDGER SIZE LIMIT exceeded; maximum is "
+                    f"{MAX_LEDGER_BYTES} bytes; archive or migrate under an "
+                    "operator-approved retention policy")
+            raise ValueError(f"{label} exceeds its bounded file size")
+        return bytes(data), after
+    finally:
+        os.close(fd)
+
+
+def _decode(data, label):
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{label} is not valid UTF-8") from exc
+
+
+def _split_ledger(data):
+    """Return complete rows, an optional torn suffix, and prefix byte count."""
+    if not data:
+        return [], b"", 0
+    final_newline = data.rfind(b"\n")
+    if final_newline < 0:
+        complete, suffix = b"", data
+    else:
+        complete = data[:final_newline + 1]
+        suffix = data[final_newline + 1:]
     rows = []
-    with open(ledger) as f:
-        for line in f:
-            line = line.rstrip("\n")
-            if line:
-                rows.append(line.split("\t"))
+    if complete:
+        text = _decode(complete, "ledger.tsv")
+        # The wire format is delimited by one literal LF.  str.splitlines()
+        # also treats several signed Unicode/control characters as record
+        # boundaries and would therefore reinterpret otherwise exact bytes.
+        lines = text[:-1].split("\n")
+        if any(not line for line in lines):
+            raise ValueError("MALFORMED ledger contains an unsigned blank row")
+        rows = [line.split("\t") for line in lines]
+    return rows, suffix, len(complete)
+
+
+def _read_rows(ledger):
+    data, _info = _read_regular_bytes(
+        ledger, "ledger.tsv", MAX_LEDGER_BYTES)
+    rows, suffix, _complete_size = _split_ledger(data)
+    if suffix:
+        raise ValueError("TORN ledger tail has no recovery context")
     return rows
 
+
 def _sk(keyfile):
-    seed = bytes.fromhex(open(keyfile).read().strip())
-    return Ed25519PrivateKey.from_private_bytes(seed)
+    raw, info = _read_regular_bytes(
+        keyfile, "key.hex", MAX_CONTROL_FILE_BYTES)
+    key_mode = stat.S_IMODE(info.st_mode)
+    if key_mode & 0o077 or not key_mode & 0o400:
+        raise ValueError("private signing key permissions are unsafe")
+    if re.fullmatch(rb"[0-9a-f]{64}\n", raw) is None:
+        raise ValueError("private signing key is malformed")
+    return Ed25519PrivateKey.from_private_bytes(bytes.fromhex(
+        raw[:-1].decode("ascii")))
 
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+def _fsync_directory(path):
+    dfd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                  | getattr(os, "O_CLOEXEC", 0)
+                  | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
+
+
+def _write_all(fd, data):
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError("short write while publishing ledger state")
+        view = view[written:]
+
+
+def _open_directory(path):
+    return os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                   | getattr(os, "O_CLOEXEC", 0)
+                   | getattr(os, "O_NOFOLLOW", 0))
+
+
+def _open_unnamed_stage(directory_fd, data, mode):
+    """Create a durable anonymous inode that vanishes on interruption."""
+    tmpfile = getattr(os, "O_TMPFILE", 0)
+    if not tmpfile:
+        raise ValueError(
+            "anonymous O_TMPFILE staging is unavailable; refusing "
+            "publication without no-orphan support")
+    try:
+        fd = os.open(
+            ".", os.O_RDWR | tmpfile | getattr(os, "O_CLOEXEC", 0), mode,
+            dir_fd=directory_fd)
+    except OSError as exc:
+        raise ValueError(
+            "anonymous O_TMPFILE staging is unsupported by the ledger "
+            "filesystem; refusing publication without no-orphan support") \
+            from exc
+    try:
+        os.fchmod(fd, mode)
+        _write_all(fd, data)
+        os.fsync(fd)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _link_fd_noreplace(source_fd, directory_fd, name, display_path):
+    """Linux linkat(AT_EMPTY_PATH): publish one anonymous inode once."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    linkat = libc.linkat
+    linkat.argtypes = [
+        ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
+        ctypes.c_int]
+    linkat.restype = ctypes.c_int
+    # AT_EMPTY_PATH is a Linux API constant, not a derived quantity.
+    if linkat(source_fd, b"", directory_fd, os.fsencode(name), 0x1000) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), display_path)
+
+
+def _read_exact_stage(directory_fd, name, payload, mode, display_path):
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(name, flags, dir_fd=directory_fd)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != mode \
+                or before.st_size != len(payload):
+            raise ValueError(
+                f"retained replacement stage is unsafe: {display_path}")
+        data = bytearray()
+        while len(data) <= len(payload):
+            chunk = os.read(fd, len(payload) + 1 - len(data))
+            if not chunk:
+                break
+            data.extend(chunk)
+        after = os.fstat(fd)
+        current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        if bytes(data) != payload or not _same_file(before, after) \
+                or not _same_file(after, current):
+            raise ValueError(
+                f"retained replacement stage is not exact: {display_path}")
+        return fd, after
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def _atomic_write(path, data):
-    tmp = path + ".new"
-    with open(tmp, "w") as f:
-        f.write(data)
-        f.flush(); os.fsync(f.fileno())
-    os.replace(tmp, path)
+    """Replace a control file through one crash-resumable fixed stage."""
+    payload = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+    directory = os.path.dirname(path) or "."
+    base = os.path.basename(path)
+    stage_name = f".{base}.stage"
+    display_stage = os.path.join(directory, stage_name)
+    directory_fd = _open_directory(directory)
+    stage_fd = None
+    try:
+        try:
+            stage_fd = _open_unnamed_stage(directory_fd, payload, 0o644)
+            _link_fd_noreplace(stage_fd, directory_fd, stage_name, display_stage)
+            os.fsync(directory_fd)
+            staged_info = os.fstat(stage_fd)
+        except FileExistsError:
+            if stage_fd is not None:
+                os.close(stage_fd)
+            stage_fd, staged_info = _read_exact_stage(
+                directory_fd, stage_name, payload, 0o644, display_stage)
+        os.replace(
+            stage_name, base, src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd)
+        os.fsync(directory_fd)
+        current = os.stat(base, dir_fd=directory_fd, follow_symlinks=False)
+        held = os.fstat(stage_fd)
+        if not stat.S_ISREG(current.st_mode) \
+                or (current.st_dev, current.st_ino) != (
+                    staged_info.st_dev, staged_info.st_ino) \
+                or not _same_file(held, current) \
+                or current.st_nlink != 1:
+            raise ValueError("head.pin changed during durable replacement")
+    finally:
+        if stage_fd is not None:
+            os.close(stage_fd)
+        os.close(directory_fd)
+
+
+def _publish_new(path, data, mode=0o644):
+    """Publish an anonymous staged inode without replacing an existing name."""
+    payload = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+    directory = os.path.dirname(path) or "."
+    base = os.path.basename(path)
+    directory_fd = _open_directory(directory)
+    staged_fd = None
+    try:
+        staged_fd = _open_unnamed_stage(directory_fd, payload, mode)
+        staged_info = os.fstat(staged_fd)
+        _link_fd_noreplace(staged_fd, directory_fd, base, path)
+        published = os.fstat(staged_fd)
+        current = os.stat(base, dir_fd=directory_fd, follow_symlinks=False)
+        if not stat.S_ISREG(published.st_mode) \
+                or (published.st_dev, published.st_ino) != (
+                    staged_info.st_dev, staged_info.st_ino) \
+                or not _same_file(published, current) \
+                or current.st_nlink != 1:
+            raise ValueError("new ledger component changed during publication")
+        os.fsync(directory_fd)
+        current = os.stat(base, dir_fd=directory_fd, follow_symlinks=False)
+        held = os.fstat(staged_fd)
+        if (published.st_dev, published.st_ino, published.st_mode,
+                published.st_uid, published.st_size) != (
+                current.st_dev, current.st_ino, current.st_mode,
+                current.st_uid, current.st_size) \
+                or not _same_file(held, current) or current.st_nlink != 1:
+            raise ValueError("new ledger component changed during publication")
+        return current
+    finally:
+        if staged_fd is not None:
+            os.close(staged_fd)
+        os.close(directory_fd)
+
+
+@contextlib.contextmanager
+def _ledger_lock(state):
+    try:
+        os.mkdir(state, 0o700)
+    except FileExistsError:
+        pass
+    state_info = os.lstat(state)
+    if not stat.S_ISDIR(state_info.st_mode) \
+            or state_info.st_uid != os.geteuid() \
+            or stat.S_IMODE(state_info.st_mode) & 0o022:
+        raise ValueError("ledger state directory is unsafe")
+    # This also closes a prior mkdir-before-parent-fsync interruption: a retry
+    # never treats a merely visible state directory as durably published.
+    _fsync_directory(os.path.dirname(os.path.abspath(state)))
+    path = os.path.join(state, "ledger.lock")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        lock_info = os.fstat(fd)
+        if not stat.S_ISREG(lock_info.st_mode) \
+                or lock_info.st_uid != os.geteuid():
+            raise ValueError("ledger lock is not a regular file")
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        held = os.fstat(fd)
+        current = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(current.st_mode) \
+                or current.st_uid != os.geteuid() \
+                or (held.st_dev, held.st_ino) != (
+                    current.st_dev, current.st_ino):
+            raise ValueError("ledger lock changed while acquiring its lease")
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _read_public_key(pubfile):
+    raw, _info = _read_regular_bytes(
+        pubfile, "pub.hex", MAX_CONTROL_FILE_BYTES)
+    if re.fullmatch(rb"[0-9a-f]{64}\n", raw) is None:
+        raise ValueError("public verification key is malformed")
+    public_hex = raw[:-1].decode("ascii")
+    try:
+        public = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("public verification key is malformed") from exc
+    return public_hex, public
+
+
+def _read_pin(pinfile):
+    raw, info = _read_regular_bytes(
+        pinfile, "head.pin", MAX_CONTROL_FILE_BYTES)
+    matched = re.fullmatch(rb"([1-9][0-9]*) ([0-9a-f]{64})\n", raw)
+    if matched is None:
+        raise ValueError("head.pin is malformed")
+    parts = tuple(part.decode("ascii") for part in matched.groups())
+    try:
+        count = int(parts[0])
+    except ValueError as exc:
+        raise ValueError("head.pin is malformed") from exc
+    return count, parts[1], info
+
+
+def _row_bytes(row):
+    return ("\t".join(row) + "\n").encode("utf-8")
+
+
+def _read_pending(state):
+    path = _pending_path(state)
+    raw, info = _read_regular_bytes(
+        path, PENDING_NAME, MAX_LEDGER_ROW_BYTES, missing_ok=True)
+    if raw is None:
+        return None
+    rows, suffix, _complete_size = _split_ledger(raw)
+    if suffix or len(rows) != 1 or _row_bytes(rows[0]) != raw:
+        raise ValueError("MALFORMED ledger.pending journal")
+    return raw, rows[0], info
+
+
+def _canonical_u64(value, label):
+    if not re.fullmatch(r"0|[1-9][0-9]*", value):
+        raise ValueError(f"MALFORMED {label}")
+    try:
+        number = int(value)
+        _u64be(number)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(f"MALFORMED {label}") from exc
+    return number
+
+
+def _validate_row(row, expected_seq, expected_prev, pub):
+    if len(row) != 9:
+        raise ValueError("MALFORMED ledger row")
+    seq, stamp, action, arg1, arg2, sum_hex, size, prev, sig = row
+    if not re.fullmatch(r"0|[1-9][0-9]*", seq) \
+            or seq != str(expected_seq) or prev != expected_prev:
+        raise ValueError(f"CHAIN BROKEN at seq {seq}")
+    if not re.fullmatch(r"[0-9a-f]{64}", sum_hex) \
+            or not re.fullmatch(r"[0-9a-f]{64}", prev) \
+            or not re.fullmatch(r"[0-9a-f]{128}", sig):
+        raise ValueError(f"MALFORMED ledger row at seq {seq}")
+    _canonical_u64(size, f"size at seq {seq}")
+    try:
+        head = entry_hash(
+            seq, stamp, action, arg1, arg2, sum_hex, size, prev)
+        pub.verify(bytes.fromhex(sig), bytes.fromhex(head))
+    except Exception as exc:
+        raise ValueError(f"SIGNATURE BAD at seq {seq}") from exc
+    return head
+
+
+def _validate_rows(rows, pub):
+    expected_prev = anchor()
+    heads = []
+    for expected_seq, row in enumerate(rows):
+        expected_prev = _validate_row(
+            row, expected_seq, expected_prev, pub)
+        heads.append(expected_prev)
+    return heads, expected_prev
+
+
+def _ensure_room(current_size, addition):
+    if addition > MAX_LEDGER_ROW_BYTES:
+        raise ValueError(
+            f"ledger row exceeds the {MAX_LEDGER_ROW_BYTES}-byte journal limit")
+    if current_size > MAX_LEDGER_BYTES - addition:
+        raise ValueError(
+            f"LEDGER SIZE LIMIT: append would exceed {MAX_LEDGER_BYTES} bytes; "
+            "archive or migrate under an operator-approved retention policy")
+
+
+def _append_bytes(path, data, expected_info):
+    flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(
+            f"ledger.tsv cannot be opened for a no-follow append: {exc}") \
+            from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or not _same_file(
+                before, expected_info):
+            raise ValueError("ledger.tsv changed before append")
+        _write_all(fd, data)
+        os.fsync(fd)
+        after = os.fstat(fd)
+        if (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino) \
+                or after.st_size != before.st_size + len(data):
+            raise ValueError("ledger.tsv changed during append")
+        return after
+    finally:
+        os.close(fd)
+
+
+def _repair_torn_tail(path, complete_size, pending_raw, expected_info):
+    """Replace only a proven byte-prefix of the exact signed pending row."""
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(
+            f"ledger.tsv cannot be opened for no-follow recovery: {exc}") \
+            from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or not _same_file(
+                before, expected_info):
+            raise ValueError("ledger.tsv changed before recovery")
+        os.ftruncate(fd, complete_size)
+        os.fsync(fd)
+        os.lseek(fd, 0, os.SEEK_END)
+        _write_all(fd, pending_raw)
+        os.fsync(fd)
+        after = os.fstat(fd)
+        if (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino) \
+                or after.st_size != complete_size + len(pending_raw):
+            raise ValueError("ledger.tsv changed during recovery")
+        return after
+    finally:
+        os.close(fd)
+
+
+def _remove_pending(state, expected_info):
+    path = _pending_path(state)
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        raise ValueError("ledger.pending disappeared during recovery") from None
+    if not stat.S_ISREG(current.st_mode) or not _same_file(
+            current, expected_info):
+        raise ValueError("ledger.pending changed during recovery")
+    os.unlink(path)
+    _fsync_directory(os.path.dirname(path) or ".")
+
+
+def _write_pin(pinfile, count, head):
+    _atomic_write(pinfile, f"{count} {head}\n")
+
+
+def _validated_chain(state, require_pin=True, expected_public_hex=None):
+    ledger, _keyfile, pubfile, pinfile = _paths(state)
+    ledger_raw, ledger_info = _read_regular_bytes(
+        ledger, "ledger.tsv", MAX_LEDGER_BYTES)
+    rows, suffix, complete_size = _split_ledger(ledger_raw)
+    if not rows:
+        raise ValueError("EMPTY ledger")
+    public_hex, pub = _read_public_key(pubfile)
+    if expected_public_hex is not None and public_hex != expected_public_hex:
+        raise ValueError("PUBLIC KEY CHANGED AFTER SIGNER BINDING")
+    accepted_heads, expected_prev = _validate_rows(rows, pub)
+    pending = _read_pending(state)
+
+    if not require_pin:
+        if suffix or pending is not None:
+            raise ValueError("ledger recovery requires head.pin validation")
+        return rows, expected_prev, ledger_info
+
+    count, pinned_head, _pin_info = _read_pin(pinfile)
+    if count > len(rows) or pinned_head != accepted_heads[count - 1]:
+        raise ValueError("PIN MISMATCH — possible rollback")
+
+    # A partial append is repairable only from the durable journal, only when
+    # the pin names the complete prefix, and only when the suffix is an exact
+    # byte-prefix of that one independently verified next row.
+    if suffix:
+        if pending is None:
+            raise ValueError("TORN ledger tail has no recovery context")
+        pending_raw, pending_row, pending_info = pending
+        if count != len(rows) or pinned_head != expected_prev:
+            raise ValueError("PIN MISMATCH — torn tail is not pinned")
+        pending_head = _validate_row(
+            pending_row, len(rows), expected_prev, pub)
+        if len(suffix) >= len(pending_raw) \
+                or suffix != pending_raw[:len(suffix)]:
+            raise ValueError("TORN ledger tail does not match ledger.pending")
+        _ensure_room(complete_size, len(pending_raw))
+        ledger_info = _repair_torn_tail(
+            ledger, complete_size, pending_raw, ledger_info)
+        rows.append(pending_row)
+        accepted_heads.append(pending_head)
+        expected_prev = pending_head
+
+    if count < len(rows):
+        # Legacy/current crash recovery: the old pin may advance over a fully
+        # verified signed tail only when it names an exact prior prefix.
+        if pending is not None:
+            pending_raw, _pending_row, pending_info = pending
+            if count != len(rows) - 1 \
+                    or pending_raw != _row_bytes(rows[-1]):
+                raise ValueError(
+                    "ledger.pending does not bind the unpinned signed tail")
+        _write_pin(pinfile, len(rows), expected_prev)
+        if pending is not None:
+            _remove_pending(state, pending_info)
+        return rows, expected_prev, ledger_info
+
+    if pending is not None:
+        pending_raw, pending_row, pending_info = pending
+        if pending_raw == _row_bytes(rows[-1]):
+            # The pin was made durable and only journal cleanup was interrupted.
+            _remove_pending(state, pending_info)
+            return rows, expected_prev, ledger_info
+        pending_head = _validate_row(
+            pending_row, len(rows), expected_prev, pub)
+        _ensure_room(ledger_info.st_size, len(pending_raw))
+        ledger_info = _append_bytes(ledger, pending_raw, ledger_info)
+        rows.append(pending_row)
+        expected_prev = pending_head
+        _write_pin(pinfile, len(rows), expected_prev)
+        _remove_pending(state, pending_info)
+
+    return rows, expected_prev, ledger_info
+
+
+def _signing_key(state):
+    """Load the private key only after binding it to the pinned public key."""
+    _ledger, keyfile, pubfile, _pinfile = _paths(state)
+    sk = _sk(keyfile)
+    expected_hex, _pub = _read_public_key(pubfile)
+    actual_hex = sk.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw).hex()
+    if actual_hex != expected_hex:
+        raise ValueError("SIGNING KEY DOES NOT MATCH PINNED PUBLIC KEY")
+    return sk
+
+def _validate_entry_fields(action, arg1, arg2, sum_hex, size):
+    for value in (action, arg1, arg2):
+        if not isinstance(value, str) or "\t" in value or "\n" in value:
+            raise ValueError("ledger text fields cannot contain tabs/newlines")
+    if not re.fullmatch(r"[0-9a-f]{64}", sum_hex) \
+            or not isinstance(size, int) or size < 0:
+        raise ValueError("invalid content digest or size")
+    try:
+        _u64be(size)
+    except OverflowError as exc:
+        raise ValueError("invalid content digest or size") from exc
+
+
+def _row_matches(row, action, arg1, arg2, sum_hex, size):
+    return row[2] == action and row[3] == arg1 and row[4] == arg2 \
+        and row[5] == sum_hex and row[6] == str(size)
+
 
 def _append_row(state, action, arg1, arg2, sum_hex, size):
-    ledger, keyfile, pubfile, pinfile = _paths(state)
-    rows = _read_rows(ledger)
-    sk = _sk(keyfile)
-    if not rows:
-        seq, prev = 0, anchor()
-    else:
-        last = rows[-1]
-        seq = int(last[0]) + 1
-        prev = entry_hash(last[0], last[1], last[2], last[3], last[4],
-                          last[5], last[6], last[7])
+    ledger, _keyfile, _pubfile, pinfile = _paths(state)
+    sk = _signing_key(state)
+    signer_hex = sk.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw).hex()
+    rows, pinned_head, ledger_info = _validated_chain(
+        state, require_pin=True, expected_public_hex=signer_hex)
+    _validate_entry_fields(action, arg1, arg2, sum_hex, size)
+    last = rows[-1]
+    seq = int(last[0]) + 1
+    prev = pinned_head
     stamp = _now()
     eh = entry_hash(seq, stamp, action, arg1, arg2, sum_hex, size, prev)
     sig = sk.sign(bytes.fromhex(eh)).hex()
     row = "\t".join([str(seq), stamp, action, arg1, arg2, sum_hex, str(size), prev, sig])
-    with open(ledger, "a") as f:
-        f.write(row + "\n")
-        f.flush(); os.fsync(f.fileno())   # torn-tail hardening (vm reset 2026-08-29)
-    # head.pin: "<count> <chain-head = Entry_Hash of the new last entry>"
-    head = entry_hash(seq, stamp, action, arg1, arg2, sum_hex, size, prev)
-    _atomic_write(pinfile, f"{seq + 1} {head}\n")
+    row_raw = (row + "\n").encode("utf-8")
+    _ensure_room(ledger_info.st_size, len(row_raw))
+
+    # The journal is the durable authorization to repair this exact byte row.
+    # No ledger byte is changed until its no-clobber publication is durable.
+    _publish_new(_pending_path(state), row_raw, 0o600)
+    pending = _read_pending(state)
+    if pending is None or pending[0] != row_raw:
+        raise ValueError("ledger.pending publication could not be verified")
+    _pending_raw, _pending_row, pending_info = pending
+    ledger_info = _append_bytes(ledger, row_raw, ledger_info)
+    _write_pin(pinfile, len(rows) + 1, eh)
+    _remove_pending(state, pending_info)
+    head = eh
     return seq, head
 
-def cmd_init(state):
+
+def _genesis_sum():
+    return hashlib.sha256(b"sia-ledger-genesis").hexdigest()
+
+
+def _validate_genesis_row(row, pub):
+    """Validate the one exact producer shape accepted as ledger genesis."""
+    if len(row) != 9:
+        raise ValueError("MALFORMED genesis ledger row")
+    if row[0] != "0" or row[2:7] != [
+            "GENESIS:init", "sia", "-", _genesis_sum(), "0"] \
+            or row[7] != anchor():
+        raise ValueError("ledger does not begin with the exact GENESIS:init row")
+    if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+                    r"[0-9]{2}:[0-9]{2}:[0-9]{2}Z", row[1]) is None:
+        raise ValueError("GENESIS:init timestamp is not canonical UTC")
+    try:
+        parsed = datetime.datetime.strptime(row[1], "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise ValueError("GENESIS:init timestamp is not canonical UTC") from exc
+    if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != row[1]:
+        raise ValueError("GENESIS:init timestamp is not canonical UTC")
+    return _validate_row(row, 0, anchor(), pub)
+
+
+def _read_exact_genesis(ledger, pub):
+    raw, info = _read_regular_bytes(
+        ledger, "ledger.tsv", MAX_LEDGER_BYTES)
+    rows, suffix, complete_size = _split_ledger(raw)
+    if suffix or complete_size != len(raw) or len(rows) != 1 \
+            or _row_bytes(rows[0]) != raw:
+        raise ValueError(
+            "incomplete initialized state has no exact single genesis ledger")
+    head = _validate_genesis_row(rows[0], pub)
+    return rows[0], head, info
+
+
+def _validate_existing_genesis(ledger, pub):
+    raw, _info = _read_regular_bytes(
+        ledger, "ledger.tsv", MAX_LEDGER_BYTES)
+    rows, _suffix, _complete_size = _split_ledger(raw)
+    if not rows:
+        raise ValueError("EMPTY ledger")
+    _validate_genesis_row(rows[0], pub)
+
+
+def _after_init_publication(_component):
+    """Test hook: publication is durable before this no-op is called."""
+
+
+def _init_presence(ledger, keyfile, pubfile, pinfile):
+    return tuple(os.path.lexists(path) for path in (
+        keyfile, pubfile, ledger, pinfile))
+
+
+def _refuse_nonprefix():
+    raise ValueError("incomplete initialized state is not an exact genesis prefix")
+
+def _cmd_init_locked(state):
     ledger, keyfile, pubfile, pinfile = _paths(state)
-    os.makedirs(state, exist_ok=True)
-    if not os.path.exists(keyfile):
-        sk = Ed25519PrivateKey.generate()
-        seed = sk.private_bytes_raw()
-        with open(os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
-            f.write(seed.hex() + "\n")
-        pub = sk.public_key().public_bytes_raw().hex()
-        _atomic_write(pubfile, pub + "\n")
-    if not os.path.exists(ledger) or not _read_rows(ledger):
-        gsum = hashlib.sha256(b"sia-ledger-genesis").hexdigest()
-        # genesis row written directly (seq 0, prev = anchor)
+    allowed_prefixes = {
+        (False, False, False, False),
+        (True, False, False, False),
+        (True, True, False, False),
+        (True, True, True, False),
+        (True, True, True, True),
+    }
+
+    while True:
+        present = _init_presence(ledger, keyfile, pubfile, pinfile)
+        if present not in allowed_prefixes:
+            _refuse_nonprefix()
+        if os.path.lexists(_pending_path(state)) and not all(present):
+            _refuse_nonprefix()
+
+        if not any(present):
+            sk = Ed25519PrivateKey.generate()
+            private_raw = sk.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption())
+            _publish_new(keyfile, private_raw.hex() + "\n", 0o600)
+            _after_init_publication("key.hex")
+            continue
+
         sk = _sk(keyfile)
-        stamp = _now()
-        eh = entry_hash(0, stamp, "GENESIS:init", "sia", "-", gsum, 0, anchor())
-        sig = sk.sign(bytes.fromhex(eh)).hex()
-        row = "\t".join(["0", stamp, "GENESIS:init", "sia", "-", gsum, "0", anchor(), sig])
-        _atomic_write(ledger, row + "\n")
-        _atomic_write(pinfile, f"1 {eh}\n")
+        signer_hex = sk.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw).hex()
+        if not present[1]:
+            _fsync_directory(state)
+            _publish_new(pubfile, signer_hex + "\n")
+            _after_init_publication("pub.hex")
+            continue
+
+        public_hex, pub = _read_public_key(pubfile)
+        if public_hex != signer_hex:
+            raise ValueError("SIGNING KEY DOES NOT MATCH PINNED PUBLIC KEY")
+        if not present[2]:
+            _fsync_directory(state)
+            stamp = _now()
+            genesis_head = entry_hash(
+                0, stamp, "GENESIS:init", "sia", "-", _genesis_sum(), 0,
+                anchor())
+            signature = sk.sign(bytes.fromhex(genesis_head)).hex()
+            row = [
+                "0", stamp, "GENESIS:init", "sia", "-", _genesis_sum(),
+                "0", anchor(), signature]
+            _publish_new(ledger, _row_bytes(row))
+            _after_init_publication("ledger.tsv")
+            continue
+
+        if not present[3]:
+            _row, genesis_head, _info = _read_exact_genesis(ledger, pub)
+            _fsync_directory(state)
+            _publish_new(pinfile, f"1 {genesis_head}\n")
+            _after_init_publication("head.pin")
+            continue
+
+        # Validate the signed origin before allowing ordinary chain recovery.
+        # This prevents a malformed-but-signed origin from authorizing any
+        # repair mutation merely because all four component names exist.
+        _validate_existing_genesis(ledger, pub)
+        _validated_chain(
+            state, require_pin=True, expected_public_hex=signer_hex)
+        _fsync_directory(state)
+        break
+
     print(f"sia-ledger: initialized at {state}")
-    print(f"  keeper {open(pubfile).read().strip()}")
+    keeper, _pub = _read_public_key(pubfile)
+    print(f"  keeper {keeper}")
     return 0
 
+
+def cmd_init(state):
+    with _ledger_lock(state):
+        return _cmd_init_locked(state)
+
 def cmd_append(state, action, arg1, arg2, sum_hex, size):
-    seq, head = _append_row(state, action, arg1, arg2, sum_hex, size)
+    with _ledger_lock(state):
+        seq, head = _append_row(state, action, arg1, arg2, sum_hex, size)
     print(f"sia-ledger: appended seq {seq}  head {head}")
     return 0
 
 def cmd_head(state):
-    ledger, *_ = _paths(state)
-    rows = _read_rows(ledger)
-    if not rows:
-        print("0 " + ("0" * 64)); return 0
-    last = rows[-1]
-    head = entry_hash(last[0], last[1], last[2], last[3], last[4], last[5], last[6], last[7])
+    with _ledger_lock(state):
+        rows, head, _ledger_info = _validated_chain(
+            state, require_pin=True)
     print(f"{len(rows)} {head}")
     return 0
 
 def cmd_verify(state, quiet=False):
-    ledger, keyfile, pubfile, pinfile = _paths(state)
-    rows = _read_rows(ledger)
-    if not rows:
-        print("sia-ledger: EMPTY ledger", file=sys.stderr); return 1
-    pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(open(pubfile).read().strip()))
-    expected_seq = 0
-    expected_prev = anchor()
-    ok = True
-    for r in rows:
-        if len(r) != 9:
-            ok = False
-            if not quiet: print(f"  seq {r[0] if r else '?'}  MALFORMED ({len(r)} cols)")
-            break
-        seq, stamp, action, a1, a2, sum_hex, size, prev, sig = r
-        links = (int(seq) == expected_seq and prev == expected_prev)
-        eh = entry_hash(seq, stamp, action, a1, a2, sum_hex, size, prev)
-        try:
-            pub.verify(bytes.fromhex(sig), bytes.fromhex(eh))
-            sig_ok = True
-        except Exception:
-            sig_ok = False
-        if not (links and sig_ok):
-            ok = False
-            if not quiet:
-                why = []
-                if not links: why.append("CHAIN BROKEN")
-                if not sig_ok: why.append("SIG BAD")
-                print(f"  seq {seq}  " + "  ".join(why))
-            break
+    try:
+        with _ledger_lock(state):
+            rows, _head, _ledger_info = _validated_chain(
+                state, require_pin=True)
+        ok, detail = True, ""
         if not quiet:
-            print(f"  seq {seq}  ok  {action}")
-        expected_seq += 1
-        expected_prev = eh
-    # anti-rollback pin check
-    if ok and os.path.exists(pinfile):
-        try:
-            pc, ph = open(pinfile).read().split()
-            head = entry_hash(rows[-1][0], rows[-1][1], rows[-1][2], rows[-1][3],
-                              rows[-1][4], rows[-1][5], rows[-1][6], rows[-1][7])
-            if int(pc) != len(rows) or ph != head:
-                ok = False
-                if not quiet: print("  PIN MISMATCH — possible rollback")
-        except Exception:
-            pass
+            for row in rows:
+                print(f"  seq {row[0]}  ok  {row[2]}")
+    except Exception as exc:
+        ok, detail = False, str(exc)
+        if not quiet:
+            print(f"  {detail}")
     print("VERDICT: " + ("LEDGER VERIFIED." if ok else "LEDGER FAILED VERIFICATION."))
     return 0 if ok else 1
+
+
+def cmd_contains(state, action, arg1, arg2, sum_hex, size):
+    """Check an exact keeper-accepted row under the ledger lease."""
+    with _ledger_lock(state):
+        _validate_entry_fields(action, arg1, arg2, sum_hex, size)
+        rows, _head, _ledger_info = _validated_chain(
+            state, require_pin=True)
+        found = any(_row_matches(
+            row, action, arg1, arg2, sum_hex, size) for row in rows)
+    return 0 if found else 3
+
+
+def cmd_settle(state, action, arg1, arg2, sum_hex, size):
+    """Append one exact occurrence only if absent, under one keeper lease."""
+    with _ledger_lock(state):
+        _validate_entry_fields(action, arg1, arg2, sum_hex, size)
+        rows, _head, _ledger_info = _validated_chain(
+            state, require_pin=True)
+        if any(_row_matches(
+                row, action, arg1, arg2, sum_hex, size) for row in rows):
+            return 0
+        seq, head = _append_row(state, action, arg1, arg2, sum_hex, size)
+    print(f"sia-ledger: appended seq {seq}  head {head}")
+    return 0
 
 def main(argv):
     if len(argv) >= 2 and argv[1] == "anchor":
         print(anchor()); return 0
     if len(argv) < 3:
-        print("usage: sia-ledger <init|append|verify|head|anchor> <statedir> [...]", file=sys.stderr)
+        print("usage: sia-ledger <init|append|contains|settle|verify|head|anchor> <statedir> [...]", file=sys.stderr)
         return 2
     cmd = argv[1]
     state = argv[2]
     if cmd == "init":   return cmd_init(state)
     if cmd == "head":   return cmd_head(state)
     if cmd == "verify": return cmd_verify(state, quiet=("--quiet" in argv))
+    if cmd == "contains":
+        # contains <state> <action> <arg1> <arg2> <contentHash> <size>
+        return cmd_contains(state, argv[3], argv[4], argv[5], argv[6],
+                            int(argv[7]))
+    if cmd == "settle":
+        # settle <state> <action> <arg1> <arg2> <contentHash> <size>
+        return cmd_settle(state, argv[3], argv[4], argv[5], argv[6],
+                          int(argv[7]))
     if cmd == "append":
         # sia-ledger append <state> <action> <arg1> <arg2> <contentHash> <size>
         return cmd_append(state, argv[3], argv[4], argv[5], argv[6], int(argv[7]))
@@ -214,4 +933,9 @@ def main(argv):
     return 2
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        exit_code = main(sys.argv)
+    except (IndexError, OSError, OverflowError, UnicodeError, ValueError) as exc:
+        print(f"sia-ledger: REFUSED {exc}", file=sys.stderr)
+        exit_code = 1
+    sys.exit(exit_code)

@@ -1,5 +1,281 @@
 # Changelog
 
+## 1.3.0 — 2026-08-30
+
+- **Non-destructive stability and rehearsal** — nodes and learned edges now
+  carry an exponential retention lens that changes retrieval salience, never
+  evidence retention. Safety-class and operator-pinned pages enter a
+  deterministic SM-2 schedule; interaction-derived quality tiers are labeled
+  as proxies, and schedule/reinforcement state advances only after a
+  successful re-embedding. `sia memory`, pin/unpin, and `sia rehearse` expose
+  the state without introducing another mind-state writer. Numeric state is
+  finite and operationally capped, pin-only review state disappears on unpin,
+  and interval calculation/lapse behavior follows the original SM-2 ordering.
+- **Resident-agent memory surface** — the stdio MCP server now advertises
+  static status/thought/calibration/cortex resources plus the guarded
+  `sia://memory/{slug}` template. Tools carry bounded schemas, behavior
+  annotations, structured content, and protocol errors. Agent notes use
+  immutable mode-0600 request files; the brainstem materializes each note as
+  model-origin prose and acknowledges the exact processed inode only after
+  corpus commit, index sync, and durable queue removal. Every SIA-managed
+  PGLite call shares one cross-process owner lease; full pulse/dream cycles and
+  explicit operator corpus mutations share a transaction lease, and a lifetime
+  brainstem lease refuses a second resident;
+  the separate `sia_search` tool provides no-touch read-only retrieval for
+  audits and MCP evaluations.
+  It supports legacy negotiation through `2025-11-25` plus the stateless
+  `2026-07-28` `server/discover` protocol, with revision-aware batch refusal,
+  validated optional client metadata, modern result metadata, and cache-scope
+  hints. Request-only notifications never execute tools, and resource failures
+  retain protocol-level not-found, invalid-request, and infrastructure
+  distinctions. Newline requests, batch cardinality, captured CLI output, and
+  serialized responses are independently bounded.
+- **Reproducible, ownership-aware bootstrap** — SIA installs a private pinned
+  Bun, fetches gbrain by its full commit, verifies the frozen upstream lockfile,
+  and compiles the installed gbrain executable from that checkout. Bun and
+  Ollama archives are SHA-256 verified before extraction; the Ollama service is
+  checked for the expected executable, service PID, loopback-only listener,
+  model manifest, and every referenced content-addressed blob. Install and
+  uninstall use lifecycle/brainstem/corpus/PGLite leases, no-follow managed-root
+  checks, content receipts, durable generation-bound no-clobber file/tree
+  publication, exact legacy-corpus recognition plus explicit consent for
+  unrecognized adoption, durable generation/HEAD-bound `corpus-bootstrap` and
+  `corpus-adoption` intents, off-path generation-bound no-clobber publication
+  for a fresh absent corpus, and v2 corpus receipts bound to the canonical
+  root's stable device/inode/mode/owner identity. Exact path-only receipts
+  migrate once through a crash-resumable generation-CAS transition held under
+  both lifecycle and corpus-owner leases; pre-lock inspection is read-only,
+  mismatched v2 roots never auto-rebind, and the returned legacy generation is
+  verified before retirement. The bootstrap also provides an exact crash-resumable
+  `key → matching public key → signed GENESIS:init → matching head`
+  ledger prefix, and an off-path `gbrain-bootstrap` with durable initialization
+  and probe phases, post-probe generation binding, generation-CAS publication,
+  and attributed recovery. The installer exercises
+  actual pidfd, Ed25519 raw-signing, `renameat2`, and
+  `O_TMPFILE`/`linkat` capabilities before managed-payload activation.
+  Manual-only MCP client mutation retains exact inspection
+  and non-ownership guards; plugin discovery is exact after an Omarchy rescan;
+  external-command capture and deadlines are bounded; removal preserves
+  consumers. A
+  failed late upgrade leaves the brainstem disabled rather than running mixed
+  dependencies. CI discovers the complete test suite, checks all Python entry
+  points, validates shell syntax, and installs hash-pinned test dependencies.
+- **Population-aware calibration guardrails** — Brier scores are recomputed
+  with deterministic decimal arithmetic; single cases and small series cannot emit a
+  judgment-quality headline, sparse confidence bins are withheld, both
+  outcome classes are required for the machine-readable monitoring-eligibility
+  flag, and excluded UNRESOLVABLE or malformed grades stay visible. Labeled
+  case/aggregate metrics remain visible below the gate, which is a descriptive
+  UI policy rather than statistical significance.
+- **Bounded natural-history projections** — take and intent pages remain the
+  source of truth while owner-private digest-bound direct rows, capped open
+  sets, append-only paginated catalogs, and sharded calibration sufficient
+  statistics remove whole-history scans from pulse, due, intent, readiness,
+  and scorecard paths. Creates/closes use durable page/projection journals;
+  signed grades project only after their exact keeper row is observable.
+  Existing corpora enter through resumable directory-generation-bound pages
+  with journaled-mutation overlay and a no-addition convergence pass. Unsigned
+  legacy resolutions stay visible outside score denominators, and CLI history
+  is cursor-paginated. Recurring bounded authority scan/catalog-sweep
+  generations now reconcile external edits, repairs, replacements, and
+  deletions. WAL-backed tombstones subtract exact prior sufficient statistics;
+  edited resolved pages regain a scored contribution only when their exact new
+  bytes have an observable signed grade, and readiness/calibration refuse
+  incomplete or unstable authority checkpoints. Ready take and intent
+  checkpoints now enter a shared, explicitly incomplete audit cycle before
+  reading any row. Their catalog limits and directory identities are pinned
+  across crash-resumable slices; tombstones advance each cursor, a faster
+  participant waits ready for its sibling instead of rotating independently,
+  and global ready returns only after stable reloads find no catalog growth or
+  pending transaction.
+  Same-inode edits after the final observation remain an explicit nonclaim
+  until a later pinned audit reaches them.
+- **Explicit origin boundary** — new persisted memories use only `evidence`,
+  `derived`, or `model`; outside the signed take cutover below, missing,
+  malformed, or ambiguous legacy metadata is exposed as `legacy-unlabeled`,
+  never promoted to evidence, and weighted like model prose.
+  Judge-grade/ponder thoughts and agent/operator notes are
+  `model`; deterministic Brier and ledger-transition arithmetic remain
+  separate derived operations. Model and legacy-unlabeled thoughts cannot
+  mint typed relations. JACKAL convenience-ledger rows and receipt filenames
+  are explicitly unverified `derived` observations: claimed formal status is
+  not inherited, categorical legacy assurance is suppressed, and these pages
+  cannot serve as grading evidence. The retired formal glyph no longer implies
+  front-door receipt verification from file presence.
+- **Signed legacy-take cutover and read gate** — the required installer
+  first-light pulse labels current-schema pre-origin open takes
+  `origin: derived` and resolved takes `origin: model`, making historical judge
+  explanations inert. Exact v1.2 producer pages enter a separately labeled
+  compatibility normalization; malformed graded pages refuse instead of being
+  guessed, and invalid legacy open deadlines remain visibly blocked from
+  grading. Owner-private journals in
+  `~/.local/state/sia/take-migrations/` bind source and target digests. The
+  exact target is signed as `MIGRATE:take-origin` with `model-inert-v1` or
+  `legacy-v1-normalize` before `sync_needed` is persisted and the corpus page
+  is atomically replaced. First light then commits git, syncs PGLite, exports
+  the graph, and clears the marker last, before desktop/MCP/service integration.
+  Memory-dependent CLI and MCP reads refuse until a successful `sia pulse` has
+  reconciled publication; status keeps a live readiness line over its
+  last-published pulse/graph snapshot.
+- **Generalized write-ahead publication and generation-stable reads** — every
+  shipped SIA corpus writer — `pulse`, `dream`, `take`, `intent`, `grade`, and
+  `ponder` — now holds the corpus transaction lease and persists `sync_needed`
+  publication debt before any page create, rewrite, or unlink. The marker
+  clears only after git commit or clean verification, PGLite sync, and graph
+  export all succeed. Readiness also blocks pending
+  `~/.local/state/sia/grade-transactions/` journals. Gated CLI commands retain
+  the lease from the readiness check through the returned result, and MCP
+  memory calls inherit that subprocess boundary, so each answer comes from the
+  same corpus generation. Pulse sequence reservation shares the heartbeat's
+  lease, and DREAM settles between memory-backed phases and around each grade
+  before later indexed-memory work.
+- **Custom-sense field privacy** — JSONL custom senses now refuse and
+  digest-bind a physical record whose configured field is absent. They never
+  fall back to rendering the raw object or unrelated fields, and the next
+  record remains reachable after the refusal is signed.
+- **Fail-closed grading evidence** — completed-empty evidence retrieval may be
+  judged UNRESOLVABLE, while a failed or malformed retrieval now refuses
+  before invoking the judge, writes no grade, and leaves the take open.
+- **Honest nightly retrieval tripwire** — the small date-seeded legacy probe
+  now exports explicitly heuristic slug-match/reciprocal-rank fields and
+  non-claims. Dream receipts, thoughts, and the cockpit label it as slug drift;
+  only the signed-ledger QA benchmark scores reader answers. Pre-bounded
+  oversized or malformed trend history is upgraded from a stable no-follow
+  tail, compacted to recent complete rows, and visibly marked as legacy
+  truncation without stranding receipt settlement or readiness.
+- **Signed-ledger QA self-benchmark** — keeper-accepted ledger snapshots with
+  observed no-follow byte, inode, metadata, and verifier-digest checks
+  now generate extraction, temporal, update, multi-event aggregation, and abstention
+  questions with row/head provenance. Question-only exports are separated
+  from mode-0600 digest-bound answer keys outside the corpus. Source slugs,
+  observed timestamps, chain/file provenance, and witness bindings live only
+  in owner-private artifacts; the mode-0600 private manifest also binds the
+  allow-listed public manifest, public IDs are answer-independent, and the
+  publication audit canonicalizes compatibility-Unicode plus repeated URL/HTML
+  encodings before checking private dates and slugs. Conflict grouping and IDs
+  share that consumer view; unsafe control, bidi-format, surrogate, and
+  noncharacter text cannot enter public question/XML fields.
+  Present-question retrieval now requires a returned source-page chunk to
+  carry its private digest-bound exact event excerpt; page slug/title matches
+  alone are wrong evidence, and aggregate counts require all contributing
+  event excerpts in the scored window.
+  Thresholds are fit only on a deterministic calibration split, unidentified
+  thresholds are unscored, and missing answers never count as `ABSTAIN`.
+  Unknown, rejected, and empty runs refuse. Source-page bytes are digest-bound
+  into dataset identity and revalidated before and after live queries under the
+  corpus-owner lease. The reserved Custos built-in retains its legacy
+  canonical-Unix, full-signed-line SHA-256 grammar and records that format and
+  its native hashes in provenance; other/custom chains remain strict
+  attest-ledger v1. Custom-chain intake also binds the configured verifier to
+  the executable position (or the immediate script operand of SIA's current
+  Python interpreter) and rejects merely mentioning it later in an unrelated
+  command. Exact ledger argv membership does not prove that arbitrary custom
+  code semantically consumes the argument. The checks explicitly do not claim
+  to exclude same-user in-place ABA between observations.
+- **Domain-typed corpus edges** — the graph exporter now loads every
+  `link_types[].inference.regex` rule from SIA's validated schema pack and
+  applies it to explicit wikilinks at Markdown-record scope. Link targets are
+  masked before matching (so an entity named `diagnose-crash` cannot mint a
+  crash relation), only explicitly `derived` integrity/healing/crash/refusal
+  thoughts can inherit their cited evidence sentence, and model/legacy thoughts
+  and entity-description pages remain neutral. A malformed/unsafe pack falls
+  back to `mentions` while marking the graph snapshot partial. The standard
+  gbrain person/company gazetteer lane now runs separately after each sync
+  (`--by-mention --ner`, source-scoped to SIA).
+- **Bounded long-horizon projections** — the nightly slug tripwire now probes
+  only its fixed pages and bounded organ directories, with no recursive corpus
+  walk and an explicit refusal when a negative probe cannot be established.
+  Graph publication uses a durable, no-follow directory cursor and retains
+  only the capped cockpit window; supported corpus writers restart that
+  projection before mutation, and publication/read readiness remain closed
+  until the generation is fully scanned without refusal. Valid nodes and
+  unique display edges beyond the deterministic cockpit caps now publish as
+  complete-with-omissions, with separate counts and an explicit non-absence
+  boundary; PGLite remains the full recall surface. Weekly
+  consolidation likewise advances a durable bounded cursor, persists exact
+  per-day source claims before any epoch mutation, and never treats a partial
+  directory page as evidence that a source disappeared. Its eligibility
+  cutoff is pinned for the entire incomplete generation and rolls forward only
+  after the cursor and admitted work converge. First-light may drain
+  bounded graph batches, but has a fixed convergence ceiling and preserves
+  named debt on refusal. An incomplete consolidation generation now retains
+  its originating DREAM marker and exact ledger binding; each pulse recovers
+  one bounded unit, while the marker remains unapplied and unsigned through
+  every claim batch and post-removal rescan. Readiness returns only after the
+  persisted cursor, candidate queue, and claims converge. Every gbrain query,
+  sync, extraction, embedding, and DREAM invocation now shares one combined
+  stdout/stderr byte ceiling, strict UTF-8 admission, deadline, and fresh
+  process-group cleanup; output overflow, malformed encoding, and surviving
+  descendants refuse without unbounded resident-process capture.
+- The schema pack now declares the `skill` entity type introduced with the
+  skills organ, preventing skill descriptions from being treated as relation
+  records.
+- **Forecast and keeper integrity** — new takes and queued proposals require a
+  deadline strictly after their UTC commit date. The tool-free Claude grader
+  is disabled by default, requires an explicit model identifier when enabled,
+  records `claude:<model-id>`, and is blinded to forecast confidence; Codex
+  grading refuses at the local-read boundary. Judge input and combined output
+  are bounded with concurrent pipe draining and process-group termination;
+  invalid answer encoding refuses. Take/proposal records reject
+  non-finite confidence, neutralize terminal control characters, and use
+  bounded aggregate spools.
+- **Crash-safe signed transitions and bounded state** — the SIA ledger binds
+  its signer to the public key before mutation, durably journals one pending
+  row, appends with `O_APPEND` plus `fsync`, atomically advances the pin, and
+  repairs only an exact independently verified torn suffix. Pulse and dream
+  lifecycle facts first enter a bounded immutable transition queue, survive a
+  keeper failure, and acknowledge source requests only after the exact signed
+  row exists. Note, touch, proposal, and transition queues have both item and
+  aggregate-byte ceilings; malformed or symlinked authoritative state refuses
+  without following or silently resetting it. Configured and partially
+  installed evidence chains remain visible as refusals instead of silently
+  shrinking verification scope. Transition occurrence IDs distinguish
+  identical lifecycle facts while exact crash recovery remains idempotent;
+  pulse sequences are reserved durably before effects.
+- **Fixed-slot publication and touch-tail recovery** — corpus/state snapshots,
+  take journals, agent requests, mind state, and benchmark artifacts now use
+  one owner-private, no-follow, same-filesystem staging slot outside each
+  scanned authority instead of randomized sibling temporary files. A killed
+  writer can leave only that fixed slot, and retries close every file and
+  directory `fsync` boundary. Touch producers use bounded atomic whole-file
+  RMW under their queue lease. A legacy unterminated physical record is first
+  recorded by exact generation, offset, full-file digest, and suffix digest;
+  only after revalidation is that suffix removed. Literal LF frames records,
+  complete malformed rows remain refusal debt, and active plus draining
+  generations share fixed byte and physical-record ceilings. Destructive purge
+  now validates, lease-checks, removes, and parent-fsyncs the two fixed slots
+  outside the retained roots; an unsafe or unexpected slot is preserved and
+  makes purge incomplete instead of leaving a crash payload behind unnoticed.
+- **Retrievable SIA lifecycle facts** — a keeper-verified base sense projects
+  signed non-`PULSE:*`, non-`DREAM:bench` rows into `events/sia/`. Fresh installs
+  sign the truthful `INSTALL:runtime` and `INSTALL:index` facts, providing a
+  standalone corpus with answer-bearing held-out benchmark observations without
+  feeding ingest or benchmark output back into itself.
+- **Fail-closed ingestion and nightly publication** — journal ingestion binds
+  a bounded cursor catalog to a separately bounded full-row pass. Valid
+  prefixes can settle; the first malformed or over-bound row advances only
+  after an exact cursor re-query and a durable named refusal. Catalog churn,
+  an incomplete row, timeout, or process failure retains the prior cursor.
+  Claude/Codex metadata trees persist every admitted directory
+  generation and revalidate the bounded catalog before a clean generation may
+  prune disappeared sessions; nested churn or refusal taints the whole cycle.
+  Notification tails advance only over the processed batch; authoritative
+  cursors, memo, and thought stores use no-follow regular-file reads. Untrusted
+  summaries are control-stripped and structurally inert before
+  Markdown/QML/CLI publication. A skipped or failed
+  gbrain dream preserves the last successful timestamp for retry, while final
+  corpus commit, index sync, and graph publication failures become signed,
+  visible errors instead of being discarded; graph publication exceptions are
+  recorded as `graph-fail`, not success. Failed index sync or graph export
+  leaves durable publication debt that an idle pulse must settle; WORLDLINE
+  uses a stable composite pagination cursor; consolidation binds source-byte
+  lineage and replays interrupted cleanup without double-counting.
+  Skill manifests now use a single bounded content capture with no-follow
+  before/after/current-path identity checks. The captured inert description,
+  head digest, and file metadata ride in the cursor snapshot and event
+  occurrence; rendering never reopens the manifest, and any unstable manifest
+  makes its whole root partial without proving a removal.
+
 ## 1.2.0 — 2026-08-29
 
 The skills-organ release: the brain now knows what its agents can do.
@@ -7,10 +283,14 @@ The skills-organ release: the brain now knows what its agents can do.
 - **Skills organ (15th sense)** — `sense_skills` scans the personal
   skill roots (`~/.claude/skills`, `~/.agents/skills`, `~/.omp/skills`,
   `~/.copilot/skills`, `~/.config/agents/skills`; override via config
-  `skills.roots`) every pulse, dedups by skill name, and diffs against
+  `skills.roots`) every pulse, admitting only real directories directly under
+  each real root with a real directly contained regular `SKILL.md`; root,
+  child, and manifest opens use no-follow semantics. It dedups by skill name
+  and diffs against
   a snapshot carried in the cursor state — so the snapshot commits only
   after the corpus write, like every other sense. Installs, updates
-  (SKILL.md mtime), and removals become events under `organs/skills`,
+  (captured `SKILL.md` identity and bounded-head digest), and removals become
+  events under `organs/skills`,
   and every skill is its own evidence page `skills/<name>` carrying the
   `description:` from its frontmatter (YAML block scalars `>`/`|`
   handled). First catalog on this box: 35 skills, one pulse.
@@ -33,10 +313,10 @@ deterministic, none adding a cognitive claim:
   history (prior 0.70 under thin history). Proposals queue; only
   `sia take --accept` commits. The calibration population now grows
   by itself without loosening propose-don't-mint.
-- **Nightly recall self-bench** — the dream runs a date-seeded sample
-  of the corpus-ground-truth question set and appends hit@5/MRR to a
-  trend the cockpit plots (BELIEFS → RECALL TREND). A falling line
-  says: run the full `sia bench`.
+- **Nightly retrieval drift tripwire** — the dream runs a date-seeded sample
+  of heuristic corpus-conditioned slug probes and appends slug-match@5 and
+  reciprocal slug rank to the trend the cockpit plots (BELIEFS → SLUG DRIFT).
+  It is not an answer-quality score; drift says to run the full `sia bench`.
 - **Cross-organ coincidence thoughts** — two organs breaking their own
   empirical bands in the same window becomes a ⋈ thought stating both
   counts and the pair's sighting ordinal — an observation, never a
