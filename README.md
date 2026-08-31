@@ -156,6 +156,12 @@ explicit readiness probe follows the public `Process` `started`/`running`/
 `exited` lifecycle: a local launcher that cannot start is shown as `LIVE
 BLOCKED` without preventing the cockpit from loading.
 
+### v1.3.4 cockpit polish
+
+v1.3.4 removes a benign Quickshell width-binding warning from the bounded
+workspace's `off-map` marker. The marker still reserves space only when shown;
+the established cockpit layout remains unchanged.
+
 ### v1.3.2 cockpit fidelity pass
 
 v1.3.2 keeps the established Hermes Star Map and three-column cockpit rather

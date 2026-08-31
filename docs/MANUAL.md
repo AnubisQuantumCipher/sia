@@ -88,6 +88,7 @@ itself from loading.
   incumbents resist eviction). Click an in-window slot to lock it in the
   graph. `off-map` entries are retained in the mind but outside the bounded
   display window, so the cockpit does not pretend they can be selected there.
+  Their label reserves row space only while it is visible.
 - **ORGANS** — every sense, sorted by today's activity, with last-event age.
 - **EVIDENCE CHAINS** — per-chain verification verdicts, SIA's own signed
   ledger head, last dream, and a **verify now** button that re-runs the

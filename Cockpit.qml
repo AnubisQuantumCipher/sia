@@ -1007,8 +1007,9 @@ Item {
                     id: wsText
                     text: "◉ " + Model.slugLabel(wsRow.modelData)
                     anchors.left: parent.left
-                    anchors.right: wsMapState.left
-                    anchors.rightMargin: Style.space(6)
+                    anchors.right: parent.right
+                    anchors.rightMargin: wsMapState.visible
+                      ? wsMapState.width + Style.space(6) : 0
                     elide: Text.ElideRight
                     color: !wsRow.onMap ? Qt.alpha(root.fg, 0.45)
                       : root.selectedId === wsRow.modelData
@@ -1020,7 +1021,6 @@ Item {
                     id: wsMapState
                     visible: !wsRow.onMap
                     anchors.right: parent.right
-                    width: visible ? implicitWidth : 0
                     textFormat: Text.PlainText
                     renderType: Text.NativeRendering
                     text: "off-map"
