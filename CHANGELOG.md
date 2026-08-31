@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.3 — 2026-08-31
+
+- **Cockpit runtime compatibility hotfix** — the explicit live-readiness
+  control now uses Quickshell `Process`'s public `started`/`running`/`exited`
+  lifecycle rather than an unavailable Qt error callback. An unavailable
+  local `sia` command therefore becomes an explicit `LIVE BLOCKED` result,
+  and the whole v1.3 cockpit loads on the installed Omarchy shell.
+
 ## 1.3.2 — 2026-08-31
 
 - **Cockpit fidelity pass** — preserves the graph-first Hermes Star Map and

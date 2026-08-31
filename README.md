@@ -149,6 +149,13 @@ cannot control what those callers do with returned content.
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.3.3 cockpit runtime hotfix
+
+v1.3.3 makes the v1.3 cockpit load on the installed Quickshell runtime. Its
+explicit readiness probe follows the public `Process` `started`/`running`/
+`exited` lifecycle: a local launcher that cannot start is shown as `LIVE
+BLOCKED` without preventing the cockpit from loading.
+
 ### v1.3.2 cockpit fidelity pass
 
 v1.3.2 keeps the established Hermes Star Map and three-column cockpit rather
