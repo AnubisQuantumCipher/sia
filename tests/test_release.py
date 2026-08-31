@@ -2025,10 +2025,39 @@ preflight_corpus locked
                 environment.update(extra_environment)
             script = ("set -euo pipefail\n" + active_prefix + variables
                       + selected_block)
-            return subprocess.run(
-                ["bash", "-s", "corpus-bootstrap-test"], input=script,
-                env=environment, text=True, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, check=False, timeout=30)
+            script_path = None
+            try:
+                # The generated extractor is intentionally large.  Source it from
+                # an owner-private file so inspectors run with ordinary stdin
+                # semantics instead of inheriting the test program's script pipe.
+                with tempfile.NamedTemporaryFile(
+                        "w", encoding="utf-8", dir=home,
+                        prefix=".corpus-bootstrap-test-", suffix=".sh",
+                        delete=False) as stream:
+                    script_path = stream.name
+                    stream.write(script)
+                # Match `bash -s corpus-bootstrap-test`: preserve its `$0` and
+                # `$1` for the extracted fixture while keeping the path quoted.
+                environment["SIA_TEST_CORPUS_BOOTSTRAP_SCRIPT"] = script_path
+                return subprocess.run(
+                    ["bash", "-c",
+                     'source "$SIA_TEST_CORPUS_BOOTSTRAP_SCRIPT"',
+                     "bash", "corpus-bootstrap-test"],
+                    env=environment, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False, timeout=30)
+            finally:
+                if script_path is not None:
+                    os.unlink(script_path)
+
+        positional_contract = (
+            'test "$0" = bash\n'
+            'test "$1" = corpus-bootstrap-test\n')
+        with tempfile.TemporaryDirectory() as home:
+            positional = run(
+                home, positional_contract + block,
+                extra_environment={
+                    "SIA_TEST_CORPUS_BOOTSTRAP_SCRIPT": "/dev/null"})
+            self.assertEqual(positional.returncode, 0, positional.stderr)
 
         with tempfile.TemporaryDirectory() as home:
             installed = run(home)
@@ -3892,9 +3921,14 @@ remove_managed_skill
             try:
                 with open(f"/proc/{pid}/stat", encoding="ascii") as stream:
                     fields = stream.read().split()
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # A child may exit after /proc opens but before its state is
+                # read. It is no longer a live or zombie descendant.
                 return False
             return len(fields) > 2 and fields[2] != "Z"
+
+        with mock.patch("builtins.open", side_effect=ProcessLookupError):
+            self.assertFalse(non_zombie(1))
 
         for script_name in ("install.sh", "uninstall.sh"):
             script = _read(script_name)
