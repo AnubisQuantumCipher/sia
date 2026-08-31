@@ -12,7 +12,7 @@ typed knowledge graph with **local** embeddings. It remembers, connects,
 thinks, dreams nightly, makes falsifiable predictions, and is **graded**
 on them. You can watch it think, and you can ask it anything.
 
-![The SIA cockpit](assets/cockpit.png)
+![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
 
 The memory-content runtime stays on your machine: ingestion, indexing,
 retrieval, and embedding make no cloud calls. The judge is disabled by default.
