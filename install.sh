@@ -4573,14 +4573,20 @@ import sys
 root = sys.argv[1]
 legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
                 "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
+                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+                   "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v3_names = modern_v2_names + ("siasenses.py",)
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
-names = modern_names if modern else legacy_names
-digest = hashlib.sha256(
-    b"sia-runtime-v2\0" if modern else b"sia-runtime-v1\0")
+v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
+if v3:
+    names, salt = modern_v3_names, b"sia-runtime-v3\0"
+elif modern:
+    names, salt = modern_v2_names, b"sia-runtime-v2\0"
+else:
+    names, salt = legacy_names, b"sia-runtime-v1\0"
+digest = hashlib.sha256(salt)
 uid = os.geteuid()
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
@@ -6639,7 +6645,7 @@ SIA_RELEASE_FILES=(
   manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
   uninstall.sh assets/cockpit.png bin/sia bin/sia-brainstem bin/sia-ledger
-  bin/sia-mcp bin/siabench.py bin/sialib.py bin/siamind.py bin/siaqueue.py
+  bin/sia-mcp bin/siabench.py bin/sialib.py bin/siasenses.py bin/siamind.py bin/siaqueue.py
   bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
 )
@@ -7280,7 +7286,7 @@ fi
 
 step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
-for runtime_module in sialib.py siamind.py siatakes.py siabench.py siaqueue.py; do
+for runtime_module in sialib.py siasenses.py siamind.py siatakes.py siabench.py siaqueue.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done

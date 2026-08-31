@@ -3444,6 +3444,42 @@ class EvidenceCursorHealth(unittest.TestCase):
 
 
 class SkillSenseContainment(unittest.TestCase):
+    def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
+        first = _load("sialib_sense_alias_first",
+                      os.path.join(BIN, "sialib.py"))
+        second = _load("sialib_sense_alias_second",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as root:
+            first_home = os.path.join(root, "first")
+            second_home = os.path.join(root, "second")
+            first_log = os.path.join(root, "first.log")
+            second_log = os.path.join(root, "second.log")
+            with open(first_log, "w", encoding="utf-8") as stream:
+                stream.write("first alias evidence\n")
+            with open(second_log, "w", encoding="utf-8") as stream:
+                stream.write("second alias evidence\n")
+            first.HOME, second.HOME = first_home, second_home
+            first.CONFIG = {
+                "skills": {"roots": ["first-skills"]},
+                "custom_senses": [{"name": "first", "path": first_log}],
+            }
+            second.CONFIG = {
+                "skills": {"roots": ["second-skills"]},
+                "custom_senses": [{"name": "second", "path": second_log}],
+            }
+            first_events, first_errors = first.sense_custom({"custom.first": 0})
+            second_events, second_errors = second.sense_custom({"custom.second": 0})
+            self.assertEqual(first_errors, [])
+            self.assertEqual(second_errors, [])
+            self.assertIn("first alias evidence", first_events[0].summary)
+            self.assertIn("second alias evidence", second_events[0].summary)
+            self.assertEqual(first._configured_skill_roots(), [
+                os.path.join(first_home, "first-skills")])
+            self.assertEqual(second._configured_skill_roots(), [
+                os.path.join(second_home, "second-skills")])
+            self.assertIs(first.SENSES[-1], first.sense_custom)
+            self.assertIs(second.SENSES[-1], second.sense_custom)
+
     def test_skill_snapshot_captures_once_with_digest_and_description(self):
         sialib = _load("sialib_skill_single_capture",
                        os.path.join(BIN, "sialib.py"))

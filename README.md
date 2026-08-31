@@ -206,6 +206,14 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.3.7 marketplace hardening
+
+v1.3.7 prepares SIA's public Omarchy plugin release without changing the
+graph-first Cockpit: sensing is now an ordinary audited runtime module, and
+the installer recognizes an existing v2 runtime before atomically publishing
+the complete v3 set. The marketplace lifecycle is explicit—Omarchy enables the
+surface, then SIA's installer brings up the resident brain.
+
 ### v1.3.6 cockpit finish
 
 v1.3.6 brings the workspace lock's hover help into the cockpit itself. Its
@@ -283,7 +291,7 @@ in the [Whitepaper](docs/WHITEPAPER.md).
 ## Install (Omarchy)
 
 ```bash
-omarchy plugin add https://github.com/AnubisQuantumCipher/sia
+omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 cd ~/.config/omarchy/plugins/khephri.sia && ./install.sh
 ```
 
@@ -308,6 +316,13 @@ relying on that registration. Any entry in that directory conservatively
 preserves the CLI/runtime during uninstall; remove it only after retiring the
 corresponding external consumer. Rerunning the installer after a manual named-
 harness registration lets it inspect and guard the exact external registration.
+
+`omarchy plugin add` validates, clones, and enables SIA's Quickshell surfaces;
+it deliberately does **not** run `install.sh`. The explicit second command is
+what installs the resident brainstem, CLI, local toolchain, and user services.
+After `omarchy plugin update khephri.sia`, rerun `./install.sh` from that
+plugin directory so the runtime generation and its ownership receipt advance
+together.
 
 After installation, the supported clients can be registered explicitly with
 the same stdio command the installer prints:
@@ -652,7 +667,9 @@ files and unowned runtime trees require the corresponding printed
 SIA-marker-owned Bun/gbrain trees may be upgraded or repaired automatically,
 with the previous tree retained at a printed sibling path. The runtime receipt
 hashes only the allowlisted shipped runtime members and requires each of those
-names to be a regular file; it does not attest to extra entries. Replacement
+names to be a regular file; it does not attest to extra entries. The current
+v3 member set includes `siasenses.py`, while a complete older v1/v2 tree stays
+recognizable only when that child is absent. Replacement
 and removal archive the complete prior runtime tree, including extras, at a
 printed sibling path.
 
@@ -767,20 +784,16 @@ its other fields are never rendered into memory.
   citation, the measurement instruments (`sia bench`,
   `sia judge-audit`), and the verification record.
 
-### Community directory status
+### Omarchy marketplace readiness
 
 SIA's public repository, root `manifest.json`, README, MIT license,
-installation/removal paths, and explicit degradation states provide the
-repository-side artifacts requested by the publishing guide. Release
-preparation included a successful local `omarchy plugin validate .` run; that
-result is not a commit-bound attestation, so rerun it against the exact public
-submission commit. The intended listing identity remains `khephri.sia`,
-category `System`. Publication is not automatic, and SIA is not claiming to be
-listed: the maintainer must review the exact submission and asset-ownership
-checklist, approve it, then open the issue through the
-[official Omarchy publishing workflow](https://plugins.omarchy.org/publish.html).
-Marketplace validation and any eventual listing establish discoverability and
-Quattro manifest compatibility, not a security review; plugins still run
+installation/removal paths, root preview, and explicit degradation states
+provide the repository-side artifacts requested by the
+[official publishing guide](https://plugins.omarchy.org/publish.html). The
+intended listing identity is `khephri.sia`, category `System`, with `AI`, `Bar`,
+and `Quickshell` as appropriate directory tags. Before submission, validate the
+exact public commit with `omarchy plugin validate .`; listing is not automatic,
+and a marketplace listing is not a security review. Community plugins still run
 unsandboxed as the installing user.
 
 ## Remove
@@ -791,6 +804,14 @@ Run the uninstaller from the plugin/repository directory:
 ./uninstall.sh           # removes code/UI; keeps corpus, ledger, keys, queues, config
 ./uninstall.sh --purge   # also attempts to erase retained SIA data and config
 ```
+
+For complete removal, start with `./uninstall.sh` while the plugin directory
+still exists. On a successful uninstall, SIA disables the Quickshell surface
+and archives the plugin checkout as part of the teardown. Do not follow it with
+`omarchy plugin remove khephri.sia`: that command expects an installed checkout
+and removes it itself, but does not remove SIA's resident runtime or user
+service. If Quickshell retains a stale entry after uninstall, force a rescan
+with `omarchy-shell shell rescanPlugins`.
 
 Default removal preserves these data categories—corpus, ledger,
 signing identity/head, queues and state snapshots, research, private

@@ -2490,14 +2490,20 @@ import sys
 root = sys.argv[1]
 legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
                 "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
+                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+                   "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v3_names = modern_v2_names + ("siasenses.py",)
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
-names = modern_names if modern else legacy_names
-digest = hashlib.sha256(
-    b"sia-runtime-v2\0" if modern else b"sia-runtime-v1\0")
+v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
+if v3:
+    names, salt = modern_v3_names, b"sia-runtime-v3\0"
+elif modern:
+    names, salt = modern_v2_names, b"sia-runtime-v2\0"
+else:
+    names, salt = legacy_names, b"sia-runtime-v1\0"
+digest = hashlib.sha256(salt)
 uid = os.geteuid()
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
@@ -2720,14 +2726,20 @@ for entry in payload["entries"]:
     entries[entry["path"]] = entry
 legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
                 "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
+                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+                   "siamind.py", "siaqueue.py", "siatakes.py")
+modern_v3_names = modern_v2_names + ("siasenses.py",)
 modern = any(os.path.lexists(os.path.join(runtime, name))
              for name in ("sia-brainstem.py", "sia-cli"))
-names = modern_names if modern else legacy_names
-digest = hashlib.sha256(
-    b"sia-runtime-v2\0" if modern else b"sia-runtime-v1\0")
+v3 = os.path.lexists(os.path.join(runtime, "siasenses.py"))
+if v3:
+    names, salt = modern_v3_names, b"sia-runtime-v3\0"
+elif modern:
+    names, salt = modern_v2_names, b"sia-runtime-v2\0"
+else:
+    names, salt = legacy_names, b"sia-runtime-v1\0"
+digest = hashlib.sha256(salt)
 for name in names:
     path = os.path.join(runtime, name)
     info = os.lstat(path)
