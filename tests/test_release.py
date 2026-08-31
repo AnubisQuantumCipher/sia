@@ -423,6 +423,12 @@ class ReleaseContract(unittest.TestCase):
         self.assertNotIn('bun install -g', installer)
         self.assertNotIn('$HOME/.bun', installer)
         self.assertIn("sha256sum -c -", installer)
+        download_helper = installer.split("download_verified() {", 1)[1].split(
+            "\n}\n", 1)[0]
+        self.assertIn('local url="$1" artifact_file="$2" expected="$3"',
+                      download_helper)
+        self.assertIn('-o "$artifact_file" "$url"', download_helper)
+        self.assertNotIn('"$out"', download_helper)
         self.assertNotIn("releases/latest", installer)
         self.assertNotRegex(installer,
                             r"curl[^\n]*\|\s*(?:ba)?sh(?:\s|$)")

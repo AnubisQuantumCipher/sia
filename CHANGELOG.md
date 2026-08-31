@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.8 — 2026-08-31
+
+- **Marketplace baseline clarity** — the checksum-bound download helper now
+  uses an unambiguous artifact-file name. This preserves its pinned
+  HTTPS/download-size/checksum contract while preventing a static scanner from
+  conflating it with an unrelated Python status-output variable.
+
 ## 1.3.7 — 2026-08-31
 
 - **Omarchy marketplace hardening** — the sensing subsystem is now an
