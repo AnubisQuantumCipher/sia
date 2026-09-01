@@ -768,9 +768,18 @@ root is never copied, deleted, or replaced by thaw.
 
 On an ordinary clean install, an absent store is created only through the
 installer's durable `managed-install/gbrain-bootstrap` path; continuity does
-not substitute a copied database for that lifecycle. Outside restore, a valid
-preexisting database is front-door health-checked by the installer; that does
-not make it portable recovery state. A routine capsule also omits installed
+not substitute a copied database for that lifecycle. The installer first
+probes the private PGLite producer, publishes its bound tree, and durably enters
+`probing`. It then generation-CAS rebinds only the exact bootstrap
+`config.json.database_path` to the canonical `brain.pglite` path and probes
+that final path. Retry reconciles the fixed public config stage and its private
+retirement claim as an exact successor/predecessor transition. A concurrent
+public-stage occupant is preserved and refused, while an already canonical
+path is a no-op. An unrelated or unsafe config is preserved and refused, and
+no rebind occurs without the bound bootstrap intent. Outside restore, a valid
+preexisting database is front-door
+health-checked by the installer; that does not make it portable recovery
+state. A routine capsule also omits installed
 runtime/toolchain generations,
 continuity credentials and working state, lock/stage files, managed-install
 receipts, and `key.hex`. The private signing identity is exported separately

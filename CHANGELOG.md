@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.2 — 2026-09-01
+
+- **Fresh gbrain bootstrap repair** — after SIA health-checks and publishes a
+  newly initialized PGLite tree, its authenticated `probing` transition now
+  generation-CAS rebinds `config.json.database_path` from the exact private
+  bootstrap projection to the exact canonical projection before the final
+  supported health probe. This fixes the deterministic fresh-install refusal
+  without weakening that probe, copying/rebuilding the PGLite store, or
+  bypassing gbrain's supported front door.
+
+- **Fail-closed interrupted-install recovery** — the rebind uses a fixed public
+  successor stage, an anonymous snapshot with a deterministic bound-CAS claim,
+  and a fixed private retirement claim. Its state table reconciles an exact
+  prepared successor or retained predecessor after interruption, while never
+  deleting a concurrently appeared public-stage occupant. It accepts an
+  already canonical path idempotently, including the documented manual
+  workaround for affected installs, but refuses malformed, ambiguous, unsafe,
+  unrelated, or unattributed configs without guessing.
+
+- **Contributor credit** — the installer fix resolves the report from
+  [@m10ust](https://github.com/m10ust) in
+  [issue #2](https://github.com/AnubisQuantumCipher/sia/issues/2).
+
 ## 1.4.1 — 2026-09-01
 
 - **Optional Git-backed Obsidian organ** — a real vault at `~/Obsidian`, or at

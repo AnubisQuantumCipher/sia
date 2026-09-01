@@ -812,11 +812,19 @@ combination or pending transition journal refuses closed; do not delete or
 recreate individual ledger components. A genuinely absent gbrain database is
 initialized off-path under a durable `managed-install/gbrain-bootstrap`
 `prepared`/`initializing`/`publishing`/`probing`/`published` transition,
-checked through gbrain's
-supported health probe, and published by tree-generation compare-and-swap. A
-valid preexisting database is health-checked and used in place. Unattributed
-partial bootstrap workspaces and unhealthy stores are preserved and refused;
-direct `.gbrain` rebuilds are unsupported.
+checked through gbrain's supported health probe, and published by
+tree-generation compare-and-swap. Because gbrain records an absolute
+`database_path`, the authenticated `probing` phase then generation-CAS rebinds
+only the exact private bootstrap path to the exact canonical `brain.pglite`
+path before probing the published store. Its fixed public config stage and
+private retirement claim recover both a prepared successor and a retained
+predecessor without deleting a concurrently appeared public-stage file; an
+already canonical path is idempotent. Any other path or
+malformed/private-mode violation is preserved and refused, and no config
+rebind occurs without the bound `gbrain-bootstrap` intent. A valid preexisting
+database is health-checked and used in place.
+Unattributed partial bootstrap workspaces and unhealthy stores are preserved
+and refused; direct `.gbrain` rebuilds are unsupported.
 
 When Omarchy is installed, failure to enable the plugin is likewise fatal
 instead of being reported as success. The installer first requests an Omarchy
