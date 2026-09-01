@@ -236,6 +236,24 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.4.2 fresh gbrain bootstrap recovery
+
+Fresh SIA installs no longer fail after publishing a newly initialized gbrain
+PGLite store. gbrain records the private bootstrap location as an absolute
+`database_path`; during the authenticated `probing` transition, SIA now
+generation- and root-CAS rebinds only that exact path to the canonical
+`.gbrain/brain.pglite` location before running the final supported health
+probe. An already canonical path remains an idempotent no-op.
+
+The transition has explicit interrupted-install recovery. It publishes from
+an anonymous snapshot, distinguishes the public stage from its private CAS and
+retirement claims, and never deletes a concurrently appeared public-stage
+file. Malformed, unsafe, unrelated, or unattributed configurations are
+preserved and refused instead of guessed. This fix was reported by
+[@m10ust](https://github.com/m10ust) in
+[issue #2](https://github.com/AnubisQuantumCipher/sia/issues/2) and shipped in
+[`v1.4.2`](https://github.com/AnubisQuantumCipher/sia/tree/v1.4.2).
+
 ### v1.4.1 optional Obsidian note-vault records
 
 SIA can recognize an existing local Git-backed Obsidian note vault as an
