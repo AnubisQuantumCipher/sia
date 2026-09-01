@@ -6046,6 +6046,7 @@ remove_managed_skill
             self.assertIn("corpus-adoption", document)
             self.assertIn("GENESIS:init", document)
             self.assertIn("gbrain-bootstrap", document)
+            self.assertIn("database_path", document)
         for document in (readme, manual):
             self.assertIn("prepared", document)
             self.assertIn("publishing", document)
@@ -6055,6 +6056,7 @@ remove_managed_skill
             self.assertIn("`brain.pglite`", folded)
             self.assertIn("managed receipt", folded)
             self.assertIn("unknown children", folded)
+            self.assertIn("generation-CAS rebind", document)
         self.assertIn("`key.hex`, then the matching `pub.hex`", readme)
         self.assertIn("one canonical signed", readme)
         self.assertIn("`GENESIS:init` row in `ledger.tsv`", readme)

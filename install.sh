@@ -885,9 +885,12 @@ PY
 # Generation-bound publication/removal for user-editable integration files.
 # Both operations serialize through an owner-only sibling lock and leave a
 # durable intent journal before creating a temporary canonical-path absence.
-# Every rename is RENAME_NOREPLACE: an independent writer always wins the
-# canonical name, while the generation displaced by this helper is retained at
-# a unique, reported sibling path.  A later invocation recovers a crash journal
+# Prior-generation transfers use RENAME_NOREPLACE.  Ordinary publications keep
+# the v1 rename protocol; a caller supplying an exact stage generation gets the
+# v2 bound protocol, which claims the public stage name and publishes an
+# anonymous byte-for-byte snapshot.  An independent writer always wins an
+# occupied canonical or stage name, while displaced generations are retained at
+# unique, reported sibling paths.  A later invocation recovers a crash journal
 # before beginning new work.
 owned_file_cas() {
   python3 - "$@" <<'PY'
@@ -908,16 +911,24 @@ arguments = sys.argv[1:]
 if not arguments:
     raise SystemExit("missing CAS operation")
 mode = arguments[0]
+parent_binding = None
+staged_expected = None
 if mode == "recover":
-    if len(arguments) != 2:
-        raise SystemExit("recover requires a target")
+    if len(arguments) not in {2, 3}:
+        raise SystemExit("recover requires a target and optional parent binding")
     target = os.path.abspath(arguments[1])
     staged = None
     expected = None
-elif len(arguments) == 4:
-    _, staged, target, expected = arguments
+    if len(arguments) == 3:
+        parent_binding = arguments[2]
+elif len(arguments) in {4, 5, 6}:
+    _, staged, target, expected, *bindings = arguments
     staged = os.path.abspath(staged)
     target = os.path.abspath(target)
+    if bindings:
+        parent_binding = bindings[0]
+    if len(bindings) == 2:
+        staged_expected = bindings[1]
 else:
     raise SystemExit("invalid CAS arguments")
 parent = os.path.dirname(target)
@@ -930,9 +941,19 @@ target_name = os.path.basename(target)
 staged_name = None if staged is None else os.path.basename(staged)
 token_pattern = re.compile(
     r"present:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):([0-9a-f]{64})")
+tree_pattern = re.compile(
+    r"tree:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):"
+    r"(\d+):([0-9a-f]{64})")
 if expected is not None and expected != "absent" \
         and token_pattern.fullmatch(expected) is None:
     raise SystemExit("invalid CAS generation")
+if staged_expected is not None \
+        and token_pattern.fullmatch(staged_expected) is None:
+    raise SystemExit("invalid staged CAS generation")
+if staged_expected is not None and mode != "publish":
+    raise SystemExit("a staged CAS generation applies only to publication")
+if parent_binding is not None and tree_pattern.fullmatch(parent_binding) is None:
+    raise SystemExit("invalid CAS parent binding")
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
 path_flags = (getattr(os, "O_PATH", os.O_RDONLY)
@@ -947,6 +968,14 @@ if not stat.S_ISDIR(parent_info.st_mode) \
         or parent_info.st_uid != os.geteuid():
     os.close(parent_fd)
     raise SystemExit("CAS parent must be an owned directory")
+if parent_binding is not None:
+    bound = tree_pattern.fullmatch(parent_binding)
+    expected_parent = tuple(int(value) for value in bound.groups()[:4])
+    actual_parent = (parent_info.st_dev, parent_info.st_ino,
+                     parent_info.st_mode, parent_info.st_uid)
+    if actual_parent != expected_parent:
+        os.close(parent_fd)
+        raise SystemExit("CAS parent does not match its bound tree root")
 
 
 def generation(value):
@@ -1026,10 +1055,15 @@ def token(name, allow_absent=False, trusted=(), moved_trusted=False):
 
 libc = ctypes.CDLL(None, use_errno=True)
 renameat2 = libc.renameat2
+linkat = libc.linkat
 renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p,
                       ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
 renameat2.restype = ctypes.c_int
+linkat.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                   ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+linkat.restype = ctypes.c_int
 RENAME_NOREPLACE = 1
+AT_EMPTY_PATH = 0x1000
 
 
 def rename_noreplace(source, destination):
@@ -1056,6 +1090,85 @@ def moved_token_matches(actual, prior):
         and actual_fields[7] == prior_fields[7]
 
 
+def same_token_identity(actual, prior):
+    actual_match = token_pattern.fullmatch(actual)
+    prior_match = token_pattern.fullmatch(prior)
+    return actual_match is not None and prior_match is not None \
+        and actual_match.groups()[:2] == prior_match.groups()[:2]
+
+
+def descriptor_matches_token(descriptor, expected_token):
+    matched = token_pattern.fullmatch(expected_token)
+    if matched is None:
+        return False
+    info = os.fstat(descriptor)
+    metadata = tuple(str(value) for value in generation(info))
+    return metadata == matched.groups()[:7]
+
+
+def anonymous_snapshot(descriptor, expected_token):
+    matched = token_pattern.fullmatch(expected_token)
+    if matched is None:
+        raise ValueError("invalid snapshot source generation")
+    source_before = os.fstat(descriptor)
+    if tuple(str(value) for value in generation(source_before)) \
+            != matched.groups()[:7]:
+        raise ValueError("snapshot source changed before copy")
+    tmpfile = getattr(os, "O_TMPFILE", 0)
+    if not tmpfile:
+        raise ValueError("anonymous CAS staging is unavailable")
+    snapshot = os.open(
+        ".", os.O_RDWR | tmpfile | getattr(os, "O_CLOEXEC", 0),
+        stat.S_IMODE(source_before.st_mode), dir_fd=parent_fd)
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            chunk = os.read(descriptor, CHUNK_BYTES)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_BYTES:
+                raise ValueError("oversized CAS snapshot source")
+            digest.update(chunk)
+            remaining = memoryview(chunk)
+            while remaining:
+                written = os.write(snapshot, remaining)
+                if written <= 0:
+                    raise OSError("short CAS snapshot write")
+                remaining = remaining[written:]
+        source_after = os.fstat(descriptor)
+        if total != source_before.st_size \
+                or generation(source_before) != generation(source_after) \
+                or digest.hexdigest() != matched.group(8):
+            raise ValueError("CAS snapshot source changed while copied")
+        os.fchmod(snapshot, stat.S_IMODE(source_before.st_mode))
+        os.fsync(snapshot)
+        snapshot_info = os.fstat(snapshot)
+        if not stat.S_ISREG(snapshot_info.st_mode) \
+                or snapshot_info.st_uid != os.geteuid() \
+                or snapshot_info.st_size != total \
+                or stat.S_IMODE(snapshot_info.st_mode) \
+                   != stat.S_IMODE(source_before.st_mode):
+            raise ValueError("anonymous CAS snapshot is unsafe")
+        fields = (*generation(snapshot_info), digest.hexdigest())
+        snapshot_token = "present:" + ":".join(
+            str(value) for value in fields)
+        return snapshot, snapshot_token
+    except BaseException:
+        os.close(snapshot)
+        raise
+
+
+def link_descriptor_noreplace(descriptor, destination):
+    result = linkat(descriptor, b"", parent_fd, os.fsencode(destination),
+                    AT_EMPTY_PATH)
+    if result:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), destination)
+
+
 def child_exists(name):
     try:
         os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
@@ -1079,6 +1192,7 @@ def unique_name(prefix):
 identity = hashlib.sha256(os.fsencode(target)).hexdigest()
 lock_name = ".sia-cas-lock-" + identity
 journal_name = ".sia-cas-journal-" + identity
+claim_name = ".sia-cas-claim-" + identity
 lock_flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
               | getattr(os, "O_NOFOLLOW", 0))
 lock_fd = os.open(lock_name, lock_flags, 0o600, dir_fd=parent_fd)
@@ -1117,11 +1231,17 @@ def read_journal():
         value = json.loads(b"".join(chunks).decode("utf-8"))
     finally:
         os.close(descriptor)
-    required = {"version", "operation", "target", "staged",
-                "archive", "expected", "desired"}
-    if not isinstance(value, dict) or set(value) != required \
-            or value["version"] != 1 or value["target"] != target_name \
-            or value["operation"] not in {"publish", "archive"}:
+    required_v1 = {"version", "operation", "target", "staged",
+                   "archive", "expected", "desired"}
+    required_v2 = required_v1 | {"source"}
+    if not isinstance(value, dict) \
+            or (value.get("version") == 1 and set(value) != required_v1) \
+            or (value.get("version") == 2 and set(value) != required_v2) \
+            or value.get("version") not in {1, 2} \
+            or value.get("target") != target_name \
+            or value.get("operation") not in {"publish", "archive"} \
+            or (value.get("version") == 2
+                and value.get("operation") != "publish"):
         raise ValueError("invalid CAS journal")
     for key in ("target", "staged", "archive"):
         item = value[key]
@@ -1132,6 +1252,9 @@ def read_journal():
         item = value[key]
         if item != "absent" and token_pattern.fullmatch(item) is None:
             raise ValueError("invalid CAS journal generation")
+    if value["version"] == 2 \
+            and token_pattern.fullmatch(value["source"]) is None:
+        raise ValueError("invalid bound CAS source generation")
     return value
 
 
@@ -1179,10 +1302,180 @@ def retained(record, reason):
               f"{os.path.join(parent, archive)}", file=sys.stderr)
 
 
+def restore_archived_prior(record):
+    prior = record["expected"]
+    if prior == "absent":
+        return True
+    archive = record["archive"]
+    current = token(
+        target_name, allow_absent=True, trusted=(prior,),
+        moved_trusted=True)
+    archived = token(
+        archive, allow_absent=True, trusted=(prior,),
+        moved_trusted=True)
+    if current != "absent" or not moved_token_matches(archived, prior):
+        retained(record, "CAS could not restore its exact prior generation")
+        return False
+    try:
+        rename_noreplace(archive, target_name)
+        sync_parent()
+    except OSError:
+        retained(record, "CAS restore preserved a newer canonical target")
+        return False
+    return True
+
+
+def path_matches_descriptor(name, descriptor):
+    try:
+        current = os.stat(
+            name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    opened = os.fstat(descriptor)
+    return (current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino)
+
+
+def target_matches_descriptor(descriptor):
+    return path_matches_descriptor(target_name, descriptor)
+
+
+def claim_retained(reason):
+    if child_exists(claim_name):
+        print(f"{reason}; claimed source retained at "
+              f"{os.path.join(parent, claim_name)}", file=sys.stderr)
+
+
+def return_claim_to_public_stage(reason):
+    if not child_exists(claim_name):
+        return True
+    if child_exists(staged_name):
+        claim_retained(reason)
+        return False
+    try:
+        rename_noreplace(claim_name, staged_name)
+        sync_parent()
+    except OSError:
+        claim_retained(reason)
+        return False
+    return True
+
+
+def recover_bound_publish(record):
+    prior_stage = record["staged"]
+    archive = record["archive"]
+    prior = record["expected"]
+    source = record["source"]
+    desired = record["desired"]
+
+    def states():
+        return (
+            token(target_name, allow_absent=True,
+                  trusted=(prior, desired), moved_trusted=True),
+            token(archive, allow_absent=True,
+                  trusted=(prior,), moved_trusted=True),
+            token(prior_stage, allow_absent=True,
+                  trusted=(prior, source), moved_trusted=True),
+            token(claim_name, allow_absent=True,
+                  trusted=(source,), moved_trusted=True),
+        )
+
+    def prior_is_current(value):
+        return value == "absent" if prior == "absent" \
+            else moved_token_matches(value, prior)
+
+    def refuse(reason):
+        retained(record, reason)
+        claim_retained(reason)
+        print(f"{reason}; bound CAS journal preserved", file=sys.stderr)
+        raise SystemExit(reason)
+
+    current, archived, staged_current, claimed = states()
+    if same_token_identity(current, desired) \
+            and not moved_token_matches(current, desired):
+        conflict_name = unique_name(".sia-cas-conflict.")
+        try:
+            rename_noreplace(target_name, conflict_name)
+            sync_parent()
+            print("bound CAS changed snapshot retained at "
+                  f"{os.path.join(parent, conflict_name)}", file=sys.stderr)
+        except OSError:
+            refuse("bound CAS could not retain its changed snapshot")
+        current, archived, staged_current, claimed = states()
+    if moved_token_matches(current, desired):
+        if prior == "absent":
+            if archived != "absent" or staged_current != "absent":
+                refuse("bound CAS found an independently occupied stage")
+        elif moved_token_matches(archived, prior) \
+                and staged_current == "absent":
+            try:
+                rename_noreplace(archive, prior_stage)
+                sync_parent()
+            except OSError:
+                refuse("bound CAS could not return the prior generation")
+        elif not (archived == "absent"
+                  and moved_token_matches(staged_current, prior)):
+            refuse("bound CAS found an independently occupied backup path")
+        current, archived, staged_current, claimed = states()
+        backup_complete = archived == "absent" \
+            and (staged_current == "absent" if prior == "absent"
+                 else moved_token_matches(staged_current, prior))
+        if not moved_token_matches(current, desired) or not backup_complete:
+            refuse("bound CAS changed while finalizing its backup")
+        if moved_token_matches(claimed, source):
+            claim_current = token(
+                claim_name, trusted=(source,), moved_trusted=True)
+            if not moved_token_matches(claim_current, source):
+                refuse("bound CAS source claim changed before retirement")
+            unlink_child(claim_name)
+        elif claimed != "absent":
+            refuse("bound CAS source claim changed")
+        current, archived, staged_current, claimed = states()
+        backup_complete = archived == "absent" \
+            and (staged_current == "absent" if prior == "absent"
+                 else moved_token_matches(staged_current, prior))
+        if not moved_token_matches(current, desired) \
+                or not backup_complete or claimed != "absent":
+            refuse("bound CAS changed at its completion boundary")
+        clear_journal()
+        return
+
+    if current == "absent" and prior != "absent" \
+            and moved_token_matches(archived, prior):
+        try:
+            rename_noreplace(archive, target_name)
+            sync_parent()
+        except OSError:
+            refuse("bound CAS rollback preserved a newer canonical target")
+    elif not (prior_is_current(current) and archived == "absent"):
+        refuse("bound CAS preserved an independently published target")
+
+    current, archived, staged_current, claimed = states()
+    if moved_token_matches(claimed, source):
+        if staged_current != "absent":
+            refuse("bound CAS rollback found an occupied public stage")
+        try:
+            rename_noreplace(claim_name, prior_stage)
+            sync_parent()
+        except OSError:
+            refuse("bound CAS rollback could not restore its source stage")
+    elif claimed != "absent":
+        refuse("bound CAS rollback found a changed source claim")
+
+    current, archived, staged_current, claimed = states()
+    if not prior_is_current(current) or archived != "absent" \
+            or not moved_token_matches(staged_current, source) \
+            or claimed != "absent":
+        refuse("bound CAS rollback did not reach its exact prior state")
+    clear_journal()
+
+
 def recover_journal():
     if not child_exists(journal_name):
         return
     record = read_journal()
+    if record["version"] == 2:
+        recover_bound_publish(record)
+        return
     operation = record["operation"]
     archive = record["archive"]
     prior_stage = record["staged"]
@@ -1254,20 +1547,34 @@ def recover_journal():
     clear_journal()
 
 
+staged_fd = None
+snapshot_fd = None
 try:
     recover_journal()
     if mode == "recover":
         raise SystemExit(0)
     if mode == "publish":
-        desired_token = token(staged_name)
+        source_token = token(staged_name)
+        if staged_expected is not None and source_token != staged_expected:
+            raise SystemExit("CAS stage changed before operation")
         staged_fd = os.open(staged_name, flags, dir_fd=parent_fd)
-        try:
-            os.fsync(staged_fd)
-        finally:
-            os.close(staged_fd)
+        if not descriptor_matches_token(staged_fd, source_token):
+            raise SystemExit("CAS stage descriptor does not match its name")
+        os.fsync(staged_fd)
+        if staged_expected is not None:
+            if child_exists(claim_name):
+                raise SystemExit("unattributed bound CAS source claim is present")
+            snapshot_fd, desired_token = anonymous_snapshot(
+                staged_fd, source_token)
+            if token(staged_name) != source_token \
+                    or not descriptor_matches_token(staged_fd, source_token):
+                raise SystemExit("CAS stage changed while snapshotting")
+        else:
+            desired_token = source_token
     elif mode == "archive":
         if child_exists(staged_name):
             raise SystemExit("CAS archive already exists")
+        source_token = None
         desired_token = "absent"
     else:
         raise SystemExit("unknown CAS operation")
@@ -1275,10 +1582,108 @@ try:
     if current != expected:
         raise SystemExit("CAS target changed before operation")
     archive_name = unique_name(".sia-cas-prior.")
-    record = {"version": 1, "operation": mode, "target": target_name,
-              "staged": staged_name, "archive": archive_name,
-              "expected": expected, "desired": desired_token}
+    if mode == "publish" and staged_expected is not None:
+        record = {"version": 2, "operation": mode, "target": target_name,
+                  "staged": staged_name, "archive": archive_name,
+                  "expected": expected, "source": source_token,
+                  "desired": desired_token}
+    else:
+        record = {"version": 1, "operation": mode, "target": target_name,
+                  "staged": staged_name, "archive": archive_name,
+                  "expected": expected, "desired": desired_token}
     if mode == "publish":
+        if staged_expected is not None:
+            write_journal(record)
+            try:
+                rename_noreplace(staged_name, claim_name)
+                sync_parent()
+            except OSError:
+                clear_journal()
+                raise SystemExit("bound CAS stage changed before claim")
+            try:
+                claimed = token(
+                    claim_name, trusted=(source_token,), moved_trusted=True)
+            except (OSError, ValueError):
+                claimed = "unsafe"
+            if not moved_token_matches(claimed, source_token) \
+                    or not path_matches_descriptor(claim_name, staged_fd):
+                returned = return_claim_to_public_stage(
+                    "bound CAS claimed a changed public stage")
+                if returned:
+                    clear_journal()
+                raise SystemExit("bound CAS source claim changed")
+            current = token(
+                target_name, allow_absent=True, trusted=(expected,))
+            if current != expected:
+                returned = return_claim_to_public_stage(
+                    "bound CAS target changed after source claim")
+                if returned:
+                    clear_journal()
+                raise SystemExit("CAS target changed before operation")
+            if expected != "absent":
+                rename_noreplace(target_name, archive_name)
+                sync_parent()
+                archived = token(
+                    archive_name, trusted=(expected,), moved_trusted=True)
+                if not moved_token_matches(archived, expected):
+                    restored = False
+                    try:
+                        rename_noreplace(archive_name, target_name)
+                        sync_parent()
+                        restored = True
+                    except OSError:
+                        retained(
+                            record,
+                            "bound CAS preserved a newer canonical target")
+                    returned = return_claim_to_public_stage(
+                        "bound CAS archive validation failed")
+                    if restored and returned:
+                        clear_journal()
+                    raise SystemExit(
+                        "CAS archived generation did not match preflight")
+            try:
+                link_descriptor_noreplace(snapshot_fd, target_name)
+                sync_parent()
+            except OSError:
+                retained(record,
+                         "bound CAS publication preserved a concurrent target")
+                restore_archived_prior(record)
+                returned = return_claim_to_public_stage(
+                    "bound CAS publication could not commit")
+                if returned:
+                    clear_journal()
+                raise SystemExit("CAS target changed during publication")
+            installed = token(target_name)
+            if not moved_token_matches(installed, desired_token):
+                if target_matches_descriptor(snapshot_fd):
+                    conflict_name = unique_name(".sia-cas-conflict.")
+                    try:
+                        rename_noreplace(target_name, conflict_name)
+                        sync_parent()
+                        print("bound CAS changed snapshot retained at "
+                              f"{os.path.join(parent, conflict_name)}",
+                              file=sys.stderr)
+                    except OSError:
+                        print("bound CAS changed snapshot retained at the "
+                              "canonical target", file=sys.stderr)
+                    restore_archived_prior(record)
+                else:
+                    retained(
+                        record,
+                        "bound CAS canonical target changed after publication")
+                returned = return_claim_to_public_stage(
+                    "bound CAS publication did not remain exact")
+                if returned:
+                    clear_journal()
+                raise SystemExit(
+                    "CAS published generation is no longer current")
+            recover_bound_publish(record)
+            installed = token(target_name)
+            if not moved_token_matches(installed, desired_token):
+                raise SystemExit("bound CAS target changed after recovery")
+            print(installed)
+            raise SystemExit(0)
+
         write_journal(record)
         if expected != "absent":
             rename_noreplace(target_name, archive_name)
@@ -1375,6 +1780,10 @@ try:
     else:
         raise SystemExit("unknown CAS operation")
 finally:
+    if snapshot_fd is not None:
+        os.close(snapshot_fd)
+    if staged_fd is not None:
+        os.close(staged_fd)
     fcntl.flock(lock_fd, fcntl.LOCK_UN)
     os.close(lock_fd)
     os.close(parent_fd)
@@ -5337,6 +5746,395 @@ if not isinstance(report, dict) \
 PY
 }
 
+# A gbrain PGLite config records an absolute database_path.  Bootstrap probes
+# the producer under its private home before publishing the complete .gbrain
+# tree, so the one SIA-authored path must be rebound after publication.  This
+# transition is authorized only by the durable probing intent and accepts only
+# the exact bootstrap path or the exact canonical path.  It never repairs an
+# unattributed/preexisting store or guesses an operator-modified location.
+rebind_published_gbrain_database() {
+  local bound_tree="$1" fields phase intent_tree root config stale canonical
+  local expected stage action operation staged_generation current
+  root="$SHARE/.gbrain"
+  config="$root/config.json"
+  stage="$root/.config.json.sia-bootstrap-stage"
+  stale="$GBRAIN_BOOTSTRAP_HOME/.gbrain/brain.pglite"
+  canonical="$root/brain.pglite"
+
+  fields="$(gbrain_bootstrap_intent_fields)" || return 1
+  IFS=$'\t' read -r phase intent_tree <<< "$fields"
+  [ "$phase" = probing ] && [ "$intent_tree" = "$bound_tree" ] || {
+    echo "gbrain database-path rebind lacks its exact probing intent" >&2
+    return 1
+  }
+  current="$(owned_tree_generation "$root")" || return 1
+  gbrain_tree_root_matches "$current" "$bound_tree" || {
+    echo "gbrain root changed before its database-path rebind; preserved" >&2
+    return 1
+  }
+  owned_file_cas recover "$config" "$bound_tree" || return 1
+  current="$(owned_tree_generation "$root")" || return 1
+  gbrain_tree_root_matches "$current" "$bound_tree" || {
+    echo "gbrain root changed during database-path recovery; preserved" >&2
+    return 1
+  }
+  while :; do
+    if ! action="$(python3 - "$config" "$stage" "$stale" \
+        "$canonical" "$bound_tree" <<'PY'
+import ctypes
+import hashlib
+import json
+import math
+import os
+import re
+import stat
+import sys
+
+path, staged, stale, canonical = map(os.path.abspath, sys.argv[1:5])
+retired = staged + ".retired"
+bound_tree = sys.argv[5]
+# JACKAL status=exact, parsed=1024*1024, exact=1048576. Exact rational
+# arithmetic outside the Lean certificate chain (NOT formal-bounded).
+MAX_BYTES = 1_048_576
+READ_BYTES = 65_536
+flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+         | getattr(os, "O_NOFOLLOW", 0)
+         | getattr(os, "O_NONBLOCK", 0))
+directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                   | getattr(os, "O_DIRECTORY", 0)
+                   | getattr(os, "O_NOFOLLOW", 0))
+
+
+def generation(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
+            value.st_nlink, value.st_size, value.st_mtime_ns,
+            value.st_ctime_ns)
+
+
+def reject_constant(value):
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate gbrain config key: {key}")
+        value[key] = item
+    return value
+
+
+def canonical_json(value):
+    return json.dumps(
+        value, sort_keys=True, ensure_ascii=False, allow_nan=False,
+        separators=(",", ":"))
+
+
+def reject_nonfinite(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("gbrain config contains a non-finite number")
+    if isinstance(value, list):
+        for item in value:
+            reject_nonfinite(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            reject_nonfinite(item)
+
+
+def cas_token(info, raw):
+    fields = (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+              info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+              hashlib.sha256(raw).hexdigest())
+    return "present:" + ":".join(str(item) for item in fields)
+
+
+def read_config(directory, name):
+    descriptor = os.open(name, flags, dir_fd=directory)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != 0o600 \
+                or before.st_size > MAX_BYTES:
+            raise ValueError(
+                "gbrain config is not private, owned, single-link, and bounded")
+        chunks = []
+        remaining = MAX_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, READ_BYTES))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if len(raw) != before.st_size or len(raw) > MAX_BYTES \
+                or generation(before) != generation(after) \
+                or generation(after) != generation(current):
+            raise ValueError("gbrain config changed while read")
+    finally:
+        os.close(descriptor)
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=unique_object, parse_constant=reject_constant)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError(
+            f"gbrain config is not strict unambiguous JSON: {error}") \
+            from error
+    reject_nonfinite(value)
+    if not isinstance(value, dict) or value.get("engine") != "pglite" \
+            or value.get("database_path") not in {stale, canonical}:
+        raise ValueError(
+            "gbrain config is not the exact bootstrap/canonical PGLite state")
+    return value, before, raw
+
+
+def successor(value):
+    result = dict(value)
+    result["database_path"] = canonical
+    return result
+
+
+def same_transition(old, final):
+    return canonical_json(successor(old)) == canonical_json(final)
+
+
+def stage_exists(directory, name):
+    try:
+        os.stat(name, dir_fd=directory, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def rename_noreplace(directory, source, destination):
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = libc.renameat2
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    if renameat2(directory, os.fsencode(source), directory,
+                 os.fsencode(destination), 1):
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), (source, destination))
+
+
+def create_stage(directory, name, value):
+    encoded = (json.dumps(
+        successor(value), indent=2, ensure_ascii=False,
+        allow_nan=False) + "\n").encode("utf-8")
+    if len(encoded) > MAX_BYTES:
+        raise ValueError("updated gbrain config exceeds its byte ceiling")
+    tmpfile = getattr(os, "O_TMPFILE", 0)
+    if not tmpfile:
+        raise ValueError("anonymous gbrain config staging is unavailable")
+    anonymous = os.open(
+        ".", os.O_RDWR | tmpfile | getattr(os, "O_CLOEXEC", 0),
+        0o600, dir_fd=directory)
+    try:
+        remaining = memoryview(encoded)
+        while remaining:
+            written = os.write(anonymous, remaining)
+            if written <= 0:
+                raise OSError("short gbrain config rebind write")
+            remaining = remaining[written:]
+        os.fchmod(anonymous, 0o600)
+        os.fsync(anonymous)
+        libc = ctypes.CDLL(None, use_errno=True)
+        linkat = libc.linkat
+        linkat.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                           ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        linkat.restype = ctypes.c_int
+        if linkat(anonymous, b"", directory, os.fsencode(name), 0x1000):
+            code = ctypes.get_errno()
+            raise OSError(code, os.strerror(code), name)
+        os.fsync(directory)
+    finally:
+        os.close(anonymous)
+    linked, info, raw = read_config(directory, name)
+    if not same_transition(value, linked):
+        raise ValueError("published gbrain config stage is not the successor")
+    return linked, info, raw
+
+
+def return_retired_to_stage(directory, name, retired_name):
+    if stage_exists(directory, name):
+        return False
+    try:
+        rename_noreplace(directory, retired_name, name)
+        os.fsync(directory)
+    except OSError:
+        return False
+    return True
+
+
+def claim_predecessor(directory, name, retired_name, expected,
+                      expected_raw, target_name, target_expected):
+    if stage_exists(directory, retired_name):
+        raise ValueError("gbrain config retirement claim is occupied")
+    current_target = os.stat(
+        target_name, dir_fd=directory, follow_symlinks=False)
+    current_stage = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    if generation(current_target) != generation(target_expected):
+        raise ValueError("gbrain config changed before stage claim")
+    if generation(current_stage) != generation(expected):
+        raise ValueError("gbrain config stage changed before retirement claim")
+    rename_noreplace(directory, name, retired_name)
+    os.fsync(directory)
+    try:
+        predecessor, retired_info, retired_raw = read_config(
+            directory, retired_name)
+        current_target = os.stat(
+            target_name, dir_fd=directory, follow_symlinks=False)
+        moved_exactly = generation(retired_info)[:-1] \
+            == generation(expected)[:-1] and retired_raw == expected_raw
+        if generation(current_target) != generation(target_expected) \
+                or not moved_exactly:
+            raise ValueError(
+                "gbrain config changed while claiming its predecessor")
+        return predecessor, retired_info, retired_raw
+    except BaseException:
+        return_retired_to_stage(directory, name, retired_name)
+        raise
+
+
+def remove_retired_stage(directory, public_name, retired_name, expected,
+                         target_name, target_expected):
+    current_target = os.stat(
+        target_name, dir_fd=directory, follow_symlinks=False)
+    current_retired = os.stat(
+        retired_name, dir_fd=directory, follow_symlinks=False)
+    if generation(current_target) != generation(target_expected):
+        raise ValueError("gbrain config changed before claim retirement")
+    if generation(current_retired) != generation(expected):
+        raise ValueError("gbrain config retirement claim changed")
+    if stage_exists(directory, public_name):
+        raise ValueError("gbrain config stage appeared during retirement")
+    os.unlink(retired_name, dir_fd=directory)
+    os.fsync(directory)
+    current_target = os.stat(
+        target_name, dir_fd=directory, follow_symlinks=False)
+    if generation(current_target) != generation(target_expected):
+        raise ValueError("gbrain config changed while retiring its claim")
+    if stage_exists(directory, public_name):
+        raise ValueError("gbrain config stage appeared after retirement")
+
+
+if os.path.basename(path) != "config.json" \
+        or os.path.basename(staged) != ".config.json.sia-bootstrap-stage" \
+        or os.path.basename(retired) \
+           != ".config.json.sia-bootstrap-stage.retired" \
+        or os.path.dirname(staged) != os.path.dirname(path) \
+        or os.path.dirname(retired) != os.path.dirname(path) \
+        or stale == canonical:
+    raise SystemExit("invalid gbrain database-path rebind boundary")
+tree_pattern = re.compile(
+    r"tree:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):"
+    r"(\d+):([0-9a-f]{64})")
+bound = tree_pattern.fullmatch(bound_tree)
+if bound is None:
+    raise SystemExit("invalid gbrain database-path root binding")
+parent = os.path.dirname(path)
+if os.path.realpath(parent) != parent:
+    raise SystemExit("gbrain config parent is not canonical")
+directory = os.open(parent, directory_flags)
+try:
+    root_info = os.fstat(directory)
+    current_root = os.stat(parent, follow_symlinks=False)
+    if not stat.S_ISDIR(root_info.st_mode) \
+            or root_info.st_uid != os.geteuid() \
+            or root_info.st_mode & 0o022 \
+            or generation(root_info) != generation(current_root):
+        raise ValueError("unsafe gbrain config parent")
+    expected_root = tuple(int(value) for value in bound.groups()[:4])
+    actual_root = (root_info.st_dev, root_info.st_ino,
+                   root_info.st_mode, root_info.st_uid)
+    if actual_root != expected_root:
+        raise ValueError("gbrain config parent does not match its bound root")
+    target, target_info, target_raw = read_config(directory, "config.json")
+    has_stage = stage_exists(directory, os.path.basename(staged))
+    has_retired = stage_exists(directory, os.path.basename(retired))
+    if target["database_path"] == stale:
+        if has_retired:
+            raise ValueError(
+                "gbrain config retirement claim precedes publication")
+        if not has_stage:
+            candidate, stage_info, stage_raw = create_stage(
+                directory, os.path.basename(staged), target)
+        else:
+            candidate, stage_info, stage_raw = read_config(
+                directory, os.path.basename(staged))
+            if candidate["database_path"] != canonical \
+                    or not same_transition(target, candidate):
+                raise ValueError(
+                    "gbrain config stage is not the exact successor")
+        print("publish\t" + cas_token(target_info, target_raw) + "\t"
+              + cas_token(stage_info, stage_raw))
+    elif not has_stage and not has_retired:
+        print("done")
+    else:
+        if has_stage and has_retired:
+            raise ValueError(
+                "gbrain config has both public and retired stages")
+        if has_stage:
+            predecessor, stage_info, stage_raw = read_config(
+                directory, os.path.basename(staged))
+            if predecessor["database_path"] != stale \
+                    or not same_transition(predecessor, target):
+                raise ValueError(
+                    "gbrain config stage is not the exact predecessor")
+            predecessor, stage_info, stage_raw = claim_predecessor(
+                directory, os.path.basename(staged),
+                os.path.basename(retired), stage_info, stage_raw,
+                "config.json", target_info)
+        else:
+            predecessor, stage_info, stage_raw = read_config(
+                directory, os.path.basename(retired))
+        if predecessor["database_path"] != stale \
+                or not same_transition(predecessor, target):
+            raise ValueError(
+                "gbrain config retirement claim is not the exact predecessor")
+        remove_retired_stage(
+            directory, os.path.basename(staged), os.path.basename(retired),
+            stage_info,
+            "config.json", target_info)
+        print("done")
+finally:
+    os.close(directory)
+PY
+    )"; then
+      echo "could not reconcile the exact gbrain database-path rebind; preserved" >&2
+      return 1
+    fi
+    IFS=$'\t' read -r operation expected staged_generation <<< "$action"
+    case "$operation" in
+      done)
+        [ -z "$expected" ] && [ -z "$staged_generation" ] || return 1
+        break
+        ;;
+      publish)
+        [ -n "$expected" ] && [ -n "$staged_generation" ] || return 1
+        if ! owned_file_cas publish "$stage" "$config" "$expected" \
+            "$bound_tree" "$staged_generation" >/dev/null; then
+          echo "gbrain config changed during database-path rebind; preserved" >&2
+          return 1
+        fi
+        ;;
+      *)
+        echo "unexpected gbrain database-path rebind result" >&2
+        return 1
+        ;;
+    esac
+  done
+  current="$(owned_tree_generation "$root")" || return 1
+  gbrain_tree_root_matches "$current" "$bound_tree" || {
+    echo "gbrain root changed during its database-path rebind; preserved" >&2
+    return 1
+  }
+}
+
 prepare_gbrain_bootstrap_home() {
   python3 - "$SHARE" "$GBRAIN_BOOTSTRAP_HOME" <<'PY'
 import os
@@ -5501,6 +6299,7 @@ preflight_gbrain_bootstrap() {
           return 1
           ;;
       esac
+      rebind_published_gbrain_database "$tree" || return 1
       gbrain_frontdoor_valid "$SHARE" || {
         echo "interrupted gbrain bootstrap did not produce a valid PGLite store; preserved" >&2
         return 1
@@ -5643,6 +6442,7 @@ complete_gbrain_bootstrap() {
     return 1
   }
   set_gbrain_bootstrap_intent probing "$installed" || return 1
+  rebind_published_gbrain_database "$installed" || return 1
   gbrain_frontdoor_valid "$SHARE" || {
     echo "published gbrain store failed its supported health probe; preserved" >&2
     return 1

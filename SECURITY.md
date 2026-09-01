@@ -352,6 +352,26 @@ referent is accepted. Nested replacement therefore refuses. Absolute,
 escaping, dangling, special, group/world-writable, and hard-linked-file shapes
 refuse rather than being normalized.
 
+The gbrain bootstrap path rebind is a separate, intent-authorized file
+transaction after the exact stage-probed tree is published. It runs only for a
+bound `gbrain-bootstrap` `probing` transition and accepts
+`config.json.database_path` only as the exact private bootstrap path or the
+exact canonical PGLite path. The config and its deterministic transaction
+stage must be current-user-owned, single-link, mode `0600`, bounded regular
+files under a canonical no-follow parent. Parsing requires strict UTF-8 JSON,
+unique keys, finite numbers, and `engine` equal to `pglite`; publication uses
+the generation-CAS helper and a fixed successor/predecessor state table. The
+bound CAS claims that public stage into its deterministic transaction sibling,
+copies its exact bytes into an anonymous filesystem-local snapshot, and links
+only that unshared descriptor as canonical. After publication, the classifier
+moves the exact predecessor from the public stage to a fixed private
+retirement claim with no-replace semantics and deletes only that claimed
+generation. Neither CAS recovery nor predecessor cleanup unlinks the public
+stage name: a concurrently appeared occupant is preserved and the transaction
+refuses until the generations can be reconciled. Malformed, unsafe, unrelated,
+collided, or unattributed state is preserved and refused. The final path still
+has to pass gbrain's supported health probe.
+
 gbrain's self-upgrade switch is verified through the pinned executable after
 configuration. The bounded command helper captures stdout and stderr together;
 the installer accepts only the exact combined form consisting of `off` plus
