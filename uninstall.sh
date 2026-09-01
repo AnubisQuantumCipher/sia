@@ -61,6 +61,7 @@ LIFECYCLE_TOMBSTONE="$HOME/.local/state/sia.lifecycle-removed"
 MCP_MARKER_DIR="$STATE_DIR/managed-mcp"
 MCP_GUARD_DIR="$STATE_DIR/mcp-consumer-guards"
 MANAGED_DIR="$STATE_DIR/managed-install"
+FIRST_LIGHT_COMPLETION="$MANAGED_DIR/first-light.json"
 CONFIG_DIR="$HOME/.config/sia"
 CLI_PATH="$HOME/.local/bin/sia"
 UNIT_PATH="$HOME/.config/systemd/user/sia-brainstem.service"
@@ -400,6 +401,7 @@ PY
 owned_metadata() {
   python3 - "$@" <<'PY'
 import hashlib
+import json
 import os
 import re
 import stat
@@ -643,6 +645,28 @@ def runtime_digest_field(receipt, runtime):
     return True
 
 
+def first_light_generation(path):
+    content, value = inspect_metadata(path)
+    if stat.S_IMODE(value.st_mode) & 0o077:
+        raise ValueError("first-light record is not owner-only")
+    try:
+        record = json.loads(content.decode("utf-8", "strict"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid first-light record") from error
+    if not isinstance(record, dict) \
+            or set(record) != {"v", "version", "state"} \
+            or type(record["v"]) is not int or record["v"] != 1 \
+            or not isinstance(record["version"], str) \
+            or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",
+                            record["version"]) is None \
+            or not isinstance(record["state"], str) \
+            or record["state"] not in {"installing", "ready"}:
+        raise ValueError("invalid first-light record")
+    digest = hashlib.sha256(content).hexdigest()
+    print(token_from_inspection(value, digest))
+    return True
+
+
 try:
     mode, *arguments = sys.argv[1:]
     if mode == "exact":
@@ -659,6 +683,8 @@ try:
         accepted = exact_runtime_receipt(*arguments)
     elif mode == "runtime-digest":
         accepted = runtime_digest_field(*arguments)
+    elif mode == "first-light-generation":
+        accepted = first_light_generation(*arguments)
     elif mode == "skill":
         accepted = exact_skill_marker(*arguments)
     elif mode == "skill-generations":
@@ -2437,7 +2463,7 @@ preflight_continuity_archive_intents() {
   for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
     intent="$(continuity_archive_intent_path "$index")"
     if [ -e "$intent" ] || [ -L "$intent" ]; then
-      CONTINUITY_UNIT_STATES[$index]=unsafe
+      CONTINUITY_UNIT_STATES[index]=unsafe
       if ! fields="$(continuity_archive_intent_fields "$index" "$intent")" \
           || [ -z "$fields" ]; then
         failed "preserve ambiguous ${CONTINUITY_UNIT_NAMES[$index]} archive intent"
@@ -2446,7 +2472,7 @@ preflight_continuity_archive_intents() {
         status=1
         continue
       fi
-      CONTINUITY_UNIT_STATES[$index]=recovery-pending
+      CONTINUITY_UNIT_STATES[index]=recovery-pending
     fi
   done
   for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
@@ -2454,7 +2480,7 @@ preflight_continuity_archive_intents() {
       || continue
     if ! continuity_recovery_manager_quiesced "$index"; then
       failed "preserve active or ambiguous ${CONTINUITY_UNIT_NAMES[$index]} archive recovery"
-      CONTINUITY_UNIT_STATES[$index]=unsafe
+      CONTINUITY_UNIT_STATES[index]=unsafe
       CONTINUITY_SAFE_TO_REMOVE=0
       RUNTIME_NEEDED_BY_CONTINUITY=1
       status=1
@@ -2469,16 +2495,16 @@ preflight_continuity_units_for_uninstall() {
     intent="$(continuity_archive_intent_path "$index")"
     if [ -e "$intent" ] || [ -L "$intent" ]; then
       [ "${CONTINUITY_UNIT_STATES[$index]:-}" = recovery-pending ] \
-        || CONTINUITY_UNIT_STATES[$index]=unsafe
+        || CONTINUITY_UNIT_STATES[index]=unsafe
       continue
     fi
-    CONTINUITY_UNIT_STATES[$index]=unsafe
+    CONTINUITY_UNIT_STATES[index]=unsafe
     if [ ! -e "${CONTINUITY_UNIT_PATHS[$index]}" ] \
         && [ ! -L "${CONTINUITY_UNIT_PATHS[$index]}" ] \
         && [ ! -e "${CONTINUITY_UNIT_RECEIPTS[$index]}" ] \
         && [ ! -L "${CONTINUITY_UNIT_RECEIPTS[$index]}" ]; then
       if continuity_unit_absent "$index"; then
-        CONTINUITY_UNIT_STATES[$index]=absent
+        CONTINUITY_UNIT_STATES[index]=absent
       else
         failed "preserve indeterminate ${CONTINUITY_UNIT_NAMES[$index]}"
         CONTINUITY_SAFE_TO_REMOVE=0
@@ -2491,16 +2517,16 @@ preflight_continuity_units_for_uninstall() {
           "${CONTINUITY_UNIT_KINDS[$index]}" \
           "${CONTINUITY_UNIT_PATHS[$index]}")"; then
       IFS=$'\t' read -r target_expected receipt_expected <<< "$authority"
-      CONTINUITY_TARGET_EXPECTED[$index]="$target_expected"
-      CONTINUITY_RECEIPT_EXPECTED[$index]="$receipt_expected"
-      CONTINUITY_UNIT_STATES[$index]=owned
+      CONTINUITY_TARGET_EXPECTED[index]="$target_expected"
+      CONTINUITY_RECEIPT_EXPECTED[index]="$receipt_expected"
+      CONTINUITY_UNIT_STATES[index]=owned
       if ! inspect_user_unit "${CONTINUITY_UNIT_NAMES[$index]}" \
           CONTINUITY_PREFLIGHT "" continuity \
           || ! continuity_manager_binding_valid \
             "$index" CONTINUITY_PREFLIGHT \
           || ! continuity_authority_unchanged "$index"; then
         failed "preserve indeterminate ${CONTINUITY_UNIT_NAMES[$index]}"
-        CONTINUITY_UNIT_STATES[$index]=unsafe
+        CONTINUITY_UNIT_STATES[index]=unsafe
         CONTINUITY_SAFE_TO_REMOVE=0
         RUNTIME_NEEDED_BY_CONTINUITY=1
       fi
@@ -2610,7 +2636,7 @@ complete_continuity_archive_pair() {
       ;;
     archived:pending) ;;
     archived:archived)
-      CONTINUITY_UNIT_STATES[$index]=pair-archived
+      CONTINUITY_UNIT_STATES[index]=pair-archived
       return 0
       ;;
     *)
@@ -2640,7 +2666,7 @@ complete_continuity_archive_pair() {
     echo "ambiguous paired archive state for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
     return 1
   }
-  CONTINUITY_UNIT_STATES[$index]=pair-archived
+  CONTINUITY_UNIT_STATES[index]=pair-archived
 }
 
 finalize_continuity_archive_pair() {
@@ -2658,7 +2684,7 @@ finalize_continuity_archive_pair() {
     "${CONTINUITY_UNIT_RECEIPTS[$index]}" \
     "$unit_backup" "$receipt_backup" "$unit_expected" "$receipt_expected" \
     || return 1
-  CONTINUITY_UNIT_STATES[$index]=removed
+  CONTINUITY_UNIT_STATES[index]=removed
   echo "exact prior ${CONTINUITY_UNIT_NAMES[$index]} retained at $unit_backup"
   echo "exact prior ${CONTINUITY_UNIT_NAMES[$index]} receipt retained at $receipt_backup"
 }
@@ -2690,7 +2716,7 @@ recover_continuity_archive_intents() {
         status=1
         break
       fi
-      CONTINUITY_UNIT_STATES[$index]=absent
+      CONTINUITY_UNIT_STATES[index]=absent
     done
   fi
   return "$status"
@@ -2728,7 +2754,7 @@ archive_owned_continuity_units() {
       status=1
       break
     fi
-    CONTINUITY_UNIT_STATES[$index]=recovery-pending
+    CONTINUITY_UNIT_STATES[index]=recovery-pending
     CONTINUITY_ARCHIVE_NEEDED=1
     if ! complete_continuity_archive_pair "$index" "$intent"; then
       echo "paired archive intent retained for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
@@ -3276,6 +3302,20 @@ remove_managed_metadata() {
     return 1
   fi
   echo "managed metadata archived at $archive"
+}
+remove_first_light_completion() {
+  local expected
+  owned_file_cas recover "$FIRST_LIGHT_COMPLETION" || return 1
+  if [ ! -e "$FIRST_LIGHT_COMPLETION" ] \
+      && [ ! -L "$FIRST_LIGHT_COMPLETION" ]; then
+    return 0
+  fi
+  expected="$(owned_metadata first-light-generation \
+    "$FIRST_LIGHT_COMPLETION")" || {
+      echo "unsafe or modified first-light completion record preserved" >&2
+      return 1
+    }
+  remove_managed_metadata "$FIRST_LIGHT_COMPLETION" "$expected"
 }
 runtime_tree_digest() {
   python3 - "$1" <<'PY'
@@ -4982,6 +5022,8 @@ if [ "$RUNTIME_NEEDED_BY_SERVICE" -eq 0 ] \
     if [ "$RUNTIME_UNOWNED" -eq 0 ]; then
       attempt "remove installed gbrain pin and receipt" \
         remove_owned_gbrain_pin
+      attempt "remove first-light completion record" \
+        remove_first_light_completion
     fi
   else
     echo "SIA runtime preserved for the surviving CLI" >&2

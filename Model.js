@@ -10,6 +10,118 @@
 // only handles angular spacing; timestamps own the radius.
 .pragma library
 
+function releaseVersion() { return "1.5.0" }
+
+// The checkout and the resident runtime advance as one release generation.
+// Only an exact release match may expose the cockpit.  Comparison stays on
+// decimal strings so a malformed or unusually large component fails closed
+// instead of being rounded through JavaScript's Number representation.
+function releaseVersionParts(value) {
+  if (typeof value !== "string") return null
+  var match = value.match(
+    /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/)
+  return match ? [match[1], match[2], match[3]] : null
+}
+
+function compareReleaseVersions(left, right) {
+  var a = releaseVersionParts(left)
+  var b = releaseVersionParts(right)
+  if (!a || !b) return null
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].length < b[i].length) return -1
+    if (a[i].length > b[i].length) return 1
+    if (a[i] < b[i]) return -1
+    if (a[i] > b[i]) return 1
+  }
+  return 0
+}
+
+function nonNegativeInteger(value) {
+  return typeof value === "number" && isFinite(value)
+    && Math.floor(value) === value && value >= 0
+}
+
+// Status snapshots published before release stamping still have a narrow,
+// distinctive schema.  Recognize that real legacy shape for upgrade routing;
+// a generic versionless object remains a repair condition.
+function residentStatusShape(status) {
+  if (!status || typeof status !== "object" || Array.isArray(status)
+      || status.v !== 1 || typeof status.ts !== "string"
+      || typeof status.state !== "string"
+      || typeof status.publication_id !== "string"
+      || !status.projection_debt
+      || typeof status.projection_debt !== "object"
+      || Array.isArray(status.projection_debt)
+      || typeof status.projection_debt.graph !== "string"
+      || typeof status.projection_debt.consolidation !== "string"
+      || !status.mind || typeof status.mind !== "object"
+      || Array.isArray(status.mind)
+      || !status.agent_queue || typeof status.agent_queue !== "object"
+      || Array.isArray(status.agent_queue)) return false
+  var mindFields = ["nodes", "edges", "decay_active", "decay_demoted",
+                    "rehearsal_eligible", "rehearsal_due", "pinned"]
+  var relayFields = ["materialized", "refused", "acknowledged"]
+  for (var i = 0; i < mindFields.length; i++)
+    if (!nonNegativeInteger(status.mind[mindFields[i]])) return false
+  for (var j = 0; j < relayFields.length; j++)
+    if (!nonNegativeInteger(status.agent_queue[relayFields[j]])) return false
+  return true
+}
+
+function legacyResidentStatus(status) {
+  return status && status.version === undefined
+    && residentStatusShape(status)
+}
+
+function runtimeLifecycle(status, pluginVersion) {
+  if (!status || typeof status !== "object") return "setup"
+  if (status.version === undefined)
+    return legacyResidentStatus(status) ? "update" : "repair"
+  var compared = compareReleaseVersions(status.version, pluginVersion)
+  if (compared === null) return "repair"
+  if (compared < 0) return "update"
+  if (compared > 0) return "ahead"
+  return "ready"
+}
+
+function installCompletionReady(completion, pluginVersion) {
+  return !!completion && typeof completion === "object"
+    && completion.v === 1 && completion.state === "ready"
+    && completion.version === pluginVersion
+}
+
+function installCompletionInstalling(completion, pluginVersion) {
+  return !!completion && typeof completion === "object"
+    && completion.v === 1 && completion.state === "installing"
+    && completion.version === pluginVersion
+}
+
+function validInstallCompletion(completion) {
+  return !!completion && typeof completion === "object"
+    && completion.v === 1
+    && (completion.state === "installing" || completion.state === "ready")
+    && releaseVersionParts(completion.version) !== null
+}
+
+// File resolution is handled by the QML surfaces.  Once both reads have
+// resolved, this combines the resident status and the separate, release-bound
+// completion record.  Existing completion state plus a missing status is a
+// repair condition, never a claim that no brain exists.
+function guidedLifecycle(status, completion, pluginVersion) {
+  var runtime = runtimeLifecycle(status, pluginVersion)
+  if (runtime === "ahead") return "ahead"
+  var completionCompared = validInstallCompletion(completion)
+    ? compareReleaseVersions(completion.version, pluginVersion) : null
+  if (completionCompared !== null && completionCompared > 0) return "ahead"
+  if (installCompletionInstalling(completion, pluginVersion))
+    return "installing"
+  if (runtime === "repair") return "repair"
+  if (runtime === "setup") return completion ? "repair" : "setup"
+  if (runtime === "update") return "update"
+  return installCompletionReady(completion, pluginVersion)
+    ? "ready" : "repair"
+}
+
 // Keep this policy paired with manifest.json's staleAfterSec schema. Both UI
 // entry points call the same validator so hand-edited shell configuration
 // cannot bypass the declared integer range.

@@ -25,6 +25,10 @@ Item {
   property string workspaceLockFeedback: ""
 
   property var status: null
+  property var installCompletion: null
+  property bool statusResolved: false
+  property bool statusLoadValid: false
+  property bool installCompletionResolved: false
   property var graph: null
   property var thoughts: []
   property bool stale: true
@@ -62,6 +66,7 @@ Item {
   property bool restoreCorrelationLost: false
   property string restoreRequestId: ""
   property string restoreExpectedPreparedId: ""
+  property bool setupLaunchRequested: false
   readonly property int continuityInputMaxLength: 4096
   readonly property int continuityResponseMaxLength: 65536
 
@@ -71,6 +76,28 @@ Item {
   readonly property string continuityPath:
     (Quickshell.env("HOME") || "")
       + "/.local/state/sia-continuity/status.json"
+  readonly property string installCompletionPath:
+    (Quickshell.env("HOME") || "")
+      + "/.local/state/sia/managed-install/first-light.json"
+  readonly property string pluginVersion:
+    root.manifest && typeof root.manifest.version === "string"
+      && root.manifest.version !== "" ? root.manifest.version
+      : Model.releaseVersion()
+  readonly property string pluginRoot:
+    String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
+  readonly property string setupHelperPath:
+    root.pluginRoot + "/bin/sia-setup"
+  readonly property string runtimeLifecycle:
+    Model.runtimeLifecycle(root.statusLoadValid ? root.status : null,
+                           root.pluginVersion)
+  readonly property string releaseLifecycle:
+    !root.statusResolved || !root.installCompletionResolved ? "checking"
+      : Model.guidedLifecycle(root.statusLoadValid ? root.status : null,
+                              root.installCompletion, root.pluginVersion)
+  readonly property bool setupRequired: root.releaseLifecycle !== "ready"
+  readonly property bool setupActionAllowed:
+    ["setup", "installing", "update", "repair"]
+      .indexOf(root.releaseLifecycle) !== -1
   readonly property string fontFamily: Style.font.family
   readonly property color fg: Color.foreground
   readonly property color accent: Color.accent
@@ -87,7 +114,8 @@ Item {
   })
 
   readonly property string brainState:
-    stale ? "stale" : (status && status.state ? status.state : "unknown")
+    releaseLifecycle !== "ready" ? releaseLifecycle
+      : stale ? "stale" : (status && status.state ? status.state : "unknown")
   readonly property int eventsToday:
     status && status.events_today ? status.events_today : 0
   readonly property var snap:
@@ -1423,7 +1451,75 @@ Item {
     root.setWorkspaceLock(root.focusedWorkspaceName)
   }
 
+  function launchSetup() {
+    // This is the sole UI launch edge.  It is reached only from an explicit
+    // click/key action; loading or enabling the plugin never executes setup.
+    if (!root.setupActionAllowed || root.setupLaunchRequested) return
+    root.setupLaunchRequested = true
+    Quickshell.execDetached([
+      "/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV",
+      root.setupHelperPath, "launch"])
+  }
+
+  function setupEyebrow() {
+    if (root.releaseLifecycle === "checking")
+      return "INSTALLATION CHECK · READING LOCAL STATE"
+    if (root.releaseLifecycle === "setup")
+      return "FIRST LIGHT · LOCAL BRAIN NOT YET INSTALLED"
+    if (root.releaseLifecycle === "installing")
+      return "FIRST LIGHT · INSTALLATION IN PROGRESS"
+    if (root.releaseLifecycle === "update")
+      return "RELEASE ALIGNMENT · RUNTIME UPDATE REQUIRED"
+    if (root.releaseLifecycle === "ahead")
+      return "RELEASE ALIGNMENT · COCKPIT CHECKOUT IS OLDER"
+    return "INSTALLATION BOUNDARY · REPAIR REQUIRED"
+  }
+
+  function setupTitle() {
+    if (root.releaseLifecycle === "checking") return "  Checking SIA"
+    if (root.releaseLifecycle === "setup")
+      return "  Give this machine a memory"
+    if (root.releaseLifecycle === "installing")
+      return "  First light is underway"
+    if (root.releaseLifecycle === "update") return "  Finish the SIA update"
+    if (root.releaseLifecycle === "ahead") return "  Update this cockpit"
+    return "  Repair the release boundary"
+  }
+
+  function setupDescription() {
+    if (root.releaseLifecycle === "checking")
+      return "SIA is reading the resident status and the separate first-light completion record. No installer has been started."
+    if (root.releaseLifecycle === "setup")
+      return "The Marketplace installed SIA's cockpit. The resident brain is not complete; first light remains a deliberate local action."
+    if (root.releaseLifecycle === "installing")
+      return "A matching installer recorded work in progress. Keep its terminal open, or retry here only if that terminal has ended."
+    if (root.releaseLifecycle === "update") {
+      var installed = root.status && typeof root.status.version === "string"
+        ? root.status.version : "a legacy runtime"
+      return "The cockpit is " + root.pluginVersion
+        + ", while the resident status is " + installed
+        + ". The installer verifies ownership and retains the corpus and signing identity while advancing the runtime."
+    }
+    if (root.releaseLifecycle === "ahead") {
+      var resident = root.status && typeof root.status.version === "string"
+        ? root.status.version : "newer"
+      return "Resident SIA " + resident + " is newer than cockpit "
+        + root.pluginVersion
+        + ". Installation is disabled to prevent a downgrade. Run `omarchy plugin update khephri.sia`, then reopen the cockpit."
+    }
+    return "SIA could not establish a matching resident status and first-light completion record. The repair action re-enters the fail-closed installer, which verifies ownership and refuses unsafe replacement."
+  }
+
+  function setupActionLabel() {
+    if (root.releaseLifecycle === "setup") return "BEGIN FIRST LIGHT"
+    if (root.releaseLifecycle === "installing")
+      return "REOPEN OR RETRY IN TERMINAL"
+    if (root.releaseLifecycle === "update") return "FINISH UPDATE"
+    return "RUN SAFE REPAIR"
+  }
+
   function stateColor() {
+    if (root.setupRequired) return root.accent
     if (root.stale) return Qt.alpha(root.fg, 0.4)
     if (root.brainState === "failed") return root.urgent
     if (root.brainState === "degraded") return Qt.alpha(root.urgent, 0.75)
@@ -1472,14 +1568,20 @@ Item {
     continuitySheetOpen = false
     continuityPage = "overview"
     restoreConfirmOpen = false
+    setupLaunchRequested = false
     readyProc.cancel()
     clearReadyCheck()
-    statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
+    statusResolved = false
+    installCompletionResolved = false
+    statusFile.reload(); installCompletionFile.reload()
+    graphFile.reload(); thoughtsFile.reload()
     continuityFile.reload()
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
       if (payload.mode === "continuity") root.openContinuity("overview")
+      else if (root.cockpitVisible && root.setupActionAllowed)
+        firstLightButton.forceActiveFocus()
       else if (root.cockpitVisible) keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
     })
@@ -1509,9 +1611,19 @@ Item {
     if (!root.cockpitVisible) return
     Qt.callLater(function() {
       if (!root.cockpitVisible) return
-      if (root.continuitySheetOpen) root.focusContinuityPage()
+      if (root.setupActionAllowed) firstLightButton.forceActiveFocus()
+      else if (root.continuitySheetOpen) root.focusContinuityPage()
       else keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
+    })
+  }
+
+  onReleaseLifecycleChanged: {
+    if (!root.cockpitVisible) return
+    Qt.callLater(function() {
+      if (!root.cockpitVisible) return
+      if (root.setupActionAllowed) firstLightButton.forceActiveFocus()
+      else keyCatcher.forceActiveFocus()
     })
   }
 
@@ -1519,11 +1631,13 @@ Item {
     try {
       const parsed = JSON.parse(text)
       if (!root.validStatusSnapshot(parsed)) {
+        root.statusLoadValid = false
         root.statusBoundary = root.status
           ? "last good status; latest status rejected" : "no valid status"
         return
       }
       root.status = parsed
+      root.statusLoadValid = true
       root.statusBoundary = ""
       readyProc.cancel()
       root.clearReadyCheck()
@@ -1531,6 +1645,7 @@ Item {
       root.stale = !(ts > 0) ||
         (Date.now() - ts) > root.staleAfterSec * 1000
     } catch (e) {
+      root.statusLoadValid = false
       root.statusBoundary = root.status
         ? "last good status; latest status rejected" : "no valid status"
     }
@@ -1629,16 +1744,36 @@ Item {
     }
   }
 
+  function applyInstallCompletion(text) {
+    try {
+      const parsed = JSON.parse(text)
+      root.installCompletion = parsed
+    } catch (e) { root.installCompletion = null }
+  }
+
   FileView {
     id: statusFile
     path: root.statePath + "/status.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyStatus(text())
-    onFileChanged: statusApply.restart()
+    onLoaded: {
+      root.applyStatus(text())
+      root.statusResolved = true
+    }
+    onLoadFailed: {
+      root.statusLoadValid = false
+      root.statusResolved = true
+      root.statusBoundary = root.status
+        ? "last good status; resident status unavailable"
+        : "resident status unavailable"
+    }
+    onFileChanged: {
+      root.statusResolved = false
+      statusApply.restart()
+    }
   }
   Timer { id: statusApply; interval: 150; repeat: false
-          onTriggered: { statusFile.reload(); root.applyStatus(statusFile.text()) } }
+          onTriggered: statusFile.reload() }
 
   FileView {
     id: graphFile
@@ -1675,6 +1810,27 @@ Item {
             continuityFile.reload()
             root.applyContinuity(continuityFile.text())
           } }
+
+  FileView {
+    id: installCompletionFile
+    path: root.installCompletionPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      root.applyInstallCompletion(text())
+      root.installCompletionResolved = true
+    }
+    onLoadFailed: {
+      root.installCompletion = null
+      root.installCompletionResolved = true
+    }
+    onFileChanged: {
+      root.installCompletionResolved = false
+      installCompletionApply.restart()
+    }
+  }
+  Timer { id: installCompletionApply; interval: 150; repeat: false
+          onTriggered: installCompletionFile.reload() }
 
   Timer {
     interval: 1000; running: root.opened; repeat: true
@@ -2010,6 +2166,16 @@ Item {
 
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
+        if (root.setupRequired) {
+          if (root.setupActionAllowed && !root.setupLaunchRequested
+              && !event.isAutoRepeat
+              && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                  || event.key === Qt.Key_Space)) {
+            root.launchSetup()
+            event.accepted = true
+          }
+          return
+        }
         if (root.restoreConfirmOpen) {
           if (continuityRestoreConfirm.handleKey(event)) event.accepted = true
           return
@@ -2029,6 +2195,7 @@ Item {
       // ---------------------------------------------------------- header
       Item {
         id: header
+        enabled: !root.setupRequired
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -2295,6 +2462,7 @@ Item {
       // ---------------------------------------------------------- footer
       Item {
         id: footer
+        enabled: !root.setupRequired
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -2334,6 +2502,7 @@ Item {
       // ---------------------------------------------------------- body
       Item {
         id: body
+        enabled: !root.setupRequired
         anchors.top: header.bottom
         anchors.bottom: footer.top
         anchors.left: parent.left
@@ -4071,6 +4240,170 @@ Item {
                   }
                 }
               }
+            }
+          }
+        }
+      }
+
+      // ------------------------------------------------ guided first light
+      // The checkout is already a functioning, reviewable plugin at this
+      // point.  Resident installation remains an informed operator action.
+      Rectangle {
+        id: firstLightGate
+        anchors.fill: parent
+        visible: root.setupRequired
+        z: 30
+        color: Color.background
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Rectangle {
+          id: firstLightCard
+          anchors.centerIn: parent
+          width: parent.width * 0.44
+          height: firstLightColumn.implicitHeight + Style.space(24)
+          radius: Style.cornerRadius
+          color: Qt.alpha(root.fg, 0.04)
+          border.color: Qt.alpha(root.accent, 0.45)
+          border.width: 1
+
+          Column {
+            id: firstLightColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Style.space(12)
+            spacing: Style.space(12)
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: root.setupEyebrow()
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: Model.brainGlyph() + root.setupTitle()
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: root.setupDescription()
+              wrapMode: Text.WordWrap
+              color: Qt.alpha(root.fg, 0.78)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Rectangle {
+              width: parent.width
+              height: firstLightBoundary.implicitHeight + Style.space(16)
+              radius: Style.cornerRadius
+              color: Qt.alpha(root.accent, 0.07)
+              border.color: Qt.alpha(root.fg, 0.12)
+              border.width: 1
+              Text {
+                id: firstLightBoundary
+                anchors.fill: parent
+                anchors.margins: Style.space(8)
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Installation runs visibly in a terminal and this cockpit stays locked until the matching runtime publishes status after `sia ready`."
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.65)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+              }
+            }
+
+            Text {
+              visible: root.setupActionAllowed
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: "YOUR CLICK MAY · download pinned restic, Bun, gbrain, and Ollama artifacts; build gbrain; pull the pinned local embedding model; create a signing identity and empty corpus only when no owned brain exists; and install or restart user services."
+              wrapMode: Text.WordWrap
+              color: Qt.alpha(root.fg, 0.72)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Button {
+              id: firstLightButton
+              visible: root.setupActionAllowed
+              enabled: root.setupActionAllowed && !root.setupLaunchRequested
+              width: parent.width
+              height: firstLightButtonText.implicitHeight + Style.space(16)
+              focusPolicy: Qt.StrongFocus
+              hoverEnabled: true
+              Accessible.name: root.setupActionLabel()
+              Accessible.description: "Open the visible SIA installer terminal after reviewing the local installation boundary."
+              onClicked: root.launchSetup()
+              background: Rectangle {
+                radius: Style.cornerRadius
+                color: firstLightButton.hovered
+                  ? Qt.alpha(root.accent, 0.28)
+                  : Qt.alpha(root.accent, 0.18)
+                border.color: firstLightButton.activeFocus
+                  ? root.fg : Qt.alpha(root.accent, 0.75)
+                border.width: firstLightButton.activeFocus ? 2 : 1
+              }
+              contentItem: Text {
+                id: firstLightButtonText
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.setupActionLabel()
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+              }
+            }
+
+            Text {
+              visible: root.setupLaunchRequested
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: "Setup terminal requested. Keep it open; this gate clears only after the matching resident release reaches first light."
+              wrapMode: Text.WordWrap
+              color: root.accent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: root.setupActionAllowed
+                ? "Enter = continue · Esc = leave setup"
+                : "Esc = leave setup"
+              color: Qt.alpha(root.fg, 0.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
             }
           }
         }

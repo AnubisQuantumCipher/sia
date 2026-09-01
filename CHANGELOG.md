@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.5.0 — 2026-09-01
+
+- **Marketplace-native guided first light** — the documented Omarchy path is
+  now `omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git
+  --enable`. An absent resident runtime presents a cockpit **SETUP** gate; an
+  older runtime after `omarchy plugin update khephri.sia` presents **UPDATE**.
+  Their explicit **Begin first light** and **Finish update** actions launch the
+  existing fail-closed installer in a visible terminal.
+
+- **Consent remains separate from enablement** — QML load never runs installer
+  code. The gate discloses pinned toolchain and embedding-runtime downloads,
+  the gbrain build and local model pull, fresh identity/corpus creation, and
+  user-service installation before the operator starts them. It clears only
+  when the resident runtime version matches the plugin and `sia ready` passes.
+
+- **Generation and consent guards** — first-light state now distinguishes
+  checking, installing, repair, update, and a newer resident generation. A
+  newer valid status or completion record disables the cockpit action, and the
+  installer repeats the comparison under its lifecycle lease before mutation.
+  Guided launch removes inherited consent flags plus `BASH_ENV`/`ENV`; the
+  release-bound completion record is atomically forced to owner-only mode.
+
+- **Lifecycle boundaries made explicit** — Omarchy has no plugin lifecycle
+  hooks, so guided first light is a cockpit handoff rather than a hidden install
+  hook. The Marketplace may retain its existing **Manual setup** override until
+  a maintainer removes it, and `omarchy plugin remove` alone still does not
+  uninstall SIA's resident runtime or user service. SIA's default uninstaller
+  removes that runtime while retaining brain data; only its explicit purge mode
+  attempts data/config erasure.
+
 ## 1.4.2 — 2026-09-01
 
 - **Fresh gbrain bootstrap repair** — after SIA health-checks and publishes a
@@ -121,9 +151,10 @@
   remain owner-private and outside every portable or continuity root.
 
 - **Marketplace installation made explicit** — the front page and field manual
-  now reflect SIA's existing `khephri.sia` listing and its intentional Manual
-  setup status. The safe path uses `omarchy plugin add` without premature
-  enablement, then runs SIA's explicit installer; the installer provisions the
+  reflected SIA's existing `khephri.sia` listing and its then-intentional Manual
+  setup status. At that release, installation used a clone followed by SIA's
+  explicit installer; v1.5.0 supersedes that manual handoff with an explicit
+  cockpit gate. The installer provisions the
   pinned private restic adapter and enables the surface only after first light.
   The documentation also distinguishes the Omarchy Brain from the unrelated
   Sia Foundation storage network at the first read.

@@ -283,7 +283,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.4.2"
+VERSION = "1.5.0"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -356,8 +356,12 @@ def ensure_dirs():
     for d in (SHARE, STATE, CORPUS, BIN):
         os.makedirs(d, exist_ok=True)
 
-def atomic_write(path, data):
-    mode = 0o600
+def atomic_write(path, data, *, mode=None):
+    if mode is not None and (
+            isinstance(mode, bool) or not isinstance(mode, int)
+            or mode < 0 or mode > 0o777):
+        raise ValueError("atomic-write mode must be an integer permission mode")
+    selected_mode = 0o600 if mode is None else mode
     try:
         current = os.lstat(path)
     except FileNotFoundError:
@@ -365,12 +369,13 @@ def atomic_write(path, data):
     if current is not None:
         if not stat.S_ISREG(current.st_mode):
             raise ValueError("atomic-write target is not a regular file")
-        mode = stat.S_IMODE(current.st_mode)
+        if mode is None:
+            selected_mode = stat.S_IMODE(current.st_mode)
     if not isinstance(data, str):
         raise TypeError("atomic-write data must be text")
     encoded = data.encode("utf-8", errors="strict")
     siaqueue.fixed_atomic_publish(
-        path, encoded, mode=mode,
+        path, encoded, mode=selected_mode,
         staging_dir=siaqueue.staging_dir_for(
             path, authority_roots=(CORPUS, STATE, SHARE)))
 
@@ -7256,7 +7261,9 @@ def _export_graph_publication():
 
 
 def export_status(st):
-    atomic_write(STATUS_PATH, json.dumps(st))
+    snapshot = dict(st)
+    snapshot["version"] = VERSION
+    atomic_write(STATUS_PATH, json.dumps(snapshot))
 
 
 def export_thoughts(store):
@@ -9991,7 +9998,8 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
         last_thought_origin = "legacy-unlabeled"
     prev_graph = read_json(GRAPH_PATH, {})
     status_marker = completed_pulse or _pending_pulse_marker(memo)
-    st = {"v": 1, "ts": iso(), "state": state, "pulse_seq": seq, "day": day,
+    st = {"v": 1, "version": VERSION, "ts": iso(), "state": state,
+          "pulse_seq": seq, "day": day,
           "publication_id": (status_marker or {}).get("id", ""),
           "events_pulse": len(events),
           "events_today": sum(o.get("today", 0) for o in organs_st.values()),

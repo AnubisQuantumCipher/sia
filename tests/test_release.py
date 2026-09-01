@@ -300,6 +300,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
+        self.assertEqual(version, "1.5.0")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',
@@ -319,13 +320,15 @@ class ReleaseContract(unittest.TestCase):
                            "flock", "iproute2"):
             self.assertIn(dependency, readme)
         self.assertIn("already listed", readme_flat)
-        self.assertIn("manual setup", readme_flat)
         self.assertIn("private restic", readme_flat)
         self.assertIn("sia foundation", readme_flat)
-        self.assertNotIn(
+        marketplace_command = (
             "omarchy plugin add https://github.com/anubisquantumcipher/"
-            "sia.git --enable", readme)
-        manual = " ".join(_read("docs/MANUAL.md").casefold().split())
+            "sia.git --enable")
+        self.assertIn(marketplace_command, readme)
+        manual_source = _read("docs/MANUAL.md").casefold()
+        manual = " ".join(manual_source.split())
+        self.assertIn(marketplace_command, manual_source)
         self.assertIn("already listed", manual)
         self.assertIn("current upstream head", manual)
         self.assertIn("sia backup list", manual)
@@ -2616,6 +2619,7 @@ ollama_runtime_receipt_valid
             installer.index("prepare_and_lock_install\n"))
         self.assertIn('release_source_frontdoor verify "$SIA_ORIGINAL_REPO"',
                       installer)
+        self.assertIn('"$SIA_PLUGIN_STAGE/bin/sia-setup"', desktop)
 
     def test_release_source_snapshot_is_bounded_and_churn_safe(self):
         installer = _read("install.sh")
@@ -5818,7 +5822,10 @@ remove_managed_skill
         self.assertIn("git diff --check", workflow)
         self.assertIn("koalaman/shellcheck-alpine@sha256:", workflow)
         self.assertIn("--network none --cap-drop all", workflow)
-        self.assertIn("shellcheck /mnt/install.sh /mnt/uninstall.sh", workflow)
+        self.assertIn(
+            "shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup",
+            workflow)
+        self.assertIn("bash -n install.sh uninstall.sh bin/sia-setup", workflow)
         uses = re.findall(r"uses:\s+([^@\s]+)@([^\s#]+)", workflow)
         self.assertTrue(uses)
         for action, revision in uses:
