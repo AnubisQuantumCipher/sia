@@ -1,5 +1,9 @@
 # Security & privacy
 
+> [!IMPORTANT]
+> This policy covers **SIA, the Omarchy Brain**. It is unaffiliated with the
+> Sia Foundation, `sia.tech`, and the similarly named storage network.
+
 **Model**: SIA's built-in senses ingest *records, not content* — subsystem ledgers,
 logs, reflogs, notification summaries, and session file metadata (never agent
 message bodies or clipboards). Built-in senses do not open private keys. An
@@ -38,6 +42,29 @@ store credentials, secrets, or private content in them: pattern-based redaction
 is defense in depth, not authorization to persist sensitive prose.
 MCP ownership markers and keep-runtime guards protect lifecycle decisions;
 they are not access-control or egress controls.
+
+The optional Obsidian organ is active only for a real no-follow vault `.git`
+directory at `~/Obsidian` or the bounded absolute `OBSIDIAN_VAULT_PATH`.
+Symlinked ancestors, a symlinked `.git`, worktree pointer files, and invalid
+overrides do not activate it. A stable bounded `HEAD` reflog supplies complete
+SHA-1 or SHA-256 commit identities only; mutable reflog descriptions are not
+trusted as subjects. SIA opens the real object database with no-follow
+semantics, then exposes only that held descriptor to a private minimal Git
+control directory; the vault's repository config is never Git's config root.
+Hex-only identities are commit-type peeled before a config-isolated
+`/usr/bin/git log` metadata walk. System/global and vault-local config, hooks,
+fsmonitor, notes, signatures, replacement objects, external diffs, text
+conversion, rename detection, paging, prompts, optional locks, lazy fetching,
+and external attribute/order files are excluded or disabled. The child may
+inspect Git commit/tree metadata and returns quoted path-status rows for
+Markdown paths outside `.obsidian/`; SIA immediately reduces those rows to
+add/change/delete counts and never persists the pathnames. A reflog row naming
+a blob fails the commit-type gate without emitting the blob. Git is not asked
+for note blobs, working-tree Markdown bodies, frontmatter, or wikilinks.
+Actual commit subjects are admitted evidence text and pass through the
+ordinary redaction boundary; this origin attests to the Git record, not to the
+truth of its prose. Missing, malformed, failed, timed-out, or over-bound Git
+metadata leaves the source cursor unpublished.
 
 The corpus ownership receipt binds the canonical root's stable device, inode,
 full mode, and owner. It excludes timestamps, contents, and Git `HEAD`, so
