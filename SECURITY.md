@@ -388,8 +388,21 @@ sandbox.
 
 The daemon runs unsandboxed as your user (like any Omarchy plugin — read
 the code before installing). The QML surfaces render dynamic snapshot strings
-with `Text.PlainText`; the cockpit's only process actions are fixed
-`~/.local/bin/sia verify` and `~/.local/bin/sia ready` invocations. PGLite admits one owner: all SIA-managed
+with `Text.PlainText`. Their ordinary process actions use fixed SIA command
+paths. The first-light gate adds one deliberately stronger action: only an
+explicit **Begin first light** or **Finish update** press may launch the
+checkout's `install.sh`, and it does so in a visible terminal. Loading or
+enabling QML never runs the installer. Before that action, the gate discloses
+that installation may download pinned local toolchains and the embedding
+runtime, build gbrain, pull the pinned local model, create a signing identity
+and corpus on a fresh install, and install user services. Success requires the
+resident runtime version to match the plugin and a live `sia ready` pass; an
+installer refusal leaves the cockpit gated. The visible terminal is an
+operator-consent and diagnosability boundary, not a sandbox—the script and
+installed daemon still execute as the user. The owner-private
+`managed-install/first-light.json` file is only a release-bound UI coordination
+record; it is not signed evidence and does not replace a fresh `sia ready`
+check when live readiness matters. PGLite admits one owner: all SIA-managed
 daemon, CLI, benchmark, and MCP-derived operations share an advisory
 cross-process lease. Whole pulse/dream cycles and explicit operator corpus
 mutations share a separate transaction lease, and a lifetime brainstem lease
@@ -430,7 +443,21 @@ security claim. Local manifest validation must be rerun against the exact
 submission commit; that result, automated marketplace validation, and any
 eventual listing establish compatibility/discoverability only. Submission
 remains maintainer-approval-gated, and the official marketplace explicitly does
-not treat a listing as a security review.
+not treat a listing as a security review. Omarchy currently provides no plugin
+lifecycle hooks. SIA's guided first-light button is therefore an explicit
+handoff to the fail-closed installer, not an automatic hook. The Marketplace
+may retain its **Manual setup** registry override until a maintainer removes
+it. Omarchy's ordinary plugin removal also cannot uninstall SIA's resident
+runtime or user service. Runtime/UI removal must begin with SIA's own
+`uninstall.sh` while the checkout remains available; only its explicit
+`--purge` mode attempts to erase the retained brain data and config as well.
+The guided launcher removes ambient installer-consent variables and
+`BASH_ENV`/`ENV` before starting the visible terminal. After acquiring the
+lifecycle lease, the installer compares its source release with both the
+resident runtime and the release-bound first-light record; a newer valid
+generation refuses before the install mutation marker or launch fence. The
+completion record itself is coordination state published at exact owner-only
+permissions. It is not signed evidence and never substitutes for `sia ready`.
 
 **Reporting**: open a GitHub issue for non-sensitive matters; for
 sensitive reports, use GitHub's private vulnerability reporting on this

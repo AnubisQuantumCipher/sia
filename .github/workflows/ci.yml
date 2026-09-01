@@ -28,7 +28,7 @@ jobs:
       - name: compile all python
         run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp
       - name: shell syntax
-        run: bash -n install.sh uninstall.sh
+        run: bash -n install.sh uninstall.sh bin/sia-setup
       - name: release artifact contracts
         run: |
           python3 -m json.tool manifest.json >/dev/null
@@ -46,7 +46,7 @@ jobs:
             --security-opt no-new-privileges --read-only \
             -v "$PWD:/mnt:ro" \
             koalaman/shellcheck-alpine@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
-            shellcheck /mnt/install.sh /mnt/uninstall.sh
+            shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup
       - name: unit and contract tests
         env:
           PYTHONWARNINGS: error::ResourceWarning

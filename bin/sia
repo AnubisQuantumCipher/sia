@@ -2,6 +2,7 @@
 """sia — talk to the Omarchy Brain.
 
   sia status            what the brain knows right now
+  sia version           print the installed SIA runtime release
   sia ready             exit successfully only when memory is reconciled
   sia ask "question" [--no-touch]
                         query the brain; ordinary results strengthen memory
@@ -1686,6 +1687,9 @@ def _main_under_lifecycle(argv):
 
 
 def _dispatch(argv, cmd):
+    if cmd == "version":
+        print(sialib.VERSION)
+        return 0
     if cmd == "status":
         return cmd_status()
     if cmd == "ready":

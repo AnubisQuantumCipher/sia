@@ -108,28 +108,38 @@ organ, or both sources may report the same Git activity.
 
 ## 1. Sixty-second start
 
-On Omarchy, install the already-listed marketplace plugin without enabling its
-surface prematurely:
+On Omarchy, add and enable the already-listed Marketplace plugin:
 
 ```bash
-omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git
+omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 ```
 
-Choose **No** if that command asks whether to enable immediately. The git-URL
-form clones current upstream HEAD rather than pinning the marketplace's last
-verified commit; inspect the checkout and listing state before running it.
-Then continue deliberately:
+The surface loads without installing the resident brain. Open the SIA bar item;
+an absent runtime presents a **SETUP** gate. Read its disclosure, then choose
+**Begin first light**. This explicit action opens the existing fail-closed
+`install.sh` in a visible terminal. It checks the supported host, downloads
+pinned local toolchains and the embedding runtime, builds gbrain, pulls the
+pinned local embedding model, creates the signing identity and empty corpus on
+a fresh machine, and installs user services. Enabling or loading the QML never
+runs those operations automatically.
 
-```bash
-~/.config/omarchy/plugins/khephri.sia/install.sh
-```
+Keep the terminal open for progress or a named refusal. The cockpit remains
+gated until the resident runtime version matches the plugin and `sia ready`
+passes. The git-URL form clones current upstream HEAD rather than pinning the
+Marketplace's last verified commit; inspect the checkout and listing state
+before starting first light.
 
-The installer adds the resident runtime, proves first light and readiness,
-then enables the surface. Omarchy's current plugin manager has no install hook,
-so `omarchy plugin add` alone is not a complete SIA installation. A first
-install is substantial rather than instant: it checks the supported host,
-downloads pinned local toolchains and the embedding runtime, builds gbrain, and
-pulls the pinned local embedding model.
+After `omarchy plugin update khephri.sia`, open the cockpit. If the resident
+runtime is older than the plugin, the **UPDATE** gate offers **Finish update**,
+which launches the same visible installer and requires the same version and
+readiness checks. The cloned manifest registers the plugin as `khephri.sia`,
+which is why the update command uses that ID.
+An active first-light marker shows **INSTALLING**; missing or contradictory
+generation records show **REPAIR**. If a valid resident status or completion
+record is newer than the plugin checkout, **AHEAD** disables the install action:
+run `omarchy plugin update khephri.sia` instead. The installer independently
+rechecks both resident records after acquiring its lifecycle lease and refuses
+a downgrade even when `install.sh` is invoked directly.
 
 | Do this | You get |
 |---|---|
@@ -1119,12 +1129,20 @@ oversize input/output refuses instead of being parsed or returned partially.
 The public repository contains the required root `manifest.json`, README,
 license, preview asset, and installation/removal documentation. SIA is already
 listed as [`khephri.sia`](https://plugins.omarchy.org/plugin.html?id=khephri.sia)
-in category `System`. The listing intentionally says **Manual setup**: the
-standard plugin command clones and validates the QML checkout but cannot run
-SIA's resident-runtime installer. Automated validation checks the exact public
-commit's manifest and Quickshell compatibility. Neither that result nor a
-listing is a security review; installed community plugins run unsandboxed as
-the user.
+in category `System`. The repository supports the normal
+`omarchy plugin add … --enable` entry point and then presents guided first
+light inside the cockpit. Omarchy's plugin manager has no lifecycle hooks, so
+enablement itself cannot install or update SIA's resident runtime. The QML
+never silently substitutes for such a hook: an explicit **Begin first light**
+or **Finish update** action launches the existing fail-closed installer in a
+visible terminal. Automated validation checks the exact public commit's
+manifest and Quickshell compatibility. Neither that result nor a listing is a
+security review; installed community plugins run unsandboxed as the user.
+
+The public listing may retain **Manual setup** until an Omarchy maintainer
+removes its pre-existing installation override. That Marketplace metadata is
+maintainer-owned; check the linked live listing for its current label, and do
+not claim it changed before the catalog actually changes.
 
 Validate every release with `omarchy plugin validate .`, push the exact tested
 commit, then use the marketplace action for verifying and publishing a newer
@@ -1133,17 +1151,21 @@ upstream commit. Do not submit SIA again as a new plugin. Follow the
 confirm every update checklist statement—including ownership of the plugin and
 preview assets—before creating the verification issue.
 
-Marketplace `omarchy plugin add …` validates and clones the QML plugin only.
-It does not run SIA's installer. Decline immediate enablement, run
-`~/.config/omarchy/plugins/khephri.sia/install.sh`, and run it again after
-`omarchy plugin update khephri.sia` so the resident runtime and its receipt
-match the plugin release. For complete removal, run `./uninstall.sh` while the
-plugin directory still exists. On a successful uninstall, SIA disables the QML
-surface and archives the plugin checkout as part of the teardown. Do not follow
-it with `omarchy plugin remove khephri.sia`: that command expects an installed
-checkout and removes it itself, but does not remove SIA's resident runtime or
-user service. If Quickshell retains a stale entry after uninstall, force a
-rescan with `omarchy-shell shell rescanPlugins`.
+Marketplace `omarchy plugin add … --enable` validates, clones, and loads the
+QML plugin only. The first-light gate is the deliberate handoff to SIA's
+installer. On update, a plugin/runtime mismatch stays gated until **Finish
+update** completes and `sia ready` passes. Guided launch clears ambient
+installer-consent and Bash startup-file variables before crossing into the
+installer; deliberate non-default overrides remain manual `./install.sh`
+operations. For resident-runtime and UI removal
+while retaining brain data, run `./uninstall.sh` while the plugin directory
+still exists; use `./uninstall.sh --purge` only when retained data and config
+should also be erased. A successful SIA uninstall disables the QML surface and
+archives the plugin checkout, so a later `omarchy plugin remove` is normally
+unnecessary. Running plain `omarchy plugin remove khephri.sia` first removes
+the checkout but not the resident runtime or user service. If Quickshell
+retains a stale entry after uninstall, force a rescan with
+`omarchy-shell shell rescanPlugins`.
 
 For contributors, every test module that loads a SIA runtime module must import
 `tests/sia_test_home.py` first. It redirects import-time home expansion into one
@@ -1277,6 +1299,14 @@ absence boundary instead of silently claiming equivalent retrieval.
 ./uninstall.sh           # removes code/UI; keeps corpus, ledger, keys, queues, config
 ./uninstall.sh --purge   # attempts to erase retained data and config too
 ```
+
+Run SIA's uninstaller before removing its plugin checkout. Omarchy has no
+remove lifecycle hook: `omarchy plugin remove khephri.sia` by itself removes
+the QML checkout but leaves the resident runtime and user service installed.
+The default SIA command removes that runtime and UI while retaining the data
+categories below; `--purge` additionally attempts to erase those retained data
+and config roots. A successful SIA uninstall archives the checkout itself, so
+a later Omarchy removal command is normally unnecessary.
 
 Default removal preserves the corpus, ledger and signing identity/head,
 queues and state snapshots, research, private toolchain, and operator config;

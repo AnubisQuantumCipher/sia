@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Marketplace first-light bridge.  This helper never installs from QML load:
+# the cockpit invokes `launch` only after an explicit operator click, and the
+# existing fail-closed installer remains the sole installation authority.
+
+set -euo pipefail
+
+refuse() {
+  printf 'SIA setup refused: %s\n' "$*" >&2
+  exit 2
+}
+
+case "${HOME:-}" in
+  /*) ;;
+  *) refuse "HOME must be an absolute path" ;;
+esac
+case "$HOME" in
+  /|*$'\n'*|*$'\r'*) refuse "HOME is unsafe" ;;
+esac
+case "${XDG_RUNTIME_DIR:-}" in
+  /*) ;;
+  *) refuse "XDG_RUNTIME_DIR must be an absolute path" ;;
+esac
+
+SELF_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+  || refuse "cannot resolve the plugin helper"
+PLUGIN_ROOT="$(cd -P -- "$SELF_DIR/.." && pwd)" \
+  || refuse "cannot resolve the plugin checkout"
+HELPER="$SELF_DIR/sia-setup"
+INSTALLER="$PLUGIN_ROOT/install.sh"
+if [ ! -f "$HELPER" ] || [ -L "$HELPER" ] || [ ! -x "$HELPER" ]; then
+  refuse "the plugin setup helper is unsafe"
+fi
+if [ ! -f "$INSTALLER" ] || [ -L "$INSTALLER" ] \
+    || [ ! -x "$INSTALLER" ]; then
+  refuse "the plugin installer is missing or unsafe"
+fi
+
+setup_runtime_dir="$XDG_RUNTIME_DIR/khephri.sia-first-light"
+if [ ! -e "$setup_runtime_dir" ]; then
+  install -d -m 0700 -- "$setup_runtime_dir"
+fi
+if [ ! -d "$setup_runtime_dir" ] || [ -L "$setup_runtime_dir" ] \
+    || [ ! -O "$setup_runtime_dir" ]; then
+  refuse "the first-light runtime directory is unsafe"
+fi
+[ "$(stat -c '%a' -- "$setup_runtime_dir")" = 700 ] \
+  || refuse "the first-light runtime directory is not owner-only"
+
+case "${1:-}" in
+  launch)
+    command -v uwsm-app >/dev/null 2>&1 \
+      || refuse "uwsm-app is unavailable"
+    command -v xdg-terminal-exec >/dev/null 2>&1 \
+      || refuse "xdg-terminal-exec is unavailable"
+    exec uwsm-app -- xdg-terminal-exec \
+      --app-id=org.omarchy.sia-first-light \
+      --title="SIA first light" --hold -- "$HELPER" run
+    ;;
+  run)
+    lock_path="$setup_runtime_dir/install.lock"
+    if [ -e "$lock_path" ] || [ -L "$lock_path" ]; then
+      if [ ! -f "$lock_path" ] || [ -L "$lock_path" ] \
+          || [ ! -O "$lock_path" ]; then
+        refuse "the first-light lock is unsafe"
+      fi
+      [ "$(stat -c '%a:%h' -- "$lock_path")" = "600:1" ] \
+        || refuse "the first-light lock is not private and singular"
+    fi
+    umask 077
+    exec {setup_lock_fd}>>"$lock_path"
+    [ "$(stat -c '%a:%h' -- "$lock_path")" = "600:1" ] \
+      || refuse "the first-light lock changed while opening"
+    flock -n "$setup_lock_fd" \
+      || refuse "another SIA installer is already running"
+    printf '\nSIA first light\n'
+    printf 'The SIA installer will create or advance this machine\047s local brain.\n'
+    printf 'Keep this terminal open; success is not declared until sia ready passes.\n\n'
+    # A Marketplace click is fresh consent for the documented default path,
+    # not consent inherited from a prior shell.  Operators who deliberately
+    # need one of these overrides can still run install.sh themselves with the
+    # variable set at that explicit command boundary.
+    unset BASH_ENV ENV \
+      SIA_ADOPT_EXISTING_CORPUS SIA_ALLOW_UNPINNED_OLLAMA \
+      SIA_INSTALL_KEYBINDING SIA_REPLACE_AGENT_SKILL \
+      SIA_REPLACE_BRAINSTEM_UNIT SIA_REPLACE_CONTINUITY_UNITS \
+      SIA_REPLACE_GBRAIN_PIN SIA_REPLACE_NOMIC_LATEST \
+      SIA_REPLACE_OLLAMA_RUNTIME SIA_REPLACE_OLLAMA_UNIT \
+      SIA_REPLACE_PLUGIN SIA_REPLACE_RUNTIME SIA_REPLACE_SCHEMA_PACK \
+      SIA_REPLACE_SIA_CLI SIA_REPLACE_TOOLCHAIN
+    exec "$INSTALLER"
+    ;;
+  *)
+    refuse "expected launch or run"
+    ;;
+esac

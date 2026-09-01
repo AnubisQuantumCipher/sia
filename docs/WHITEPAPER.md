@@ -1,6 +1,6 @@
 # SIA: An Evidence-Grounded Neurocognitive Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-08-31 · v1.3**
+**Khephri Labs · open source (MIT) · 2026-09-01 · v1.5**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 
@@ -756,17 +756,29 @@ and observed churn makes the root partial while retaining prior rows. This is
 an ingestion boundary, not a validation of the skill's instructions or a
 hostile same-user filesystem snapshot after the final observation.
 
-The v1.3 release includes the manifest, installation/removal documentation,
-and graceful-degradation states needed for an Omarchy community directory
-submission. Release preparation included a successful local
-`omarchy plugin validate .` run, but that result is not bound to a future
-submission commit and must be rerun against the exact public commit. Directory
-publication remains a separate, approval-gated maintainer workflow under the
-[official publishing guide](https://plugins.omarchy.org/publish.html): the
-owner must confirm every checklist statement and asset right, approve the exact
-issue, open it, and await automated validation plus maintainer review. SIA does
-not claim to be listed. A directory listing provides discovery and manifest
-compatibility, not a security review.
+The v1.5 plugin separates discoverability from lifecycle authority. Omarchy's
+standard add-and-enable command clones, validates, and loads the QML, but its
+plugin manager supplies no install, update, or remove hook for SIA's resident
+runtime. When that runtime is absent or older than the plugin, the cockpit
+renders a setup/update gate instead of ordinary controls. The gate discloses
+the substantial local work; only an explicit operator action launches the
+existing fail-closed installer in a visible terminal. QML load alone never
+installs software. The gate clears only after the runtime version matches the
+plugin and the installer atomically publishes its owner-private completion
+record after a live `sia ready` check succeeds. That coordination record is
+not signed evidence and does not replace a later live-readiness query.
+
+SIA is listed in the Omarchy Plugin Marketplace, although its public catalog
+entry may continue to say **Manual setup** until a maintainer removes the
+existing registry override. Release preparation still requires a local
+`omarchy plugin validate .` run against the exact public commit and the
+approval-gated update workflow in the
+[official publishing guide](https://plugins.omarchy.org/publish.html). A
+directory listing provides discovery and manifest compatibility, not a
+security review. Likewise, Omarchy's ordinary plugin removal deletes the QML
+checkout but does not uninstall SIA's resident runtime or user service; the
+SIA uninstaller remains the resident-runtime removal boundary, with its
+separate purge mode governing attempted erasure of retained brain data.
 
 ## References
 
@@ -792,5 +804,5 @@ deployment's research archive.
 
 ---
 
-*This document describes the v1.3 system. The user's guide is `MANUAL.md`
+*This document describes the v1.5 system. The user's guide is `MANUAL.md`
 alongside this file.*

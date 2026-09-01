@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SIA — the Omarchy Brain · installer
-# Idempotent. Run from the cloned repo / plugin directory:
-#   omarchy plugin add https://github.com/AnubisQuantumCipher/sia
-#   cd ~/.config/omarchy/plugins/khephri.sia && ./install.sh
-# or: git clone … && cd sia && ./install.sh
+# Idempotent. Marketplace / Omarchy path:
+#   omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
+#   click the SIA bar item, review the first-light boundary, and continue
+# Or standalone: git clone … && cd sia && ./install.sh
 #
 # What you get: a resident daemon that turns YOUR machine's evidence
 # streams into a private, associative, self-consolidating memory. A fresh
@@ -68,6 +68,7 @@ RESTIC_ROOT="$TOOLCHAIN/restic"
 RESTIC_BIN="$RESTIC_ROOT/bin/restic"
 RESTIC_RECEIPT="$RESTIC_ROOT/.sia-release"
 MANAGED_DIR="$STATE/managed-install"
+FIRST_LIGHT_COMPLETION="$MANAGED_DIR/first-light.json"
 BRAINSTEM_UNIT="$SYSTEMD_USER_DIR/sia-brainstem.service"
 BRAINSTEM_RECEIPT="$MANAGED_DIR/sia-brainstem.service"
 BACKUP_UNIT="$SYSTEMD_USER_DIR/sia-backup.service"
@@ -128,6 +129,33 @@ SIA_CORPUS_RECEIPT_LOCKS_HELD=0
 SIA_GBRAIN_BOOTSTRAP_NEEDED=0
 step() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+publish_first_light_state() {
+  local module_root="$1" state="$2"
+  python3 - "$module_root" "$FIRST_LIGHT_COMPLETION" "$state" <<'PY'
+import json
+import os
+import stat
+import sys
+
+runtime, target, state = sys.argv[1:]
+if state not in {"installing", "ready"}:
+    raise SystemExit("invalid first-light state")
+sys.path.insert(0, runtime)
+import sialib
+
+payload = {"v": 1, "version": sialib.VERSION, "state": state}
+sialib.atomic_write(
+    target, json.dumps(payload, sort_keys=True, separators=(",", ":")),
+    mode=0o600)
+published = os.lstat(target)
+if not stat.S_ISREG(published.st_mode) \
+        or published.st_uid != os.geteuid() \
+        or published.st_nlink != 1 \
+        or stat.S_IMODE(published.st_mode) != 0o600:
+    raise SystemExit("first-light state record is unsafe")
+PY
+}
 
 preflight_python_capabilities() {
   python3 - <<'PY'
@@ -5763,10 +5791,10 @@ rebind_published_gbrain_database() {
 
   fields="$(gbrain_bootstrap_intent_fields)" || return 1
   IFS=$'\t' read -r phase intent_tree <<< "$fields"
-  [ "$phase" = probing ] && [ "$intent_tree" = "$bound_tree" ] || {
+  if [ "$phase" != probing ] || [ "$intent_tree" != "$bound_tree" ]; then
     echo "gbrain database-path rebind lacks its exact probing intent" >&2
     return 1
-  }
+  fi
   current="$(owned_tree_generation "$root")" || return 1
   gbrain_tree_root_matches "$current" "$bound_tree" || {
     echo "gbrain root changed before its database-path rebind; preserved" >&2
@@ -8546,10 +8574,10 @@ PY
 SIA_RELEASE_FILES=(
   manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
-  uninstall.sh assets/cockpit.png bin/sia bin/sia-brainstem bin/sia-ledger
+  uninstall.sh assets/cockpit.png bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
   bin/siacapsule.py bin/sialib.py bin/siasenses.py bin/siarestoreadmit.py
-  bin/siamind.py bin/siaqueue.py
+  bin/siamind.py bin/siaqueue.py bin/siarelease.py
   bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
@@ -8661,6 +8689,8 @@ else
   SIA_BRAINSTEM_BARRIER_DEFERRED=1
 fi
 acquire_install_lifecycle
+run_with_deadline 120 python3 "$REPO/bin/siarelease.py" \
+  "$REPO/bin/sialib.py" "$BINDIR/sialib.py" "$FIRST_LIGHT_COMPLETION"
 acquire_owner_lock "$STATE/brainstem-owner.lock" SIA_BRAINSTEM_LOCK_FD \
   "brainstem"
 acquire_owner_lock "$STATE/corpus-owner.lock" SIA_CORPUS_LOCK_FD \
@@ -8700,6 +8730,7 @@ drain_legacy_launchers
 # runtime, schema, or ledger byte can change. This standalone writer works on
 # both fresh installs and upgrades from runtimes that predate readiness.
 mark_install_sync_debt
+publish_first_light_state "$REPO/bin" installing
 
 step "1/9 private restic + bun + pinned gbrain (the memory engine, by Garry Tan)"
 RESTIC_VERSION=0.19.1
@@ -9817,7 +9848,8 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
     "$SIA_PLUGIN_STAGE/uninstall.sh" "$SIA_PLUGIN_STAGE/bin/sia" \
     "$SIA_PLUGIN_STAGE/bin/sia-brainstem" \
     "$SIA_PLUGIN_STAGE/bin/sia-ledger" "$SIA_PLUGIN_STAGE/bin/sia-mcp" \
-    "$SIA_PLUGIN_STAGE/bin/sia-continuity-worker"
+    "$SIA_PLUGIN_STAGE/bin/sia-continuity-worker" \
+    "$SIA_PLUGIN_STAGE/bin/sia-setup"
   find "$SIA_PLUGIN_STAGE" -type d -name __pycache__ -prune \
     -exec rm -rf -- {} +
   find "$SIA_PLUGIN_STAGE" -type f \
@@ -10604,6 +10636,15 @@ if [ -e "$CONFIG_DIR/continuity.json" ] \
   }
   echo "  continuity: repository probed; persistent schedules enabled"
 fi
+
+# The cockpit's first-light gate is cleared by a separate completion record,
+# never by seeing new runtime bytes or a status snapshot alone.  Re-run the
+# public readiness predicate after final service attestation, then publish the
+# release-bound record atomically.  An interrupted or refused installer leaves
+# the prior/missing record fail-closed.
+run_with_deadline 120 "$CLI_PATH" ready
+publish_first_light_state "$BINDIR" ready
+echo "  first light: matching runtime and readiness completion published"
 
 step "done — your machine has a brain"
 cat <<'EOF'

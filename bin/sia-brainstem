@@ -85,7 +85,8 @@ def _publish_failure(seq, exc):
         if not isinstance(errors, dict):
             errors = {}
         errors["brainstem"] = sialib.clip(str(exc), 160)
-        status.update({"v": 1, "ts": sialib.iso(), "state": "failed",
+        status.update({"v": 1, "version": sialib.VERSION,
+                       "ts": sialib.iso(), "state": "failed",
                        "pulse_seq": seq, "errors": errors})
         sialib.export_status(status)
     except Exception as status_exc:
