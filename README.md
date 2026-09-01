@@ -3,10 +3,6 @@
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu and Heka.*
 
-> [!IMPORTANT]
-> This repository is **SIA, the Omarchy Brain**. It is unaffiliated with the
-> Sia Foundation, `sia.tech`, and the similarly named storage network.
-
 **Give your machine a memory.** SIA is a persistent, associative,
 self-consolidating memory system for your Linux desktop. A resident daemon
 tails the evidence your machine already produces — package installs,
