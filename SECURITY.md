@@ -14,11 +14,13 @@ alternatives; regular-expression syntax refuses without advancing the cursor.
 Secret-shaped spans (key blocks, JWTs,
 tokens, `.ssh` paths, password fields) are redacted at the sense
 boundary, before anything reaches the corpus or git; every omission is
-counted in SOURCE HEALTH. All storage and embeddings are local; embeddings
-use a loopback-only Ollama socket. The only external-network paths owned by
-this repository are the installer's downloads and the optional judge through
-your configured Claude CLI authentication/account/provider; its normal billing
-and data terms apply. The judge runs from an empty directory with
+counted in SOURCE HEALTH. Memory storage and embeddings are local; embeddings
+use a loopback-only Ollama socket. External-network paths owned by this
+repository are the installer's downloads, the optional judge through your
+configured Claude CLI authentication/account/provider, and the optional
+continuity adapter when the operator configures a remote recovery repository;
+each service's normal billing and data terms apply. The judge runs from an
+empty directory with
 built-in tools, MCP, customizations, session persistence, slash commands, and
 browser integration disabled; an explicit model identifier is required and
 recorded. Its prompt and combined output are byte-bounded, stdout and stderr
@@ -51,6 +53,116 @@ or retire an intent. The migration authenticates the observed transition; it
 cannot prove that the directory present under an old path-only receipt is the
 same historical directory that originally received it. Same-user code can
 still replace files or directories and remains outside SIA's sandbox boundary.
+
+Continuity treats `~/.local/share/sia`, `~/.local/state/sia`, and
+`~/.config/sia` as SIA authorities, not as paths a repository program may walk
+live. The storage-independent freeze path takes SIA's owner leases, copies only
+the signed portable allowlist into a private stage with no-follow and stable-
+generation checks, verifies the copied SIA ledger off-path, and publishes a
+closed signed manifest. Verification rejects an unknown field, undeclared
+payload entry, special file, unsafe link, changed digest/metadata, invalid
+signature, or inconsistent corpus/ledger head. A transport receives only the
+completed capsule and has no live-root restore primitive.
+
+The daily capsule omits the private ledger-signing key, `.gbrain`, installed
+runtime/toolchains, managed-install and external-consumer receipts, lock/stage
+files, and all continuity configuration, credentials, requests, prepared
+trees, and rollback state. The separately exported offline identity file and
+the restic repository key are distinct secrets. Backend environment files and
+path-bearing credentials are accepted only as owner-private real files outside
+every portable root and outside continuity working state, so a capsule cannot
+silently include the credential that authorizes its own repository.
+
+Continuity configuration is bound to the authenticated restic repository
+configuration identity and the intended SIA capsule-signing public identity.
+The adapter rechecks the repository identity on use. Snapshot identity tags are
+selection hints only: repository-copy health requires an off-path capsule
+signature that resolves to the bound public identity. Untagged or foreign-
+identity snapshots cannot become `latest` healthy state or produce overall
+`verified`, even when their capsules are internally valid. Deliberate
+clean-machine identity adoption remains a typed restore path backed by the
+separate offline identity, not an automatic backup-health transition.
+For that explicit cross-identity path, `latest` remains scoped to the current
+identity and the operator selects a full snapshot id. Only after core thaw's
+signed adoption and internal readiness/ledger proof, and before resident
+restart, may the adapter atomically rebind `continuity.json` to the adopted
+public identity while preserving the debt-authenticated repository id,
+endpoint, and environment binding. This rebind cannot promote a snapshot;
+post-restart proof settles the restore operation, and a subsequent repository
+check must perform a new round trip before overall health can become green.
+
+Systemd is also an input boundary. Before schedule enable/start/resume, SIA
+authenticates each continuity service/timer against its managed receipt and
+installed bytes, then compares systemd's effective fragment, drop-ins, target,
+job, and resulting state with that definition. Restore performs the equivalent
+attestation for `sia-brainstem.service`; during quiescence it permits only the
+exact restore-owned runtime barrier drop-in and requires that barrier retired
+before start. A substituted fragment, foreign drop-in, receipt mismatch, or
+unexpected manager job fails closed.
+
+Thaw is an exclusive lifecycle operation. The stable launcher must hold the
+lifecycle, brainstem, corpus, and gbrain owner leases before the core accepts
+its capability. Before asking restic to materialize a snapshot, the adapter
+strictly preflights the bounded metadata listing: paths must be relative and
+canonical, nodes must be supported regular files/directories, and entry-count,
+aggregate-byte, and depth ceilings must hold. Refusal cleanup is independent of
+that admission catalog, so malformed or partially restored private stages can
+be retired without accepting their shape. Before mutation, SIA re-verifies the
+prepared capsule, binds the current target ledger head, captures a complete
+rollback capsule, signs an adoption intent with the target identity, and
+publishes a durable boot barrier
+and journal. Installation preserves the target corpus directory inode and the
+exact corpus-v2 receipt bytes; deleting or rebinding that receipt is never a
+recovery path. The whole `.gbrain` tree is neither restored nor replaced.
+Instead, thaw authenticates and preserves the destination `.gbrain` root,
+`config.json`, installed schema pack, matching managed receipt, and unknown
+children. It initializes and probes a fresh `brain.pglite` off-path through
+gbrain, then replaces only that projection and the exact
+`brain.pglite.wal-repair-attempt.json` and `brain.pglite.lock-reap.json`
+sidecars before a full corpus sync. Commit requires a signed adoption
+transition, `sia ready`, and direct SIA signed-ledger verification. External
+subsystem-chain availability cannot turn an otherwise valid SIA restore into a
+failed continuity transaction.
+
+Recovery is layered. `restore-supervisor.json` binds the stable launcher's
+accepted operation and restart phase; `restore-runtime-mask` records its
+brainstem runtime gate; and `restore-in-progress.json` is capsule core's thaw
+barrier bound to the rollback journal. The first two may exist even if a crash
+occurred before core thaw started. Any one is fail-closed recovery debt, so
+ordinary brain, backup, and restore entry points refuse until `sia restore
+recover` reacquires the exclusive leases and reconciles the exact phase. Core
+journal/capsule authentication is required when its barrier exists; a
+never-started or already-finished core phase is reconciled through the bound
+supervisor intent instead. Manual removal of any recovery artifact, corpus
+receipt, journal, rollback tree, or retained identity material can destroy the
+information required for safe recovery and is unsupported.
+
+Core commit is not user-visible green success. The stable supervisor restarts
+the brainstem, binds a fresh readiness, signed-ledger, and adoption observation
+to the exact resident PID while the corpus-owner lease holds, then rechecks the
+PID under that same lease. The lease remains held through accepted-request and
+restore-debt retirement and terminal status publication, preventing a proof
+assembled across mutable corpus generations. Green is written last and only
+after every restore-owned supervisor/runtime debt is durably gone. A successful
+restore is recorded in its correlated operation fields; it does not by itself
+establish repository-copy health. Overall `verified` additionally requires a
+concrete `latest` copy with `verified: true`, `readiness: "ready"`, and matching
+brain identity.
+
+After a committed or rolled-back outcome, capsule core durably retires known
+private-key copies and the bounded heavy rollback tree; the signed live
+`RESTORE:adopt` ledger row remains the authoritative audit evidence.
+
+Restic is a replaceable encrypted repository adapter, not a component of the
+capsule trust format. Upload success is not recorded as verification until the
+exact snapshot has been restored into a private off-path stage and the capsule
+verifier passes; the weekly check repeats repository checking and that round
+trip. SIA never automatically invokes repository forget, prune, or deletion.
+This model does not protect against arbitrary code already running as the
+unlocked account, compromise of the offline signing identity or repository
+key, destructive backend credentials deleting every remote copy, or loss of a
+repository stored only on the protected disk. Provider-side immutability or
+independent append-only custody remains an operator control.
 
 Journal ingestion does not trust the requested row cap as a memory bound. It
 first catalogs an ordered bounded cursor window, then streams binary stdout

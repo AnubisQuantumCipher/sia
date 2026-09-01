@@ -1,0 +1,15 @@
+[Unit]
+Description=SIA continuity — capture and encrypt the Omarchy Brain
+Documentation=https://github.com/AnubisQuantumCipher/sia
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/.config/sia/continuity.json
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sia backup now --scheduled
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+Nice=10
+IOSchedulingClass=idle

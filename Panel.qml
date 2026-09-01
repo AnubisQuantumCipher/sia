@@ -1,6 +1,6 @@
 // SIA bar widget — brain glyph + today's event count, colored by brain
 // state. Clicking summons the full-screen SIA cockpit (Cockpit.qml).
-// Pixels only: reads ~/.local/state/sia/status.json.
+// Pixels only: reads the brainstem and continuity workers' published state.
 
 import QtQuick
 import Quickshell
@@ -17,11 +17,15 @@ BarWidget {
   readonly property color urgentColor: bar ? bar.urgent : Color.urgent
 
   property var status: null
+  property var continuity: null
   property bool stale: true
   property real nowMs: Date.now()
 
   readonly property string statusPath:
     (Quickshell.env("HOME") || "") + "/.local/state/sia/status.json"
+  readonly property string continuityPath:
+    (Quickshell.env("HOME") || "")
+      + "/.local/state/sia-continuity/status.json"
   readonly property string brainState:
     stale ? "stale" : (status && status.state ? status.state : "unknown")
   readonly property int eventsToday:
@@ -51,6 +55,35 @@ BarWidget {
     return root.fg
   }
 
+  function indicatorColor() {
+    if (root.continuity) {
+      var tone = Model.continuityTone(root.continuity.state)
+      if (tone === "danger") return root.urgentColor
+      if (tone === "busy") return Color.accent
+    }
+    return root.stateColor()
+  }
+
+  function continuityText() {
+    if (!root.continuity) return "continuity status unavailable"
+    var label = Model.continuityStateLabel(root.continuity.state)
+      .toLowerCase()
+    var detail = String(root.continuity.detail || "").trim()
+    return detail !== "" ? label + " — " + detail : label
+  }
+
+  function tooltip() {
+    var brain = root.cockpitWorkspace !== ""
+      ? "SIA — cockpit locked to workspace " + root.cockpitWorkspace
+        + " · return there to unlock"
+      : root.stale
+        ? "SIA — brainstem not reporting"
+        : "SIA — " + root.brainState + " · " + root.eventsToday
+          + " events today"
+    return brain + " · " + root.continuityText()
+      + " · click for cockpit · right-click for continuity"
+  }
+
   function applyStatus(text) {
     try {
       const parsed = JSON.parse(text)
@@ -58,6 +91,13 @@ BarWidget {
       const ts = Date.parse(parsed.ts)
       root.stale = !(ts > 0) ||
         (Date.now() - ts) > root.staleAfterSec * 1000
+    } catch (e) { /* mid-replace read; keep last-known-good */ }
+  }
+
+  function applyContinuity(text) {
+    try {
+      const parsed = JSON.parse(text)
+      if (Model.validContinuityStatus(parsed)) root.continuity = parsed
     } catch (e) { /* mid-replace read; keep last-known-good */ }
   }
 
@@ -74,6 +114,20 @@ BarWidget {
   }
   Timer { id: statusApply; interval: 150; repeat: false
           onTriggered: { statusFile.reload(); root.applyStatus(statusFile.text()) } }
+
+  FileView {
+    id: continuityFile
+    path: root.continuityPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyContinuity(text())
+    onFileChanged: continuityApply.restart()
+  }
+  Timer { id: continuityApply; interval: 150; repeat: false
+          onTriggered: {
+            continuityFile.reload()
+            root.applyContinuity(continuityFile.text())
+          } }
 
   Timer {
     interval: 5000; running: true; repeat: true
@@ -93,24 +147,23 @@ BarWidget {
     bar: root.bar
     text: String.fromCodePoint(0xF09D1)
       + (root.eventsToday > 0 && !root.stale ? " " + root.eventsToday : "")
+      + (Model.continuityBarMark(root.continuity) !== ""
+         ? " " + Model.continuityBarMark(root.continuity) : "")
     slotSize: Style.bar.statusSlot
     // the stock slot is one-glyph wide; grow with the painted count so the
     // neighbouring widget can't paint over our number
     fixedWidth: vertical ? -1
       : Math.max(slotSize, glyphPaintedWidth + Style.spaceReal(8))
     fontSize: Style.font.caption
-    foreground: root.stateColor()
-    tooltipText: root.cockpitWorkspace !== ""
-      ? "SIA — cockpit locked to workspace " + root.cockpitWorkspace
-        + " · return there to unlock"
-      : root.stale
-        ? "SIA — brainstem not reporting"
-        : "SIA — " + root.brainState + " · " + root.eventsToday
-          + " events today · click for the cockpit"
+    foreground: root.indicatorColor()
+    tooltipText: root.tooltip()
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) { statusFile.reload(); return }
-      if (root.bar && root.bar.shell)
-        root.bar.shell.summon("khephri.sia", "{}")
+      if (!root.bar || !root.bar.shell) return
+      if (buttonCode === Qt.RightButton) {
+        root.bar.shell.summon("khephri.sia", "{\"mode\":\"continuity\"}")
+        return
+      }
+      root.bar.shell.summon("khephri.sia", "{}")
     }
   }
 }

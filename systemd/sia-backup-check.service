@@ -1,0 +1,15 @@
+[Unit]
+Description=SIA continuity — verify the external recovery repository
+Documentation=https://github.com/AnubisQuantumCipher/sia
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/.config/sia/continuity.json
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sia backup check --scheduled
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+Nice=10
+IOSchedulingClass=idle

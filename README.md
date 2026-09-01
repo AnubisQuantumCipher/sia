@@ -3,6 +3,10 @@
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu and Heka.*
 
+> [!IMPORTANT]
+> This repository is **SIA, the Omarchy Brain**. It is unaffiliated with the
+> Sia Foundation, `sia.tech`, and the similarly named storage network.
+
 **Give your machine a memory.** SIA is a persistent, associative,
 self-consolidating memory system for your Linux desktop. A resident daemon
 tails the evidence your machine already produces — package installs,
@@ -15,6 +19,34 @@ predictions, then records how they are graded. You can watch its thought stream
 and ask it about the memory it has admitted.
 
 ![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
+
+## Install (Omarchy)
+
+SIA is already listed in the
+[Omarchy Plugin Marketplace](https://plugins.omarchy.org/plugin.html?id=khephri.sia).
+Add its public plugin checkout with Omarchy's standard command:
+
+```bash
+omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git
+```
+
+When Omarchy asks whether to enable the plugin immediately, choose **No**.
+The git-URL form clones the current upstream branch; it is not pinned to the
+commit last verified by the marketplace. Inspect the checked-out commit and
+the listing's verification state before running code from it.
+Then install the resident brainstem, CLI, private toolchain, and user services:
+
+```bash
+~/.config/omarchy/plugins/khephri.sia/install.sh
+```
+
+Do not add `--enable` on first install. The installer runs first light, checks
+`sia ready`, and enables the desktop surface only after the brain is ready.
+Omarchy's current plugin command has no install hook, so the explicit second
+command is required; silently launching it from QML would violate the plugin
+manager's trust boundary. Community plugins run unsandboxed as your user, so
+inspect the source before installation. See the
+[official development guide](https://plugins.omarchy.org/develop.html).
 
 The memory-content runtime stays on your machine: ingestion, indexing,
 retrieval, and embedding make no cloud calls. The judge is disabled by default.
@@ -71,6 +103,7 @@ receive it.
 | **Outcome learning and evaluation** | Lets people commit future-dated predictions; optionally obtains tool-isolated evidence judgments; records signed grades and population-aware descriptive Brier calibration; and runs `sia bench`, a signed-ledger QA benchmark that scores abstention. | Calibration is not a representative population claim, and `sia bench` is a local regression instrument — not the curated LongMemEval benchmark. |
 | **Resident agents** | Exposes local memory through bounded stdio MCP tools/resources and `sia context` packs. Agents queue immutable note requests; the brainstem alone materializes and indexes them before acknowledgement. | Agents do not receive a database handle. Their notes remain `model`-origin prose, and each MCP consumer remains its own disclosure boundary. |
 | **Mission control** | Presents the graph, thought stream, evidence chain, source health, memory lens, agent relay, and a deliberate on-demand live-readiness check in the Quickshell cockpit. | The cockpit labels last-published diagnostics separately from an explicit live check, and labels bounded display omissions rather than implying memory is missing. |
+| **Continuity** | Freezes the documented SIA roots into a signed portable capsule, verifies repository copies by exact off-path round trip, and thaws only through a journaled, receipt-preserving restore ceremony. | The private signing key and `.gbrain` are not in routine capsules. Restore keeps the installed `.gbrain` substrate and rebuilds only its PGLite projection through gbrain. No repository is pruned automatically, and a same-disk copy is not disaster protection. |
 
 For the exact operating paths and recovery behavior, use the
 [Field Manual](docs/MANUAL.md). For the design, measurements, and remaining
@@ -206,6 +239,52 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.4.0 brain-native continuity
+
+v1.4.0 gives the Omarchy Brain a storage-independent continuity contract.
+In this repository, **SIA means only the Omarchy Brain**, not a similarly
+named storage network or repository backend.
+`sia continuity freeze` produces a signed, closed portable capsule from the
+authoritative share, state, and config roots; `roots --json` publishes their
+versioned, structured policy with an explicit prohibition on walking them
+live; `verify` authenticates a capsule off-path; and only a core-bound prepared
+receipt can reach `thaw` behind SIA's exclusive lifecycle and owner leases.
+Restore preserves the target corpus directory inode and exact v2
+receipt, records an explicit signed adoption, and preserves the installed
+destination `.gbrain` root, config, schema pack, managed receipt, and unknown
+children. Through gbrain's supported front door it initializes a fresh
+`brain.pglite` off-path, replaces only that projection and its two explicit
+repair/reap sidecars, and performs a full corpus sync. Core commit requires
+`sia ready` and SIA's signed ledger to pass; the user-visible restore becomes
+verified/green only after the stable supervisor restarts the resident
+brainstem and obtains a fresh correlated health, ledger, and adoption proof.
+
+An interrupted restore may leave core thaw debt
+(`restore-in-progress.json`), stable-supervisor debt
+(`restore-supervisor.json`), runtime-gate debt (`restore-runtime-mask`), or a
+combination. This includes a crash after apply was accepted but before core
+thaw began. `sia restore recover` reconciles the exact remaining phase;
+deleting any of those artifacts, the corpus receipt, journal, or rollback tree
+is never a repair.
+
+Restic is the first replaceable repository adapter, not part of the brain
+format. Hourly jobs upload a locally verified completed capsule; weekly jobs
+run `restic check`, restore the newest snapshot off-path, and verify that exact
+round trip. Manual **Backup now** performs the upload and round-trip check
+immediately. A newer scheduled upload remains unverified until the weekly job
+passes and never displaces the last known verified recovery copy. The adapter
+never performs automatic `forget`, `prune`, deletion, or live-brain restore;
+the scheduled restore is verification into a private off-path stage only.
+Routine capsules exclude the private signing key,
+continuity credentials, installed runtime, and `.gbrain`; setup exports the
+signing identity separately for offline custody, and `sia continuity
+export-identity` supports the same owner-private, no-overwrite ceremony
+independently. An authentic capsule marked
+`recovery-only` is retained as recovery material but is never presented as a
+ready green copy. The CLI is canonical and the cockpit is a thin client over
+the same queued operations and status receipts.
+See [Continuity and clean-machine recovery](docs/CONTINUITY.md).
+
 ### v1.3.8 marketplace baseline clarity
 
 v1.3.8 preserves the verified-download contract—pinned SHA-256, HTTPS/TLS,
@@ -215,11 +294,12 @@ output. The Cockpit and runtime behavior are unchanged.
 
 ### v1.3.7 marketplace hardening
 
-v1.3.7 prepares SIA's public Omarchy plugin release without changing the
+v1.3.7 prepared SIA's public Omarchy plugin release without changing the
 graph-first Cockpit: sensing is now an ordinary audited runtime module, and
 the installer recognizes an existing v2 runtime before atomically publishing
-the complete v3 set. The marketplace lifecycle is explicit—Omarchy enables the
-surface, then SIA's installer brings up the resident brain.
+the complete v3 set. The current safe lifecycle is explicit—Omarchy clones the
+surface, then SIA's installer brings up the resident brain and enables the
+surface only after readiness passes.
 
 ### v1.3.6 cockpit finish
 
@@ -295,14 +375,9 @@ The operational commands and refusal/recovery paths are in the
 [Field Manual](docs/MANUAL.md); measurement design and remaining non-claims are
 in the [Whitepaper](docs/WHITEPAPER.md).
 
-## Install (Omarchy)
+### What the installer does
 
-```bash
-omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
-cd ~/.config/omarchy/plugins/khephri.sia && ./install.sh
-```
-
-or standalone (CLI + MCP work without the Omarchy shell):
+For a standalone install (CLI + MCP work without the Omarchy shell):
 
 ```bash
 git clone https://github.com/AnubisQuantumCipher/sia && cd sia && ./install.sh
@@ -324,9 +399,9 @@ preserves the CLI/runtime during uninstall; remove it only after retiring the
 corresponding external consumer. Rerunning the installer after a manual named-
 harness registration lets it inspect and guard the exact external registration.
 
-`omarchy plugin add` validates, clones, and enables SIA's Quickshell surfaces;
-it deliberately does **not** run `install.sh`. The explicit second command is
-what installs the resident brainstem, CLI, local toolchain, and user services.
+`omarchy plugin add` validates and clones SIA's Quickshell surfaces; it
+deliberately does **not** run `install.sh`. The explicit second command is what
+installs the resident brainstem, CLI, local toolchain, and user services.
 After `omarchy plugin update khephri.sia`, rerun `./install.sh` from that
 plugin directory so the runtime generation and its ownership receipt advance
 together.
@@ -550,11 +625,13 @@ stopped.
 
 Requirements: Linux (Omarchy/Arch tested; x86_64 or aarch64) with pollable
 pidfds exposed through Python's `os.pidfd_open`, `python3` with an
-Ed25519-capable `python-cryptography`, `git`, `curl`, `tar`, `unzip`, `sha256sum`,
-`zstd`, `flock`, `ss` from `iproute2`, a systemd user session
+Ed25519-capable `python-cryptography`, `git`, `curl`, `tar`, `unzip`, `bzip2`,
+`sha256sum`, `zstd`, `flock`, `ss` from `iproute2`, a systemd user session
 (`systemctl`), and roughly 2 GB of disk for
-Ollama. The bootstrap downloads Bun and Ollama from pinned release URLs and
-verifies their published SHA-256 digests before extraction. It checks out the
+Ollama. The bootstrap downloads Bun, Ollama, and SIA's private restic executable
+from pinned release URLs and verifies their published SHA-256 digests before
+extraction. It does not trust or require an ambient `restic` from `PATH`; the
+managed binary lives under `~/.local/share/sia/toolchain/restic`. It checks out the
 full gbrain commit in `GBRAIN_PIN`, verifies the pinned upstream `bun.lock`,
 installs with `--frozen-lockfile`, compiles the executable, and binds its
 receipt to the commit, lock, version, and binary digest under
@@ -743,6 +820,7 @@ sia memory --pin organs/journal     # protect/qualify a page for rehearsal
 sia calibration                    # population-aware descriptive scorecard
 sia calibration --cursor NEXT_CURSOR  # continue bounded domain rows
 sia bench generate --out /tmp/sia-qa  # signed-ledger QA + private MCP eval
+sia backup status                     # continuity adapter and verified-copy state
 ```
 
 Point it at your own programs in `~/.config/sia/config.json`:
@@ -786,22 +864,30 @@ its other fields are never rendered into memory.
 
 - [**Field Manual**](docs/MANUAL.md) — cockpit tour, full CLI, thought
   glyphs, how the learning works, operations, troubleshooting.
+- [**Continuity**](docs/CONTINUITY.md) — signed portable capsules,
+  storage adapters, automatic verification, and clean-machine restore.
 - [**Whitepaper**](docs/WHITEPAPER.md) — architecture, the evidence
   model, every cognitive mechanism with its published formula and
   citation, the measurement instruments (`sia bench`,
   `sia judge-audit`), and the verification record.
 
-### Omarchy marketplace readiness
+### Omarchy marketplace status
 
-SIA's public repository, root `manifest.json`, README, MIT license,
-installation/removal paths, root preview, and explicit degradation states
-provide the repository-side artifacts requested by the
-[official publishing guide](https://plugins.omarchy.org/publish.html). The
-intended listing identity is `khephri.sia`, category `System`, with `AI`, `Bar`,
-and `Quickshell` as appropriate directory tags. Before submission, validate the
-exact public commit with `omarchy plugin validate .`; listing is not automatic,
-and a marketplace listing is not a security review. Community plugins still run
-unsandboxed as the installing user.
+SIA is listed as [`khephri.sia`](https://plugins.omarchy.org/plugin.html?id=khephri.sia)
+in the Omarchy Plugin Marketplace. Its installation mode remains **Manual
+setup** because the standard plugin command installs the QML checkout but has
+no lifecycle hook for SIA's resident service and private toolchain. That label
+is intentional; it must not be bypassed by auto-running `install.sh` from QML.
+
+Every release is validated locally with `omarchy plugin validate .`. After its
+exact public commit is pushed, the existing listing is updated through the
+marketplace's newer-upstream-commit verification path; SIA must not be
+submitted again as a new plugin. The root manifest, README, MIT license,
+installation/removal paths, preview, and explicit degradation states satisfy
+the repository-side artifacts in the
+[official publishing guide](https://plugins.omarchy.org/publish.html).
+Marketplace validation and listing are not security reviews; community plugins
+still run unsandboxed as the installing user.
 
 ## Remove
 

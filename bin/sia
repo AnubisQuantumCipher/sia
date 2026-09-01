@@ -39,6 +39,16 @@
                         signed-ledger retrieval and abstention benchmark
   sia judge-audit       exercise the configured judge against engineered
                         evidence states; writes an owner-private report
+  sia continuity roots --json
+                        show the storage-independent portable-root contract
+  sia continuity freeze --output ABSOLUTE_PATH
+                        create a completed signed capsule off the live roots
+  sia continuity export-identity --output ABSOLUTE_PATH
+                        export the offline signing recovery document
+  sia continuity verify CAPSULE --json
+                        authenticate a completed capsule off-path
+  sia backup ...        manage the replaceable recovery-repository adapter
+  sia restore ...       prepare off-path recovery; live apply is ceremonial
 """
 
 import contextlib, fcntl, json, math, os, re, stat, subprocess, sys
@@ -50,6 +60,17 @@ _LAUNCHER_ABI_ENV = "SIA_LAUNCHER_ABI"
 _LAUNCHER_LIFECYCLE_FD_ENV = "SIA_LAUNCHER_LIFECYCLE_FD"
 _LAUNCHER_TARGET_FD_ENV = "SIA_LAUNCHER_TARGET_FD"
 _LAUNCHER_TARGET_PATH_ENV = "SIA_LAUNCHER_TARGET_PATH"
+_RESTORE_LAUNCH_ABI = "sia-restore-launch-v1"
+_RESTORE_LAUNCH_ABI_ENV = "SIA_RESTORE_LAUNCH_ABI"
+_RESTORE_LIFECYCLE_FD_ENV = "SIA_RESTORE_LIFECYCLE_FD"
+_RESTORE_ADMIN_FD_ENV = "SIA_RESTORE_ADMIN_FD"
+_RESTORE_TARGET_FD_ENV = "SIA_RESTORE_TARGET_FD"
+_RESTORE_TARGET_PATH_ENV = "SIA_RESTORE_TARGET_PATH"
+_RESTORE_MASK_OWNED_ENV = "SIA_RESTORE_MASK_OWNED"
+_RESTORE_FINALIZE_ABI_ENV = "SIA_RESTORE_FINALIZE_ABI"
+_RESTORE_FINALIZE_ADMIN_FD_ENV = "SIA_RESTORE_FINALIZE_ADMIN_FD"
+_RESTORE_MASK_MARKER_BYTES = b"sia-continuity-runtime-mask-v1\n"
+_ACTIVE_RESTORE_LIFECYCLE_FD = None
 
 
 def _validated_inherited_lifecycle_fd(lock):
@@ -199,6 +220,157 @@ def _validated_launcher_lifecycle_fd(lock, expected_target):
     return lifecycle_fd
 
 
+def _validated_restore_launcher_fd(lock, expected_target):
+    """Validate the one hidden stable-launcher path that holds lifecycle EX."""
+    names = (_RESTORE_LAUNCH_ABI_ENV, _RESTORE_LIFECYCLE_FD_ENV,
+             _RESTORE_ADMIN_FD_ENV, _RESTORE_TARGET_FD_ENV,
+             _RESTORE_TARGET_PATH_ENV, _RESTORE_MASK_OWNED_ENV)
+    values = tuple(os.environ.get(name) for name in names)
+    if all(value is None for value in values):
+        return None
+    abi, lifecycle_raw, admin_raw, target_raw, target_path, mask_owned = values
+    if abi != _RESTORE_LAUNCH_ABI \
+            or lifecycle_raw is None or admin_raw is None \
+            or target_raw is None \
+            or not lifecycle_raw.isascii() or not lifecycle_raw.isdigit() \
+            or not admin_raw.isascii() or not admin_raw.isdigit() \
+            or not target_raw.isascii() or not target_raw.isdigit() \
+            or mask_owned not in {"0", "1"} \
+            or target_path is None \
+            or os.path.abspath(target_path) != os.path.abspath(expected_target) \
+            or os.path.abspath(__file__) != os.path.abspath(expected_target) \
+            or not ((len(sys.argv) == 3
+                     and sys.argv[1] == "_continuity-restore-worker"
+                     and os.path.isabs(sys.argv[2]))
+                    or (len(sys.argv) == 3
+                        and sys.argv[1] == "_continuity-restore-recover"
+                        and re.fullmatch(r"[0-9a-f]+", sys.argv[2])
+                        is not None)) \
+            or os.environ.get(_INHERITED_LIFECYCLE_FD_ENV) is not None:
+        raise RuntimeError("invalid SIA restore-launcher handoff")
+    if any(os.environ.get(name) is not None for name in (
+            _LAUNCHER_ABI_ENV, _LAUNCHER_LIFECYCLE_FD_ENV,
+            _LAUNCHER_TARGET_FD_ENV, _LAUNCHER_TARGET_PATH_ENV,
+            _RESTORE_FINALIZE_ABI_ENV,
+            _RESTORE_FINALIZE_ADMIN_FD_ENV)):
+        raise RuntimeError("mixed SIA launcher capabilities are forbidden")
+    try:
+        lifecycle_fd = int(lifecycle_raw, 10)
+        admin_fd = int(admin_raw, 10)
+        target_fd = int(target_raw, 10)
+        inherited = os.fstat(lifecycle_fd)
+        lock_target = os.lstat(lock)
+        admin = os.fstat(admin_fd)
+        admin_path = os.path.join(
+            os.path.dirname(lock), "sia.lifecycle-admin.lock")
+        admin_target = os.lstat(admin_path)
+        pinned_target = os.fstat(target_fd)
+        current_target = os.lstat(expected_target)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("invalid SIA restore-launcher handoff") from exc
+    if not stat.S_ISREG(inherited.st_mode) \
+            or inherited.st_uid != os.geteuid() \
+            or not stat.S_ISREG(lock_target.st_mode) \
+            or lock_target.st_uid != os.geteuid() \
+            or (inherited.st_dev, inherited.st_ino) != \
+               (lock_target.st_dev, lock_target.st_ino) \
+            or not stat.S_ISREG(admin.st_mode) \
+            or admin.st_uid != os.geteuid() \
+            or not stat.S_ISREG(admin_target.st_mode) \
+            or admin_target.st_uid != os.geteuid() \
+            or (admin.st_dev, admin.st_ino) != \
+               (admin_target.st_dev, admin_target.st_ino) \
+            or not stat.S_ISREG(pinned_target.st_mode) \
+            or pinned_target.st_uid != os.geteuid() \
+            or not stat.S_ISREG(current_target.st_mode) \
+            or current_target.st_uid != os.geteuid() \
+            or (pinned_target.st_dev, pinned_target.st_ino) != \
+               (current_target.st_dev, current_target.st_ino):
+        raise RuntimeError("SIA restore-launcher generation changed")
+    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    probe_fd = os.open(lock, flags)
+    try:
+        probe = os.fstat(probe_fd)
+        if not stat.S_ISREG(probe.st_mode) \
+                or probe.st_uid != os.geteuid() \
+                or (probe.st_dev, probe.st_ino) != \
+                   (inherited.st_dev, inherited.st_ino):
+            raise RuntimeError("SIA restore lifecycle lease changed")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError("SIA restore lifecycle lease is not held")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError("SIA restore lifecycle lease is not exclusive")
+        try:
+            fcntl.flock(lifecycle_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                "SIA restore descriptor does not own lifecycle EX") from exc
+    finally:
+        os.close(probe_fd)
+    admin_probe = os.open(admin_path, flags)
+    try:
+        probe = os.fstat(admin_probe)
+        if not stat.S_ISREG(probe.st_mode) \
+                or probe.st_uid != os.geteuid() \
+                or (probe.st_dev, probe.st_ino) != \
+                   (admin.st_dev, admin.st_ino):
+            raise RuntimeError("SIA restore admin lease changed")
+        try:
+            fcntl.flock(admin_probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(admin_probe, fcntl.LOCK_UN)
+            raise RuntimeError("SIA restore admin lease is not exclusive")
+        try:
+            fcntl.flock(admin_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                "SIA restore descriptor does not own admin EX") from exc
+    finally:
+        os.close(admin_probe)
+    marker_path = os.path.join(
+        os.path.dirname(lock), "sia-continuity", "restore-runtime-mask")
+    if mask_owned == "1":
+        marker_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                        | getattr(os, "O_NOFOLLOW", 0))
+        marker_fd = None
+        try:
+            marker_fd = os.open(marker_path, marker_flags)
+            marker_info = os.fstat(marker_fd)
+            if marker_info.st_size != len(_RESTORE_MASK_MARKER_BYTES):
+                raise RuntimeError(
+                    "SIA restore runtime-mask marker is unsafe")
+            marker_bytes = os.read(
+                marker_fd, len(_RESTORE_MASK_MARKER_BYTES))
+        except OSError as exc:
+            raise RuntimeError("SIA restore runtime-mask marker is absent") \
+                from exc
+        finally:
+            if marker_fd is not None:
+                os.close(marker_fd)
+        if not stat.S_ISREG(marker_info.st_mode) \
+                or marker_info.st_uid != os.geteuid() \
+                or marker_info.st_nlink != 1 \
+                or stat.S_IMODE(marker_info.st_mode) != 0o600 \
+                or marker_bytes != _RESTORE_MASK_MARKER_BYTES:
+            raise RuntimeError("SIA restore runtime-mask marker is unsafe")
+    elif os.path.lexists(marker_path):
+        raise RuntimeError("unowned SIA restore runtime-mask marker exists")
+    return lifecycle_fd
+
+
 def _runtime_module_dir(script_path=None, home=None):
     """Find SIA's Python modules in a checkout or an installed runtime."""
     script_dir = os.path.dirname(os.path.abspath(script_path or __file__))
@@ -229,6 +401,24 @@ def _runtime_generation_lease(home=None):
         return
     expected_target = os.path.join(
         home, ".local", "share", "sia", "bin", "sia-cli")
+    restore_fd = _validated_restore_launcher_fd(lock, expected_target)
+    if restore_fd is not None:
+        if os.path.lexists(tombstone):
+            marker = os.lstat(tombstone)
+            if not stat.S_ISREG(marker.st_mode) \
+                    or marker.st_uid != os.geteuid():
+                raise RuntimeError("SIA lifecycle removal marker is unsafe")
+            raise RuntimeError(
+                "SIA runtime was removed; reinstall before restoring")
+        global _ACTIVE_RESTORE_LIFECYCLE_FD
+        _ACTIVE_RESTORE_LIFECYCLE_FD = restore_fd
+        os.environ[_INHERITED_LIFECYCLE_FD_ENV] = str(restore_fd)
+        try:
+            yield
+        finally:
+            _ACTIVE_RESTORE_LIFECYCLE_FD = None
+            os.environ.pop(_INHERITED_LIFECYCLE_FD_ENV, None)
+        return
     if _validated_launcher_lifecycle_fd(lock, expected_target) is not None:
         if os.path.lexists(tombstone):
             marker = os.lstat(tombstone)
@@ -1282,6 +1472,74 @@ def cmd_note(argv):
     return 0
 
 
+def cmd_continuity(argv):
+    """Expose the brain-owned capsule boundary without a storage adapter."""
+    import siacapsule
+    if argv == ["roots", "--json"]:
+        print(json.dumps(siacapsule.roots(), ensure_ascii=True,
+                         sort_keys=True, separators=(",", ":")))
+        return 0
+    if argv and argv[0] == "freeze":
+        output = None
+        if len(argv) == 3 and argv[1] == "--output" \
+                and os.path.isabs(argv[2]):
+            output = argv[2]
+        if output is not None:
+            result = siacapsule.freeze(output)
+            print(json.dumps(result, ensure_ascii=True, sort_keys=True,
+                             separators=(",", ":")))
+            return 0
+    elif len(argv) == 3 and argv[0] == "export-identity" \
+            and argv[1] == "--output" and os.path.isabs(argv[2]):
+        result = siacapsule.export_identity_key(argv[2])
+        print(json.dumps(result, ensure_ascii=True, sort_keys=True,
+                         separators=(",", ":")))
+        return 0
+    elif len(argv) == 3 and argv[0] == "verify" \
+            and argv[2] == "--json" and os.path.isabs(argv[1]):
+        result = siacapsule.verify(argv[1])
+        print(json.dumps(result, ensure_ascii=True, sort_keys=True,
+                         separators=(",", ":")))
+        return 0
+    print("usage: sia continuity roots --json\n"
+          "       sia continuity freeze --output ABSOLUTE_PATH\n"
+          "       sia continuity export-identity --output ABSOLUTE_PATH\n"
+          "       sia continuity verify ABSOLUTE_CAPSULE --json")
+    return 2
+
+
+def cmd_restore_worker(request_path):
+    """Run one apply under the stable supervisor's lifecycle EX."""
+    lifecycle_fd = _ACTIVE_RESTORE_LIFECYCLE_FD
+    if lifecycle_fd is None:
+        print("restore worker refused: exclusive launcher capability missing",
+              file=sys.stderr)
+        return 1
+    import siabackup
+    try:
+        return siabackup.run_restore_request(
+            request_path, lifecycle_fd=lifecycle_fd)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"restore worker refused: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_restore_recover(request_id):
+    """Recover the durable thaw barrier under lifecycle EX."""
+    lifecycle_fd = _ACTIVE_RESTORE_LIFECYCLE_FD
+    if lifecycle_fd is None:
+        print("restore recovery refused: exclusive launcher capability missing",
+              file=sys.stderr)
+        return 1
+    import siabackup
+    try:
+        return siabackup.run_restore_recovery(
+            request_id, lifecycle_fd=lifecycle_fd)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"restore recovery refused: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_agent_propose(raw):
     """Queue one validated model-origin take through the lifecycle CLI."""
     import siatakes
@@ -1458,6 +1716,49 @@ def _dispatch(argv, cmd):
         return cmd_dream()
     if cmd == "verify":
         return cmd_verify()
+    if cmd == "continuity":
+        return cmd_continuity(argv[2:])
+    if cmd == "backup":
+        import siabackup
+        return siabackup.cli_backup(argv[2:])
+    if cmd == "restore":
+        import siabackup
+        return siabackup.cli_restore(argv[2:], sys.stdin.buffer)
+    if cmd == "_continuity-worker" and len(argv) == 3 \
+            and os.path.isabs(argv[2]):
+        import siabackup
+        return siabackup.run_request(argv[2])
+    if cmd == "_continuity-restore-worker" and len(argv) == 3 \
+            and os.path.isabs(argv[2]):
+        return cmd_restore_worker(argv[2])
+    if cmd == "_continuity-restore-recover" and len(argv) == 3 \
+            and re.fullmatch(r"[0-9a-f]+", argv[2]) is not None:
+        return cmd_restore_recover(argv[2])
+    if cmd == "_continuity-restore-complete" and len(argv) == 3 \
+            and os.path.isabs(argv[2]):
+        import siabackup
+        try:
+            siabackup.finalize_restore_request(argv[2])
+            return 0
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return 1
+    if cmd == "_continuity-restore-restart-failed" and len(argv) == 3 \
+            and os.path.isabs(argv[2]):
+        import siabackup
+        return 0 if siabackup.mark_brainstem_restart_failed(argv[2]) else 1
+    if cmd == "_continuity-recovery-restart-failed" and len(argv) == 2:
+        import siabackup
+        return 0 if siabackup.mark_recovery_restart_failed() else 1
+    if cmd == "_continuity-recovery-complete" and len(argv) == 2:
+        import siabackup
+        return 0 if siabackup.finalize_restore_recovery() else 1
+    if cmd == "_continuity-supervisor-reconcile" and len(argv) == 2:
+        import siabackup
+        try:
+            siabackup.reconcile_supervisor_spools()
+            return 0
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return 1
     if cmd == "note":
         return cmd_note(argv[2:])
     if cmd == "agent-propose" and len(argv) == 3:

@@ -11,6 +11,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import qs.Ui as Ui
 import "Model.js" as Model
 
 Item {
@@ -40,10 +41,36 @@ Item {
   property bool readyChecked: false
   property bool readyOk: false
   property string readyDetail: ""
+  property var continuity: null
+  property string continuityBoundary: ""
+  property bool continuitySheetOpen: false
+  property string continuityPage: "overview"
+  property bool restoreConfirmOpen: false
+  property string continuityActionMsg: ""
+  property bool continuityActionOk: false
+  property string repositoryInput: ""
+  property string recoveryKeyPathInput: ""
+  property string identityKeyOutputPathInput: ""
+  property string environmentFileInput: ""
+  property string restoreSnapshotInput: ""
+  property string restorePhraseInput: ""
+  property string restorePreparedSnapshotInput: ""
+  property string restoreLedgerHeadInput: ""
+  property bool restoreReceiptReadoptAck: false
+  property string restoreIdentityKeyPathInput: ""
+  property bool restoreVerificationPending: false
+  property bool restoreCorrelationLost: false
+  property string restoreRequestId: ""
+  property string restoreExpectedPreparedId: ""
+  readonly property int continuityInputMaxLength: 4096
+  readonly property int continuityResponseMaxLength: 65536
 
   readonly property string effId: hoverId !== "" ? hoverId : selectedId
   readonly property string statePath:
     (Quickshell.env("HOME") || "") + "/.local/state/sia"
+  readonly property string continuityPath:
+    (Quickshell.env("HOME") || "")
+      + "/.local/state/sia-continuity/status.json"
   readonly property string fontFamily: Style.font.family
   readonly property color fg: Color.foreground
   readonly property color accent: Color.accent
@@ -77,6 +104,16 @@ Item {
       && root.focusedWorkspaceName !== root.workspaceLockName
   readonly property bool cockpitVisible:
     root.opened && !root.workspaceLockMismatch
+  readonly property string continuityState:
+    root.continuity ? root.continuity.state : "unknown"
+  readonly property color continuityColor: {
+    if (root.restoreCorrelationLost) return root.urgent
+    if (root.restoreVerificationPending) return root.accent
+    var tone = Model.continuityTone(root.continuityState)
+    if (tone === "good" || tone === "busy") return root.accent
+    if (tone === "danger") return root.urgent
+    return Qt.alpha(root.fg, 0.62)
+  }
 
   function isNonNegativeCount(value) {
     return typeof value === "number" && isFinite(value)
@@ -173,6 +210,279 @@ Item {
     return "ledger " + transition.state
   }
 
+  function continuityStateText() {
+    if (root.restoreCorrelationLost) return "NEEDS ATTENTION"
+    if (root.restoreVerificationPending) return "RESTORE VERIFYING"
+    if (!root.continuity) return "STATUS UNAVAILABLE"
+    return Model.continuityStateLabel(root.continuity.state)
+  }
+
+  function continuityRepositoryText() {
+    if (!root.continuity) return "No continuity status has been published."
+    var display = String(root.continuity.repository_display || "").trim()
+    if (display !== "") return display
+    return root.continuity.state === "unconfigured"
+      ? "Choose a recovery repository to begin."
+      : "Repository identity is not available."
+  }
+
+  function continuityLatestText() {
+    var latest = root.continuity ? root.continuity.latest : null
+    if (!latest) return "No recovery copy has been recorded."
+    var age = Model.timeAgo(latest.created_at, root.nowMs)
+    var when = age !== "" ? age : latest.created_at
+    var classification = Model.continuityLatestReady(latest)
+      ? "Recovery-ready copy · "
+      : latest.verified
+        ? "Verified recovery material · "
+        : "Unverified copy · "
+    return classification
+      + when + " · " + latest.profile
+  }
+
+  function continuityDetailText() {
+    if (root.continuityBoundary !== "") return root.continuityBoundary
+    if (!root.continuity) return "The continuity worker is not reporting."
+    var detail = String(root.continuity.detail || "").trim()
+    return detail !== "" ? detail : root.continuityLatestText()
+  }
+
+  function clearContinuityInputs() {
+    root.repositoryInput = ""
+    root.recoveryKeyPathInput = ""
+    root.identityKeyOutputPathInput = ""
+    root.environmentFileInput = ""
+    root.restoreSnapshotInput = ""
+    root.clearRestoreCeremony()
+  }
+
+  function preparedRestore() {
+    return root.continuity && root.continuity.prepared
+      ? root.continuity.prepared : null
+  }
+
+  function clearRestoreCeremony() {
+    root.restorePhraseInput = ""
+    root.restorePreparedSnapshotInput = ""
+    root.restoreLedgerHeadInput = ""
+    root.restoreReceiptReadoptAck = false
+    root.restoreIdentityKeyPathInput = ""
+  }
+
+  function restoreCeremonyReady() {
+    var prepared = root.preparedRestore()
+    if (root.restoreVerificationPending || root.restoreCorrelationLost
+        || !prepared
+        || !Model.continuityCanApply(root.continuity)) return false
+    return root.restorePhraseInput === "RESTORE"
+      && root.restorePreparedSnapshotInput === prepared.snapshot_id
+      && root.restoreLedgerHeadInput === prepared.ledger_head
+      && root.restoreReceiptReadoptAck
+      && (prepared.identity_matches
+          || root.restoreIdentityKeyPathInput.trim() !== "")
+  }
+
+  function focusContinuityPage() {
+    Qt.callLater(function() {
+      if (!root.continuitySheetOpen || root.restoreConfirmOpen) return
+      if (root.continuityPage === "setup") setupRepositoryField.forceActiveFocus()
+      else if (root.continuityPage === "connect")
+        connectRepositoryField.forceActiveFocus()
+      else if (root.continuityPage === "restore") {
+        if (Model.continuityCanApply(root.continuity))
+          restorePhraseField.forceActiveFocus()
+        else if (root.continuityState === "restoring")
+          continuityCloseButton.forceActiveFocus()
+        else restoreSnapshotField.forceActiveFocus()
+      }
+      else if (Model.continuityCanBackUp(root.continuity))
+        overviewBackupButton.forceActiveFocus()
+      else if (Model.continuityCanPrepare(root.continuity)
+               || Model.continuityCanApply(root.continuity))
+        overviewRestoreButton.forceActiveFocus()
+      else if (!root.continuity
+               || root.continuityState === "unconfigured")
+        overviewSetupButton.forceActiveFocus()
+      else continuityCloseButton.forceActiveFocus()
+    })
+  }
+
+  function openContinuity(page) {
+    root.continuityPage = page || "overview"
+    root.continuitySheetOpen = true
+    root.restoreConfirmOpen = false
+    if (root.continuityPage === "restore"
+        && root.restoreSnapshotInput.trim() === ""
+        && root.continuity && root.continuity.latest)
+      root.restoreSnapshotInput = root.continuity.latest.snapshot_id
+    root.focusContinuityPage()
+  }
+
+  function closeContinuity() {
+    root.restoreConfirmOpen = false
+    root.continuitySheetOpen = false
+    root.continuityPage = "overview"
+    root.clearRestoreCeremony()
+    Qt.callLater(function() {
+      if (root.cockpitVisible) keyCatcher.forceActiveFocus()
+    })
+  }
+
+  function continuityRefusal(message) {
+    root.continuityActionOk = false
+    root.continuityActionMsg = message
+  }
+
+  function requestBackupNow() {
+    continuityProc.launch(["backup", "now"], "Back up now")
+  }
+
+  function requestBackupCheck() {
+    continuityProc.launch(["backup", "check"], "Check backup")
+  }
+
+  function requestSetup() {
+    var repository = root.repositoryInput.trim()
+    var recoveryKey = root.recoveryKeyPathInput.trim()
+    var identityKey = root.identityKeyOutputPathInput.trim()
+    var environmentFile = root.environmentFileInput.trim()
+    if (repository === "" || recoveryKey === "" || identityKey === "") {
+      root.continuityRefusal(
+        "Repository, recovery-key, and offline identity-key output paths are required.")
+      return
+    }
+    var args = ["backup", "setup", "--repository", repository,
+                "--recovery-key-out", recoveryKey,
+                "--identity-key-out", identityKey]
+    if (environmentFile !== "")
+      args = args.concat(["--environment-file", environmentFile])
+    continuityProc.launch(args, "Set up backup")
+  }
+
+  function requestConnect() {
+    var repository = root.repositoryInput.trim()
+    var recoveryKey = root.recoveryKeyPathInput.trim()
+    var environmentFile = root.environmentFileInput.trim()
+    if (repository === "" || recoveryKey === "") {
+      root.continuityRefusal(
+        "Repository and recovery-key file paths are required.")
+      return
+    }
+    var args = ["backup", "connect", "--repository", repository,
+                "--recovery-key-file", recoveryKey]
+    if (environmentFile !== "")
+      args = args.concat(["--environment-file", environmentFile])
+    continuityProc.launch(args, "Connect backup")
+  }
+
+  function requestRestorePrepare() {
+    var snapshot = root.restoreSnapshotInput.trim()
+    if (snapshot === "") {
+      root.continuityRefusal("Choose a verified snapshot before preparing restore.")
+      return
+    }
+    root.clearRestoreCeremony()
+    continuityProc.launch(["restore", "prepare", snapshot], "Prepare restore")
+  }
+
+  function requestRestoreConfirmation() {
+    var prepared = root.preparedRestore()
+    if (root.restoreCorrelationLost) {
+      root.continuityRefusal(
+        "Restore correlation was lost. Inspect continuity status before any retry.")
+      return
+    }
+    if (root.restoreVerificationPending) {
+      root.continuityRefusal(
+        "A restore is already waiting for readiness and SIA signed-ledger verification.")
+      return
+    }
+    if (!prepared || !Model.continuityCanApply(root.continuity)) {
+      root.continuityRefusal(
+        "Restore is not prepared. Prepare and verify the snapshot first.")
+      return
+    }
+    if (root.restorePhraseInput !== "RESTORE") {
+      root.continuityRefusal("Type RESTORE exactly to continue.")
+      return
+    }
+    if (root.restorePreparedSnapshotInput !== prepared.snapshot_id) {
+      root.continuityRefusal(
+        "The typed snapshot ID does not match the prepared restore.")
+      return
+    }
+    if (root.restoreLedgerHeadInput !== prepared.ledger_head) {
+      root.continuityRefusal(
+        "The typed ledger head does not match the prepared restore.")
+      return
+    }
+    if (!root.restoreReceiptReadoptAck) {
+      root.continuityRefusal(
+        "Acknowledge corpus-receipt re-adoption before continuing.")
+      return
+    }
+    if (!prepared.identity_matches
+        && root.restoreIdentityKeyPathInput.trim() === "") {
+      root.continuityRefusal(
+        "This machine needs the offline identity-key file path.")
+      return
+    }
+    continuityRestoreConfirm.selectedIndex = 0
+    root.restoreConfirmOpen = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function cancelRestoreConfirmation() {
+    root.restoreConfirmOpen = false
+    root.clearRestoreCeremony()
+    Qt.callLater(function() {
+      if (root.continuitySheetOpen) restorePhraseField.forceActiveFocus()
+    })
+  }
+
+  function confirmRestore() {
+    var prepared = root.preparedRestore()
+    root.restoreConfirmOpen = false
+    if (!prepared || !root.restoreCeremonyReady()) {
+      root.clearRestoreCeremony()
+      root.continuityRefusal(
+        "Restore ceremony changed or expired. Enter it again.")
+      return
+    }
+    var identityKeyPath = root.restoreIdentityKeyPathInput.trim()
+    var request = JSON.stringify({
+      schema_version: 1,
+      phrase: root.restorePhraseInput,
+      snapshot_id: root.restorePreparedSnapshotInput,
+      ledger_head: root.restoreLedgerHeadInput,
+      corpus_receipt_re_adopt: true
+    })
+    var args = ["restore", "apply", prepared.prepared_id, "--confirm-stdin"]
+    if (!prepared.identity_matches)
+      args = args.concat(["--identity-key-file", identityKeyPath])
+    if (continuityProc.launch(
+        args, "Restore SIA", request, true, prepared.prepared_id))
+      root.clearRestoreCeremony()
+  }
+
+  function validRestoreAcceptance(value, preparedId) {
+    return root.isPlainRecord(value)
+      && value.schema_version === 1
+      && value.accepted === true
+      && typeof value.request_id === "string" && value.request_id !== ""
+      && value.operation === "restore-apply"
+      && value.prepared_id === preparedId
+  }
+
+  function matchingRestoreOperation(status) {
+    var operation = status && status.operation ? status.operation : null
+    if (!operation || !Model.validContinuityOperation(operation)) return null
+    return operation.request_id === root.restoreRequestId
+        && operation.kind === "restore-apply"
+        && operation.prepared_id === root.restoreExpectedPreparedId
+      ? operation : null
+  }
+
   function configuredPluginSettings() {
     const config = root.shell ? root.shell.shellConfig : null
     const layout = config && config.bar ? config.bar.layout : null
@@ -191,7 +501,839 @@ Item {
         }
       }
     }
+    return root.configuredPluginArraySettings(config)
+  }
 
+  // ------------------------------------------------ continuity sheet
+  Item {
+        id: continuityLayer
+        parent: keyCatcher
+        anchors.fill: parent
+        visible: root.continuitySheetOpen
+        z: 20
+
+        Rectangle {
+          anchors.fill: parent
+          color: Qt.alpha(Color.background, 0.7)
+          MouseArea {
+            anchors.fill: parent
+            onClicked: {
+              if (!root.restoreConfirmOpen) root.closeContinuity()
+            }
+          }
+        }
+
+        Ui.BorderSurface {
+          id: continuitySheetCard
+          anchors.centerIn: parent
+          width: Math.min(parent.width - Style.spacing.panelPadding,
+                          body.leftW + body.rightW)
+          height: Math.min(parent.height - header.height,
+                           continuitySheetCol.implicitHeight
+                             + contentTopInset + contentBottomInset)
+          color: Color.background
+          borderSpec: Border.flat(root.continuityColor,
+                                  Style.normalBorderWidth)
+          padding: Style.spacing.panelPadding
+          radius: Style.cornerRadius
+
+          MouseArea { anchors.fill: parent; onClicked: {} }
+
+          Flickable {
+            id: continuitySheetScroll
+            anchors.fill: parent
+            anchors.leftMargin: continuitySheetCard.contentLeftInset
+            anchors.rightMargin: continuitySheetCard.contentRightInset
+            anchors.topMargin: continuitySheetCard.contentTopInset
+            anchors.bottomMargin: continuitySheetCard.contentBottomInset
+            contentWidth: width
+            contentHeight: continuitySheetCol.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            Column {
+              id: continuitySheetCol
+              width: continuitySheetScroll.width
+              spacing: Style.spacing.lg
+
+            Item {
+              width: continuitySheetCol.width
+              height: Math.max(sheetTitleCol.implicitHeight,
+                               continuityCloseButton.implicitHeight)
+              Column {
+                id: sheetTitleCol
+                anchors.left: parent.left
+                anchors.right: continuityCloseButton.left
+                anchors.rightMargin: Style.spacing.md
+                spacing: Style.spacing.xs
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "SIA CONTINUITY"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: root.continuityPage === "setup"
+                    ? "Create a verified recovery repository"
+                    : root.continuityPage === "connect"
+                      ? "Reconnect this brain to an existing repository"
+                      : root.continuityPage === "restore"
+                        ? "Inspect, prepare, then deliberately restore"
+                        : "Keep the brain recoverable beyond this computer"
+                  color: Qt.alpha(root.fg, 0.52)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+              Ui.Button {
+                id: continuityCloseButton
+                anchors.right: parent.right
+                anchors.top: parent.top
+                text: "Close"
+                fontSize: Style.font.caption
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close continuity"
+                Accessible.description:
+                  "Return to the SIA cockpit without stopping accepted work"
+                onClicked: root.closeContinuity()
+              }
+            }
+
+            Rectangle {
+              width: continuitySheetCol.width
+              height: Style.normalBorderWidth
+              color: Qt.alpha(root.continuityColor, 0.35)
+            }
+
+            // ---------------------------------------------------- overview
+            Column {
+              visible: root.continuityPage === "overview"
+              width: continuitySheetCol.width
+              spacing: Style.spacing.lg
+
+              Item {
+                width: parent.width
+                height: Math.max(overviewState.implicitHeight,
+                                 overviewStateMark.implicitHeight)
+                Text {
+                  id: overviewState
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: root.continuityStateText()
+                  color: root.continuityColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: true
+                }
+                Text {
+                  id: overviewStateMark
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: Model.continuityBarMark(root.continuity)
+                  color: root.continuityColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                }
+              }
+
+              Ui.BorderSurface {
+                width: parent.width
+                height: overviewFacts.implicitHeight
+                  + contentTopInset + contentBottomInset
+                color: Qt.alpha(root.continuityColor, 0.05)
+                borderSpec: Border.flat(Qt.alpha(root.continuityColor, 0.24),
+                                        Style.normalBorderWidth)
+                padding: Style.spacing.xl
+                radius: Style.cornerRadius
+                Column {
+                  id: overviewFacts
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.leftMargin: parent.contentLeftInset
+                  anchors.rightMargin: parent.contentRightInset
+                  anchors.topMargin: parent.contentTopInset
+                  spacing: Style.spacing.sm
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityRepositoryText()
+                    elide: Text.ElideMiddle
+                    color: root.fg
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityLatestText()
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.7)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityDetailText()
+                    wrapMode: Text.WordWrap
+                    color: root.continuityBoundary !== ""
+                      || root.continuityState === "failed"
+                      || root.continuityState === "blocked"
+                        ? root.urgent : Qt.alpha(root.fg, 0.58)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: "Verification checks the repository copy. Off-machine placement, immutability, and retention remain operator-owned."
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.5)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Row {
+                spacing: Style.spacing.md
+                Ui.Button {
+                  id: overviewSetupButton
+                  visible: !root.continuity
+                    || root.continuityState === "unconfigured"
+                  text: "Set up new"
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Set up a new SIA backup"
+                  Accessible.description:
+                    "Create a repository with separate recovery and offline identity key files"
+                  onClicked: root.openContinuity("setup")
+                }
+                Ui.Button {
+                  id: overviewConnectButton
+                  visible: !root.continuity
+                    || root.continuityState === "unconfigured"
+                  text: "Connect existing"
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Connect an existing SIA backup"
+                  Accessible.description:
+                    "Reconnect with an existing recovery key file"
+                  onClicked: root.openContinuity("connect")
+                }
+                Ui.Button {
+                  id: overviewBackupButton
+                  visible: !!root.continuity
+                    && root.continuityState !== "unconfigured"
+                  enabled: Model.continuityCanBackUp(root.continuity)
+                    && !continuityProc.working
+                  text: continuityProc.working ? "Requesting…" : "Back up now"
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Back up SIA now"
+                  Accessible.description:
+                    "Capture and verify a new encrypted recovery copy"
+                  onClicked: root.requestBackupNow()
+                }
+                Ui.Button {
+                  id: overviewCheckButton
+                  visible: !!root.continuity
+                    && root.continuityState !== "unconfigured"
+                  enabled: Model.continuityCanCheck(root.continuity)
+                    && !continuityProc.working
+                  text: "Check backup"
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Check SIA backup"
+                  Accessible.description:
+                    "Verify the encrypted recovery repository"
+                  onClicked: root.requestBackupCheck()
+                }
+                Ui.Button {
+                  id: overviewRestoreButton
+                  visible: !!root.continuity
+                    && root.continuityState !== "unconfigured"
+                  enabled: (Model.continuityCanPrepare(root.continuity)
+                            || Model.continuityCanApply(root.continuity))
+                    && !continuityProc.working
+                  text: "Restore…"
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Restore SIA"
+                  Accessible.description:
+                    "Review a verified snapshot before restoring"
+                  onClicked: root.openContinuity("restore")
+                }
+              }
+            }
+
+            // ------------------------------------------------------- setup
+            Column {
+              visible: root.continuityPage === "setup"
+              width: continuitySheetCol.width
+              spacing: Style.spacing.md
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Repository"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                id: setupRepositoryField
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.repositoryInput
+                placeholderText: "Repository path or endpoint"
+                Accessible.name: "Backup repository"
+                Accessible.description:
+                  "Path or endpoint for the new encrypted backup repository"
+                onTextChanged: root.repositoryInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Recovery key output"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.recoveryKeyPathInput
+                placeholderText: "Path on separate recovery media"
+                Accessible.name: "Recovery key output path"
+                Accessible.description:
+                  "Where SIA should create the recovery key file"
+                onTextChanged: root.recoveryKeyPathInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Offline identity key output"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.identityKeyOutputPathInput
+                placeholderText: "Path on separate offline media"
+                Accessible.name: "Offline identity key output path"
+                Accessible.description:
+                  "Where SIA should create the machine identity recovery key"
+                onTextChanged: root.identityKeyOutputPathInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Keep the offline identity key separate from this computer, the repository, and the recovery key. It is never uploaded."
+                wrapMode: Text.WordWrap
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Environment file · optional"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.environmentFileInput
+                placeholderText: "Path to repository environment file"
+                Accessible.name: "Backup environment file"
+                Accessible.description:
+                  "Optional path containing repository environment settings"
+                onTextChanged: root.environmentFileInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Keep both key files outside this computer and outside the repository. Only file paths—not key contents—enter this cockpit. Destination resilience and retention remain operator-owned."
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.58)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Row {
+                spacing: Style.spacing.md
+                Ui.Button {
+                  text: "Back"
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Back to continuity overview"
+                  onClicked: root.openContinuity("overview")
+                }
+                Ui.Button {
+                  text: continuityProc.working ? "Requesting…" : "Set up backup"
+                  enabled: !continuityProc.working
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Set up SIA backup"
+                  Accessible.description:
+                    "Create the repository and write separate recovery and identity key files"
+                  onClicked: root.requestSetup()
+                }
+              }
+            }
+
+            // ----------------------------------------------------- connect
+            Column {
+              visible: root.continuityPage === "connect"
+              width: continuitySheetCol.width
+              spacing: Style.spacing.md
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Repository"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                id: connectRepositoryField
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.repositoryInput
+                placeholderText: "Existing repository path or endpoint"
+                Accessible.name: "Existing backup repository"
+                Accessible.description:
+                  "Path or endpoint for the encrypted backup repository"
+                onTextChanged: root.repositoryInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Recovery key file"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.recoveryKeyPathInput
+                placeholderText: "Path to the existing recovery key file"
+                Accessible.name: "Recovery key file"
+                Accessible.description:
+                  "Recovery key file used to reconnect this computer"
+                onTextChanged: root.recoveryKeyPathInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Environment file · optional"
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Ui.TextField {
+                width: parent.width
+                maximumLength: root.continuityInputMaxLength
+                text: root.environmentFileInput
+                placeholderText: "Path to repository environment file"
+                Accessible.name: "Backup environment file"
+                Accessible.description:
+                  "Optional path containing repository environment settings"
+                onTextChanged: root.environmentFileInput = text
+              }
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "SIA reads the recovery key through its guarded CLI. The cockpit never asks for or displays the key itself."
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.58)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Row {
+                spacing: Style.spacing.md
+                Ui.Button {
+                  text: "Back"
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Back to continuity overview"
+                  onClicked: root.openContinuity("overview")
+                }
+                Ui.Button {
+                  text: continuityProc.working ? "Requesting…" : "Connect backup"
+                  enabled: !continuityProc.working
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Connect SIA backup"
+                  Accessible.description:
+                    "Reconnect this computer to the encrypted repository"
+                  onClicked: root.requestConnect()
+                }
+              }
+            }
+
+            // ----------------------------------------------------- restore
+            Column {
+              visible: root.continuityPage === "restore"
+              width: continuitySheetCol.width
+              spacing: Style.spacing.md
+
+              Column {
+                visible: root.continuityState !== "prepared"
+                  && root.continuityState !== "restoring"
+                width: parent.width
+                spacing: Style.spacing.md
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "Verified snapshot"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Ui.TextField {
+                  id: restoreSnapshotField
+                  width: parent.width
+                  maximumLength: root.continuityInputMaxLength
+                  text: root.restoreSnapshotInput
+                  placeholderText: "Snapshot ID"
+                  Accessible.name: "Snapshot to prepare"
+                  Accessible.description:
+                    "Identifier of the verified SIA recovery snapshot"
+                  onTextChanged: root.restoreSnapshotInput = text
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: root.continuityLatestText()
+                  wrapMode: Text.WordWrap
+                  color: Qt.alpha(root.fg, 0.62)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Ui.Button {
+                  text: continuityProc.working
+                    ? "Requesting…" : "Prepare restore"
+                  enabled: Model.continuityCanPrepare(root.continuity)
+                    && !continuityProc.working
+                    && root.restoreSnapshotInput.trim() !== ""
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Prepare SIA restore"
+                  Accessible.description:
+                    "Download, verify, and stage a snapshot without applying it"
+                  onClicked: root.requestRestorePrepare()
+                }
+              }
+
+              Column {
+                visible: root.continuityState === "prepared"
+                  && Model.continuityCanApply(root.continuity)
+                width: parent.width
+                spacing: Style.spacing.md
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "RESTORE CEREMONY"
+                  color: root.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: true
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "Preparation is non-destructive. Applying it replaces live SIA brain state. Every value below is checked again by the backend under the exclusive lifecycle lease."
+                  wrapMode: Text.WordWrap
+                  color: Qt.alpha(root.fg, 0.68)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "Type RESTORE"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Ui.TextField {
+                  id: restorePhraseField
+                  width: parent.width
+                  maximumLength: "RESTORE".length
+                  text: root.restorePhraseInput
+                  placeholderText: "RESTORE"
+                  Accessible.name: "Restore confirmation phrase"
+                  Accessible.description: "Type RESTORE exactly"
+                  onTextChanged: root.restorePhraseInput = text
+                }
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "Prepared snapshot · type exactly"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: {
+                    var prepared = root.preparedRestore()
+                    return prepared ? prepared.snapshot_id : ""
+                  }
+                  wrapMode: Text.WrapAnywhere
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+                Ui.TextField {
+                  width: parent.width
+                  maximumLength: root.continuityInputMaxLength
+                  text: root.restorePreparedSnapshotInput
+                  placeholderText: "Exact prepared snapshot ID"
+                  Accessible.name: "Prepared snapshot confirmation"
+                  Accessible.description:
+                    "Type the exact prepared snapshot identifier shown above"
+                  onTextChanged: root.restorePreparedSnapshotInput = text
+                }
+
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "Current ledger head · type exactly"
+                  color: root.fg
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: {
+                    var prepared = root.preparedRestore()
+                    return prepared ? prepared.ledger_head : ""
+                  }
+                  wrapMode: Text.WrapAnywhere
+                  color: root.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+                Ui.TextField {
+                  width: parent.width
+                  maximumLength: root.continuityInputMaxLength
+                  text: root.restoreLedgerHeadInput
+                  placeholderText: "Exact current ledger head"
+                  Accessible.name: "Current ledger head confirmation"
+                  Accessible.description:
+                    "Type the exact current ledger head shown above"
+                  onTextChanged: root.restoreLedgerHeadInput = text
+                }
+
+                Ui.Toggle {
+                  width: parent.width
+                  checked: root.restoreReceiptReadoptAck
+                  label: "Re-adopt corpus receipt"
+                  description: "I understand this machine will deliberately re-adopt the prepared snapshot's corpus receipt as its recovery lineage."
+                  foreground: root.fg
+                  accent: root.accent
+                  Accessible.role: Accessible.CheckBox
+                  Accessible.name: label
+                  Accessible.description: description
+                  Accessible.checked: checked
+                  onClicked: root.restoreReceiptReadoptAck
+                    = !root.restoreReceiptReadoptAck
+                }
+
+                Column {
+                  visible: {
+                    var prepared = root.preparedRestore()
+                    return !!prepared && !prepared.identity_matches
+                  }
+                  width: parent.width
+                  spacing: Style.spacing.sm
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: "Offline identity key file"
+                    color: root.urgent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+                  Ui.TextField {
+                    width: parent.width
+                    maximumLength: root.continuityInputMaxLength
+                    text: root.restoreIdentityKeyPathInput
+                    placeholderText: "Path to offline identity-key file"
+                    Accessible.name: "Offline identity key file"
+                    Accessible.description:
+                      "Path used locally to authorize identity recovery"
+                    onTextChanged: root.restoreIdentityKeyPathInput = text
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: "This prepared identity does not match this machine. Only the file path is handed to the guarded CLI; key bytes are never displayed, uploaded, or placed in argv."
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.urgent, 0.82)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                Ui.Button {
+                  id: restoreApplyButton
+                  enabled: root.restoreCeremonyReady()
+                    && !continuityProc.working
+                  text: "Review live restore…"
+                  foreground: enabled ? root.urgent
+                    : Qt.alpha(root.fg, 0.35)
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Review prepared SIA restore"
+                  Accessible.description:
+                    "Open the final destructive confirmation after every ceremony field matches"
+                  onClicked: root.requestRestoreConfirmation()
+                }
+              }
+
+              Text {
+                visible: root.continuityState === "restoring"
+                width: parent.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "Restore is running outside the cockpit. Success is withheld until SIA reports ready and its signed ledger passes verification."
+                wrapMode: Text.WordWrap
+                color: root.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              Ui.Button {
+                text: "Back"
+                bordered: true
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "Back to continuity overview"
+                onClicked: root.openContinuity("overview")
+              }
+            }
+
+            Text {
+              visible: root.continuityActionMsg !== ""
+              width: continuitySheetCol.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: root.continuityActionMsg
+              wrapMode: Text.WordWrap
+              color: continuityProc.working || root.restoreVerificationPending
+                ? Qt.alpha(root.fg, 0.65)
+                : root.continuityActionOk ? root.accent : root.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+      }
+
+        Ui.ConfirmDialog {
+          id: continuityRestoreConfirm
+          anchors.fill: parent
+          opened: root.restoreConfirmOpen
+          z: 30
+          selectedIndex: 0
+          message: "Begin the live restore and re-adopt its corpus receipt on this machine? This replaces live brain state. Cancel applies nothing and resets the ceremony. Success remains withheld until SIA is ready and its signed ledger verifies."
+          cancelText: "Cancel"
+          confirmText: "Restore SIA"
+          background: Color.background
+          foreground: root.fg
+          scrim: Qt.alpha(Color.background, 0.7)
+          selectedBackground: Qt.alpha(root.fg, 0.08)
+          selectedText: root.accent
+          fontFamily: root.fontFamily
+          cornerRadius: Style.cornerRadius
+          onCanceled: root.cancelRestoreConfirmation()
+          onConfirmed: root.confirmRestore()
+        }
+      }
+
+  function configuredPluginArraySettings(config) {
+    const pluginId = Util.canonicalWidgetId(root.pluginId)
     const plugins = config ? config.plugins : null
     if (Array.isArray(plugins)) {
       for (var p = 0; p < plugins.length; p++) {
@@ -311,6 +1453,11 @@ Item {
   }
 
   function open(payloadJson) {
+    var payload = ({})
+    try {
+      payload = typeof payloadJson === "string"
+        ? JSON.parse(payloadJson || "{}") : (payloadJson || ({}))
+    } catch (e) { payload = ({}) }
     root.loadWorkspaceLock()
     // A layer-shell surface is not a Hyprland toplevel, so the lock gates
     // visibility against the live focused workspace rather than claiming a
@@ -320,13 +1467,20 @@ Item {
     workspaceLockFeedback = ""
     verifyMsg = ""
     verifyOk = false
+    continuityActionMsg = ""
+    continuityActionOk = false
+    continuitySheetOpen = false
+    continuityPage = "overview"
+    restoreConfirmOpen = false
     readyProc.cancel()
     clearReadyCheck()
     statusFile.reload(); graphFile.reload(); thoughtsFile.reload()
+    continuityFile.reload()
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
-      if (root.cockpitVisible) keyCatcher.forceActiveFocus()
+      if (payload.mode === "continuity") root.openContinuity("overview")
+      else if (root.cockpitVisible) keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
     })
   }
@@ -338,6 +1492,10 @@ Item {
     hoverId = ""
     readyProc.cancel()
     clearReadyCheck()
+    root.continuitySheetOpen = false
+    root.continuityPage = "overview"
+    root.restoreConfirmOpen = false
+    root.clearContinuityInputs()
     root.clearWorkspaceLock()
     workspaceLockFeedback = ""
   }
@@ -351,7 +1509,8 @@ Item {
     if (!root.cockpitVisible) return
     Qt.callLater(function() {
       if (!root.cockpitVisible) return
-      keyCatcher.forceActiveFocus()
+      if (root.continuitySheetOpen) root.focusContinuityPage()
+      else keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
     })
   }
@@ -413,6 +1572,63 @@ Item {
     } catch (e) { }
   }
 
+  function applyContinuity(text) {
+    try {
+      const parsed = JSON.parse(text)
+      if (!Model.validContinuityStatus(parsed)) {
+        root.continuityBoundary = root.continuity
+          ? "last good continuity status; latest update rejected"
+          : "no valid continuity status"
+        return
+      }
+      var previousPrepared = root.preparedRestore()
+      var previousPreparedId = previousPrepared
+        ? previousPrepared.prepared_id : ""
+      var nextPreparedId = parsed.prepared
+        ? parsed.prepared.prepared_id : ""
+      root.continuity = parsed
+      root.continuityBoundary = ""
+      if (previousPreparedId !== nextPreparedId) {
+        root.restoreConfirmOpen = false
+        root.clearRestoreCeremony()
+      }
+      if (root.restoreVerificationPending) {
+        var operation = root.matchingRestoreOperation(parsed)
+        if (operation && (operation.phase === "accepted"
+                          || operation.phase === "running")) {
+          root.continuityActionOk = false
+          root.continuityActionMsg = "Restore is running. Readiness and SIA signed-ledger verification are still pending."
+        } else if (operation && operation.phase === "verified"
+                   && operation.ready
+                   && operation.sia_ledger_verified) {
+          root.restoreVerificationPending = false
+          root.continuityActionOk = true
+          root.continuityActionMsg = "Restore verified: SIA is ready and its signed ledger passes."
+        } else if (operation && operation.phase === "verified") {
+          root.restoreVerificationPending = false
+          root.continuityActionOk = false
+          root.continuityActionMsg = "Restore terminal record did not prove both readiness and SIA signed-ledger verification."
+        } else if (operation && (operation.phase === "failed"
+                                 || operation.phase === "blocked")) {
+          root.restoreVerificationPending = false
+          root.continuityActionOk = false
+          root.continuityActionMsg = "The exact restore request did not reach verified readiness. Review continuity details before retrying."
+        }
+      }
+      if (root.continuitySheetOpen
+          && (root.continuityPage === "setup"
+              || root.continuityPage === "connect")
+          && parsed.state !== "unconfigured") {
+        root.continuityPage = "overview"
+        root.focusContinuityPage()
+      }
+    } catch (e) {
+      root.continuityBoundary = root.continuity
+        ? "last good continuity status; latest update rejected"
+        : "no valid continuity status"
+    }
+  }
+
   FileView {
     id: statusFile
     path: root.statePath + "/status.json"
@@ -446,6 +1662,20 @@ Item {
   Timer { id: thoughtsApply; interval: 200; repeat: false
           onTriggered: { thoughtsFile.reload(); root.applyThoughts(thoughtsFile.text()) } }
 
+  FileView {
+    id: continuityFile
+    path: root.continuityPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyContinuity(text())
+    onFileChanged: continuityApply.restart()
+  }
+  Timer { id: continuityApply; interval: 150; repeat: false
+          onTriggered: {
+            continuityFile.reload()
+            root.applyContinuity(continuityFile.text())
+          } }
+
   Timer {
     interval: 1000; running: root.opened; repeat: true
     onTriggered: {
@@ -465,7 +1695,7 @@ Item {
     onExited: function(code) {
       root.verifyOk = code === 0
       root.verifyMsg = code === 0
-        ? "all registered chains re-verified ✓"
+        ? "SIA signed ledger re-verified ✓"
         : "CHAIN VERIFICATION INCOMPLETE"
     }
   }
@@ -572,6 +1802,183 @@ Item {
     }
   }
 
+  // Every continuity command is a short hand-off to the independently
+  // published worker.  The accepted backup or restore continues if this
+  // cockpit closes; this Process reports only whether the request crossed the
+  // local CLI boundary.
+  Process {
+    id: continuityProc
+    property string operationLabel: ""
+    property string outText: ""
+    property string errText: ""
+    property int exitCode: 0
+    property bool exited: false
+    property bool outDone: false
+    property bool errDone: false
+    property bool launchPending: false
+    property bool startedForAttempt: false
+    property bool launchFailed: false
+    property bool working: false
+    property string stdinPayload: ""
+    property bool awaitRestoreVerification: false
+    property string restorePreparedId: ""
+    property bool outOverflow: false
+    property bool errOverflow: false
+    command: []
+    stdinEnabled: true
+
+    function launch(args, label, inputLine, waitForRestoreVerification,
+                    preparedId) {
+      if (working || running) {
+        root.continuityRefusal(
+          "Another continuity request is still being handed off.")
+        return false
+      }
+      operationLabel = label
+      outText = ""
+      errText = ""
+      exitCode = 0
+      exited = false
+      outDone = false
+      errDone = false
+      outOverflow = false
+      errOverflow = false
+      launchPending = true
+      startedForAttempt = false
+      launchFailed = false
+      stdinPayload = typeof inputLine === "string" ? inputLine : ""
+      awaitRestoreVerification = waitForRestoreVerification === true
+      restorePreparedId = typeof preparedId === "string" ? preparedId : ""
+      if (awaitRestoreVerification) {
+        root.restoreVerificationPending = false
+        root.restoreCorrelationLost = false
+        root.restoreRequestId = ""
+        root.restoreExpectedPreparedId = restorePreparedId
+      }
+      working = true
+      root.continuityActionMsg = label + " requested…"
+      root.continuityActionOk = false
+      command = [(Quickshell.env("HOME") || "") + "/.local/bin/sia"]
+        .concat(args)
+      running = true
+      return true
+    }
+
+    function markLaunchFailure() {
+      if (launchFailed) return
+      var wasRestore = awaitRestoreVerification
+      launchPending = false
+      launchFailed = true
+      working = false
+      stdinPayload = ""
+      awaitRestoreVerification = false
+      restorePreparedId = ""
+      if (wasRestore) {
+        root.restoreVerificationPending = false
+        root.restoreRequestId = ""
+        root.restoreExpectedPreparedId = ""
+      }
+      root.continuityActionOk = false
+      root.continuityActionMsg = "Could not start the local SIA command."
+    }
+
+    function settle() {
+      if (launchFailed || !exited || !outDone || !errDone) return
+      working = false
+      var detail = outOverflow || errOverflow
+        ? "SIA command output exceeded the cockpit display boundary."
+        : (outText + "\n" + errText).replace(/^\s+|\s+$/g, "")
+      var accepted = exitCode === 0
+      if (awaitRestoreVerification && accepted) {
+        root.continuityActionOk = false
+        var acceptance = null
+        try {
+          acceptance = outOverflow ? null
+            : JSON.parse(outText.replace(/^\s+|\s+$/g, ""))
+        }
+        catch (e) { acceptance = null }
+        if (root.validRestoreAcceptance(acceptance, restorePreparedId)) {
+          root.restoreRequestId = acceptance.request_id
+          root.restoreExpectedPreparedId = restorePreparedId
+          root.restoreVerificationPending = true
+          root.restoreCorrelationLost = false
+          root.continuityActionMsg = "Restore accepted. Waiting for the exact request's readiness and SIA signed-ledger verification."
+        } else {
+          root.restoreRequestId = ""
+          root.restoreExpectedPreparedId = restorePreparedId
+          root.restoreVerificationPending = false
+          root.restoreCorrelationLost = true
+          root.continuityActionMsg = "Restore handoff lacked a valid correlation receipt. No success will be shown; inspect continuity status before any retry."
+        }
+      } else {
+        if (awaitRestoreVerification) {
+          root.restoreVerificationPending = false
+          root.restoreCorrelationLost = false
+          root.restoreRequestId = ""
+          root.restoreExpectedPreparedId = ""
+        }
+        root.continuityActionOk = accepted
+        root.continuityActionMsg = detail !== "" ? detail
+          : operationLabel + (accepted ? " accepted." : " was refused.")
+      }
+      stdinPayload = ""
+      awaitRestoreVerification = false
+      restorePreparedId = ""
+      outText = ""
+      errText = ""
+      continuityFile.reload()
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityProc.outOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityProc.outText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityProc.outDone = true
+        continuityProc.settle()
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityProc.errOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityProc.errText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityProc.errDone = true
+        continuityProc.settle()
+      }
+    }
+    onStarted: {
+      continuityProc.startedForAttempt = true
+      continuityProc.launchPending = false
+      if (continuityProc.stdinPayload !== "") {
+        // Quickshell Process exposes write but no close-stdin method.  The
+        // restore CLI reads exactly one bounded newline-terminated record.
+        var inputLine = continuityProc.stdinPayload
+        continuityProc.stdinPayload = ""
+        continuityProc.write(inputLine + "\n")
+        inputLine = ""
+      }
+    }
+    onRunningChanged: {
+      if (!running && continuityProc.launchPending
+          && !continuityProc.startedForAttempt)
+        continuityProc.markLaunchFailure()
+    }
+    onExited: function(code) {
+      continuityProc.exitCode = code
+      continuityProc.exited = true
+      continuityProc.settle()
+    }
+  }
+
   PanelWindow {
     id: win
     visible: root.cockpitVisible
@@ -587,10 +1994,28 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
+
+      // Sheets contain focusable controls, so Esc must remain available even
+      // when a field rather than this catcher owns active focus.
+      Shortcut {
+        sequences: ["Esc"]
+        enabled: root.cockpitVisible
+        context: Qt.WindowShortcut
+        onActivated: {
+          if (root.restoreConfirmOpen) root.cancelRestoreConfirmation()
+          else if (root.continuitySheetOpen) root.closeContinuity()
+          else root.dismiss()
+        }
+      }
+
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Escape) { root.dismiss(); event.accepted = true }
-        else if (event.key === Qt.Key_L) {
+        if (root.restoreConfirmOpen) {
+          if (continuityRestoreConfirm.handleKey(event)) event.accepted = true
+          return
+        }
+        if (root.continuitySheetOpen) return
+        if (event.key === Qt.Key_L) {
           root.toggleWorkspaceLock()
           event.accepted = true
         }
@@ -938,6 +2363,199 @@ Item {
           id: leftPane
           width: leftScroll.width
           spacing: body.gap
+
+          // Continuity is a separate operational truth plane: it stays above
+          // ordinary brain vitals and remains legible while restore quiesces
+          // the brainstem.  The colored lifeline is the one deliberate visual
+          // signature; every state is also named in text.
+          Rectangle {
+            id: continuityCard
+            width: parent.width
+            height: continuityCardCol.implicitHeight + Style.space(20)
+            radius: Style.cornerRadius
+            color: Qt.alpha(root.continuityColor, 0.05)
+            border.color: Qt.alpha(root.continuityColor, 0.28)
+            border.width: 1
+
+            Rectangle {
+              anchors.left: parent.left
+              anchors.top: parent.top
+              anchors.bottom: parent.bottom
+              width: Style.normalBorderWidth
+              color: root.continuityColor
+            }
+
+            Column {
+              id: continuityCardCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(5)
+
+              Item {
+                width: continuityCardCol.width
+                height: Math.max(continuityTitle.implicitHeight,
+                                 continuityStateButton.implicitHeight)
+                Text {
+                  id: continuityTitle
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  text: "CONTINUITY"
+                  color: Qt.alpha(root.fg, 0.48)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+                Ui.Button {
+                  id: continuityStateButton
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.continuityStateText()
+                  foreground: root.continuityColor
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.spacing.sm
+                  verticalPadding: Style.spacing.xxs
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Open continuity details, "
+                    + root.continuityStateText().toLowerCase()
+                  Accessible.description:
+                    "Show backup setup, verification, and recovery controls"
+                  onClicked: root.openContinuity("overview")
+                }
+              }
+
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityRepositoryText()
+                elide: Text.ElideMiddle
+                color: Qt.alpha(root.fg, 0.7)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityLatestText()
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.52)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: root.continuityDetailText() !== ""
+                  && root.continuityDetailText() !== root.continuityLatestText()
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityDetailText()
+                wrapMode: Text.WordWrap
+                color: root.continuityBoundary !== ""
+                  || root.continuityState === "failed"
+                  || root.continuityState === "blocked"
+                    ? root.urgent : Qt.alpha(root.fg, 0.52)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Row {
+                spacing: Style.spacing.sm
+                Ui.Button {
+                  id: cardSetupButton
+                  visible: !root.continuity
+                    || root.continuityState === "unconfigured"
+                  text: "Set up"
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.spacing.sm
+                  verticalPadding: Style.spacing.xs
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Set up SIA backup"
+                  Accessible.description:
+                    "Create a new encrypted recovery repository"
+                  onClicked: root.openContinuity("setup")
+                }
+                Ui.Button {
+                  id: cardConnectButton
+                  visible: !root.continuity
+                    || root.continuityState === "unconfigured"
+                  text: "Connect"
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.spacing.sm
+                  verticalPadding: Style.spacing.xs
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Connect an existing SIA backup"
+                  Accessible.description:
+                    "Use a recovery key file to connect this computer"
+                  onClicked: root.openContinuity("connect")
+                }
+                Ui.Button {
+                  id: cardBackupButton
+                  visible: !!root.continuity
+                    && root.continuityState !== "unconfigured"
+                  enabled: Model.continuityCanBackUp(root.continuity)
+                    && !continuityProc.working
+                  text: continuityProc.working ? "Requesting…" : "Back up now"
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.spacing.sm
+                  verticalPadding: Style.spacing.xs
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Back up SIA now"
+                  Accessible.description:
+                    "Capture and verify a new encrypted recovery copy"
+                  onClicked: root.requestBackupNow()
+                }
+                Ui.Button {
+                  id: cardRestoreButton
+                  visible: !!root.continuity
+                    && root.continuityState !== "unconfigured"
+                  enabled: (Model.continuityCanPrepare(root.continuity)
+                            || Model.continuityCanApply(root.continuity))
+                    && !continuityProc.working
+                  text: "Restore…"
+                  foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
+                  fontSize: Style.font.caption
+                  horizontalPadding: Style.spacing.sm
+                  verticalPadding: Style.spacing.xs
+                  bordered: true
+                  focusable: true
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Restore SIA"
+                  Accessible.description:
+                    "Review a verified recovery copy before restoring"
+                  onClicked: root.openContinuity("restore")
+                }
+              }
+
+              Text {
+                visible: root.continuityActionMsg !== ""
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityActionMsg
+                wrapMode: Text.WordWrap
+                color: continuityProc.working
+                    || root.restoreVerificationPending
+                  ? Qt.alpha(root.fg, 0.65)
+                  : root.continuityActionOk ? root.accent : root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
 
           Rectangle {
             width: parent.width

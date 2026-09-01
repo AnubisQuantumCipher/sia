@@ -42,9 +42,13 @@ case "$XDG_RUNTIME_DIR" in
     ;;
 esac
 export GBRAIN_SKIP_STARTUP_HOOKS=1
-unset SIA_INHERITED_LIFECYCLE_FD \
+unset SIA_INHERITED_LIFECYCLE_FD SIA_INHERITED_CORPUS_FD \
   SIA_LAUNCHER_ABI SIA_LAUNCHER_LIFECYCLE_FD \
-  SIA_LAUNCHER_TARGET_FD SIA_LAUNCHER_TARGET_PATH
+  SIA_LAUNCHER_TARGET_FD SIA_LAUNCHER_TARGET_PATH \
+  SIA_RESTORE_LAUNCH_ABI SIA_RESTORE_LIFECYCLE_FD \
+  SIA_RESTORE_ADMIN_FD SIA_RESTORE_TARGET_FD \
+  SIA_RESTORE_TARGET_PATH SIA_RESTORE_MASK_OWNED \
+  SIA_RESTORE_FINALIZE_ABI SIA_RESTORE_FINALIZE_ADMIN_FD
 REPO="$(cd "$(dirname "$0")" && pwd)"
 SIA_ORIGINAL_REPO="$REPO"
 SIA_RELEASE_SOURCE=""
@@ -54,12 +58,26 @@ BINDIR="$SHARE/bin"
 LIFECYCLE_LOCK="$HOME/.local/state/sia.lifecycle.lock"
 LIFECYCLE_ADMIN_LOCK="$HOME/.local/state/sia.lifecycle-admin.lock"
 LIFECYCLE_TOMBSTONE="$HOME/.local/state/sia.lifecycle-removed"
+RESTORE_BARRIER="$HOME/.local/state/sia-continuity/restore-in-progress.json"
+RESTORE_MASK_DEBT="$HOME/.local/state/sia-continuity/restore-runtime-mask"
+RESTORE_SUPERVISOR_DEBT="$HOME/.local/state/sia-continuity/restore-supervisor.json"
 CONFIG_DIR="$HOME/.config/sia"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 TOOLCHAIN="$SHARE/toolchain"
+RESTIC_ROOT="$TOOLCHAIN/restic"
+RESTIC_BIN="$RESTIC_ROOT/bin/restic"
+RESTIC_RECEIPT="$RESTIC_ROOT/.sia-release"
 MANAGED_DIR="$STATE/managed-install"
 BRAINSTEM_UNIT="$SYSTEMD_USER_DIR/sia-brainstem.service"
 BRAINSTEM_RECEIPT="$MANAGED_DIR/sia-brainstem.service"
+BACKUP_UNIT="$SYSTEMD_USER_DIR/sia-backup.service"
+BACKUP_TIMER="$SYSTEMD_USER_DIR/sia-backup.timer"
+BACKUP_CHECK_UNIT="$SYSTEMD_USER_DIR/sia-backup-check.service"
+BACKUP_CHECK_TIMER="$SYSTEMD_USER_DIR/sia-backup-check.timer"
+BACKUP_UNIT_RECEIPT="$MANAGED_DIR/sia-backup.service"
+BACKUP_TIMER_RECEIPT="$MANAGED_DIR/sia-backup.timer"
+BACKUP_CHECK_UNIT_RECEIPT="$MANAGED_DIR/sia-backup-check.service"
+BACKUP_CHECK_TIMER_RECEIPT="$MANAGED_DIR/sia-backup-check.timer"
 BRAINSTEM_RUNTIME_BARRIER="$XDG_RUNTIME_DIR/systemd/user/sia-brainstem.service.d/sia-lifecycle-barrier.conf"
 CORPUS_RECEIPT="$MANAGED_DIR/corpus"
 CORPUS_BOOTSTRAP_INTENT="$MANAGED_DIR/corpus-bootstrap"
@@ -82,6 +100,7 @@ SIA_PLUGIN_STAGE=""
 SIA_RUNTIME_STAGE=""
 SIA_BUN_STAGE=""
 SIA_GBRAIN_STAGE=""
+SIA_RESTIC_STAGE=""
 SIA_INSTALL_LOCK_FD=""
 SIA_INSTALL_ADMIN_LOCK_FD=""
 SIA_BRAINSTEM_LOCK_FD=""
@@ -1482,7 +1501,7 @@ PY
 }
 
 step "SIA — the Omarchy Brain"
-for dep in python3 git curl tar unzip sha256sum zstd systemctl flock ss; do
+for dep in python3 git curl tar unzip bzip2 sha256sum zstd systemctl systemd-run flock ss; do
   have "$dep" || { echo "missing dependency: $dep"; exit 1; }
 done
 ARCH="$(uname -m)"; case "$ARCH" in
@@ -1491,6 +1510,8 @@ ARCH="$(uname -m)"; case "$ARCH" in
     OLLAMA_SHA256=6c648fd62bc8ea18d19aeb0900a03ff2d6a1fc830d901348d070fb93aca4630e
     BUN_ASSET=bun-linux-aarch64.zip
     BUN_SHA256=4b1a332ee861983eb93bcfe6f770fff94e3e31b2c388bdaea3c8ed35e58eed0e
+    RESTIC_ARCH=arm64
+    RESTIC_SHA256=a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465
     ;;
   x86_64)
     OLLAMA_ARCH=amd64
@@ -1502,6 +1523,8 @@ ARCH="$(uname -m)"; case "$ARCH" in
       BUN_ASSET=bun-linux-x64-baseline.zip
       BUN_SHA256=184fb4595f0d401a217cf7c78c1bc430ba83314dab7a8b94805babbf7fa7097f
     fi
+    RESTIC_ARCH=amd64
+    RESTIC_SHA256=f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
     ;;
   *) echo "unsupported arch: $ARCH"; exit 1 ;;
 esac
@@ -1525,6 +1548,7 @@ sia_install_cleanup() {
   [ -z "$SIA_PLUGIN_STAGE" ] || rm -rf -- "$SIA_PLUGIN_STAGE"
   [ -z "$SIA_RUNTIME_STAGE" ] || rm -rf -- "$SIA_RUNTIME_STAGE"
   [ -z "$SIA_BUN_STAGE" ] || rm -rf -- "$SIA_BUN_STAGE"
+  [ -z "$SIA_RESTIC_STAGE" ] || rm -rf -- "$SIA_RESTIC_STAGE"
   [ -z "$SIA_GBRAIN_STAGE" ] || rm -rf -- "$SIA_GBRAIN_STAGE"
   if [ "$status" -ne 0 ]; then
     # Restore every public failure gate and stop a mutated generation while
@@ -2051,12 +2075,769 @@ path = sys.argv[1]
 source = r'''#!/usr/bin/env python3
 """Stable SIA launcher: pin one runtime generation before opening Python."""
 
+import ctypes
+import errno
 import fcntl
+import hashlib
+import json
 import os
+import secrets
 import stat
+import subprocess
 import sys
 
 _ABI = "sia-launch-v1"
+_RESTORE_ABI = "sia-restore-launch-v1"
+_RESTORE_COMMAND = "_continuity-restore-worker"
+_RECOVER_COMMAND = "_continuity-restore-recover"
+_SERVICE = "sia-brainstem.service"
+_MASK_MARKER_BYTES = b"sia-continuity-runtime-mask-v1\n"
+_BARRIER_BYTES = (
+    b"[Unit]\n"
+    b"RefuseManualStart=yes\n"
+    b"ConditionPathExists=\n"
+    b"ConditionPathExists=!/\n"
+)
+_BARRIER_ACTIVE = "sia-lifecycle-barrier.conf"
+_BARRIER_RETIRED = "sia-lifecycle-barrier.retired"
+_SUPERVISOR_SCHEMA = "sia-restore-supervisor-v1"
+_REQUEST_SCHEMA = "sia-continuity-request-v1"
+_MAX_REQUEST_BYTES = 1048576
+
+
+def _generation(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
+            value.st_nlink, value.st_size, value.st_mtime_ns,
+            value.st_ctime_ns)
+
+
+def _strict_private_json(path, label):
+    descriptor = os.open(
+        path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0))
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != 0o600 \
+                or before.st_size > _MAX_REQUEST_BYTES:
+            raise RuntimeError(f"{label} is unsafe")
+        raw = os.read(descriptor, before.st_size)
+        after = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if len(raw) != before.st_size \
+                or _generation(before) != _generation(after) \
+                or _generation(after) != _generation(current):
+            raise RuntimeError(f"{label} changed while read")
+    finally:
+        os.close(descriptor)
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{label} contains duplicate keys")
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(raw.decode("utf-8", "strict"),
+                          object_pairs_hook=unique)
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise RuntimeError(f"{label} is malformed") from exc
+
+
+def _hex_id(value):
+    return isinstance(value, str) and bool(value) \
+        and all(character in "0123456789abcdef" for character in value)
+
+
+def _request_binding(path, root):
+    value = _strict_private_json(path, "restore request")
+    required = {"schema", "id", "created_at", "action", "args"}
+    if not isinstance(value, dict) or set(value) != required \
+            or value.get("schema") != _REQUEST_SCHEMA \
+            or value.get("action") != "apply" \
+            or not _hex_id(value.get("id")) \
+            or not isinstance(value.get("args"), dict) \
+            or not _hex_id(value["args"].get("prepared_id")) \
+            or not _hex_id(value["args"].get("capsule_id")) \
+            or not _hex_id(value["args"].get("manifest_sha256")) \
+            or not isinstance(value["args"].get("snapshot_id"), str) \
+            or not value["args"]["snapshot_id"] \
+            or not isinstance(value["args"].get("repository"), str) \
+            or not value["args"]["repository"] \
+            or not isinstance(value["args"].get("environment_file"), str) \
+            or (value["args"]["environment_file"]
+                and (not os.path.isabs(value["args"]["environment_file"])
+                     or os.path.abspath(value["args"]["environment_file"]) !=
+                        value["args"]["environment_file"])) \
+            or not _hex_id(value["args"].get("repository_id")) \
+            or not isinstance(value["args"].get("configured_at"), str) \
+            or not value["args"]["configured_at"] \
+            or not _hex_id(value["args"].get("target_public_key")) \
+            or not _hex_id(value["args"].get("restored_public_key")):
+        raise RuntimeError("restore request binding is invalid")
+    expected = os.path.join(root, "requests", value["id"] + ".json")
+    if os.path.abspath(path) != os.path.abspath(expected):
+        raise RuntimeError("restore request is outside its spool")
+    return {
+        "request_path": os.path.abspath(path),
+        "request_id": value["id"],
+        "prepared_id": value["args"]["prepared_id"],
+        "snapshot_id": value["args"]["snapshot_id"],
+        "capsule_id": value["args"]["capsule_id"],
+        "manifest_sha256": value["args"]["manifest_sha256"],
+        "repository": value["args"]["repository"],
+        "environment_file": value["args"]["environment_file"],
+        "repository_id": value["args"]["repository_id"],
+        "configured_at": value["args"]["configured_at"],
+        "target_public_key": value["args"]["target_public_key"],
+        "restored_public_key": value["args"]["restored_public_key"],
+    }
+
+
+def _supervisor_path(root):
+    return os.path.join(root, "restore-supervisor.json")
+
+
+def _supervisor_debt(root):
+    path = _supervisor_path(root)
+    try:
+        value = _strict_private_json(path, "restore supervisor debt")
+    except FileNotFoundError:
+        return None
+    required = {"schema", "kind", "request_path", "request_id",
+                "prepared_id", "snapshot_id", "capsule_id",
+                "manifest_sha256", "phase", "child_code", "restart_pid",
+                "runtime_path", "runtime_device", "runtime_inode",
+                "repository", "environment_file", "repository_id",
+                "configured_at", "target_public_key",
+                "restored_public_key"}
+    if not isinstance(value, dict) or set(value) != required \
+            or value.get("schema") != _SUPERVISOR_SCHEMA \
+            or value.get("kind") not in {"restore-apply", "restore-recover"} \
+            or not _hex_id(value.get("request_id")) \
+            or value.get("phase") not in {
+                "accepted", "child-running", "child-finished",
+                "restart-starting", "restart-attested", "restart-failed"} \
+            or not isinstance(value.get("child_code"), str) \
+            or not isinstance(value.get("restart_pid"), str) \
+            or not isinstance(value.get("runtime_path"), str) \
+            or not os.path.isabs(value["runtime_path"]) \
+            or not isinstance(value.get("runtime_device"), str) \
+            or not value["runtime_device"].isascii() \
+            or not value["runtime_device"].isdigit() \
+            or not isinstance(value.get("runtime_inode"), str) \
+            or not value["runtime_inode"].isascii() \
+            or not value["runtime_inode"].isdigit() \
+            or (value["kind"] == "restore-apply"
+                and (not _hex_id(value.get("prepared_id"))
+                     or not _hex_id(value.get("capsule_id"))
+                     or not _hex_id(value.get("manifest_sha256"))
+                     or not isinstance(value.get("snapshot_id"), str)
+                     or not value["snapshot_id"]
+                     or not isinstance(value.get("repository"), str)
+                     or not value["repository"]
+                     or not isinstance(value.get("environment_file"), str)
+                     or (value["environment_file"]
+                         and (not os.path.isabs(value["environment_file"])
+                              or os.path.abspath(value["environment_file"]) !=
+                                 value["environment_file"]))
+                     or not _hex_id(value.get("repository_id"))
+                     or not isinstance(value.get("configured_at"), str)
+                     or not value["configured_at"]
+                     or not _hex_id(value.get("target_public_key"))
+                     or not _hex_id(value.get("restored_public_key"))
+                     or os.path.abspath(value.get("request_path", "")) !=
+                        os.path.abspath(os.path.join(
+                            root, "requests",
+                            value["request_id"] + ".json")))) \
+            or (value["kind"] == "restore-recover"
+                and any(value.get(key) != "" for key in {
+                    "request_path", "prepared_id", "snapshot_id",
+                    "capsule_id", "manifest_sha256", "repository",
+                    "environment_file", "repository_id", "configured_at",
+                    "target_public_key", "restored_public_key"})):
+        raise RuntimeError("restore supervisor debt is malformed")
+    if value["phase"] == "restart-attested":
+        if not value["restart_pid"].isascii() \
+                or not value["restart_pid"].isdigit() \
+                or value["restart_pid"] == "0":
+            raise RuntimeError("restore supervisor PID is malformed")
+    elif value["restart_pid"] != "pending" \
+            and (not value["restart_pid"].isascii()
+                 or not value["restart_pid"].isdigit()
+                 or value["restart_pid"] == "0"):
+        raise RuntimeError("restore supervisor PID state is malformed")
+    return value
+
+
+def _write_supervisor(root, value):
+    existing = _supervisor_debt(root)
+    if existing is not None:
+        binding = {"kind", "request_path", "request_id", "prepared_id",
+                   "snapshot_id", "capsule_id", "manifest_sha256",
+                   "runtime_path", "runtime_device", "runtime_inode",
+                   "repository", "environment_file", "repository_id",
+                   "configured_at", "target_public_key",
+                   "restored_public_key"}
+        if any(existing[key] != value[key] for key in binding):
+            raise RuntimeError("restore supervisor debt binding changed")
+    raw = (json.dumps(value, ensure_ascii=True, sort_keys=True,
+                      separators=(",", ":")) + "\n").encode("utf-8")
+    if len(raw) > _MAX_REQUEST_BYTES:
+        raise RuntimeError("restore supervisor debt exceeds its boundary")
+    stage = os.path.join(
+        root, ".restore-supervisor-stage-" + secrets.token_hex())
+    try:
+        descriptor = os.open(
+            stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+            0o600)
+        try:
+            os.fchmod(descriptor, 0o600)
+            view = memoryview(raw)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    raise OSError("short restore supervisor write")
+                view = view[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except BaseException:
+        try:
+            os.unlink(stage)
+        except FileNotFoundError:
+            pass
+        raise
+    os.replace(stage, _supervisor_path(root))
+    root_fd = os.open(
+        root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(root_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _systemctl(arguments, label, *, capture=False):
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", *arguments],
+            stdin=subprocess.DEVNULL,
+            stdout=(subprocess.PIPE if capture else subprocess.DEVNULL),
+            stderr=subprocess.DEVNULL, timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"could not {label}") from exc
+    if result.returncode != 0:
+        raise RuntimeError(f"could not {label}")
+    return result
+
+
+def _read_exact_owned_file(path, label, mode):
+    if not os.path.isabs(path) or os.path.realpath(path) != path:
+        raise RuntimeError(f"{label} path is unsafe")
+    descriptor = os.open(
+        path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != mode \
+                or before.st_size > _MAX_REQUEST_BYTES:
+            raise RuntimeError(f"{label} is unsafe")
+        chunks = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if len(raw) != before.st_size \
+                or _generation(before) != _generation(after) \
+                or _generation(after) != _generation(current):
+            raise RuntimeError(f"{label} changed while read")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def _managed_brainstem_unit(home):
+    unit = os.path.join(
+        home, ".config", "systemd", "user", _SERVICE)
+    receipt = os.path.join(
+        home, ".local", "state", "sia", "managed-install", _SERVICE)
+    raw = _read_exact_owned_file(unit, "managed brainstem unit", 0o644)
+    digest = hashlib.sha256(raw).hexdigest()
+    expected = (
+        "managed-by=khephri.sia\n"
+        "kind=brainstem-unit\n"
+        f"path={unit}\n"
+        f"sha256={digest}\n"
+    ).encode("utf-8")
+    observed = _read_exact_owned_file(
+        receipt, "managed brainstem unit receipt", 0o600)
+    if observed != expected:
+        raise RuntimeError("managed brainstem unit receipt does not match")
+    return unit
+
+
+def _runtime_barrier_path():
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    if not runtime.startswith("/") or runtime == "/" \
+            or os.path.realpath(runtime) != runtime:
+        raise RuntimeError("XDG_RUNTIME_DIR is not a canonical private directory")
+    runtime_info = os.lstat(runtime)
+    if not stat.S_ISDIR(runtime_info.st_mode) \
+            or runtime_info.st_uid != os.geteuid() \
+            or stat.S_IMODE(runtime_info.st_mode) != 0o700:
+        raise RuntimeError("XDG_RUNTIME_DIR is not a canonical private directory")
+    return os.path.join(
+        runtime, "systemd", "user", _SERVICE + ".d", _BARRIER_ACTIVE)
+
+
+def _barrier_generation(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+            info.st_gid, info.st_nlink, info.st_size, info.st_mtime_ns,
+            info.st_ctime_ns)
+
+
+def _barrier_child_directory(parent, name, create):
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent)
+    except FileNotFoundError:
+        if not create:
+            return None
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+        descriptor = os.open(name, flags, dir_fd=parent)
+        os.fsync(parent)
+    info = os.fstat(descriptor)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+            or stat.S_IMODE(info.st_mode) & 0o022:
+        os.close(descriptor)
+        raise RuntimeError(f"unsafe runtime systemd directory: {name}")
+    return descriptor
+
+
+def _barrier_parent(create):
+    _runtime_barrier_path()
+    runtime = os.environ["XDG_RUNTIME_DIR"]
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptors = [os.open(runtime, flags)]
+    try:
+        runtime_open = os.fstat(descriptors[0])
+        if not stat.S_ISDIR(runtime_open.st_mode) \
+                or runtime_open.st_uid != os.geteuid() \
+                or stat.S_IMODE(runtime_open.st_mode) != 0o700:
+            raise RuntimeError("XDG_RUNTIME_DIR changed during inspection")
+        for name in ("systemd", "user", _SERVICE + ".d"):
+            descriptor = _barrier_child_directory(
+                descriptors[-1], name, create)
+            if descriptor is None:
+                return None, descriptors
+            descriptors.append(descriptor)
+            if name == "user":
+                try:
+                    os.stat(_SERVICE, dir_fd=descriptor,
+                            follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise RuntimeError(
+                        "foreign runtime sia-brainstem unit fragment exists")
+        return descriptors[-1], descriptors
+    except Exception:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        raise
+
+
+def _read_barrier(parent, name):
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0))
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent)
+    except FileNotFoundError:
+        return None
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != 0o644 \
+                or before.st_size != len(_BARRIER_BYTES):
+            raise RuntimeError(
+                "brainstem runtime barrier is foreign or unstable")
+        chunks = []
+        remaining = len(_BARRIER_BYTES) + 1
+        while remaining:
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        observed = b"".join(chunks)
+        after = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(after.st_mode) \
+                or after.st_uid != os.geteuid() or after.st_nlink != 1 \
+                or stat.S_IMODE(after.st_mode) != 0o644 \
+                or _barrier_generation(before) != _barrier_generation(after) \
+                or _barrier_generation(after) != _barrier_generation(current) \
+                or observed != _BARRIER_BYTES \
+                or after.st_size != len(_BARRIER_BYTES):
+            raise RuntimeError(
+                "brainstem runtime barrier is foreign or unstable")
+        return _barrier_generation(after)
+    finally:
+        os.close(descriptor)
+
+
+def _require_unchanged_barrier(parent, name, expected):
+    current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if _barrier_generation(current) != expected:
+        raise RuntimeError("brainstem runtime barrier changed before mutation")
+
+
+def _rename_barrier_noreplace(parent, source, target):
+    libc = ctypes.CDLL(None, use_errno=True)
+    operation = getattr(libc, "renameat2", None)
+    if operation is None:
+        raise OSError(errno.ENOSYS, "renameat2 is unavailable")
+    operation.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_uint]
+    operation.restype = ctypes.c_int
+    result = operation(parent, os.fsencode(source), parent,
+                       os.fsencode(target), 1)
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), target)
+    os.fsync(parent)
+
+
+def _barrier_file(action):
+    if action not in {"state", "install", "retire", "restore", "discard"}:
+        raise RuntimeError("invalid brainstem runtime barrier action")
+    parent = None
+    descriptors = []
+    try:
+        parent, descriptors = _barrier_parent(action == "install")
+        if parent is None:
+            if action not in {"state", "discard"}:
+                raise RuntimeError("brainstem runtime barrier directory is absent")
+            return "absent"
+        active = _read_barrier(parent, _BARRIER_ACTIVE)
+        retired = _read_barrier(parent, _BARRIER_RETIRED)
+        if active is not None and retired is not None:
+            raise RuntimeError(
+                "active and retired brainstem barriers both exist")
+        if action == "state":
+            if active is not None:
+                return "active"
+            if retired is not None:
+                return "retired"
+            return "absent"
+        if action == "install":
+            if retired is not None:
+                raise RuntimeError("retired brainstem barrier requires recovery")
+            if active is None:
+                flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                         | getattr(os, "O_CLOEXEC", 0)
+                         | getattr(os, "O_NOFOLLOW", 0))
+                descriptor = os.open(
+                    _BARRIER_ACTIVE, flags, 0o644, dir_fd=parent)
+                try:
+                    os.fchmod(descriptor, 0o644)
+                    view = memoryview(_BARRIER_BYTES)
+                    while view:
+                        written = os.write(descriptor, view)
+                        if written <= 0:
+                            raise OSError("short brainstem runtime barrier write")
+                        view = view[written:]
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                os.fsync(parent)
+                _read_barrier(parent, _BARRIER_ACTIVE)
+            return "active"
+        if action == "retire":
+            if active is None or retired is not None:
+                raise RuntimeError("brainstem runtime barrier cannot be retired")
+            _require_unchanged_barrier(parent, _BARRIER_ACTIVE, active)
+            _rename_barrier_noreplace(
+                parent, _BARRIER_ACTIVE, _BARRIER_RETIRED)
+            _read_barrier(parent, _BARRIER_RETIRED)
+            return "retired"
+        if action == "restore":
+            if retired is None or active is not None:
+                raise RuntimeError("brainstem runtime barrier cannot be restored")
+            _require_unchanged_barrier(parent, _BARRIER_RETIRED, retired)
+            _rename_barrier_noreplace(
+                parent, _BARRIER_RETIRED, _BARRIER_ACTIVE)
+            _read_barrier(parent, _BARRIER_ACTIVE)
+            return "active"
+        if active is not None:
+            raise RuntimeError(
+                "active brainstem runtime barrier cannot be discarded")
+        if retired is not None:
+            _require_unchanged_barrier(parent, _BARRIER_RETIRED, retired)
+            os.unlink(_BARRIER_RETIRED, dir_fd=parent)
+            os.fsync(parent)
+        return "absent"
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def _service_state(home, expected_drop_in_paths, *, allow_operator_mask=False):
+    unit = _managed_brainstem_unit(home)
+    result = _systemctl(
+        ["show", _SERVICE, "--property=LoadState",
+         "--property=UnitFileState", "--property=ActiveState",
+         "--property=FragmentPath", "--property=DropInPaths",
+         "--property=MainPID", "--property=RefuseManualStart",
+         "--property=Job"], "inspect the SIA brainstem", capture=True)
+    fields = {}
+    for raw in result.stdout.decode("utf-8", "strict").splitlines():
+        if "=" not in raw:
+            raise RuntimeError("brainstem state report is malformed")
+        key, value = raw.split("=", 1)
+        if key in fields:
+            raise RuntimeError("brainstem state report is ambiguous")
+        fields[key] = value
+    expected = {"LoadState", "UnitFileState", "ActiveState", "FragmentPath",
+                "DropInPaths", "MainPID", "RefuseManualStart", "Job"}
+    if set(fields) != expected \
+            or not fields["MainPID"].isascii() \
+            or not fields["MainPID"].isdigit():
+        raise RuntimeError("brainstem state report is incomplete")
+    if fields["Job"]:
+        raise RuntimeError("brainstem state has a pending systemd job")
+    if fields["ActiveState"] not in {"active", "inactive", "failed"}:
+        raise RuntimeError("brainstem state is transitional")
+    if _masked(fields):
+        if not allow_operator_mask or expected_drop_in_paths \
+                or fields["FragmentPath"] != "/dev/null" \
+                or fields["DropInPaths"] \
+                or fields["RefuseManualStart"] != "no":
+            raise RuntimeError("brainstem operator mask is not an allowed gate")
+        return fields
+    if fields["LoadState"] != "loaded" \
+            or fields["UnitFileState"] not in {
+                "disabled", "enabled", "enabled-runtime"} \
+            or fields["FragmentPath"] != unit \
+            or fields["DropInPaths"] != expected_drop_in_paths:
+        raise RuntimeError("brainstem effective unit is not the managed unit")
+    expected_refusal = "yes" if expected_drop_in_paths else "no"
+    if fields["RefuseManualStart"] != expected_refusal:
+        raise RuntimeError("brainstem manual-start policy is not exact")
+    return fields
+
+
+def _masked(state):
+    return state["LoadState"] == "masked" \
+        and state["UnitFileState"] in {"masked", "masked-runtime"}
+
+
+def _private_continuity_root(state_parent):
+    root = os.path.join(state_parent, "sia-continuity")
+    os.makedirs(root, mode=0o700, exist_ok=True)
+    info = os.lstat(root)
+    if os.path.realpath(root) != root \
+            or not stat.S_ISDIR(info.st_mode) \
+            or info.st_uid != os.geteuid() \
+            or stat.S_IMODE(info.st_mode) & 0o077:
+        raise RuntimeError("continuity state root is unsafe")
+    return root
+
+
+def _marker_path(root):
+    return os.path.join(root, "restore-runtime-mask")
+
+
+def _marker_present(root):
+    path = _marker_path(root)
+    try:
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return False
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) \
+                or info.st_uid != os.geteuid() or info.st_nlink != 1 \
+                or stat.S_IMODE(info.st_mode) != 0o600 \
+                or info.st_size != len(_MASK_MARKER_BYTES) \
+                or os.read(descriptor, len(_MASK_MARKER_BYTES)) != \
+                   _MASK_MARKER_BYTES:
+            raise RuntimeError("restore runtime-mask marker is unsafe")
+    finally:
+        os.close(descriptor)
+    return True
+
+
+def _write_marker(root):
+    path = _marker_path(root)
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+             | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        os.write(descriptor, _MASK_MARKER_BYTES)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    root_fd = os.open(
+        root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(root_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _remove_marker(root):
+    if not _marker_present(root):
+        raise RuntimeError("restore runtime-mask marker disappeared")
+    os.unlink(_marker_path(root))
+    root_fd = os.open(
+        root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(root_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _gate_brainstem(home, root, *, supervisor_owned=False):
+    owned = _marker_present(root)
+    barrier_state = _barrier_file("state")
+    _managed_brainstem_unit(home)
+    if barrier_state == "retired":
+        if not owned and not supervisor_owned:
+            raise RuntimeError("unowned retired brainstem barrier exists")
+        if not owned:
+            _write_marker(root)
+            owned = True
+        _barrier_file("restore")
+        barrier_state = "active"
+    elif barrier_state == "active":
+        if not owned and not supervisor_owned:
+            raise RuntimeError("unowned active brainstem barrier exists")
+        if not owned:
+            _write_marker(root)
+            owned = True
+    _systemctl(["daemon-reload"], "load the SIA restore runtime barrier")
+    expected_drop_in = (_runtime_barrier_path()
+                        if barrier_state == "active" else "")
+    state = _service_state(
+        home, expected_drop_in,
+        allow_operator_mask=(not owned and barrier_state == "absent"))
+    if not owned and barrier_state == "absent" and _masked(state):
+        _systemctl(["stop", _SERVICE], "stop the masked SIA brainstem")
+        stopped = _service_state(home, "", allow_operator_mask=True)
+        if not _masked(stopped) \
+                or stopped["ActiveState"] != "inactive" \
+                or stopped["MainPID"] != "0":
+            raise RuntimeError("pre-existing brainstem mask is not quiescent")
+        return False
+    if _masked(state):
+        raise RuntimeError("brainstem operator mask conflicts with restore gate")
+    if barrier_state == "absent":
+        if not owned:
+            _write_marker(root)
+            owned = True
+        if _barrier_file("install") != "active":
+            raise RuntimeError("SIA restore runtime barrier did not install")
+        _systemctl(["daemon-reload"],
+                   "load the SIA restore runtime barrier")
+    _systemctl(["stop", _SERVICE], "quiesce the SIA brainstem")
+    stopped = _service_state(home, _runtime_barrier_path())
+    if stopped["LoadState"] != "loaded" \
+            or stopped["ActiveState"] != "inactive" \
+            or stopped["MainPID"] != "0":
+        raise RuntimeError("SIA brainstem restore gate is not quiescent")
+    return owned
+
+
+def _retire_gate(home, root, *, owned, barrier_present):
+    if not owned:
+        return True, ""
+    if barrier_present:
+        return False, ""
+    if _marker_present(root):
+        raise RuntimeError(
+            "restore runtime-mask marker must retire before restart")
+    if _barrier_file("state") != "active":
+        raise RuntimeError("SIA restore runtime barrier is not active")
+    gated = _service_state(home, _runtime_barrier_path())
+    if gated["ActiveState"] != "inactive" or gated["MainPID"] != "0":
+        raise RuntimeError("SIA brainstem changed before barrier retirement")
+    if _barrier_file("retire") != "retired":
+        raise RuntimeError("SIA restore runtime barrier did not retire")
+    _systemctl(["daemon-reload"],
+               "retire the SIA restore runtime barrier")
+    state = _service_state(home, "", allow_operator_mask=True)
+    if _masked(state):
+        # A separate persistent operator mask remains authoritative.
+        return True, ""
+    if state["ActiveState"] != "inactive" or state["MainPID"] != "0":
+        raise RuntimeError("SIA brainstem changed before restart")
+    _systemctl(["start", _SERVICE], "restart the SIA brainstem")
+    started = _service_state(home, "")
+    if started["ActiveState"] != "active" or started["MainPID"] == "0":
+        raise RuntimeError("SIA brainstem restart did not become active")
+    if _barrier_file("discard") != "absent":
+        raise RuntimeError("retired SIA restore runtime barrier remains")
+    return True, started["MainPID"]
+
+
+def _open_owned_lock(path):
+    flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(path, flags, 0o600)
+    info = os.fstat(descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1:
+        os.close(descriptor)
+        raise RuntimeError("SIA lifecycle lease is unsafe")
+    os.fchmod(descriptor, 0o600)
+    return descriptor
+
+
+def _post_supervisor(stable, arguments, admin_fd):
+    environment = dict(os.environ)
+    environment["SIA_RESTORE_FINALIZE_ABI"] = "sia-restore-finalize-v1"
+    environment["SIA_RESTORE_FINALIZE_ADMIN_FD"] = str(admin_fd)
+    os.set_inheritable(admin_fd, True)
+    try:
+        result = subprocess.run(
+            [stable, *arguments], stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=120, check=False, env=environment,
+            pass_fds=(admin_fd,))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 def _refuse(message):
@@ -2065,9 +2846,286 @@ def _refuse(message):
     raise SystemExit(1)
 
 
+def _restore_main(home, target, tombstone, state_parent, child_arguments,
+                  *, apply_request=None, public_recovery=False,
+                  recovery_id=None):
+    root = _private_continuity_root(state_parent)
+    barrier = os.path.join(root, "restore-in-progress.json")
+    admin_path = os.path.join(state_parent, "sia.lifecycle-admin.lock")
+    lifecycle_path = os.path.join(state_parent, "sia.lifecycle.lock")
+    admin_fd = _open_owned_lock(admin_path)
+    lifecycle_fd = None
+    target_fd = None
+    owned = False
+    marker_before = False
+    barrier_before = False
+    debt = None
+    child_code = 1
+    failure = None
+    try:
+        fcntl.flock(admin_fd, fcntl.LOCK_EX)
+        marker_before = _marker_present(root)
+        barrier_before = os.path.lexists(barrier)
+        debt = _supervisor_debt(root)
+        if public_recovery and not marker_before \
+                and not barrier_before and debt is None:
+            raise RuntimeError("no interrupted restore requires recovery")
+        if public_recovery and not marker_before \
+                and not barrier_before and debt is not None \
+                and debt.get("phase") == "restart-attested":
+            if _post_supervisor(
+                    os.path.abspath(sys.argv[0]),
+                    ["_continuity-supervisor-reconcile"], admin_fd):
+                return 0
+        if apply_request is not None:
+            if debt is None or debt.get("phase") != "accepted":
+                raise RuntimeError(
+                    "restore request is not an exact accepted intent")
+            binding = _request_binding(apply_request, root)
+            if any(debt[key] != binding[key] for key in binding):
+                raise RuntimeError("restore request intent binding changed")
+        owned = _gate_brainstem(
+            home, root, supervisor_owned=(debt is not None
+                                    and debt.get("phase") ==
+                                    "restart-starting"))
+        lifecycle_fd = _open_owned_lock(lifecycle_path)
+        fcntl.flock(lifecycle_fd, fcntl.LOCK_EX)
+        if os.path.lexists(tombstone):
+            marker = os.lstat(tombstone)
+            if not stat.S_ISREG(marker.st_mode) \
+                    or marker.st_uid != os.geteuid():
+                raise RuntimeError("lifecycle removal marker is unsafe")
+            raise RuntimeError("SIA runtime was removed; reinstall first")
+        target_fd = os.open(
+            target, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0))
+        target_info = os.fstat(target_fd)
+        current = os.lstat(target)
+        if not stat.S_ISREG(target_info.st_mode) \
+                or target_info.st_uid != os.geteuid() \
+                or not stat.S_ISREG(current.st_mode) \
+                or current.st_uid != os.geteuid() \
+                or (target_info.st_dev, target_info.st_ino) != \
+                   (current.st_dev, current.st_ino):
+            raise RuntimeError("runtime target is not the exact owned file")
+        if debt is not None \
+                and (debt["runtime_path"] != os.path.abspath(target)
+                     or debt["runtime_device"] != str(target_info.st_dev)
+                     or debt["runtime_inode"] != str(target_info.st_ino)):
+            raise RuntimeError("restore runtime generation changed")
+        if apply_request is None:
+            if debt is None:
+                if not public_recovery:
+                    raise RuntimeError(
+                        "restore recovery lacks exact supervisor debt")
+                recovery_id = secrets.token_hex()
+                debt = {
+                    "schema": _SUPERVISOR_SCHEMA,
+                    "kind": "restore-recover",
+                    "request_path": "",
+                    "request_id": recovery_id,
+                    "prepared_id": "",
+                    "snapshot_id": "",
+                    "capsule_id": "",
+                    "manifest_sha256": "",
+                    "repository": "",
+                    "environment_file": "",
+                    "repository_id": "",
+                    "configured_at": "",
+                    "target_public_key": "",
+                    "restored_public_key": "",
+                    "phase": "accepted",
+                    "child_code": "pending",
+                    "restart_pid": "pending",
+                    "runtime_path": os.path.abspath(target),
+                    "runtime_device": str(target_info.st_dev),
+                    "runtime_inode": str(target_info.st_ino),
+                }
+                _write_supervisor(root, debt)
+            elif recovery_id is not None \
+                    and debt["request_id"] != recovery_id:
+                raise RuntimeError("restore recovery identifier changed")
+        if apply_request is not None:
+            debt["phase"] = "child-running"
+            debt["restart_pid"] = "pending"
+            _write_supervisor(root, debt)
+        else:
+            debt["phase"] = "child-running"
+            debt["restart_pid"] = "pending"
+            _write_supervisor(root, debt)
+            child_arguments = [_RECOVER_COMMAND, debt["request_id"]]
+        for descriptor in (admin_fd, lifecycle_fd, target_fd):
+            os.set_inheritable(descriptor, True)
+        environment = dict(os.environ)
+        for name in (
+                "SIA_INHERITED_LIFECYCLE_FD", "SIA_INHERITED_CORPUS_FD",
+                "SIA_LAUNCHER_ABI", "SIA_LAUNCHER_LIFECYCLE_FD",
+                "SIA_LAUNCHER_TARGET_FD", "SIA_LAUNCHER_TARGET_PATH",
+                "SIA_RESTORE_LAUNCH_ABI", "SIA_RESTORE_LIFECYCLE_FD",
+                "SIA_RESTORE_ADMIN_FD", "SIA_RESTORE_TARGET_FD",
+                "SIA_RESTORE_TARGET_PATH", "SIA_RESTORE_MASK_OWNED",
+                "SIA_RESTORE_FINALIZE_ABI",
+                "SIA_RESTORE_FINALIZE_ADMIN_FD"):
+            environment.pop(name, None)
+        environment["SIA_RESTORE_LAUNCH_ABI"] = _RESTORE_ABI
+        environment["SIA_RESTORE_LIFECYCLE_FD"] = str(lifecycle_fd)
+        environment["SIA_RESTORE_ADMIN_FD"] = str(admin_fd)
+        environment["SIA_RESTORE_TARGET_FD"] = str(target_fd)
+        environment["SIA_RESTORE_TARGET_PATH"] = target
+        environment["SIA_RESTORE_MASK_OWNED"] = "1" if owned else "0"
+        child = subprocess.run(
+            [sys.executable, target, *child_arguments], env=environment,
+            pass_fds=(admin_fd, lifecycle_fd, target_fd), check=False)
+        child_code = child.returncode
+        debt["phase"] = "child-finished"
+        debt["child_code"] = str(child_code)
+        _write_supervisor(root, debt)
+    except (OSError, RuntimeError, ValueError,
+            subprocess.SubprocessError) as exc:
+        failure = exc
+    finally:
+        if target_fd is not None:
+            os.close(target_fd)
+        if lifecycle_fd is not None:
+            try:
+                fcntl.flock(lifecycle_fd, fcntl.LOCK_UN)
+            finally:
+                os.close(lifecycle_fd)
+        barrier_after = os.path.lexists(barrier)
+        try:
+            owned = owned or _marker_present(root)
+        except (OSError, RuntimeError, ValueError) as exc:
+            if failure is None:
+                failure = exc
+        stable = os.path.abspath(sys.argv[0])
+        finalization_ok = False
+        restart_pid = ""
+        if not barrier_after and child_code == 0 and failure is None:
+            if debt is None:
+                failure = RuntimeError(
+                    "restore supervisor debt was not established")
+            elif not owned:
+                # The operator entered restore with an independently managed
+                # brainstem mask. Preserve it: this supervisor has no
+                # authority to unmask or claim that gate merely because the
+                # restore child completed.
+                debt["phase"] = "restart-failed"
+                debt["child_code"] = str(child_code)
+                debt["restart_pid"] = "pending"
+                try:
+                    _write_supervisor(root, debt)
+                    if debt["kind"] == "restore-apply":
+                        downgraded = _post_supervisor(
+                            stable,
+                            ["_continuity-restore-restart-failed",
+                             debt["request_path"]], admin_fd)
+                    else:
+                        downgraded = _post_supervisor(
+                            stable,
+                            ["_continuity-recovery-restart-failed"],
+                            admin_fd)
+                    if not downgraded:
+                        raise RuntimeError(
+                            "restore restart-failure status was refused")
+                    failure = RuntimeError(
+                        "pre-existing operator brainstem mask was preserved; "
+                        "unmask it deliberately, then run sia restore recover")
+                except (OSError, RuntimeError, ValueError) as exc:
+                    if failure is None:
+                        failure = exc
+            else:
+                debt["phase"] = "restart-starting"
+                debt["child_code"] = str(child_code)
+                debt["restart_pid"] = "pending"
+                try:
+                    _write_supervisor(root, debt)
+                    # The supervisor journal remains the admission barrier.
+                    # Retire the runtime-mask marker before starting the
+                    # brainstem, or its normal import would correctly refuse.
+                    _remove_marker(root)
+                    gate_ok, restart_pid = _retire_gate(
+                        home, root, owned=owned, barrier_present=False)
+                    if not gate_ok or not restart_pid:
+                        raise RuntimeError(
+                            "SIA brainstem restart was not attested")
+                    debt["phase"] = "restart-attested"
+                    debt["restart_pid"] = restart_pid
+                    _write_supervisor(root, debt)
+                    finalization_ok = _post_supervisor(
+                        stable, ["_continuity-supervisor-reconcile"],
+                        admin_fd)
+                    if not finalization_ok:
+                        raise RuntimeError(
+                            "restore supervisor reconciliation was refused")
+                except (OSError, RuntimeError, ValueError) as exc:
+                    if failure is None:
+                        failure = exc
+        if not barrier_after and debt is not None and not finalization_ok:
+            try:
+                persisted = _supervisor_debt(root)
+                if persisted is not None and persisted.get("phase") in {
+                        "restart-starting", "restart-attested"}:
+                    # A failed post-restart finalizer must not leave the
+                    # admitted resident writer running behind nonterminal
+                    # supervisor debt. Re-arm the exact runtime gate first.
+                    owned = _gate_brainstem(
+                        home, root, supervisor_owned=True)
+                    persisted["phase"] = "restart-failed"
+                    _write_supervisor(root, persisted)
+                    debt = persisted
+                    if debt["kind"] == "restore-apply":
+                        downgraded = _post_supervisor(
+                            stable,
+                            ["_continuity-restore-restart-failed",
+                             debt["request_path"]], admin_fd)
+                    else:
+                        downgraded = _post_supervisor(
+                            stable,
+                            ["_continuity-recovery-restart-failed"],
+                            admin_fd)
+                    if not downgraded and failure is None:
+                        failure = RuntimeError(
+                            "restore restart-failure status was refused")
+            except (OSError, RuntimeError, ValueError) as exc:
+                if failure is None:
+                    failure = exc
+        # If marker retirement failed it remains alongside non-green debt.
+        # If it succeeded, supervisor debt alone continues to deny ordinary
+        # admission until exact finalization retires it last.
+        if finalization_ok and os.path.lexists(_marker_path(root)):
+            try:
+                raise RuntimeError(
+                    "restore finalized while runtime-mask debt remains")
+            except RuntimeError as exc:
+                failure = exc
+        try:
+            fcntl.flock(admin_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(admin_fd)
+    if public_recovery and failure is None and finalization_ok:
+        child_code = 0
+    if failure is not None:
+        _refuse(str(failure))
+    return child_code
+
+
 def _main():
     home = os.path.abspath(os.path.expanduser("~"))
     launcher = os.path.basename(os.path.abspath(sys.argv[0]))
+    restore_apply = (launcher == "sia" and len(sys.argv) == 3
+                     and sys.argv[1] == _RESTORE_COMMAND
+                     and os.path.isabs(sys.argv[2]))
+    hidden_recover = (launcher == "sia" and len(sys.argv) == 3
+                      and sys.argv[1] == _RECOVER_COMMAND
+                      and _hex_id(sys.argv[2]))
+    public_recover = (launcher == "sia" and sys.argv[1:] ==
+                      ["restore", "recover"])
+    restore_recover = hidden_recover or public_recover
+    restore_worker = restore_apply or restore_recover
+    if launcher == "sia" \
+            and sys.argv[1:2] in ([_RESTORE_COMMAND], [_RECOVER_COMMAND]) \
+            and not restore_worker:
+        _refuse("invalid restore-worker invocation")
     runtime = os.path.join(home, ".local", "share", "sia", "bin")
     if launcher == "sia":
         target = os.path.join(runtime, "sia-cli")
@@ -2080,6 +3138,14 @@ def _main():
     lock = os.path.join(state_parent, "sia.lifecycle.lock")
     tombstone = os.path.join(state_parent, "sia.lifecycle-removed")
     os.makedirs(state_parent, exist_ok=True)
+    if restore_worker:
+        recovery_id = sys.argv[2] if hidden_recover else None
+        child_arguments = ([_RESTORE_COMMAND, sys.argv[2]]
+                           if restore_apply else None)
+        return _restore_main(
+            home, target, tombstone, state_parent, child_arguments,
+            apply_request=(sys.argv[2] if restore_apply else None),
+            public_recovery=public_recover, recovery_id=recovery_id)
     lock_flags = (os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
                   | getattr(os, "O_NOFOLLOW", 0))
     try:
@@ -2092,7 +3158,9 @@ def _main():
                 or lifecycle.st_uid != os.geteuid():
             _refuse("lifecycle lease is not an owned regular file")
         os.fchmod(lifecycle_fd, 0o600)
-        fcntl.flock(lifecycle_fd, fcntl.LOCK_SH)
+        fcntl.flock(
+            lifecycle_fd,
+            fcntl.LOCK_SH)
         if os.path.lexists(tombstone):
             marker = os.lstat(tombstone)
             if not stat.S_ISREG(marker.st_mode) \
@@ -2120,6 +3188,14 @@ def _main():
         os.set_inheritable(target_fd, True)
         environment = dict(os.environ)
         environment.pop("SIA_INHERITED_LIFECYCLE_FD", None)
+        environment.pop("SIA_INHERITED_CORPUS_FD", None)
+        for name in (
+                "SIA_LAUNCHER_ABI", "SIA_LAUNCHER_LIFECYCLE_FD",
+                "SIA_LAUNCHER_TARGET_FD", "SIA_LAUNCHER_TARGET_PATH",
+                "SIA_RESTORE_LAUNCH_ABI", "SIA_RESTORE_LIFECYCLE_FD",
+                "SIA_RESTORE_ADMIN_FD", "SIA_RESTORE_TARGET_FD",
+                "SIA_RESTORE_TARGET_PATH", "SIA_RESTORE_MASK_OWNED"):
+            environment.pop(name, None)
         environment["SIA_LAUNCHER_ABI"] = _ABI
         environment["SIA_LAUNCHER_LIFECYCLE_FD"] = str(lifecycle_fd)
         environment["SIA_LAUNCHER_TARGET_FD"] = str(target_fd)
@@ -2131,7 +3207,7 @@ def _main():
 
 
 if __name__ == "__main__":
-    _main()
+    raise SystemExit(_main())
 '''
 flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
          | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
@@ -2333,6 +3409,13 @@ prepare_and_lock_install() {
     echo "another SIA install or uninstall is active" >&2
     return 1
   }
+  if [ -e "$RESTORE_BARRIER" ] || [ -L "$RESTORE_BARRIER" ] \
+      || [ -e "$RESTORE_MASK_DEBT" ] || [ -L "$RESTORE_MASK_DEBT" ] \
+      || [ -e "$RESTORE_SUPERVISOR_DEBT" ] \
+      || [ -L "$RESTORE_SUPERVISOR_DEBT" ]; then
+    echo "SIA restore is interrupted; run 'sia restore recover' before install" >&2
+    return 1
+  fi
   mkdir -p "$SHARE" "$STATE" "$MANAGED_DIR" "$HOME/.local/bin" \
     "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$HOME/opt" "$TOOLCHAIN"
   assert_safe_managed_roots \
@@ -2346,6 +3429,17 @@ prepare_and_lock_install() {
     "$HOME/.config/omarchy/plugins/khephri.sia" \
     "$HOME/.claude" "$HOME/.claude/skills" \
     "$HOME/.claude/skills/sia" "$HOME/opt" "$TOOLCHAIN"
+  local archive_intent
+  for archive_intent in \
+      "$MANAGED_DIR/.sia-backup.service.archive-intent.json" \
+      "$MANAGED_DIR/.sia-backup.timer.archive-intent.json" \
+      "$MANAGED_DIR/.sia-backup-check.service.archive-intent.json" \
+      "$MANAGED_DIR/.sia-backup-check.timer.archive-intent.json"; do
+    if [ -e "$archive_intent" ] || [ -L "$archive_intent" ]; then
+      echo "continuity unit archival is incomplete; rerun uninstall before install" >&2
+      return 1
+    fi
+  done
   if [ -L "$LIFECYCLE_TOMBSTONE" ] \
       || { [ -e "$LIFECYCLE_TOMBSTONE" ] \
            && [ ! -f "$LIFECYCLE_TOMBSTONE" ]; }; then
@@ -4577,10 +5671,18 @@ modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
                    "siamind.py", "siaqueue.py", "siatakes.py")
 modern_v3_names = modern_v2_names + ("siasenses.py",)
+modern_v4_names = modern_v3_names + (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "sia-continuity-worker")
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-if v3:
+v4 = any(os.path.lexists(os.path.join(root, name))
+         for name in ("siacapsule.py", "siabackup.py",
+                      "sia-continuity-worker"))
+if v4:
+    names, salt = modern_v4_names, b"sia-runtime-v4\0"
+elif v3:
     names, salt = modern_v3_names, b"sia-runtime-v3\0"
 elif modern:
     names, salt = modern_v2_names, b"sia-runtime-v2\0"
@@ -6645,9 +7747,14 @@ SIA_RELEASE_FILES=(
   manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
   uninstall.sh assets/cockpit.png bin/sia bin/sia-brainstem bin/sia-ledger
-  bin/sia-mcp bin/siabench.py bin/sialib.py bin/siasenses.py bin/siamind.py bin/siaqueue.py
-  bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md schema-pack/pack.yaml
+  bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
+  bin/siacapsule.py bin/sialib.py bin/siasenses.py bin/siarestoreadmit.py
+  bin/siamind.py bin/siaqueue.py
+  bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
+  schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
+  systemd/sia-backup.service systemd/sia-backup.timer
+  systemd/sia-backup-check.service systemd/sia-backup-check.timer
 )
 SIA_RELEASE_SOURCE="$SIA_INSTALL_TMP/release-source"
 release_source_frontdoor snapshot "$SIA_ORIGINAL_REPO" \
@@ -6665,6 +7772,16 @@ preflight_runtime
 preflight_corpus read-only
 preflight_owned_file "$SIA_STABLE_LAUNCHER" "$CLI_PATH" "$CLI_RECEIPT" \
   sia-cli SIA_REPLACE_SIA_CLI SIA_CLI_EXPECTED
+preflight_owned_file "$REPO/systemd/sia-backup.service" "$BACKUP_UNIT" \
+  "$BACKUP_UNIT_RECEIPT" backup-unit SIA_REPLACE_CONTINUITY_UNITS
+preflight_owned_file "$REPO/systemd/sia-backup.timer" "$BACKUP_TIMER" \
+  "$BACKUP_TIMER_RECEIPT" backup-timer SIA_REPLACE_CONTINUITY_UNITS
+preflight_owned_file "$REPO/systemd/sia-backup-check.service" \
+  "$BACKUP_CHECK_UNIT" "$BACKUP_CHECK_UNIT_RECEIPT" backup-check-unit \
+  SIA_REPLACE_CONTINUITY_UNITS
+preflight_owned_file "$REPO/systemd/sia-backup-check.timer" \
+  "$BACKUP_CHECK_TIMER" "$BACKUP_CHECK_TIMER_RECEIPT" backup-check-timer \
+  SIA_REPLACE_CONTINUITY_UNITS
 
 # Never stop a foreign or locally modified unit merely because it happens to
 # use SIA's service name. An exact current unit is safely adoptable; an older
@@ -6784,7 +7901,72 @@ drain_legacy_launchers
 # both fresh installs and upgrades from runtimes that predate readiness.
 mark_install_sync_debt
 
-step "1/9 private bun + pinned gbrain (the memory engine, by Garry Tan)"
+step "1/9 private restic + bun + pinned gbrain (the memory engine, by Garry Tan)"
+RESTIC_VERSION=0.19.1
+RESTIC_ASSET="restic_${RESTIC_VERSION}_linux_${RESTIC_ARCH}.bz2"
+owned_tree_cas recover "$RESTIC_ROOT" || exit 1
+restic_runtime_receipt_valid() {
+  local receipt_prefix reported_version
+  [ -x "$RESTIC_BIN" ] && [ ! -L "$RESTIC_BIN" ] \
+    && [ -f "$RESTIC_RECEIPT" ] && [ ! -L "$RESTIC_RECEIPT" ] || return 1
+  receipt_prefix="$(printf 'managed-by=khephri.sia\nversion=%s\nasset=%s\nsha256=%s' \
+    "$RESTIC_VERSION" "$RESTIC_ASSET" "$RESTIC_SHA256")"
+  # The archive hash is pinned from the upstream release checksum manifest.
+  # Bind the installed executable to that release before executing it.
+  owned_metadata release "$RESTIC_RECEIPT" "$RESTIC_BIN" \
+    "$receipt_prefix" || return 1
+  reported_version="$(bounded_command_capture \
+    "$RESTIC_BIN" version 2>/dev/null)" || return 1
+  case "$reported_version" in
+    "restic $RESTIC_VERSION compiled with "*" on linux/$RESTIC_ARCH") ;;
+    *) return 1 ;;
+  esac
+}
+if ! restic_runtime_receipt_valid; then
+  if [ -e "$RESTIC_ROOT" ] || [ -L "$RESTIC_ROOT" ]; then
+    if [ ! -d "$RESTIC_ROOT" ] || [ -L "$RESTIC_ROOT" ]; then
+      echo "refusing unsafe private restic root" >&2
+      exit 1
+    fi
+    if [ -L "$RESTIC_RECEIPT" ] \
+        || { [ -e "$RESTIC_RECEIPT" ] && [ ! -f "$RESTIC_RECEIPT" ]; }; then
+      echo "refusing unsafe private restic receipt" >&2
+      exit 1
+    fi
+    if [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
+      echo "existing private restic tree lacks an exact current release receipt; preserved" >&2
+      echo "explicit replacement requires SIA_REPLACE_TOOLCHAIN=1 ./install.sh" >&2
+      exit 1
+    fi
+    RESTIC_TREE_EXPECTED="$(owned_tree_generation "$RESTIC_ROOT")" || exit 1
+  else
+    RESTIC_TREE_EXPECTED=absent
+  fi
+  download_verified \
+    "https://github.com/restic/restic/releases/download/v$RESTIC_VERSION/$RESTIC_ASSET" \
+    "$SIA_INSTALL_TMP/$RESTIC_ASSET" "$RESTIC_SHA256"
+  run_with_deadline 300 bzip2 -dk "$SIA_INSTALL_TMP/$RESTIC_ASSET"
+  SIA_RESTIC_STAGE="$(mktemp -d "$TOOLCHAIN/.restic.stage.XXXXXX")"
+  mkdir -p "$SIA_RESTIC_STAGE/bin"
+  install -m 0755 "$SIA_INSTALL_TMP/${RESTIC_ASSET%.bz2}" \
+    "$SIA_RESTIC_STAGE/bin/restic"
+  RESTIC_BINARY_SHA256="$(owned_metadata digest \
+    "$SIA_RESTIC_STAGE/bin/restic")" || exit 1
+  printf 'managed-by=khephri.sia\nversion=%s\nasset=%s\nsha256=%s\nbinary_sha256=%s\n' \
+    "$RESTIC_VERSION" "$RESTIC_ASSET" "$RESTIC_SHA256" \
+    "$RESTIC_BINARY_SHA256" > "$SIA_RESTIC_STAGE/.sia-release"
+  SIA_INSTALL_MUTATED=1
+  RESTIC_RESULT="$(atomic_install_tree "$SIA_RESTIC_STAGE" "$RESTIC_ROOT" \
+    "$TOOLCHAIN/.restic.previous.XXXXXX" "$RESTIC_TREE_EXPECTED")"
+  IFS=$'\t' read -r _RESTIC_INSTALLED_TREE RESTIC_BACKUP \
+    <<< "$RESTIC_RESULT"
+  SIA_RESTIC_STAGE=""
+  [ -z "$RESTIC_BACKUP" ] \
+    || echo "  previous private restic retained at $RESTIC_BACKUP"
+fi
+restic_runtime_receipt_valid || {
+  echo "private restic receipt or executable verification failed" >&2; exit 1; }
+
 BUN_VERSION=1.4.0
 BUN_TAG="bun-v$BUN_VERSION"
 BUN_ROOT="$TOOLCHAIN/bun"
@@ -7286,11 +8468,12 @@ fi
 
 step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
-for runtime_module in sialib.py siasenses.py siamind.py siatakes.py siabench.py siaqueue.py; do
+for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
+    siatakes.py siabench.py siaqueue.py siacapsule.py siabackup.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done
-for runtime_command in sia-ledger sia-mcp; do
+for runtime_command in sia-ledger sia-mcp sia-continuity-worker; do
   install -m 0755 "$REPO/bin/$runtime_command" \
     "$SIA_RUNTIME_STAGE/$runtime_command"
 done
@@ -7746,6 +8929,16 @@ if [ "$SIA_BRAINSTEM_BARRIER_DEFERRED" -eq 1 ]; then
 fi
 install_owned_file "$REPO/systemd/sia-brainstem.service" "$BRAINSTEM_UNIT" \
   0644 "$BRAINSTEM_RECEIPT" brainstem-unit SIA_REPLACE_BRAINSTEM_UNIT
+install_owned_file "$REPO/systemd/sia-backup.service" "$BACKUP_UNIT" 0644 \
+  "$BACKUP_UNIT_RECEIPT" backup-unit SIA_REPLACE_CONTINUITY_UNITS
+install_owned_file "$REPO/systemd/sia-backup.timer" "$BACKUP_TIMER" 0644 \
+  "$BACKUP_TIMER_RECEIPT" backup-timer SIA_REPLACE_CONTINUITY_UNITS
+install_owned_file "$REPO/systemd/sia-backup-check.service" \
+  "$BACKUP_CHECK_UNIT" 0644 "$BACKUP_CHECK_UNIT_RECEIPT" \
+  backup-check-unit SIA_REPLACE_CONTINUITY_UNITS
+install_owned_file "$REPO/systemd/sia-backup-check.timer" \
+  "$BACKUP_CHECK_TIMER" 0644 "$BACKUP_CHECK_TIMER_RECEIPT" \
+  backup-check-timer SIA_REPLACE_CONTINUITY_UNITS
 run_with_deadline 120 systemctl --user daemon-reload
 SIA_BRAINSTEM_BARRIER_DEFERRED=0
 run_with_deadline 120 systemctl --user stop sia-brainstem.service
@@ -7823,7 +9016,8 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
   chmod 0755 "$SIA_PLUGIN_STAGE/install.sh" \
     "$SIA_PLUGIN_STAGE/uninstall.sh" "$SIA_PLUGIN_STAGE/bin/sia" \
     "$SIA_PLUGIN_STAGE/bin/sia-brainstem" \
-    "$SIA_PLUGIN_STAGE/bin/sia-ledger" "$SIA_PLUGIN_STAGE/bin/sia-mcp"
+    "$SIA_PLUGIN_STAGE/bin/sia-ledger" "$SIA_PLUGIN_STAGE/bin/sia-mcp" \
+    "$SIA_PLUGIN_STAGE/bin/sia-continuity-worker"
   find "$SIA_PLUGIN_STAGE" -type d -name __pycache__ -prune \
     -exec rm -rf -- {} +
   find "$SIA_PLUGIN_STAGE" -type f \
@@ -8600,6 +9794,16 @@ if (actual_executable != expected_executable
 PY
 discard_install_brainstem_retired_barrier
 echo "  brainstem: active (verified executable and argv)"
+if [ -e "$CONFIG_DIR/continuity.json" ] \
+    || [ -L "$CONFIG_DIR/continuity.json" ] \
+    || [ -e "$HOME/.local/state/sia-continuity/repository.key" ] \
+    || [ -L "$HOME/.local/state/sia-continuity/repository.key" ]; then
+  run_with_deadline 120 "$CLI_PATH" backup resume-schedule || {
+    echo "retained continuity repository/schedules could not be resumed" >&2
+    exit 1
+  }
+  echo "  continuity: repository probed; persistent schedules enabled"
+fi
 
 step "done — your machine has a brain"
 cat <<'EOF'

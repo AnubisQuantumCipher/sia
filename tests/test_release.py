@@ -81,10 +81,18 @@ def _runtime_digest(root):
                        "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
                        "siamind.py", "siaqueue.py", "siatakes.py")
     modern_v3_names = modern_v2_names + ("siasenses.py",)
+    modern_v4_names = modern_v3_names + (
+        "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+        "sia-continuity-worker")
     modern = any(os.path.lexists(os.path.join(root, name))
                  for name in ("sia-brainstem.py", "sia-cli"))
     v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-    if v3:
+    v4 = any(os.path.lexists(os.path.join(root, name))
+             for name in ("siacapsule.py", "siabackup.py",
+                          "sia-continuity-worker"))
+    if v4:
+        names, salt = modern_v4_names, b"sia-runtime-v4\0"
+    elif v3:
         names, salt = modern_v3_names, b"sia-runtime-v3\0"
     elif modern:
         names, salt = modern_v2_names, b"sia-runtime-v2\0"
@@ -112,6 +120,32 @@ def _managed_cli_runtime(home):
            "managed-by=khephri.sia\nkind=runtime\n"
            f"path={runtime}\nsha256={_runtime_digest(runtime)}\n")
     return cli, runtime
+
+
+def _managed_brainstem_install(home):
+    unit = os.path.join(
+        home, ".config/systemd/user/sia-brainstem.service")
+    _write(unit, _read("systemd/sia-brainstem.service"), 0o644)
+    receipt = os.path.join(
+        home, ".local/state/sia/managed-install/sia-brainstem.service")
+    _write(receipt, _managed_file_receipt(unit, "brainstem-unit"), 0o600)
+    return unit
+
+
+def _brainstem_show(unit, *, drop_in="", refuse="no", load="loaded",
+                    unit_state="enabled", active="active", pid="1", job=""):
+    values = {
+        "LoadState": load,
+        "UnitFileState": unit_state,
+        "ActiveState": active,
+        "FragmentPath": unit,
+        "DropInPaths": drop_in,
+        "MainPID": pid,
+        "RefuseManualStart": refuse,
+        "Job": job,
+    }
+    return ("\n".join(f"{key}={value}" for key, value in values.items())
+            + "\n").encode("utf-8")
 
 
 def _mcp_guard_contents(home, client, reason):
@@ -274,15 +308,30 @@ class ReleaseContract(unittest.TestCase):
 
     def test_marketplace_documentation_and_license_are_present(self):
         readme = _read("README.md").casefold()
+        readme_flat = " ".join(readme.split())
         self.assertTrue(os.path.isfile(os.path.join(REPO, "LICENSE")))
         self.assertIn("install", readme)
         self.assertIn("remove", readme)
         self.assertIn("uninstall.sh", readme)
         self.assertIn("--purge", readme)
         for dependency in ("python", "git", "curl", "tar", "unzip",
-                           "sha256sum", "zstd", "systemctl", "flock",
-                           "iproute2"):
+                           "bzip2", "sha256sum", "zstd", "systemctl",
+                           "flock", "iproute2"):
             self.assertIn(dependency, readme)
+        self.assertIn("already listed", readme_flat)
+        self.assertIn("manual setup", readme_flat)
+        self.assertIn("private restic", readme_flat)
+        self.assertIn("sia foundation", readme_flat)
+        self.assertNotIn(
+            "omarchy plugin add https://github.com/anubisquantumcipher/"
+            "sia.git --enable", readme)
+        manual = " ".join(_read("docs/MANUAL.md").casefold().split())
+        self.assertIn("already listed", manual)
+        self.assertIn("current upstream head", manual)
+        self.assertIn("sia backup list", manual)
+        self.assertIn("sia restore prepare full_source_snapshot_id", manual)
+        self.assertNotIn("sia restore prepare latest", manual)
+        self.assertNotIn("not a claim that sia is already listed", manual)
 
     def test_marketplace_scanned_source_files_fit_the_static_limit(self):
         # Observed from the marketplace baseline's source-snapshot guard.
@@ -397,6 +446,13 @@ class ReleaseContract(unittest.TestCase):
         self.assertEqual(config["judge"]["backend"], "none")
         self.assertEqual(config["judge"]["model"], "")
 
+    def test_brainstem_service_waits_for_post_admission_readiness(self):
+        unit = _read("systemd/sia-brainstem.service")
+        self.assertIn("Type=notify\n", unit)
+        self.assertIn("NotifyAccess=main\n", unit)
+        self.assertIn("TimeoutStartSec=120\n", unit)
+        self.assertNotIn("Type=simple\n", unit)
+
     def test_installer_uses_full_pins_and_verified_downloads(self):
         installer = _read("install.sh")
         flattened_installer = re.sub(r"\\\n\s*", " ", installer)
@@ -441,7 +497,9 @@ class ReleaseContract(unittest.TestCase):
         self.assertTrue(all(len(value) == 64 for value in checksums))
         self.assertIn('siabench.py siaqueue.py', installer)
         self.assertIn('bin/siasenses.py', installer)
-        self.assertIn('siasenses.py siamind.py', installer)
+        self.assertIn('bin/siarestoreadmit.py', installer)
+        self.assertIn('siasenses.py siarestoreadmit.py', installer)
+        self.assertIn('siarestoreadmit.py siamind.py', installer)
         self.assertIn('SIA_INSTALL_KEYBINDING:-0', installer)
         self.assertIn('SIA_BRAINSTEM_WAS_ACTIVE=1', installer)
         self.assertIn('SIA_INSTALL_MUTATED=1', installer)
@@ -524,6 +582,8 @@ class ReleaseContract(unittest.TestCase):
             installer.index('step "8/9 desktop')]
         self.assertIn('SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD"',
                       first_light_block)
+        self.assertIn(
+            'environment.pop("SIA_INHERITED_CORPUS_FD", None)', installer)
         self.assertNotIn('clear_lifecycle_tombstone', first_light_block)
         self.assertNotIn('write_lifecycle_tombstone', first_light_block)
         self.assertNotIn('flock -s "$SIA_INSTALL_LOCK_FD"',
@@ -1446,6 +1506,60 @@ retain_unowned_cli_before_fence
                 os.close(spoof)
                 os.close(owner)
 
+    def test_inherited_corpus_handoff_requires_the_exclusive_owner(self):
+        library = _load(
+            "sialib_corpus_handoff", os.path.join(REPO, "bin/sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            state = os.path.join(home, ".local/state/sia")
+            os.makedirs(state)
+            lock = os.path.join(state, "corpus-owner.lock")
+            owner = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+            spoof = os.open(lock, os.O_RDWR)
+            try:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with mock.patch.dict(
+                        os.environ,
+                        {"SIA_INHERITED_CORPUS_FD": str(owner)}), \
+                        mock.patch.object(
+                            library, "CORPUS_OWNER_LOCK", lock):
+                    with library.corpus_owner():
+                        with library.corpus_owner():
+                            self.assertEqual(
+                                library._CORPUS_OWNER_DEPTH.get(), 2)
+                    probe = os.open(lock, os.O_RDWR)
+                    try:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(
+                                probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    finally:
+                        os.close(probe)
+
+                with mock.patch.dict(
+                        os.environ,
+                        {"SIA_INHERITED_CORPUS_FD": str(spoof)}), \
+                        mock.patch.object(
+                            library, "CORPUS_OWNER_LOCK", lock):
+                    with self.assertRaisesRegex(
+                            RuntimeError, "does not own the lease"):
+                        with library.corpus_owner():
+                            pass
+
+                fcntl.flock(owner, fcntl.LOCK_UN)
+                fcntl.flock(spoof, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                with mock.patch.dict(
+                        os.environ,
+                        {"SIA_INHERITED_CORPUS_FD": str(spoof)}), \
+                        mock.patch.object(
+                            library, "CORPUS_OWNER_LOCK", lock):
+                    with self.assertRaisesRegex(
+                            RuntimeError, "not exclusively held"):
+                        with library.corpus_owner():
+                            pass
+            finally:
+                fcntl.flock(owner, fcntl.LOCK_UN)
+                os.close(spoof)
+                os.close(owner)
+
     def test_stable_launcher_holds_generation_lease_across_exec(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
@@ -1477,8 +1591,8 @@ retain_unowned_cli_before_fence
                 process.communicate(timeout=2)
 
             _write(target, _read("bin/sia"), 0o644)
-            for name in ("sialib.py", "siasenses.py", "siamind.py", "siatakes.py",
-                         "siaqueue.py"):
+            for name in ("sialib.py", "siasenses.py", "siarestoreadmit.py",
+                         "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
             result = subprocess.run(
@@ -1537,11 +1651,502 @@ retain_unowned_cli_before_fence
                 os.close(target_fd)
                 os.close(lifecycle_fd)
 
+    def test_restore_supervisor_uses_owned_runtime_drop_in_not_runtime_mask(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            source = _read_path(launcher_path)
+            self.assertNotIn('["mask", "--runtime"', source)
+            self.assertNotIn('["unmask", "--runtime"', source)
+            self.assertIn("ConditionPathExists=!/", source)
+            self.assertIn("RefuseManualStart=yes", source)
+
+    def test_restore_supervisor_carries_exact_repository_binding(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_repository_binding", launcher_path)
+            root = os.path.join(home, ".local/state/sia-continuity")
+            requests = os.path.join(root, "requests")
+            os.makedirs(requests, mode=0o700)
+            request_path = os.path.join(requests, "abc123.json")
+            repository_binding = {
+                "repository": "rest:https://backup.invalid/sia",
+                "environment_file": "",
+                "repository_id": "c" * 64,
+                "configured_at": "2026-09-01T00:00:00Z",
+                "target_public_key": "d" * 64,
+                "restored_public_key": "e" * 64,
+            }
+            request = {
+                "schema": launcher._REQUEST_SCHEMA,
+                "id": "abc123",
+                "created_at": "2026-09-01T00:00:00Z",
+                "action": "apply",
+                "args": {
+                    "prepared_id": "def456",
+                    "snapshot_id": "snapshot",
+                    "capsule_id": "a" * 32,
+                    "manifest_sha256": "b" * 64,
+                    **repository_binding,
+                },
+            }
+            _write(request_path, json.dumps(request) + "\n", 0o600)
+            binding = launcher._request_binding(request_path, root)
+            for key, value in repository_binding.items():
+                self.assertEqual(binding[key], value)
+
+            runtime_info = os.lstat(launcher_path)
+            debt = {
+                "schema": launcher._SUPERVISOR_SCHEMA,
+                "kind": "restore-apply",
+                **binding,
+                "phase": "accepted",
+                "child_code": "pending",
+                "restart_pid": "pending",
+                "runtime_path": launcher_path,
+                "runtime_device": str(runtime_info.st_dev),
+                "runtime_inode": str(runtime_info.st_ino),
+            }
+            launcher._write_supervisor(root, debt)
+            self.assertEqual(launcher._supervisor_debt(root), debt)
+            changed = {**debt, "repository_id": "f" * 64}
+            with self.assertRaisesRegex(
+                    RuntimeError, "supervisor debt binding changed"):
+                launcher._write_supervisor(root, changed)
+            os.unlink(launcher._supervisor_path(root))
+            recovery = {
+                **debt,
+                "kind": "restore-recover",
+                "request_path": "",
+                "prepared_id": "",
+                "snapshot_id": "",
+                "capsule_id": "",
+                "manifest_sha256": "",
+                **{key: "" for key in repository_binding},
+            }
+            launcher._write_supervisor(root, recovery)
+            self.assertEqual(launcher._supervisor_debt(root), recovery)
+
+    def test_brainstem_restart_admits_current_restore_binding_schema(self):
+        library = _load(
+            "sialib_restore_admission", os.path.join(REPO, "bin/sialib.py"))
+        admission = _load(
+            "siarestoreadmit_contract",
+            os.path.join(REPO, "bin/siarestoreadmit.py"))
+        with tempfile.TemporaryDirectory() as home:
+            runtime = os.path.join(home, ".local/share/sia/bin")
+            root = os.path.join(home, ".local/state/sia-continuity")
+            requests = os.path.join(root, "requests")
+            os.makedirs(runtime, mode=0o700)
+            os.makedirs(requests, mode=0o700)
+            runtime_path = os.path.join(runtime, "sia-cli")
+            _write(runtime_path, "runtime\n", 0o600)
+            request_id = "abc123"
+            request_path = os.path.join(requests, request_id + ".json")
+            binding = {
+                "prepared_id": "d" * 32,
+                "snapshot_id": "f" * 64,
+                "capsule_id": "a" * 32,
+                "manifest_sha256": "b" * 64,
+                "repository": "rest:https://backup.invalid/sia",
+                "environment_file": "",
+                "repository_id": "c" * 64,
+                "configured_at": "2026-09-01T00:00:00Z",
+                "target_public_key": "d" * 64,
+                "restored_public_key": "e" * 64,
+            }
+            request = {
+                "schema": "sia-continuity-request-v1",
+                "id": request_id,
+                "created_at": "2026-09-01T00:00:00Z",
+                "action": "apply",
+                "args": {
+                    **binding,
+                    "confirmation": {
+                        "schema_version": 1,
+                        "phrase": "RESTORE",
+                        "snapshot_id": binding["snapshot_id"],
+                        "ledger_head": "0" * 64,
+                        "corpus_receipt_re_adopt": True,
+                    },
+                    "identity_key_file": None,
+                },
+            }
+            _write(request_path, json.dumps(request) + "\n", 0o600)
+            info = os.lstat(runtime_path)
+            debt = {
+                "schema": "sia-restore-supervisor-v1",
+                "kind": "restore-apply",
+                "request_path": request_path,
+                "request_id": request_id,
+                **binding,
+                "phase": "restart-starting",
+                "child_code": "0",
+                "restart_pid": "pending",
+                "runtime_path": runtime_path,
+                "runtime_device": str(info.st_dev),
+                "runtime_inode": str(info.st_ino),
+            }
+            supervisor = os.path.join(root, "restore-supervisor.json")
+            _write(supervisor, json.dumps(debt) + "\n", 0o600)
+            with mock.patch.object(library, "BIN", runtime), \
+                    mock.patch.object(
+                        library, "RESTORE_BARRIER_PATH",
+                        os.path.join(root, "restore-in-progress.json")), \
+                    mock.patch.object(
+                        library, "RESTORE_MASK_PATH",
+                        os.path.join(root, "restore-runtime-mask")), \
+                    mock.patch.object(
+                        library, "RESTORE_SUPERVISOR_PATH", supervisor):
+                self.assertTrue(
+                    admission._brainstem_restore_restart_admitted(library))
+                request["args"]["repository_id"] = "9" * 64
+                _write(request_path, json.dumps(request) + "\n", 0o600)
+                with self.assertRaisesRegex(
+                        RuntimeError, "request binding changed"):
+                    admission._brainstem_restore_restart_admitted(library)
+
+    def test_restore_supervisor_refuses_foreign_effective_unit_before_stop(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_effective_unit", launcher_path)
+            unit = _managed_brainstem_install(home)
+            root = os.path.join(home, ".local/state/sia-continuity")
+            os.makedirs(root, mode=0o700)
+            cases = (
+                ("fragment", os.path.join(home, "foreign.service"), ""),
+                ("drop-in", unit, os.path.join(home, "foreign.conf")),
+            )
+            for label, fragment, drop_in in cases:
+                with self.subTest(label=label):
+                    calls = []
+
+                    def systemctl(arguments, _label, *, capture=False):
+                        calls.append(list(arguments))
+                        output = (_brainstem_show(fragment, drop_in=drop_in)
+                                  if capture else b"")
+                        return subprocess.CompletedProcess(
+                            arguments, 0, stdout=output)
+
+                    with mock.patch.object(
+                            launcher, "_systemctl", side_effect=systemctl), \
+                            self.assertRaisesRegex(
+                                RuntimeError,
+                                "effective unit is not the managed unit"):
+                        launcher._gate_brainstem(home, root)
+                    self.assertFalse(any(
+                        call[:1] == ["stop"] for call in calls))
+                    self.assertFalse(launcher._marker_present(root))
+                    self.assertEqual(launcher._barrier_file("state"),
+                                     "absent")
+
+    def test_restore_supervisor_requires_exact_managed_brainstem_receipt(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_managed_unit", launcher_path)
+            unit = _managed_brainstem_install(home)
+            _write(unit, _read_path(unit) + "# local mutation\n", 0o644)
+            with mock.patch.object(launcher, "_systemctl") as systemctl, \
+                    self.assertRaisesRegex(
+                        RuntimeError,
+                        "managed brainstem unit receipt does not match"):
+                launcher._service_state(home, "")
+            systemctl.assert_not_called()
+
+    def test_restore_supervisor_drop_in_gate_and_operator_mask_controls(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_drop_in_gate", launcher_path)
+            unit = _managed_brainstem_install(home)
+            root = os.path.join(home, ".local/state/sia-continuity")
+            os.makedirs(root, mode=0o700)
+            reports = [
+                _brainstem_show(unit),
+                _brainstem_show(
+                    unit, drop_in=launcher._runtime_barrier_path(),
+                    refuse="yes", active="inactive", pid="0"),
+            ]
+            calls = []
+
+            def systemctl(arguments, _label, *, capture=False):
+                calls.append(list(arguments))
+                output = reports.pop(0) if capture else b""
+                return subprocess.CompletedProcess(arguments, 0, stdout=output)
+
+            with mock.patch.object(
+                    launcher, "_systemctl", side_effect=systemctl):
+                self.assertTrue(launcher._gate_brainstem(home, root))
+            self.assertTrue(launcher._marker_present(root))
+            self.assertEqual(launcher._barrier_file("state"), "active")
+            self.assertIn(["stop", launcher._SERVICE], calls)
+            launcher._remove_marker(root)
+            self.assertEqual(launcher._barrier_file("retire"), "retired")
+            self.assertEqual(launcher._barrier_file("discard"), "absent")
+
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_operator_gate", launcher_path)
+            _managed_brainstem_install(home)
+            root = os.path.join(home, ".local/state/sia-continuity")
+            os.makedirs(root, mode=0o700)
+            reports = [
+                _brainstem_show(
+                    "/dev/null", load="masked", unit_state="masked-runtime",
+                    active="active"),
+                _brainstem_show(
+                    "/dev/null", load="masked", unit_state="masked-runtime",
+                    active="inactive", pid="0"),
+            ]
+
+            def systemctl(arguments, _label, *, capture=False):
+                output = reports.pop(0) if capture else b""
+                return subprocess.CompletedProcess(arguments, 0, stdout=output)
+
+            with mock.patch.object(
+                    launcher, "_systemctl", side_effect=systemctl):
+                self.assertFalse(launcher._gate_brainstem(home, root))
+            self.assertFalse(launcher._marker_present(root))
+            self.assertEqual(launcher._barrier_file("state"), "absent")
+
+    def test_restore_supervisor_rechecks_effective_unit_before_restart(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_restart_recheck", launcher_path)
+            unit = _managed_brainstem_install(home)
+            root = os.path.join(home, ".local/state/sia-continuity")
+            os.makedirs(root, mode=0o700)
+            launcher._write_marker(root)
+            launcher._barrier_file("install")
+            launcher._remove_marker(root)
+            reports = [
+                _brainstem_show(
+                    unit, drop_in=launcher._runtime_barrier_path(),
+                    refuse="yes", active="inactive", pid="0"),
+                _brainstem_show(
+                    os.path.join(home, "foreign.service"),
+                    active="inactive", pid="0"),
+            ]
+            calls = []
+
+            def systemctl(arguments, _label, *, capture=False):
+                calls.append(list(arguments))
+                output = reports.pop(0) if capture else b""
+                return subprocess.CompletedProcess(arguments, 0, stdout=output)
+
+            with mock.patch.object(
+                    launcher, "_systemctl", side_effect=systemctl), \
+                    self.assertRaisesRegex(
+                        RuntimeError,
+                        "effective unit is not the managed unit"):
+                launcher._retire_gate(
+                    home, root, owned=True, barrier_present=False)
+            self.assertFalse(any(
+                call[:1] == ["start"] for call in calls))
+
+    def test_restore_supervisor_marker_retirement_failure_never_finalizes(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            target = os.path.join(
+                home, ".local", "share", "sia", "bin", "sia-cli")
+            _generate_stable_launcher(launcher_path)
+            _write(target, "# runtime target\n", 0o600)
+            launcher = _load("sia_restore_supervisor_failure",
+                             launcher_path)
+            state_parent = os.path.join(home, ".local", "state")
+            root = os.path.join(state_parent, "sia-continuity")
+            os.makedirs(root, mode=0o700)
+            request_path = os.path.join(root, "requests", "abc123.json")
+            target_info = os.lstat(target)
+            persisted = {
+                "schema": launcher._SUPERVISOR_SCHEMA,
+                "kind": "restore-apply",
+                "request_path": request_path,
+                "request_id": "abc123",
+                "prepared_id": "def456",
+                "snapshot_id": "snapshot",
+                "capsule_id": "a" * 32,
+                "manifest_sha256": "b" * 64,
+                "repository": "rest:https://backup.invalid/sia",
+                "environment_file": "",
+                "repository_id": "c" * 64,
+                "configured_at": "2030-01-01T00:00:00Z",
+                "target_public_key": "d" * 64,
+                "restored_public_key": "e" * 64,
+                "phase": "accepted",
+                "child_code": "pending",
+                "restart_pid": "pending",
+                "runtime_path": target,
+                "runtime_device": str(target_info.st_dev),
+                "runtime_inode": str(target_info.st_ino),
+            }
+            binding = {
+                key: persisted[key] for key in {
+                    "request_path", "request_id", "prepared_id",
+                    "snapshot_id", "capsule_id", "manifest_sha256",
+                    "repository", "environment_file", "repository_id",
+                    "configured_at", "target_public_key",
+                    "restored_public_key"}
+            }
+            finalizer_calls = []
+
+            def read_debt(_root):
+                return dict(persisted)
+
+            def write_debt(_root, value):
+                persisted.clear()
+                persisted.update(value)
+
+            def post(_stable, arguments, _admin_fd):
+                finalizer_calls.append(arguments)
+                return True
+
+            child = subprocess.CompletedProcess([], 0)
+            with mock.patch.object(
+                    launcher, "_supervisor_debt", side_effect=read_debt), \
+                    mock.patch.object(
+                        launcher, "_write_supervisor",
+                        side_effect=write_debt), \
+                    mock.patch.object(
+                        launcher, "_request_binding",
+                        return_value=binding), \
+                    mock.patch.object(
+                        launcher, "_marker_present", return_value=False), \
+                    mock.patch.object(
+                        launcher, "_gate_brainstem", return_value=True), \
+                    mock.patch.object(
+                        launcher, "_remove_marker",
+                        side_effect=OSError("marker unlink refused")), \
+                    mock.patch.object(
+                        launcher, "_post_supervisor", side_effect=post), \
+                    mock.patch.object(
+                        launcher.subprocess, "run", return_value=child), \
+                    mock.patch.object(
+                        sys, "argv", [launcher_path,
+                                      launcher._RESTORE_COMMAND,
+                                      request_path]), \
+                    self.assertRaises(SystemExit):
+                launcher._restore_main(
+                    home, target,
+                    os.path.join(state_parent, "sia.lifecycle-removed"),
+                    state_parent,
+                    [launcher._RESTORE_COMMAND, request_path],
+                    apply_request=request_path)
+            self.assertEqual(persisted["phase"], "restart-failed")
+            self.assertIn(
+                ["_continuity-restore-restart-failed", request_path],
+                finalizer_calls)
+            self.assertNotIn(
+                ["_continuity-supervisor-reconcile"], finalizer_calls)
+
+    def test_restore_supervisor_never_claims_an_operator_mask(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            target = os.path.join(
+                home, ".local", "share", "sia", "bin", "sia-cli")
+            _generate_stable_launcher(launcher_path)
+            _write(target, "# runtime target\n", 0o600)
+            launcher = _load("sia_restore_operator_mask",
+                             launcher_path)
+            state_parent = os.path.join(home, ".local", "state")
+            root = os.path.join(state_parent, "sia-continuity")
+            os.makedirs(root, mode=0o700)
+            request_path = os.path.join(root, "requests", "abc123.json")
+            target_info = os.lstat(target)
+            persisted = {
+                "schema": launcher._SUPERVISOR_SCHEMA,
+                "kind": "restore-apply",
+                "request_path": request_path,
+                "request_id": "abc123",
+                "prepared_id": "def456",
+                "snapshot_id": "snapshot",
+                "capsule_id": "a" * 32,
+                "manifest_sha256": "b" * 64,
+                "repository": "rest:https://backup.invalid/sia",
+                "environment_file": "",
+                "repository_id": "c" * 64,
+                "configured_at": "2030-01-01T00:00:00Z",
+                "target_public_key": "d" * 64,
+                "restored_public_key": "e" * 64,
+                "phase": "accepted",
+                "child_code": "pending",
+                "restart_pid": "pending",
+                "runtime_path": target,
+                "runtime_device": str(target_info.st_dev),
+                "runtime_inode": str(target_info.st_ino),
+            }
+            binding = {
+                key: persisted[key] for key in {
+                    "request_path", "request_id", "prepared_id",
+                    "snapshot_id", "capsule_id", "manifest_sha256",
+                    "repository", "environment_file", "repository_id",
+                    "configured_at", "target_public_key",
+                    "restored_public_key"}
+            }
+            finalizer_calls = []
+
+            def read_debt(_root):
+                return dict(persisted)
+
+            def write_debt(_root, value):
+                persisted.clear()
+                persisted.update(value)
+
+            def post(_stable, arguments, _admin_fd):
+                finalizer_calls.append(arguments)
+                return True
+
+            child = subprocess.CompletedProcess([], 0)
+            with mock.patch.object(
+                    launcher, "_supervisor_debt", side_effect=read_debt), \
+                    mock.patch.object(
+                        launcher, "_write_supervisor",
+                        side_effect=write_debt), \
+                    mock.patch.object(
+                        launcher, "_request_binding",
+                        return_value=binding), \
+                    mock.patch.object(
+                        launcher, "_marker_present", return_value=False), \
+                    mock.patch.object(
+                        launcher, "_gate_brainstem", return_value=False), \
+                    mock.patch.object(
+                        launcher, "_remove_marker") as remove_marker, \
+                    mock.patch.object(
+                        launcher, "_retire_gate") as retire_gate, \
+                    mock.patch.object(
+                        launcher, "_post_supervisor", side_effect=post), \
+                    mock.patch.object(
+                        launcher.subprocess, "run", return_value=child), \
+                    mock.patch.object(
+                        sys, "argv", [launcher_path,
+                                      launcher._RESTORE_COMMAND,
+                                      request_path]), \
+                    self.assertRaises(SystemExit):
+                launcher._restore_main(
+                    home, target,
+                    os.path.join(state_parent, "sia.lifecycle-removed"),
+                    state_parent,
+                    [launcher._RESTORE_COMMAND, request_path],
+                    apply_request=request_path)
+            self.assertEqual(persisted["phase"], "restart-failed")
+            remove_marker.assert_not_called()
+            retire_gate.assert_not_called()
+            self.assertIn(
+                ["_continuity-restore-restart-failed", request_path],
+                finalizer_calls)
+            self.assertNotIn(
+                ["_continuity-supervisor-reconcile"], finalizer_calls)
+
     def test_new_sialib_rejects_loaded_old_installed_launchers(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
-            for name in ("sialib.py", "siasenses.py", "siamind.py", "siatakes.py",
-                         "siaqueue.py"):
+            for name in ("sialib.py", "siasenses.py", "siarestoreadmit.py",
+                         "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
             environment = os.environ.copy()
@@ -1886,6 +2491,20 @@ ollama_runtime_receipt_valid
         metadata_function = _owned_metadata_shell(installer)
         cases = (
             (
+                "restic",
+                "restic_runtime_receipt_valid",
+                "\n}\nif ! restic_runtime_receipt_valid",
+                {
+                    "RESTIC_VERSION": "1.2.3",
+                    "RESTIC_ASSET": "restic_1.2.3_linux_amd64.bz2",
+                    "RESTIC_SHA256": "d" * 64,
+                    "RESTIC_ARCH": "amd64",
+                },
+                "managed-by=khephri.sia\nversion=1.2.3\n"
+                "asset=restic_1.2.3_linux_amd64.bz2\nsha256=" + "d" * 64,
+                "restic 1.2.3 compiled with go-fixture on linux/amd64",
+            ),
+            (
                 "bun",
                 "bun_runtime_receipt_valid",
                 "\n}\nif ! bun_runtime_receipt_valid",
@@ -1952,13 +2571,16 @@ ollama_runtime_receipt_valid
                 self.assertEqual(valid.returncode, 0, valid.stderr)
                 self.assertTrue(os.path.exists(sentinel))
 
+        restic_gate = installer.split(
+            "if ! restic_runtime_receipt_valid; then", 1)[1].split(
+                "  download_verified", 1)[0]
         bun_gate = installer.split(
             "if ! bun_runtime_receipt_valid; then", 1)[1].split(
                 "  download_verified", 1)[0]
         gbrain_gate = installer.split(
             "if ! gbrain_runtime_receipt_valid; then", 1)[1].split(
                 "  GBRAIN_SOURCE=", 1)[0]
-        for gate in (bun_gate, gbrain_gate):
+        for gate in (restic_gate, bun_gate, gbrain_gate):
             self.assertIn("SIA_REPLACE_TOOLCHAIN", gate)
             self.assertNotIn("grep -qx 'managed-by=khephri.sia'", gate)
 
@@ -4452,6 +5074,13 @@ remove_managed_skill
                 fake_bin, "systemctl",
                 'echo "systemctl $*" >> "$TRACE"\n'
                 'if [ "$1 $2" = "--user show" ]; then\n'
+                '  if [ "$3" != "sia-brainstem.service" ]; then\n'
+                '    echo "LoadState=not-found"; echo "ActiveState=inactive"\n'
+                '    echo "FragmentPath="; echo "UnitFileState="\n'
+                '    echo "DropInPaths="; echo "MainPID=0"\n'
+                '    echo "RefuseManualStart=no"; echo "Job="\n'
+                '    exit 0\n'
+                '  fi\n'
                 '  unit=$HOME/.config/systemd/user/sia-brainstem.service\n'
                 '  barrier=$XDG_RUNTIME_DIR/systemd/user/'
                 'sia-brainstem.service.d/sia-lifecycle-barrier.conf\n'
@@ -5316,6 +5945,98 @@ remove_managed_skill
                          _read("CHANGELOG.md")):
             self.assertIn("workspace lock", document.casefold())
 
+    def test_cockpit_continuity_actions_are_async_accessible_and_guarded(self):
+        cockpit = _read("Cockpit.qml")
+        panel = _read("Panel.qml")
+        model = _read("Model.js")
+
+        status_path = "/.local/state/sia-continuity/status.json"
+        self.assertIn(status_path, cockpit)
+        self.assertIn(status_path, panel)
+        self.assertIn("Model.validContinuityStatus(parsed)", cockpit)
+        self.assertIn("Model.validContinuityStatus(parsed)", panel)
+        self.assertIn("last good continuity status", cockpit)
+
+        # Continuity is deliberately above ordinary vitals, while the graph
+        # remains the central cockpit instrument.
+        self.assertLess(cockpit.index('text: "CONTINUITY"'),
+                        cockpit.index('text: "VITALS"'))
+        self.assertIn("id: continuityLayer", cockpit)
+        self.assertIn("parent: keyCatcher", cockpit)
+
+        # The QML process only hands explicit argv to SIA. Accepted work is
+        # status-file driven and is never canceled merely because the overlay
+        # closes.
+        for command in (
+                '["backup", "now"]', '["backup", "check"]',
+                '["restore", "prepare", snapshot]'):
+            self.assertIn(command, cockpit)
+        self.assertIn(
+            '["restore", "apply", prepared.prepared_id, "--confirm-stdin"]',
+            cockpit)
+        self.assertIn('"backup", "setup", "--repository"', cockpit)
+        self.assertIn('"backup", "connect", "--repository"', cockpit)
+        self.assertIn('"--identity-key-out", identityKey', cockpit)
+        self.assertNotIn("continuityProc.cancel()", cockpit)
+        self.assertNotIn('["bash", "-c"', cockpit)
+        self.assertNotIn('prepared.prepared_id, "--confirm"]', cockpit)
+
+        # The destructive ceremony travels as one bounded stdin record, never
+        # in argv or a reusable confirmation file. The process and form copies
+        # are cleared after hand-off.
+        self.assertIn("stdinEnabled: true", cockpit)
+        self.assertIn('continuityProc.write(inputLine + "\\n")', cockpit)
+        self.assertIn('continuityProc.stdinPayload = ""', cockpit)
+        self.assertIn("maximumLength: root.continuityInputMaxLength", cockpit)
+        for field in (
+                "phrase: root.restorePhraseInput",
+                "snapshot_id: root.restorePreparedSnapshotInput",
+                "ledger_head: root.restoreLedgerHeadInput",
+                "corpus_receipt_re_adopt: true"):
+            self.assertIn(field, cockpit)
+        self.assertIn('root.restorePhraseInput === "RESTORE"', cockpit)
+        self.assertIn("root.restoreReceiptReadoptAck", cockpit)
+        self.assertIn("Ui.Toggle", cockpit)
+        self.assertIn("Accessible.role: Accessible.CheckBox", cockpit)
+        self.assertNotIn("--confirmation-file", cockpit)
+
+        # Restore is accessible from the card but application remains a
+        # separate, destructive confirmation whose keyboard default is Cancel.
+        self.assertIn("Ui.ConfirmDialog", cockpit)
+        self.assertIn("selectedIndex: 0", cockpit)
+        self.assertIn("continuityRestoreConfirm.handleKey(event)", cockpit)
+        self.assertIn("context: Qt.WindowShortcut", cockpit)
+        self.assertIn("Accessible.role: Accessible.Button", cockpit)
+        self.assertIn("focusable: true", cockpit)
+        self.assertIn("function validRestoreAcceptance", cockpit)
+        self.assertIn("function matchingRestoreOperation", cockpit)
+        self.assertIn("operation.request_id === root.restoreRequestId", cockpit)
+        self.assertIn('operation.kind === "restore-apply"', cockpit)
+        self.assertIn("operation.prepared_id === root.restoreExpectedPreparedId",
+                      cockpit)
+        self.assertIn("operation.ready", cockpit)
+        self.assertIn("operation.sia_ledger_verified", cockpit)
+        self.assertNotIn("restoreObservedRunning", cockpit)
+        self.assertIn(
+            "Success is withheld until SIA reports ready", cockpit)
+
+        # Right-click is a deep link, not a direct destructive action.
+        self.assertIn('{\\"mode\\":\\"continuity\\"}', panel)
+        self.assertIn("right-click for continuity", panel)
+
+        self.assertIn("function validContinuityStatus", model)
+        self.assertIn('typeof value.ledger_head === "string"', model)
+        self.assertIn('typeof value.identity_matches === "boolean"', model)
+        self.assertIn("function validContinuityOperation", model)
+        self.assertIn('typeof value.request_id === "string"', model)
+        self.assertIn('typeof value.sia_ledger_verified === "boolean"', model)
+        self.assertNotIn('return "PROTECTED"', model)
+        for state in (
+                "unconfigured", "queued", "capturing", "uploading",
+                "checking", "preparing", "prepared", "restoring",
+                "verified", "recovery-only", "failed", "blocked"):
+            self.assertIn(f'"{state}"', model)
+
     def test_recovery_boundaries_are_operator_visible(self):
         readme = _read("README.md")
         manual = _read("docs/MANUAL.md")
@@ -5329,7 +6050,11 @@ remove_managed_skill
             self.assertIn("prepared", document)
             self.assertIn("publishing", document)
             self.assertIn("published", document)
-            self.assertIn("valid preexisting database", document)
+            folded = " ".join(document.split())
+            self.assertIn("destination `.gbrain` root", folded)
+            self.assertIn("`brain.pglite`", folded)
+            self.assertIn("managed receipt", folded)
+            self.assertIn("unknown children", folded)
         self.assertIn("`key.hex`, then the matching `pub.hex`", readme)
         self.assertIn("one canonical signed", readme)
         self.assertIn("`GENESIS:init` row in `ledger.tsv`", readme)
