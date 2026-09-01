@@ -23,6 +23,13 @@ SIA_CANONICAL_HOME="$(cd -P -- "$HOME" 2>/dev/null && pwd)" || {
 }
 HOME="$SIA_CANONICAL_HOME"
 export HOME
+unset SIA_INHERITED_LIFECYCLE_FD SIA_INHERITED_CORPUS_FD \
+  SIA_LAUNCHER_ABI SIA_LAUNCHER_LIFECYCLE_FD \
+  SIA_LAUNCHER_TARGET_FD SIA_LAUNCHER_TARGET_PATH \
+  SIA_RESTORE_LAUNCH_ABI SIA_RESTORE_LIFECYCLE_FD \
+  SIA_RESTORE_ADMIN_FD SIA_RESTORE_TARGET_FD \
+  SIA_RESTORE_TARGET_PATH SIA_RESTORE_MASK_OWNED \
+  SIA_RESTORE_FINALIZE_ABI SIA_RESTORE_FINALIZE_ADMIN_FD
 case "${XDG_RUNTIME_DIR:-}" in
   /*) ;;
   *) echo "refusing uninstall with an unsafe XDG_RUNTIME_DIR" >&2; exit 2 ;;
@@ -42,6 +49,10 @@ esac
 SHARE_DIR="$HOME/.local/share/sia"
 RUNTIME_BIN_DIR="$SHARE_DIR/bin"
 STATE_DIR="$HOME/.local/state/sia"
+CONTINUITY_STATE_DIR="$HOME/.local/state/sia-continuity"
+RESTORE_BARRIER="$CONTINUITY_STATE_DIR/restore-in-progress.json"
+RESTORE_MASK_DEBT="$CONTINUITY_STATE_DIR/restore-runtime-mask"
+RESTORE_SUPERVISOR_DEBT="$CONTINUITY_STATE_DIR/restore-supervisor.json"
 SHARE_PUBLICATION_STAGE="$HOME/.local/share/.sia.sia-stage"
 STATE_PUBLICATION_STAGE="$HOME/.local/state/.sia.sia-stage"
 LIFECYCLE_LOCK="$HOME/.local/state/sia.lifecycle.lock"
@@ -54,6 +65,30 @@ CONFIG_DIR="$HOME/.config/sia"
 CLI_PATH="$HOME/.local/bin/sia"
 UNIT_PATH="$HOME/.config/systemd/user/sia-brainstem.service"
 UNIT_RECEIPT="$MANAGED_DIR/sia-brainstem.service"
+CONTINUITY_UNIT_NAMES=(
+  sia-backup.timer
+  sia-backup-check.timer
+  sia-backup.service
+  sia-backup-check.service
+)
+CONTINUITY_UNIT_PATHS=(
+  "$HOME/.config/systemd/user/sia-backup.timer"
+  "$HOME/.config/systemd/user/sia-backup-check.timer"
+  "$HOME/.config/systemd/user/sia-backup.service"
+  "$HOME/.config/systemd/user/sia-backup-check.service"
+)
+CONTINUITY_UNIT_RECEIPTS=(
+  "$MANAGED_DIR/sia-backup.timer"
+  "$MANAGED_DIR/sia-backup-check.timer"
+  "$MANAGED_DIR/sia-backup.service"
+  "$MANAGED_DIR/sia-backup-check.service"
+)
+CONTINUITY_UNIT_KINDS=(
+  backup-timer
+  backup-check-timer
+  backup-unit
+  backup-check-unit
+)
 BRAINSTEM_RUNTIME_BARRIER="$XDG_RUNTIME_DIR/systemd/user/sia-brainstem.service.d/sia-lifecycle-barrier.conf"
 CLI_RECEIPT="$MANAGED_DIR/sia-cli"
 RUNTIME_RECEIPT="$MANAGED_DIR/runtime"
@@ -70,6 +105,7 @@ BRAINSTEM_SAFE_TO_REMOVE=1
 RUNTIME_NEEDED_BY_MCP=0
 RUNTIME_NEEDED_BY_PLUGIN=0
 RUNTIME_NEEDED_BY_SERVICE=0
+RUNTIME_NEEDED_BY_CONTINUITY=0
 RUNTIME_NEEDED_BY_CLI=0
 RUNTIME_UNOWNED=0
 PLUGIN_SAFE_TO_ARCHIVE=1
@@ -77,6 +113,11 @@ PLUGIN_EXPECTED=""
 UNIT_OWNED=0
 UNIT_TARGET_EXPECTED=""
 UNIT_RECEIPT_EXPECTED=""
+CONTINUITY_SAFE_TO_REMOVE=1
+CONTINUITY_ARCHIVE_NEEDED=0
+declare -a CONTINUITY_UNIT_STATES
+declare -a CONTINUITY_TARGET_EXPECTED
+declare -a CONTINUITY_RECEIPT_EXPECTED
 SIA_UNINSTALL_LOCK_FD=""
 SIA_UNINSTALL_ADMIN_LOCK_FD=""
 SIA_LIFECYCLE_ACQUIRE_ATTEMPTS=8
@@ -1918,7 +1959,8 @@ capture_cli_removal_authority() {
   printf '%s\t%s\n' "$target_after" "$receipt_after"
 }
 inspect_user_unit() {
-  local unit="$1" prefix="$2" expected_drop_in_paths="${3:-}" output key count
+  local unit="$1" prefix="$2" expected_drop_in_paths="${3:-}"
+  local state_mode="${4:-steady}" output key count
   local load_state active_state fragment_path unit_file_state
   local drop_in_paths main_pid refuse_manual_start job
   if ! output="$(bounded_command_capture systemctl --user show "$unit" \
@@ -1943,15 +1985,20 @@ inspect_user_unit() {
   refuse_manual_start="$(printf '%s\n' "$output" | sed -n 's/^RefuseManualStart=//p')"
   job="$(printf '%s\n' "$output" | sed -n 's/^Job=//p')"
   case "$load_state" in loaded|not-found|masked) ;; *) return 1;; esac
-  case "$active_state" in active|inactive|failed) ;; *) return 1;; esac
+  case "$state_mode:$active_state" in
+    steady:active|steady:inactive|steady:failed \
+      |continuity:active|continuity:inactive|continuity:failed \
+      |continuity:activating|continuity:deactivating) ;;
+    *) return 1;;
+  esac
   case "$unit_file_state" in
-    ""|disabled|enabled|enabled-runtime|masked-runtime) ;;
+    ""|disabled|enabled|enabled-runtime|masked-runtime|static) ;;
     *)
     return 1;;
   esac
   [ "$drop_in_paths" = "$expected_drop_in_paths" ] || return 1
   [[ "$main_pid" =~ ^[0-9]+$ ]] || return 1
-  [ -z "$job" ] || return 1
+  [ -z "$job" ] || [ "$state_mode" = continuity ] || return 1
   if [ -n "$expected_drop_in_paths" ]; then
     [ "$refuse_manual_start" = yes ] || return 1
   else
@@ -1966,6 +2013,748 @@ inspect_user_unit() {
   printf -v "${prefix}_REFUSE_MANUAL_START" '%s' "$refuse_manual_start"
   printf -v "${prefix}_JOB" '%s' "$job"
 }
+
+continuity_manager_binding_valid() {
+  local index="$1" prefix="$2"
+  local active_var fragment_var load_var main_pid_var unit_state_var
+  load_var="${prefix}_LOAD_STATE"
+  active_var="${prefix}_ACTIVE_STATE"
+  fragment_var="${prefix}_FRAGMENT_PATH"
+  unit_state_var="${prefix}_UNIT_FILE_STATE"
+  main_pid_var="${prefix}_MAIN_PID"
+  case "${!load_var}" in
+    not-found)
+      [ "${!active_var}" = inactive ] \
+        && [ -z "${!fragment_var}" ] \
+        && [ -z "${!unit_state_var}" ] \
+        && [ "${!main_pid_var}" = 0 ]
+      ;;
+    loaded)
+      [ "${!fragment_var}" = "${CONTINUITY_UNIT_PATHS[$index]}" ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+continuity_authority_unchanged() {
+  local index="$1" target_now receipt_now
+  [ "${CONTINUITY_UNIT_STATES[$index]:-}" = owned ] || return 1
+  target_now="$(owned_metadata generation \
+    "${CONTINUITY_UNIT_PATHS[$index]}")" || return 1
+  receipt_now="$(owned_metadata generation \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}")" || return 1
+  [ "$target_now" = "${CONTINUITY_TARGET_EXPECTED[$index]}" ] \
+    && [ "$receipt_now" = "${CONTINUITY_RECEIPT_EXPECTED[$index]}" ] \
+    && managed_receipt_matches \
+      "${CONTINUITY_UNIT_RECEIPTS[$index]}" \
+      "${CONTINUITY_UNIT_KINDS[$index]}" \
+      "${CONTINUITY_UNIT_PATHS[$index]}"
+}
+
+continuity_unit_absent() {
+  local index="$1"
+  [ ! -e "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+    && [ ! -L "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+    && [ ! -e "${CONTINUITY_UNIT_RECEIPTS[$index]}" ] \
+    && [ ! -L "${CONTINUITY_UNIT_RECEIPTS[$index]}" ] \
+    && inspect_user_unit "${CONTINUITY_UNIT_NAMES[$index]}" \
+      CONTINUITY_ABSENT \
+    && continuity_manager_binding_valid "$index" CONTINUITY_ABSENT \
+    && [ "$CONTINUITY_ABSENT_LOAD_STATE" = not-found ] \
+    && [ ! -e "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+    && [ ! -L "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+    && [ ! -e "${CONTINUITY_UNIT_RECEIPTS[$index]}" ] \
+    && [ ! -L "${CONTINUITY_UNIT_RECEIPTS[$index]}" ]
+}
+
+# One durable record binds the unit and its ownership receipt to fixed archive
+# paths.  The record is synced before either single-file CAS is allowed to run
+# and is retained until daemon-reload has made the paired absence observable.
+continuity_archive_intent_path() {
+  local index="$1"
+  printf '%s/.%s.archive-intent.json\n' \
+    "$MANAGED_DIR" "${CONTINUITY_UNIT_NAMES[$index]}"
+}
+
+continuity_archive_intent() {
+  python3 - "$@" <<'PY'
+import ctypes
+import hashlib
+import json
+import os
+import re
+import secrets
+import stat
+import sys
+
+MAX_BYTES = 1_048_576
+MAX_INTENT_BYTES = 65_536
+SCHEMA = "sia-continuity-archive-pair-v1"
+TOKEN = re.compile(
+    r"present:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):(\d+):([0-9a-f]{64})")
+REQUIRED = {"schema", "name", "kind", "unit", "receipt",
+            "unit_archive", "receipt_archive", "unit_expected",
+            "receipt_expected"}
+arguments = sys.argv[1:]
+if not arguments:
+    raise SystemExit("missing continuity archive-intent operation")
+operation, *values = arguments
+if operation == "create" and len(values) == 9:
+    (intent, name, kind, unit, receipt, unit_archive, receipt_archive,
+     unit_expected, receipt_expected) = values
+elif operation in {"read", "state"} and len(values) == 5:
+    intent, name, kind, unit, receipt = values
+    unit_archive = receipt_archive = None
+    unit_expected = receipt_expected = None
+elif operation == "finish" and len(values) == 9:
+    (intent, name, kind, unit, receipt, unit_archive, receipt_archive,
+     unit_expected, receipt_expected) = values
+else:
+    raise SystemExit("invalid continuity archive-intent arguments")
+
+paths = [intent, unit, receipt]
+if operation in {"create", "finish"}:
+    paths.extend([unit_archive, receipt_archive])
+if any(not os.path.isabs(path) or os.path.abspath(path) != path
+       for path in paths):
+    raise SystemExit("continuity archive-intent paths must be absolute")
+if any(any(character in path for character in "\0\t\r\n")
+       for path in paths):
+    raise SystemExit("continuity archive-intent paths contain controls")
+for path in paths:
+    parent = os.path.dirname(path)
+    if os.path.realpath(parent) != parent:
+        raise SystemExit("continuity archive-intent paths must not traverse links")
+if os.path.basename(intent) != f".{name}.archive-intent.json":
+    raise SystemExit("continuity archive-intent name mismatch")
+if re.fullmatch(r"sia-backup(?:-check)?\.(?:timer|service)", name) is None \
+        or re.fullmatch(r"[a-z][a-z-]*", kind) is None:
+    raise SystemExit("invalid continuity archive-intent identity")
+
+directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                   | getattr(os, "O_DIRECTORY", 0)
+                   | getattr(os, "O_NOFOLLOW", 0))
+read_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+              | getattr(os, "O_NOFOLLOW", 0)
+              | getattr(os, "O_NONBLOCK", 0))
+parent_path = os.path.dirname(intent)
+parent_fd = os.open(parent_path, directory_flags)
+parent_info = os.fstat(parent_fd)
+if not stat.S_ISDIR(parent_info.st_mode) \
+        or parent_info.st_uid != os.geteuid():
+    os.close(parent_fd)
+    raise SystemExit("continuity archive-intent parent is not owned")
+intent_name = os.path.basename(intent)
+
+
+def generation(value):
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
+            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def child_exists(descriptor, child):
+    try:
+        os.stat(child, dir_fd=descriptor, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def unique_name(prefix):
+    while True:
+        candidate = prefix + secrets.token_hex(12)
+        if not child_exists(parent_fd, candidate):
+            return candidate
+
+
+libc = ctypes.CDLL(None, use_errno=True)
+renameat2 = libc.renameat2
+renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                      ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+renameat2.restype = ctypes.c_int
+RENAME_NOREPLACE = 1
+
+
+def rename_noreplace(source, destination):
+    result = renameat2(parent_fd, os.fsencode(source),
+                       parent_fd, os.fsencode(destination), RENAME_NOREPLACE)
+    if result:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), (source, destination))
+
+
+def reject_duplicate_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate continuity archive-intent field")
+        value[key] = item
+    return value
+
+
+def validate_record(record):
+    if not isinstance(record, dict) or set(record) != REQUIRED \
+            or record["schema"] != SCHEMA \
+            or record["name"] != name or record["kind"] != kind \
+            or record["unit"] != unit or record["receipt"] != receipt:
+        raise ValueError("invalid continuity archive-intent record")
+    for key in REQUIRED:
+        if not isinstance(record[key], str):
+            raise ValueError("non-string continuity archive-intent field")
+    if TOKEN.fullmatch(record["unit_expected"]) is None \
+            or TOKEN.fullmatch(record["receipt_expected"]) is None:
+        raise ValueError("invalid continuity archive-intent generation")
+    expected_unit_prefix = f".{name}.removed."
+    expected_receipt_prefix = f".{name}.receipt.removed."
+    unit_archive_name = os.path.basename(record["unit_archive"])
+    receipt_archive_name = os.path.basename(record["receipt_archive"])
+    if os.path.dirname(record["unit_archive"]) != os.path.dirname(unit) \
+            or re.fullmatch(re.escape(expected_unit_prefix) + r"[A-Za-z0-9]+",
+                            unit_archive_name) is None:
+        raise ValueError("invalid continuity unit archive path")
+    if os.path.dirname(record["receipt_archive"]) != os.path.dirname(receipt) \
+            or re.fullmatch(re.escape(expected_receipt_prefix)
+                            + r"[A-Za-z0-9]+",
+                            receipt_archive_name) is None:
+        raise ValueError("invalid continuity receipt archive path")
+    for key in ("unit", "receipt", "unit_archive", "receipt_archive"):
+        path = record[key]
+        if not os.path.isabs(path) or os.path.abspath(path) != path \
+                or os.path.realpath(os.path.dirname(path)) \
+                != os.path.dirname(path):
+            raise ValueError("unsafe continuity archive-intent path")
+    if len({record["unit"], record["receipt"], record["unit_archive"],
+            record["receipt_archive"]}) != 4:
+        raise ValueError("continuity archive-intent paths are not distinct")
+    return record
+
+
+def read_record():
+    descriptor = os.open(intent_name, read_flags, dir_fd=parent_fd)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) != 0o600 \
+                or before.st_size > MAX_INTENT_BYTES:
+            raise ValueError("unsafe continuity archive-intent")
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, MAX_INTENT_BYTES)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_INTENT_BYTES:
+                raise ValueError("oversized continuity archive-intent")
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        current = os.stat(intent_name, dir_fd=parent_fd,
+                          follow_symlinks=False)
+        if total != before.st_size or generation(before) != generation(after) \
+                or generation(after) != generation(current):
+            raise ValueError("continuity archive-intent changed while read")
+        record = json.loads(b"".join(chunks).decode("utf-8"),
+                            object_pairs_hook=reject_duplicate_keys)
+    finally:
+        os.close(descriptor)
+    return validate_record(record), generation(before)
+
+
+def path_token(path, allow_absent=False):
+    try:
+        descriptor = os.open(path, read_flags)
+    except FileNotFoundError:
+        if allow_absent:
+            try:
+                os.stat(path, follow_symlinks=False)
+            except FileNotFoundError:
+                return "absent"
+        raise
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_size > MAX_BYTES:
+            raise ValueError("unsafe continuity archive member")
+        digest = hashlib.sha256()
+        total = 0
+        while True:
+            chunk = os.read(descriptor, MAX_BYTES)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_BYTES:
+                raise ValueError("oversized continuity archive member")
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if total != before.st_size or generation(before) != generation(after) \
+                or generation(after) != generation(current):
+            raise ValueError("continuity archive member changed while read")
+    finally:
+        os.close(descriptor)
+    return "present:" + ":".join(
+        str(item) for item in (*generation(before), digest.hexdigest()))
+
+
+def moved_matches(actual, expected):
+    actual_match = TOKEN.fullmatch(actual)
+    expected_match = TOKEN.fullmatch(expected)
+    if actual_match is None or expected_match is None:
+        return False
+    actual_fields = actual_match.groups()
+    expected_fields = expected_match.groups()
+    return actual_fields[:6] == expected_fields[:6] \
+        and actual_fields[7] == expected_fields[7]
+
+
+def member_state(current_path, archive_path, expected):
+    current = path_token(current_path, allow_absent=True)
+    archived = path_token(archive_path, allow_absent=True)
+    if current == expected and archived == "absent":
+        return "pending"
+    if current == "absent" and moved_matches(archived, expected):
+        return "archived"
+    raise ValueError("ambiguous continuity archive member state")
+
+
+try:
+    if operation == "create":
+        record = validate_record({
+            "schema": SCHEMA, "name": name, "kind": kind,
+            "unit": unit, "receipt": receipt,
+            "unit_archive": unit_archive,
+            "receipt_archive": receipt_archive,
+            "unit_expected": unit_expected,
+            "receipt_expected": receipt_expected,
+        })
+        if child_exists(parent_fd, intent_name) \
+                or path_token(unit) != unit_expected \
+                or path_token(receipt) != receipt_expected \
+                or path_token(unit_archive, allow_absent=True) != "absent" \
+                or path_token(receipt_archive, allow_absent=True) != "absent":
+            raise ValueError("continuity archive-intent precondition changed")
+        payload = (json.dumps(record, sort_keys=True,
+                              separators=(",", ":")) + "\n").encode("utf-8")
+        if len(payload) > MAX_INTENT_BYTES:
+            raise ValueError("oversized continuity archive-intent payload")
+        temporary = unique_name(".sia-continuity-archive-intent-stage.")
+        try:
+            descriptor = os.open(
+                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+                0o600, dir_fd=parent_fd)
+            try:
+                remaining = memoryview(payload)
+                while remaining:
+                    written = os.write(descriptor, remaining)
+                    if written <= 0:
+                        raise OSError("short continuity archive-intent write")
+                    remaining = remaining[written:]
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            rename_noreplace(temporary, intent_name)
+            os.fsync(parent_fd)
+        except BaseException:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+            except FileNotFoundError:
+                pass
+            raise
+        persisted, _persisted_generation = read_record()
+        if persisted != record:
+            raise ValueError("continuity archive-intent did not persist exactly")
+    else:
+        record, intent_generation = read_record()
+        if operation == "read":
+            print("\t".join((record["unit_archive"],
+                             record["receipt_archive"],
+                             record["unit_expected"],
+                             record["receipt_expected"])))
+        else:
+            unit_state = member_state(record["unit"], record["unit_archive"],
+                                      record["unit_expected"])
+            receipt_state = member_state(
+                record["receipt"], record["receipt_archive"],
+                record["receipt_expected"])
+            if operation == "state":
+                print(unit_state + "\t" + receipt_state)
+            else:
+                if unit_state != "archived" or receipt_state != "archived":
+                    raise ValueError("continuity archive pair is incomplete")
+                if (record["unit_archive"] != unit_archive
+                        or record["receipt_archive"] != receipt_archive
+                        or record["unit_expected"] != unit_expected
+                        or record["receipt_expected"] != receipt_expected):
+                    raise ValueError("continuity archive-intent finish mismatch")
+                current = os.stat(intent_name, dir_fd=parent_fd,
+                                  follow_symlinks=False)
+                if generation(current) != intent_generation:
+                    raise ValueError("continuity archive-intent changed before finish")
+                os.unlink(intent_name, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+except (IndexError, OSError, UnicodeError, ValueError) as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)
+finally:
+    os.close(parent_fd)
+PY
+}
+
+continuity_archive_intent_fields() {
+  local index="$1" intent="$2"
+  continuity_archive_intent read "$intent" \
+    "${CONTINUITY_UNIT_NAMES[$index]}" \
+    "${CONTINUITY_UNIT_KINDS[$index]}" \
+    "${CONTINUITY_UNIT_PATHS[$index]}" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}"
+}
+
+continuity_recovery_manager_quiesced() {
+  local index="$1" active_var job_var load_var main_pid_var unit_state_var
+  inspect_user_unit "${CONTINUITY_UNIT_NAMES[$index]}" \
+    CONTINUITY_RECOVERY "" continuity || return 1
+  load_var=CONTINUITY_RECOVERY_LOAD_STATE
+  active_var=CONTINUITY_RECOVERY_ACTIVE_STATE
+  unit_state_var=CONTINUITY_RECOVERY_UNIT_FILE_STATE
+  main_pid_var=CONTINUITY_RECOVERY_MAIN_PID
+  job_var=CONTINUITY_RECOVERY_JOB
+  [ -z "${!job_var}" ] && [ "${!active_var}" = inactive ] \
+    && [ "${!main_pid_var}" = 0 ] || return 1
+  continuity_manager_binding_valid "$index" CONTINUITY_RECOVERY || return 1
+  if [ "${!load_var}" = loaded ]; then
+    case "${CONTINUITY_UNIT_NAMES[$index]}:${!unit_state_var}" in
+      *.timer:disabled|*.service:static|*.service:disabled) ;;
+      *) return 1 ;;
+    esac
+  fi
+}
+
+preflight_continuity_archive_intents() {
+  local fields index intent status=0
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    intent="$(continuity_archive_intent_path "$index")"
+    if [ -e "$intent" ] || [ -L "$intent" ]; then
+      CONTINUITY_UNIT_STATES[$index]=unsafe
+      if ! fields="$(continuity_archive_intent_fields "$index" "$intent")" \
+          || [ -z "$fields" ]; then
+        failed "preserve ambiguous ${CONTINUITY_UNIT_NAMES[$index]} archive intent"
+        CONTINUITY_SAFE_TO_REMOVE=0
+        RUNTIME_NEEDED_BY_CONTINUITY=1
+        status=1
+        continue
+      fi
+      CONTINUITY_UNIT_STATES[$index]=recovery-pending
+    fi
+  done
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    [ "${CONTINUITY_UNIT_STATES[$index]:-}" = recovery-pending ] \
+      || continue
+    if ! continuity_recovery_manager_quiesced "$index"; then
+      failed "preserve active or ambiguous ${CONTINUITY_UNIT_NAMES[$index]} archive recovery"
+      CONTINUITY_UNIT_STATES[$index]=unsafe
+      CONTINUITY_SAFE_TO_REMOVE=0
+      RUNTIME_NEEDED_BY_CONTINUITY=1
+      status=1
+    fi
+  done
+  return "$status"
+}
+
+preflight_continuity_units_for_uninstall() {
+  local authority index intent receipt_expected target_expected
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    intent="$(continuity_archive_intent_path "$index")"
+    if [ -e "$intent" ] || [ -L "$intent" ]; then
+      [ "${CONTINUITY_UNIT_STATES[$index]:-}" = recovery-pending ] \
+        || CONTINUITY_UNIT_STATES[$index]=unsafe
+      continue
+    fi
+    CONTINUITY_UNIT_STATES[$index]=unsafe
+    if [ ! -e "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+        && [ ! -L "${CONTINUITY_UNIT_PATHS[$index]}" ] \
+        && [ ! -e "${CONTINUITY_UNIT_RECEIPTS[$index]}" ] \
+        && [ ! -L "${CONTINUITY_UNIT_RECEIPTS[$index]}" ]; then
+      if continuity_unit_absent "$index"; then
+        CONTINUITY_UNIT_STATES[$index]=absent
+      else
+        failed "preserve indeterminate ${CONTINUITY_UNIT_NAMES[$index]}"
+        CONTINUITY_SAFE_TO_REMOVE=0
+        RUNTIME_NEEDED_BY_CONTINUITY=1
+      fi
+      continue
+    fi
+    if authority="$(capture_managed_file_authority \
+          "${CONTINUITY_UNIT_RECEIPTS[$index]}" \
+          "${CONTINUITY_UNIT_KINDS[$index]}" \
+          "${CONTINUITY_UNIT_PATHS[$index]}")"; then
+      IFS=$'\t' read -r target_expected receipt_expected <<< "$authority"
+      CONTINUITY_TARGET_EXPECTED[$index]="$target_expected"
+      CONTINUITY_RECEIPT_EXPECTED[$index]="$receipt_expected"
+      CONTINUITY_UNIT_STATES[$index]=owned
+      if ! inspect_user_unit "${CONTINUITY_UNIT_NAMES[$index]}" \
+          CONTINUITY_PREFLIGHT "" continuity \
+          || ! continuity_manager_binding_valid \
+            "$index" CONTINUITY_PREFLIGHT \
+          || ! continuity_authority_unchanged "$index"; then
+        failed "preserve indeterminate ${CONTINUITY_UNIT_NAMES[$index]}"
+        CONTINUITY_UNIT_STATES[$index]=unsafe
+        CONTINUITY_SAFE_TO_REMOVE=0
+        RUNTIME_NEEDED_BY_CONTINUITY=1
+      fi
+    else
+      failed "preserve unowned or modified ${CONTINUITY_UNIT_NAMES[$index]}"
+      CONTINUITY_SAFE_TO_REMOVE=0
+      RUNTIME_NEEDED_BY_CONTINUITY=1
+    fi
+  done
+}
+
+inspect_owned_continuity_unit() {
+  local index="$1" prefix="$2"
+  continuity_authority_unchanged "$index" \
+    && inspect_user_unit "${CONTINUITY_UNIT_NAMES[$index]}" "$prefix" \
+      "" continuity \
+    && continuity_manager_binding_valid "$index" "$prefix" \
+    && continuity_authority_unchanged "$index"
+}
+
+quiesce_continuity_units_for_uninstall() {
+  local active_var index job_var load_var main_pid_var name state unit_state_var
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    state="${CONTINUITY_UNIT_STATES[$index]:-unsafe}"
+    if [ "$state" = absent ]; then
+      continuity_unit_absent "$index" || return 1
+      continue
+    fi
+    if [ "$state" = recovery-pending ]; then
+      continuity_recovery_manager_quiesced "$index" || return 1
+      continue
+    fi
+    [ "$state" = owned ] || return 1
+    inspect_owned_continuity_unit "$index" CONTINUITY_HANDOFF \
+      || return 1
+    load_var=CONTINUITY_HANDOFF_LOAD_STATE
+    active_var=CONTINUITY_HANDOFF_ACTIVE_STATE
+    job_var=CONTINUITY_HANDOFF_JOB
+    unit_state_var=CONTINUITY_HANDOFF_UNIT_FILE_STATE
+    main_pid_var=CONTINUITY_HANDOFF_MAIN_PID
+    if [ "${!load_var}" = loaded ]; then
+      name="${CONTINUITY_UNIT_NAMES[$index]}"
+      case "$name" in
+        *.timer)
+          if [ "${!active_var}" != inactive ] \
+              || [ "${!main_pid_var}" != 0 ] \
+              || [ -n "${!job_var}" ] \
+              || [ "${!unit_state_var}" != disabled ]; then
+            run_with_deadline 120 systemctl --user disable --now "$name" \
+              || return 1
+          fi
+          ;;
+        *.service)
+          case "${!unit_state_var}" in static|disabled) ;; *) return 1 ;; esac
+          if [ "${!active_var}" != inactive ] \
+              || [ "${!main_pid_var}" != 0 ] \
+              || [ -n "${!job_var}" ]; then
+            run_with_deadline 120 systemctl --user stop "$name" || return 1
+          fi
+          ;;
+        *) return 1 ;;
+      esac
+    fi
+    inspect_owned_continuity_unit "$index" CONTINUITY_QUIESCED \
+      || return 1
+    [ -z "$CONTINUITY_QUIESCED_JOB" ] || return 1
+    if [ "$CONTINUITY_QUIESCED_LOAD_STATE" = loaded ]; then
+      [ "$CONTINUITY_QUIESCED_ACTIVE_STATE" = inactive ] \
+        && [ "$CONTINUITY_QUIESCED_MAIN_PID" = 0 ] || return 1
+      case "${CONTINUITY_UNIT_NAMES[$index]}" in
+        *.timer)
+          [ "$CONTINUITY_QUIESCED_UNIT_FILE_STATE" = disabled ] \
+            || return 1
+          ;;
+        *.service)
+          case "$CONTINUITY_QUIESCED_UNIT_FILE_STATE" in
+            static|disabled) ;;
+            *) return 1 ;;
+          esac
+          ;;
+      esac
+    fi
+  done
+}
+
+complete_continuity_archive_pair() {
+  local fields index="$1" intent="$2" receipt_backup receipt_expected
+  local states unit_backup unit_expected unit_state receipt_state
+  fields="$(continuity_archive_intent_fields "$index" "$intent")" || return 1
+  IFS=$'\t' read -r unit_backup receipt_backup unit_expected receipt_expected \
+    <<< "$fields"
+  [ -n "$unit_backup" ] && [ -n "$receipt_backup" ] \
+    && [ -n "$unit_expected" ] && [ -n "$receipt_expected" ] || return 1
+  owned_file_cas recover "${CONTINUITY_UNIT_PATHS[$index]}" || return 1
+  owned_file_cas recover "${CONTINUITY_UNIT_RECEIPTS[$index]}" || return 1
+  states="$(continuity_archive_intent state "$intent" \
+    "${CONTINUITY_UNIT_NAMES[$index]}" \
+    "${CONTINUITY_UNIT_KINDS[$index]}" \
+    "${CONTINUITY_UNIT_PATHS[$index]}" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}")" || return 1
+  IFS=$'\t' read -r unit_state receipt_state <<< "$states"
+  case "$unit_state:$receipt_state" in
+    pending:pending)
+      owned_file_cas archive "$unit_backup" \
+        "${CONTINUITY_UNIT_PATHS[$index]}" "$unit_expected" >/dev/null \
+        || return 1
+      ;;
+    archived:pending) ;;
+    archived:archived)
+      CONTINUITY_UNIT_STATES[$index]=pair-archived
+      return 0
+      ;;
+    *)
+      echo "ambiguous paired archive state for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+      return 1
+      ;;
+  esac
+  states="$(continuity_archive_intent state "$intent" \
+    "${CONTINUITY_UNIT_NAMES[$index]}" \
+    "${CONTINUITY_UNIT_KINDS[$index]}" \
+    "${CONTINUITY_UNIT_PATHS[$index]}" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}")" || return 1
+  IFS=$'\t' read -r unit_state receipt_state <<< "$states"
+  [ "$unit_state:$receipt_state" = archived:pending ] || {
+    echo "ambiguous paired archive state for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+    return 1
+  }
+  owned_file_cas archive "$receipt_backup" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}" "$receipt_expected" >/dev/null \
+    || return 1
+  states="$(continuity_archive_intent state "$intent" \
+    "${CONTINUITY_UNIT_NAMES[$index]}" \
+    "${CONTINUITY_UNIT_KINDS[$index]}" \
+    "${CONTINUITY_UNIT_PATHS[$index]}" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}")" || return 1
+  [ "$states" = $'archived\tarchived' ] || {
+    echo "ambiguous paired archive state for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+    return 1
+  }
+  CONTINUITY_UNIT_STATES[$index]=pair-archived
+}
+
+finalize_continuity_archive_pair() {
+  local fields index="$1" intent="$2" receipt_backup receipt_expected
+  local unit_backup unit_expected
+  [ "${CONTINUITY_UNIT_STATES[$index]:-}" = pair-archived ] || return 1
+  continuity_unit_absent "$index" || return 1
+  fields="$(continuity_archive_intent_fields "$index" "$intent")" || return 1
+  IFS=$'\t' read -r unit_backup receipt_backup unit_expected receipt_expected \
+    <<< "$fields"
+  continuity_archive_intent finish "$intent" \
+    "${CONTINUITY_UNIT_NAMES[$index]}" \
+    "${CONTINUITY_UNIT_KINDS[$index]}" \
+    "${CONTINUITY_UNIT_PATHS[$index]}" \
+    "${CONTINUITY_UNIT_RECEIPTS[$index]}" \
+    "$unit_backup" "$receipt_backup" "$unit_expected" "$receipt_expected" \
+    || return 1
+  CONTINUITY_UNIT_STATES[$index]=removed
+  echo "exact prior ${CONTINUITY_UNIT_NAMES[$index]} retained at $unit_backup"
+  echo "exact prior ${CONTINUITY_UNIT_NAMES[$index]} receipt retained at $receipt_backup"
+}
+
+recover_continuity_archive_intents() {
+  local index intent status=0
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    [ "${CONTINUITY_UNIT_STATES[$index]:-}" = recovery-pending ] \
+      || continue
+    intent="$(continuity_archive_intent_path "$index")"
+    if ! continuity_recovery_manager_quiesced "$index" \
+        || ! complete_continuity_archive_pair "$index" "$intent"; then
+      echo "ambiguous archive recovery retained for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+      status=1
+      break
+    fi
+    CONTINUITY_ARCHIVE_NEEDED=1
+  done
+  if [ "$CONTINUITY_ARCHIVE_NEEDED" -eq 1 ]; then
+    run_with_deadline 120 systemctl --user daemon-reload || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+      [ "${CONTINUITY_UNIT_STATES[$index]:-}" = pair-archived ] \
+        || continue
+      intent="$(continuity_archive_intent_path "$index")"
+      if ! finalize_continuity_archive_pair "$index" "$intent"; then
+        echo "paired archive intent retained for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+        status=1
+        break
+      fi
+      CONTINUITY_UNIT_STATES[$index]=absent
+    done
+  fi
+  return "$status"
+}
+
+archive_owned_continuity_units() {
+  local index intent receipt_backup status=0 unit_backup
+  for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+    [ "${CONTINUITY_UNIT_STATES[$index]:-}" = owned ] || continue
+    if ! continuity_authority_unchanged "$index"; then
+      echo "${CONTINUITY_UNIT_NAMES[$index]} authority changed before archival" >&2
+      status=1
+      break
+    fi
+    unit_backup="$(mktemp \
+      "$(dirname "${CONTINUITY_UNIT_PATHS[$index]}")/.${CONTINUITY_UNIT_NAMES[$index]}.removed.XXXXXX")" \
+      || { status=1; break; }
+    rm -f -- "$unit_backup"
+    receipt_backup="$(mktemp \
+      "$(dirname "${CONTINUITY_UNIT_RECEIPTS[$index]}")/.${CONTINUITY_UNIT_NAMES[$index]}.receipt.removed.XXXXXX")" \
+      || {
+        status=1
+        break
+      }
+    rm -f -- "$receipt_backup"
+    intent="$(continuity_archive_intent_path "$index")"
+    if ! continuity_archive_intent create "$intent" \
+        "${CONTINUITY_UNIT_NAMES[$index]}" \
+        "${CONTINUITY_UNIT_KINDS[$index]}" \
+        "${CONTINUITY_UNIT_PATHS[$index]}" \
+        "${CONTINUITY_UNIT_RECEIPTS[$index]}" \
+        "$unit_backup" "$receipt_backup" \
+        "${CONTINUITY_TARGET_EXPECTED[$index]}" \
+        "${CONTINUITY_RECEIPT_EXPECTED[$index]}"; then
+      status=1
+      break
+    fi
+    CONTINUITY_UNIT_STATES[$index]=recovery-pending
+    CONTINUITY_ARCHIVE_NEEDED=1
+    if ! complete_continuity_archive_pair "$index" "$intent"; then
+      echo "paired archive intent retained for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+      status=1
+      break
+    fi
+  done
+  if [ "$CONTINUITY_ARCHIVE_NEEDED" -eq 1 ] \
+      && ! run_with_deadline 120 systemctl --user daemon-reload; then
+    status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    for index in "${!CONTINUITY_UNIT_NAMES[@]}"; do
+      [ "${CONTINUITY_UNIT_STATES[$index]:-}" = pair-archived ] \
+        || continue
+      intent="$(continuity_archive_intent_path "$index")"
+      if ! finalize_continuity_archive_pair "$index" "$intent"; then
+        echo "paired archive intent retained for ${CONTINUITY_UNIT_NAMES[$index]}" >&2
+        status=1
+        break
+      fi
+    done
+  fi
+  return "$status"
+}
+
 acquire_owner_lock() {
   local path="$1" variable="$2" label="$3" descriptor
   if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
@@ -2023,6 +2812,13 @@ flock -n "$SIA_UNINSTALL_ADMIN_LOCK_FD" || {
   echo "another SIA install or uninstall is active" >&2
   exit 1
 }
+if [ -e "$RESTORE_BARRIER" ] || [ -L "$RESTORE_BARRIER" ] \
+    || [ -e "$RESTORE_MASK_DEBT" ] || [ -L "$RESTORE_MASK_DEBT" ] \
+    || [ -e "$RESTORE_SUPERVISOR_DEBT" ] \
+    || [ -L "$RESTORE_SUPERVISOR_DEBT" ]; then
+  echo "SIA restore is interrupted; run 'sia restore recover' before uninstall" >&2
+  exit 1
+fi
 
 inspect_owned_brainstem_for_uninstall() {
   local prefix="$1" expected_drop_in_paths=""
@@ -2456,7 +3252,8 @@ safe_remove_tree() {
     return 1
   fi
   case "$1" in
-    "$RUNTIME_BIN_DIR"|"$STATE_DIR"|"$CONFIG_DIR"|"$SHARE_DIR")
+    "$RUNTIME_BIN_DIR"|"$STATE_DIR"|"$CONTINUITY_STATE_DIR"\
+      |"$CONFIG_DIR"|"$SHARE_DIR")
       rm -rf -- "$1"
       ;;
     *) echo "refusing unexpected tree removal: $1" >&2; return 1 ;;
@@ -2494,10 +3291,18 @@ modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
                    "siamind.py", "siaqueue.py", "siatakes.py")
 modern_v3_names = modern_v2_names + ("siasenses.py",)
+modern_v4_names = modern_v3_names + (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "sia-continuity-worker")
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-if v3:
+v4 = any(os.path.lexists(os.path.join(root, name))
+         for name in ("siacapsule.py", "siabackup.py",
+                      "sia-continuity-worker"))
+if v4:
+    names, salt = modern_v4_names, b"sia-runtime-v4\0"
+elif v3:
     names, salt = modern_v3_names, b"sia-runtime-v3\0"
 elif modern:
     names, salt = modern_v2_names, b"sia-runtime-v2\0"
@@ -2730,10 +3535,18 @@ modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
                    "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
                    "siamind.py", "siaqueue.py", "siatakes.py")
 modern_v3_names = modern_v2_names + ("siasenses.py",)
+modern_v4_names = modern_v3_names + (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "sia-continuity-worker")
 modern = any(os.path.lexists(os.path.join(runtime, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(runtime, "siasenses.py"))
-if v3:
+v4 = any(os.path.lexists(os.path.join(runtime, name))
+         for name in ("siacapsule.py", "siabackup.py",
+                      "sia-continuity-worker"))
+if v4:
+    names, salt = modern_v4_names, b"sia-runtime-v4\0"
+elif v3:
     names, salt = modern_v3_names, b"sia-runtime-v3\0"
 elif modern:
     names, salt = modern_v2_names, b"sia-runtime-v2\0"
@@ -3927,6 +4740,8 @@ PY
 }
 
 if have systemctl; then
+  preflight_continuity_archive_intents || true
+  preflight_continuity_units_for_uninstall
   BRAINSTEM_BARRIER_STATE="$(brainstem_runtime_barrier_file state)" || exit 1
   BRAINSTEM_EXPECTED_DROP_IN=""
   case "$BRAINSTEM_BARRIER_STATE" in
@@ -3974,6 +4789,18 @@ else
   failed "systemctl unavailable; sia-brainstem.service may still be running"
   BRAINSTEM_SAFE_TO_REMOVE=0
   RUNTIME_NEEDED_BY_SERVICE=1
+  CONTINUITY_SAFE_TO_REMOVE=0
+  RUNTIME_NEEDED_BY_CONTINUITY=1
+fi
+
+if [ "$CONTINUITY_SAFE_TO_REMOVE" -eq 1 ]; then
+  if ! quiesce_continuity_units_for_uninstall; then
+    failed "quiesce exact SIA continuity timers and services"
+    CONTINUITY_SAFE_TO_REMOVE=0
+    RUNTIME_NEEDED_BY_CONTINUITY=1
+  fi
+else
+  echo "SIA continuity units preserved because ownership or manager state is indeterminate" >&2
 fi
 
 if [ "$UNIT_OWNED" -eq 1 ] && [ "$BRAINSTEM_SAFE_TO_REMOVE" -eq 1 ]; then
@@ -3985,6 +4812,25 @@ if [ "$UNIT_OWNED" -eq 1 ] && [ "$BRAINSTEM_SAFE_TO_REMOVE" -eq 1 ]; then
 fi
 
 acquire_uninstall_lifecycle || exit 1
+
+# The first stop/disable pass lets an in-flight scheduled command release its
+# shared lifecycle lease.  Repeat under EX so no admitted client can race the
+# receipt-bound unit archives that follow.
+if [ "$CONTINUITY_SAFE_TO_REMOVE" -eq 1 ]; then
+  if ! recover_continuity_archive_intents; then
+    failed "recover interrupted SIA continuity unit and receipt archives"
+    CONTINUITY_SAFE_TO_REMOVE=0
+    RUNTIME_NEEDED_BY_CONTINUITY=1
+  elif ! quiesce_continuity_units_for_uninstall; then
+    failed "revalidate quiesced SIA continuity units under lifecycle EX"
+    CONTINUITY_SAFE_TO_REMOVE=0
+    RUNTIME_NEEDED_BY_CONTINUITY=1
+  elif ! archive_owned_continuity_units; then
+    failed "archive exact SIA continuity units and receipts"
+    CONTINUITY_SAFE_TO_REMOVE=0
+    RUNTIME_NEEDED_BY_CONTINUITY=1
+  fi
+fi
 
 if [ "$BRAINSTEM_SAFE_TO_REMOVE" -eq 1 ] \
     && { [ -e "$SHARE_DIR" ] || [ -e "$STATE_DIR" ] \
@@ -4127,6 +4973,7 @@ else
 fi
 
 if [ "$RUNTIME_NEEDED_BY_SERVICE" -eq 0 ] \
+    && [ "$RUNTIME_NEEDED_BY_CONTINUITY" -eq 0 ] \
     && [ "$RUNTIME_NEEDED_BY_MCP" -eq 0 ] \
     && [ "$RUNTIME_NEEDED_BY_PLUGIN" -eq 0 ]; then
   attempt "remove SIA CLI" remove_owned_cli
@@ -4149,6 +4996,7 @@ if [ "$PURGE" -eq 1 ]; then
     failed "purge blocked because uninstall integrations did not all complete"
     echo "purge was not attempted; resolve the listed failures and retry" >&2
   elif [ "$RUNTIME_NEEDED_BY_SERVICE" -eq 1 ] \
+      || [ "$RUNTIME_NEEDED_BY_CONTINUITY" -eq 1 ] \
       || [ "$RUNTIME_NEEDED_BY_MCP" -eq 1 ] \
       || [ "$RUNTIME_NEEDED_BY_PLUGIN" -eq 1 ] \
       || [ "$RUNTIME_NEEDED_BY_CLI" -eq 1 ] \
@@ -4168,10 +5016,14 @@ if [ "$PURGE" -eq 1 ]; then
       echo "purge was not attempted because a fixed publication stage is unsafe" >&2
     else
       attempt "purge retained SIA state" safe_remove_tree "$STATE_DIR"
+      attempt "purge retained SIA continuity state" \
+        safe_remove_tree "$CONTINUITY_STATE_DIR"
       attempt "purge retained SIA memory" safe_remove_tree "$SHARE_DIR"
       attempt "purge SIA operator configuration" safe_remove_tree "$CONFIG_DIR"
     fi
     if { [ ! -e "$STATE_DIR" ] && [ ! -L "$STATE_DIR" ]; } \
+        && { [ ! -e "$CONTINUITY_STATE_DIR" ] \
+             && [ ! -L "$CONTINUITY_STATE_DIR" ]; } \
         && { [ ! -e "$SHARE_DIR" ] && [ ! -L "$SHARE_DIR" ]; } \
         && { [ ! -e "$CONFIG_DIR" ] && [ ! -L "$CONFIG_DIR" ]; } \
         && { [ ! -e "$STATE_PUBLICATION_STAGE" ] \
@@ -4191,6 +5043,7 @@ else
   echo "removed program/UI integration. Memory and state survive at:"
   echo "  $SHARE_DIR"
   echo "  $STATE_DIR"
+  echo "  $CONTINUITY_STATE_DIR"
   echo "  $CONFIG_DIR"
   echo "To erase them too: ./uninstall.sh --purge"
 fi

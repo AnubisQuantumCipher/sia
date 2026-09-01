@@ -1,0 +1,11 @@
+[Unit]
+Description=SIA continuity — automatic recovery copy
+Documentation=https://github.com/AnubisQuantumCipher/sia
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=sia-backup.service
+
+[Install]
+WantedBy=timers.target

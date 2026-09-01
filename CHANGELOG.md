@@ -1,5 +1,84 @@
 # Changelog
 
+## 1.4.0 — 2026-09-01
+
+- **Brain-native portable capsules** — SIA now owns a storage-independent
+  freeze/verify/thaw boundary over its documented share, state, and config
+  authorities. Freeze copies under SIA's owner leases, verifies the copied SIA
+  ledger off-path, and signs a closed manifest; repository adapters see only a
+  completed capsule and never traverse live brain roots.
+
+- **Receipt-preserving restore ceremony** — restore preparation is off-path;
+  apply requires the literal `RESTORE`, exact snapshot id, full current target
+  ledger head, and explicit corpus-receipt re-adoption. Thaw holds the
+  lifecycle and brain-owner leases, preserves the target corpus inode and exact
+  v2 receipt, and records a signed adoption. It preserves and authenticates the
+  destination `.gbrain` root/config, installed schema pack, managed receipt,
+  and unknown children; through gbrain it initializes a fresh
+  `brain.pglite` off-path and replaces only that projection plus its two
+  explicit repair/reap sidecars before a full sync. Core commit requires a
+  successful `sia ready` gate and direct SIA-ledger verification. Terminal
+  verified/green status is withheld until a stable-supervisor restart is
+  attested and the exact resident brainstem passes a fresh readiness, ledger,
+  and adoption check.
+
+- **Layered, bounded restore recovery** — supervisor intent, the restore-owned
+  runtime gate, and capsule core's thaw barrier are separate durable debts. A
+  crash before core thaw starts is recoverable without inventing a rollback
+  journal; a core barrier authenticates its exact journal/capsule. `sia restore
+  recover` reconciles either case. Settled commit/rollback operations durably
+  retire private-key copies and heavy rollback trees while the signed live
+  `RESTORE:adopt` ledger row remains the audit evidence. Manual deletion of
+  recovery artifacts is unsupported.
+
+- **Separated signing authority** — routine capsules omit `key.hex`, `.gbrain`,
+  installed runtime/toolchains, credentials, and continuity working state.
+  Setup exports the SIA signing identity separately for offline custody; it is
+  never treated as the restic repository key or uploaded with the capsule.
+
+- **Replaceable verified transport** — restic is the first adapter outside the
+  capsule format. Hourly jobs locally verify and upload a completed capsule.
+  The weekly job runs `restic check`, restores the newest snapshot into a
+  private off-path stage, and verifies that exact capsule again; manual
+  **Backup now** performs upload and round-trip verification immediately. A
+  newer scheduled upload cannot displace the last known verified recovery
+  copy. SIA never automatically forgets, prunes, deletes, or applies a
+  repository snapshot to the live brain; scheduled restores are private
+  off-path verification only.
+
+- **Fail-closed continuity attestation** — repository health is now bound to
+  the authenticated restic repository identity and the intended SIA signing
+  identity. Effective systemd fragments, drop-ins, jobs, and managed receipts
+  are attested before schedules or the brainstem are started. Snapshot metadata
+  is bounded and path-checked before restic restores payload bytes. Post-restore
+  readiness, ledger, adoption, and resident-PID observations are held in one
+  corpus generation; request and supervisor/runtime debt retire before green is
+  published. A successful restore remains a correlated operation outcome and
+  cannot manufacture **RECOVERY READY** without a ready, verified,
+  identity-matching repository copy. Clean-target adoption rebinds continuity
+  to the signed adopted identity before restart while preserving the repository
+  binding, but only a later repository check may promote that copy.
+
+- **Restart-schema parity** — early brainstem restore admission now lives in a
+  state-free runtime module and validates the same complete repository and
+  identity binding written by the worker and stable supervisor. A changed or
+  legacy-shaped request still refuses, while a valid `restart-starting` debt
+  can reach resident restart attestation and terminal verification.
+
+- **Canonical CLI, thin cockpit** — continuity setup, status, backup,
+  preparation, typed restore, and recovery use the same durable request/status
+  contract. The cockpit calls that contract rather than owning lifecycle or
+  restore logic. Backend environment files and path-bearing credentials must
+  remain owner-private and outside every portable or continuity root.
+
+- **Marketplace installation made explicit** — the front page and field manual
+  now reflect SIA's existing `khephri.sia` listing and its intentional Manual
+  setup status. The safe path uses `omarchy plugin add` without premature
+  enablement, then runs SIA's explicit installer; the installer provisions the
+  pinned private restic adapter and enables the surface only after first light.
+  The documentation also distinguishes the Omarchy Brain from the unrelated
+  Sia Foundation storage network at the first read.
+
 ## 1.3.8 — 2026-08-31
 
 - **Marketplace baseline clarity** — the checksum-bound download helper now

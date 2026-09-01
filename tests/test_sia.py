@@ -5594,6 +5594,12 @@ link_types:
         self.assertIn("--ner", calls[2])
         self.assertEqual(calls[2][calls[2].index("--source-id") + 1], "sia")
 
+        calls.clear()
+        with mock.patch.dict(
+                os.environ, {"SIA_RESTORE_FULL_SYNC": "1"}):
+            self.assertEqual(self.sialib.brain_sync(), (True, ""))
+        self.assertEqual(calls[0], ["sync", "--source", "sia", "--full"])
+
 
 class BoundedGraphProjection(unittest.TestCase):
     """The resident graph advances bounded durable pages and fails closed."""

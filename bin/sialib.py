@@ -17,6 +17,7 @@ import bisect, collections, contextlib, contextvars, copy, ctypes, fcntl, functo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import siamind
+import siarestoreadmit
 import siatakes
 import siaqueue
 
@@ -33,6 +34,12 @@ BRAINSTEM_OWNER_LOCK = os.path.join(STATE, "brainstem-owner.lock")
 LIFECYCLE_LOCK = os.path.join(HOME, ".local/state/sia.lifecycle.lock")
 LIFECYCLE_TOMBSTONE = os.path.join(
     HOME, ".local/state/sia.lifecycle-removed")
+RESTORE_BARRIER_PATH = os.path.join(
+    HOME, ".local/state/sia-continuity/restore-in-progress.json")
+RESTORE_MASK_PATH = os.path.join(
+    HOME, ".local/state/sia-continuity/restore-runtime-mask")
+RESTORE_SUPERVISOR_PATH = os.path.join(
+    HOME, ".local/state/sia-continuity/restore-supervisor.json")
 THOUGHT_INBOX_PATH = os.path.join(STATE, "thought-inbox.json")
 THOUGHT_INBOX_LOCK = os.path.join(STATE, "thought-inbox.lock")
 THOUGHT_INBOX_CLAIM = os.path.join(STATE, "thought-inbox.draining.json")
@@ -238,7 +245,7 @@ ORGANS = _build_organs()
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.3.8"
+VERSION = "1.4.0"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -250,14 +257,26 @@ _CORPUS_MUTATION_BARRIER = contextvars.ContextVar(
     "sia_corpus_mutation_barrier", default=None)
 _CORPUS_OWNER_DEPTH = contextvars.ContextVar(
     "sia_corpus_owner_depth", default=0)
+_CORPUS_OWNER_FD = contextvars.ContextVar(
+    "sia_corpus_owner_fd", default=None)
+_BRAINSTEM_OWNER_FD = contextvars.ContextVar(
+    "sia_brainstem_owner_fd", default=None)
+_GBRAIN_OWNER_FD = contextvars.ContextVar(
+    "sia_gbrain_owner_fd", default=None)
 _LIFECYCLE_READER_DEPTH = contextvars.ContextVar(
     "sia_lifecycle_reader_depth", default=0)
 _INHERITED_LIFECYCLE_FD_ENV = "SIA_INHERITED_LIFECYCLE_FD"
+_INHERITED_CORPUS_FD_ENV = "SIA_INHERITED_CORPUS_FD"
 _LAUNCHER_ABI = "sia-launch-v1"
 _LAUNCHER_ABI_ENV = "SIA_LAUNCHER_ABI"
 _LAUNCHER_LIFECYCLE_FD_ENV = "SIA_LAUNCHER_LIFECYCLE_FD"
 _LAUNCHER_TARGET_FD_ENV = "SIA_LAUNCHER_TARGET_FD"
 _LAUNCHER_TARGET_PATH_ENV = "SIA_LAUNCHER_TARGET_PATH"
+_RESTORE_LAUNCH_ABI_ENV = "SIA_RESTORE_LAUNCH_ABI"
+_RESTORE_LAUNCH_ABI = "sia-restore-launch-v1"
+_RESTORE_FINALIZE_ABI_ENV = "SIA_RESTORE_FINALIZE_ABI"
+_RESTORE_FINALIZE_ADMIN_FD_ENV = "SIA_RESTORE_FINALIZE_ADMIN_FD"
+_RESTORE_FINALIZE_ABI = "sia-restore-finalize-v1"
 
 
 @contextlib.contextmanager
@@ -412,6 +431,15 @@ def read_json(path, default):
         return default
 
 
+def _strict_json_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
 def read_state_json(path, default, label):
     """Read daemon-owned JSON without following links or hiding damage.
 
@@ -450,7 +478,9 @@ def read_state_json(path, default, label):
                 if observed != finished or len(raw) > MAX_STATE_JSON_BYTES:
                     raise RuntimeError(
                         f"{label} state changed while read or exceeds its bound")
-                value = json.loads(raw.decode("utf-8"))
+                value = json.loads(
+                    raw.decode("utf-8"),
+                    object_pairs_hook=_strict_json_object)
         except (OSError, UnicodeError, ValueError, RecursionError) as exc:
             raise RuntimeError(
                 f"{label} state is unreadable or malformed") from exc
@@ -526,6 +556,69 @@ def _validated_inherited_lifecycle_fd():
         except BlockingIOError as exc:
             raise RuntimeError(
                 "inherited SIA lifecycle descriptor does not own the lease") \
+                from exc
+    finally:
+        os.close(probe_fd)
+    return inherited_fd
+
+
+def _validated_inherited_corpus_fd():
+    """Recognize only a parent's inherited exclusive corpus lease."""
+    raw = os.environ.get(_INHERITED_CORPUS_FD_ENV)
+    if raw is None:
+        return None
+    if not raw or not raw.isascii() or not raw.isdigit():
+        raise RuntimeError("invalid inherited SIA corpus descriptor")
+    try:
+        inherited_fd = int(raw, 10)
+        inherited = os.fstat(inherited_fd)
+        target = os.lstat(CORPUS_OWNER_LOCK)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("invalid inherited SIA corpus descriptor") from exc
+    if not stat.S_ISREG(inherited.st_mode) \
+            or inherited.st_uid != os.geteuid() \
+            or not stat.S_ISREG(target.st_mode) \
+            or target.st_uid != os.geteuid() \
+            or (inherited.st_dev, inherited.st_ino) != \
+               (target.st_dev, target.st_ino):
+        raise RuntimeError(
+            "inherited SIA corpus descriptor is not the owned lease")
+
+    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        probe_fd = os.open(CORPUS_OWNER_LOCK, flags)
+    except OSError as exc:
+        raise RuntimeError("could not probe inherited SIA corpus lease") \
+            from exc
+    try:
+        probe = os.fstat(probe_fd)
+        if not stat.S_ISREG(probe.st_mode) \
+                or probe.st_uid != os.geteuid() \
+                or (probe.st_dev, probe.st_ino) != \
+                   (inherited.st_dev, inherited.st_ino):
+            raise RuntimeError("SIA corpus lease changed during handoff")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError(
+                "inherited SIA corpus descriptor has no conflicting lease")
+        try:
+            fcntl.flock(probe_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            fcntl.flock(probe_fd, fcntl.LOCK_UN)
+            raise RuntimeError(
+                "inherited SIA corpus descriptor is not exclusively held")
+        try:
+            fcntl.flock(inherited_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                "inherited SIA corpus descriptor does not own the lease") \
                 from exc
     finally:
         os.close(probe_fd)
@@ -652,6 +745,27 @@ def _require_installed_launcher_handoff():
 _require_installed_launcher_handoff()
 
 
+class _RestoreCoreView:
+    """Resolve the owning dynamic sialib namespace without re-importing it."""
+
+    def __getattr__(self, name):
+        return globals()[name]
+
+
+_RESTORE_CORE_VIEW = _RestoreCoreView()
+
+
+def restore_barrier_active():
+    return siarestoreadmit.restore_barrier_active(_RESTORE_CORE_VIEW)
+
+
+def _require_restore_admission():
+    return siarestoreadmit.require_restore_admission(_RESTORE_CORE_VIEW)
+
+
+_require_restore_admission()
+
+
 @contextlib.contextmanager
 def _lifecycle_reader():
     """Keep runtime operations outside install/uninstall mutation windows."""
@@ -734,21 +848,45 @@ def corpus_owner():
     if depth:
         token = _CORPUS_OWNER_DEPTH.set(depth + 1)
         try:
-            yield
+            yield _CORPUS_OWNER_FD.get()
         finally:
             _CORPUS_OWNER_DEPTH.reset(token)
         return
-    with _owner_lease(CORPUS_OWNER_LOCK, "SIA corpus transaction"):
+    inherited_fd = _validated_inherited_corpus_fd()
+    if inherited_fd is not None:
         token = _CORPUS_OWNER_DEPTH.set(1)
+        fd_token = _CORPUS_OWNER_FD.set(inherited_fd)
         try:
-            yield
+            yield inherited_fd
         finally:
+            _CORPUS_OWNER_FD.reset(fd_token)
+            _CORPUS_OWNER_DEPTH.reset(token)
+        return
+    with _owner_lease(
+            CORPUS_OWNER_LOCK, "SIA corpus transaction") as owner_fd:
+        token = _CORPUS_OWNER_DEPTH.set(1)
+        fd_token = _CORPUS_OWNER_FD.set(owner_fd)
+        try:
+            yield owner_fd
+        finally:
+            _CORPUS_OWNER_FD.reset(fd_token)
             _CORPUS_OWNER_DEPTH.reset(token)
 
 
+@contextlib.contextmanager
 def brainstem_owner():
-    """Refuse a second resident brainstem for this SIA instance."""
-    return _owner_lease(BRAINSTEM_OWNER_LOCK, "SIA brainstem", blocking=False)
+    """Refuse a second resident brainstem; nest in the owning context."""
+    inherited = _BRAINSTEM_OWNER_FD.get()
+    if inherited is not None:
+        yield inherited
+        return
+    with _owner_lease(
+            BRAINSTEM_OWNER_LOCK, "SIA brainstem", blocking=False) as owner_fd:
+        token = _BRAINSTEM_OWNER_FD.set(owner_fd)
+        try:
+            yield owner_fd
+        finally:
+            _BRAINSTEM_OWNER_FD.reset(token)
 
 
 MAX_THOUGHT_INBOX_ITEMS = 200
@@ -5173,8 +5311,16 @@ def gbrain_owner():
     locking cannot constrain unrelated programs that bypass SIA, but it closes
     contention among every runtime shipped by this project.
     """
+    inherited = _GBRAIN_OWNER_FD.get()
+    if inherited is not None:
+        yield inherited
+        return
     with _owner_lease(GBRAIN_OWNER_LOCK, "SIA PGLite") as owner_fd:
-        yield owner_fd
+        token = _GBRAIN_OWNER_FD.set(owner_fd)
+        try:
+            yield owner_fd
+        finally:
+            _GBRAIN_OWNER_FD.reset(token)
 
 def gbrain(args, timeout=120, json_out=False):
     try:
@@ -5283,7 +5429,13 @@ def corpus_dirty():
 
 
 def brain_sync():
-    r = gbrain(["sync", "--source", "sia"], timeout=300)
+    args = ["sync", "--source", "sia"]
+    if os.environ.get("SIA_RESTORE_FULL_SYNC") == "1":
+        # A restored Git history may be older than, or unrelated to, the
+        # destination PGLite bookmark. Incremental sync is not a recovery
+        # proof; the restore worker requests one complete reconciliation.
+        args.append("--full")
+    r = gbrain(args, timeout=300)
     if r.returncode != 0:
         return False, (r.stderr or r.stdout)[-400:]
     # sync does not run link extraction — materialize explicit corpus links

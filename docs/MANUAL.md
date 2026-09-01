@@ -3,6 +3,10 @@
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*
 
+> [!IMPORTANT]
+> This is **SIA, the Omarchy Brain**, not the Sia Foundation, `sia.tech`, or
+> the similarly named storage network.
+
 SIA gives your machine an associative memory. Everything this computer
 already records — package installs, journal errors, git commits, agent
 sessions, notifications, and any log you point it at — flows into one
@@ -42,6 +46,29 @@ object or unrelated fields.
 ---
 
 ## 1. Sixty-second start
+
+On Omarchy, install the already-listed marketplace plugin without enabling its
+surface prematurely:
+
+```bash
+omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git
+```
+
+Choose **No** if that command asks whether to enable immediately. The git-URL
+form clones current upstream HEAD rather than pinning the marketplace's last
+verified commit; inspect the checkout and listing state before running it.
+Then continue deliberately:
+
+```bash
+~/.config/omarchy/plugins/khephri.sia/install.sh
+```
+
+The installer adds the resident runtime, proves first light and readiness,
+then enables the surface. Omarchy's current plugin manager has no install hook,
+so `omarchy plugin add` alone is not a complete SIA installation. A first
+install is substantial rather than instant: it checks the supported host,
+downloads pinned local toolchains and the embedding runtime, builds gbrain, and
+pulls the pinned local embedding model.
 
 | Do this | You get |
 |---|---|
@@ -650,33 +677,187 @@ publication into a valid one.
 | Pending signed take migrations | `~/.local/state/sia/take-migrations/` |
 | Publication/readiness marker | `~/.local/state/sia/memo.json` (`sync_needed`) |
 | Authoritative mind/rehearsal state, queues, and live snapshots | `~/.local/state/sia/` |
+| Operator SIA configuration | `~/.config/sia/` |
+| Continuity adapter state, staging, and rollback journals | `~/.local/state/sia-continuity/` |
 | Non-authoritative fixed publication slots | `~/.local/state/.sia.sia-stage/`, `~/.local/share/.sia.sia-stage/` |
 | Plugin (bar + cockpit) | `~/.config/omarchy/plugins/khephri.sia/` |
 | Services | `sia-brainstem.service`, `ollama.service` (user) |
+| Continuity schedules | `sia-backup.timer`, `sia-backup-check.timer` (user) |
 | CLI | `~/.local/bin/sia` |
 
 **The corpus is the evidence source of truth.** The PGLite database is a
 rebuildable index over it, but `mind.json`, review schedules, queues, pending
-transactions, the signed ledger/key/head, and config are not derivable from
-that index. Back up all of `~/.local/share/sia`, `~/.local/state/sia`, and
-`~/.config/sia`; `.gbrain` may be omitted only if you accept an index rebuild.
-Do not move, open, or rebuild `.gbrain` directly. The installer creates an
-initially absent database through a durable `managed-install/gbrain-bootstrap`
-intent and resumes only the exact partial state attributable to that intent.
-It initializes off-path, validates through gbrain's supported health probe,
-and publishes the validated tree by generation compare-and-swap through
-`prepared`, `initializing`, `publishing`, `probing`, and `published` phases.
-The probe is authorized before it may mutate the staged store, and the full
-post-probe generation is bound before the intent retires. A valid preexisting database
-is front-door health-checked and used in place. An unattributed partial
-bootstrap workspace or unhealthy existing database is preserved and refused;
-it is never moved, deleted, or claimed automatically. A safe destructive rebuild
-would have to hold SIA's lifecycle, PGLite-owner, and corpus-transaction leases
-through archive, initialization, source registration, sync, and validation.
-This release deliberately provides no shortcut around that boundary. For
-disaster recovery, preserve the suspect tree and either restore a known-good
-database or restore the retained corpus/state/config into a clean installation
-where the database is genuinely absent.
+transactions, the signed ledger/head, and config are not derivable from that
+index. The authoritative continuity roots are exactly
+`~/.local/share/sia`, `~/.local/state/sia`, and `~/.config/sia`. They are not
+an instruction for a generic backup program to traverse those directories
+while the brainstem is writing. Use SIA's freeze interface.
+
+`.gbrain` is deliberately omitted from portable capsules. Do not copy or open
+it directly during recovery. A clean compatible installation first supplies
+the destination substrate. Thaw authenticates and preserves the destination `.gbrain` root,
+its `config.json`, the installed `sia-pack`, the matching managed receipt at
+`managed-install/schema-pack`, and unknown children. Through gbrain's
+supported front door it initializes a fresh `brain.pglite` off-path, probes it,
+and replaces only the live `brain.pglite` projection plus the exact
+`brain.pglite.wal-repair-attempt.json` and `brain.pglite.lock-reap.json`
+sidecars before the full corpus sync. The prior projection and sidecars are
+temporary rollback material, not portable memory, and the whole `.gbrain`
+root is never copied, deleted, or replaced by thaw.
+
+On an ordinary clean install, an absent store is created only through the
+installer's durable `managed-install/gbrain-bootstrap` path; continuity does
+not substitute a copied database for that lifecycle. Outside restore, a valid
+preexisting database is front-door health-checked by the installer; that does
+not make it portable recovery state. A routine capsule also omits installed
+runtime/toolchain generations,
+continuity credentials and working state, lock/stage files, managed-install
+receipts, and `key.hex`. The private signing identity is exported separately
+to offline media; the capsule carries the public identity and signed history
+needed to authenticate it.
+
+### Continuity and clean-machine recovery
+
+The stable brain-native interface is repository-independent:
+
+```bash
+sia continuity roots --json
+sia continuity freeze --output /absolute/private/path/completed-capsule
+sia continuity verify /absolute/private/path/completed-capsule --json
+sia continuity export-identity --output /absolute/offline/sia-identity.key
+```
+
+Freeze takes SIA's owner leases, stages a closed portable tree, verifies the
+copied SIA ledger off-path, and signs the manifest. Verify checks that
+signature, the closed schema, every declared path/digest, the corpus Git head,
+and the ledger head. The roots response contains absolute authority paths,
+structured selection and exclusion rules, and `do_not_walk_live: true`.
+Verification facts and snapshot-bound preparation are distinct schemas, and
+only SIA's core-bound prepared receipt can enter thaw. Storage adapters may
+consume only a completed capsule; they never walk the live roots. Thaw is
+available only through the restore workflow, under the exclusive lifecycle
+and brain-owner leases. The identity export is a separate offline ceremony:
+it refuses non-private or linked parents, never overwrites, and reports no
+private key bytes.
+
+Restic is the first replaceable adapter. Set it up with an off-machine
+repository, an owner-private backend environment file outside every portable
+root and outside `~/.local/state/sia-continuity`, and two separate recovery
+outputs:
+
+```bash
+sia backup setup \
+  --repository 's3:https://storage.example/bucket/sia' \
+  --environment-file "$HOME/.sia-continuity-secrets/backend.env" \
+  --recovery-key-out '/path/on/separate-media/sia-repository.key' \
+  --identity-key-out '/path/on/offline-media/sia-identity.key'
+sia backup status
+# wait for that setup request to finish before continuing
+sia backup now
+sia backup status
+sia backup list
+```
+
+The environment file may contain only the adapter's allowlisted variables.
+Any path-bearing credential value, including `RCLONE_CONFIG` or
+`GOOGLE_APPLICATION_CREDENTIALS`, must also point to a real owner-private file
+outside all SIA authority and continuity roots. This keeps the credentials
+out of the capsule they authorize. Create the environment file and each
+recovery output's owner-controlled parent directory in advance; the output
+files themselves must be absent so setup cannot overwrite an existing secret.
+Setup and repository work are queued. Retain the accepted request id, wait for
+that exact operation to reach a terminal status, and only then start the next
+step; command acceptance is not operation success.
+
+Setup enables a persistent hourly job. Each run freezes and locally verifies
+a completed capsule, then uploads it. A weekly job runs `restic check`,
+restores the newest SIA snapshot into a private off-path stage, and verifies
+that exact capsule again. Manual `sia backup now` performs the upload and
+round-trip verification immediately. A newer scheduled upload remains marked
+as awaiting verification and does not replace the last known verified recovery
+copy. SIA never automatically
+applies a snapshot to the live brain, forgets, prunes, or deletes repository
+snapshots. The scheduled restore is verification into a private off-path stage
+only. A locally stored repository is useful for a drill, but it does not
+protect against loss of that disk. Configure an actual off-machine destination
+before calling the brain protected. An authentic capsule classified
+`recovery-only` remains available for recovery, but it is not a ready verified
+copy and must not be shown green.
+
+On a clean compatible SIA installation, connect with the separately retained
+repository key, prepare a snapshot off-path, and inspect the published status:
+
+```bash
+sia backup connect \
+  --repository 's3:https://storage.example/bucket/sia' \
+  --environment-file "$HOME/.sia-continuity-secrets/backend.env" \
+  --recovery-key-file '/path/on/separate-media/sia-repository.key'
+sia backup status
+# wait for that connection request to finish before continuing
+sia backup list
+sia restore prepare FULL_SOURCE_SNAPSHOT_ID
+sia restore status
+```
+
+Wait for connection to finish before listing. A clean target has a fresh local
+identity, so `latest` intentionally will not select the source brain. Choose
+the full intended source snapshot id from `sia backup list`; do not guess from
+a shortened id. Then wait for status to publish the prepared id, exact snapshot
+id, and bound current target ledger head before applying. Apply itself returns
+an acceptance receipt first; only an exactly correlated terminal status with
+readiness and SIA-ledger verification is success.
+
+Apply is a ceremony, not a one-click overwrite. Send exactly one bounded JSON
+line whose closed schema names the literal `RESTORE`, the exact prepared
+snapshot identifier, the full current **target** ledger head, and explicit
+receipt re-adoption:
+
+```bash
+printf '%s\n' \
+  '{"schema_version":1,"phrase":"RESTORE","snapshot_id":"EXACT_SNAPSHOT_ID","ledger_head":"FULL_CURRENT_TARGET_LEDGER_HEAD","corpus_receipt_re_adopt":true}' \
+  | sia restore apply PREPARED_ID --confirm-stdin \
+      --identity-key-file '/path/on/offline-media/sia-identity.key'
+```
+
+Omit `--identity-key-file` only when preparation says the installed identity
+already matches. Thaw preserves the target corpus directory inode and exact
+corpus-v2 receipt bytes, then records a signed adoption transition for the
+restored contents. Core commit requires projection-only publication through
+gbrain, a full corpus sync, `sia ready`, and SIA signed-ledger verification.
+The stable supervisor then restarts the resident brainstem and re-observes its
+exact PID, readiness, signed ledger, and adoption row. Only that fresh
+post-restart proof may publish a terminal verified/green restore. Optional
+external subsystem chains do not gate recovery.
+
+Power loss or a crash can leave one or more distinct recovery artifacts under
+`~/.local/state/sia-continuity/`:
+
+- `restore-in-progress.json` is the core thaw barrier and binds the rollback
+  journal/capsule after live adoption has reached that phase;
+- `restore-supervisor.json` is the stable launcher's durable apply/restart
+  intent and may exist even when core thaw never started;
+- `restore-runtime-mask` records the restore-owned brainstem runtime gate.
+
+Any one of them is recovery debt, so ordinary SIA operations refuse. Do not
+delete any of those files, the corpus receipt, rollback journal/capsule, or
+retained operation material. Run `sia restore recover`; the stable launcher
+reacquires the exclusive leases and reconciles the exact supervisor/runtime
+phase as well as any core barrier. Depending on the authenticated phase, it
+finishes committed cleanup, restores the pre-restore generation, or proves
+that a never-started apply left the coherent target unchanged. It restarts the
+brainstem only after core debt is resolved, then requires the same fresh
+post-restart proof before a terminal verified result. Follow with `sia ready`,
+`sia ledger`, and `sia restore status`.
+
+The CLI is canonical. The cockpit is a thin view/controller over the same
+request, typed-confirmation, and correlated-status contract; it cannot weaken
+the restore ceremony. The acceptance drill starts from a clean compatible SIA
+installation, restores only from the external repository and separately kept
+recovery secrets, preserves that destination's corpus receipt and `.gbrain`
+substrate, reaches post-restart `sia ready` with the signed adoption present,
+and scavenges no file from the failed computer. The complete capsule schema,
+threat boundary, and clean-machine acceptance test are in
+[Continuity](CONTINUITY.md).
 
 ## 7. Agents everywhere
 
@@ -863,23 +1044,28 @@ Each newline-delimited request and captured CLI result is capped at 262144
 bytes, batches at eight items, and a serialized response at 1048576 bytes;
 oversize input/output refuses instead of being parsed or returned partially.
 
-### Community-directory publication
+### Omarchy marketplace publication
 
 The public repository contains the required root `manifest.json`, README,
-license, preview asset, and installation/removal documentation. Its intended
-marketplace identity is `khephri.sia` in category `System`, with `AI`, `Bar`,
-and `Quickshell` as directory tags. This is submission readiness, not a claim
-that SIA is already listed. Follow the
-[official publishing guide](https://plugins.omarchy.org/publish.html), validate
-the exact public commit with `omarchy plugin validate .`, and confirm every
-submission checklist statement—including rights to the plugin and preview
-assets—before creating the issue. Automated validation checks the submitted
-commit's manifest/Quickshell compatibility. Neither that result nor a listing
-is a security review; installed community plugins run unsandboxed as the user.
+license, preview asset, and installation/removal documentation. SIA is already
+listed as [`khephri.sia`](https://plugins.omarchy.org/plugin.html?id=khephri.sia)
+in category `System`. The listing intentionally says **Manual setup**: the
+standard plugin command clones and validates the QML checkout but cannot run
+SIA's resident-runtime installer. Automated validation checks the exact public
+commit's manifest and Quickshell compatibility. Neither that result nor a
+listing is a security review; installed community plugins run unsandboxed as
+the user.
 
-Marketplace `omarchy plugin add … --enable` validates, clones, and enables the
-QML plugin only. It does not run SIA's installer. Run `./install.sh` from the
-cloned plugin directory afterward, and run it again after
+Validate every release with `omarchy plugin validate .`, push the exact tested
+commit, then use the marketplace action for verifying and publishing a newer
+upstream commit. Do not submit SIA again as a new plugin. Follow the
+[official publishing guide](https://plugins.omarchy.org/publish.html) and
+confirm every update checklist statement—including ownership of the plugin and
+preview assets—before creating the verification issue.
+
+Marketplace `omarchy plugin add …` validates and clones the QML plugin only.
+It does not run SIA's installer. Decline immediate enablement, run
+`~/.config/omarchy/plugins/khephri.sia/install.sh`, and run it again after
 `omarchy plugin update khephri.sia` so the resident runtime and its receipt
 match the plugin release. For complete removal, run `./uninstall.sh` while the
 plugin directory still exists. On a successful uninstall, SIA disables the QML

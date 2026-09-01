@@ -305,6 +305,12 @@ def run_quick(max_q=8, day=None):
 
 
 def run_legacy():
+    """Compute and publish one legacy report in a single corpus generation."""
+    with sialib.corpus_owner():
+        return _run_legacy_owned()
+
+
+def _run_legacy_owned():
     present, absent = build_questions()
     graph = sialib.read_json(sialib.GRAPH_PATH, None)
     mind = siamind.load_mind()
@@ -395,8 +401,8 @@ def run_legacy():
     report = "\n".join(lines)
     out = os.path.expanduser(
         f"~/.local/share/sia/research/bench-{sialib.today()}.md")
-    with open(out, "w") as f:
-        f.write(report + "\n")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    _atomic_text(out, report + "\n")
     print(report)
     print(f"\nsaved → {out}")
     return report
@@ -2363,10 +2369,10 @@ def run(chain_names=None):
         _require_usable_bundle(bundle)
         reports = evaluate_retrieval(bundle, corpus=CORPUS)
         report = render_retrieval_report(bundle, reports)
-    out_dir = os.path.expanduser("~/.local/share/sia/research")
-    os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, f"ledger-bench-{sialib.today()}.md")
-    _atomic_text(out, report + "\n")
+        out_dir = os.path.expanduser("~/.local/share/sia/research")
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f"ledger-bench-{sialib.today()}.md")
+        _atomic_text(out, report + "\n")
     print(report)
     print(f"\nsaved → {out}")
     return report

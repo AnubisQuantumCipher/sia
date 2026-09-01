@@ -2493,9 +2493,30 @@ class LegacySlugTripwire(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             output = os.path.join(root, "tripwire.md")
             stdout = io.StringIO()
+            lease = {"held": False}
+
+            @contextlib.contextmanager
+            def corpus_owner():
+                self.assertFalse(lease["held"])
+                lease["held"] = True
+                try:
+                    yield
+                finally:
+                    lease["held"] = False
+
+            real_atomic = siabench._atomic_text
+
+            def publish(path, content, mode=0o644):
+                self.assertTrue(lease["held"])
+                return real_atomic(path, content, mode=mode)
+
             with mock.patch.object(siabench, "CORPUS", root), \
                     mock.patch.object(siabench, "_engine",
                                       side_effect=self._retrieval_row), \
+                    mock.patch.object(siabench.sialib, "corpus_owner",
+                                      side_effect=corpus_owner), \
+                    mock.patch.object(siabench, "_atomic_text",
+                                      side_effect=publish), \
                     mock.patch.object(siabench.sialib, "read_json",
                                       return_value={}), \
                     mock.patch.object(siabench.siamind, "load_mind",
@@ -2505,6 +2526,7 @@ class LegacySlugTripwire(unittest.TestCase):
                                       return_value=output), \
                     contextlib.redirect_stdout(stdout):
                 report = siabench.run_legacy()
+            self.assertFalse(lease["held"])
         self.assertIn("legacy slug-retrieval drift tripwire", report)
         self.assertIn("slug match@5", report)
         self.assertIn("Neither set is answer-bearing ground truth", report)

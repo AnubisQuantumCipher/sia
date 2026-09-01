@@ -9,7 +9,7 @@ brain, verifies the signed chains, thinks, and exports widget snapshots.
 Dreams nightly at 03:33 local.
 """
 
-import contextlib, datetime, fcntl, os, signal, stat, sys, time
+import contextlib, datetime, fcntl, os, signal, socket, stat, sys, time
 
 
 @contextlib.contextmanager
@@ -56,6 +56,19 @@ DREAM_RETRY_SEC = max(
     1, int(os.environ.get("SIA_DREAM_RETRY_SEC", "3600")))
 
 _stop = False
+
+
+def _restore_barrier_present():
+    barrier = os.path.join(
+        sialib.HOME, ".local", "state", "sia-continuity",
+        "restore-in-progress.json")
+    if not os.path.lexists(barrier):
+        return False
+    info = os.lstat(barrier)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o077:
+        raise RuntimeError("restore barrier is unsafe")
+    return True
 
 def _on_term(signum, frame):
     global _stop
@@ -142,8 +155,32 @@ def _durable_dream_day(fallback):
         sialib.log(f"dream schedule refresh refused: {exc!r}")
         return fallback
 
+
+def _systemd_ready():
+    """Complete Type=notify admission after all durable startup work."""
+    endpoint = os.environ.pop("NOTIFY_SOCKET", "")
+    if not endpoint:
+        # Direct foreground/test invocations are not systemd services.
+        return
+    if "\x00" in endpoint or not (endpoint.startswith("/")
+                                    or endpoint.startswith("@")):
+        raise RuntimeError("systemd notification socket is invalid")
+    address = "\x00" + endpoint[1:] if endpoint.startswith("@") else endpoint
+    payload = b"READY=1\nSTATUS=SIA brainstem ready"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notifier:
+        sent = notifier.sendto(payload, address)
+    if sent != len(payload):
+        raise RuntimeError("systemd readiness notification was incomplete")
+
 def main():
     try:
+        if _restore_barrier_present():
+            sialib.log(
+                "sia-brainstem REFUSED: interrupted restore barrier requires "
+                "recovery")
+            # A clean stop avoids Restart=on-failure looping behind a durable
+            # barrier. The operator-visible continuity status remains blocked.
+            return 0
         with sialib.brainstem_owner():
             return _run_owned()
     except sialib.OwnerBusy as exc:
@@ -171,6 +208,7 @@ def _run_owned():
             raise RuntimeError(f"ledger recovery refused: {recovery_errors}")
         sialib.durable_ledger_append(
             "BOOT:brainstem", sialib.VERSION, f"pulse={PULSE_SEC}s")
+        _systemd_ready()
     except Exception as exc:
         sialib.log(f"brainstem startup REFUSED: {exc!r}")
         _publish_failure(seq, exc)

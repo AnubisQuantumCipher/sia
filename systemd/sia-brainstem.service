@@ -3,7 +3,11 @@ Description=SIA brainstem — the Omarchy Brain's resident daemon
 Documentation=https://github.com/AnubisQuantumCipher/sia
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+# JACKAL status=exact, parsed=2*60, exact=120. Exact rational arithmetic
+# outside the Lean certificate chain (NOT formal-bounded).
+TimeoutStartSec=120
 ExecStart=/usr/bin/python3 %h/.local/share/sia/bin/sia-brainstem
 Restart=on-failure
 RestartSec=10

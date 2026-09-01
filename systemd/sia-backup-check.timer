@@ -1,0 +1,11 @@
+[Unit]
+Description=SIA continuity — automatic repository integrity check
+Documentation=https://github.com/AnubisQuantumCipher/sia
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+Unit=sia-backup-check.service
+
+[Install]
+WantedBy=timers.target

@@ -30,6 +30,162 @@ function validStaleAfterSec(value, fallback) {
   return staleAfterDefaultSec()
 }
 
+// ------------------------------------------------------------- continuity
+
+// The backup worker publishes independently from the brainstem so recovery
+// progress remains visible while SIA itself is quiesced.  Keep this validator
+// shared by the bar and cockpit: neither surface may turn malformed or
+// mid-replace bytes into a reassuring recovery state.
+var CONTINUITY_STATES = [
+  "unconfigured", "queued", "capturing", "uploading", "checking",
+  "preparing", "prepared", "restoring", "verified", "recovery-only",
+  "failed", "blocked"
+]
+var CONTINUITY_OPERATION_PHASES = [
+  "accepted", "running", "verified", "failed", "blocked"
+]
+
+function isPlainRecord(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function optionalString(value) {
+  return value === undefined || value === null || typeof value === "string"
+}
+
+function validContinuityLatest(value) {
+  if (value === undefined || value === null) return true
+  return isPlainRecord(value)
+    && typeof value.snapshot_id === "string"
+    && typeof value.created_at === "string"
+    && typeof value.verified === "boolean"
+    && typeof value.readiness === "string"
+    && typeof value.profile === "string"
+    && typeof value.identity_matches === "boolean"
+}
+
+function continuityLatestReady(value) {
+  return isPlainRecord(value)
+    && value.snapshot_id !== ""
+    && value.created_at !== ""
+    && value.profile !== ""
+    && value.verified === true
+    && value.readiness === "ready"
+    && value.identity_matches === true
+}
+
+function validContinuityPrepared(value) {
+  if (value === undefined || value === null) return true
+  return isPlainRecord(value)
+    && typeof value.prepared_id === "string"
+    && typeof value.snapshot_id === "string"
+    && typeof value.created_at === "string"
+    && typeof value.readiness === "string"
+    && typeof value.profile === "string"
+    && typeof value.ledger_head === "string"
+    && typeof value.identity_matches === "boolean"
+}
+
+function validContinuityOperation(value) {
+  if (value === undefined || value === null) return true
+  return isPlainRecord(value)
+    && typeof value.request_id === "string" && value.request_id !== ""
+    && typeof value.kind === "string" && value.kind !== ""
+    && typeof value.prepared_id === "string"
+    && typeof value.phase === "string"
+    && CONTINUITY_OPERATION_PHASES.indexOf(value.phase) !== -1
+    && typeof value.ready === "boolean"
+    && typeof value.sia_ledger_verified === "boolean"
+    && (value.kind !== "restore-apply" || value.prepared_id !== "")
+}
+
+function validContinuityStatus(value) {
+  return isPlainRecord(value)
+    && value.schema_version === 2
+    && typeof value.state === "string"
+    && CONTINUITY_STATES.indexOf(value.state) !== -1
+    && optionalString(value.detail)
+    && optionalString(value.repository_display)
+    && validContinuityLatest(value.latest)
+    && validContinuityPrepared(value.prepared)
+    && validContinuityOperation(value.operation)
+    && (value.state !== "verified" || continuityLatestReady(value.latest))
+    && (value.state !== "prepared"
+        || (isPlainRecord(value.prepared)
+            && value.prepared.prepared_id !== ""
+            && value.prepared.snapshot_id !== ""
+            && value.prepared.ledger_head !== ""))
+    && (value.state !== "restoring"
+        || (isPlainRecord(value.operation)
+            && (value.operation.kind === "restore-apply"
+                || value.operation.kind === "restore-recover")
+            && (value.operation.phase === "accepted"
+                || value.operation.phase === "running")))
+}
+
+function continuityStateLabel(state) {
+  if (state === "unconfigured") return "NOT SET UP"
+  if (state === "queued") return "COPY QUEUED"
+  if (state === "capturing" || state === "uploading") return "COPYING"
+  if (state === "checking") return "VERIFYING COPY"
+  if (state === "preparing") return "PREPARING RESTORE"
+  if (state === "prepared") return "RESTORE PREPARED"
+  if (state === "restoring") return "RESTORING"
+  if (state === "verified") return "RECOVERY READY"
+  if (state === "recovery-only") return "NEEDS ATTENTION"
+  if (state === "failed") return "FAILED"
+  if (state === "blocked") return "NEEDS ATTENTION"
+  return "STATUS UNAVAILABLE"
+}
+
+function continuityTone(state) {
+  if (state === "verified") return "good"
+  if (state === "failed" || state === "blocked") return "danger"
+  if (continuityBusy(state)) return "busy"
+  return "attention"
+}
+
+function continuityBusy(state) {
+  return ["queued", "capturing", "uploading", "checking", "preparing",
+          "restoring"].indexOf(state) !== -1
+}
+
+function continuityCanBackUp(status) {
+  if (!validContinuityStatus(status)) return false
+  return ["verified", "recovery-only", "failed", "blocked"]
+    .indexOf(status.state) !== -1
+}
+
+function continuityCanCheck(status) {
+  return continuityCanBackUp(status)
+}
+
+function continuityCanPrepare(status) {
+  if (!validContinuityStatus(status) || continuityBusy(status.state))
+    return false
+  var latest = status.latest
+  return isPlainRecord(latest) && latest.verified === true
+    && latest.snapshot_id !== ""
+}
+
+function continuityCanApply(status) {
+  if (!validContinuityStatus(status) || status.state !== "prepared")
+    return false
+  var prepared = status.prepared
+  return isPlainRecord(prepared) && prepared.prepared_id !== ""
+    && prepared.snapshot_id !== "" && prepared.ledger_head !== ""
+}
+
+function continuityBarMark(status) {
+  if (!validContinuityStatus(status)) return "?"
+  if (status.state === "failed" || status.state === "blocked") return "!"
+  if (continuityBusy(status.state)) return "↥"
+  if (status.state === "unconfigured" || status.state === "recovery-only")
+    return "◇"
+  if (status.state === "prepared") return "◆"
+  return ""
+}
+
 // ---------------------------------------------------------------- glyphs
 
 function brainGlyph()   { return String.fromCodePoint(0xF09D1) }  // nf-md-brain

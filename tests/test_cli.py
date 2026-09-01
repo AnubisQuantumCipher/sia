@@ -882,11 +882,71 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(brainstem.sialib, "load_memo",
                                   return_value={"pulse_seq": "broken"}), \
                 mock.patch.object(brainstem, "_publish_failure") as publish, \
+                mock.patch.object(brainstem, "_systemd_ready") as ready, \
                 mock.patch.object(brainstem.sialib,
                                   "recover_ledger_transitions") as recover:
             self.assertEqual(brainstem._run_owned(), 1)
         recover.assert_not_called()
+        ready.assert_not_called()
         publish.assert_called_once()
+
+    def test_daemon_notifies_systemd_only_after_boot_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            endpoint = os.path.join(directory, "notify.sock")
+            trace = []
+            notifier = mock.MagicMock()
+            notifier.__enter__.return_value = notifier
+            payload = b"READY=1\nSTATUS=SIA brainstem ready"
+            owner = {"held": False}
+
+            @contextlib.contextmanager
+            def brainstem_owner():
+                owner["held"] = True
+                try:
+                    yield
+                finally:
+                    owner["held"] = False
+
+            def append(action, *_args):
+                trace.append(action)
+
+            def sendto(message, address):
+                self.assertTrue(owner["held"])
+                trace.append("READY")
+                self.assertEqual((message, address), (payload, endpoint))
+                return len(message)
+
+            notifier.sendto.side_effect = sendto
+            prior_stop = brainstem._stop
+            brainstem._stop = True
+            try:
+                with mock.patch.dict(
+                        os.environ, {"NOTIFY_SOCKET": endpoint}), \
+                        mock.patch.object(
+                            brainstem, "_restore_barrier_present",
+                            return_value=False), \
+                        mock.patch.object(
+                            brainstem.sialib, "brainstem_owner",
+                            side_effect=brainstem_owner), \
+                        mock.patch.object(brainstem.signal, "signal"), \
+                        mock.patch.object(brainstem.sialib, "ensure_dirs"), \
+                        mock.patch.object(brainstem.sialib, "log"), \
+                        mock.patch.object(
+                            brainstem.sialib, "load_memo",
+                            return_value={"pulse_seq": 0}), \
+                        mock.patch.object(
+                            brainstem.sialib, "recover_ledger_transitions",
+                            return_value=(False, [])), \
+                        mock.patch.object(
+                            brainstem.sialib, "durable_ledger_append",
+                            side_effect=append), \
+                        mock.patch.object(brainstem.socket, "socket",
+                                          return_value=notifier):
+                    self.assertEqual(brainstem.main(), 0)
+            finally:
+                brainstem._stop = prior_stop
+            self.assertEqual(
+                trace, ["BOOT:brainstem", "READY", "HALT:brainstem"])
 
     def test_manual_pulse_refuses_corrupt_sequence_without_mutation(self):
         output = io.StringIO()

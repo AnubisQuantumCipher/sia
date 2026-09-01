@@ -254,10 +254,13 @@ class PgliteOwnership(unittest.TestCase):
                         with self.assertRaises(BlockingIOError):
                             fcntl.flock(contender, fcntl.LOCK_EX
                                        | fcntl.LOCK_NB)
-                with sialib.brainstem_owner():
-                    with self.assertRaises(sialib.OwnerBusy):
-                        with sialib.brainstem_owner():
-                            pass
+                with sialib.brainstem_owner() as owner_fd:
+                    with sialib.brainstem_owner() as nested_fd:
+                        self.assertEqual(nested_fd, owner_fd)
+                    with open(sialib.BRAINSTEM_OWNER_LOCK, "a") as contender:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(contender, fcntl.LOCK_EX
+                                       | fcntl.LOCK_NB)
             finally:
                 (sialib.STATE, sialib.CORPUS_OWNER_LOCK,
                  sialib.BRAINSTEM_OWNER_LOCK) = old

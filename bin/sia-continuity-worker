@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Compatibility trampoline into SIA's generation-pinning stable CLI."""
+
+import os
+import sys
+
+
+def main(argv):
+    if len(argv) != 2 or not os.path.isabs(argv[1]):
+        print("usage: sia-continuity-worker ABSOLUTE_REQUEST", file=sys.stderr)
+        return 2
+    stable = os.path.join(os.path.abspath(os.path.expanduser("~")),
+                          ".local", "bin", "sia")
+    try:
+        os.execv(stable, [stable, "_continuity-worker", argv[1]])
+    except OSError as exc:
+        print(f"continuity worker refused: stable SIA launcher unavailable: "
+              f"{exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
