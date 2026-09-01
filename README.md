@@ -6,8 +6,9 @@ beside Hu and Heka.*
 **Give your machine a memory.** SIA is a persistent, associative,
 self-consolidating memory system for your Linux desktop. A resident daemon
 tails the evidence your machine already produces — package installs,
-journal errors, git commits, agent sessions, notifications, and any log
-you point it at — into a git-versioned markdown corpus, indexed into a
+journal errors, git commits, optional Git-backed Obsidian vault records,
+agent sessions, notifications, and any log you point it at — into a
+git-versioned markdown corpus, indexed into a
 typed knowledge graph with **local** embeddings. It retains, links, and
 retrieves admitted memories, and runs a deterministic nightly
 "dream" consolidation cycle. It helps you propose and commit falsifiable
@@ -235,11 +236,40 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.4.1 optional Obsidian note-vault records
+
+SIA can recognize an existing local Git-backed Obsidian note vault as an
+optional organ. It does not install Obsidian, initialize the vault, or make
+commits. At brainstem start it activates only when `~/Obsidian/.git` is a real
+directory, or when `OBSIDIAN_VAULT_PATH` names another absolute vault path; an
+absent vault stays silent.
+
+The organ tails bounded `HEAD` reflog commit rows, then resolves complete Git
+commit identities through a config-isolated `/usr/bin/git` metadata view. It
+records the redacted/clipped actual commit subject plus aggregate Markdown
+add/change/delete counts as Git-record `evidence`. It never opens Markdown
+note bodies, frontmatter, or wikilinks. `.obsidian/` is excluded, and Markdown
+pathnames are discarded before event construction. Git hooks, notes,
+signatures, replacement objects, external diffs/text conversion, prompts, and
+lazy fetching are disabled. Worktree-style `.git` files, symlinked vault paths,
+invalid overrides, and failed or malformed Git reads do not advance the source
+cursor.
+
+Installer first light performs bounded history backfill. A vault first seen by
+an ordinary brainstem start establishes a baseline and emits only later commit
+rows. `evidence` here attests that Git recorded the metadata; it does not make
+the commit subject true.
+
+This feature was proposed by
+[@webdevtodayjason](https://github.com/webdevtodayjason) in
+[issue #1](https://github.com/AnubisQuantumCipher/sia/issues/1).
+
 ### v1.4.0 brain-native continuity
 
 v1.4.0 gives the Omarchy Brain a storage-independent continuity contract.
-In this repository, **SIA means only the Omarchy Brain**, not a similarly
-named storage network or repository backend.
+In this repository, **SIA means only the Omarchy Brain**, not the Sia
+Foundation's similarly named `sia.tech` storage network or a repository
+backend.
 `sia continuity freeze` produces a signed, closed portable capsule from the
 authoritative share, state, and config roots; `roots --json` publishes their
 versioned, structured policy with an explicit prohibition on walking them
@@ -827,6 +857,39 @@ Point it at your own programs in `~/.config/sia/config.json`:
       "match": "ERROR|FATAL", "kind": "error", "tags": ["failed"] } ] }
 ```
 
+A real Git repository at `~/Obsidian` needs no configuration; discovery occurs
+when the brainstem starts. For a different vault, persist its absolute path in
+the user-service environment and export the same value before rerunning the
+installer, so installer first light and the resident service inspect the same
+vault:
+
+```bash
+OBSIDIAN_VAULT_PATH=/absolute/path/to/vault
+export OBSIDIAN_VAULT_PATH
+install -d -m 0700 "$HOME/.config/environment.d"
+printf 'OBSIDIAN_VAULT_PATH=%s\n' "$OBSIDIAN_VAULT_PATH" \
+  > "$HOME/.config/environment.d/90-sia-obsidian.conf"
+chmod 0600 "$HOME/.config/environment.d/90-sia-obsidian.conf"
+systemctl --user daemon-reload
+systemctl --user set-environment \
+  OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH"
+~/.config/omarchy/plugins/khephri.sia/install.sh
+sia status
+```
+
+The environment file covers later user-manager starts; `set-environment`
+updates the current manager, and the shell export keeps installer first light
+on the same path. Do not create a `sia-brainstem.service` drop-in: SIA
+intentionally refuses foreign drop-ins on its managed service. A blank,
+relative, invalid, or over-bound override disables the organ and reports
+`obsidian-vault-environment-invalid` rather than falling back silently.
+SIA continuity preserves Obsidian commit records already admitted to the brain,
+but it does not back up the external note vault or this `environment.d` file.
+Back up the vault independently and recreate the path setting on a restored
+machine when its location is non-default.
+If you installed the issue's `sia-obsidian-ingest` sidecar, retire its timer
+and custom-sense entry first so the same Git activity is not reported twice.
+
 Skill discovery roots are configurable too. Relative entries are interpreted
 beneath your home directory; SIA admits only real direct child skill
 directories with a real directly contained `SKILL.md`. Symlinked child
@@ -940,7 +1003,7 @@ staging data and must never be manually published or trusted.
 
 ## What this is (and is not)
 
-A local, git-backed, origin-labeled memory that refuses to pretend a
+A local, git-versioned, origin-labeled memory that refuses to pretend a
 language model is a witness. **It is not a brain** — it is a disciplined
 historian with a small associative index and a cockpit. That is better
 than a brain: a brain you cannot audit, a historian you can. The
@@ -971,6 +1034,9 @@ whitepaper's rename test governs them.
 ## Credits
 
 Built on [gbrain](https://github.com/garrytan/gbrain) by Garry Tan.
+The optional Git-backed Obsidian organ was proposed by
+[@webdevtodayjason](https://github.com/webdevtodayjason) in
+[issue #1](https://github.com/AnubisQuantumCipher/sia/issues/1).
 Cognitive mechanisms trace to Anderson (ACT-R), Collins & Loftus, Nader,
 Lisman & Grace, McGaugh, McClelland/McNaughton/O'Reilly, Dehaene, and to
 HippoRAG, Generative Agents, Zep, and Letta — citations in the

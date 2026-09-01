@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.1 — 2026-09-01
+
+- **Optional Git-backed Obsidian organ** — a real vault at `~/Obsidian`, or at
+  an absolute `OBSIDIAN_VAULT_PATH`, now contributes bounded commit records.
+  The reflog supplies complete commit identities only; a config-isolated Git
+  object view commit-peels each identity and records the actual commit subject
+  and Markdown add/change/delete counts while excluding `.obsidian/` and
+  discarding filenames. Missing vaults,
+  worktree pointer files, and symlinked paths remain inactive rather than
+  manufacturing an empty catalog.
+
+- **Records, not note bodies** — the Git child disables hooks, notes,
+  signatures, replacement objects, fsmonitor, external diffs, text conversion,
+  rename detection, paging, prompts, lazy fetching, and external
+  attribute/order files. It does not request Markdown blobs, frontmatter, or
+  wikilinks. Actual commit subjects cross the normal redaction boundary;
+  malformed, failed, timed-out, or over-bound metadata retains the prior
+  cursor. Existing `sia-obsidian-ingest` sidecar users should retire its timer
+  and custom-sense entry to avoid duplicate observations. This is a local
+  Obsidian note-application integration, not a Sia Foundation or `sia.tech`
+  storage integration.
+
+- **Contributor credit** — the optional organ implements the proposal from
+  [@webdevtodayjason](https://github.com/webdevtodayjason) in
+  [issue #1](https://github.com/AnubisQuantumCipher/sia/issues/1).
+
 ## 1.4.0 — 2026-09-01
 
 - **Brain-native portable capsules** — SIA now owns a storage-independent

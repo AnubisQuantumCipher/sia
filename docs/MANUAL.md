@@ -43,6 +43,67 @@ reads only its configured `field`; a physical record missing that field
 advances only through a signed, named refusal and never falls back to the raw
 object or unrelated fields.
 
+**Optional Obsidian note-vault organ.** This observes the local Obsidian
+note-taking application; it has no relation to the Sia Foundation, `sia.tech`,
+or its storage network. SIA does not install Obsidian, initialize Git,
+configure synchronization, or commit notes. Uncommitted working-tree changes
+are invisible.
+
+A real Git repository at `~/Obsidian` activates a records-only sense at
+brainstem start. It tails a bounded `HEAD` reflog, admits complete commit
+identities through a config-isolated Git object view, resolves the actual
+commit subject, and records aggregate Markdown path counts (added, changed,
+deleted). It does not open note bodies, frontmatter, or wikilinks, and excludes
+`.obsidian/` paths. Markdown filenames are discarded before event
+construction. Commit subjects are admitted records, so keep secrets out of
+them; SIA still applies its normal secret-shape redaction and control-character
+boundary. The `evidence` origin attests that Git recorded the metadata, not
+that prose in the subject or notes is true.
+
+For another location, persist an absolute path in the systemd user-service
+environment and export the same value before rerunning the installer:
+
+```bash
+OBSIDIAN_VAULT_PATH=/absolute/path/to/vault
+export OBSIDIAN_VAULT_PATH
+install -d -m 0700 "$HOME/.config/environment.d"
+printf 'OBSIDIAN_VAULT_PATH=%s\n' "$OBSIDIAN_VAULT_PATH" \
+  > "$HOME/.config/environment.d/90-sia-obsidian.conf"
+chmod 0600 "$HOME/.config/environment.d/90-sia-obsidian.conf"
+systemctl --user daemon-reload
+systemctl --user set-environment \
+  OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH"
+~/.config/omarchy/plugins/khephri.sia/install.sh
+sia status
+```
+
+The file covers later user-manager starts, `set-environment` updates the
+current manager, and the export keeps installer first light on the same path.
+Do not add a service drop-in, because managed-unit attestation rejects foreign
+drop-ins. A present but blank, relative, invalid, or over-bound override
+disables the organ and reaches SOURCE HEALTH instead of falling back. A missing
+vault, worktree `.git` pointer file, symlinked path, or missing `HEAD` reflog is
+silent—absence is not rendered as an empty vault. Installer first light
+performs bounded backfill; ordinary first observation baselines existing
+history and reports only later commits.
+
+The continuity capsule preserves Obsidian commit records that have already
+entered SIA's corpus and ledger. It deliberately does not absorb the external
+note vault or `~/.config/environment.d/90-sia-obsidian.conf`; protect the vault
+with its own backup and recreate a non-default path setting on the restored
+machine.
+
+To disable the organ even when a vault exists, merge this into
+`~/.config/sia/config.json`, then restart the brainstem:
+
+```json
+{ "senses": { "disable": ["obsidian"] } }
+```
+
+If you installed the issue's `sia-obsidian-ingest` sidecar, retire its timer
+and disable or remove its custom-sense entry before activating this first-party
+organ, or both sources may report the same Git activity.
+
 ---
 
 ## 1. Sixty-second start
@@ -1164,7 +1225,17 @@ absence boundary instead of silently claiming equivalent retrieval.
   a separately bounded full-row pass. A valid prefix can settle; a malformed
   or over-bound row advances only after its exact cursor is re-queried and its
   named refusal is durable. Churn that defeats that identity check, a partial
-  row, timeout, or failed producer retains the prior journal cursor. A custom
+  row, timeout, or failed producer retains the prior journal cursor. The
+  optional Obsidian sense accepts complete commit identities from a stable
+  no-follow `HEAD` reflog. It exposes a held no-follow object database to a
+  private minimal Git control directory, so vault-local configuration and its
+  includes are not read. Commit-type peeling rejects a reflog row that names a
+  blob. The fixed, bounded metadata read disables hooks, notes, signatures,
+  external diffs, text conversion, replacement objects, prompts, and lazy
+  fetching. Only the actual commit subject and aggregate Markdown
+  add/change/delete counts persist; pathnames are discarded, `.obsidian/` is
+  excluded, and note blobs are not requested. A Git error or
+  malformed/over-bound result retains the prior cursor. A custom
   sense reads the exact file/field configured by
   the operator, so never point one at a secret or content store. The separate
   SIA ledger keeper necessarily reads SIA's own

@@ -13,7 +13,7 @@ Honesty rules (house style):
     custom senses read exactly the operator-configured record path/field.
 """
 
-import bisect, collections, contextlib, contextvars, copy, ctypes, fcntl, functools, html, json, math, os, re, selectors, signal, sqlite3, stat, subprocess, sys, time, hashlib, datetime, glob, unicodedata, uuid
+import bisect, collections, contextlib, contextvars, copy, ctypes, errno, fcntl, functools, html, json, math, os, re, selectors, signal, sqlite3, stat, subprocess, sys, tempfile, time, hashlib, datetime, glob, unicodedata, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import siamind
@@ -153,6 +153,28 @@ def load_config():
 
 CONFIG = load_config()
 
+
+def _configured_obsidian_vault():
+    """Absolute vault root for the optional Obsidian organ.
+
+    An absent environment override selects ``~/Obsidian``.  A present
+    override must already be an absolute, bounded UTF-8 path.  Invalid
+    overrides disable the organ instead of silently falling back to a
+    different vault.
+    """
+    if "OBSIDIAN_VAULT_PATH" not in os.environ:
+        return os.path.join(HOME, "Obsidian")
+    value = os.environ.get("OBSIDIAN_VAULT_PATH")
+    if not _strict_config_string(
+            value, nonempty=True, limit=MAX_CONFIG_PATH_CHARS) \
+            or not os.path.isabs(value):
+        _record_config_error("obsidian-vault-environment-invalid")
+        return None
+    return os.path.normpath(value)
+
+
+OBSIDIAN_VAULT = _configured_obsidian_vault()
+
 # organs every box has
 BASE_ORGANS = {
     "sia":         ("SIA ledger",  "SIA's signed lifecycle transitions"),
@@ -181,6 +203,11 @@ OPTIONAL_ORGANS = {
                   ".codex/sessions"),
     "skills":    ("Skills",    "agent skills installed on this box",
                   ".claude/skills"),
+    # Records, not note bodies: the vault's git history only.  ``None`` is a
+    # deliberate sentinel; activation uses the no-follow directory gate once
+    # that helper has been defined below.
+    "obsidian":  ("Obsidian",  "git-backed Obsidian vault (records, not notes)",
+                  None),
 }
 
 
@@ -209,7 +236,20 @@ def _build_organs():
     organs = dict(BASE_ORGANS)
     disabled = _configured_disabled_organs()
     for key, (name, desc, probe) in OPTIONAL_ORGANS.items():
-        if key not in disabled and os.path.exists(os.path.join(HOME, probe)):
+        if key in disabled:
+            continue
+        if key == "obsidian":
+            try:
+                active = (OBSIDIAN_VAULT is not None
+                          and _nofollow_source_directory(os.path.join(
+                              OBSIDIAN_VAULT, ".git")))
+            except (OSError, RuntimeError, ValueError):
+                active = False
+        else:
+            probe_path = (probe if os.path.isabs(probe)
+                          else os.path.join(HOME, probe))
+            active = os.path.exists(probe_path)
+        if active:
             organs[key] = (name, desc)
     configured = CONFIG.get("custom_senses", [])
     if not isinstance(configured, list) \
@@ -239,13 +279,11 @@ def _build_organs():
         organs.pop(key, None)
     return organs
 
-ORGANS = _build_organs()
-
 # Tags that carry emotional weight for salience (mirrored into gbrain config).
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -2168,6 +2206,12 @@ def _nofollow_source_directory(path):
     return True
 
 
+# Optional organ discovery needs the no-follow directory gate above.  Keep
+# construction here so a symlinked vault or ``.git`` never activates merely
+# because ``exists()`` followed it.
+ORGANS = _build_organs()
+
+
 SOURCE_TREE_SCHEMA = "sia-source-tree-v3"
 SOURCE_TREE_GENERATION_FIELDS = (
     "device", "inode", "size", "mtime_ns", "ctime_ns")
@@ -2555,14 +2599,16 @@ _SENSE_ORGAN = {
     "sense_custos": "custos", "sense_aegis": "aegis",
     "sense_worldline": "worldline", "sense_guardian": "guardian",
     "sense_pacman": "pacman", "sense_journal": "journal",
-    "sense_git": "projects", "sense_claude": "claude-code",
+    "sense_git": "projects", "sense_obsidian": "obsidian",
+    "sense_claude": "claude-code",
     "sense_codex": "codex", "sense_notify": "notify",
     "sense_agents": "agents", "sense_skills": "skills",
 }
 
 _ALL_SENSES = [sense_sia, sense_jackal, sense_sekhmet, sense_custos, sense_aegis,
                sense_worldline, sense_pacman, sense_journal,
-               sense_guardian, sense_git, sense_claude, sense_codex,
+               sense_guardian, sense_git, sense_obsidian,
+               sense_claude, sense_codex,
                sense_notify, sense_agents, sense_skills]
 
 # only senses whose organ is active on THIS machine run

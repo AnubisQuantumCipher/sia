@@ -1418,6 +1418,245 @@ def sense_git(cursors):
     return evs
 
 
+# Only complete object names are admitted.  Git repositories use either the
+# SHA-1 or SHA-256 object format; abbreviations from an untrusted reflog are
+# never passed back to Git.
+OBSIDIAN_HEX = frozenset("0123456789abcdef")
+OBSIDIAN_OBJECT_NAME_LENGTHS = frozenset((40, 64))
+OBSIDIAN_GIT_PATH = "/usr/bin/git"
+
+
+def _obsidian_object_name(value):
+    """True only for one complete, non-null Git object name."""
+    return (isinstance(value, str)
+            and len(value) in OBSIDIAN_OBJECT_NAME_LENGTHS
+            and set(value) <= OBSIDIAN_HEX
+            and set(value) != {"0"})
+
+
+def _obsidian_commit_record(line):
+    """Project one reflog row to its commit OID, or ``None`` if unrelated."""
+    if "\t" not in line:
+        return None
+    meta, action = line.split("\t", 1)
+    if not action.startswith("commit"):
+        return None
+    fields = meta.split(" ", 2)
+    if len(fields) != 3 or not _obsidian_object_name(fields[1]):
+        raise ValueError("Obsidian commit reflog row has no complete object name")
+    return fields[1]
+
+
+def _obsidian_git_environment():
+    """Minimal environment for the fixed, non-interactive metadata read."""
+    return {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/nonexistent",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_PAGER": "cat",
+        "PAGER": "cat",
+        "LC_ALL": "C.UTF-8",
+    }
+
+
+def _parse_obsidian_git_metadata(output, requested):
+    """Parse fixed Git output and discard every Markdown pathname.
+
+    The returned dictionary retains only commit object name, subject, and
+    aggregate add/change/delete path counts.  Any missing, duplicate, or
+    malformed record refuses the whole cursor trial.
+    """
+    if not isinstance(output, str) or not isinstance(requested, list) \
+            or not requested:
+        raise ValueError("Obsidian Git metadata request is invalid")
+    if not output.strip():
+        raise ValueError("Obsidian Git metadata omitted a requested commit")
+    # A leading NUL and two NUL field boundaries frame each commit.  Without
+    # `-z`, core.quotePath C-quotes control/non-UTF-8 pathname bytes, so the
+    # bounded runner can decode strict UTF-8 without retaining a pathname.
+    # Commit subjects may contain every control except NUL and remain isolated
+    # as their own field for the Event redaction boundary.
+    fields = output.split("\x00")
+    if not fields or fields.pop(0) != "" \
+            or len(fields) != len(requested) * 3:
+        raise ValueError("Obsidian Git metadata output is malformed")
+    records = {}
+    statuses = {"A", "D", "M", "T"}
+    for position, expected_oid in enumerate(requested):
+        oid, subject, changes = fields[position * 3:(position + 1) * 3]
+        if oid != expected_oid or not _obsidian_object_name(oid) \
+                or oid in records:
+            raise ValueError("Obsidian Git metadata output is malformed")
+        counts = {"added": 0, "changed": 0, "deleted": 0}
+        for row in changes.splitlines():
+            if not row:
+                continue
+            status_code, separator, _discarded_path = row.partition("\t")
+            if not separator or status_code not in statuses \
+                    or not _discarded_path:
+                raise ValueError("Obsidian Git path metadata is malformed")
+            if status_code == "A":
+                counts["added"] += 1
+            elif status_code == "D":
+                counts["deleted"] += 1
+            else:
+                counts["changed"] += 1
+        records[oid] = {"subject": subject, **counts}
+    if list(records) != requested:
+        raise ValueError("Obsidian Git metadata omitted a requested commit")
+    return records
+
+
+def _obsidian_control_file(path, payload):
+    """Create one exact private file in a fresh trusted control Git dir."""
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+             | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    finally:
+        os.close(descriptor)
+
+
+def _obsidian_git_metadata(objects_fd, object_names):
+    """Read metadata through a config-isolated view of the held object DB."""
+    requested = list(dict.fromkeys(object_names))
+    if not requested or len(requested) > MAX_SOURCE_TAIL_RECORDS \
+            or any(not _obsidian_object_name(value) for value in requested):
+        raise ValueError("Obsidian Git metadata request is invalid")
+    lengths = {len(value) for value in requested}
+    if len(lengths) != 1:
+        raise ValueError("Obsidian Git object formats are mixed")
+    object_format = "sha1" if lengths == {40} else "sha256"
+    with tempfile.TemporaryDirectory(prefix="sia-obsidian-git-") as control:
+        os.mkdir(os.path.join(control, "objects"), 0o700)
+        os.mkdir(os.path.join(control, "refs"), 0o700)
+        _obsidian_control_file(
+            os.path.join(control, "HEAD"), b"ref: refs/heads/isolated\n")
+        config = (
+            b"[core]\n\trepositoryformatversion = 0\n\tbare = true\n"
+            if object_format == "sha1" else
+            b"[core]\n\trepositoryformatversion = 1\n\tbare = true\n"
+            b"[extensions]\n\tobjectformat = sha256\n")
+        _obsidian_control_file(os.path.join(control, "config"), config)
+        command = [
+            OBSIDIAN_GIT_PATH, f"--git-dir={control}",
+            "--no-pager", "--no-replace-objects",
+            "-c", "core.hooksPath=/dev/null",
+            "-c", "core.fsmonitor=false",
+            "-c", "core.attributesFile=/dev/null",
+            "-c", "core.quotePath=true",
+            "-c", "color.ui=false",
+            "-c", "diff.external=",
+            "-c", "diff.orderFile=/dev/null",
+            "log", "--no-walk=unsorted", "--diff-merges=first-parent",
+            "--no-ext-diff", "--no-textconv", "--no-notes",
+            "--no-show-signature", "--no-renames", "--root",
+            "--name-status", "--format=%x00%H%x00%s%x00",
+            *[f"{value}^{{commit}}" for value in requested],
+            "--", "*.md", ":(exclude).obsidian/**",
+        ]
+        environment = _obsidian_git_environment()
+        environment["GIT_OBJECT_DIRECTORY"] = \
+            f"/proc/self/fd/{objects_fd}"
+        result = _run_bounded_text_process(
+            command, env=environment, timeout=JOURNAL_TIMEOUT_SECONDS,
+            cwd=os.sep, pass_fds=(objects_fd,), label="obsidian-git",
+            output_limit=MAX_SOURCE_TAIL_BYTES)
+        if result.returncode != 0 or result.stderr:
+            raise RuntimeError("Obsidian Git metadata read failed")
+        return _parse_obsidian_git_metadata(result.stdout, requested)
+
+
+def _obsidian_git_directory_identity(path, descriptor):
+    """Bind one held Git directory to its still-current no-follow path."""
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_DIRECTORY", 0))
+    held = os.fstat(descriptor)
+    current = _source_path_identity(path, flags)
+    if not stat.S_ISDIR(held.st_mode) \
+            or (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
+        raise RuntimeError("Obsidian Git directory changed while sensing")
+    return (held.st_dev, held.st_ino)
+
+
+def sense_obsidian(cursors):
+    """Sense bounded vault Git records without opening vault note bodies.
+
+    The reflog supplies complete commit identities only.  A fixed Git command
+    resolves those identities to the actual commit subject and Markdown path
+    add/change/delete counts.  Names are discarded during parsing; note
+    bodies, frontmatter, wikilinks, and ``.obsidian/`` remain outside the
+    source boundary.  A missing or non-directory ``.git`` is silent.
+    """
+    if OBSIDIAN_VAULT is None:
+        return []
+    vault_git = os.path.join(OBSIDIAN_VAULT, ".git")
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_DIRECTORY", 0))
+    try:
+        git_fd = _open_source_nofollow(vault_git, flags)
+    except OSError as exc:
+        if exc.errno in {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}:
+            return []
+        raise
+    objects_fd = None
+    try:
+        before = _obsidian_git_directory_identity(vault_git, git_fd)
+        objects_path = os.path.join(vault_git, "objects")
+        objects_fd = _open_source_nofollow(objects_path, flags)
+        objects_before = _obsidian_git_directory_identity(
+            objects_path, objects_fd)
+        trial = copy.deepcopy(cursors)
+        records = tail_line_records(
+            os.path.join(vault_git, "logs/HEAD"), trial, "obsidian.head")
+        commit_rows = []
+        for generation, ordinal, line in records:
+            object_name = _obsidian_commit_record(line)
+            if object_name is not None:
+                commit_rows.append((generation, ordinal, object_name))
+        metadata = (_obsidian_git_metadata(
+            objects_fd, [row[2] for row in commit_rows])
+            if commit_rows else {})
+        objects_after = _obsidian_git_directory_identity(
+            objects_path, objects_fd)
+        after = _obsidian_git_directory_identity(vault_git, git_fd)
+        if before != after or objects_before != objects_after:
+            raise RuntimeError("Obsidian Git directory changed while sensing")
+        events = []
+        for _generation, _ordinal, object_name in commit_rows:
+            record = metadata[object_name]
+            subject = clip(redact(record["subject"], "obsidian"), 70)
+            if not subject:
+                subject = "(no subject)"
+            summary = (
+                f"vault {object_name[:12]}: {subject} — Markdown "
+                f"+{record['added']} ~{record['changed']} "
+                f"-{record['deleted']}")
+            events.append(Event(
+                "obsidian", utcnow(), "commit", summary,
+                {"organs/obsidian"},
+                {"git", "commit", "markdown-metadata", "obsidian"},
+                occurrence=f"obsidian:{object_name}"))
+        cursors.clear()
+        cursors.update(trial)
+        return events
+    finally:
+        if objects_fd is not None:
+            os.close(objects_fd)
+        os.close(git_fd)
+
+
 def sense_claude(cursors):
     """Claude sessions from filesystem metadata only; payloads are unopened."""
     evs = []

@@ -10,7 +10,7 @@ PageRank mass conservation, novelty-as-absence, empirical surprise incl.
 absence detection, redaction fail-closed, and touch-source weighting.
 """
 
-import contextlib, copy, datetime, hashlib, importlib.machinery, importlib.util, json, os, re, sqlite3, stat
+import contextlib, copy, datetime, hashlib, importlib.machinery, importlib.util, json, os, re, shlex, sqlite3, stat
 import subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
@@ -2242,6 +2242,404 @@ class BuiltinSourceBounds(unittest.TestCase):
                     self.sialib.sense_agents({})
             finally:
                 self.sialib.HOME = old_home
+
+
+class ObsidianVaultOrgan(unittest.TestCase):
+    """The optional vault organ admits Git records, never note bodies."""
+
+    def setUp(self):
+        self.sialib = _load("sialib_obsidian",
+                            os.path.join(BIN, "sialib.py"))
+
+    @contextlib.contextmanager
+    def _vault(self, object_format="sha1"):
+        with tempfile.TemporaryDirectory() as home:
+            vault = os.path.join(home, "Obsidian")
+            os.makedirs(vault)
+            init = ["/usr/bin/git", "init", "-q"]
+            if object_format != "sha1":
+                init.append(f"--object-format={object_format}")
+            result = subprocess.run(
+                init, cwd=vault, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0:
+                self.skipTest(f"Git object format {object_format} unavailable")
+            self.sialib.OBSIDIAN_VAULT = vault
+            yield vault
+
+    def _write(self, vault, relative, text):
+        path = os.path.join(vault, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        return path
+
+    def _git(self, vault, *args, check=True):
+        return subprocess.run(
+            ["/usr/bin/git", "-C", vault, *args], check=check,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def _commit(self, vault, subject):
+        self._git(vault, "add", "-A")
+        self._git(vault, "-c", "user.email=fixture@example.invalid",
+                  "-c", "user.name=fixture", "commit", "-qm", subject)
+        return self._git(vault, "rev-parse", "HEAD").stdout.strip()
+
+    def _sense(self, cursors=None, *, backfill=True):
+        cursors = {} if cursors is None else cursors
+        value = "1" if backfill else ""
+        with mock.patch.dict(os.environ, {"SIA_BACKFILL": value},
+                             clear=False):
+            return self.sialib.sense_obsidian(cursors)
+
+    def test_absent_vault_is_silent_not_an_empty_catalog(self):
+        with tempfile.TemporaryDirectory() as home:
+            self.sialib.OBSIDIAN_VAULT = os.path.join(home, "Obsidian")
+            cursors = {}
+            self.assertEqual(self._sense(cursors), [])
+            self.assertEqual(cursors, {})
+
+    def test_actual_subject_and_markdown_path_counts_only(self):
+        with self._vault() as vault:
+            self._write(vault, "keep.md", "private first body\n")
+            self._write(vault, "delete.md", "private deleted body\n")
+            self._write(vault, "ignore.txt", "not markdown\n")
+            self._write(vault, ".obsidian/private.md", "private settings\n")
+            self._commit(vault, "initial vault")
+
+            self._write(vault, "keep.md", "changed private body\n")
+            self._write(vault, "added-secret-name.md", "new private body\n")
+            self._write(vault, "ignore.txt", "changed non-markdown\n")
+            self._write(vault, ".obsidian/private.md", "changed settings\n")
+            os.unlink(os.path.join(vault, "delete.md"))
+            oid = self._commit(vault, "actual commit subject")
+
+            # A reflog message is mutable metadata, not the commit subject.
+            log_path = os.path.join(vault, ".git", "logs", "HEAD")
+            with open(log_path, encoding="utf-8") as stream:
+                rows = stream.readlines()
+            rows[-1] = rows[-1].split("\t", 1)[0] \
+                + "\tcommit: forged reflog subject\n"
+            with open(log_path, "w", encoding="utf-8") as stream:
+                stream.writelines(rows)
+
+            events = self._sense()
+
+        event = next(item for item in events
+                     if item.occurrence == f"obsidian:{oid}")
+        self.assertEqual(
+            event.summary,
+            f"vault {oid[:12]}: actual commit subject — Markdown +1 ~1 -1")
+        self.assertEqual(event.organ, "obsidian")
+        self.assertEqual(event.kind, "commit")
+        self.assertEqual(event.links, {"organs/obsidian"})
+        self.assertIn("markdown-metadata", event.tags)
+        self.assertNotIn("forged reflog", event.summary)
+        self.assertNotIn("added-secret-name", event.summary)
+        self.assertNotIn("private body", event.summary)
+
+    def test_history_is_tailed_without_replay(self):
+        with self._vault() as vault:
+            self._write(vault, "first.md", "first\n")
+            self._commit(vault, "first")
+            cursors = {}
+            first = self._sense(cursors)
+            repeated = self._sense(cursors)
+            self._write(vault, "second.md", "second\n")
+            oid = self._commit(vault, "second")
+            appended = self._sense(cursors)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(repeated, [])
+        self.assertEqual(len(appended), 1)
+        self.assertEqual(appended[0].occurrence, f"obsidian:{oid}")
+        self.assertIn(": second — Markdown +1 ~0 -0", appended[0].summary)
+
+    def test_first_observation_baselines_without_backfill(self):
+        with self._vault() as vault:
+            self._write(vault, "first.md", "first\n")
+            self._commit(vault, "first")
+            cursors = {}
+            self.assertEqual(self._sense(cursors, backfill=False), [])
+            self._write(vault, "second.md", "second\n")
+            oid = self._commit(vault, "second")
+            events = self._sense(cursors, backfill=False)
+        self.assertEqual([event.occurrence for event in events],
+                         [f"obsidian:{oid}"])
+
+    def test_no_note_body_is_ever_opened(self):
+        with self._vault() as vault:
+            self._write(vault, "daily/private.md", "private note body\n")
+            self._write(vault, ".obsidian/state.md", "private app state\n")
+            self._commit(vault, "metadata only")
+            opened = []
+            real_open = self.sialib.os.open
+
+            def recording_open(path, *args, **kwargs):
+                opened.append(os.fsdecode(path))
+                return real_open(path, *args, **kwargs)
+
+            with mock.patch.object(self.sialib.os, "open", recording_open):
+                events = self._sense()
+        self.assertEqual(len(events), 1)
+        self.assertFalse([name for name in opened if name.endswith(".md")],
+                         opened)
+        self.assertNotIn("private note body", events[0].summary)
+        self.assertNotIn("private app state", events[0].summary)
+
+    def test_control_bearing_markdown_filename_is_counted_then_discarded(self):
+        with self._vault() as vault:
+            hostile_name = "private\n\t\x1e-name.md"
+            self._write(vault, hostile_name, "private note body\n")
+            oid = self._commit(vault, "hostile path metadata")
+            event = self._sense()[0]
+        self.assertEqual(event.occurrence, f"obsidian:{oid}")
+        self.assertIn("Markdown +1 ~0 -0", event.summary)
+        self.assertNotIn("private", event.summary)
+        self.assertNotIn("\n", event.summary)
+        self.assertNotIn("\t", event.summary)
+        self.assertNotIn("\x1e", event.summary)
+
+    def test_non_utf8_markdown_filename_is_quoted_counted_and_discarded(self):
+        with self._vault() as vault:
+            raw_path = os.fsencode(vault) + b"/private-\xff.md"
+            descriptor = os.open(
+                raw_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.write(descriptor, b"private note body\n")
+            finally:
+                os.close(descriptor)
+            oid = self._commit(vault, "non-UTF-8 path metadata")
+            event = self._sense()[0]
+        self.assertEqual(event.occurrence, f"obsidian:{oid}")
+        self.assertIn("Markdown +1 ~0 -0", event.summary)
+        self.assertNotIn("private", event.summary)
+        self.assertNotIn("377", event.summary)
+
+    def test_repository_commands_cannot_run_diff_drivers_hooks_or_notes(self):
+        with self._vault() as vault:
+            sentinel = os.path.join(vault, "command-ran")
+            script = self._write(
+                vault, "leak.sh", "#!/bin/sh\nprintf ran > "
+                + shlex.quote(sentinel) + "\n")
+            os.chmod(script, 0o700)
+            self._write(vault, ".gitattributes", "*.md diff=leak\n")
+            self._write(vault, "private.md", "body never for textconv\n")
+            self._git(vault, "config", "diff.leak.command", script)
+            self._git(vault, "config", "diff.leak.textconv", script)
+            oid = self._commit(vault, "safe subject")
+            hook = self._write(
+                vault, ".git/hooks/post-rewrite",
+                "#!/bin/sh\nprintf hook > " + shlex.quote(sentinel) + "\n")
+            os.chmod(hook, 0o700)
+            self._git(vault, "-c", "user.email=fixture@example.invalid",
+                      "-c", "user.name=fixture", "notes", "add", "-m",
+                      "private note metadata", oid)
+            events = self._sense()
+            self.assertFalse(os.path.exists(sentinel))
+        self.assertEqual(len(events), 1)
+        self.assertNotIn("private note metadata", events[0].summary)
+
+    def test_vault_config_cannot_include_or_parse_a_markdown_note(self):
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private note body\n")
+            oid = self._commit(vault, "isolated repository config")
+            included = self._write(
+                vault, "private-config.md", "not valid git config [[secret]]\n")
+            config_path = os.path.join(vault, ".git", "config")
+            with open(config_path, "a", encoding="utf-8") as stream:
+                stream.write("\n[include]\n\tpath = ../private-config.md\n")
+
+            events = self._sense()
+
+        self.assertEqual([event.occurrence for event in events],
+                         [f"obsidian:{oid}"])
+        self.assertNotIn(os.path.basename(included), events[0].summary)
+        self.assertNotIn("secret", events[0].summary)
+
+    def test_worktree_pointer_file_and_links_are_silent(self):
+        with tempfile.TemporaryDirectory() as home:
+            vault = os.path.join(home, "Obsidian")
+            os.makedirs(vault)
+            with open(os.path.join(vault, ".git"), "w") as stream:
+                stream.write("gitdir: /elsewhere/worktrees/vault\n")
+            self.sialib.OBSIDIAN_VAULT = vault
+            cursors = {}
+            self.assertEqual(self._sense(cursors), [])
+            self.assertEqual(cursors, {})
+
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(vault, "linked")
+            real_git = os.path.join(os.path.dirname(vault), "real.git")
+            os.rename(os.path.join(vault, ".git"), real_git)
+            os.symlink(real_git, os.path.join(vault, ".git"))
+            cursors = {}
+            self.assertEqual(self._sense(cursors), [])
+            self.assertEqual(cursors, {})
+
+    def test_symlinked_vault_ancestor_is_silent(self):
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(vault, "linked ancestor")
+            linked = os.path.join(os.path.dirname(vault), "linked-vault")
+            os.symlink(vault, linked)
+            self.sialib.OBSIDIAN_VAULT = linked
+            cursors = {}
+            self.assertEqual(self._sense(cursors), [])
+            self.assertEqual(cursors, {})
+
+    def test_missing_reflog_in_a_real_git_directory_is_silent(self):
+        with self._vault():
+            self.assertEqual(self._sense(), [])
+
+    def test_organ_activates_only_when_the_vault_git_exists(self):
+        self.assertIn("obsidian", self.sialib.OPTIONAL_ORGANS)
+        self.assertEqual(self.sialib._SENSE_ORGAN["sense_obsidian"],
+                         "obsidian")
+        with tempfile.TemporaryDirectory() as home:
+            vault = os.path.join(home, "Obsidian")
+            self.sialib.OBSIDIAN_VAULT = vault
+            self.assertNotIn("obsidian", self.sialib._build_organs())
+            os.makedirs(os.path.join(vault, ".git"))
+            self.assertIn("obsidian", self.sialib._build_organs())
+            real_git = os.path.join(home, "real.git")
+            os.rename(os.path.join(vault, ".git"), real_git)
+            os.symlink(real_git, os.path.join(vault, ".git"))
+            self.assertNotIn("obsidian", self.sialib._build_organs())
+
+    def test_environment_override_is_absolute_bounded_and_fail_closed(self):
+        old = os.environ.pop("OBSIDIAN_VAULT_PATH", None)
+        try:
+            self.assertEqual(self.sialib._configured_obsidian_vault(),
+                             os.path.join(self.sialib.HOME, "Obsidian"))
+        finally:
+            if old is not None:
+                os.environ["OBSIDIAN_VAULT_PATH"] = old
+        with tempfile.TemporaryDirectory() as home:
+            override = os.path.join(home, "vault")
+            with mock.patch.dict(os.environ,
+                                 {"OBSIDIAN_VAULT_PATH": override}):
+                self.assertEqual(self.sialib._configured_obsidian_vault(),
+                                 override)
+        for bad in ("", "relative/vault",
+                    "/" + "x" * self.sialib.MAX_CONFIG_PATH_CHARS):
+            self.sialib.CONFIG_ERRORS.clear()
+            with mock.patch.dict(os.environ,
+                                 {"OBSIDIAN_VAULT_PATH": bad}):
+                self.assertIsNone(self.sialib._configured_obsidian_vault())
+            self.assertIn({
+                "config": "config.json",
+                "error": "obsidian-vault-environment-invalid",
+            }, self.sialib.CONFIG_ERRORS)
+
+    def test_sha1_and_sha256_object_names_are_complete(self):
+        for object_format, expected_length in (("sha1", 40), ("sha256", 64)):
+            with self.subTest(object_format=object_format), \
+                    self._vault(object_format) as vault:
+                self._write(vault, "note.md", "private\n")
+                oid = self._commit(vault, f"{object_format} commit")
+                events = self._sense()
+                self.assertEqual(len(oid), expected_length)
+                self.assertEqual([event.occurrence for event in events],
+                                 [f"obsidian:{oid}"])
+        for bad in ("a" * 4, "a" * 39, "a" * 41,
+                    "a" * 63, "a" * 65, "0" * 40, "G" * 40):
+            self.assertFalse(self.sialib._obsidian_object_name(bad))
+
+    def test_git_failures_leave_the_source_cursor_unchanged(self):
+        failures = (
+            subprocess.CompletedProcess([], 0, "malformed", ""),
+            subprocess.TimeoutExpired(["git"], 1),
+            OverflowError("bounded output"),
+        )
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(vault, "fixture")
+            for failure in failures:
+                with self.subTest(failure=type(failure).__name__):
+                    cursors = {"sentinel": "kept"}
+                    kwargs = ({"return_value": failure}
+                              if isinstance(failure,
+                                            subprocess.CompletedProcess)
+                              else {"side_effect": failure})
+                    with mock.patch.object(
+                            self.sialib, "_run_bounded_text_process",
+                            **kwargs), self.assertRaises(Exception):
+                        self._sense(cursors)
+                    self.assertEqual(cursors, {"sentinel": "kept"})
+
+    def test_missing_commit_object_leaves_the_cursor_unchanged(self):
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(vault, "fixture")
+            log_path = os.path.join(vault, ".git", "logs", "HEAD")
+            with open(log_path, encoding="utf-8") as stream:
+                row = stream.read()
+            fields = row.split(" ", 2)
+            missing = "f" * len(fields[1])
+            with open(log_path, "w", encoding="utf-8") as stream:
+                stream.write(fields[0] + " " + missing + " " + fields[2])
+            cursors = {"sentinel": "kept"}
+            with self.assertRaisesRegex(RuntimeError, "metadata read failed"):
+                self._sense(cursors)
+            self.assertEqual(cursors, {"sentinel": "kept"})
+
+    def test_blob_oid_in_commit_reflog_row_never_reaches_git_output(self):
+        body = "PRIVATE-NOTE-BODY-SENTINEL"
+        with self._vault() as vault:
+            self._write(vault, "note.md", body + "\n")
+            self._commit(vault, "fixture")
+            blob_oid = self._git(
+                vault, "rev-parse", "HEAD:note.md").stdout.strip()
+            log_path = os.path.join(vault, ".git", "logs", "HEAD")
+            with open(log_path, encoding="utf-8") as stream:
+                row = stream.read()
+            fields = row.split(" ", 2)
+            with open(log_path, "w", encoding="utf-8") as stream:
+                stream.write(fields[0] + " " + blob_oid + " " + fields[2])
+
+            captured = []
+            real_run = self.sialib._run_bounded_text_process
+
+            def recording_run(*args, **kwargs):
+                result = real_run(*args, **kwargs)
+                captured.append(result)
+                return result
+
+            cursors = {"sentinel": "kept"}
+            with mock.patch.object(
+                    self.sialib, "_run_bounded_text_process",
+                    side_effect=recording_run), self.assertRaisesRegex(
+                        RuntimeError, "metadata read failed"):
+                self._sense(cursors)
+        self.assertEqual(cursors, {"sentinel": "kept"})
+        child_output = "".join(
+            item.stdout + item.stderr for item in captured)
+        self.assertNotIn(body, child_output)
+
+    def test_subject_is_redacted_and_controls_are_neutralized(self):
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(
+                vault, "password=hunter2supersecret\x1e\a visible")
+            event = self._sense()[0]
+        self.assertNotIn("hunter2supersecret", event.summary)
+        self.assertNotIn("\a", event.summary)
+        self.assertNotIn("\x1e", event.summary)
+        self.assertIn("visible", event.summary)
+        self.assertIn("⟦redacted⟧", event.summary)
+
+    def test_event_day_retains_evidence_origin(self):
+        with self._vault() as vault:
+            self._write(vault, "note.md", "private\n")
+            self._commit(vault, "evidence event")
+            event = self._sense()[0]
+        with tempfile.TemporaryDirectory() as corpus:
+            self.sialib.CORPUS = corpus
+            day = event.ts.strftime("%Y-%m-%d")
+            self.sialib.update_day_page("obsidian", day, [event])
+            self.assertEqual(self.sialib.corpus_origin(
+                f"events/obsidian/{day}", "event-day"), "evidence")
 
 
 class Redaction(unittest.TestCase):
