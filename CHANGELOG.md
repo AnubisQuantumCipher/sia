@@ -2,6 +2,56 @@
 
 ## 1.5.1 — 2026-09-02
 
+### Review response: the real-gbrain contract lane, and honest surfaces
+
+An outside review of this repository was verified claim by claim and acted on.
+Its measurable observations were exact; what follows is the response.
+
+- **The seam that shipped both defects now has a real-binary test.**
+  `tests/test_gbrain_contract.py` runs every gbrain argv shape SIA ships —
+  init/sources/sync, both `extract links` forms, `get`/`search`/`embed` with
+  `--source`, the `call` ops, `context-pack`, `engine status --probe`,
+  `dream --json`, `--version` against `GBRAIN_PIN` — against the actual pinned
+  binary through `sialib`'s own subprocess plumbing, in an isolated home, in
+  seconds, with no embedding runtime required. CI gains a `gbrain-contract`
+  job that builds the exact pin (bun and gbrain both digest-verified, mirroring
+  `install.sh`) and fails if the lane skips. Empirical findings pinned along
+  the way: bare `get` resolution is brain-state-dependent (why every
+  page-addressed call names its source), `context-pack` accepts no `--source`
+  by design (documented at its call site; it is not an instance of the
+  issue-#3 class), and `sources list --json` must stay strictly-pure stdout
+  JSON because the restore path parses it strictly.
+- **Three v1.5.1 staging regressions caught by running the full suite:** a
+  rehearsal test still asserting the pre-fix embed argv, the marketplace
+  first-light `RELEASE_VERSION` constant, and `Model.js`'s `releaseVersion()`
+  release stamp (which gates the cockpit's setup/update logic) were all still
+  at their old values. All fixed; the full 848-test suite is green.
+- **Cross-project boilerplate scrubbed.** 113 leaked arithmetic-receipt
+  comments (a sibling project's prompting residue) were removed from tests and
+  runtime files — the review correctly read them as unreviewed provenance.
+- **The README is a third its size** (1,137 → ~400 lines). The front door now
+  reads for a person: the release-history retellings point at this changelog,
+  the installer/publication internals live in the Field Manual, and a new
+  "Install, recovery, and removal boundaries" section keeps every
+  operator-visible promise (all documentation-contract tests still pass; the
+  deep migration vocabulary test now pins the specification documents rather
+  than the README). A new section states plainly that the historian is the
+  shipped product and the cognitive lane is the research program, with the
+  whitepaper's own evidentiary status quoted.
+- **Whitepaper corrections:** §5's citation of a freeze rule that §11 never
+  stated is fixed — §11 now states the hypothesis-lane freeze rule explicitly;
+  and §9's verification record gains the lesson that postdates it: agent-panel
+  review reads code and stubs, so a missing flag against an external binary is
+  not findable by reading — "re-verified" meant SIA's own invariants, and the
+  live-contract gap now has its own instrument.
+- **`docs/ARCHITECTURE.md`** records the measured `sialib.py` lane map, the
+  three verified constraints that make extraction a designed change (test
+  monkeypatching of module globals, the `siasenses` bind/invoke façade as the
+  sanctioned pattern, the versioned runtime member set), and names the
+  thought-recovery cluster as the sanctioned next extraction in its own
+  release.
+
+
 - **Rehearsal grading works** — the nightly SM-2 rehearsal embed ran without
   `--source`, so gbrain resolved every due slug against its `default` source,
   answered "Page not found", and each DREAM:rehearse ended `reviewed=0` with

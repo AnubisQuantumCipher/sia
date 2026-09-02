@@ -1813,6 +1813,9 @@ def _dispatch(argv, cmd):
         st = sialib.read_json(sialib.STATUS_PATH, {})
         organs = sorted({s.split("/")[1] for s in st.get("workspace", [])
                          if s.startswith("events/")})[:6] or ["jackal"]
+        # context-pack is a brain-wide gbrain memory verb (entity cards + threads + facts);
+        # it accepts no --source flag at all, so the bare invocation is correct here and is
+        # not an instance of the issue-#3 missing-source class. Pinned by the contract lane.
         r = _gbrain_read(["context-pack", "--entities", ",".join(organs),
                           "--budget-tokens", "4000"])
         sys.stdout.write(sialib.strip_controls(r.stdout))

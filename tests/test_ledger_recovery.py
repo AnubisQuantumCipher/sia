@@ -117,9 +117,6 @@ class LedgerRecovery(unittest.TestCase):
             self.share, record["action"], record["arg1"], record["arg2"],
             digest, str(len(content)),
         ]
-        # JACKAL status=exact: parsed=2+1, exact=3; parsed=2-1, exact=1.
-        # Exact rational arithmetic outside the Lean certificate chain
-        # (NOT formal-bounded).
         barrier = threading.Barrier(3)
         results = []
 
@@ -184,9 +181,6 @@ class LedgerRecovery(unittest.TestCase):
 
     def test_record_overflow_fails_before_unbounded_name_materialization(self):
         directory = sialib._ensure_ledger_pending_dir()
-        # JACKAL status=exact: parsed=1+1, exact=2; parsed=2+1, exact=3.
-        # Exact rational arithmetic outside the Lean certificate chain
-        # (NOT formal-bounded).
         for index in range(3):
             path = os.path.join(directory, f"{index:064x}.json")
             with open(path, "w") as stream:
@@ -203,8 +197,6 @@ class LedgerRecovery(unittest.TestCase):
 
     def test_unexpected_directory_entries_have_a_hard_scan_ceiling(self):
         directory = sialib._ensure_ledger_pending_dir()
-        # JACKAL status=exact: parsed=2+1, exact=3. Exact rational arithmetic
-        # outside the Lean certificate chain (NOT formal-bounded).
         for index in range(3):
             with open(os.path.join(directory, f"noise-{index}"), "w") \
                     as stream:

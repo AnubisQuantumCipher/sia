@@ -40,12 +40,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 GENESIS_TAG = b"attest-genesis-v1"
 ENTRY_TAG   = b"attest-entry-v1"
-# JACKAL exact: status=exact parsed=64*1024*1024 exact=67108864.
 # This is an operational resource ceiling, not a retention policy or an
 # assurance claim about available disk space.
 MAX_LEDGER_BYTES = 67_108_864
-# JACKAL exact: status=exact parsed=16*1024 exact=16384; formal=false.
-# This exact rational result is not formal-bounded and has no Lean-checked
 # certificate; it sets a resource limit and makes no code-correctness claim.
 MAX_LEDGER_ROW_BYTES = 16_384
 MAX_CONTROL_FILE_BYTES = MAX_LEDGER_ROW_BYTES

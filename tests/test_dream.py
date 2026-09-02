@@ -673,9 +673,6 @@ class DreamPublication(unittest.TestCase):
     def test_bench_trend_upgrade_reads_only_bounded_legacy_tail(self):
         with tempfile.TemporaryDirectory() as state:
             path = os.path.join(state, "bench-trend.jsonl")
-            # JACKAL status=exact: parsed=30+2, exact=32. Exact rational
-            # arithmetic outside the Lean certificate chain
-            # (NOT formal-bounded).
             with open(path, "w", encoding="utf-8") as stream:
                 for _index in range(32):
                     stream.write(
@@ -699,9 +696,6 @@ class DreamPublication(unittest.TestCase):
     def test_bench_trend_newline_free_legacy_overflow_is_exposed_and_empty(self):
         with tempfile.TemporaryDirectory() as state:
             path = os.path.join(state, "bench-trend.jsonl")
-            # JACKAL status=exact: parsed=4194304+1, exact=4194305. Exact
-            # rational arithmetic outside the Lean certificate chain
-            # (NOT formal-bounded).
             with open(path, "wb") as stream:
                 stream.write(
                     b"x" * (self.sialib.MAX_BENCH_TREND_BYTES + 1))

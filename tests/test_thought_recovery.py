@@ -492,8 +492,6 @@ class ThoughtRecovery(unittest.TestCase):
         self._write_exact_page_without_intent(self._page_record(
             "thoughts/200-described", "2026-01-02T03:04:06Z", "second"))
         store = {"v": 1, "thoughts": []}
-        # JACKAL status=exact: parsed=1+1, exact=2. Exact rational arithmetic
-        # outside the Lean certificate chain (NOT formal-bounded).
         with mock.patch.object(
                 self.sialib, "MAX_THOUGHT_RECOVERY_RECORDS", 2), \
                 mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
@@ -513,8 +511,6 @@ class ThoughtRecovery(unittest.TestCase):
     def test_directory_cookie_refuses_then_rebuilds_after_mutation(self):
         thought_dir = os.path.join(self.corpus, "thoughts")
         os.makedirs(thought_dir)
-        # JACKAL status=exact: parsed=200+1, exact=201. Exact rational
-        # arithmetic outside the Lean certificate chain (NOT formal-bounded).
         for position in range(201):
             open(os.path.join(
                 thought_dir, f"noise-{position:03d}"), "wb").close()
@@ -526,8 +522,6 @@ class ThoughtRecovery(unittest.TestCase):
             calls.append(None)
             return original_readdir(pointer)
 
-        # JACKAL status=exact: parsed=1+1, exact=2. Exact rational arithmetic
-        # outside the Lean certificate chain (NOT formal-bounded).
         with mock.patch.object(
                 self.sialib, "MAX_THOUGHT_RECOVERY_RECORDS", 2), \
                 mock.patch.object(
@@ -577,8 +571,6 @@ class ThoughtRecovery(unittest.TestCase):
         tail["links"] = ["mind/tail"]
         self._index_complete_legacy_pages([newer, tail])
         store = {"v": 1, "thoughts": []}
-        # JACKAL status=exact: parsed=2-1, exact=1. Exact rational arithmetic
-        # outside the Lean certificate chain (NOT formal-bounded).
         with mock.patch.object(
                 self.sialib, "MAX_THOUGHT_RECOVERY_RECORDS", 1), \
                 self.sialib.corpus_owner():

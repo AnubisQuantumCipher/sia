@@ -109,8 +109,6 @@ _CAPSULE_PATH_BYTE_LIMIT = sialib.MAX_CONFIG_BYTES
 # candidate before the first unlink, so an over-bound tree is preserved and
 # refused rather than partly erased.
 _OPERATION_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
-# JACKAL status=exact, parsed=64, exact=64; exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded).  Operation trees
 # add rollback/capsule/staging prefixes around already-bounded portable roots,
 # so they need a separate finite deletion-preflight depth policy.
 _OPERATION_TREE_DEPTH_LIMIT = 64

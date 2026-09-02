@@ -417,7 +417,6 @@ class WorldlineCursor(unittest.TestCase):
 
     def test_composite_cursor_keeps_every_tied_row_across_pages(self):
         stamp = "2026-08-30T12:00:00.000000Z"
-        # JACKAL exact: parsed=2000+1 exact=2001 (not formal-bounded).
         row_count = 2001
         with contextlib.closing(sqlite3.connect(self.db)) as con:
             con.executemany(
@@ -567,9 +566,7 @@ class WorldlineCursor(unittest.TestCase):
         ])
         cursors = {"worldline.created_at": "",
                    "worldline.event_id": ""}
-        # JACKAL status=exact, parsed=7+6+6+6+27+7, exact=59;
         # parsed=59*2, exact=118. Both results are exact rational
-        # arithmetic outside the Lean certificate chain (NOT formal-bounded).
         with mock.patch.object(
                 self.sialib, "MAX_WORLDLINE_PAGE_BYTES", 100):
             pages = [self.sialib.sense_worldline(cursors)
@@ -743,7 +740,6 @@ class Surprise(unittest.TestCase):
         mind = {"hourbuf": {}, "hist": {}, "ewma": {}, "cooldown": {}}
         # Cover every weekday/weekend × six-hour band with a fully active
         # history independent of the wall-clock day on which CI runs. JACKAL
-        # exact: parsed=8*7*24, exact=1344 (not formal-bounded).
         active_hours = 1344
         for hour in range(active_hours):
             siamind.surprisal_update(
@@ -5892,8 +5888,6 @@ link_types:
 
     def test_schema_pack_newline_free_byte_overflow_is_refused(self):
         pack = os.path.join(self.tmp.name, "oversize.yaml")
-        # JACKAL status=exact: parsed=65536+1, exact=65537. Exact rational
-        # arithmetic outside the Lean certificate chain (NOT formal-bounded).
         with open(pack, "wb") as stream:
             stream.write(b"x" * (self.sialib.MAX_SCHEMA_PACK_BYTES + 1))
         with self.assertRaisesRegex(ValueError, "bounded regular file"):
@@ -5901,8 +5895,6 @@ link_types:
 
     def test_schema_pack_physical_line_aggregate_is_bounded(self):
         pack = os.path.join(self.tmp.name, "many-lines.yaml")
-        # JACKAL status=exact: parsed=4096+1, exact=4097. Exact rational
-        # arithmetic outside the Lean certificate chain (NOT formal-bounded).
         with open(pack, "wb") as stream:
             stream.write(
                 b"\n" * (self.sialib.MAX_SCHEMA_PACK_LINES + 1))
@@ -5911,8 +5903,6 @@ link_types:
 
     def test_schema_pack_rule_aggregate_is_bounded(self):
         pack = os.path.join(self.tmp.name, "many-rules.yaml")
-        # JACKAL status=exact: parsed=256+1, exact=257. Exact rational
-        # arithmetic outside the Lean certificate chain (NOT formal-bounded).
         with open(pack, "w", encoding="utf-8") as stream:
             stream.write("page_types: []\nlink_types:\n")
             for index in range(self.sialib.MAX_DOMAIN_EDGE_RULES + 1):

@@ -485,7 +485,7 @@ itself is recorded as a thought stating both counts and the pair's
 sighting ordinal — never a cause. Simultaneous *absences* are
 deliberately not paired: a suspend would pair every organ at once. Pair history accumulates deterministically;
 a future hypothesis lane would build on it only behind a measured gate,
-per the freeze rule in §11.
+per the hypothesis-lane freeze rule stated in §11.
 
 ## 6. Model policy
 
@@ -601,6 +601,24 @@ SIA deliberately labels the resulting memory unverified. The first take
 graded TRUE at Brier 0.01 while its sibling returned an honest
 UNRESOLVABLE after completed recall admitted no sufficient evidence.
 
+One verification lesson postdates that record and belongs beside it.
+Issue #3 (fixed in v1.5.1) showed that the nightly SM-2 rehearsal had
+never graded a page in the project's life: its per-page embed omitted
+``--source``, the real gbrain binary answered "Page not found" every
+night, and the signed ledger recorded ``reviewed=0`` with nobody
+reading it. Issue #2 had the same shape at the same boundary — the
+installer's transactional protocol was right about every internal
+invariant and wrong about gbrain writing an absolute ``database_path``.
+Both defects were invisible to the adversarial panels above because
+panels — like the unit suite — read code and stubs; a missing flag
+against an external binary is not findable by reading. "Re-verified"
+in this section therefore means verified against SIA's own invariants,
+not against the live gbrain contract. That gap now has its own
+instrument: ``tests/test_gbrain_contract.py`` runs every gbrain argv
+shape SIA ships against the real pinned binary, locally and in CI,
+so the next contract drift fails in the pipeline instead of in the
+ledger.
+
 The review-established invariants now ship as an executable suite
 (`tests/`, run in CI on every push): cursor/replay semantics,
 epoch-merge idempotence, ledger tamper-rejection, PPR mass
@@ -695,6 +713,16 @@ grade, never mint facts. If a mechanism cannot be defended in that
 vocabulary, it is not ready, whatever the citation says.
 
 ## 11. Limitations and operational boundaries
+
+**The hypothesis-lane freeze rule.** A mechanism in the cognitive lane
+ships as deterministic policy with an instrument attached, and it is
+promoted — or a new hypothesis lane is opened — only when its instrument
+shows it beating the plain alternative, never on citation or plausibility.
+The shipped example is §4.3's associative tie-breaker: graph influence is
+the tested release-selected policy because it matched dense retrieval on
+the historical probe set, and a tripwire regression is an operator-visible
+warning that must be investigated before any future policy is accepted.
+Anything without that measured showing stays behind its gate.
 
 Typed edge inference now has two deliberately separate deterministic lanes:
 gbrain runs its person/company entity gazetteer after each sync, while SIA

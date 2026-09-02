@@ -26,8 +26,6 @@ import sialib
 
 CONFIG_SCHEMA = "sia-continuity-config-v2"
 REQUEST_SCHEMA = "sia-continuity-request-v1"
-# JACKAL status=exact, parsed=1+1, exact=2. Exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded).
 STATUS_SCHEMA_VERSION = 2
 CONFIRMATION_SCHEMA_VERSION = 1
 ACCEPTANCE_SCHEMA_VERSION = 1
@@ -49,28 +47,15 @@ WORKER_LOCK = os.path.join(ROOT, "worker.lock")
 RESTIC_PATH = os.path.join(sialib.TOOLCHAIN, "restic", "bin", "restic")
 STABLE_CLI_PATH = os.path.join(sialib.HOME, ".local", "bin", "sia")
 
-# JACKAL status=exact, parsed=24*60*60, exact=86400. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 RESTIC_TIMEOUT_SECONDS = 86400
-# JACKAL status=exact, parsed=1, exact=1; exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded).
 LATEST_SNAPSHOT_COUNT = "1"
-# JACKAL status=exact, parsed=64, exact=64; exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded). This is a policy
 # bound for the operator-facing list, not a claim about repository size.
 LIST_SNAPSHOT_COUNT = "64"
-# JACKAL status=exact, parsed=1024*1024, exact=1048576. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_SPOOL_ENTRIES = 1_048_576
-# JACKAL status=exact, parsed=64, exact=64; same assurance boundary.
 MAX_SPOOL_DEPTH = 64
-# JACKAL status=exact, parsed=64*1024*1024*1024, exact=68719476736;
 # same assurance boundary. This is an explicit local staging policy, not a
 # claim about available disk capacity or a repository-retention policy.
 MAX_SPOOL_BYTES = 68_719_476_736
-# JACKAL status=exact, parsed=64*1024*1024, exact=67108864;
-# exact rational arithmetic outside the Lean certificate chain (NOT
-# formal-bounded). This bounds the signed-ledger scan used only after its
 # verifier succeeds.
 MAX_LEDGER_BYTES = 67_108_864
 
