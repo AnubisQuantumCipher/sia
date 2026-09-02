@@ -127,15 +127,37 @@ Successful setup or connection enables two persistent user timers:
 - a weekly `restic check` plus exact off-path restore and capsule verification
   of the newest SIA snapshot.
 
-Persistent timers catch up after the machine was powered off. Jobs are
-serialized and duplicate scheduled requests are coalesced. Closing the
-cockpit does not stop a job. SIA never automatically applies a snapshot to the
-live brain, forgets, prunes, or deletes repository snapshots. The weekly job
-restores only into a private off-path verification stage. Manual
-`sia backup now` uploads and immediately
-runs the exact round-trip verification path. A newer scheduled upload is shown
-as awaiting verification and cannot replace the last known verified recovery
-copy. An authentic capsule classified
+The hourly timer is scheduled at each wall-clock hour. The weekly timer uses
+the systemd `weekly` calendar boundary. Both timers are persistent and
+explicitly no-wake: they never wake the computer solely to run Continuity, but
+a missed event starts a catch-up run when the user timer becomes active again.
+Jobs are serialized and duplicate scheduled requests are coalesced. Closing
+the cockpit does not stop a job.
+
+Inspect the effective schedule rather than inferring it from repository
+health:
+
+```bash
+sia backup schedule
+```
+
+The command authenticates SIA's managed timer receipts and effective systemd
+fragment paths, then returns closed JSON containing `configured`, `automatic`,
+the observation time, and each timer's cadence, enabled/active state,
+persistence, wake policy, and last/next trigger. It exposes no repository
+credential. If either timer cannot be authenticated or observed exactly, the
+command refuses; the cockpit reports schedule status unavailable rather than
+claiming automatic protection from a stale repository result. **RECOVERY
+READY** and **AUTOMATIC BACKUP ON** are deliberately separate claims.
+
+SIA never automatically applies a snapshot to the live brain, forgets,
+prunes, or deletes repository snapshots. The weekly job restores only into a
+private off-path verification stage. Manual `sia backup now`—shown as **Make
+extra copy now** in the cockpit—is optional. It uploads and immediately runs
+the exact round-trip verification path, which is useful when a new recovery
+point should not wait for the regular schedule. A newer scheduled upload is
+shown as awaiting verification and cannot replace the last known verified
+recovery copy. An authentic capsule classified
 `recovery-only` remains useful recovery material, but it is not reported as a
 ready verified copy.
 

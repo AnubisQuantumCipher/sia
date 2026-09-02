@@ -848,6 +848,7 @@ sia backup status
 # wait for that setup request to finish before continuing
 sia backup now
 sia backup status
+sia backup schedule
 sia backup list
 ```
 
@@ -865,10 +866,26 @@ step; command acceptance is not operation success.
 Setup enables a persistent hourly job. Each run freezes and locally verifies
 a completed capsule, then uploads it. A weekly job runs `restic check`,
 restores the newest SIA snapshot into a private off-path stage, and verifies
-that exact capsule again. Manual `sia backup now` performs the upload and
-round-trip verification immediately. A newer scheduled upload remains marked
-as awaiting verification and does not replace the last known verified recovery
-copy. SIA never automatically
+that exact capsule again. Both timers are explicitly no-wake: they do not wake
+the computer solely for Continuity, and their persistent calendar policy runs
+a missed event after the user timer becomes active again. Work is serialized,
+duplicate scheduled requests are coalesced, and closing the cockpit does not
+stop an accepted worker.
+
+Run `sia backup schedule` to inspect the authenticated live schedule. Its
+closed JSON reports whether Continuity is configured and automatic, when the
+schedule was observed, and the hourly upload and weekly verification timers'
+cadence, enablement, activity, persistence, wake policy, and last/next trigger
+times. The cockpit renders those same facts. If SIA cannot authenticate its
+managed timer receipts and effective systemd units, it refuses the command and
+the cockpit makes no automatic-backup claim.
+
+No button press is required for routine hourly protection. Manual `sia backup
+now`, labeled **Make extra copy now** in the cockpit, is optional: it performs
+the upload and exact repository round-trip verification immediately. Use it
+when an important new recovery point should not wait for the timer. A newer
+scheduled upload remains marked as awaiting verification and does not replace
+the last known verified recovery copy. SIA never automatically
 applies a snapshot to the live brain, forgets, prunes, or deletes repository
 snapshots. The scheduled restore is verification into a private off-path stage
 only. A locally stored repository is useful for a drill, but it does not

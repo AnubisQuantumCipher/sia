@@ -158,6 +158,53 @@ class ContinuityTransport(unittest.TestCase):
     def _repository_config_output():
         return json.dumps({"id": "b" * 64}) + "\n"
 
+    def _managed_schedule_authority(self):
+        systemd_dir = os.path.join(self.temp.name, "schedule-systemd")
+        managed_dir = os.path.join(self.temp.name, "schedule-managed")
+        os.mkdir(systemd_dir, 0o700)
+        os.mkdir(managed_dir, 0o700)
+        for name, kind, unit_type, timer_target in siabackup._CONTINUITY_UNITS:
+            unit = os.path.join(systemd_dir, name)
+            if unit_type == "timer":
+                raw = (
+                    "[Timer]\n"
+                    "OnCalendar="
+                    + ("weekly" if name == "sia-backup-check.timer"
+                       else "hourly")
+                    + "\nPersistent=true\nUnit=" + timer_target + "\n"
+                ).encode()
+            else:
+                raw = b"[Service]\nType=oneshot\nExecStart=/bin/true\n"
+            siabackup._write_exclusive(unit, raw)
+            receipt = (
+                "managed-by=khephri.sia\n"
+                f"kind={kind}\n"
+                f"path={unit}\n"
+                f"sha256={siabackup.hashlib.sha256(raw).hexdigest()}\n"
+            ).encode()
+            siabackup._write_exclusive(
+                os.path.join(managed_dir, name), receipt)
+        return systemd_dir, managed_dir
+
+    @staticmethod
+    def _schedule_fields(systemd_dir, name, *, active=True, enabled=True,
+                         drop_in="", job="", last="", next_trigger=""):
+        return {
+            "LoadState": "loaded",
+            "FragmentPath": os.path.join(systemd_dir, name),
+            "DropInPaths": drop_in,
+            "ActiveState": "active" if active else "inactive",
+            "UnitFileState": "enabled" if enabled else "disabled",
+            "Job": job,
+            "Unit": ("sia-backup-check.service"
+                     if name == "sia-backup-check.timer"
+                     else "sia-backup.service"),
+            "Persistent": "yes",
+            "WakeSystem": "no",
+            "LastTriggerUSec": last,
+            "NextElapseUSecRealtime": next_trigger,
+        }
+
     def test_default_status_is_not_a_protection_claim(self):
         status = siabackup.read_status()
         self.assertEqual(status["state"], "unconfigured")
@@ -1161,6 +1208,260 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
         with open(outside, "rb") as stream:
             self.assertEqual(stream.read(), b"preserve\n")
+
+    def test_schedule_status_reports_configured_active_policy(self):
+        self._configure()
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+        fields = {
+            "sia-backup.timer": self._schedule_fields(
+                systemd_dir, "sia-backup.timer", last="@1700000000",
+                next_trigger="@1700003600"),
+            "sia-backup-check.timer": self._schedule_fields(
+                systemd_dir, "sia-backup-check.timer",
+                next_trigger="@1700600000"),
+        }
+        commands = []
+
+        def systemctl(command, **kwargs):
+            self.assertEqual(
+                command[:5],
+                ["systemctl", "--user", "show", "--timestamp=unix",
+                 command[4]])
+            self.assertEqual(kwargs["label"],
+                             "continuity schedule observation")
+            name = command[4]
+            commands.append(name)
+            stdout = "".join(
+                f"{key}={value}\n" for key, value in fields[name].items())
+            return subprocess.CompletedProcess(
+                command, 0, stdout=stdout, stderr="")
+
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_attest_continuity_units") as attestor, \
+                mock.patch.object(
+                    siabackup.sialib, "_run_bounded_text_process",
+                    side_effect=systemctl), \
+                mock.patch.object(
+                    siabackup, "_now", return_value="2026-09-02T20:00:00Z"):
+            status = siabackup.schedule_status()
+
+        attestor.assert_called_once_with()
+        self.assertEqual(commands, [
+            "sia-backup.timer", "sia-backup-check.timer"])
+        self.assertEqual(status, {
+            "schema_version": siabackup.SCHEDULE_SCHEMA_VERSION,
+            "configured": True,
+            "automatic": True,
+            "observed_at": "2026-09-02T20:00:00Z",
+            "upload": {
+                "cadence": "hourly",
+                "enabled": True,
+                "active": True,
+                "persistent": True,
+                "wake_system": False,
+                "last_trigger_at": "2023-11-14T22:13:20Z",
+                "next_trigger_at": "2023-11-14T23:13:20Z",
+            },
+            "verification": {
+                "cadence": "weekly",
+                "enabled": True,
+                "active": True,
+                "persistent": True,
+                "wake_system": False,
+                "last_trigger_at": None,
+                "next_trigger_at": "2023-11-21T20:53:20Z",
+            },
+        })
+
+    def test_schedule_status_is_not_automatic_when_timer_is_inactive(self):
+        self._configure()
+        upload = {
+            "cadence": "hourly", "enabled": True, "active": True,
+            "persistent": True, "wake_system": False,
+            "last_trigger_at": None, "next_trigger_at": None,
+        }
+        verification = {
+            "cadence": "weekly", "enabled": True, "active": False,
+            "persistent": True, "wake_system": False,
+            "last_trigger_at": None, "next_trigger_at": None,
+        }
+        with mock.patch.object(siabackup, "_attest_continuity_units"), \
+                mock.patch.object(
+                    siabackup, "_timer_schedule_observation",
+                    side_effect=[upload, verification]):
+            status = siabackup.schedule_status()
+        self.assertTrue(status["configured"])
+        self.assertFalse(status["automatic"])
+        self.assertFalse(status["verification"]["active"])
+
+    def test_schedule_timestamp_is_strict_and_nullable(self):
+        self.assertIsNone(siabackup._schedule_timestamp(
+            "", "continuity trigger"))
+        self.assertEqual(
+            siabackup._schedule_timestamp(
+                "@1700000000", "continuity trigger"),
+            "2023-11-14T22:13:20Z")
+        for value in ("1700000000", "@-1", "@1.5", "@1 trailing"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, "not a systemd Unix timestamp"):
+                siabackup._schedule_timestamp(value, "continuity trigger")
+        with self.assertRaisesRegex(ValueError, "supported time range"):
+            siabackup._schedule_timestamp(
+                "@99999999999999999999", "continuity trigger")
+
+    def test_schedule_field_reader_refuses_malformed_manager_output(self):
+        responses = (
+            ("LoadState=loaded\n", "incomplete"),
+            ("LoadState=loaded\nLoadState=loaded\n", "repeats a field"),
+            ("not-a-field\n", "malformed"),
+        )
+        for stdout, message in responses:
+            with self.subTest(message=message), mock.patch.object(
+                    siabackup.sialib, "_run_bounded_text_process",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, stdout=stdout, stderr="")), \
+                    self.assertRaisesRegex(ValueError, message):
+                siabackup._systemd_schedule_fields("sia-backup.timer")
+        with mock.patch.object(
+                siabackup.sialib, "_run_bounded_text_process",
+                return_value=subprocess.CompletedProcess(
+                    [], 1, stdout="", stderr="refused")), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "observation failed"):
+            siabackup._systemd_schedule_fields("sia-backup.timer")
+
+    def test_schedule_observation_refuses_dropin_and_generation_change(self):
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+        name = "sia-backup.timer"
+        foreign = self._schedule_fields(
+            systemd_dir, name, drop_in="/foreign.conf")
+        current = self._schedule_fields(systemd_dir, name)
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir):
+            with mock.patch.object(
+                    siabackup, "_systemd_schedule_fields",
+                    return_value=foreign), \
+                    self.assertRaisesRegex(
+                        siabackup.BlockedError, "authority is not exact"):
+                siabackup._timer_schedule_observation(
+                    name, "hourly", "sia-backup.service", "backup-timer")
+            binding = siabackup._managed_unit_binding(name, "backup-timer")
+            with mock.patch.object(
+                    siabackup, "_systemd_schedule_fields",
+                    return_value=current), \
+                    mock.patch.object(
+                        siabackup, "_managed_unit_binding",
+                        return_value=binding), \
+                    mock.patch.object(
+                        siabackup, "_generation",
+                        return_value="changed-generation"), \
+                    self.assertRaisesRegex(
+                        siabackup.BlockedError,
+                        "authority changed during observation"):
+                siabackup._timer_schedule_observation(
+                    name, "hourly", "sia-backup.service", "backup-timer")
+
+    def test_schedule_status_refuses_partial_configuration(self):
+        self._configure()
+        observe = mock.Mock()
+        with mock.patch.object(
+                siabackup, "_timer_schedule_observation", observe):
+            os.unlink(siabackup.KEY_PATH)
+            with self.assertRaisesRegex(
+                    siabackup.BlockedError, "configuration.*incomplete"):
+                siabackup.schedule_status()
+            os.unlink(siabackup.CONFIG_PATH)
+            siabackup._write_exclusive(
+                siabackup.KEY_PATH, b"recovery-key\n")
+            with self.assertRaisesRegex(
+                    siabackup.BlockedError, "configuration.*incomplete"):
+                siabackup.schedule_status()
+        observe.assert_not_called()
+
+    def test_schedule_status_refuses_configuration_generation_change(self):
+        self._configure()
+        timer = {
+            "cadence": "hourly", "enabled": True, "active": True,
+            "persistent": True, "wake_system": False,
+            "last_trigger_at": None, "next_trigger_at": None,
+        }
+        replaced = False
+
+        def observe(_name, cadence, _target, _receipt_kind):
+            nonlocal replaced
+            if not replaced:
+                with open(siabackup.CONFIG_PATH, "rb") as stream:
+                    raw = stream.read()
+                stage = siabackup.CONFIG_PATH + ".replacement"
+                siabackup._write_exclusive(stage, raw)
+                os.replace(stage, siabackup.CONFIG_PATH)
+                replaced = True
+            return {**timer, "cadence": cadence}
+
+        with mock.patch.object(siabackup, "_attest_continuity_units"), \
+                mock.patch.object(
+                    siabackup, "_timer_schedule_observation",
+                    side_effect=observe), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError,
+                    "configuration changed during schedule observation"):
+            siabackup.schedule_status()
+
+    def test_schedule_status_refuses_foreign_target_service(self):
+        self._configure()
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+
+        def fields(name, *, timer):
+            value = {
+                "LoadState": "loaded",
+                "FragmentPath": os.path.join(systemd_dir, name),
+                "DropInPaths": (
+                    "/foreign.conf" if name == "sia-backup.service" else ""),
+                "ActiveState": "inactive",
+                "UnitFileState": "disabled",
+                "Job": "",
+            }
+            if timer:
+                value["Unit"] = (
+                    "sia-backup-check.service"
+                    if name == "sia-backup-check.timer"
+                    else "sia-backup.service")
+            return value
+
+        observe = mock.Mock()
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_systemd_unit_fields", side_effect=fields), \
+                mock.patch.object(
+                    siabackup, "_timer_schedule_observation", observe), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "authority is not exact"):
+            siabackup.schedule_status()
+        observe.assert_not_called()
+
+    def test_schedule_cli_emits_machine_readable_status(self):
+        payload = {
+            "schema_version": siabackup.SCHEDULE_SCHEMA_VERSION,
+            "configured": True,
+            "automatic": True,
+            "observed_at": "2026-09-02T20:00:00Z",
+            "upload": {"cadence": "hourly"},
+            "verification": {"cadence": "weekly"},
+        }
+        output = io.StringIO()
+        with mock.patch.object(
+                siabackup, "schedule_status", return_value=payload) as status, \
+                mock.patch("sys.stdout", output):
+            result = siabackup.cli_backup(["schedule"])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue()), payload)
+        status.assert_called_once_with()
 
     def test_schedule_enable_refuses_foreign_effective_dropin(self):
         systemd_dir = os.path.join(self.temp.name, "systemd")

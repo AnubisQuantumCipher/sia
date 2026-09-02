@@ -47,6 +47,8 @@ Item {
   property string readyDetail: ""
   property var continuity: null
   property string continuityBoundary: ""
+  property var continuitySchedule: null
+  property string continuityScheduleBoundary: ""
   property bool continuitySheetOpen: false
   property string continuityPage: "overview"
   property bool restoreConfirmOpen: false
@@ -276,6 +278,105 @@ Item {
     return detail !== "" ? detail : root.continuityLatestText()
   }
 
+  function continuityScheduleStateText() {
+    if (root.continuityState === "unconfigured")
+      return "AUTOMATIC BACKUP · AFTER SETUP"
+    if (!root.continuitySchedule) {
+      if (continuityScheduleProc.checking)
+        return "AUTOMATIC BACKUP · CHECKING"
+      return root.continuityScheduleBoundary !== ""
+        ? "AUTOMATIC BACKUP · STATUS UNAVAILABLE"
+        : "AUTOMATIC BACKUP · CHECKING"
+    }
+    return root.continuitySchedule.automatic
+      ? "AUTOMATIC BACKUP · ON"
+      : "AUTOMATIC BACKUP · NEEDS ATTENTION"
+  }
+
+  function continuityScheduleColor() {
+    if (root.continuitySchedule && root.continuitySchedule.automatic)
+      return root.accent
+    if (continuityScheduleProc.checking)
+      return Qt.alpha(root.fg, 0.52)
+    if (root.continuityState !== "unconfigured"
+        && (root.continuitySchedule
+            || root.continuityScheduleBoundary !== ""))
+      return root.urgent
+    return Qt.alpha(root.fg, 0.52)
+  }
+
+  function continuityTimerState(timer) {
+    if (!timer) return "status unavailable"
+    if (!timer.enabled) return "disabled"
+    return timer.active ? "active" : "not running"
+  }
+
+  function continuityTriggerText(value, emptyText, relative) {
+    var timestamp = Date.parse(value || "")
+    if (!(timestamp > 0)) return emptyText
+    if (relative) {
+      var age = Model.timeAgo(value, root.nowMs)
+      if (age !== "") return age
+    }
+    return Qt.formatDateTime(new Date(timestamp), "ddd HH:mm")
+  }
+
+  function continuityHourlyText() {
+    var schedule = root.continuitySchedule
+    if (!schedule) {
+      if (root.continuityState === "unconfigured")
+        return "Every hour after setup · no button needed"
+      if (continuityScheduleProc.checking)
+        return "Checking the hourly timer…"
+      return root.continuityScheduleBoundary !== ""
+        ? root.continuityScheduleBoundary
+        : "Checking the hourly timer…"
+    }
+    var timer = schedule.upload
+    return "Every hour · no button needed · "
+      + root.continuityTimerState(timer)
+      + "\nLast start "
+      + root.continuityTriggerText(
+          timer.last_trigger_at, "not yet", true)
+      + " · next "
+      + root.continuityTriggerText(
+          timer.next_trigger_at, "not scheduled", false)
+  }
+
+  function continuityWeeklyText() {
+    if (root.continuityState === "unconfigured")
+      return "Weekly deep restore-check verification begins after setup."
+    var schedule = root.continuitySchedule
+    if (!schedule)
+      return "Weekly deep restore-check verification"
+    var timer = schedule.verification
+    return "Weekly deep restore check · "
+      + root.continuityTimerState(timer)
+      + "\nLast check start "
+      + root.continuityTriggerText(
+          timer.last_trigger_at, "not yet", true)
+      + " · next "
+      + root.continuityTriggerText(
+          timer.next_trigger_at, "not scheduled", false)
+  }
+
+  function continuitySleepText() {
+    if (root.continuityState === "unconfigured")
+      return "Persistent catch-up and no-wake protection begin after setup."
+    var schedule = root.continuitySchedule
+    if (!schedule)
+      return "Sleep/off policy is shown after schedule verification."
+    if (schedule.upload.persistent && schedule.verification.persistent
+        && !schedule.upload.wake_system
+        && !schedule.verification.wake_system) {
+      var checked = root.continuityTriggerText(
+        schedule.observed_at, "time unavailable", true)
+      return "Schedule checked " + checked
+        + " · Sleep/off: never wakes this computer · a missed run catches up after you return."
+    }
+    return "Sleep/catch-up policy differs from SIA's protected default."
+  }
+
   function clearContinuityInputs() {
     root.repositoryInput = ""
     root.recoveryKeyPathInput = ""
@@ -325,7 +426,7 @@ Item {
         else restoreSnapshotField.forceActiveFocus()
       }
       else if (Model.continuityCanBackUp(root.continuity))
-        overviewBackupButton.forceActiveFocus()
+        continuityCloseButton.forceActiveFocus()
       else if (Model.continuityCanPrepare(root.continuity)
                || Model.continuityCanApply(root.continuity))
         overviewRestoreButton.forceActiveFocus()
@@ -340,6 +441,7 @@ Item {
     root.continuityPage = page || "overview"
     root.continuitySheetOpen = true
     root.restoreConfirmOpen = false
+    continuityScheduleRefresh.restart()
     if (root.continuityPage === "restore"
         && root.restoreSnapshotInput.trim() === ""
         && root.continuity && root.continuity.latest)
@@ -363,7 +465,7 @@ Item {
   }
 
   function requestBackupNow() {
-    continuityProc.launch(["backup", "now"], "Back up now")
+    continuityProc.launch(["backup", "now"], "Extra copy")
   }
 
   function requestBackupCheck() {
@@ -683,6 +785,79 @@ Item {
 
               Ui.BorderSurface {
                 width: parent.width
+                height: overviewAutomation.implicitHeight
+                  + contentTopInset + contentBottomInset
+                color: Qt.alpha(root.continuityScheduleColor(), 0.05)
+                borderSpec: Border.flat(
+                  Qt.alpha(root.continuityScheduleColor(), 0.28),
+                  Style.normalBorderWidth)
+                padding: Style.spacing.xl
+                radius: Style.cornerRadius
+                Column {
+                  id: overviewAutomation
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.top: parent.top
+                  anchors.leftMargin: parent.contentLeftInset
+                  anchors.rightMargin: parent.contentRightInset
+                  anchors.topMargin: parent.contentTopInset
+                  spacing: Style.spacing.sm
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityScheduleStateText()
+                    color: root.continuityScheduleColor()
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityHourlyText()
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.72)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuityWeeklyText()
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.62)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: root.continuitySleepText()
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.54)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    visible: root.continuityState !== "unconfigured"
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: "Make extra copy now is optional. It uploads and immediately performs the deep repository restore check."
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.54)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Ui.BorderSurface {
+                width: parent.width
                 height: overviewFacts.implicitHeight
                   + contentTopInset + contentBottomInset
                 color: Qt.alpha(root.continuityColor, 0.05)
@@ -745,7 +920,8 @@ Item {
                 }
               }
 
-              Row {
+              Flow {
+                width: parent.width
                 spacing: Style.spacing.md
                 Ui.Button {
                   id: overviewSetupButton
@@ -779,14 +955,15 @@ Item {
                     && root.continuityState !== "unconfigured"
                   enabled: Model.continuityCanBackUp(root.continuity)
                     && !continuityProc.working
-                  text: continuityProc.working ? "Requesting…" : "Back up now"
+                  text: continuityProc.working
+                    ? "Requesting…" : "Make extra copy now"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
                   bordered: true
                   focusable: true
                   Accessible.role: Accessible.Button
-                  Accessible.name: "Back up SIA now"
+                  Accessible.name: "Make an extra SIA backup now"
                   Accessible.description:
-                    "Capture and verify a new encrypted recovery copy"
+                    "Optional extra copy with immediate deep repository verification; hourly backups continue automatically"
                   onClicked: root.requestBackupNow()
                 }
                 Ui.Button {
@@ -1592,6 +1769,7 @@ Item {
     statusFile.reload(); installCompletionFile.reload()
     graphFile.reload(); thoughtsFile.reload()
     continuityFile.reload()
+    continuityScheduleRefresh.restart()
     if (root.graph && graphCanvas.width > 0)
       Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
@@ -1760,10 +1938,25 @@ Item {
         root.continuityPage = "overview"
         root.focusContinuityPage()
       }
+      if (root.opened) continuityScheduleRefresh.restart()
     } catch (e) {
       root.continuityBoundary = root.continuity
         ? "last good continuity status; latest update rejected"
         : "no valid continuity status"
+    }
+  }
+
+  function applyContinuitySchedule(text) {
+    try {
+      const parsed = JSON.parse(text)
+      if (!Model.validContinuitySchedule(parsed))
+        throw new Error("invalid continuity schedule")
+      root.continuitySchedule = parsed
+      root.continuityScheduleBoundary = ""
+    } catch (e) {
+      root.continuitySchedule = null
+      root.continuityScheduleBoundary =
+        "Automatic schedule status unavailable; no automatic run is being claimed."
     }
   }
 
@@ -1834,6 +2027,14 @@ Item {
             continuityFile.reload()
             root.applyContinuity(continuityFile.text())
           } }
+  Timer { id: continuityScheduleRefresh; interval: 150; repeat: false
+          onTriggered: continuityScheduleProc.refresh() }
+  Timer {
+    interval: 60000
+    running: root.opened
+    repeat: true
+    onTriggered: continuityScheduleProc.refresh()
+  }
 
   FileView {
     id: installCompletionFile
@@ -1879,6 +2080,106 @@ Item {
       root.verifyMsg = code === 0
         ? "SIA signed ledger re-verified ✓"
         : "CHAIN VERIFICATION INCOMPLETE"
+    }
+  }
+
+  // Schedule health is observed live instead of inferred from RECOVERY READY.
+  // The CLI authenticates the managed systemd units and returns only bounded,
+  // closed JSON; no repository credential enters the cockpit.
+  Process {
+    id: continuityScheduleProc
+    property string outText: ""
+    property string errText: ""
+    property int exitCode: 0
+    property bool exited: false
+    property bool outDone: false
+    property bool errDone: false
+    property bool outOverflow: false
+    property bool errOverflow: false
+    property bool launchPending: false
+    property bool startedForAttempt: false
+    property bool checking: false
+    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia",
+              "backup", "schedule"]
+
+    function refresh() {
+      if (checking || running) return
+      outText = ""
+      errText = ""
+      exitCode = 0
+      exited = false
+      outDone = false
+      errDone = false
+      outOverflow = false
+      errOverflow = false
+      launchPending = true
+      startedForAttempt = false
+      checking = true
+      root.continuitySchedule = null
+      root.continuityScheduleBoundary = ""
+      running = true
+    }
+
+    function fail(message) {
+      checking = false
+      launchPending = false
+      root.continuitySchedule = null
+      root.continuityScheduleBoundary = message
+    }
+
+    function settle() {
+      if (!exited || !outDone || !errDone) return
+      checking = false
+      if (exitCode === 0 && !outOverflow && !errOverflow) {
+        root.applyContinuitySchedule(
+          outText.replace(/^\s+|\s+$/g, ""))
+      } else {
+        fail(outOverflow || errOverflow
+          ? "Automatic schedule response exceeded its display boundary."
+          : "Automatic schedule could not be verified; no automatic run is being claimed.")
+      }
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityScheduleProc.outOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityScheduleProc.outText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityScheduleProc.outDone = true
+        continuityScheduleProc.settle()
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityScheduleProc.errOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityScheduleProc.errText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityScheduleProc.errDone = true
+        continuityScheduleProc.settle()
+      }
+    }
+    onStarted: {
+      continuityScheduleProc.startedForAttempt = true
+      continuityScheduleProc.launchPending = false
+    }
+    onRunningChanged: {
+      if (!running && continuityScheduleProc.launchPending
+          && !continuityScheduleProc.startedForAttempt)
+        continuityScheduleProc.fail(
+          "Automatic schedule command could not start; no automatic run is being claimed.")
+    }
+    onExited: function(code) {
+      continuityScheduleProc.exitCode = code
+      continuityScheduleProc.exited = true
+      continuityScheduleProc.settle()
     }
   }
 
@@ -2629,6 +2930,48 @@ Item {
                 width: continuityCardCol.width
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
+                text: root.continuityScheduleStateText()
+                wrapMode: Text.WordWrap
+                color: root.continuityScheduleColor()
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityHourlyText()
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.68)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuityWeeklyText()
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.56)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.continuitySleepText()
+                wrapMode: Text.WordWrap
+                color: Qt.alpha(root.fg, 0.48)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                width: continuityCardCol.width
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
                 text: root.continuityRepositoryText()
                 elide: Text.ElideMiddle
                 color: Qt.alpha(root.fg, 0.7)
@@ -2701,7 +3044,7 @@ Item {
                     && root.continuityState !== "unconfigured"
                   enabled: Model.continuityCanBackUp(root.continuity)
                     && !continuityProc.working
-                  text: continuityProc.working ? "Requesting…" : "Back up now"
+                  text: continuityProc.working ? "Requesting…" : "Extra copy"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
                   fontSize: Style.font.caption
                   horizontalPadding: Style.spacing.sm
@@ -2709,9 +3052,9 @@ Item {
                   bordered: true
                   focusable: true
                   Accessible.role: Accessible.Button
-                  Accessible.name: "Back up SIA now"
+                  Accessible.name: "Make an extra SIA backup now"
                   Accessible.description:
-                    "Capture and verify a new encrypted recovery copy"
+                    "Optional extra copy with immediate deep repository verification; hourly backups continue automatically"
                   onClicked: root.requestBackupNow()
                 }
                 Ui.Button {

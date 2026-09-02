@@ -17,18 +17,25 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.2.** The cockpit now opens directly into the last
-validated healthy generation instead of flashing an installation check while
-it refreshes. Cold startup, failed reads, first-light changes, and runtime
-version mismatches remain fail-closed. Setup and updates now restart the
-Omarchy shell while the install gate is closed, then require the live cockpit
-to attest this exact source release before SIA can publish ready.
+**Current release: v1.7.3.** Continuity now shows its authenticated live
+schedule in the cockpit: whether automatic protection is on, the last and next
+hourly timer trigger, the next weekly deep restore check, and the persistent/no-wake
+sleep policy. After repository setup, the hourly copy needs no button press.
+The optional **Make extra copy now** action captures, uploads, and immediately
+round-trip-verifies a new snapshot when you want a fresh recovery point now.
 
 ![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
 
 *The current cockpit after a verified repository round trip. **RECOVERY
 READY** reports a ready, identity-matching recovery copy; it is not a
 substitute for the clean-machine restore drill.*
+
+Automatic Continuity never wakes the computer solely to run a backup. Its
+persistent timers catch up after the user session returns, serialize their
+work, and coalesce duplicate scheduled requests. The hourly job creates an
+encrypted recovery snapshot; the weekly job performs the deeper repository
+check and exact off-path restore verification. Inspect the live schedule at
+any time with `sia backup schedule`.
 
 ## Install (Omarchy)
 
@@ -208,6 +215,7 @@ sia memory --pin organs/journal     # protect/qualify a page for rehearsal
 sia calibration                     # population-aware descriptive scorecard
 sia bench generate --out /tmp/sia-qa  # signed-ledger QA + private MCP eval
 sia backup status                   # continuity adapter and verified-copy state
+sia backup schedule                 # authenticated automatic-timer state
 ```
 
 Point it at your own programs in `~/.config/sia/config.json`:

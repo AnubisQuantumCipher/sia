@@ -304,7 +304,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.7.2")
+        self.assertEqual(version, "1.7.3")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',
@@ -3708,12 +3708,12 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
                 "PATH": fake_bin + os.pathsep + environment["PATH"],
                 "TRACE": trace,
                 "RESTARTED": restarted,
-                "LOADED_RELEASE": "1.7.2",
+                "LOADED_RELEASE": "1.7.3",
             })
             result = subprocess.run(
                 ["bash", "-c", functions +
                  "\nactivate_and_verify_omarchy_plugin "
-                 "khephri.sia 1.7.2"],
+                 "khephri.sia 1.7.3"],
                 env=environment, text=True, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -3728,7 +3728,7 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
             refused = subprocess.run(
                 ["bash", "-c", functions +
                  "\nactivate_and_verify_omarchy_plugin "
-                 "khephri.sia 1.7.2"],
+                 "khephri.sia 1.7.3"],
                 env=environment, text=True, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(refused.returncode, 0)
@@ -3741,7 +3741,7 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
             refused = subprocess.run(
                 ["bash", "-c", functions +
                  "\nactivate_and_verify_omarchy_plugin "
-                 "khephri.sia 1.7.2"],
+                 "khephri.sia 1.7.3"],
                 env=environment, text=True, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(refused.returncode, 0)
@@ -6153,6 +6153,21 @@ remove_managed_skill
                 "checking", "preparing", "prepared", "restoring",
                 "verified", "recovery-only", "failed", "blocked"):
             self.assertIn(f'"{state}"', model)
+
+    def test_continuity_timer_policy_is_explicit(self):
+        timers = {
+            "systemd/sia-backup.timer": (
+                "OnCalendar=hourly", "Unit=sia-backup.service"),
+            "systemd/sia-backup-check.timer": (
+                "OnCalendar=weekly", "Unit=sia-backup-check.service"),
+        }
+        for path, (calendar, target) in timers.items():
+            with self.subTest(path=path):
+                unit = _read(path)
+                self.assertIn(calendar, unit)
+                self.assertIn(target, unit)
+                self.assertIn("Persistent=true", unit)
+                self.assertIn("WakeSystem=false", unit)
 
     def test_recovery_boundaries_are_operator_visible(self):
         readme = _read("README.md")

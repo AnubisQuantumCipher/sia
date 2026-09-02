@@ -27,6 +27,7 @@ import sialib
 CONFIG_SCHEMA = "sia-continuity-config-v2"
 REQUEST_SCHEMA = "sia-continuity-request-v1"
 STATUS_SCHEMA_VERSION = 2
+SCHEDULE_SCHEMA_VERSION = 1
 CONFIRMATION_SCHEMA_VERSION = 1
 ACCEPTANCE_SCHEMA_VERSION = 1
 PROFILE = "signed portable capsule"
@@ -1046,6 +1047,123 @@ def _systemd_unit_fields(name, *, timer):
     if set(fields) != set(properties):
         raise ValueError("continuity systemd response is incomplete")
     return fields
+
+
+def _systemd_schedule_fields(name):
+    properties = [
+        "LoadState", "FragmentPath", "DropInPaths", "ActiveState",
+        "UnitFileState", "Job", "Unit", "Persistent", "WakeSystem",
+        "LastTriggerUSec", "NextElapseUSecRealtime",
+    ]
+    command = [
+        "systemctl", "--user", "show", "--timestamp=unix", name,
+    ]
+    for prop in properties:
+        command.append("--property=" + prop)
+    result = sialib._run_bounded_text_process(
+        command, env=None, timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=None,
+        label="continuity schedule observation",
+        output_limit=sialib.MAX_CONFIG_BYTES)
+    if result.returncode != 0:
+        raise BlockedError("Continuity schedule observation failed.")
+    fields = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            raise ValueError("continuity schedule response is malformed")
+        key, value = line.split("=", 1)
+        if key in fields:
+            raise ValueError("continuity schedule response repeats a field")
+        fields[key] = value
+    if set(fields) != set(properties):
+        raise ValueError("continuity schedule response is incomplete")
+    return fields
+
+
+def _schedule_timestamp(value, label):
+    if value == "":
+        return None
+    match = re.fullmatch(r"@([0-9]{1,20})", value)
+    if match is None:
+        raise ValueError(f"{label} is not a systemd Unix timestamp")
+    try:
+        observed = datetime.datetime.fromtimestamp(
+            int(match.group(1), 10), datetime.timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(f"{label} is outside the supported time range") \
+            from exc
+    return observed.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _timer_schedule_observation(name, cadence, timer_target, receipt_kind):
+    target, target_generation, receipt, receipt_generation = \
+        _managed_unit_binding(name, receipt_kind)
+    fields = _systemd_schedule_fields(name)
+    if fields["LoadState"] != "loaded" \
+            or os.path.abspath(fields["FragmentPath"]) != target \
+            or fields["DropInPaths"] \
+            or fields["Unit"] != timer_target:
+        raise BlockedError(
+            "Effective continuity schedule authority is not exact.")
+    if fields["Persistent"] not in {"yes", "no"} \
+            or fields["WakeSystem"] not in {"yes", "no"}:
+        raise ValueError("continuity schedule policy is malformed")
+    observation = {
+        "cadence": cadence,
+        "enabled": fields["UnitFileState"] == "enabled",
+        "active": fields["ActiveState"] == "active" and not fields["Job"],
+        "persistent": fields["Persistent"] == "yes",
+        "wake_system": fields["WakeSystem"] == "yes",
+        "last_trigger_at": _schedule_timestamp(
+            fields["LastTriggerUSec"], "last continuity trigger"),
+        "next_trigger_at": _schedule_timestamp(
+            fields["NextElapseUSecRealtime"], "next continuity trigger"),
+    }
+    if _generation(os.lstat(target)) != target_generation \
+            or _generation(os.lstat(receipt)) != receipt_generation:
+        raise BlockedError(
+            "Continuity schedule authority changed during observation.")
+    return observation
+
+
+def schedule_status():
+    config_exists = os.path.lexists(CONFIG_PATH)
+    key_exists = os.path.lexists(KEY_PATH)
+    if config_exists != key_exists:
+        raise BlockedError(
+            "Continuity configuration and repository key are incomplete.")
+    config_generation = None
+    key_generation = None
+    if config_exists:
+        config_generation = _generation(os.lstat(CONFIG_PATH))
+        key_generation = _generation(os.lstat(KEY_PATH))
+        load_config()
+    # A genuine timer is not enough: its named target must still be the exact
+    # managed service.  Reuse the four-unit authority boundary before exposing
+    # any automatic-backup claim.
+    _attest_continuity_units()
+    upload = _timer_schedule_observation(
+        "sia-backup.timer", "hourly", "sia-backup.service",
+        "backup-timer")
+    verification = _timer_schedule_observation(
+        "sia-backup-check.timer", "weekly", "sia-backup-check.service",
+        "backup-check-timer")
+    configured = config_exists and key_exists
+    if configured and (
+            _generation(os.lstat(CONFIG_PATH)) != config_generation
+            or _generation(os.lstat(KEY_PATH)) != key_generation):
+        raise BlockedError(
+            "Continuity configuration changed during schedule observation.")
+    automatic = configured \
+        and upload["enabled"] and upload["active"] \
+        and verification["enabled"] and verification["active"]
+    return {
+        "schema_version": SCHEDULE_SCHEMA_VERSION,
+        "configured": configured,
+        "automatic": automatic,
+        "observed_at": _now(),
+        "upload": upload,
+        "verification": verification,
+    }
 
 
 def _attest_continuity_units(*, timers_enabled=False,
@@ -3366,6 +3484,10 @@ def cli_backup(argv):
             print(json.dumps(read_status(), ensure_ascii=True, sort_keys=True,
                              separators=(",", ":")))
             return 0
+        if argv == ["schedule"]:
+            print(json.dumps(schedule_status(), ensure_ascii=True,
+                             sort_keys=True, separators=(",", ":")))
+            return 0
         if argv == ["list"]:
             print(json.dumps(list_snapshots(), ensure_ascii=True,
                              sort_keys=True, separators=(",", ":")))
@@ -3383,7 +3505,7 @@ def cli_backup(argv):
           "       sia backup connect --repository REPOSITORY "
           "--recovery-key-file ABSOLUTE_PATH "
           "[--environment-file ABSOLUTE_PATH]\n"
-          "       sia backup now [--scheduled] | status | list | "
+          "       sia backup now [--scheduled] | status | schedule | list | "
           "check [--scheduled] | resume-schedule")
     return 2
 

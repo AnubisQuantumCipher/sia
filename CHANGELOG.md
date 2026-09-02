@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.7.3 — 2026-09-02 · continuity explains itself
+
+Continuity now makes automatic protection visible instead of asking the
+operator to infer it from a green repository copy.
+
+- **The live schedule is inspectable.** `sia backup schedule` authenticates
+  SIA's managed systemd timer receipts and effective units, then reports the
+  hourly upload and weekly verification timers' enabled/active state, last and
+  next trigger, persistence, and wake policy without exposing credentials.
+- **The cockpit answers the obvious question.** It shows whether automatic
+  backup is on, when it last started, when it will run next, and when the next
+  weekly deep restore check is due. An unavailable or unauthenticated schedule
+  is never presented as healthy.
+- **Routine and on-demand work are distinct.** Hourly capture needs no button
+  press. **Make extra copy now** is an optional immediate upload plus exact
+  off-path round-trip verification.
+- **Sleep behavior is explicit.** Neither timer wakes the computer solely for
+  Continuity; persistent calendar timers catch up after the user session
+  returns, while serialized workers coalesce duplicate scheduled requests.
+
 ## 1.7.2 — 2026-09-02 · steady first light
 
 The cockpit and bar no longer flash an installation check while rereading a

@@ -11,7 +11,7 @@
 // one edge of the canvas.
 .pragma library
 
-function releaseVersion() { return "1.7.2" }
+function releaseVersion() { return "1.7.3" }
 
 // The checkout and the resident runtime advance as one release generation.
 // Only an exact release match may expose the cockpit.  Comparison stays on
@@ -210,6 +210,42 @@ function validContinuityOperation(value) {
     && typeof value.ready === "boolean"
     && typeof value.sia_ledger_verified === "boolean"
     && (value.kind !== "restore-apply" || value.prepared_id !== "")
+}
+
+function validContinuityScheduleTimestamp(value, nullable) {
+  if (nullable && value === null) return true
+  if (typeof value !== "string"
+      || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value))
+    return false
+  var parsed = Date.parse(value)
+  return parsed > 0
+    && new Date(parsed).toISOString().replace(".000Z", "Z") === value
+}
+
+function validContinuityScheduleTimer(value, cadence) {
+  return isPlainRecord(value)
+    && value.cadence === cadence
+    && typeof value.enabled === "boolean"
+    && typeof value.active === "boolean"
+    && typeof value.persistent === "boolean"
+    && typeof value.wake_system === "boolean"
+    && validContinuityScheduleTimestamp(value.last_trigger_at, true)
+    && validContinuityScheduleTimestamp(value.next_trigger_at, true)
+}
+
+function validContinuitySchedule(value) {
+  if (!isPlainRecord(value)
+      || value.schema_version !== 1
+      || typeof value.configured !== "boolean"
+      || typeof value.automatic !== "boolean"
+      || !validContinuityScheduleTimestamp(value.observed_at, false)
+      || !validContinuityScheduleTimer(value.upload, "hourly")
+      || !validContinuityScheduleTimer(value.verification, "weekly"))
+    return false
+  var active = value.configured
+    && value.upload.enabled && value.upload.active
+    && value.verification.enabled && value.verification.active
+  return value.automatic === active
 }
 
 function validContinuityStatus(value) {

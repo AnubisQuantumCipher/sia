@@ -5,6 +5,7 @@ Documentation=https://github.com/AnubisQuantumCipher/sia
 [Timer]
 OnCalendar=hourly
 Persistent=true
+WakeSystem=false
 Unit=sia-backup.service
 
 [Install]

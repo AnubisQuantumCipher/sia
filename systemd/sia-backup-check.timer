@@ -5,6 +5,7 @@ Documentation=https://github.com/AnubisQuantumCipher/sia
 [Timer]
 OnCalendar=weekly
 Persistent=true
+WakeSystem=false
 Unit=sia-backup-check.service
 
 [Install]
