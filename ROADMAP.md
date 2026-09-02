@@ -158,7 +158,12 @@ entire point. The pulse lane (4,373 lines) is deliberately **not** scheduled: it
 transaction core, and it gets split only after three successful façade extractions have
 proven the pattern under upgrade/rollback on a real machine.
 
-**Review invitations (with, not after, v1.6.0):** ask
+**Review invitations (with, not after, v1.6.0):** SENT 2026-09-02 —
+[m10ust](https://github.com/AnubisQuantumCipher/sia/issues/2#issuecomment-5507962051)
+(installer/member-set lane) and
+[webdevtodayjason](https://github.com/AnubisQuantumCipher/sia/issues/1#issuecomment-5507962249)
+(Obsidian-organ contract across the series), each with an explicit standing-reviewer
+offer. Original intent: ask
 [@m10ust](https://github.com/m10ust) to review the installer/member-set changes (they
 audited exactly that lane in issue #2 and called its hygiene the best they had seen), and
 [@webdevtodayjason](https://github.com/webdevtodayjason) to sanity-check the Obsidian organ
