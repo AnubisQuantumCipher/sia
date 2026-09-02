@@ -21,7 +21,11 @@ the corpus is markdown in git and the daemon signs its own acts.
 center, gives semantic branches stable room around the whole field, grows
 memories outward during replay, and keeps labels from piling over one another.
 
-![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
+![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
+
+*The current cockpit after a verified repository round trip. **RECOVERY
+READY** reports a ready, identity-matching recovery copy; it is not a
+substitute for the clean-machine restore drill.*
 
 ## Install (Omarchy)
 
