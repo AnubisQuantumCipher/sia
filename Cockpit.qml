@@ -4,7 +4,7 @@
 // brainstem's snapshots; the brain is gbrain + the signed corpus.
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -99,6 +99,7 @@ Item {
     ["setup", "installing", "update", "repair"]
       .indexOf(root.releaseLifecycle) !== -1
   readonly property string fontFamily: Style.font.family
+  readonly property color bg: Color.background
   readonly property color fg: Color.foreground
   readonly property color accent: Color.accent
   readonly property color urgent: Color.urgent
@@ -578,7 +579,9 @@ Item {
             contentHeight: continuitySheetCol.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Controls.ScrollBar.vertical: Controls.ScrollBar {
+              policy: Controls.ScrollBar.AsNeeded
+            }
 
             Column {
               id: continuitySheetCol
@@ -1548,6 +1551,19 @@ Item {
     graphCanvas.requestPaint()
   }
 
+  function toggleGraphReplay() {
+    if (!root.graph) return
+    if (root.playing) {
+      root.playing = false
+      root.revealT = 1.0
+    } else {
+      Model.replayLayout(root.graph, graphCanvas.width, graphCanvas.height)
+      root.revealT = 0.0
+      root.playing = true
+    }
+    graphCanvas.requestPaint()
+  }
+
   function open(payloadJson) {
     var payload = ({})
     try {
@@ -2186,8 +2202,7 @@ Item {
           event.accepted = true
         }
         else if (event.key === Qt.Key_R) {
-          if (root.playing) { root.playing = false; root.revealT = 1.0 }
-          else { root.revealT = 0.0; root.playing = true }
+          root.toggleGraphReplay()
           event.accepted = true
         }
       }
@@ -2526,7 +2541,9 @@ Item {
           clip: true
           pixelAligned: true    // snap scroll to whole pixels — no text shimmer
           boundsBehavior: Flickable.StopAtBounds
-          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+          Controls.ScrollBar.vertical: Controls.ScrollBar {
+            policy: Controls.ScrollBar.AsNeeded
+          }
 
         Column {
           id: leftPane
@@ -3732,7 +3749,8 @@ Item {
                   root.revealT = Math.min(1, root.revealT + 40 / 12000)
                   if (root.revealT >= 1) root.playing = false
                 }
-                Model.step(root.graph, graphCanvas.width, graphCanvas.height)
+                Model.step(root.graph, graphCanvas.width, graphCanvas.height,
+                           root.revealT)
                 graphCanvas.requestPaint()
               }
             }
@@ -3787,6 +3805,7 @@ Item {
               }
               ctx.lineWidth = 1
 
+              var nodeObstacles = []
               for (i = 0; i < nodes.length; i++) {
                 n = nodes[i]
                 if (!vis[n.id]) continue
@@ -3795,6 +3814,10 @@ Item {
                 var dimmed = eff !== "" && n.id !== eff &&
                   !(nbrs && nbrs[n.id])
                 var r = Model.nodeRadius(n)
+                nodeObstacles.push({
+                  id: n.id, left: p.x - r - 3, right: p.x + r + 3,
+                  top: p.y - r - 3, bottom: p.y + r + 3
+                })
                 var col = Model.nodeColor(n, root.pal)
                 var fresh = Model.freshness(n, now)
                 if (fresh > 0.02 && !dimmed) {
@@ -3825,6 +3848,7 @@ Item {
                 }
               }
 
+              var labelNodes = []
               for (i = 0; i < nodes.length; i++) {
                 n = nodes[i]
                 if (!vis[n.id]) continue
@@ -3834,13 +3858,84 @@ Item {
                 if (!anchorLbl && !isEff && !isNbr) continue
                 p = Model.posOf(n.id)
                 if (!p) continue
-                var alpha = isEff ? 1.0
-                  : isNbr ? 0.8
-                  : (eff !== "" ? 0.25
-                     : (n.id === "sia/cortex" ? 0.9 : 0.55))
+                labelNodes.push({
+                  node: n, point: p, effective: isEff, neighbor: isNbr,
+                  priority: n.id === "sia/cortex" ? 400
+                    : isEff ? 350 : n.t === "organ" ? 200 + (n.deg || 0)
+                    : 100 + (n.deg || 0)
+                })
+              }
+              labelNodes.sort(function(a, b) {
+                if (a.priority !== b.priority) return b.priority - a.priority
+                return a.node.id < b.node.id ? -1
+                  : (a.node.id > b.node.id ? 1 : 0)
+              })
+
+              var placedLabels = []
+              var topSafe = Style.space(34)
+              var bottomSafe = height - Style.space(54)
+              var sideSafe = Style.space(8)
+              var labelHeight = Style.font.caption + 6
+              ctx.font = Style.font.caption + "px " + root.fontFamily
+              ctx.textAlign = "center"
+              ctx.textBaseline = "middle"
+
+              function overlaps(left, right, top, bottom, rect, padding) {
+                return !(right + padding < rect.left
+                         || left - padding > rect.right
+                         || bottom + padding < rect.top
+                         || top - padding > rect.bottom)
+              }
+
+              for (i = 0; i < labelNodes.length; i++) {
+                var labelNode = labelNodes[i]
+                n = labelNode.node
+                p = labelNode.point
+                var label = Model.shortLabel(n)
+                var labelWidth = ctx.measureText(label).width + 8
+                var candidates = Model.labelCandidates(
+                  p.x, p.y, cx, cy, Model.nodeRadius(n),
+                  labelWidth, labelHeight)
+                var chosen = null
+                for (var ci = 0; ci < candidates.length; ci++) {
+                  var candidate = candidates[ci]
+                  var left = candidate.x - labelWidth / 2
+                  var right = candidate.x + labelWidth / 2
+                  var top = candidate.y - labelHeight / 2
+                  var bottom = candidate.y + labelHeight / 2
+                  if (left < sideSafe || right > width - sideSafe
+                      || top < topSafe || bottom > bottomSafe) continue
+                  var blocked = false
+                  for (var pi = 0; pi < placedLabels.length && !blocked; pi++)
+                    blocked = overlaps(left, right, top, bottom,
+                                       placedLabels[pi], 3)
+                  for (var oi = 0; oi < nodeObstacles.length && !blocked; oi++) {
+                    if (nodeObstacles[oi].id === n.id) continue
+                    blocked = overlaps(left, right, top, bottom,
+                                       nodeObstacles[oi], 2)
+                  }
+                  if (!blocked) {
+                    chosen = { x: candidate.x, y: candidate.y,
+                      left: left, right: right, top: top, bottom: bottom }
+                    break
+                  }
+                }
+                if (!chosen) continue
+                placedLabels.push(chosen)
+
+                var alpha = labelNode.effective ? 1.0
+                  : labelNode.neighbor ? 0.82
+                  : (eff !== "" ? 0.28
+                     : (n.id === "sia/cortex" ? 0.94 : 0.62))
+                ctx.strokeStyle = Qt.alpha(root.fg, alpha * 0.24)
+                ctx.beginPath(); ctx.moveTo(p.x, p.y)
+                ctx.lineTo(chosen.x, chosen.y); ctx.stroke()
+                ctx.fillStyle = Qt.alpha(root.bg,
+                  labelNode.effective ? 0.90 : 0.76)
+                ctx.fillRect(chosen.left - 2, chosen.top - 1,
+                             labelWidth + 4, labelHeight + 2)
                 ctx.fillStyle = Qt.alpha(root.fg, alpha)
-                ctx.fillText(Model.shortLabel(n), p.x,
-                             p.y - Model.nodeRadius(n) - 5)
+                ctx.fillText(label, chosen.x, chosen.y)
               }
             }
 
@@ -3912,9 +4007,7 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               onClicked: {
-                if (root.playing) { root.playing = false; root.revealT = 1.0 }
-                else { root.revealT = 0.0; root.playing = true }
-                graphCanvas.requestPaint()
+                root.toggleGraphReplay()
               }
             }
           }
@@ -4188,7 +4281,9 @@ Item {
               pixelAligned: true
               clip: true
               boundsBehavior: Flickable.StopAtBounds
-              ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+              Controls.ScrollBar.vertical: Controls.ScrollBar {
+                policy: Controls.ScrollBar.AsNeeded
+              }
 
               Column {
                 id: thoughtCol
@@ -4346,7 +4441,7 @@ Item {
               horizontalAlignment: Text.AlignHCenter
             }
 
-            Button {
+            Controls.Button {
               id: firstLightButton
               visible: root.setupActionAllowed
               enabled: root.setupActionAllowed && !root.setupLaunchRequested

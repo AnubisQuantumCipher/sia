@@ -213,14 +213,24 @@ than claiming a per-output attachment.
   arrives, the cockpit keeps the last good snapshot and says so instead of
   quietly treating it as current or complete.
 
-**Center — the living graph.** Time is radial: the cortex at the center,
-organs on the inner ring, every memory at a radius set by its age (oldest
-inner, newest at the rim) with faint day rings. Nodes glow when freshly
-touched.
+**Center — the living graph.** Time is radial: the cortex stays at the center,
+organs anchor semantic sectors on the inner ring, and every memory blooms
+through its branch at a radius set by age (oldest inner, newest at the rim)
+with faint day rings. Weighted sectors give busy organs more room without
+letting the whole graph collapse into one side of the field. Nodes repel
+locally, linked memories pull together, and soft radial/semantic tethers keep
+the result alive but legible. Nodes glow when freshly touched.
 
 - **Hover** a node → its whole neighborhood lights and labels; everything
   else dims.
 - **Click** a node → lock the selection (click empty space to release).
+- **Replay growth** → deterministically reseed the layout beside its owning
+  organs, then admit memories by timestamp so branches visibly grow outward.
+  Hidden future nodes do not participate in the force simulation early, and
+  replaying cannot preserve a previously collapsed arrangement.
+- **Labels** choose collision-free positions around visible nodes. Lower
+  priority labels stay quiet when no clear position exists; hover or lock the
+  node to inspect its exact identity rather than drawing words over words.
 - **Inspector** (right rail) → the locked/hovered memory's title, type,
   persisted origin (`evidence` / `derived` / `model` / `legacy-unlabeled`),
   age, in/out degree, and every connection with its type *and the text it was

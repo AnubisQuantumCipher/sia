@@ -17,9 +17,9 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.0.** SIA's MCP tools now appear with the clean
-client-visible names `sia.ask`, `sia.search`, `sia.recall`, `sia.status`,
-`sia.think`, `sia.note`, `sia.propose_take`, and `sia.calibration`.
+**Current release: v1.7.1.** The living memory graph now holds SIA at its
+center, gives semantic branches stable room around the whole field, grows
+memories outward during replay, and keeps labels from piling over one another.
 
 ![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
 
@@ -143,7 +143,8 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   model, because remembering *to do* needs a diary, not a dopamine analogue.
 - **A mission-control cockpit.** A full-screen Quickshell overlay (from the
   bar widget, or `SUPER+SHIFT+B` when you opt into the binding): the living
-  graph with radial time, hover neighborhoods, edge explanations, origin
+  graph with radial time, stable semantic sectors, collision-aware labels,
+  replayable outward growth, hover neighborhoods, edge explanations, origin
   labels, a thought stream, evidence-chain verdicts, and a SOURCE HEALTH truth
   boundary that admits incompleteness instead of hiding it. Its truth ribbon
   separates the last-published snapshot from an explicitly requested live

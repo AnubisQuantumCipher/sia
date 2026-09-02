@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.7.1 — 2026-09-02 · the memory graph gets its whole sky
+
+The cockpit graph can no longer drift into one edge of its card and leave most
+of the field empty. SIA remains the visual center; organs own deterministic,
+weighted semantic sectors; and memories organize inside those branches while
+their timestamps continue to own radius.
+
+- **A self-organizing orbital garden.** Stable branch slots replace random
+  seeding. Local repulsion and link springs remain alive, while semantic-angle
+  tethers, radial-time tethers, and a fixed cortex prevent whole-graph drift.
+  Busy organs receive more angular room, so a dominant source expands across
+  the field instead of crushing every other branch into the same hemisphere.
+- **Replay means growth again.** The replay control now resets the layout,
+  seeds memories beside their owning organ, and admits them to the force
+  simulation only when their timestamp is revealed. A replay no longer hides
+  and re-shows stale coordinates.
+- **Words stop fighting for the same pixels.** Cortex, organ, hover, and
+  neighborhood labels try outward and tangential placements, reject node and
+  label collisions, respect the card's control/legend margins, and stay quiet
+  when no honest clear position exists. The inspector remains the complete
+  identity surface.
+- **Executable layout contracts.** A dominant synthetic branch must still use
+  every quadrant, hidden replay nodes must remain stationary until revealed,
+  replay seeding must be deterministic, and label candidates must begin on
+  the outward side of the orbit.
+- **Clean-shell startup stays clean.** Qt Quick controls are explicitly
+  namespaced, preventing Omarchy's UI components from shadowing the setup
+  button or scroll bars when the long-running shell is restarted.
+
 ## 1.7.0 — 2026-09-02 · clean MCP tool namespace
 
 SIA's MCP server name already supplies the `sia` namespace. The advertised

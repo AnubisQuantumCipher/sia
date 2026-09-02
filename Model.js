@@ -4,13 +4,14 @@
 // signed corpus. Nothing here is evidence.
 //
 // Layout philosophy (after the Hermes Star Map): time is radial — the
-// cortex sits at the center, the organs on a fixed inner ring, and every
-// memory at a radius set by its age: older toward the center, newest at
-// the rim. Faint day rings mark the time bands. The force simulation
-// only handles angular spacing; timestamps own the radius.
+// cortex sits at the center, organs hold stable semantic sectors on the
+// inner ring, and memories bloom through those sectors at a radius set by
+// age. Faint day rings mark the time bands. The force simulation gives the
+// branches room to breathe without allowing the whole mind to collapse into
+// one edge of the canvas.
 .pragma library
 
-function releaseVersion() { return "1.7.0" }
+function releaseVersion() { return "1.7.1" }
 
 // The checkout and the resident runtime advance as one release generation.
 // Only an exact release match may expose the cockpit.  Comparison stays on
@@ -410,11 +411,43 @@ function freshness(n, nowMs) {
 
 // ---------------------------------------------------------------- layout
 
-var L = { pos: {}, seeded: false, phase: 0,
-          minT: 0, maxT: 1, adj: {}, edgesByNode: {}, rings: [] }
+var L = { pos: {}, seeded: false, replaySeed: false, phase: 0,
+          minT: 0, maxT: 1, adj: {}, edgesByNode: {}, rings: [],
+          targetAngle: {}, sectorWidth: {}, width: 0, height: 0 }
 
 function resetLayout() {
-  L.pos = {}; L.seeded = false; L.adj = {}; L.edgesByNode = {}; L.rings = []
+  L.pos = {}; L.seeded = false; L.replaySeed = false; L.phase = 0
+  L.adj = {}; L.edgesByNode = {}; L.rings = []; L.targetAngle = {}
+  L.sectorWidth = {}
+  L.width = 0; L.height = 0
+}
+
+function replayLayout(graph, w, h) {
+  resetLayout()
+  L.replaySeed = true
+  syncGraph(graph, w, h)
+}
+
+function stableUnit(text) {
+  var value = String(text || ""), hash = 2166136261
+  for (var i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i)
+    hash += (hash << 1) + (hash << 4) + (hash << 7)
+      + (hash << 8) + (hash << 24)
+  }
+  hash += hash << 13
+  hash ^= hash >>> 7
+  hash += hash << 3
+  hash ^= hash >>> 17
+  hash += hash << 5
+  return (hash >>> 0) / 4294967295
+}
+
+function angleDelta(target, current) {
+  var delta = target - current
+  while (delta > Math.PI) delta -= 2 * Math.PI
+  while (delta < -Math.PI) delta += 2 * Math.PI
+  return delta
 }
 
 // radius bands as fractions of min(w,h)/2
@@ -430,6 +463,23 @@ function syncGraph(graph, w, h) {
   if (!graph || !graph.nodes) return
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
   var i, n
+
+  // Preserve a settled layout across ordinary resizes by moving it with the
+  // canvas. Without this, a display/workspace change leaves yesterday's
+  // pixel coordinates pulling against today's center.
+  if (L.seeded && L.width > 0 && L.height > 0
+      && (L.width !== w || L.height !== h)) {
+    var oldCx = L.width / 2, oldCy = L.height / 2
+    var oldHalf = Math.min(L.width, L.height) / 2
+    var scale = oldHalf > 0 ? half / oldHalf : 1
+    for (var oldId in L.pos) {
+      L.pos[oldId].x = cx + (L.pos[oldId].x - oldCx) * scale
+      L.pos[oldId].y = cy + (L.pos[oldId].y - oldCy) * scale
+      L.pos[oldId].vx *= scale
+      L.pos[oldId].vy *= scale
+    }
+  }
+  L.width = w; L.height = h
 
   // time normalization over dated non-organ nodes
   var minT = Infinity, maxT = -Infinity
@@ -478,10 +528,84 @@ function syncGraph(graph, w, h) {
     L.edgesByNode[e.d].push({ other: e.s, type: e.t, why: e.why || "", out: false })
   }
 
-  // organ index for stable ring placement
-  var organs = graph.nodes.filter(function(x) { return x.t === "organ" })
-  var organIndex = {}
-  for (i = 0; i < organs.length; i++) organIndex[organs[i].id] = i
+  // Organ sectors are deterministic and independent of snapshot order. The
+  // fixed anchors prevent a high-degree branch from dragging the whole mind
+  // into one hemisphere while the local forces still organize each branch.
+  var organs = graph.nodes.filter(function(x) {
+    return x.t === "organ" && x.id !== "sia/cortex"
+  })
+    .slice().sort(function(a, b) {
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)
+    })
+  var nodeById = {}
+  for (i = 0; i < graph.nodes.length; i++)
+    nodeById[graph.nodes[i].id] = graph.nodes[i]
+
+  L.targetAngle = {}; L.sectorWidth = {}
+  var branchNodes = {}, unownedNodes = []
+  for (i = 0; i < organs.length; i++) branchNodes[organs[i].id] = []
+  for (i = 0; i < graph.nodes.length; i++) {
+    n = graph.nodes[i]
+    if (n.id === "sia/cortex" || n.t === "organ") continue
+    var organNeighbors = []
+    var linked = L.edgesByNode[n.id] || []
+    for (var ni = 0; ni < linked.length; ni++) {
+      var linkedNode = nodeById[linked[ni].other]
+      if (linkedNode && linkedNode.t === "organ"
+          && linkedNode.id !== "sia/cortex")
+        organNeighbors.push(linkedNode.id)
+    }
+    organNeighbors.sort()
+    if (organNeighbors.length) {
+      branchNodes[organNeighbors[0]].push(n)
+    } else unownedNodes.push(n)
+  }
+
+  var organWeight = {}, totalWeight = 0
+  for (i = 0; i < organs.length; i++) {
+    organWeight[organs[i].id] = branchNodes[organs[i].id].length + 1
+    totalWeight += organWeight[organs[i].id]
+  }
+  var sector = 2 * Math.PI / Math.max(1, organs.length)
+  var sectorCursor = -Math.PI / 2
+  for (i = 0; i < organs.length; i++) {
+    var ownedWidth = totalWeight > 0
+      ? 2 * Math.PI * organWeight[organs[i].id] / totalWeight : sector
+    L.sectorWidth[organs[i].id] = ownedWidth
+    L.targetAngle[organs[i].id] = sectorCursor + ownedWidth / 2
+    sectorCursor += ownedWidth
+  }
+
+  function stableNodeOrder(a, b) {
+    var ah = stableUnit("order:" + a.id)
+    var bh = stableUnit("order:" + b.id)
+    if (ah !== bh) return ah - bh
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)
+  }
+
+  for (i = 0; i < organs.length; i++) {
+    var branch = branchNodes[organs[i].id]
+    branch.sort(stableNodeOrder)
+    if (!branch.length) continue
+    var branchWidth = L.sectorWidth[organs[i].id] * 0.88
+    var branchStart = L.targetAngle[organs[i].id] - branchWidth / 2
+    var branchSlot = branchWidth / branch.length
+    for (var bi = 0; bi < branch.length; bi++) {
+      var branchJitter = (stableUnit("jitter:" + branch[bi].id) - 0.5)
+        * branchSlot * 0.30
+      L.targetAngle[branch[bi].id] = branchStart
+        + branchSlot * (bi + 0.5) + branchJitter
+    }
+  }
+
+  unownedNodes.sort(stableNodeOrder)
+  var unownedSlot = 2 * Math.PI / Math.max(1, unownedNodes.length)
+  for (i = 0; i < unownedNodes.length; i++) {
+    var freeJitter = (stableUnit("free:" + unownedNodes[i].id) - 0.5)
+      * unownedSlot * 0.30
+    L.targetAngle[unownedNodes[i].id] = -Math.PI / 2
+      + unownedSlot * (i + 0.5) + freeJitter
+  }
 
   var live = {}
   for (i = 0; i < graph.nodes.length; i++) {
@@ -491,42 +615,55 @@ function syncGraph(graph, w, h) {
     var x, y
     if (n.id === "sia/cortex") { x = cx; y = cy }
     else if (n.t === "organ") {
-      var k = organIndex[n.id] || 0
-      var ang = (2 * Math.PI * k) / Math.max(1, organs.length) - Math.PI / 2
+      var ang = L.targetAngle[n.id]
       x = cx + Math.cos(ang) * R_ORGAN * half
       y = cy + Math.sin(ang) * R_ORGAN * half
     } else {
-      // spawn at the node's own time-radius, near a neighbor's angle
-      var nb = L.edgesByNode[n.id]
-      var a2 = Math.random() * 2 * Math.PI
-      if (nb && nb.length && L.pos[nb[0].other]) {
-        var p0 = L.pos[nb[0].other]
-        a2 = Math.atan2(p0.y - cy, p0.x - cx) + (Math.random() - 0.5) * 0.9
-      }
-      var r0 = targetRadius(n, half)
+      // Ordinary refreshes start at the stable time/sector coordinate. A
+      // deliberate replay starts beside the owning organ, then blooms each
+      // memory outward as its timestamp becomes visible.
+      var a2 = L.targetAngle[n.id]
+      var r0 = L.replaySeed
+        ? (R_ORGAN * half
+           + (stableUnit("radius:" + n.id) - 0.5) * 18)
+        : targetRadius(n, half)
       x = cx + Math.cos(a2) * r0
       y = cy + Math.sin(a2) * r0
     }
     L.pos[n.id] = { x: x, y: y, vx: 0, vy: 0 }
   }
   for (var id in L.pos) if (!live[id]) delete L.pos[id]
+  L.replaySeed = false
   L.seeded = true
 }
 
-function step(graph, w, h) {
+function step(graph, w, h, revealT) {
   if (!graph || !graph.nodes || !L.seeded) return
   var nodes = graph.nodes, edges = graph.edges
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
   var i, j, a, b, dx, dy, d2, d, f
-  var K_REP = 700, K_SPRING = 0.012, REST = 40, K_RAD = 0.09, DAMP = 0.80
+  var K_REP = 760, K_SPRING = 0.009, REST = 44
+  var K_RAD = 0.085, K_ANGLE = 0.032, K_ORGAN = 0.16, DAMP = 0.82
+  var active = {}
+  for (i = 0; i < nodes.length; i++)
+    active[nodes[i].id] = nodes[i].id === "sia/cortex"
+      || nodes[i].t === "organ" || revealT === undefined
+      || (nodes[i].tsNorm || 0) <= revealT
   for (i = 0; i < nodes.length; i++) {
+    if (!active[nodes[i].id]) continue
     a = L.pos[nodes[i].id]; if (!a) continue
     for (j = i + 1; j < nodes.length; j++) {
+      if (!active[nodes[j].id]) continue
       b = L.pos[nodes[j].id]; if (!b) continue
       dx = a.x - b.x; dy = a.y - b.y
       d2 = dx * dx + dy * dy
       if (d2 > 26000) continue
-      if (d2 < 1) { d2 = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5 }
+      if (d2 < 1) {
+        d2 = 1
+        var nudge = stableUnit(nodes[i].id + "|" + nodes[j].id)
+          * 2 * Math.PI
+        dx = Math.cos(nudge); dy = Math.sin(nudge)
+      }
       f = K_REP / d2
       d = Math.sqrt(d2)
       a.vx += (dx / d) * f; a.vy += (dy / d) * f
@@ -534,6 +671,7 @@ function step(graph, w, h) {
     }
   }
   for (i = 0; i < edges.length; i++) {
+    if (!active[edges[i].s] || !active[edges[i].d]) continue
     a = L.pos[edges[i].s]; b = L.pos[edges[i].d]
     if (!a || !b) continue
     dx = b.x - a.x; dy = b.y - a.y
@@ -545,26 +683,65 @@ function step(graph, w, h) {
   for (i = 0; i < nodes.length; i++) {
     var n = nodes[i]
     a = L.pos[n.id]; if (!a) continue
+    if (!active[n.id]) { a.vx = 0; a.vy = 0; continue }
     if (n.id === "sia/cortex") {
-      a.vx += (cx - a.x) * 0.3; a.vy += (cy - a.y) * 0.3
+      a.x = cx; a.y = cy; a.vx = 0; a.vy = 0
+      continue
+    } else if (n.t === "organ") {
+      var organAngle = L.targetAngle[n.id]
+      var organX = cx + Math.cos(organAngle) * R_ORGAN * half
+      var organY = cy + Math.sin(organAngle) * R_ORGAN * half
+      a.vx += (organX - a.x) * K_ORGAN
+      a.vy += (organY - a.y) * K_ORGAN
     } else {
-      // time owns the radius: spring toward the node's temporal ring
+      // Time owns radius; semantic ownership softly owns angle. The latter is
+      // a tether, not a fixed point, so repulsion and links can still produce
+      // a living, self-organizing branch inside the organ's sector.
       dx = a.x - cx; dy = a.y - cy
       var r = Math.sqrt(dx * dx + dy * dy) || 1
       var want = targetRadius(n, half)
-      var k = n.t === "organ" ? K_RAD * 3.5 : K_RAD
-      a.vx += (dx / r) * (want - r) * k
-      a.vy += (dy / r) * (want - r) * k
+      a.vx += (dx / r) * (want - r) * K_RAD
+      a.vy += (dy / r) * (want - r) * K_RAD
+      var turn = angleDelta(L.targetAngle[n.id], Math.atan2(dy, dx))
+        * r * K_ANGLE
+      a.vx += (-dy / r) * turn
+      a.vy += (dx / r) * turn
     }
     a.vx *= DAMP; a.vy *= DAMP
     var vm = Math.sqrt(a.vx * a.vx + a.vy * a.vy)
     if (vm > 6) { a.vx *= 6 / vm; a.vy *= 6 / vm }
     a.x += a.vx; a.y += a.vy
-    var m = 8
+    var m = Math.max(12, nodeRadius(n) + 6)
     if (a.x < m) a.x = m; if (a.x > w - m) a.x = w - m
     if (a.y < m) a.y = m; if (a.y > h - m) a.y = h - m
   }
   L.phase += 0.03
+}
+
+// Candidate label centers, ordered from the node's outward radial side to
+// progressively quieter fallbacks. The painter performs collision tests
+// against nodes, earlier labels, and the graph card's UI margins.
+function labelCandidates(x, y, cx, cy, nodeR, labelW, labelH) {
+  var dx = x - cx, dy = y - cy
+  var distance = Math.sqrt(dx * dx + dy * dy)
+  var ux = distance > 0 ? dx / distance : 0
+  var uy = distance > 0 ? dy / distance : -1
+  var tx = -uy, ty = ux
+  var radial = nodeR + labelH * 0.5 + 7
+  var diagonal = labelW * 0.30 + nodeR + 5
+  var side = labelW * 0.5 + nodeR + 7
+  return [
+    { x: x + ux * radial, y: y + uy * radial },
+    { x: x + ux * radial + tx * diagonal,
+      y: y + uy * radial + ty * diagonal },
+    { x: x + ux * radial - tx * diagonal,
+      y: y + uy * radial - ty * diagonal },
+    { x: x + tx * side, y: y + ty * side },
+    { x: x - tx * side, y: y - ty * side },
+    { x: x - ux * radial, y: y - uy * radial },
+    { x: x, y: y - nodeR - labelH * 0.5 - 6 },
+    { x: x, y: y + nodeR + labelH * 0.5 + 6 }
+  ]
 }
 
 function posOf(id)   { return L.pos[id] }
