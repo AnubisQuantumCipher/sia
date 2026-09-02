@@ -51,6 +51,12 @@ GBRAIN_ENV = dict(os.environ,
                   GBRAIN_SKIP_STARTUP_HOOKS="1",
                   PATH=BUN_DIR + ":" + os.environ.get("PATH", ""))
 
+# gbrain registers this corpus under one named source. Every page-addressed
+# invocation must name it: without --source the lookup lands in gbrain's
+# "default" source and fails with "Page not found" even though the page is
+# synced and embedded.
+GBRAIN_SOURCE = "sia"
+
 # ---- instance configuration (~/.config/sia/config.json) --------------
 # SIA is generic: a base set of senses every Linux/Omarchy box has, plus
 # OPTIONAL integrations that activate only when their data exists on this
@@ -62,8 +68,6 @@ MAX_CONFIG_PATH_CHARS = 4096
 MAX_CONFIG_TEXT_CHARS = 2000
 MAX_SOURCE_NAME_CHARS = 200
 MAX_CONFIG_TAGS = 8
-# JACKAL status=exact, parsed=16*1024*1024, exact=16777216. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_STATE_JSON_BYTES = 16_777_216
 
 CONFIG_ERRORS = []
@@ -283,7 +287,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -949,8 +953,6 @@ THOUGHT_RECOVERY_LOCK_NAME = "thought-recovery.lock"
 MAX_THOUGHT_RECOVERY_RECORDS = MAX_THOUGHT_INBOX_ITEMS
 MAX_THOUGHT_RECOVERY_RECORD_BYTES = MAX_THOUGHT_INBOX_BYTES
 MAX_THOUGHT_RECOVERY_BYTES = MAX_STATE_JSON_BYTES
-# JACKAL status=exact: parsed=200*2+1, exact=401. Exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded).
 MAX_THOUGHT_RECOVERY_SCAN_ENTRIES = 401
 
 
@@ -962,8 +964,6 @@ class ThoughtDirectoryGenerationChanged(ValueError):
     """The quiescent legacy directory changed around a durable cookie."""
 
 
-# JACKAL status=exact, parsed=255-3, exact=252. Exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded). The leaf reserves
 # three bytes for the persisted `.md` suffix.
 MAX_CORPUS_COMPONENT_BYTES = 255
 MAX_CORPUS_LEAF_BYTES = 252
@@ -1420,10 +1420,7 @@ def save_cursors(c):
     atomic_write(CURSORS_PATH, encoded)
 
 
-# JACKAL status=exact, parsed=256*1024, exact=262144. This exact
-# arithmetic is outside the Lean certificate chain (NOT formal-bounded).
 MAX_SOURCE_TAIL_BYTES = 262_144
-# JACKAL status=exact, parsed=64*1024, exact=65536. Same assurance boundary.
 SOURCE_CURSOR_GUARD_BYTES = 65_536
 MAX_SOURCE_TAIL_RECORDS = 1024
 SOURCE_CURSOR_VERSION = 2
@@ -2786,8 +2783,6 @@ def day_slug(organ, date):
 MAX_EVENT_BULLETS = 400
 MAX_EVENT_SHARDS = 1024
 MAX_EVENT_LOOKUP_PAGES = 4096
-# JACKAL status=exact, parsed=4096+1, exact=4097. Exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded). One extra raw
 # directory inspection distinguishes a complete ceiling-sized snapshot from
 # a source that exceeds the supported complete-snapshot capacity.
 MAX_EVENT_DIRECTORY_INSPECTIONS = 4097
@@ -2800,8 +2795,6 @@ MAX_EPOCH_SOURCE_MANIFEST_BYTES = MAX_EPOCH_PAGE_BYTES
 CONSOLIDATION_SCAN_SCHEMA = "sia-consolidation-scan-v1"
 MAX_CONSOLIDATION_DAYS_PER_RUN = MAX_CONFIG_TAGS
 MAX_CONSOLIDATION_DIRECTORY_QUEUE = MAX_EVENT_LOOKUP_PAGES
-# JACKAL status=exact, parsed=2-1, exact=1. Exact rational arithmetic outside
-# the Lean certificate chain (NOT formal-bounded): events/<organ>/<page> has
 # one directory level below the events root.
 MAX_CONSOLIDATION_TREE_LEVELS = 1
 EVENT_INDEX_SCHEMA = "sia-consolidated-event-v1"
@@ -5404,7 +5397,8 @@ def _gbrain_call_unlocked(op, params, timeout=120, owner_fd=None):
     """Call one gbrain operation while the caller owns the engine lease."""
     try:
         r = _run_bounded_text_process(
-            [GBRAIN, "call", "--source", "sia", op, json.dumps(params)],
+            [GBRAIN, "call", "--source", GBRAIN_SOURCE, op,
+             json.dumps(params)],
             env=GBRAIN_ENV, timeout=timeout, cwd=CORPUS,
             pass_fds=((owner_fd,) if owner_fd is not None else ()),
             label="gbrain", output_limit=MAX_GBRAIN_OUTPUT_BYTES)
@@ -5753,10 +5747,7 @@ def ledger_settle(action, arg1, arg2, content, occurrence_id=None):
 LEDGER_PENDING_SCHEMA_V1 = "sia-ledger-pending-v1"
 LEDGER_PENDING_SCHEMA = "sia-ledger-pending-v2"
 MAX_LEDGER_PENDING_RECORDS = 1024
-# JACKAL exact: parsed=64*1024, exact=65536; and
 # parsed=1024*65536, exact=67108864; parsed=1024*2, exact=2048;
-# parsed=2048+1, exact=2049. Exact rational arithmetic outside the Lean
-# certificate chain (NOT formal-bounded).
 MAX_LEDGER_PENDING_RECORD_BYTES = 65_536
 MAX_LEDGER_PENDING_BYTES = 67_108_864
 MAX_LEDGER_PENDING_SCAN_ENTRIES = 2_049
@@ -6281,8 +6272,6 @@ MAX_GRAPH_NODES = 260
 MAX_GRAPH_EDGES = MAX_EVENT_LOOKUP_PAGES
 MAX_GRAPH_SCAN_ENTRIES = MAX_SOURCE_SCAN_ENTRIES
 MAX_GRAPH_DIRECTORY_QUEUE = MAX_EVENT_LOOKUP_PAGES
-# JACKAL status=exact, parsed=3-1, exact=2. Exact rational arithmetic outside
-# the Lean certificate chain (NOT formal-bounded). Corpus Markdown has at most
 # three path components, hence two directory levels below its root.
 MAX_GRAPH_TREE_LEVELS = 2
 
@@ -6666,9 +6655,6 @@ _DOMAIN_REGEX_MAX_CHARS = 512
 _DOMAIN_REGEX_MAX_BOUND = 256
 _DOMAIN_REGEX_MAX_OPTIONALS = 16
 _DOMAIN_BOUNDED_DOT_RE = re.compile(r"\.\{([0-9]+),([0-9]+)\}")
-# JACKAL status=exact: parsed=1024*64, exact=65536; parsed=16*256,
-# exact=4096. Exact rational arithmetic outside the Lean certificate chain
-# (NOT formal-bounded).
 MAX_SCHEMA_PACK_BYTES = 65_536
 MAX_SCHEMA_PACK_LINES = 4_096
 MAX_SCHEMA_PACK_LINE_BYTES = 4_096
@@ -7276,14 +7262,9 @@ MEMO_PATH = os.path.join(STATE, "memo.json")
 MAX_MEMO_BYTES = 16_777_216
 MAX_SOURCE_REPLAY_EVENTS = 65_536
 MAX_SOURCE_REPLAY_SOURCES = 2001
-# JACKAL status=exact, parsed=4*1024*1024, exact=4194304. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_SOURCE_REPLAY_RECORD_BYTES = 4_194_304
 # A legacy trend may contain more history than the current cockpit window,
-# but every pulse still admits only a finite source. JACKAL status=exact:
 # parsed=4*1024*1024, exact=4194304; parsed=16*256, exact=4096;
-# parsed=1024*64, exact=65536. Exact rational arithmetic outside the Lean
-# certificate chain (NOT formal-bounded).
 MAX_BENCH_TREND_BYTES = 4_194_304
 MAX_BENCH_TREND_INPUT_LINES = 4_096
 MAX_BENCH_TREND_LINE_BYTES = 65_536
@@ -11161,7 +11142,6 @@ def _append_bench_trend_once(record, receipt_id):
         valid_lines.append(line.encode("utf-8"))
     # The cockpit consumes only a recent projection. Rotate that derived
     # window before it can strand a durable dream-unit receipt at the file
-    # bound. JACKAL status=exact: parsed=30-1, exact=29 (NOT formal-bounded).
     prior = collections.deque(
         valid_lines,
         maxlen=MAX_BENCH_TREND_ROWS - 1)
@@ -11215,6 +11195,14 @@ def _settle_pending_dream_unit(store, expected_unit=None):
     return receipt
 
 
+def _embed_failure_reason(result):
+    """One bounded line explaining a failed rehearsal embed subprocess."""
+    text = ((getattr(result, "stderr", "") or "").strip()
+            or (getattr(result, "stdout", "") or "").strip()
+            or f"exit {getattr(result, 'returncode', '?')}")
+    return " ".join(text.split())[:160]
+
+
 def rehearse_memories(now=None, stage=None):
     """Embed due pages and atomically stage their mind/ledger transition."""
     now = time.time() if now is None else float(now)
@@ -11231,7 +11219,8 @@ def rehearse_memories(now=None, stage=None):
             missing += 1
             attempted.append(item)
             continue
-        result = gbrain(["embed", slug], timeout=300)
+        result = gbrain(["embed", slug, "--source", GBRAIN_SOURCE],
+                        timeout=300)
         if result.returncode == 0:
             committed = siamind.apply_rehearsal(mind, plan, now=now)
             if committed is None:
@@ -11244,6 +11233,7 @@ def rehearse_memories(now=None, stage=None):
                 embedded += 1
         else:
             item["embed"] = "failed"
+            item["error"] = _embed_failure_reason(result)
             failed += 1
         attempted.append(item)
     decay = siamind.decay_sweep(mind, now=now)
@@ -11372,6 +11362,21 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 thought = (
                     "dream", thought_text,
                     [item["slug"] for item in reviewed[:5]], False)
+            elif rehearsal["failed"] or rehearsal["missing"]:
+                reasons = sorted({item["error"]
+                                  for item in rehearsal["planned"]
+                                  if item.get("error")})
+                detail = f" First reason: {reasons[0]}" if reasons else ""
+                thought = (
+                    "dream",
+                    f"I could not rehearse any of the "
+                    f"{len(rehearsal['planned'])} due memories: "
+                    f"{rehearsal['failed']} embed failure(s), "
+                    f"{rehearsal['missing']} missing page(s). The SM-2 "
+                    f"queue cannot advance until embedding succeeds."
+                    f"{detail}",
+                    [item["slug"] for item in rehearsal["planned"][:5]],
+                    True)
             _stage_dream_unit(
                 mind, "rehearse", "DREAM:rehearse",
                 f"reviewed={len(reviewed)}",

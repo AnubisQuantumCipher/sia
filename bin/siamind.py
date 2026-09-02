@@ -50,10 +50,7 @@ TOUCH_QUEUE_REFUSAL_SCHEMA = "sia-touch-queue-tail-refusal-v1"
 TOUCH_QUEUE_REFUSAL_NAME = ".touch-queue-tail-refusal.json"
 # The runtime has exactly the ordinary-reinforcement and recovery-unpin lanes.
 MAX_TOUCH_QUEUE_REFUSAL_SOURCES = 2
-# JACKAL exact: parsed=16*1024*1024, exact=16777216.
 MAX_TOUCH_QUEUE_BYTES = 16_777_216
-# JACKAL status=exact, parsed=2^16, exact=65536. Exact rational arithmetic
-# outside the Lean certificate chain (NOT formal-bounded).
 MAX_TOUCH_QUEUE_RECORDS = 65_536
 MAX_MIND_BYTES = 16_777_216
 
@@ -79,8 +76,6 @@ SM2_FIRST_INTERVAL = 1
 SM2_SECOND_INTERVAL = 6
 SM2_IMPORTANCE_AROUSAL = 0.7
 # Operational bounds prevent repeated reinforcement or malformed persisted
-# floats from producing non-standard JSON or immortal salience. JACKAL exact:
-# parsed=365*100, exact=36500 (exact rational arithmetic; not formal-bounded).
 MAX_STABILITY_DAYS = 36500.0
 MAX_REVIEW_INTERVAL_DAYS = 36500
 MAX_SM2_EF = 5.0

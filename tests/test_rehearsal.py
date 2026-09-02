@@ -322,15 +322,12 @@ class SM2(unittest.TestCase):
         review = {"ef": 2.5, "reps": 0, "interval_days": 0,
                   "reviews": 0}
         siamind.sm2_update(review, 5, now=0)
-        # JACKAL exact: parsed=5/2+... at q=5, exact=13/5.
         self.assertEqual(review["ef"], 2.6)
         self.assertEqual((review["reps"], review["interval_days"]), (1, 1))
         siamind.sm2_update(review, 5, now=siamind.SECONDS_PER_DAY)
         self.assertEqual((review["reps"], review["interval_days"]), (2, 6))
         siamind.sm2_update(review, 2, now=2 * siamind.SECONDS_PER_DAY)
         self.assertEqual((review["reps"], review["interval_days"]), (0, 1))
-        # JACKAL exact: parsed=27/10+1/10-(5-2)*(8/100+(5-2)*2/100),
-        # exact=119/50, approx=2.38 (exact rational, not formal-bounded).
         self.assertAlmostEqual(review["ef"], 2.38)
         siamind.sm2_update(review, 5, now=3 * siamind.SECONDS_PER_DAY)
         self.assertEqual((review["reps"], review["interval_days"]), (1, 1))
@@ -339,8 +336,6 @@ class SM2(unittest.TestCase):
         review = {"ef": 2.5, "reps": 2, "interval_days": 6,
                   "reviews": 2}
         siamind.sm2_update(review, 5, now=0)
-        # JACKAL exact: parsed=6*(5/2), exact=15; the response then updates
-        # EF via parsed=5/2+1/10, exact=13/5 (neither is formal-bounded).
         self.assertEqual(review["interval_days"], 15)
         self.assertEqual(review["ef"], 2.6)
 
@@ -889,7 +884,8 @@ class DreamIntegration(unittest.TestCase):
             sialib.gbrain = lambda args, timeout=0: calls.append(args) or Result()
             report = sialib.rehearse_memories(now=2)
             self.assertEqual(report["embedded"], 1)
-            self.assertEqual(calls, [["embed", "events/x/day"]])
+            self.assertEqual(
+                calls, [["embed", "events/x/day", "--source", "sia"]])
             saved = sialib.siamind.load_mind(now=2)
             self.assertEqual(saved["nodes"]["events/x/day"]
                              ["review"]["last_quality"], 5)

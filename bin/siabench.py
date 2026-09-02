@@ -40,8 +40,6 @@ CORPUS = sialib.CORPUS
 ABSTAIN = "ABSTAIN"
 DATASET_SCHEMA = "sia-signed-ledger-qa-v2"
 PRIVATE_MANIFEST_SCHEMA = "sia-signed-ledger-qa-private-manifest-v2"
-# JACKAL status=exact, parsed=5+1, exact=6. Exact rational arithmetic outside
-# the Lean certificate chain (NOT formal-bounded).
 GENERATOR_VERSION = "6"
 ANSWER_WITNESS_SCHEMA = "sia-retrieval-answer-witness-v1"
 PUBLIC_MANIFEST_BASE_FIELDS = (
@@ -66,12 +64,8 @@ MCP_EVALUATION_LIMIT = 10
 # Complete evidence is never truncated to fit these ceilings. A chain or
 # artifact beyond them is an explicit BenchmarkRefusal because genesis-to-head
 # linkage, latest-row questions, and negative witnesses all require the whole
-# observed snapshot. The shared constants carry their JACKAL exact comments in
-# sialib (NOT formal-bounded).
 MAX_BENCH_FILE_BYTES = sialib.MAX_STATE_JSON_BYTES
 MAX_BENCH_LEDGER_BYTES = sialib.MAX_STATE_JSON_BYTES
-# JACKAL status=exact, parsed=4*1024*1024, exact=4194304. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_BENCH_VERIFIER_BYTES = 4_194_304
 MAX_BENCH_SOURCE_PAGE_BYTES = sialib.MAX_EVENT_PAGE_BYTES
 MAX_BENCH_AGGREGATE_BYTES = sialib.MAX_LEDGER_PENDING_BYTES

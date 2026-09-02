@@ -16,7 +16,7 @@ import urllib.parse
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
 STATE = os.path.join(HOME, ".local/state/sia")
-SERVER_VERSION = "1.5.0"
+SERVER_VERSION = "1.5.1"
 MODERN_PROTOCOL = "2026-07-28"
 LEGACY_PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26",
                     "2024-11-05")
@@ -28,12 +28,10 @@ SERVER_INSTRUCTIONS = (
     "Recall before re-deriving machine history. Carry origin labels and the "
     "truth-boundary line; absence of recall is not evidence of absence. "
     "Agent notes are model-origin prose, never evidence.")
-# JACKAL exact: parsed=256*1024 exact=262144 (not formal-bounded).
 MAX_SIA_OUTPUT_BYTES = 262_144
 READ_CHUNK_BYTES = 65_536
 MAX_REQUEST_BYTES = 262_144
 MAX_BATCH_ITEMS = 8
-# JACKAL exact: parsed=1024*1024 exact=1048576 (not formal-bounded).
 MAX_RESPONSE_BYTES = 1_048_576
 
 TEXT_OUTPUT_SCHEMA = {

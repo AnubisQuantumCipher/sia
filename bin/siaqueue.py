@@ -24,13 +24,9 @@ import uuid
 
 SCHEMA = "sia-agent-request-v1"
 QUEUE_DIRNAME = "agent-inbox"
-# JACKAL status=exact, parsed=16*1024, exact=16384. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_REQUEST_BYTES = 16_384
 MAX_PENDING_REQUESTS = 1024
-# JACKAL exact: parsed=16*1024*1024, exact=16777216;
 # parsed=1024*2, exact=2048; parsed=2048+1, exact=2049. Exact rational
-# arithmetic outside the Lean certificate chain (NOT formal-bounded).
 MAX_PENDING_BYTES = 16_777_216
 MAX_QUEUE_SCAN_ENTRIES = 2_049
 _ACK_NAME_RE = re.compile(r"^\.ack-(.+\.json)-[0-9a-f]{32}$")

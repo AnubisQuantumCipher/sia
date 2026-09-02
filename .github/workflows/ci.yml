@@ -51,3 +51,63 @@ jobs:
         env:
           PYTHONWARNINGS: error::ResourceWarning
         run: python3 -m unittest discover -s tests -v
+
+  # Both shipped defects (issues #2 and #3) lived at the SIA<->gbrain subprocess seam, and
+  # the unit suite stubs that seam — so this job builds the exact pinned gbrain and runs the
+  # real-binary contract lane. In the main test job that lane skips (honestly) for lack of a
+  # binary; here it must run and pass.
+  gbrain-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - name: pinned bun (mirrors install.sh)
+        run: |
+          set -euo pipefail
+          BUN_VERSION=1.4.0
+          BUN_ASSET=bun-linux-x64.zip
+          BUN_SHA256=2d03fb5fb83ac8b567aca0a281b2ce1a1a19d488f56c2968d88c3f25e92fe452
+          curl -fsSLo "$RUNNER_TEMP/bun.zip" \
+            "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/$BUN_ASSET"
+          printf '%s  %s\n' "$BUN_SHA256" "$RUNNER_TEMP/bun.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/bun.zip" -d "$RUNNER_TEMP/bun"
+          BUN_BIN="$RUNNER_TEMP/bun/${BUN_ASSET%.zip}/bun"
+          chmod 0755 "$BUN_BIN"
+          test "$("$BUN_BIN" --version)" = "$BUN_VERSION"
+          echo "BUN_BIN=$BUN_BIN" >> "$GITHUB_ENV"
+      - name: build the exact pinned gbrain (mirrors install.sh)
+        run: |
+          set -euo pipefail
+          PIN="$(sed -n 's/^commit=//p' GBRAIN_PIN)"
+          PIN_VERSION="$(sed -n 's/^version=//p' GBRAIN_PIN)"
+          PIN_LOCK_SHA256="$(sed -n 's/^bun_lock_sha256=//p' GBRAIN_PIN)"
+          SRC="$RUNNER_TEMP/gbrain-src"
+          git init -q "$SRC"
+          git -C "$SRC" remote add origin https://github.com/garrytan/gbrain
+          git -C "$SRC" fetch -q --depth 1 origin "$PIN"
+          git -C "$SRC" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$SRC" rev-parse HEAD)" = "$PIN"
+          printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
+          "$BUN_BIN" install --cwd "$SRC" --frozen-lockfile --production \
+            --ignore-scripts --no-progress
+          printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
+          "$BUN_BIN" build --compile --outfile "$RUNNER_TEMP/gbrain-bin" "$SRC/src/cli.ts"
+          chmod 0755 "$RUNNER_TEMP/gbrain-bin"
+          test "$("$RUNNER_TEMP/gbrain-bin" --version)" = "gbrain $PIN_VERSION"
+          echo "SIA_GBRAIN_BIN=$RUNNER_TEMP/gbrain-bin" >> "$GITHUB_ENV"
+      - name: real-gbrain contract lane
+        env:
+          PYTHONWARNINGS: error::ResourceWarning
+        run: |
+          set -euo pipefail
+          output="$(python3 -m unittest tests.test_gbrain_contract -v 2>&1)" || {
+            printf '%s\n' "$output"; exit 1; }
+          printf '%s\n' "$output"
+          # A skip here would mean SIA_GBRAIN_BIN was ignored — the lane must actually run.
+          if printf '%s' "$output" | grep -q 'skipped'; then
+            echo 'contract lane skipped despite a provided binary' >&2; exit 1
+          fi

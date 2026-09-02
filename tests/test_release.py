@@ -300,7 +300,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.5.0")
+        self.assertEqual(version, "1.5.1")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',
@@ -386,10 +386,16 @@ class ReleaseContract(unittest.TestCase):
         self.assertIn("CLI", boundary)
 
     def test_generalized_publication_and_legacy_upgrade_are_documented(self):
+        # The deep migration/publication vocabulary belongs in the specification
+        # documents. The README is the front door and describes the same behavior
+        # in operator language; forcing the migration jargon into it made it
+        # unreadable without protecting any user, so the README is deliberately
+        # NOT in this list (its own operator-facing promises are pinned by the
+        # marketplace, boundary, and recovery documentation tests).
         documents = {
             relative: _read(relative)
             for relative in (
-                "README.md", "docs/MANUAL.md", "docs/WHITEPAPER.md",
+                "docs/MANUAL.md", "docs/WHITEPAPER.md",
                 "CHANGELOG.md", "SECURITY.md",
             )
         }
@@ -424,16 +430,20 @@ class ReleaseContract(unittest.TestCase):
                 for surface in ("git", "PGLite", "graph"):
                     self.assertIn(surface, document)
 
-        for relative in ("README.md", "docs/MANUAL.md", "CHANGELOG.md"):
-            document = documents[relative]
+        # These are operator-visible behaviors, so the README keeps them too.
+        readme = _read("README.md")
+        for relative, document in (("README.md", readme),
+                                   ("docs/MANUAL.md", documents["docs/MANUAL.md"]),
+                                   ("CHANGELOG.md", documents["CHANGELOG.md"])):
             with self.subTest(first_light_document=relative):
                 self.assertIn("first-light pulse", document)
                 self.assertIn("successful `sia pulse`", document)
                 self.assertIn("last-published", document)
 
-        for relative in ("README.md", "docs/MANUAL.md"):
-            self.assertIn("SIA memory read refused", documents[relative])
-            self.assertIn("readiness line", documents[relative])
+        for relative, document in (("README.md", readme),
+                                   ("docs/MANUAL.md", documents["docs/MANUAL.md"])):
+            self.assertIn("SIA memory read refused", document)
+            self.assertIn("readiness line", document)
 
         for relative in ("docs/WHITEPAPER.md", "SECURITY.md"):
             document = documents[relative].casefold()
@@ -4767,8 +4777,6 @@ remove_managed_skill
                         stderr=subprocess.PIPE, check=False)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     child_pid = int(result.stdout.strip())
-                    # status=exact parsed=1/(1/100) exact=100 and
-                    # parsed=1/100 exact=1/100; not formal-bounded.
                     for _ in range(100):
                         if not non_zombie(child_pid):
                             break

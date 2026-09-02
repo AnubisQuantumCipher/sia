@@ -43,12 +43,7 @@ DEFAULT_HISTORY_PAGE_LIMIT = 64
 MAX_HISTORY_CURSOR_DIGITS = 256
 MAX_HISTORY_BASELINE_SCAN = 64
 MAX_TRANSACTION_RECOVERY_BATCH = 64
-# Matches sialib's operator-config intake ceiling. JACKAL status=exact,
-# parsed=64*1024, exact=65536 (outside the Lean certificate chain; NOT
-# formal-bounded).
 MAX_CONFIG_BYTES = 65_536
-# JACKAL status=exact, parsed=64*1024, exact=65536 (outside the Lean
-# certificate chain; NOT formal-bounded).  Judge prompts and combined output
 # are deliberately much larger than the admitted grading excerpts while still
 # placing a hard memory boundary around an optional external model process.
 MAX_JUDGE_INPUT_BYTES = 65_536

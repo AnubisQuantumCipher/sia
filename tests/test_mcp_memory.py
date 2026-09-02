@@ -43,9 +43,6 @@ class AgentSpool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state:
             queue_dir = os.path.join(state, siaqueue.QUEUE_DIRNAME)
             os.makedirs(queue_dir)
-            # JACKAL status=exact: parsed=2+1, exact=3. Exact rational
-            # arithmetic outside the Lean certificate chain
-            # (NOT formal-bounded).
             for index in range(3):
                 with open(os.path.join(queue_dir, f"noise-{index}"), "w") \
                         as stream:

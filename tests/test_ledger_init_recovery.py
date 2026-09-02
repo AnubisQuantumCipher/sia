@@ -338,8 +338,6 @@ class LedgerInitRecovery(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as state:
             self._crash_after(state, "key.hex")
-            # JACKAL exact: status=exact parsed=2^31 exact=2147483648;
-            # not formal-bounded and no Lean-checked certificate.
             foreign_uid = 2_147_483_648
             with mock.patch.object(
                     KEEPER.os, "geteuid", return_value=foreign_uid):
