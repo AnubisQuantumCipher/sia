@@ -44,11 +44,11 @@ sia bench                         # signed-ledger held-out memory self-benchmark
   returned to configured consumers, while SIA's redaction is pattern-based
   defense in depth rather than a secrecy guarantee.
 - **When you make a testable claim about this machine's future**: propose
-  a take (MCP `sia_propose_take`, or tell the user to run `sia take`).
+  a take (MCP `sia.propose_take`, or tell the user to run `sia take`).
   Agents propose; only the operator commits. the configured judge grades takes
   against recalled evidence when due; Brier scores use deterministic decimal
   arithmetic and remain descriptive over an operator-selected population.
-- **For an audit or evaluation**: use the MCP `sia_search` tool or CLI
+- **For an audit or evaluation**: use the MCP `sia.search` tool or CLI
   `--no-touch` forms. Ordinary recall intentionally reinforces memory; the
   no-touch lane does not mutate rehearsal or graph state.
 

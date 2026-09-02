@@ -17,6 +17,10 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
+**Current release: v1.7.0.** SIA's MCP tools now appear with the clean
+client-visible names `sia.ask`, `sia.search`, `sia.recall`, `sia.status`,
+`sia.think`, `sia.note`, `sia.propose_take`, and `sia.calibration`.
+
 ![The live SIA cockpit: truth ribbon, memory lens, agent relay, and knowledge graph](assets/cockpit.png)
 
 ## Install (Omarchy)
@@ -150,6 +154,10 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   for skill-reading harnesses. Tools cover reinforcing recall, a read-only
   search lane for audits, and carefully labeled writes; resources mount
   status, thoughts, calibration, the cortex, and `sia://memory/{slug}` pages.
+  The clean client-visible tool surface is `sia.ask`, `sia.search`,
+  `sia.recall`, `sia.status`, `sia.think`, `sia.note`, `sia.propose_take`, and
+  `sia.calibration`; reconnect the client or open a new agent session after an
+  update so cached MCP discovery is refreshed.
   Notes persist and may be returned to configured consumers, so do not put
   credentials, secrets, or private content in them; pattern-based redaction is
   defense in depth, not a secrecy guarantee.

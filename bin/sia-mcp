@@ -16,7 +16,7 @@ import urllib.parse
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
 STATE = os.path.join(HOME, ".local/state/sia")
-SERVER_VERSION = "1.6.0"
+SERVER_VERSION = "1.7.0"
 MODERN_PROTOCOL = "2026-07-28"
 LEGACY_PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26",
                     "2024-11-05")
@@ -188,7 +188,7 @@ def run_sia(args, timeout=240):
 
 
 TOOLS = [
-    _tool("sia_ask", "Ask SIA",
+    _tool("ask", "Ask SIA",
      "Semantic recall over the machine's memory (evidence "
         "ledgers, events, thoughts). Results are labeled by origin class "
         "(evidence/derived/model) and every answer ends with a truth-"
@@ -199,32 +199,32 @@ TOOLS = [
                    "maxLength": 500,
                    "description": "Question to answer from SIA memory."}},
      ["question"], read_only=False, idempotent=False),
-    _tool("sia_search", "Search SIA Without Reinforcement",
+    _tool("search", "Search SIA Without Reinforcement",
      "Read-only semantic search over SIA memory. It returns the same "
-        "origin labels and truth boundary as sia_ask but does not queue "
+        "origin labels and truth boundary as sia.ask but does not queue "
         "recall/reconsolidation touches; use it for audits and evaluations.",
      {"question": {"type": "string", "minLength": 1,
                    "maxLength": 500,
                    "description": "Question to search in SIA memory."}},
      ["question"], read_only=True, idempotent=True),
-    _tool("sia_recall", "Recall SIA Memory",
+    _tool("recall", "Recall SIA Memory",
      "Read one memory page verbatim by slug (e.g. "
         "'organs/sekhmet', 'events/jackal/2026-08-29', 'sia/cortex').",
      {"slug": {"type": "string", "minLength": 1, "maxLength": 200,
                "pattern": r"^[a-z0-9][a-z0-9/._-]*$",
                "description": "Corpus slug returned by SIA recall."}},
      ["slug"], read_only=True, idempotent=True),
-    _tool("sia_status", "Read SIA Status",
+    _tool("status", "Read SIA Status",
      "One-screen state of the brain: pulse, memories, "
         "per-organ activity today, signed-chain verdicts, latest thought.",
      read_only=True, idempotent=True),
-    _tool("sia_think", "Read SIA Thoughts",
+    _tool("think", "Read SIA Thoughts",
      "The brain's recent thoughts. Deterministic generator entries cite "
         "evidence; ✦/⚖ are labeled model-assisted and ✉ notes are "
         "labeled model-origin prose; pre-origin records carry an explicit "
         "legacy-unlabeled boundary.",
      read_only=True, idempotent=True),
-    _tool("sia_note", "Leave SIA Note",
+    _tool("note", "Leave SIA Note",
      "Leave a labeled note for future agent sessions. "
         "Notes are model-origin memories: recallable and graphed, but "
         "permanently marked as agent prose and weighted below evidence. "
@@ -237,7 +237,7 @@ TOOLS = [
                     "description": "who is writing (e.g. codex, grok, "
                                    "claude-fable-5)"}},
      ["text", "author"], read_only=False, idempotent=False),
-    _tool("sia_propose_take", "Propose SIA Take",
+    _tool("propose_take", "Propose SIA Take",
      "PROPOSE a falsifiable prediction (claim + confidence "
         "+ deadline). Proposals wait in a queue; only the human operator "
         "commits them with `sia take --accept` — agents never mint the "
@@ -251,7 +251,7 @@ TOOLS = [
          "author": {"type": "string", "minLength": 1, "maxLength": 40}},
      ["claim", "confidence", "deadline"],
      read_only=False, idempotent=False),
-    _tool("sia_calibration", "Read SIA Calibration",
+    _tool("calibration", "Read SIA Calibration",
      "Read the population-aware Brier scorecard. Single cases and sparse "
         "series remain descriptive; the output states its sampling and "
         "world-truth boundaries. Pass a returned decimal cursor to read the "
@@ -263,6 +263,27 @@ TOOLS = [
                                 "calibration page."}},
      read_only=True, idempotent=True),
 ]
+
+# MCP clients already add the server namespace when displaying a tool.  Raw
+# names therefore stay unprefixed so the public surface reads ``sia.ask``
+# instead of ``sia.sia_ask``.  Older raw names remain accepted during the
+# migration, but they are deliberately absent from tools/list so new clients
+# cannot discover or display both forms.
+LEGACY_TOOL_ALIASES = {
+    "sia_ask": "ask",
+    "sia_search": "search",
+    "sia_recall": "recall",
+    "sia_status": "status",
+    "sia_think": "think",
+    "sia_note": "note",
+    "sia_propose_take": "propose_take",
+    "sia_calibration": "calibration",
+}
+
+
+def _canonical_tool_name(name):
+    """Translate a hidden legacy raw name to the advertised MCP name."""
+    return LEGACY_TOOL_ALIASES.get(name, name)
 
 
 RESOURCES = [
@@ -342,6 +363,7 @@ def read_resource(uri):
 
 def _validate_tool_args(name, args):
     """Validate the JSON-Schema subset used by this server's descriptors."""
+    name = _canonical_tool_name(name)
     descriptor = next((tool for tool in TOOLS if tool["name"] == name), None)
     if descriptor is None:
         return f"unknown tool {name!r}; call tools/list for available names"
@@ -374,10 +396,10 @@ def _validate_tool_args(name, args):
             if value < rule.get("minimum", value) \
                     or value > rule.get("maximum", value):
                 return f"{key} is outside the allowed range"
-    if name == "sia_recall" and _memory_slug("sia://memory/" + args["slug"]) \
+    if name == "recall" and _memory_slug("sia://memory/" + args["slug"]) \
             is None:
         return "slug must be a canonical SIA corpus slug without traversal"
-    if name == "sia_propose_take":
+    if name == "propose_take":
         try:
             datetime.date.fromisoformat(args["deadline"])
         except ValueError:
@@ -386,27 +408,28 @@ def _validate_tool_args(name, args):
 
 
 def call_tool(name, args):
-    if name == "sia_ask":
+    name = _canonical_tool_name(name)
+    if name == "ask":
         return run_sia(["ask", str(args.get("question", ""))[:500]])
-    if name == "sia_search":
+    if name == "search":
         return run_sia(["ask", "--no-touch",
                         str(args.get("question", ""))[:500]])
-    if name == "sia_recall":
+    if name == "recall":
         return run_sia(["recall", str(args.get("slug", ""))[:200],
                         "--no-touch"])
-    if name == "sia_status":
+    if name == "status":
         return run_sia(["status"])
-    if name == "sia_think":
+    if name == "think":
         return run_sia(["think"])
-    if name == "sia_calibration":
+    if name == "calibration":
         cursor = args.get("cursor")
         return run_sia(["calibration"] if cursor is None else
                        ["calibration", "--cursor", str(cursor)])
-    if name == "sia_note":
+    if name == "note":
         author = str(args.get("author", "agent"))[:40]
         return run_sia(["note", str(args.get("text", ""))[:2000],
                         "--from", author])
-    if name == "sia_propose_take":
+    if name == "propose_take":
         prop = {"claim": " ".join(str(args.get("claim", "")).split())[:300],
                 "confidence": min(0.99, max(0.01,
                     float(args.get("confidence", 0.7)))),
@@ -703,17 +726,18 @@ def _dispatch(msg, protocol_version=None, require_initialization=False):
     if method == "tools/list":
         return complete({"tools": TOOLS}, cache_scope="public")
     if method == "tools/call":
-        name = params.get("name")
-        if not isinstance(name, str) or not name:
+        requested_name = params.get("name")
+        if not isinstance(requested_name, str) or not requested_name:
             return respond(error={
                 "code": -32602,
                 "message": "invalid tool arguments",
                 "data": {"detail": "name must be a non-empty string"},
             })
+        name = _canonical_tool_name(requested_name)
         if not any(tool["name"] == name for tool in TOOLS):
             return respond(error={
                 "code": -32602,
-                "message": f"unknown tool: {name}",
+                "message": f"unknown tool: {requested_name}",
                 "data": {"detail": "call tools/list for available names"},
             })
         arguments = params.get("arguments", {})

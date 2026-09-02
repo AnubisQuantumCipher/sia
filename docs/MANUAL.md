@@ -410,7 +410,7 @@ cursor-paginated catalog. When another page exists, CLI and MCP output prints
 an explicit omission line and the next catalog cursor rather than presenting
 the current page as complete. Pass that value to
 `sia calibration --cursor NEXT_CURSOR`, or as the optional `cursor` argument
-of the `sia_calibration` MCP tool. The static `sia://calibration` resource
+of the `sia.calibration` MCP tool. The static `sia://calibration` resource
 remains the first page. Overall population totals and exclusions are complete
 and repeated on every page; only domain rows are paginated. The nightly dream
 grades up to three due takes on its own.
@@ -1017,9 +1017,16 @@ failure restores the original. If either managed marker is missing, repeated,
 or reversed, install and removal preserve the entire file and report the
 malformed block rather than deleting an open-ended range.
 
-MCP tools: `sia_ask`, `sia_search`, `sia_recall`, `sia_status`, `sia_think`,
-`sia_note`, `sia_propose_take`, `sia_calibration`. The server never
-opens the database. SIA-managed reads share the same cross-process owner
+The MCP server is registered as `sia` and advertises the raw tool names `ask`,
+`search`, `recall`, `status`, `think`, `note`, `propose_take`, and
+`calibration`. Clients therefore present the public surface as `sia.ask`,
+`sia.search`, `sia.recall`, `sia.status`, `sia.think`, `sia.note`,
+`sia.propose_take`, and `sia.calibration`. The pre-v1.7 raw `sia_*` request
+names remain accepted as hidden inbound compatibility aliases for this release,
+but are not returned by `tools/list`; clients never receive both generations.
+Restart or reconnect the MCP client, or open a new agent session, after an
+update so any cached tool discovery is refreshed. The server never opens the
+database. SIA-managed reads share the same cross-process owner
 lease as the daemon; note writes create immutable per-request files instead
 of touching either the corpus or PGLite. The brainstem acknowledges a note
 only after its labeled page is committed and indexed. Agents propose takes;
@@ -1061,10 +1068,10 @@ legacy-take migration, natural-history transaction, or unfinished bounded
 take/intent baseline. The MCP ask/search/recall/thought/calibration tools and
 non-status memory resources shell out to those commands and inherit their
 refusal as a tool error or resource-unavailable response, with result bytes
-drawn from the same corpus generation. `sia status`, `sia_status`, and
+drawn from the same corpus generation. `sia status`, `sia.status`, and
 `sia://status` remain callable for diagnosis: the readiness line is live, while
 the pulse, source-health, and graph fields are the last-published snapshot.
-`sia_note` and `sia_propose_take` may still enqueue writes; neither exposes
+`sia.note` and `sia.propose_take` may still enqueue writes; neither exposes
 indexed memory.
 
 The skills sense likewise admits only a real skill directory directly beneath
@@ -1110,8 +1117,8 @@ The same read surface is mountable as MCP resources:
 | `sia://memory/{slug}` | one canonical corpus slug returned by recall |
 
 The memory template rejects traversal, uppercase/non-canonical slugs, and
-arbitrary schemes. Resource reads and `sia_search` use the CLI's no-touch
-lane and are idempotent; `sia_ask` is intentionally not marked read-only
+arbitrary schemes. Resource reads and `sia.search` use the CLI's no-touch
+lane and are idempotent; `sia.ask` is intentionally not marked read-only
 because successful recall queues reinforcement touches.
 
 The stdio server is dual-era MCP. It negotiates the legacy `2024-11-05`,

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.0 — 2026-09-02 · clean MCP tool namespace
+
+SIA's MCP server name already supplies the `sia` namespace. The advertised
+tool names are now the bare `ask`, `search`, `recall`, `status`, `think`,
+`note`, `propose_take`, and `calibration`, so clients render the clean public
+surface `sia.ask`, `sia.search`, `sia.recall`, `sia.status`, `sia.think`,
+`sia.note`, `sia.propose_take`, and `sia.calibration` instead of duplicating
+the namespace as `sia.sia_*`.
+
+- The pre-1.7 raw `sia_*` request names remain accepted as hidden inbound
+  compatibility aliases for this release. They are never returned by
+  `tools/list`, so a fresh client cannot display both generations.
+- MCP clients may cache discovery for the life of a process or agent session.
+  Restart or reconnect the client, or open a new session, after updating SIA
+  to refresh the visible tool names.
+- The CLI and `sia://` resource names are unchanged; only the MCP tool
+  discovery contract moved to the clean namespace.
+
 ## 1.6.0 — 2026-09-02 · first module extraction (roadmap Phase 2)
 
 The exports lane leaves the monolith. No behavior change; this is mass moved

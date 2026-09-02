@@ -703,6 +703,73 @@ class McpResources(unittest.TestCase):
         self.assertEqual(len(uris), len(set(uris)))
         self.assertTrue(siamcp.RESOURCE_TEMPLATES)
 
+    def test_tool_inventory_uses_only_clean_names(self):
+        expected = (
+            "ask", "search", "recall", "status", "think", "note",
+            "propose_take", "calibration",
+        )
+        advertised = tuple(tool["name"] for tool in siamcp.TOOLS)
+        self.assertEqual(advertised, expected)
+        self.assertEqual(len(advertised), len(set(advertised)))
+        self.assertTrue(all(not name.startswith("sia_")
+                            for name in advertised))
+        self.assertTrue(set(siamcp.LEGACY_TOOL_ALIASES).isdisjoint(
+            advertised))
+        self.assertEqual(set(siamcp.LEGACY_TOOL_ALIASES.values()),
+                         set(advertised))
+
+    def test_hidden_legacy_tool_aliases_work_in_supported_protocol_lanes(self):
+        valid_arguments = {
+            "sia_ask": {"question": "what changed?"},
+            "sia_search": {"question": "audit memory"},
+            "sia_recall": {"slug": "sia/cortex"},
+            "sia_status": {},
+            "sia_think": {},
+            "sia_note": {"text": "migration note", "author": "unit"},
+            "sia_propose_take": {
+                "claim": "migration remains compatible",
+                "confidence": 0.7,
+                "deadline": "2026-12-31",
+            },
+            "sia_calibration": {},
+        }
+        modern_metadata = {
+            "io.modelcontextprotocol/protocolVersion":
+                siamcp.MODERN_PROTOCOL,
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }
+        lanes = (
+            ("2025-11-25", {}),
+            (siamcp.MODERN_PROTOCOL, {"_meta": modern_metadata}),
+        )
+        for legacy_name, arguments in valid_arguments.items():
+            for protocol, metadata in lanes:
+                with self.subTest(name=legacy_name, protocol=protocol):
+                    params = {"name": legacy_name,
+                              "arguments": dict(arguments)}
+                    params.update(metadata)
+                    response = siamcp.handle_message({
+                        "jsonrpc": "2.0", "id": legacy_name,
+                        "method": "tools/call", "params": params,
+                    }, protocol_version=protocol)
+                    self.assertNotIn("error", response)
+                    self.assertFalse(response["result"]["isError"])
+                    legacy_argv = list(self.calls[-1])
+
+                    canonical_params = {
+                        "name": siamcp.LEGACY_TOOL_ALIASES[legacy_name],
+                        "arguments": dict(arguments),
+                    }
+                    canonical_params.update(metadata)
+                    canonical_response = siamcp.handle_message({
+                        "jsonrpc": "2.0", "id": "canonical",
+                        "method": "tools/call",
+                        "params": canonical_params,
+                    }, protocol_version=protocol)
+                    self.assertNotIn("error", canonical_response)
+                    self.assertFalse(canonical_response["result"]["isError"])
+                    self.assertEqual(self.calls[-1], legacy_argv)
+
     def test_tool_contracts_are_bounded_annotated_and_structured(self):
         for tool in siamcp.TOOLS:
             self.assertIn("annotations", tool)
@@ -712,39 +779,39 @@ class McpResources(unittest.TestCase):
             self.assertFalse(
                 tool["inputSchema"].get("additionalProperties", True))
         self.assertIsNone(siamcp._validate_tool_args(
-            "sia_ask", {"question": "what changed?"}))
+            "ask", {"question": "what changed?"}))
         search = next(tool for tool in siamcp.TOOLS
-                      if tool["name"] == "sia_search")
+                      if tool["name"] == "search")
         self.assertTrue(search["annotations"]["readOnlyHint"])
         self.assertTrue(search["annotations"]["idempotentHint"])
         text, is_error = siamcp.call_tool(
-            "sia_search", {"question": "audit memory"})
+            "search", {"question": "audit memory"})
         self.assertFalse(is_error)
         self.assertIn("content for", text)
         self.assertEqual(self.calls[-1],
                          ["ask", "--no-touch", "audit memory"])
         self.assertIsNone(siamcp._validate_tool_args(
-            "sia_calibration", {"cursor": "17"}))
+            "calibration", {"cursor": "17"}))
         text, is_error = siamcp.call_tool(
-            "sia_calibration", {"cursor": "17"})
+            "calibration", {"cursor": "17"})
         self.assertFalse(is_error)
         self.assertIn("content for", text)
         self.assertEqual(self.calls[-1],
                          ["calibration", "--cursor", "17"])
         self.assertIsNotNone(siamcp._validate_tool_args(
-            "sia_calibration", {"cursor": "not-a-cursor"}))
+            "calibration", {"cursor": "not-a-cursor"}))
         cursor_rule = next(
             tool for tool in siamcp.TOOLS
-            if tool["name"] == "sia_calibration"
+            if tool["name"] == "calibration"
         )["inputSchema"]["properties"]["cursor"]
         self.assertIsNotNone(siamcp._validate_tool_args(
-            "sia_calibration",
+            "calibration",
             {"cursor": "1" * (cursor_rule["maxLength"] + 1)}))
         calls_before = list(self.calls)
         rejected = siamcp.handle_message({
             "jsonrpc": "2.0", "id": "long-cursor",
             "method": "tools/call", "params": {
-                "name": "sia_calibration",
+                "name": "calibration",
                 "arguments": {
                     "cursor": "1" * (cursor_rule["maxLength"] + 1),
                 },
@@ -755,14 +822,14 @@ class McpResources(unittest.TestCase):
                       rejected["result"]["structuredContent"]["text"])
         self.assertEqual(self.calls, calls_before)
         self.assertIsNotNone(siamcp._validate_tool_args(
-            "sia_ask", {"question": "", "extra": True}))
+            "ask", {"question": "", "extra": True}))
         self.assertIsNotNone(siamcp._validate_tool_args(
-            "sia_propose_take", {"claim": "x", "confidence": float("nan"),
+            "propose_take", {"claim": "x", "confidence": float("nan"),
                                  "deadline": "2026-02-30"}))
 
     def test_proposal_tool_requires_future_deadline_at_queue_time(self):
         text, is_error = siamcp.call_tool(
-            "sia_propose_take", {
+            "propose_take", {
                 "claim": "future claim", "confidence": 0.7,
                 "deadline": "2026-12-31", "author": "agent"})
         self.assertFalse(is_error)
@@ -1048,7 +1115,7 @@ class McpResources(unittest.TestCase):
         legacy_messages = [
             {"jsonrpc": "2.0", "id": "before", "method": "tools/list"},
             {"jsonrpc": "2.0", "method": "tools/call",
-             "params": {"name": "sia_ask",
+             "params": {"name": "ask",
                         "arguments": {"question": "must not execute"}}},
             {"jsonrpc": "2.0", "id": "init", "method": "initialize",
              "params": {"protocolVersion": "2025-03-26",
@@ -1060,7 +1127,7 @@ class McpResources(unittest.TestCase):
             {"jsonrpc": "2.0", "id": "discover",
              "method": "server/discover", "params": {"_meta": metadata}},
             {"jsonrpc": "2.0", "method": "tools/call",
-             "params": {"name": "sia_ask",
+             "params": {"name": "ask",
                         "arguments": {"question": "must not execute"}}},
             {"jsonrpc": "2.0", "id": "missing-meta",
              "method": "tools/list", "params": {}},
@@ -1072,7 +1139,7 @@ class McpResources(unittest.TestCase):
             {"jsonrpc": "2.0", "id": "batch-before",
              "method": "tools/list"},
             {"jsonrpc": "2.0", "method": "tools/call",
-             "params": {"name": "sia_ask",
+             "params": {"name": "ask",
                         "arguments": {"question": "must not execute"}}},
         ], require_initialization=True)
         self.assertEqual(
@@ -1121,7 +1188,7 @@ class McpResources(unittest.TestCase):
                             "clientInfo": {"name": "unit",
                                            "version": "1"}}}) + "\n",
             json.dumps({"jsonrpc": "2.0", "id": "bad", "method": "tools/call",
-                        "params": {"name": "sia_ask", "arguments": {}}}) + "\n",
+                        "params": {"name": "ask", "arguments": {}}}) + "\n",
             json.dumps({"jsonrpc": "2.0", "id": "params",
                         "method": "tools/call", "params": []}) + "\n",
             json.dumps({"jsonrpc": "2.0", "method": "ping"}) + "\n",
@@ -1236,7 +1303,7 @@ class McpResources(unittest.TestCase):
             {"jsonrpc": "2.0", "method": "ping"},
             {"jsonrpc": "2.0", "method": "missing/method"},
             {"jsonrpc": "2.0", "method": "tools/call",
-             "params": {"name": "sia_ask",
+             "params": {"name": "ask",
                         "arguments": {"question": "must not execute"}}},
         ]
         incoming = io.StringIO(
@@ -1316,11 +1383,11 @@ class McpResources(unittest.TestCase):
     def test_tool_protocol_errors_are_distinct_from_execution_failures(self):
         messages = [
             {"jsonrpc": "2.0", "id": "unknown", "method": "tools/call",
-             "params": {"name": "sia_does_not_exist", "arguments": {}}},
+             "params": {"name": "does_not_exist", "arguments": {}}},
             {"jsonrpc": "2.0", "id": "invalid", "method": "tools/call",
-             "params": {"name": "sia_ask", "arguments": {}}},
+             "params": {"name": "ask", "arguments": {}}},
             {"jsonrpc": "2.0", "id": "execution", "method": "tools/call",
-             "params": {"name": "sia_ask",
+             "params": {"name": "ask",
                         "arguments": {"question": "owner available?"}}},
         ]
         prior_run_sia = siamcp.run_sia
