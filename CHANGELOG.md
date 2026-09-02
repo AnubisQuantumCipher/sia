@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.7.2 — 2026-09-02 · steady first light
+
+The cockpit and bar no longer flash an installation check while rereading a
+healthy resident status. The change narrows refresh semantics without
+weakening SIA's first-light barrier.
+
+- **Validated pixels stay stable.** Opening the cockpit and routine atomic
+  status publication retain the last validated resident generation until the
+  new read commits through its load callback.
+- **Real lifecycle results still gate.** Cold startup remains unresolved;
+  missing or malformed files still fail closed; and a real first-light
+  completion change immediately returns both surfaces to the gate until its
+  settled read moves them to installing, repair, or ready.
+- **The panel follows the same contract.** Its `CHECK` label no longer appears
+  during ordinary brainstem publication, avoiding a transient width and color
+  shift in the bar.
+- **The race has a regression contract.** Tests pin the bootstrap latches,
+  refresh behavior, failure callbacks, and the executable setup, repair,
+  update, ahead, installing, and ready lifecycle outcomes.
+- **Installed means live.** While first light remains gated as installing, the
+  installer restarts the Omarchy shell and requires the resident cockpit to
+  report this exact source release. Only then can readiness publish, so a
+  successful update cannot leave stale QML in memory.
+
 ## 1.7.1 — 2026-09-02 · the memory graph gets its whole sky
 
 The cockpit graph can no longer drift into one edge of its card and leave most

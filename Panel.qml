@@ -172,7 +172,8 @@ BarWidget {
       root.statusResolved = true
     }
     onFileChanged: {
-      root.statusResolved = false
+      // Keep the last validated generation while the atomic refresh settles;
+      // the load callbacks still fail closed on missing or invalid status.
       statusApply.restart()
     }
   }
@@ -202,6 +203,8 @@ BarWidget {
       root.installCompletionResolved = true
     }
     onFileChanged: {
+      // A real first-light change immediately restores the install barrier;
+      // the settled callback decides which lifecycle may be shown next.
       root.installCompletionResolved = false
       installCompletionApply.restart()
     }

@@ -17,9 +17,12 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.1.** The living memory graph now holds SIA at its
-center, gives semantic branches stable room around the whole field, grows
-memories outward during replay, and keeps labels from piling over one another.
+**Current release: v1.7.2.** The cockpit now opens directly into the last
+validated healthy generation instead of flashing an installation check while
+it refreshes. Cold startup, failed reads, first-light changes, and runtime
+version mismatches remain fail-closed. Setup and updates now restart the
+Omarchy shell while the install gate is closed, then require the live cockpit
+to attest this exact source release before SIA can publish ready.
 
 ![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
 

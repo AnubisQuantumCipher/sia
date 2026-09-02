@@ -22,7 +22,7 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.7.1"
+RELEASE_VERSION = "1.7.2"
 
 
 def _read(relative):
@@ -141,7 +141,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.2"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": "1.7.3"}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -179,10 +179,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.2"}, installing,
+                "guidedLifecycle", {"version": "1.7.3"}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.2", "state": "ready"}
+        newer_ready = {"v": 1, "version": "1.7.3", "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -235,6 +235,52 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn(
             "stat.S_IMODE(published.st_mode) != 0o600", installer)
         self.assertIn("remove_first_light_completion", _read("uninstall.sh"))
+
+    def test_ready_generation_stays_visible_during_file_refresh(self):
+        for surface in ("Panel.qml", "Cockpit.qml"):
+            source = _read(surface)
+            self.assertIn("property bool statusResolved: false", source)
+            self.assertIn(
+                "property bool installCompletionResolved: false", source)
+
+            status_view = source[
+                source.index("id: statusFile"):
+                source.index("id: statusApply")]
+            self.assertIn("onLoaded:", status_view)
+            self.assertIn("root.statusResolved = true", status_view)
+            self.assertLess(
+                status_view.index("root.applyStatus(text())"),
+                status_view.index("root.statusResolved = true"))
+            self.assertIn("onLoadFailed:", status_view)
+            self.assertIn("onFileChanged:", status_view)
+            self.assertIn("statusApply.restart()", status_view)
+            self.assertNotIn("root.statusResolved = false", status_view)
+
+            completion_view = source[
+                source.index("id: installCompletionFile"):
+                source.index("id: installCompletionApply")]
+            self.assertIn("onLoaded:", completion_view)
+            self.assertIn(
+                "root.installCompletionResolved = true", completion_view)
+            self.assertLess(
+                completion_view.index("root.applyInstallCompletion(text())"),
+                completion_view.index(
+                    "root.installCompletionResolved = true"))
+            self.assertIn("onLoadFailed:", completion_view)
+            self.assertIn("root.installCompletion = null", completion_view)
+            self.assertIn("onFileChanged:", completion_view)
+            self.assertIn("installCompletionApply.restart()", completion_view)
+            self.assertIn(
+                "root.installCompletionResolved = false", completion_view)
+
+        cockpit = _read("Cockpit.qml")
+        open_body = _balanced_body(cockpit, "function open(payloadJson)")
+        self.assertIn("statusFile.reload()", open_body)
+        self.assertIn("installCompletionFile.reload()", open_body)
+        self.assertNotIn("statusResolved = false", open_body)
+        self.assertNotIn("installCompletionResolved = false", open_body)
+        self.assertIn("function loadedReleaseVersion(ignored)", cockpit)
+        self.assertIn("return Model.releaseVersion()", cockpit)
 
     def test_completion_publication_replaces_a_permissive_mode_atomically(self):
         sialib = _load_sialib()
@@ -408,14 +454,14 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.2")
+            write_runtime(resident, "1.7.3")
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
 
             resident.unlink()
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.2", "state": "ready"}),
+                "v": 1, "version": "1.7.3", "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()

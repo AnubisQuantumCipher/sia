@@ -127,6 +127,7 @@ SIA_CORPUS_EARLY_RECEIPT_GENERATION=""
 SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
 SIA_CORPUS_RECEIPT_LOCKS_HELD=0
 SIA_GBRAIN_BOOTSTRAP_NEEDED=0
+SIA_PLUGIN_INSTALLED_TREE=""
 step() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -9866,7 +9867,7 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
   PLUGIN_RESULT="$(atomic_install_tree "$SIA_PLUGIN_STAGE" "$PLUGDIR" \
     "$PLUGIN_PARENT/.khephri.sia.previous.XXXXXX" \
     "$PLUGIN_TREE_EXPECTED")"
-  IFS=$'\t' read -r _PLUGIN_INSTALLED_TREE PLUGIN_BACKUP \
+  IFS=$'\t' read -r SIA_PLUGIN_INSTALLED_TREE PLUGIN_BACKUP \
     <<< "$PLUGIN_RESULT"
   SIA_PLUGIN_STAGE=""
   [ -z "$PLUGIN_BACKUP" ] || {
@@ -9909,6 +9910,44 @@ rescan_and_verify_omarchy_plugin() {
     echo "plugin '$plugin_id' is not known after rescan; refusing enablement" >&2
     return 1
   }
+}
+
+plugin_manifest_release_version() {
+  python3 - "$1" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    manifest = json.load(stream)
+if not isinstance(manifest, dict) or manifest.get("id") != "khephri.sia":
+    raise SystemExit("installed plugin manifest has the wrong identity")
+version = manifest.get("version")
+if not isinstance(version, str) or re.fullmatch(
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)",
+        version) is None:
+    raise SystemExit("installed plugin manifest has an invalid release")
+print(version)
+PY
+}
+
+activate_and_verify_omarchy_plugin() {
+  local plugin_id="$1" expected="$2" actual="" attempt
+
+  # Rescan can leave a keepLoaded component from the previous tree resident.
+  # Use Omarchy's supported lifecycle command, then accept success only when
+  # the newly loaded cockpit itself reports the installed release over IPC.
+  run_with_deadline 120 omarchy restart shell || return 1
+  for (( attempt = 0; attempt < 40; attempt++ )); do
+    if actual="$(bounded_command_capture \
+        omarchy-shell shell call "$plugin_id" loadedReleaseVersion probe)" \
+        && [ "$actual" = "$expected" ]; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  echo "plugin '$plugin_id' did not activate its exact installed release" >&2
+  return 1
 }
 
 binding_block_state() {
@@ -10573,6 +10612,30 @@ for final_manifest in "$NOMIC_MANIFEST" "$NOMIC_ALIAS_MANIFEST"; do
   [ "$final_before" = "$final_after" ] \
     || { echo "model manifest changed during final verification" >&2; exit 1; }
 done
+
+# Plugin discovery is not activation: Quickshell can retain a keepLoaded
+# component from the previous tree after rescan.  Restart through Omarchy's
+# supported lifecycle path while first light is still `installing`, then make
+# the live component attest the exact installed release.  Any refusal leaves
+# the public gate closed and the installer recovery barriers authoritative.
+if have omarchy; then
+  SIA_LIVE_PLUGIN_VERSION="$(
+    plugin_manifest_release_version "$PLUGDIR/manifest.json")"
+  activate_and_verify_omarchy_plugin \
+    khephri.sia "$SIA_LIVE_PLUGIN_VERSION"
+  if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ]; then
+    SIA_PLUGIN_LIVE_TREE="$(owned_tree_generation "$PLUGDIR")" || {
+      echo "installed plugin tree could not be re-observed after activation" >&2
+      exit 1
+    }
+    [ -n "$SIA_PLUGIN_INSTALLED_TREE" ] \
+      && [ "$SIA_PLUGIN_LIVE_TREE" = "$SIA_PLUGIN_INSTALLED_TREE" ] || {
+        echo "installed plugin tree changed during activation" >&2
+        exit 1
+      }
+  fi
+  echo "  cockpit: exact installed release active in Omarchy shell"
+fi
 
 if [ "$SIA_ORIGINAL_REPO" = "$PLUGDIR" ]; then
   release_source_frontdoor verify "$SIA_ORIGINAL_REPO" \

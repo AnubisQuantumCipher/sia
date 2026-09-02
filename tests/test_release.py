@@ -304,7 +304,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.7.1")
+        self.assertEqual(version, "1.7.2")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',
@@ -3664,6 +3664,91 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
             self.assertEqual(calls[1], "omarchy plugin list --json")
             self.assertEqual(calls[2], "sleep 0.05")
             self.assertEqual(calls[3], "omarchy plugin list --json")
+
+    def test_plugin_activation_restarts_and_attests_loaded_source_release(self):
+        installer = _read("install.sh")
+        activation = "activate_and_verify_omarchy_plugin() {" + \
+            installer.split(
+                "activate_and_verify_omarchy_plugin() {", 1)[1].split(
+                    "\n}\n\nbinding_block_state()", 1)[0] + "\n}\n"
+        functions = _bounded_commands_shell(installer) + "\n" + activation
+
+        self.assertIn("omarchy restart shell", activation)
+        self.assertIn("loadedReleaseVersion", activation)
+        self.assertIn('[ "$actual" = "$expected" ]', activation)
+        self.assertNotIn("|| true", activation)
+        self.assertIn(
+            '[ "$SIA_PLUGIN_LIVE_TREE" = '
+            '"$SIA_PLUGIN_INSTALLED_TREE" ]', installer)
+        self.assertLess(
+            installer.rindex(
+                "activate_and_verify_omarchy_plugin \\\n    khephri.sia"),
+            installer.rindex(
+                'publish_first_light_state "$BINDIR" ready'))
+
+        with tempfile.TemporaryDirectory() as root:
+            fake_bin = os.path.join(root, "bin")
+            trace = os.path.join(root, "trace")
+            restarted = os.path.join(root, "restarted")
+            os.makedirs(fake_bin)
+            _fake_command(
+                fake_bin, "omarchy",
+                'echo "omarchy $*" >> "$TRACE"\n'
+                '[ "${RESTART_EXIT:-0}" = 0 ] || exit "$RESTART_EXIT"\n'
+                ': > "$RESTARTED"\n')
+            _fake_command(
+                fake_bin, "omarchy-shell",
+                'echo "omarchy-shell $*" >> "$TRACE"\n'
+                'printf "%s\\n" "${LOADED_RELEASE:-unknown}"\n')
+            _fake_command(
+                fake_bin, "sleep",
+                'echo "sleep $*" >> "$TRACE"\n')
+            environment = os.environ.copy()
+            environment.update({
+                "PATH": fake_bin + os.pathsep + environment["PATH"],
+                "TRACE": trace,
+                "RESTARTED": restarted,
+                "LOADED_RELEASE": "1.7.2",
+            })
+            result = subprocess.run(
+                ["bash", "-c", functions +
+                 "\nactivate_and_verify_omarchy_plugin "
+                 "khephri.sia 1.7.2"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                _read_path(trace).splitlines(),
+                ["omarchy restart shell",
+                 "omarchy-shell shell call khephri.sia "
+                 "loadedReleaseVersion probe"])
+
+            os.unlink(trace)
+            environment["RESTART_EXIT"] = "9"
+            refused = subprocess.run(
+                ["bash", "-c", functions +
+                 "\nactivate_and_verify_omarchy_plugin "
+                 "khephri.sia 1.7.2"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertEqual(
+                _read_path(trace).splitlines(), ["omarchy restart shell"])
+
+            os.unlink(trace)
+            environment.pop("RESTART_EXIT")
+            environment["LOADED_RELEASE"] = "unknown"
+            refused = subprocess.run(
+                ["bash", "-c", functions +
+                 "\nactivate_and_verify_omarchy_plugin "
+                 "khephri.sia 1.7.2"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn(
+                "did not activate its exact installed release",
+                refused.stderr)
+            self.assertIn("sleep 0.05", _read_path(trace).splitlines())
 
     def test_keybinding_mutations_are_atomic_and_refuse_open_blocks(self):
         installer = _read("install.sh")

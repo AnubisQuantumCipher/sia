@@ -1021,6 +1021,12 @@ that exact ID; rescan failure, malformed output, or a missing ID is a refusal,
 not a directory-name guess. Without Omarchy, only the cockpit is skipped; the
 CLI and MCP surface remain available.
 
+Discovery is not accepted as live activation. While the first-light record is
+still `installing`, the installer uses `omarchy restart shell`, polls the
+resident `khephri.sia` cockpit for its source release, and re-observes the
+installed plugin tree. A restart, load, version, or generation mismatch stops
+the installer before the `ready` completion record can be published.
+
 The optional binding edit is staged beside `bindings.lua` and renamed into
 place only as a complete file. In a live session, reload/config validation
 failure restores the original. If either managed marker is missing, repeated,
@@ -1232,7 +1238,7 @@ absence boundary instead of silently claiming equivalent retrieval.
 - **Widget vanished after an Omarchy update** — quattro upgrades can
   rewrite `shell.json`; run `omarchy plugin enable khephri.sia`.
 - **Edited plugin QML but nothing changed** — the hot-reloader can serve
-  stale code; `omarchy-restart-shell`. (Each shell restart may coredump a
+  stale code; `omarchy restart shell`. (Each shell restart may coredump a
   `hyprland-dialog` helper — an Omarchy quirk SIA will dutifully report
   as a crash thought.)
 - **SOURCE HEALTH shows a sense error** — that sense failed this pulse;

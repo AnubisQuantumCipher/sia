@@ -1587,8 +1587,8 @@ Item {
     setupLaunchRequested = false
     readyProc.cancel()
     clearReadyCheck()
-    statusResolved = false
-    installCompletionResolved = false
+    // Opening requests fresh bytes without discarding the last validated
+    // generation. Cold startup and every failed load still resolve fail-closed.
     statusFile.reload(); installCompletionFile.reload()
     graphFile.reload(); thoughtsFile.reload()
     continuityFile.reload()
@@ -1601,6 +1601,13 @@ Item {
       else if (root.cockpitVisible) keyCatcher.forceActiveFocus()
       graphCanvas.requestPaint()
     })
+  }
+
+  // The installer calls this through Omarchy shell IPC after activation.  A
+  // copied plugin tree is not the live generation until the resident shell
+  // answers with the exact release it has actually loaded.
+  function loadedReleaseVersion(ignored) {
+    return Model.releaseVersion()
   }
 
   function close() {
@@ -1784,7 +1791,8 @@ Item {
         : "resident status unavailable"
     }
     onFileChanged: {
-      root.statusResolved = false
+      // Atomic publication is a refresh, not evidence that the resident
+      // generation became unsafe. Commit the new result in the load callbacks.
       statusApply.restart()
     }
   }
@@ -1841,6 +1849,8 @@ Item {
       root.installCompletionResolved = true
     }
     onFileChanged: {
+      // First-light is an install lifecycle barrier, not a routine status
+      // refresh.  Withdraw validated pixels until the changed record settles.
       root.installCompletionResolved = false
       installCompletionApply.restart()
     }
