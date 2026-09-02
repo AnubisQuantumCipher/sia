@@ -143,11 +143,14 @@ extraction is a *designed* change — the `siasenses.py` bind/invoke façade plu
 lists. Never a mechanical move; the monkeypatched-globals hazard is documented in the
 repo itself.
 
-| Release | Extraction | Lines (approx.) | Gate |
+| Release | Extraction | Lines (approx.) | Status |
 |---|---|---|---|
-| v1.6.0 | thought-pages + recovery/legacy replay (`sialib.py` 3387–5257) | ~1,870 | full suite + contract lane + dedicated `test_thought_recovery.py` green; nothing else in the release |
-| v1.6.1 | cursors lane (1415–2517) | ~1,100 | same |
-| v1.6.2 | exports lane (6280–7279) | ~1,000 | same |
+| **v1.6.0** | **exports lane → `bin/siagraph.py`** | ~1,000 | **DONE** — 857-test suite + façade smoke green; sialib 517 KB → 477 KB |
+| v1.6.1 | thought-pages + recovery/legacy replay | ~1,870 | next; `test_thought_recovery.py` is the gate |
+| v1.6.2 | cursors lane | ~1,100 | last (senses-substrate; most entangled) |
+
+Order revised from the original guess after four parallel extraction maps:
+exports scored decisively cleanest and led. See `docs/ARCHITECTURE.md`.
 
 Target: `sialib.py` < 400 KB by v1.6.2 — roughly 23% below the marketplace cap instead of
 1.4%. Each release is small enough for a human to read the diff end to end, which is the

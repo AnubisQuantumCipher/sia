@@ -3334,13 +3334,17 @@ modern_v3_names = modern_v2_names + ("siasenses.py",)
 modern_v4_names = modern_v3_names + (
     "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker")
+modern_v5_names = modern_v4_names + ("siagraph.py",)
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
 v4 = any(os.path.lexists(os.path.join(root, name))
          for name in ("siacapsule.py", "siabackup.py",
                       "sia-continuity-worker"))
-if v4:
+v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
+if v5:
+    names, salt = modern_v5_names, b"sia-runtime-v5\0"
+elif v4:
     names, salt = modern_v4_names, b"sia-runtime-v4\0"
 elif v3:
     names, salt = modern_v3_names, b"sia-runtime-v3\0"
@@ -3578,13 +3582,17 @@ modern_v3_names = modern_v2_names + ("siasenses.py",)
 modern_v4_names = modern_v3_names + (
     "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker")
+modern_v5_names = modern_v4_names + ("siagraph.py",)
 modern = any(os.path.lexists(os.path.join(runtime, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(runtime, "siasenses.py"))
 v4 = any(os.path.lexists(os.path.join(runtime, name))
          for name in ("siacapsule.py", "siabackup.py",
                       "sia-continuity-worker"))
-if v4:
+v5 = os.path.lexists(os.path.join(runtime, "siagraph.py"))
+if v5:
+    names, salt = modern_v5_names, b"sia-runtime-v5\0"
+elif v4:
     names, salt = modern_v4_names, b"sia-runtime-v4\0"
 elif v3:
     names, salt = modern_v3_names, b"sia-runtime-v3\0"

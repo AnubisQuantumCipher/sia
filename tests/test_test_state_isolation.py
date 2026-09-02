@@ -18,8 +18,8 @@ REPO = Path(__file__).resolve().parent.parent
 BIN = REPO / "bin"
 sys.path.insert(0, str(BIN))
 RUNTIME_MODULES = (
-    "sialib", "siasenses", "siarestoreadmit", "siamind", "siatakes",
-    "siabench", "siaqueue")
+    "sialib", "siasenses", "siagraph", "siarestoreadmit", "siamind",
+    "siatakes", "siabench", "siaqueue")
 RUNTIME_FILES = tuple(name + ".py" for name in RUNTIME_MODULES)
 
 

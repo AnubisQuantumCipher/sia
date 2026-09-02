@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.0 — 2026-09-02 · first module extraction (roadmap Phase 2)
+
+The exports lane leaves the monolith. No behavior change; this is mass moved
+out of `bin/sialib.py` so a reader can hold a piece of it at a time — the
+review's largest structural ask, executed the sanctioned way.
+
+- **`bin/siagraph.py`** now holds graph projection, the two-lane domain-edge
+  inference, `corpus_edges`, and `export_graph` — 26 functions, ~1,000 lines —
+  via the same `bind`/`invoke` façade `siasenses` uses. The core keeps sole
+  ownership of the constants, `GraphProjectionPending`, and the published
+  files; the child imports no core module, so one runtime state survives the
+  dynamic-alias test loading, and explicit test monkeypatches of these helpers
+  are mirrored into intra-module calls. `sialib.py` drops from 517 KB to
+  477 KB (from 98.6% of the 512 KB marketplace scan cap to ~91%).
+- **Chosen by measurement, not guess.** Four parallel extraction maps ran
+  before any cut; the exports lane scored decisively cleanest (contiguous,
+  four entry points, no import-time execution, one parent-owned exception), so
+  it led rather than the originally-listed thought-recovery cluster. The maps
+  for the remaining lanes are recorded for their own releases;
+  `docs/ARCHITECTURE.md` carries the revised order and the reasons.
+- **A `sia-runtime-v5` member set** was added to all four runtime-digest
+  routines (install.sh, uninstall.sh ×2, the test mirror) and the installer
+  release/staging file lists, so a partial tree still cannot validate as an
+  older complete one.
+- Verified: the 857-test suite, and a façade-identity smoke — delegates
+  resolve, `sialib.GraphProjectionPending is siagraph.GraphProjectionPending`,
+  and `except sialib.GraphProjectionPending` catches a `siagraph` raise.
+
 ## 1.5.2 — 2026-09-02 · the instruments spoke, the policy moved
 
 The first execution of ROADMAP.md Phase 1. Everything here is measurement or a

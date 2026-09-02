@@ -73,25 +73,38 @@ Three verified constraints make a naive "move the code and re-import" wrong:
    so a partial tree can never validate as an older one — which also means
    every extraction is a deliberate receipt revision.
 
-## The sanctioned next extraction
+## Extraction progress
 
-**The thought-pages + recovery/legacy-replay cluster (`sialib.py`
-3387–5257, ~1,871 lines)** is the measured best candidate:
+**v1.6.0 — DONE: the exports lane → `bin/siagraph.py`.** Four extraction maps
+were run in parallel before cutting anything; the exports lane scored
+decisively cleanest (one contiguous ~1,000-line block, 26 functions reachable
+from four entry points, only 8 names referenced from 14 parent functions, no
+import-time execution beyond constants, one exception class that stays
+parent-owned), so it led rather than the originally-guessed thought-recovery
+cluster. The move used the exact `siasenses` bind/invoke façade, added a
+`sia-runtime-v5` member set to all four digest routines and the installer/test
+file lists, and required no change to the graph/domain test suites — the façade
+keeps every `sialib.<name>` working and mirrors test monkeypatches. `sialib.py`
+dropped from 517 KB to 477 KB; the 857-test suite and a façade-identity smoke
+(delegates resolve, `GraphProjectionPending` is one shared class across the
+boundary, `except sialib.X` catches a `siagraph` raise) are green.
 
-- zero references from any other `bin/` module;
-- only 14 of its 67 names are referenced elsewhere inside sialib;
-- a dedicated 800-line suite (`tests/test_thought_recovery.py`) plus five
-  other suites exercise it through `sialib.<name>` attributes, which the
-  façade pattern preserves.
+**Next: v1.6.1 — the thought-pages + recovery/legacy-replay cluster** (~1,870
+lines, ~66 functions). Its verified map is on file: zero references from any
+other `bin/` module, but two hazards the exports lane did not have — an
+import-time ctypes block (`_THOUGHT_RECOVERY_LIBC` + `_ThoughtRecoveryDirent`,
+which must stay parent-side) and two `@contextlib.contextmanager` decorators
+(so the child imports `contextlib` itself). Its dedicated
+`tests/test_thought_recovery.py` is the gate.
 
-The move is: new `bin/siathoughts.py` (or similar) using the exact
-`bind`/`invoke` façade shape from `siasenses.py`; a `sia-runtime-v5` member
-set added in the three digest sites and the installer/test lists; and no
-test changes — the façade keeps `sialib.<name>` working. Follow-up
-candidates after it proves out: the cursors lane, then the exports lane.
+**Then: v1.6.2 — the cursors lane** last, because it is the substrate the
+already-extracted `siasenses` child calls ~95× through the bound namespace;
+extracting it adds a second delegate hop in the pulse hot path, so it moves
+only after two façade extractions have proven under real upgrade/rollback.
 
-Do this as its own release with nothing else in it, and let the full suite
-plus the real-gbrain contract lane gate it.
+Each extraction ships as its own release with nothing else in it, gated by the
+full suite and the real-gbrain contract lane. Target: `sialib.py` < 400 KB by
+v1.6.2.
 
 ## The boundary that actually bit
 

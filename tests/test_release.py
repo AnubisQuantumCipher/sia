@@ -84,13 +84,17 @@ def _runtime_digest(root):
     modern_v4_names = modern_v3_names + (
         "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
         "sia-continuity-worker")
+    modern_v5_names = modern_v4_names + ("siagraph.py",)
     modern = any(os.path.lexists(os.path.join(root, name))
                  for name in ("sia-brainstem.py", "sia-cli"))
     v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
     v4 = any(os.path.lexists(os.path.join(root, name))
              for name in ("siacapsule.py", "siabackup.py",
                           "sia-continuity-worker"))
-    if v4:
+    v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
+    if v5:
+        names, salt = modern_v5_names, b"sia-runtime-v5\0"
+    elif v4:
         names, salt = modern_v4_names, b"sia-runtime-v4\0"
     elif v3:
         names, salt = modern_v3_names, b"sia-runtime-v3\0"
@@ -300,7 +304,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.5.2")
+        self.assertEqual(version, "1.6.0")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',
@@ -1615,7 +1619,8 @@ retain_unowned_cli_before_fence
                 process.communicate(timeout=2)
 
             _write(target, _read("bin/sia"), 0o644)
-            for name in ("sialib.py", "siasenses.py", "siarestoreadmit.py",
+            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+                         "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
@@ -2169,7 +2174,8 @@ retain_unowned_cli_before_fence
     def test_new_sialib_rejects_loaded_old_installed_launchers(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
-            for name in ("sialib.py", "siasenses.py", "siarestoreadmit.py",
+            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+                         "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)

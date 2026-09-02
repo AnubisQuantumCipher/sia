@@ -1341,7 +1341,7 @@ class CapsuleBoundaryTests(unittest.TestCase):
         os.makedirs(runtime, mode=0o700, exist_ok=True)
         for name in ("sia-brainstem", "sialib.py", "siamind.py",
                      "siatakes.py", "siaqueue.py", "siasenses.py",
-                     "siarestoreadmit.py"):
+                     "siagraph.py", "siarestoreadmit.py"):
             source = os.path.join(BIN, name)
             target = os.path.join(
                 runtime, "sia-brainstem.py" if name == "sia-brainstem"
