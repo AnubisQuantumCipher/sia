@@ -385,6 +385,17 @@ class ReleaseContract(unittest.TestCase):
         self.assertIn("MCP client", boundary)
         self.assertIn("CLI", boundary)
 
+    def test_readme_stays_readable(self):
+        # A shape ceiling, not a vocabulary assertion (ROADMAP.md, standing gates).
+        # The README was once 1,137 lines of duplicated specification; the front
+        # door must stay something a person reads. Deep material belongs in
+        # docs/MANUAL.md, docs/WHITEPAPER.md, and CHANGELOG.md.
+        lines = _read("README.md").count("\n") + 1
+        self.assertLessEqual(
+            lines, 500,
+            f"README.md is {lines} lines; move specification material to the "
+            "manual/whitepaper instead of growing the front door")
+
     def test_generalized_publication_and_legacy_upgrade_are_documented(self):
         # The deep migration/publication vocabulary belongs in the specification
         # documents. The README is the front door and describes the same behavior

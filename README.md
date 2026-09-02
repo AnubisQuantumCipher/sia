@@ -295,6 +295,9 @@ The short version of the contract; the full mechanics are in the
 - [**Whitepaper**](docs/WHITEPAPER.md) — architecture, the evidence model,
   every cognitive mechanism with its formula and citation, the measurement
   instruments, and the verification record.
+- [**Roadmap**](ROADMAP.md) — the measured state of every instrument, the
+  feature freeze and its exit gates, the module-split schedule, and the
+  v2.0 decision rule for the cognitive lane.
 - [**CHANGELOG**](CHANGELOG.md) — the complete release history. Recent
   highlights: the v1.5.1 rehearsal-grading fix with its real-gbrain contract
   test lane ([issue #3](https://github.com/AnubisQuantumCipher/sia/issues/3)),
