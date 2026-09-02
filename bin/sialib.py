@@ -51,6 +51,12 @@ GBRAIN_ENV = dict(os.environ,
                   GBRAIN_SKIP_STARTUP_HOOKS="1",
                   PATH=BUN_DIR + ":" + os.environ.get("PATH", ""))
 
+# gbrain registers this corpus under one named source. Every page-addressed
+# invocation must name it: without --source the lookup lands in gbrain's
+# "default" source and fails with "Page not found" even though the page is
+# synced and embedded.
+GBRAIN_SOURCE = "sia"
+
 # ---- instance configuration (~/.config/sia/config.json) --------------
 # SIA is generic: a base set of senses every Linux/Omarchy box has, plus
 # OPTIONAL integrations that activate only when their data exists on this
@@ -5404,7 +5410,8 @@ def _gbrain_call_unlocked(op, params, timeout=120, owner_fd=None):
     """Call one gbrain operation while the caller owns the engine lease."""
     try:
         r = _run_bounded_text_process(
-            [GBRAIN, "call", "--source", "sia", op, json.dumps(params)],
+            [GBRAIN, "call", "--source", GBRAIN_SOURCE, op,
+             json.dumps(params)],
             env=GBRAIN_ENV, timeout=timeout, cwd=CORPUS,
             pass_fds=((owner_fd,) if owner_fd is not None else ()),
             label="gbrain", output_limit=MAX_GBRAIN_OUTPUT_BYTES)
@@ -11215,6 +11222,14 @@ def _settle_pending_dream_unit(store, expected_unit=None):
     return receipt
 
 
+def _embed_failure_reason(result):
+    """One bounded line explaining a failed rehearsal embed subprocess."""
+    text = ((getattr(result, "stderr", "") or "").strip()
+            or (getattr(result, "stdout", "") or "").strip()
+            or f"exit {getattr(result, 'returncode', '?')}")
+    return " ".join(text.split())[:160]
+
+
 def rehearse_memories(now=None, stage=None):
     """Embed due pages and atomically stage their mind/ledger transition."""
     now = time.time() if now is None else float(now)
@@ -11231,7 +11246,8 @@ def rehearse_memories(now=None, stage=None):
             missing += 1
             attempted.append(item)
             continue
-        result = gbrain(["embed", slug], timeout=300)
+        result = gbrain(["embed", slug, "--source", GBRAIN_SOURCE],
+                        timeout=300)
         if result.returncode == 0:
             committed = siamind.apply_rehearsal(mind, plan, now=now)
             if committed is None:
@@ -11244,6 +11260,7 @@ def rehearse_memories(now=None, stage=None):
                 embedded += 1
         else:
             item["embed"] = "failed"
+            item["error"] = _embed_failure_reason(result)
             failed += 1
         attempted.append(item)
     decay = siamind.decay_sweep(mind, now=now)
@@ -11372,6 +11389,21 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 thought = (
                     "dream", thought_text,
                     [item["slug"] for item in reviewed[:5]], False)
+            elif rehearsal["failed"] or rehearsal["missing"]:
+                reasons = sorted({item["error"]
+                                  for item in rehearsal["planned"]
+                                  if item.get("error")})
+                detail = f" First reason: {reasons[0]}" if reasons else ""
+                thought = (
+                    "dream",
+                    f"I could not rehearse any of the "
+                    f"{len(rehearsal['planned'])} due memories: "
+                    f"{rehearsal['failed']} embed failure(s), "
+                    f"{rehearsal['missing']} missing page(s). The SM-2 "
+                    f"queue cannot advance until embedding succeeds."
+                    f"{detail}",
+                    [item["slug"] for item in rehearsal["planned"][:5]],
+                    True)
             _stage_dream_unit(
                 mind, "rehearse", "DREAM:rehearse",
                 f"reviewed={len(reviewed)}",

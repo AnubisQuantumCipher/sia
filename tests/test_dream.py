@@ -264,6 +264,33 @@ class DreamPublication(unittest.TestCase):
                 if row == ("memo", False)),
             self.trace.index(("graph", True)))
 
+    def test_rehearsal_total_failure_emits_urgent_thought(self):
+        def rehearsal(*, now=None, stage=None):
+            report = {
+                "reviewed": [], "embedded": 0, "failed": 2, "missing": 0,
+                "planned": [
+                    {"slug": "events/a", "embed": "failed",
+                     "error": "Page not found: events/a (source=default)"},
+                    {"slug": "events/b", "embed": "failed",
+                     "error": "Page not found: events/b (source=default)"},
+                ], "decay": {}}
+            mind = copy.deepcopy(self.mind)
+            if stage is not None:
+                stage(mind, report)
+            self.sialib.siamind.save_mind(mind)
+            return report
+
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
+            rehearse=rehearsal)
+        failing = [row for row in self.thought_rows
+                   if row[1] == "dream" and "could not rehearse" in row[2]]
+        self.assertEqual(len(failing), 1)
+        self.assertIn("2 embed failure(s)", failing[0][2])
+        self.assertIn("Page not found", failing[0][2])
+        self.assertEqual(failing[0][3], ["events/a", "events/b"])
+        self.assertIs(failing[0][4], True)
+
     def test_write_ahead_marker_precedes_consolidation_mutation(self):
         def consolidate():
             self.sialib._before_corpus_mutation()
@@ -1159,6 +1186,73 @@ class ThoughtOrigins(unittest.TestCase):
                 export.assert_not_called()
             finally:
                 self.sialib.CORPUS = old_corpus
+
+
+class RehearsalEmbedContract(unittest.TestCase):
+    """rehearse_memories must address pages in the registered gbrain source.
+
+    The per-page embed ran without --source for the project's whole history,
+    so gbrain looked the slug up in its "default" source, answered "Page not
+    found", and every nightly rehearsal failed with reviewed=0 (issue #3).
+    """
+
+    def setUp(self):
+        self.sialib = _load(
+            "sialib_rehearse_test", os.path.join(BIN, "sialib.py"))
+
+    def _rehearse(self, gbrain_result, apply_result=None):
+        calls = []
+
+        def fake_gbrain(args, timeout=120, json_out=False):
+            calls.append(list(args))
+            return gbrain_result
+
+        plan = {"slug": "events/skills/2026-08-31", "quality": 5}
+        with ExitStack() as stack:
+            for name, replacement in (
+                    ("gbrain", fake_gbrain),
+                    ("page_exists", lambda _slug: True),
+                    ("read_json", lambda *_args, **_kwargs: {})):
+                stack.enter_context(
+                    mock.patch.object(self.sialib, name, replacement))
+            for name, replacement in (
+                    ("load_mind", lambda now=None: {}),
+                    ("sync_graph_state", lambda *_args, **_kwargs: None),
+                    ("plan_rehearsal",
+                     lambda _mind, now=None: [dict(plan)]),
+                    ("apply_rehearsal",
+                     lambda _mind, _plan, now=None: apply_result),
+                    ("decay_sweep", lambda _mind, now=None: {}),
+                    ("save_mind", lambda _mind: None)):
+                stack.enter_context(
+                    mock.patch.object(self.sialib.siamind, name, replacement))
+            report = self.sialib.rehearse_memories(now=0.0)
+        return calls, report
+
+    def test_embed_names_the_registered_source(self):
+        committed = {"slug": "events/skills/2026-08-31", "quality": 5}
+        calls, report = self._rehearse(
+            subprocess.CompletedProcess([], 0, "", ""),
+            apply_result=committed)
+        self.assertEqual(calls, [[
+            "embed", "events/skills/2026-08-31",
+            "--source", self.sialib.GBRAIN_SOURCE]])
+        self.assertEqual(report["embedded"], 1)
+        self.assertEqual(report["failed"], 0)
+        self.assertEqual(report["reviewed"][0]["embed"], "ok")
+
+    def test_failed_embed_records_bounded_reason(self):
+        calls, report = self._rehearse(subprocess.CompletedProcess(
+            [], 1,
+            "Page not found: events/skills/2026-08-31 (source=default)\n",
+            ""))
+        self.assertEqual(report["failed"], 1)
+        self.assertEqual(report["reviewed"], [])
+        item = report["planned"][0]
+        self.assertEqual(item["embed"], "failed")
+        self.assertIn("Page not found", item["error"])
+        self.assertLessEqual(len(item["error"]), 160)
+        self.assertNotIn("\n", item["error"])
 
 
 if __name__ == "__main__":
