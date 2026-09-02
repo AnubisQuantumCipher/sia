@@ -251,6 +251,15 @@ non-claims, use the [Whitepaper](docs/WHITEPAPER.md).
   Secret-shaped spans are redacted at
   the sense boundary; *absence of recall is never evidence of absence*.
 
+### v1.5.1 Rehearsal grading fix
+
+The nightly SM-2 rehearsal had never graded a page: its per-page embed omitted
+`--source`, gbrain looked each due slug up in the wrong source, and every
+`DREAM:rehearse` ended `reviewed=0` — silently, because only successful
+reviews emitted a thought. The embed now names the registered source, failed
+embeds keep a bounded one-line reason, a rehearsal that grades nothing raises
+an urgent dream thought, and the embed argv is pinned by contract tests.
+
 ### v1.5.0 Marketplace-native guided first light
 
 SIA now installs through Omarchy's familiar add-and-enable flow. When the QML

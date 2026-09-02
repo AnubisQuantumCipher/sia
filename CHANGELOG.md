@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.1 — 2026-09-02
+
+- **Rehearsal grading works** — the nightly SM-2 rehearsal embed ran without
+  `--source`, so gbrain resolved every due slug against its `default` source,
+  answered "Page not found", and each DREAM:rehearse ended `reviewed=0` with
+  every embed failed; the due queue could never clear. The rehearsal embed
+  now names the registered source through a shared `GBRAIN_SOURCE` constant,
+  which the call interface also uses instead of a string literal.
+
+- **Grading failures are visible** — a failed rehearsal embed records a
+  bounded one-line reason instead of discarding subprocess stderr, and a
+  rehearsal that grades nothing while pages failed or went missing stages an
+  urgent dream thought naming the counts and the first reason. The signed
+  `DREAM:rehearse` ledger row was previously the only trace.
+
+- **The embed contract is pinned by tests** — new tests assert the exact
+  rehearsal embed argv, the bounded failure reason, and the total-failure
+  thought. The previous suite stubbed the whole rehearsal step, which is how
+  a broken subprocess contract could ship.
+
 ## 1.5.0 — 2026-09-01
 
 - **Marketplace-native guided first light** — the documented Omarchy path is

@@ -335,6 +335,9 @@ schedule immediately: the due DREAM performs re-embedding first. A failed or
 missing embedding does not advance
 the scheduler state, recall touch, or incident-edge reinforcement, so the page
 remains due for retry until that same page is successfully re-embedded.
+A failed embed keeps a bounded one-line reason, and a rehearsal that grades
+nothing while pages failed or went missing raises an urgent dream thought
+naming the counts and the first reason — grading cannot fail silently.
 Legacy JACKAL pages whose formal-looking assurance has not been re-verified
 through JACKAL's front door are recall-visible but deliberately excluded from
 reinforcement; `sia rehearse` names that exclusion and does not claim a queued
