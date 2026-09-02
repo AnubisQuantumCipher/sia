@@ -16,7 +16,7 @@ import urllib.parse
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
 STATE = os.path.join(HOME, ".local/state/sia")
-SERVER_VERSION = "1.5.1"
+SERVER_VERSION = "1.5.2"
 MODERN_PROTOCOL = "2026-07-28"
 LEGACY_PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26",
                     "2024-11-05")

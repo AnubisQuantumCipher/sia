@@ -2,21 +2,35 @@
   "schemaVersion": 1,
   "id": "khephri.sia",
   "name": "SIA",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "author": "Khephri Labs",
   "license": "MIT",
   "description": "SIA — the Omarchy Brain. Live knowledge graph, thoughts, and evidence-chain integrity of the machine's own memory.",
-  "tags": ["brain", "memory", "graph", "evidence"],
-  "kinds": ["bar-widget", "overlay"],
+  "tags": [
+    "brain",
+    "memory",
+    "graph",
+    "evidence"
+  ],
+  "kinds": [
+    "bar-widget",
+    "overlay"
+  ],
   "keepLoaded": true,
-  "entryPoints": { "barWidget": "Panel.qml", "overlay": "Cockpit.qml" },
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "overlay": "Cockpit.qml"
+  },
   "barWidget": {
     "displayName": "SIA",
     "description": "The Omarchy Brain — what the machine remembers, thinks, and can verify.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
-    "defaults": { "staleAfterSec": 240, "cockpitWorkspace": "" },
+    "defaults": {
+      "staleAfterSec": 240,
+      "cockpitWorkspace": ""
+    },
     "schema": [
       {
         "key": "staleAfterSec",

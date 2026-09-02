@@ -1,18 +1,15 @@
 {
   "_comment": "SIA instance configuration — copy to ~/.config/sia/config.json",
   "_egress_trust_boundary": "The local memory runtime and embeddings do not make cloud calls. This file can opt the separate Claude CLI judge into sending recalled context. Independently, any script, pipe, agent, or configured MCP client that receives sia CLI/MCP output can forward it to another provider; SIA cannot enforce that caller's billing, retention, or data terms.",
-
   "judge": {
     "_comment": "Disabled by default: no recalled memory leaves the machine. To opt in, set backend to claude and choose an explicit model identifier; Claude runs tool-free through your configured CLI authentication/account/provider, whose normal billing and data terms apply. Codex is refused because its documented read-only mode still permits local reads.",
     "backend": "none",
     "model": ""
   },
-
   "senses": {
     "_comment": "Optional integrations (jackal/sekhmet/custos/aegis/worldline/guardian) auto-activate when their data exists; list names here to force-disable any sense.",
     "disable": []
   },
-
   "skills": {
     "_comment": "Skill roots are checked in this precedence order. Relative entries are interpreted beneath HOME; each admitted skill must be a real direct child directory containing a real directly contained regular SKILL.md. Symlinked children/manifests are skipped; unreadable or unstable roots are partial. Restart sia-brainstem.service after changing config.",
     "roots": [
@@ -23,7 +20,6 @@
       ".config/agents/skills"
     ]
   },
-
   "custom_senses": [
     {
       "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' includes and 'exclude' omits bounded literal alternatives separated by | (neither accepts regex); for jsonl, 'field' selects the message field.",
@@ -35,10 +31,11 @@
       "enabled": false,
       "match": "ERROR|FATAL",
       "kind": "error",
-      "tags": ["failed"]
+      "tags": [
+        "failed"
+      ]
     }
   ],
-
   "chains": [
     {
       "_comment": "Extra signed evidence chains to re-verify each sweep. The verifier must be the exact executed program, or the immediate script operand of SIA's current Python interpreter; the ledger must also appear as an exact argv element.",
@@ -46,7 +43,15 @@
       "name": "mychain",
       "ledger": "~/.local/share/mychain/ledger.tsv",
       "verifier": "~/.local/bin/mychain-verify",
-      "verify": ["~/.local/bin/mychain-verify", "~/.local/share/mychain/ledger.tsv", "--quiet"]
+      "verify": [
+        "~/.local/bin/mychain-verify",
+        "~/.local/share/mychain/ledger.tsv",
+        "--quiet"
+      ]
     }
-  ]
+  ],
+  "retrieval": {
+    "_comment": "Off by measurement: on the extended 22-probe tripwire set (2026-09-02) the graph-influenced blend scored uniformly below plain dense retrieval, so `sia ask` uses origin-weighted dense ordering unless you enable this deliberately. The nightly tripwire keeps measuring the blend lane either way.",
+    "associative_rerank": false
+  }
 }

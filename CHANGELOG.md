@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.5.2 — 2026-09-02 · the instruments spoke, the policy moved
+
+The first execution of ROADMAP.md Phase 1. Everything here is measurement or a
+policy change the measurement demanded; no new capability.
+
+### The tripwire warning was investigated — and the rerank is demoted
+
+The nightly drift tripwire showed the blend trailing keyword retrieval, so the
+full three-system decomposition ran: dense exactly equalled keyword (slug
+match@5 0.92, reciprocal rank 0.71 on the original 13 probes), isolating the
+deficit to the graph rerank itself. The probe set was then extended from 13 to
+22 organ-gated probes (nine organs with corpus presence had no probe at all),
+with acceptors widened to the established organs/-inclusive style for
+fairness. On the extended set the blend measured uniformly below plain dense
+retrieval: match@5 0.86 vs 0.91, reciprocal rank 0.67 vs 0.71, match@1 0.50
+vs 0.59. Per the hypothesis-lane freeze rule, `sia ask` now applies graph
+influence only when the new validated `retrieval.associative_rerank` key is
+explicitly true (default off; the answer footer states the mode), and
+WHITEPAPER §4.3 records the measurement and the re-promotion condition — the
+same rule that demoted it. The nightly tripwire keeps measuring the blend
+lane regardless, so the hypothesis stays under instrumentation.
+
+### The rehearsal-efficacy instrument (ROADMAP P1.3)
+
+`sia memory --efficacy` partitions the dense-lane probes by SM-2 review state
+and reports hit-rates with populations and non-claims. First datapoint
+(2026-09-02): rehearsed families 6/6 (1.0) vs unrehearsed 14/16 (0.875) —
+directionally favorable and explicitly no-conclusion under the
+interpretation rule fixed in ROADMAP.md before the data spoke. The partition
+is a pure function with unit tests.
+
+### Calibration lane unblocked
+
+The configured `judge.backend: codex` was silently unusable — SIA refuses the
+codex backend by design (its documented read-only sandbox still permits
+reads), so no take could ever grade. The operator config now names the
+supported claude backend, and the first live grading pass ran: both past-due
+takes graded honestly UNRESOLVABLE (recalled evidence insufficient),
+exercising the abstention audit end to end. Six self-study proposals from
+ROADMAP P1.2 are queued through the designed agent lane; committing them
+remains the operator's single keystroke (`sia take --accept all`) because a
+model must not mint the takes it later helps grade.
+
+### Fixed
+
+- `sia take --help` registered a take whose claim was `--help`: option-shaped
+  tokens are never claim text and now refuse with usage. (The one stray take
+  this bug created is documented and will grade UNRESOLVABLE at its deadline;
+  calibration excludes such rows visibly.)
+
 ## 1.5.1 — 2026-09-02
 
 ### Review response: the real-gbrain contract lane, and honest surfaces

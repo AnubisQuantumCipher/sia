@@ -659,14 +659,21 @@ def cmd_ask(q, touch=True):
                                  in (r.stderr or "")))
             return 0
         recall_degraded = ""
-        try:
-            graph = sialib.read_json(sialib.GRAPH_PATH, None)
-            mind = siamind.load_mind()
-            ranked = siamind.ppr_rerank(
-                graph, dense, mind=mind, origins=origins)
-        except Exception:
+        if not sialib.associative_rerank_enabled():
+            # Off by measurement (see sialib.associative_rerank_enabled):
+            # origin-weighted dense ordering, honestly labeled in the footer.
             ranked = siamind.ppr_rerank(None, dense, origins=origins)
-            recall_degraded = "associative rerank unavailable; origin-safe fallback"
+            recall_degraded = ("associative rerank off by measured default; "
+                              "retrieval.associative_rerank enables it")
+        else:
+            try:
+                graph = sialib.read_json(sialib.GRAPH_PATH, None)
+                mind = siamind.load_mind()
+                ranked = siamind.ppr_rerank(
+                    graph, dense, mind=mind, origins=origins)
+            except Exception:
+                ranked = siamind.ppr_rerank(None, dense, origins=origins)
+                recall_degraded = "associative rerank unavailable; origin-safe fallback"
         for slug, score in ranked[:8]:
             m = meta.get(slug, {})
             oc = origins[slug]
@@ -757,6 +764,32 @@ def cmd_memory(argv):
             return 1
         print(f"queued {'pin' if pinned else 'unpin'} for {argv[1]} — "
               "the brainstem applies it on the next pulse")
+        return 0
+    if argv and argv[0] == "--efficacy":
+        # ROADMAP P1.3: descriptive rehearsal-efficacy report. Runs the
+        # dense-lane probes once and partitions by SM-2 review state; the
+        # interpretation rule is fixed in ROADMAP.md before the data spoke.
+        import siabench
+        try:
+            report = siabench.rehearsal_efficacy()
+        except siabench.BenchmarkRefusal as exc:
+            print(f"efficacy refused: {exc}")
+            return 2
+        if not report:
+            print("no eligible probes — corpus has no probe-covered organs")
+            return 1
+        print("rehearsal efficacy — descriptive, tiny populations, "
+              "slug-proximity heuristic:")
+        for bucket in ("rehearsed", "unrehearsed"):
+            row = report[bucket]
+            rate = ("n/a" if row["hit_rate"] is None
+                    else f"{row['hit_rate']:.3f}")
+            print(f"  {bucket:12} probes {row['probes']:3} · "
+                  f"hits {row['hits']:3} · hit-rate {rate}")
+        print(f"  reviewed pages {report['reviewed_page_count']} · "
+              f"probe count {report['probe_count']}")
+        for line in report["non_claims"]:
+            print(f"  · {line}")
         return 0
     mind = siamind.load_mind()
     now = __import__("time").time()
@@ -1204,6 +1237,15 @@ def cmd_take(argv):
             by = argv[i + 1]; i += 2
         elif a == "--domain" and i + 1 < len(argv):
             domain = argv[i + 1].lower(); i += 2
+        elif a.startswith("-"):
+            # An option-shaped token is never claim text. Before this guard,
+            # `sia take --help` registered a take whose claim was "--help" —
+            # a silently misattributed commitment instead of a usage message.
+            print("usage: sia take \"claim\" [--confidence 0.7] "
+                  "[--by YYYY-MM-DD] [--domain d]")
+            print(f"take refused: unrecognized option {a!r}; "
+                  "nothing was registered")
+            return 2
         else:
             claim.append(a); i += 1
     if not claim:

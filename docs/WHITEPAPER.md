@@ -280,11 +280,22 @@ origin weighting that demotes model prose below evidence and treats
 instrumented, not asserted: on the historical 13-probe heuristic slug set, an
 earlier additive blend scored slug match@5 0.77 versus 0.92 and was replaced;
 the tie-breaker blend matched dense at slug match@5 0.92 and did not beat it. Those probes
-are a retrieval-drift tripwire, not answer ground truth. The shipped runtime
-does not automatically gate PPR on that nightly tripwire: graph influence is
-the tested release-selected policy, while a later tripwire regression is an
-operator-visible warning that must be investigated before a future policy is
-accepted (see §9). Score-threshold abstention was
+are a retrieval-drift tripwire, not answer ground truth.
+
+That warning fired, was investigated, and the policy moved with the data. On
+2026-09-02 the nightly tripwire showed the blend trailing keyword retrieval;
+the full three-system decomposition then separated the causes (dense exactly
+equalled keyword, so the deficit was the rerank, not the embedding lane), and
+after the probe set was extended from 13 to 22 organ-gated probes to cover the
+grown corpus, the blend measured uniformly below plain dense retrieval: slug
+match@5 0.86 versus 0.91, reciprocal slug rank 0.67 versus 0.71, match@1 0.50
+versus 0.59. Per the hypothesis-lane freeze rule (§11), graph influence in
+`sia ask` therefore ships **default-off** behind the validated
+`retrieval.associative_rerank` configuration key; the answer footer states the
+mode either way. The nightly tripwire continues to measure the blend lane
+regardless of the flag, so the hypothesis stays under instrumentation and can
+earn its default back with a measured win — the promotion condition is the
+same rule that demoted it. Score-threshold abstention was
 also measured and found unidentifiable on this stack (present/absent
 score distributions overlap); abstention therefore lives in the judge
 and the answer's truth-boundary footer, not in a cutoff.

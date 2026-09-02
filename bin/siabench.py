@@ -236,6 +236,38 @@ def build_questions():
                                              "epochs/custos"])
     if _probe_regular_page("sia/cortex"):
         add("what is sia the omarchy brain", ["sia/cortex"])
+    # 2026-09-02 extension (roadmap P1.1): the original 13 probes predate nine
+    # organs that now have corpus presence, so the tripwire sampled a stale
+    # slice of memory. Same hand-authored, organ-gated, deterministic style;
+    # acceptors remain relevance heuristics, not answer keys.
+    if organ_has("custos"):
+        add("custos downloads sweep activity", ["events/custos",
+                                                "epochs/custos",
+                                                "organs/custos"])
+    if organ_has("codex"):
+        add("codex agent sessions recorded on this machine",
+            ["events/codex", "organs/codex"])
+    if organ_has("skills"):
+        add("which agent skills were updated", ["events/skills",
+                                                "organs/skills", "skills/"])
+    if organ_has("notify"):
+        add("desktop notifications observed recently",
+            ["events/notify", "organs/notify"])
+    if organ_has("aegis"):
+        add("aegis hardening runs on this machine",
+            ["events/aegis", "organs/aegis"])
+    if organ_has("anubis"):
+        add("anubis encryption operations and integrity failures",
+            ["events/anubis", "organs/anubis"])
+    if organ_has("sia"):
+        add("sia installer and index lifecycle facts",
+            ["events/sia", "organs/sia"])
+    if organ_has("guardian"):
+        add("omarchy guardian preflight findings",
+            ["events/guardian", "organs/guardian"])
+    if organ_has("journal"):
+        add("systemd user service failures in the journal",
+            ["events/journal", "epochs/journal"])
     add("which evidence chain failed verification", ["integrity"])
     absent = [
         "when did the nginx web server crash",
@@ -253,6 +285,63 @@ def slug_family_rank(ranked_slugs, accepts, k=5):
         if any(a in s for a in accepts):
             return i + 1
     return None
+
+
+def rehearsal_efficacy_partition(probe_results, review_reps):
+    """Pure partition for the rehearsal-efficacy report (ROADMAP P1.3).
+
+    ``probe_results`` is [(question, accepts, rank_or_None)]; ``review_reps``
+    maps slug -> successful SM-2 review count. A probe family counts as
+    rehearsed when any reviewed slug (reps >= 1) contains one of its acceptor
+    fragments. Descriptive only: populations ride along, no significance
+    claim, and slug proximity remains a relevance heuristic.
+    """
+    rehearsed_slugs = [slug for slug, reps in review_reps.items()
+                       if isinstance(reps, int) and reps >= 1]
+    partitions = {"rehearsed": {"probes": 0, "hits": 0},
+                  "unrehearsed": {"probes": 0, "hits": 0}}
+    for _question, accepts, rank in probe_results:
+        family_rehearsed = any(
+            fragment in slug
+            for slug in rehearsed_slugs for fragment in accepts)
+        bucket = partitions["rehearsed" if family_rehearsed
+                            else "unrehearsed"]
+        bucket["probes"] += 1
+        if rank is not None:
+            bucket["hits"] += 1
+    for bucket in partitions.values():
+        bucket["hit_rate"] = (round(bucket["hits"] / bucket["probes"], 3)
+                              if bucket["probes"] else None)
+    partitions["non_claims"] = [
+        "descriptive partition over tiny populations; no significance claim",
+        "families are matched by acceptor-fragment overlap, not by controlled"
+        " age/organ pairing",
+        "a slug-family hit is retrieval proximity, not answer correctness",
+    ]
+    return partitions
+
+
+def rehearsal_efficacy():
+    """Run the dense-lane probes and partition by SM-2 rehearsal state."""
+    present, _ = build_questions()
+    if not present:
+        return None
+    mind = siamind.load_mind()
+    review_reps = {}
+    for slug, node in (mind.get("nodes") or {}).items():
+        review = node.get("review")
+        if isinstance(review, dict) and isinstance(review.get("reps"), int):
+            review_reps[slug] = review["reps"]
+    results = []
+    for question, accepts in present:
+        ranked = [s for s, _sc, _ in _dedupe(_engine(["query", question]))]
+        results.append((question, accepts,
+                        slug_family_rank(ranked, accepts)))
+    report = rehearsal_efficacy_partition(results, review_reps)
+    report["probe_count"] = len(results)
+    report["reviewed_page_count"] = sum(
+        1 for reps in review_reps.values() if reps >= 1)
+    return report
 
 
 def run_quick(max_q=8, day=None):

@@ -116,7 +116,10 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   deterministic, all behavior-defensible: importance decays with time and
   grows with world-originated use (ACT-R); co-recalled memories bond (Hebbian,
   with nightly decay and degree caps); recall spreads through the graph
-  (Personalized PageRank as a benchmarked tie-breaker); a non-destructive
+  (Personalized PageRank, measured on the tripwire probes and currently
+  default-off in `sia ask` because the extended set showed it trailing
+  plain dense retrieval — the whitepaper records the numbers and the
+  re-promotion condition); a non-destructive
   stability lens demotes stale associations without deleting evidence, while
   high-arousal or operator-pinned memories follow a nightly SM-2 rehearsal
   schedule; genuine novelty — including the *silence* of a paced source —

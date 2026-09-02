@@ -22,7 +22,7 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.5.1"
+RELEASE_VERSION = "1.5.2"
 
 
 def _read(relative):

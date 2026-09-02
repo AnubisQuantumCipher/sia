@@ -150,12 +150,38 @@ def load_config():
             _record_config_error("custom-senses-must-be-list")
         elif len(custom) > MAX_CONFIG_BYTES:
             _record_config_error("custom-senses-over-bound")
+        retrieval = value.get("retrieval", {})
+        if not isinstance(retrieval, dict):
+            _record_config_error("retrieval-must-be-object")
+        else:
+            if set(retrieval) - {"associative_rerank"}:
+                _record_config_error("retrieval-unknown-key")
+            if "associative_rerank" in retrieval \
+                    and not isinstance(retrieval["associative_rerank"], bool):
+                _record_config_error("retrieval-associative-rerank-must-be-bool")
         return value
     except OSError:
         _record_config_error("config-read-refused")
         return {}
 
 CONFIG = load_config()
+
+
+def associative_rerank_enabled(config=None):
+    """Whether `sia ask` applies the graph-influenced associative rerank.
+
+    Default OFF by measurement, per the hypothesis-lane freeze rule: on the
+    extended 22-probe tripwire set (2026-09-02) the blend scored uniformly
+    below plain dense retrieval (slug match@5 0.86 vs 0.91, reciprocal rank
+    0.67 vs 0.71, match@1 0.50 vs 0.59), so graph influence must be enabled
+    deliberately (`retrieval.associative_rerank: true`) and earns its default
+    back only with a measured win. The nightly tripwire keeps measuring the
+    blend lane either way, so the hypothesis stays under instrumentation.
+    """
+    source = CONFIG if config is None else config
+    retrieval = source.get("retrieval", {})
+    return isinstance(retrieval, dict) \
+        and retrieval.get("associative_rerank") is True
 
 
 def _configured_obsidian_vault():
@@ -287,7 +313,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication

@@ -300,7 +300,7 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.5.1")
+        self.assertEqual(version, "1.5.2")
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
         self.assertIn(f'SERVER_VERSION = "{version}"',

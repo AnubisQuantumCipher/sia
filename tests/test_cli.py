@@ -45,6 +45,22 @@ def _read(path):
 
 sia = _load_script("sia_cli_test", SIA_PATH)
 brainstem = _load_script("sia_brainstem_test", BRAINSTEM_PATH)
+
+
+class TakeOptionShapedTokens(unittest.TestCase):
+    def test_option_shaped_token_refuses_instead_of_registering(self):
+        # `sia take --help` once registered a take whose claim was "--help".
+        # An unrecognized option must refuse with usage and register nothing.
+        import io, contextlib
+        for argv in (["--help"], ["-h"], ["real claim", "--confidnce", "0.6"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = sia.cmd_take(argv)
+            self.assertEqual(code, 2, argv)
+            self.assertIn("usage:", out.getvalue())
+            self.assertIn("nothing was registered", out.getvalue())
+
+
 import siatakes
 
 
@@ -394,6 +410,8 @@ class HonestStatusLanguage(unittest.TestCase):
                 mock.patch.object(sia.sialib, "corpus_origin",
                                   return_value="model"), \
                 mock.patch.object(sia.sialib, "read_json", return_value={}), \
+                mock.patch.object(sia.sialib, "associative_rerank_enabled",
+                                  return_value=True), \
                 mock.patch.object(mind, "load_mind",
                                   side_effect=RuntimeError("damaged mind")), \
                 mock.patch.object(sia, "_health_footer",
