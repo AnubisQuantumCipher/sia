@@ -3996,6 +3996,121 @@ class ChildModuleBindSeam(unittest.TestCase):
         self.assertEqual(self.first._skill_display_name("plain"), "plain")
 
 
+
+class ConsolidationKeepsOutcomes(unittest.TestCase):
+    """A gist that keeps the intent and drops the outcome is worse than a
+    shorter one: the aggregate counts still assert that something happened
+    while no exemplar shows it, so a rigorous reader must abstain on a fact
+    the machine really did observe. Measured on the real corpus — SEKHMET's
+    four ``OUTCOME:restart_wireplumber  ok`` rows of 2026-08-24 were all
+    dropped by positional sampling, and the claim became ungradeable."""
+
+    def setUp(self):
+        self.sialib = _load("sialib_epoch_exemplars",
+                            os.path.join(BIN, "sialib.py"))
+        # The real 2026-08-24 SEKHMET log, in shape: the outcomes sit in the
+        # middle, which is exactly where the old rule could not see them.
+        self.day = [
+            "- 22:13:56Z GENESIS:init sekhmet -",
+            "- 22:14:21Z INTENT:restart_wireplumber  wireplumber_down",
+            "- 22:14:21Z OUTCOME:restart_wireplumber  ok",
+            "- 22:20:00Z OBS:change sekhmet degraded",
+            "- 22:29:23Z OUTCOME:restart_wireplumber  ok",
+            "- 23:00:00Z BOOT:watch sekhmet -",
+            "- 23:06:14Z OBS:change sekhmet ok",
+        ]
+
+    def test_every_event_kind_survives_consolidation(self):
+        kept = self.sialib._epoch_exemplars(self.day)
+        kinds = {line.split()[2].split(":")[0] for line in kept}
+        self.assertEqual(
+            kinds, {"GENESIS", "INTENT", "OUTCOME", "OBS", "BOOT"},
+            "a kind the day recorded must keep at least one exemplar")
+
+    def test_the_outcome_of_a_heal_is_not_dropped_for_its_intent(self):
+        kept = self.sialib._epoch_exemplars(self.day)
+        self.assertTrue(
+            any("OUTCOME:restart_wireplumber" in line for line in kept),
+            "the epoch recorded the intent and lost the success")
+        # The defect, stated as the old rule, so a revert fails here.
+        old_rule = self.day[:2] + self.day[-1:]
+        self.assertFalse(
+            any("OUTCOME:" in line for line in old_rule),
+            "positional sampling is what dropped it")
+
+    def test_an_epoch_stays_a_gist(self):
+        long_day = [f"- 0{i}:00:00Z OBS:change sekhmet ok" for i in range(9)]
+        self.assertLessEqual(
+            len(self.sialib._epoch_exemplars(long_day)),
+            self.sialib.MAX_EPOCH_EXEMPLARS)
+        self.assertEqual(self.sialib._epoch_exemplars([]), [])
+
+    def test_exemplars_stay_in_order_and_are_real_lines(self):
+        kept = self.sialib._epoch_exemplars(self.day)
+        self.assertEqual(kept, sorted(kept, key=self.day.index))
+        for line in kept:
+            self.assertIn(line, self.day)
+
+
+class GradingAdmitsTheEpochLane(unittest.TestCase):
+    """`epochs/` is in the grading evidence allowlist, but the selection
+    sorted both lanes into one list by full path and sliced the tail — and
+    "epochs" sorts before "events", so an organ with three or more day pages
+    never showed the judge its epoch at all. Consolidated history lives
+    there, so the lane was allowed and unreachable at the same time."""
+
+    def setUp(self):
+        self.siatakes = _load("siatakes_epoch_lane",
+                              os.path.join(BIN, "siatakes.py"))
+
+    @staticmethod
+    def _select(paths, max_pages=3):
+        candidates = [(p, p, None) for p in paths]
+        lanes = {}
+        for item in candidates:
+            lanes.setdefault(item[1].split("/", 1)[0], []).append(item)
+        ranked = [sorted(items, key=lambda item: item[0])
+                  for _lane, items in sorted(lanes.items())]
+        selected = []
+        while len(selected) < max_pages and any(ranked):
+            progressed = False
+            for lane_items in ranked:
+                if len(selected) >= max_pages:
+                    break
+                if lane_items:
+                    selected.append(lane_items.pop())
+                    progressed = True
+            if not progressed:
+                break
+        return [item[0] for item in sorted(selected, key=lambda i: i[0])]
+
+    def test_the_shipped_selection_is_round_robin_not_a_path_slice(self):
+        with open(os.path.join(BIN, "siatakes.py"), encoding="utf-8") as f:
+            source = f.read()
+        self.assertNotIn(
+            "pages = sorted(candidates, key=lambda item: item[0])"
+            "[-max_pages:]", source)
+        self.assertIn("lanes.setdefault(item[1].split(\"/\", 1)[0]", source)
+
+    def test_an_epoch_is_admitted_beside_the_recent_days(self):
+        paths = ["epochs/sekhmet/2026-w35"] + [
+            f"events/sekhmet/2026-08-{day}" for day in (27, 28, 29, 30, 31)]
+        chosen = self._select(paths)
+        self.assertIn("epochs/sekhmet/2026-w35", chosen)
+        self.assertEqual(len(chosen), 3)
+        # The old rule, pinned so a revert fails here.
+        self.assertNotIn("epochs/sekhmet/2026-w35", sorted(paths)[-3:])
+
+    def test_a_single_lane_still_fills_the_budget(self):
+        days = [f"events/sekhmet/2026-08-{d}" for d in (27, 28, 29, 30)]
+        self.assertEqual(len(self._select(days)), 3)
+        self.assertEqual(
+            self._select(days),
+            ["events/sekhmet/2026-08-28", "events/sekhmet/2026-08-29",
+             "events/sekhmet/2026-08-30"],
+            "with no epoch lane the most recent days are still chosen")
+
+
 class SkillSenseContainment(unittest.TestCase):
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",

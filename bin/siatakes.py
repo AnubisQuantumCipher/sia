@@ -1095,10 +1095,34 @@ def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
                     candidates.append((
                         os.path.join(directory, entry["name"]),
                         f"{lane}/{o}/{entry['name'][:-3]}", entry))
-            # This retains the prior deterministic path-order selection, but
-            # only after both lanes have proved that the candidate set is
-            # complete. A partial page can never masquerade as the tail.
-            pages = sorted(candidates, key=lambda item: item[0])[-max_pages:]
+            # Selection is per lane and round-robin, taking each lane's most
+            # recent first, so a lane can never be starved by a lexical
+            # accident. Sorting the combined set by path and slicing the tail
+            # put every "epochs/" page ahead of every "events/" page — the
+            # string "epochs" sorts before "events" — so an organ with three
+            # or more day pages never showed the judge its epoch at all. That
+            # is exactly where consolidated history lives, which defeated the
+            # docstring above: the epoch record was never among "its most
+            # recent day/epoch records". Both lanes have already proved their
+            # candidate sets complete, so a partial page still cannot
+            # masquerade as the tail.
+            lanes = {}
+            for item in candidates:
+                lanes.setdefault(item[1].split("/", 1)[0], []).append(item)
+            ranked = [sorted(items, key=lambda item: item[0])
+                      for _lane, items in sorted(lanes.items())]
+            selected = []
+            while len(selected) < max_pages and any(ranked):
+                progressed = False
+                for lane_items in ranked:
+                    if len(selected) >= max_pages:
+                        break
+                    if lane_items:
+                        selected.append(lane_items.pop())
+                        progressed = True
+                if not progressed:
+                    break
+            pages = sorted(selected, key=lambda item: item[0])
             for p, slug, entry in pages:
                 if not stat.S_ISREG(entry["mode"]):
                     raise GradingEvidenceUnavailable(

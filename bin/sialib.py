@@ -313,7 +313,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.7.5"
+VERSION = "1.7.6"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -7881,6 +7881,50 @@ def _recover_pending_dream_publication(memo):
     return True
 
 
+
+_EPOCH_EXEMPLAR_KIND_RE = re.compile(r"^- \S+ ([A-Z][A-Z_]*):")
+MAX_EPOCH_EXEMPLARS = 8
+
+
+def _epoch_exemplars(bullets):
+    """Pick the bullets that survive consolidation as a day's exemplars.
+
+    Positional sampling — the first two and the last — was the original rule,
+    and it silently dropped whole classes of event.  Measured: on 2026-08-24
+    SEKHMET's four ``OUTCOME:restart_wireplumber  ok`` rows all sat in the
+    middle of a nineteen-line log, so the epoch recorded that a heal had been
+    *intended* and never that it *succeeded*.  The aggregate counts still said
+    ``outcome: 4`` while no exemplar showed one, which is the worst shape a
+    gist can take: it asserts that something happened and keeps no instance of
+    it, so a rigorous reader must abstain on a fact the machine really did
+    observe.
+
+    Keep the positional anchors, then make sure every distinct event kind the
+    day recorded is represented at least once, bounded so an epoch stays a
+    gist rather than growing back into the day page it replaced.  Order stays
+    chronological.  Compacted originals remain in git either way; this governs
+    what live memory can still answer from.
+    """
+    if not bullets:
+        return []
+    keep, seen = set(), set()
+
+    def take(index):
+        keep.add(index)
+        match = _EPOCH_EXEMPLAR_KIND_RE.match(bullets[index])
+        if match:
+            seen.add(match.group(1))
+
+    for index in list(range(min(2, len(bullets)))) + [len(bullets) - 1]:
+        take(index)
+    for index, bullet in enumerate(bullets):
+        if len(keep) >= MAX_EPOCH_EXEMPLARS:
+            break
+        match = _EPOCH_EXEMPLAR_KIND_RE.match(bullet)
+        if match and match.group(1) not in seen:
+            take(index)
+    return [bullets[index] for index in sorted(keep)]
+
 def _pending_consolidation_marker(memo):
     marker = memo.get("consolidation_pending", False)
     if marker is False or marker is None:
@@ -10039,7 +10083,7 @@ def consolidate_corpus():
             all_tags |= tags
             log_part = text.split("## Timeline")[0].split("## Log")[-1]
             blts = [l for l in log_part.splitlines() if l.startswith("- ")]
-            for b in blts[:2] + blts[-1:]:
+            for b in _epoch_exemplars(blts):
                 bullets.append(f"- {date} ·" + b[1:])
             for wl in re.findall(r"\[\[([a-z0-9/._-]+)", text):
                 links.add(wl)

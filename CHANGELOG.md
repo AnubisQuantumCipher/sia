@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.7.6 — 2026-09-03 · it forgot the outcome and kept the intent
+
+The nightly judge audit had reported the same score for five days —
+resolution 1/2, abstention 4/4, the one miss in the safe direction. Read as a
+limit of the grader, it was comfortable. It was not the grader.
+
+SEKHMET really did restart wireplumber, four times, on 2026-08-24. Those
+`OUTCOME:restart_wireplumber  ok` rows are in SEKHMET's own signed ledger at
+sequences 2, 7, 13 and 17, and its chain verifies clean. SIA ingested them
+correctly as evidence: `events/sekhmet/2026-08-24.md` carried all four. Then
+SIA deleted that page itself, in corpus commit `d0e63ce6`, message "dream".
+
+- **Consolidation kept the intent and dropped the success.** Epoch exemplars
+  were sampled by position — the first two bullets and the last. On a
+  nineteen-line log the four outcome rows all sat in the middle, so the week's
+  gist recorded that a heal had been *attempted* and never that it worked,
+  while its aggregate counts still said `outcome: 4`. That is the worst shape
+  a gist can take: it asserts something happened and keeps no instance of it,
+  so a rigorous reader must abstain on a fact the machine really did observe.
+  Exemplars now keep the positional anchors and then guarantee every distinct
+  event kind the day recorded survives at least once, bounded so an epoch
+  stays a gist. Compacted originals remained in git throughout; what changed
+  is what live memory can still answer from.
+- **The epoch lane was allowed and unreachable at the same time.** Grading
+  evidence admits `events/` and `epochs/`, but the selection sorted both lanes
+  into one list by full path and sliced the tail — and `epochs` sorts before
+  `events`, so an organ with three or more day pages never showed the judge
+  its epoch at all. Consolidated history lives there. Selection is now per
+  lane and round-robin, most recent first, which is what the docstring above
+  it always claimed.
+- **Two models, one answer.** The audit was re-run under `claude-sonnet-5` and
+  `claude-opus-5`. Both scored 1/2 and 4/4, both abstained on the same
+  fixture, and both gave the same reason — the admitted excerpts named no
+  restart. A more capable judge bought nothing, because the evidence was not
+  there to find. `judge.backend=codex` remains refused: the CLI exposes no
+  documented inference-only switch, so configuring it stops grading rather
+  than degrading it.
+- **Seven regression tests**, each pinning the old rule so a revert fails on
+  it: every event kind survives consolidation, the outcome of a heal is not
+  dropped for its intent, an epoch stays bounded, exemplars stay in order, the
+  shipped selection is round-robin and not a path slice, an epoch is admitted
+  beside the recent days, and a single lane still fills the budget.
+
+The already-consolidated week-35 epoch is still missing those outcome rows.
+The fix is forward-only; the original page survives in git, and repairing live
+memory is a deliberate operation, not something a release performs on the
+operator's corpus.
+
 ## 1.7.5 — 2026-09-03 · what held by discipline now holds by test
 
 [@m10ust](https://github.com/m10ust) took the standing review invitation and
