@@ -131,10 +131,12 @@ marker that installer shell publishes and refuses by name if none appears;
 that refusal goes to the helper's own stderr, which the cockpit does not
 capture. The cockpit is a second, independent observer of the same marker,
 on its own twenty-five-second deadline, and reports that nothing was observed
-rather than showing silent progress. Nothing queries the compositor, so a
-window mapped late or onto another workspace is still possible. The cockpit
-remains gated until the resident runtime version matches the plugin and
-`sia ready` passes. The git-URL form clones current upstream HEAD rather than pinning the
+rather than showing silent progress. The cockpit is a layer-shell overlay
+above every normal window, so the terminal opens behind it; once the installer
+shell is observed the cockpit steps aside a moment later, and Esc closes it at
+any time. Nothing queries the compositor, so a window on another workspace is
+still yours to find. The cockpit remains gated until the resident runtime
+version matches the plugin and `sia ready` passes. The git-URL form clones current upstream HEAD rather than pinning the
 Marketplace's last verified commit; inspect the checkout and listing state
 before starting first light.
 

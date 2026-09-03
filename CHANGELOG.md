@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.7.5 — 2026-09-03 · the cockpit steps aside
+
+1.7.4 called @m10ust's late-appearing terminal "unreproduced". It was not a
+compositor quirk; it was this cockpit standing in front of its own terminal.
+
+- **The overlay occluded the terminal it asked for.** The cockpit is a
+  layer-shell `Overlay` surface, which sits above every normal window by
+  protocol, and it holds keyboard focus while visible. The first-light gate is
+  an opaque full-cockpit rectangle that also paints over the close button and
+  the "Esc = close" hint. So a click opened the installer terminal *behind*
+  the cockpit with no visible way out, and the window only came to the front
+  when `install.sh` ran `omarchy restart shell` near the end and the overlay
+  was destroyed — a terminal that "only appeared at the end of the install."
+- **Now it yields.** Once the installer shell is observed to start — the
+  nonce-bound, tty-checked marker from 1.7.4 — the cockpit shows that it is
+  stepping aside and dismisses itself a moment later, so the terminal is in
+  front with the keyboard. Reopening the cockpit lands on the existing
+  installing lifecycle, which reports progress honestly. If no shell is ever
+  observed, the cockpit stays and says so, exactly as before.
+- **The gate carries its own exit.** Esc has always closed the cockpit; the
+  gate now says so on the screen it covers, so no operator is trapped behind
+  an overlay while a terminal waits underneath it.
+- **Copy corrected.** The boundary text, README, manual, whitepaper and
+  maintainers file no longer describe the report as unexplained. What the
+  marker witnesses is unchanged: an installer shell running with a terminal
+  attached, not a mapped window.
+
 ## 1.7.4 — 2026-09-03 · what held by discipline now holds by test
 
 [@m10ust](https://github.com/m10ust) took the standing review invitation and

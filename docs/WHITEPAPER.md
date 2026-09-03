@@ -807,8 +807,10 @@ under `$XDG_RUNTIME_DIR` before the first installer byte, holds that terminal
 itself at the end rather than relying on a `--hold` a terminal entry may
 silently drop, and refuses by name when no marker appears. Nothing queries the
 compositor, so the marker is evidence the shell began running in whatever the
-desktop opened, not evidence that a window was mapped. QML load alone never
-installs software. The gate clears only after the runtime version
+desktop opened, not evidence that a window was mapped. Because the cockpit is
+a layer-shell overlay above every normal window, it steps aside once that
+shell is observed rather than standing in front of the terminal it asked for.
+QML load alone never installs software. The gate clears only after the runtime version
 matches the plugin and the installer atomically publishes its owner-private
 completion record after a live `sia ready` check succeeds. That coordination
 record is not signed evidence and does not replace a later live-readiness

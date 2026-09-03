@@ -17,15 +17,16 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.4.** An outside review of the module-split series
+**Current release: v1.7.5.** An outside review of the module-split series
 turned three invariants that held by discipline into invariants that hold by
 test: the façade export set each extracted child publishes, the runtime
 member-set rung ladder across all four digest sites, and the bind() seam that
-keeps a parent façade out of a child's own calls. Chasing the review's fourth
-report — an installer terminal that appeared only at the end — turned up a
-shipped defect: `xdg-terminal-exec` silently drops `--hold` on the default
-desktop. SIA now holds that terminal itself and reports whether the installer
-shell was ever observed to start.
+keeps a parent façade out of a child's own calls. The review's fourth report —
+an installer terminal that appeared only at the end — was two defects of our
+own: `xdg-terminal-exec` silently drops `--hold` on the default desktop, and
+the cockpit, an overlay above every window, stood in front of the terminal it
+had just opened. SIA now holds that terminal itself, reports whether the
+installer shell was observed to start, and steps aside once it has.
 
 ![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
 
@@ -55,9 +56,9 @@ The enabled surface detects that the resident brain is absent and presents a
 first light**. That explicit action asks this desktop to open a terminal and
 run SIA's fail-closed `install.sh` in it — loading or enabling the QML never
 runs the installer by itself. SIA holds that terminal open when the installer
-finishes, on success and on a named refusal, and the cockpit reports whether
-the installer shell was actually observed to start. First light is
-substantial: it downloads pinned
+finishes, on success and on a named refusal; the cockpit reports whether the
+installer shell was actually observed to start and, once it has, steps aside so
+that terminal is in front. First light is substantial: it downloads pinned
 local toolchains and the embedding runtime, builds gbrain, pulls the pinned
 local embedding model, creates this machine's signing identity and empty
 corpus, and installs user services. Review the disclosure in the gate before

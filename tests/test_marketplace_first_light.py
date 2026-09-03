@@ -24,7 +24,7 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.7.4"
+RELEASE_VERSION = "1.7.5"
 
 
 def _read(relative):
@@ -143,7 +143,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.5"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": "1.7.6"}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -181,10 +181,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.5"}, installing,
+                "guidedLifecycle", {"version": "1.7.6"}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.5", "state": "ready"}
+        newer_ready = {"v": 1, "version": "1.7.6", "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -786,7 +786,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn(
             "Your click asks this desktop to open a terminal", cockpit)
         self.assertIn(
-            "SIA holds that window open at the end, on success and on a "
+            "SIA holds that terminal open at the end, on success and on a "
             "named refusal", cockpit)
         self.assertIn(
             "Setup terminal requested, but SIA never observed the "
@@ -821,6 +821,33 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         # An unrequested marker change is worth one reload, never a poll that
         # outlives the wait that asked for it.
         self.assertIn("setupPresenceDeadline.running", presence)
+        # The cockpit is a layer-shell overlay above every normal window and
+        # owns the keyboard while visible, so the terminal it asks for opens
+        # behind it.  Once the installer shell is observed, the cockpit must
+        # step aside — and until then the gate must show its own way out,
+        # because it paints over the close chrome.
+        self.assertIn("WlrLayershell.layer: WlrLayer.Overlay", cockpit)
+        presence_apply = cockpit[
+            cockpit.index("function applySetupPresence(text)"):
+            cockpit.index("function applyInstallCompletion(text)")]
+        self.assertIn("setupYield.restart()", presence_apply)
+        yield_timer = cockpit[
+            cockpit.index("id: setupYield"):
+            cockpit.index("id: setupPresenceDeadline")]
+        self.assertIn("root.setupTerminalPresented && root.cockpitVisible",
+                      yield_timer)
+        self.assertIn("root.dismiss()", yield_timer)
+        opened = cockpit[
+            cockpit.index("function open(payloadJson)"):
+            cockpit.index("function close()")]
+        self.assertIn("setupYield.stop()", opened)
+        self.assertIn(
+            "Esc closes this cockpit at any time. The installer terminal "
+            "opens behind it until the cockpit steps aside.", cockpit)
+        self.assertIn("this cockpit is an overlay above every window, so it "
+                      "steps aside once the installer shell is observed to "
+                      "start", cockpit)
+        self.assertIn("This cockpit steps aside in a moment", cockpit)
         # A terminal that presents late must not leave the operator with no
         # status at all.
         self.assertIn(
@@ -894,14 +921,14 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.5")
+            write_runtime(resident, "1.7.6")
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
 
             resident.unlink()
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.5", "state": "ready"}),
+                "v": 1, "version": "1.7.6", "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()

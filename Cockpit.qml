@@ -1661,7 +1661,7 @@ Item {
     // A late start supersedes the deadline's honest "never observed": the
     // deadline reports what had been seen by then, not a final verdict.
     if (root.setupTerminalPresented)
-      return "Setup terminal started. SIA holds that window open at the end, on success and on a named refusal. If you cannot see it, check your other workspaces. This gate clears only after the matching resident release reaches first light."
+      return "Setup terminal started. This cockpit steps aside in a moment so that window is in front; SIA holds it open at the end, on success and on a named refusal. Reopen SIA any time for progress. This gate clears only after the matching resident release reaches first light."
     if (root.setupTerminalMissing)
       return "Setup terminal requested, but SIA never observed the installer shell start. If it starts later it is the real installer and holds itself open. Otherwise open a terminal yourself and run install.sh from the plugin checkout, or repair the terminal handler on this desktop, then try again."
     return "Setup terminal requested. Waiting for the installer shell to start…"
@@ -1797,6 +1797,7 @@ Item {
     setupRequestedAtSec = 0
     setupPresenceApply.stop()
     setupPresenceDeadline.stop()
+    setupYield.stop()
     readyProc.cancel()
     clearReadyCheck()
     // Opening requests fresh bytes without discarding the last validated
@@ -2011,6 +2012,11 @@ Item {
       root.setupLaunchRequested = true
       setupPresenceApply.stop()
       setupPresenceDeadline.stop()
+      // This cockpit is a layer-shell overlay above every normal window and
+      // holds the keyboard while visible, so the terminal it just asked for
+      // opens behind it.  Step aside once that shell is known to be running;
+      // the installing lifecycle reports progress when the cockpit reopens.
+      setupYield.restart()
     } catch (e) { }
   }
 
@@ -2134,6 +2140,11 @@ Item {
   }
   Timer { id: setupPresenceApply; interval: 500; repeat: true
           onTriggered: setupPresenceFile.reload() }
+  Timer { id: setupYield; interval: 1500; repeat: false
+          onTriggered: {
+            if (root.setupTerminalPresented && root.cockpitVisible)
+              root.dismiss()
+          } }
   Timer { id: setupPresenceDeadline; interval: 25000; repeat: false
           onTriggered: {
             // The helper waits 20s for its own marker.  Past that the honest
@@ -4857,13 +4868,28 @@ Item {
                 anchors.margins: Style.space(8)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Your click asks this desktop to open a terminal and SIA holds that window open at the end, on success and on a named refusal; the cockpit reports whether the installer shell was actually observed to start rather than assuming a window appeared. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
+                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.65)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 horizontalAlignment: Text.AlignHCenter
               }
+            }
+
+            Text {
+              // The gate paints over the close chrome, so it carries its own
+              // way out: nothing on this screen may trap the operator behind
+              // an overlay while a terminal waits underneath it.
+              width: parent.width
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              text: "Esc closes this cockpit at any time. The installer terminal opens behind it until the cockpit steps aside."
+              wrapMode: Text.WordWrap
+              color: Qt.alpha(root.fg, 0.55)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
             }
 
             Text {
