@@ -24,7 +24,7 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.7.6"
+RELEASE_VERSION = "1.7.7"
 
 
 def _read(relative):
@@ -143,7 +143,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.7"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": "1.7.8"}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -181,10 +181,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.7"}, installing,
+                "guidedLifecycle", {"version": "1.7.8"}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.7", "state": "ready"}
+        newer_ready = {"v": 1, "version": "1.7.8", "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -921,14 +921,14 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.7")
+            write_runtime(resident, "1.7.8")
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
 
             resident.unlink()
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.7", "state": "ready"}),
+                "v": 1, "version": "1.7.8", "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()

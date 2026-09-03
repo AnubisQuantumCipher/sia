@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.7.7 — 2026-09-03 · a prefix is not an excerpt
+
+1.7.6 fixed consolidation and the epoch lane, and the audit still abstained.
+The epoch was admitted this time — the judge named it — and it still reported
+that the page showed nothing. It was right a third time.
+
+- **The organ lane handed the judge a blind prefix.** Evidence excerpts took
+  the first 420 characters of a page, and a page's first bytes are its YAML
+  frontmatter and title. The repaired week-35 epoch carries its
+  `OUTCOME:restart_wireplumber  ok` exemplar at character 497 of 1027, so the
+  judge received the page's metadata — including an aggregate `outcome: 5`,
+  which is a count and must never be read as an instance — and none of its
+  evidence. This is the same mistake the epoch sampler made one layer in:
+  keep by position, and hope the part that matters is at the front. Excerpts
+  now drop the frontmatter and centre their window on the claim's own terms,
+  deterministically, by first match in page order.
+- **Five tests**, including the two that pin the defect: the excerpt carries
+  what a prefix truncated away, and frontmatter is not evidence.
+
+The operator's week-35 epoch was separately repaired outside this release, as
+a deliberate ledgered act rather than a release action: the four exemplars the
+2026-08-29 dream dropped were restored from the originals in corpus git,
+additive only, committed to the corpus and signed into the lifecycle ledger as
+`REPAIR:epoch-exemplars` at sequence 6772. Asked afterwards, SIA returns that
+epoch as evidence at rank three; before the repair it appeared at no rank.
+
 ## 1.7.6 — 2026-09-03 · it forgot the outcome and kept the intent
 
 The nightly judge audit had reported the same score for five days —

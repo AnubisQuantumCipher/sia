@@ -4111,6 +4111,66 @@ class GradingAdmitsTheEpochLane(unittest.TestCase):
             "with no epoch lane the most recent days are still chosen")
 
 
+
+class GradingExcerptsShowTheEvidence(unittest.TestCase):
+    """The organ lane handed the judge a blind 420-character prefix, and a
+    page's first bytes are its frontmatter. Measured on the real week-35
+    epoch: the ``OUTCOME:restart_wireplumber  ok`` exemplar sits at character
+    497 of 1027, so the judge saw the page's metadata — including an aggregate
+    ``outcome: 5`` that is a count and not an instance — and none of its
+    evidence. It named the page and correctly reported that it showed
+    nothing."""
+
+    PAGE = (
+        '--- type: epoch title: "SEKHMET — 2026 week 35" '
+        'tags: [healing, sekhmet] date: 2026-08-24 '
+        'sia_counts: {"boot": 4, "genesis": 1, "intent": 5, "obs": 16, '
+        '"outcome": 5} --- # SEKHMET — 2026 week 35 Consolidated from 2 '
+        'day-memories (2026-08-24 … 2026-08-25); originals verbatim in '
+        'corpus git history. Organ: [[organs/sekhmet]] of [[sia/cortex]]. '
+        '## Exemplars - 2026-08-24 · 22:13:56Z GENESIS:init sekhmet - '
+        '- 2026-08-24 · 22:14:21Z INTENT:restart_wireplumber '
+        'wireplumber_down - 2026-08-24 · 22:14:21Z '
+        'OUTCOME:restart_wireplumber  ok - 2026-08-24 · 22:20:25Z '
+        'BOOT:watch sekhmet - - 2026-08-24 · 23:06:14Z OBS:change sekhmet ok')
+    CLAIM = ("SEKHMET successfully restarted wireplumber at least once "
+             "during August 2026")
+
+    def setUp(self):
+        self.siatakes = _load("siatakes_excerpt",
+                              os.path.join(BIN, "siatakes.py"))
+
+    def test_the_excerpt_carries_the_evidence_a_prefix_truncated_away(self):
+        excerpt = self.siatakes._evidence_excerpt(self.PAGE, self.CLAIM, 420)
+        self.assertIn("OUTCOME:restart_wireplumber", excerpt)
+        # The defect, pinned so a revert fails here.
+        self.assertNotIn("OUTCOME:restart_wireplumber", self.PAGE[:420])
+
+    def test_frontmatter_is_not_evidence(self):
+        excerpt = self.siatakes._evidence_excerpt(self.PAGE, self.CLAIM, 420)
+        self.assertNotIn("sia_counts", excerpt)
+        self.assertNotIn("type: epoch", excerpt)
+
+    def test_the_excerpt_stays_within_its_budget(self):
+        for chars in (120, 220, 420):
+            with self.subTest(chars=chars):
+                excerpt = self.siatakes._evidence_excerpt(
+                    self.PAGE, self.CLAIM, chars)
+                self.assertLessEqual(len(excerpt), chars)
+
+    def test_a_short_page_is_returned_whole_without_its_frontmatter(self):
+        page = "--- type: epoch --- # T body text here"
+        self.assertEqual(
+            self.siatakes._evidence_excerpt(page, self.CLAIM, 420),
+            "# T body text here")
+
+    def test_a_claim_that_matches_nothing_still_returns_the_head(self):
+        excerpt = self.siatakes._evidence_excerpt(
+            self.PAGE, "zzzz qqqq", 200)
+        self.assertTrue(excerpt.startswith("# SEKHMET"))
+        self.assertLessEqual(len(excerpt), 200)
+
+
 class SkillSenseContainment(unittest.TestCase):
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",

@@ -11,7 +11,7 @@
 // one edge of the canvas.
 .pragma library
 
-function releaseVersion() { return "1.7.6" }
+function releaseVersion() { return "1.7.7" }
 
 // The checkout and the resident runtime advance as one release generation.
 // Only an exact release match may expose the cockpit.  Comparison stays on

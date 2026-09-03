@@ -1063,6 +1063,42 @@ def _directory_generation_is_current(directory, generation):
         ("ctime_ns", current.st_ctime_ns)))
 
 
+
+_EVIDENCE_FRONTMATTER_RE = re.compile(r"\A---\s.*?\s---\s", re.S)
+_EVIDENCE_TERM_RE = re.compile(r"[a-z0-9_]{4,}")
+
+
+def _evidence_excerpt(text, claim, chars):
+    """Take the part of a page that bears on the claim, not its first bytes.
+
+    A blind prefix is positional, and a page's first bytes are its YAML
+    frontmatter and title.  Measured: the SEKHMET week-35 epoch carries its
+    ``OUTCOME:restart_wireplumber  ok`` exemplar at character 497 of 1027, so
+    a 420-character head showed the judge the page's metadata — including an
+    aggregate ``outcome: 5`` which is a count and must never be read as an
+    instance — and none of its evidence.  The judge named the page and
+    correctly reported that it showed nothing, which is the same failure the
+    epoch sampler made one layer in: keep by position, and hope the part that
+    matters happens to be at the front.
+
+    Drop the frontmatter, then centre the window on the claim's own terms so a
+    long page surfaces the part that answers it.  Deterministic: the window is
+    chosen by the first matching term in page order, never by rank.
+    """
+    body = _EVIDENCE_FRONTMATTER_RE.sub("", text, count=1).strip()
+    if len(body) <= chars:
+        return body
+    lowered = body.lower()
+    hits = sorted(
+        found for found in
+        (lowered.find(term) for term in set(_EVIDENCE_TERM_RE.findall(
+            claim.lower())))
+        if found >= 0)
+    if not hits:
+        return body[:chars]
+    start = max(0, hits[0] - chars // 4)
+    return body[start:start + chars]
+
 def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
     """Deterministic evidence lane: when a claim names an organ, its most
     recent day/epoch records go to the judge whether or not semantic
@@ -1136,7 +1172,8 @@ def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
                     raise GradingEvidenceUnavailable(
                         f"organ evidence page could not be admitted: {slug}") \
                         from exc
-                lines.append(f"[{slug}] {txt[:chars]}")
+                lines.append(
+                    f"[{slug}] {_evidence_excerpt(txt, claim, chars)}")
                 citations.add(slug)
             if any(not _directory_generation_is_current(
                     directory, generation)
