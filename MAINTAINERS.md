@@ -14,7 +14,17 @@ invitations for the lanes they know best:
   ([#2](https://github.com/AnubisQuantumCipher/sia/issues/2)) with a full
   reproduction and workaround, then verified the fix. Their audit of the
   installer's transactional hygiene is the project's only outside audit of
-  that lane.
+  that lane. They then took the standing invitation and reviewed the first
+  module-split extraction (v1.5.2…v1.6.0) — four digest routines, the
+  release/staging lists, `bin/siagraph.py`, the bind/invoke façade and the
+  test mirror — running the release suite from a fresh clone at 0fb8332 on
+  Arch (92/92 green) and installing v1.6.0 on their own machine. It returned
+  no HIGH and no MEDIUM, three seams where a real property was held by
+  discipline rather than by a check, and one report that the guided
+  installer's terminal appeared only at the end of the install. The three
+  seams are closed in 1.7.4; the terminal report is answered as far as this
+  end can answer it, and the review lane is standing for the remaining
+  extractions on their own timeline.
 - **[@webdevtodayjason](https://github.com/webdevtodayjason)** — the Obsidian
   organ and its records-not-content contract, which exists because of their
   proposal and working sidecar reference

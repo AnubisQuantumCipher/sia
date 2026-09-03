@@ -3837,6 +3837,165 @@ class EvidenceCursorHealth(unittest.TestCase):
                 self.sialib.HOME = old_home
 
 
+class ChildModuleBindSeam(unittest.TestCase):
+    """bind()'s parent-mirror seam on the sialib -> siagraph/siasenses
+    boundary.  One child module instance is shared by every dynamically
+    loaded sialib alias; invoke()'s per-call rebind is what isolates the
+    aliases, and the branch that tells a delegate façade apart from a test
+    monkeypatch is what keeps the child's intra-module calls on its own raw
+    implementations instead of routing them back out through the parent
+    façade."""
+
+    def setUp(self):
+        self.first = _load("sialib_bind_seam_first",
+                           os.path.join(BIN, "sialib.py"))
+        self.second = _load("sialib_bind_seam_second",
+                            os.path.join(BIN, "sialib.py"))
+        self.graph = self.first._siagraph
+        self.senses = self.first._siasenses
+        # The children are process-wide singletons: every export this class
+        # poisons goes back before the next test observes the namespace.
+        for child in (self.graph, self.senses):
+            self.addCleanup(child.__dict__.update,
+                            dict(child._ORIGINAL_CHILD_FUNCTIONS))
+
+    def test_bind_restores_child_original_for_delegate_marked_parent(self):
+        # sialib publishes one binding façade per child export and marks it
+        # _sia_senses_delegate; bind() must reinstate the raw child function
+        # rather than mirror the façade back into the module it delegates to.
+        facade = self.first.__dict__["_append_graph_failure"]
+        self.assertIs(facade.__dict__.get("_sia_senses_delegate"), True)
+        self.graph.__dict__["_append_graph_failure"] = "poisoned"
+        self.graph.bind(self.first.__dict__)
+        mirrored = [name for name in self.graph._EXPORTED_FUNCTIONS
+                    if self.graph.__dict__[name]
+                    is not self.graph._ORIGINAL_CHILD_FUNCTIONS[name]]
+        self.assertEqual(mirrored, [])
+        state = {"failed_ops": []}
+        self.first._record_graph_failure(state, "delegate-branch")
+        self.assertEqual(state["failed_ops"], ["delegate-branch"])
+
+    def test_bind_mirrors_plain_parent_replacement_into_child_calls(self):
+        seen = []
+
+        def fake_append(failures, failure):
+            seen.append(failure)
+
+        # A monkeypatch carries no delegate marker, so the seam must mirror
+        # it: an intra-module call inside the child observes the mock.
+        with mock.patch.object(self.first, "_append_graph_failure",
+                               fake_append):
+            state = {"failed_ops": []}
+            self.first._record_graph_failure(state, "mirrored")
+            self.assertIs(
+                self.graph.__dict__["_append_graph_failure"], fake_append)
+        self.assertEqual(seen, ["mirrored"])
+        self.assertEqual(state["failed_ops"], [])
+
+    def test_bind_restores_original_when_parent_omits_the_name(self):
+        probe = "_sia_bind_seam_probe"
+        self.addCleanup(self.graph.__dict__.pop, probe, None)
+        self.graph.__dict__["_append_graph_failure"] = "poisoned"
+        # A parent namespace that never defined the export leaves the child
+        # on its own implementation, never on a stale leftover value.
+        self.graph.bind({probe: "bound"})
+        self.assertIs(
+            self.graph.__dict__["_append_graph_failure"],
+            self.graph._ORIGINAL_CHILD_FUNCTIONS["_append_graph_failure"])
+        self.assertEqual(self.graph.__dict__[probe], "bound")
+
+    def test_graph_mock_in_one_alias_does_not_leak_into_the_next(self):
+        seen = []
+
+        def fake_append(failures, failure):
+            seen.append(failure)
+
+        # Both aliases delegate into one child instance, so only the rebind
+        # per call keeps the first alias's mock out of the second's calls.
+        self.assertIs(self.first._siagraph, self.second._siagraph)
+        with mock.patch.object(self.first, "_append_graph_failure",
+                               fake_append):
+            first_state = {"failed_ops": []}
+            self.first._record_graph_failure(first_state, "first-alias")
+            second_state = {"failed_ops": []}
+            self.second._record_graph_failure(second_state, "second-alias")
+        self.assertEqual(seen, ["first-alias"])
+        self.assertEqual(first_state["failed_ops"], [])
+        self.assertEqual(second_state["failed_ops"], ["second-alias"])
+
+    def test_invoke_calls_the_original_not_a_stale_mirrored_value(self):
+        # invoke() resolves its target from the captured originals before it
+        # binds, so a stale mirror in the child namespace can never run.
+        self.graph.__dict__["_record_graph_failure"] = "poisoned"
+        state = {"failed_ops": []}
+        self.graph.invoke(self.first.__dict__, "_record_graph_failure",
+                          state, "re-entrant")
+        self.assertEqual(state["failed_ops"], ["re-entrant"])
+        self.assertIs(
+            self.graph.__dict__["_record_graph_failure"],
+            self.graph._ORIGINAL_CHILD_FUNCTIONS["_record_graph_failure"])
+        # A plain parent replacement is mirrored into intra-module calls,
+        # but invoke() itself must still enter the child's own function:
+        # resolving the target after bind() would run the parent's mock.
+        def fake_record(state, failure):
+            state["failed_ops"].append("mirrored-into-invoke")
+
+        parent = dict(self.first.__dict__)
+        parent["_record_graph_failure"] = fake_record
+        state = {"failed_ops": []}
+        self.graph.invoke(parent, "_record_graph_failure", state, "direct")
+        self.assertEqual(state["failed_ops"], ["direct"])
+        with self.assertRaises(AttributeError):
+            self.graph.invoke(self.first.__dict__, "no_such_export")
+
+    def test_bind_refuses_non_dict_and_never_rebinds_control_names(self):
+        # The seam's own machinery and the module identity stay owned by the
+        # child: a parent may not replace them, and a non-namespace refuses.
+        for child in (self.graph, self.senses):
+            with self.assertRaises(TypeError):
+                child.bind([("STATE", "/tmp")])
+            guarded = {name: getattr(child, name)
+                       for name in child._BIND_CONTROL_NAMES}
+            guarded["__name__"] = child.__name__
+            guarded["__doc__"] = child.__doc__
+            child.bind({name: "hijacked" for name in guarded})
+            for name, owned in guarded.items():
+                self.assertIs(getattr(child, name), owned)
+
+    def test_sialib_publishes_one_delegate_per_child_export(self):
+        # The export tuple is only a contract because sialib turns every
+        # name in it into a published delegate.  A break in that loop would
+        # remove a public sialib function while the child still defines it.
+        for child in (self.graph, self.senses):
+            for name in child._EXPORTED_FUNCTIONS:
+                with self.subTest(module=child.__name__, export=name):
+                    published = self.first.__dict__[name]
+                    self.assertIs(
+                        published.__dict__.get("_sia_senses_delegate"), True)
+
+    def test_sense_bind_restores_child_originals_for_delegate_parent(self):
+        # The sensing child carries the identical seam; assert its delegate
+        # branch the same way so neither half can regress unnoticed.
+        facade = self.first.__dict__["_skill_name_bytes"]
+        self.assertIs(facade.__dict__.get("_sia_senses_delegate"), True)
+        self.senses.__dict__["_skill_name_bytes"] = "poisoned"
+        self.senses.bind(self.first.__dict__)
+        mirrored = [name for name in self.senses._EXPORTED_FUNCTIONS
+                    if self.senses.__dict__[name]
+                    is not self.senses._ORIGINAL_CHILD_FUNCTIONS[name]]
+        self.assertEqual(mirrored, [])
+        self.assertEqual(self.first._skill_display_name("plain"), "plain")
+
+    def test_sense_mock_in_one_alias_does_not_leak_into_the_next(self):
+        with mock.patch.object(self.first, "_skill_name_bytes",
+                               lambda name: b"mirrored"):
+            self.assertEqual(
+                self.first._skill_display_name("plain"), "mirrored")
+            self.assertEqual(
+                self.second._skill_display_name("plain"), "plain")
+        self.assertEqual(self.first._skill_display_name("plain"), "plain")
+
+
 class SkillSenseContainment(unittest.TestCase):
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",

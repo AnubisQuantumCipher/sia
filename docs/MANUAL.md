@@ -116,16 +116,25 @@ omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 
 The surface loads without installing the resident brain. Open the SIA bar item;
 an absent runtime presents a **SETUP** gate. Read its disclosure, then choose
-**Begin first light**. This explicit action opens the existing fail-closed
-`install.sh` in a visible terminal. It checks the supported host, downloads
-pinned local toolchains and the embedding runtime, builds gbrain, pulls the
-pinned local embedding model, creates the signing identity and empty corpus on
-a fresh machine, and installs user services. Enabling or loading the QML never
-runs those operations automatically.
+**Begin first light**. This explicit action asks the desktop to open a
+terminal running the existing fail-closed `install.sh`. It checks the supported
+host, downloads pinned local toolchains and the embedding runtime, builds
+gbrain, pulls the pinned local embedding model, creates the signing identity
+and empty corpus on a fresh machine, and installs user services. Enabling or
+loading the QML never runs those operations automatically.
 
-Keep the terminal open for progress or a named refusal. The cockpit remains
-gated until the resident runtime version matches the plugin and `sia ready`
-passes. The git-URL form clones current upstream HEAD rather than pinning the
+Read that terminal for progress or a named refusal. SIA holds the window open
+at the end so the last line stays readable; `xdg-terminal-exec --hold` is not
+relied on, because a terminal entry without `TerminalArgHold=` (Alacritty, the
+Omarchy default) silently drops it. The helper waits twenty seconds for the
+marker that installer shell publishes and refuses by name if none appears;
+that refusal goes to the helper's own stderr, which the cockpit does not
+capture. The cockpit is a second, independent observer of the same marker,
+on its own twenty-five-second deadline, and reports that nothing was observed
+rather than showing silent progress. Nothing queries the compositor, so a
+window mapped late or onto another workspace is still possible. The cockpit
+remains gated until the resident runtime version matches the plugin and
+`sia ready` passes. The git-URL form clones current upstream HEAD rather than pinning the
 Marketplace's last verified commit; inspect the checkout and listing state
 before starting first light.
 
@@ -1177,8 +1186,9 @@ in category `System`. The repository supports the normal
 light inside the cockpit. Omarchy's plugin manager has no lifecycle hooks, so
 enablement itself cannot install or update SIA's resident runtime. The QML
 never silently substitutes for such a hook: an explicit **Begin first light**
-or **Finish update** action launches the existing fail-closed installer in a
-visible terminal. Automated validation checks the exact public commit's
+or **Finish update** action asks the desktop to open a terminal running the
+existing fail-closed installer, and the cockpit reports whether that installer
+shell actually started. Automated validation checks the exact public commit's
 manifest and Quickshell compatibility. Neither that result nor a listing is a
 security review; installed community plugins run unsandboxed as the user.
 

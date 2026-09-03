@@ -10628,11 +10628,17 @@ if have omarchy; then
       echo "installed plugin tree could not be re-observed after activation" >&2
       exit 1
     }
-    [ -n "$SIA_PLUGIN_INSTALLED_TREE" ] \
-      && [ "$SIA_PLUGIN_LIVE_TREE" = "$SIA_PLUGIN_INSTALLED_TREE" ] || {
-        echo "installed plugin tree changed during activation" >&2
-        exit 1
-      }
+    # Two guards rather than one A && B || C chain: the generation that was
+    # never captured and the generation that moved are different refusals,
+    # and shellcheck reads the chained form as a possible if-then-else.
+    [ -n "$SIA_PLUGIN_INSTALLED_TREE" ] || {
+      echo "installed plugin tree generation was never observed" >&2
+      exit 1
+    }
+    [ "$SIA_PLUGIN_LIVE_TREE" = "$SIA_PLUGIN_INSTALLED_TREE" ] || {
+      echo "installed plugin tree changed during activation" >&2
+      exit 1
+    }
   fi
   echo "  cockpit: exact installed release active in Omarchy shell"
 fi

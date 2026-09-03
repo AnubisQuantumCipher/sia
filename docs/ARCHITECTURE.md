@@ -25,7 +25,7 @@ and are the pattern to follow:
 | `bin/siarestoreadmit.py` | ~11 KB | restore admission |
 | `bin/siarelease.py` | ~6 KB | release stamping |
 
-## What remains in `bin/sialib.py` (11.6k lines)
+## What remains in `bin/sialib.py` (10.7k lines)
 
 Measured lane map (banner comments; approximate ranges):
 
@@ -88,6 +88,20 @@ keeps every `sialib.<name>` working and mirrors test monkeypatches. `sialib.py`
 dropped from 517 KB to 477 KB; the 857-test suite and a façade-identity smoke
 (delegates resolve, `GraphProjectionPending` is one shared class across the
 boundary, `except sialib.X` catches a `siagraph` raise) are green.
+
+**v1.7.4 — the façade contract stopped being a convention.** An outside
+review of the v1.5.2…v1.6.0 diff found no HIGH and no MEDIUM, and named three
+properties the extraction relied on that nothing enforced. Each now has a
+test: the exact export set and count of every façade child (so a future
+extraction that drops a name fails on a readable number rather than silently
+un-publishing a sialib delegate); the four rung ladders pinned as one text
+plus behavioural proof that a partial v5 tree still classifies as v5 at all
+four sites; and the three branches of `bind()`, including the delegate-marked
+branch that keeps a child's intra-module calls on its own raw implementations
+rather than on the parent façade. Which modules are façade children is now
+discovered rather than hand-listed, so the next extraction is pinned the
+moment it captures its own exports, and adding one dict entry to
+`FACADE_CHILD_EXPORTS` inherits every guard above.
 
 **Next: v1.6.1 — the thought-pages + recovery/legacy-replay cluster** (~1,870
 lines, ~66 functions). Its verified map is on file: zero references from any

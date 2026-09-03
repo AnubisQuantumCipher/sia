@@ -800,12 +800,19 @@ standard add-and-enable command clones, validates, and loads the QML, but its
 plugin manager supplies no install, update, or remove hook for SIA's resident
 runtime. When that runtime is absent or older than the plugin, the cockpit
 renders a setup/update gate instead of ordinary controls. The gate discloses
-the substantial local work; only an explicit operator action launches the
-existing fail-closed installer in a visible terminal. QML load alone never
-installs software. The gate clears only after the runtime version matches the
-plugin and the installer atomically publishes its owner-private completion
-record after a live `sia ready` check succeeds. That coordination record is
-not signed evidence and does not replace a later live-readiness query.
+the substantial local work; only an explicit operator action asks the desktop
+to open a terminal running the existing fail-closed installer. That the
+installer shell started is not assumed: it publishes an owner-private marker
+under `$XDG_RUNTIME_DIR` before the first installer byte, holds that terminal
+itself at the end rather than relying on a `--hold` a terminal entry may
+silently drop, and refuses by name when no marker appears. Nothing queries the
+compositor, so the marker is evidence the shell began running in whatever the
+desktop opened, not evidence that a window was mapped. QML load alone never
+installs software. The gate clears only after the runtime version
+matches the plugin and the installer atomically publishes its owner-private
+completion record after a live `sia ready` check succeeds. That coordination
+record is not signed evidence and does not replace a later live-readiness
+query.
 
 SIA is listed in the Omarchy Plugin Marketplace, although its public catalog
 entry may continue to say **Manual setup** until a maintainer removes the

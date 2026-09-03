@@ -391,15 +391,16 @@ the code before installing). The QML surfaces render dynamic snapshot strings
 with `Text.PlainText`. Their ordinary process actions use fixed SIA command
 paths. The first-light gate adds one deliberately stronger action: only an
 explicit **Begin first light** or **Finish update** press may launch the
-checkout's `install.sh`, and it does so in a visible terminal. Loading or
-enabling QML never runs the installer. Before that action, the gate discloses
+checkout's `install.sh`, and it does so by asking this desktop to open a
+terminal for it; the cockpit reports whether the installer shell was ever
+observed to start. Loading or enabling QML never runs the installer. Before that action, the gate discloses
 that installation may download pinned local toolchains and the embedding
 runtime, build gbrain, pull the pinned local model, create a signing identity
 and corpus on a fresh install, and install user services. Success requires the
 resident runtime version to match the plugin and a live `sia ready` pass; an
-installer refusal leaves the cockpit gated. The visible terminal is an
-operator-consent and diagnosability boundary, not a sandbox—the script and
-installed daemon still execute as the user. The owner-private
+installer refusal leaves the cockpit gated. A terminal the desktop does open
+is an operator-consent and diagnosability boundary, not a sandbox—the script
+and installed daemon still execute as the user. The owner-private
 `managed-install/first-light.json` file is only a release-bound UI coordination
 record; it is not signed evidence and does not replace a fresh `sia ready`
 check when live readiness matters. PGLite admits one owner: all SIA-managed
@@ -452,7 +453,7 @@ runtime or user service. Runtime/UI removal must begin with SIA's own
 `uninstall.sh` while the checkout remains available; only its explicit
 `--purge` mode attempts to erase the retained brain data and config as well.
 The guided launcher removes ambient installer-consent variables and
-`BASH_ENV`/`ENV` before starting the visible terminal. After acquiring the
+`BASH_ENV`/`ENV` before starting the installer terminal. After acquiring the
 lifecycle lease, the installer compares its source release with both the
 resident runtime and the release-bound first-light record; a newer valid
 generation refuses before the install mutation marker or launch fence. The

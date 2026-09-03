@@ -2,13 +2,190 @@
 # Marketplace first-light bridge.  This helper never installs from QML load:
 # the cockpit invokes `launch` only after an explicit operator click, and the
 # existing fail-closed installer remains the sole installation authority.
+#
+# Visibility is owned here, not delegated.  xdg-terminal-exec silently drops
+# --hold when the resolved terminal entry declares no TerminalArgHold=, which
+# is true of Alacritty, the Omarchy default, so the window would close the
+# moment the installer exits — including on a named refusal.  The run stage
+# therefore holds its own terminal on every exit path, and the launch stage
+# proves the run stage started in a terminal instead of assuming it did.
+# Nothing here queries the compositor: a window mapped late or onto another
+# workspace is outside what this can witness.
 
 set -euo pipefail
 
+# Cold terminal start plus bash startup is seconds on the reference desktop;
+# this bound only has to separate "slow" from "never".
+SETUP_PRESENT_SECONDS=20
+setup_hold_armed=0
+setup_installer_pid=
+setup_installer_done=0
+setup_refused=0
+
 refuse() {
+  setup_refused=1
   printf 'SIA setup refused: %s\n' "$*" >&2
   exit 2
 }
+
+# Every exit of the run stage reaches this trap, so the operator can read the
+# outcome whether the installer succeeded, failed, or a refusal fired first.
+# The trap runs no `exit`, so the status that triggered it stays the helper's
+# exit status.
+hold_setup_terminal() {
+  local status=$?
+  if [ "$setup_hold_armed" != 1 ]; then
+    return "$status"
+  fi
+  setup_hold_armed=0
+  if [ "$status" -eq 0 ] && [ "$setup_installer_done" = 1 ]; then
+    printf '\nSIA first light finished with exit status 0.\n' || true
+    printf 'The cockpit clears only once the matching runtime is ready.\n' \
+      || true
+  elif [ "$status" -eq 0 ]; then
+    # A fatal signal this helper does not trap still runs the EXIT trap, and
+    # $? is then the last completed command's status, not the installer's.
+    # Nothing was observed, so nothing is claimed.
+    printf '\nSIA first light stopped before the installer returned.\n' \
+      || true
+    printf 'No installer status was seen; the install did not complete.\n' \
+      || true
+  elif [ "$setup_refused" = 1 ]; then
+    printf '\nSIA first light did not complete: exit status %s.\n' \
+      "$status" || true
+    printf 'The named refusal printed above is the reason.\n' || true
+  else
+    printf '\nSIA first light did not complete: exit status %s.\n' \
+      "$status" || true
+    printf 'The last message printed above is the reason.\n' || true
+  fi
+  # The hold is a blocking read, so it is offered only to a real terminal:
+  # a piped or scripted run must never be able to wedge on it.  A terminal is
+  # not enough on its own: a helper sitting in a background process group
+  # takes SIGTTIN on the read and would stop, holding the install lock with
+  # no window to type into.  Ignoring SIGTTIN turns exactly that case into an
+  # immediate error the `|| true` absorbs, so the hold can wait for a
+  # keystroke but can never wedge waiting for one nobody can send.
+  if [ -t 0 ] && [ -t 1 ]; then
+    trap '' TTIN TTOU
+    printf '\nPress Enter when you have read this. ' || true
+    read -r || true
+    trap - TTIN TTOU
+  fi
+  return "$status"
+}
+
+# An interrupted install must not leave a window waiting on a keystroke, so
+# disarm the hold before exiting with the conventional signal status.  A
+# directed signal reaches only this helper, so the installer is stopped here
+# explicitly: without that, "interrupted" would be printed over an install
+# that in fact ran to completion.
+setup_interrupted() {
+  trap - INT TERM HUP
+  setup_hold_armed=0
+  if [ -n "$setup_installer_pid" ]; then
+    kill -TERM "$setup_installer_pid" 2>/dev/null || true
+    wait "$setup_installer_pid" 2>/dev/null || true
+  fi
+  printf '\nSIA first light interrupted by SIG%s; not holding.\n' "$1" >&2 \
+    || true
+  exit "$2"
+}
+
+# The launch stage binds its wait to a fresh nonce, so a marker left by an
+# earlier attempt can never be read as this click presenting a terminal.
+valid_attempt_id() {
+  case "$1" in
+    ""|*[!0-9a-f]*) return 1 ;;
+  esac
+  [ "${#1}" -eq 32 ]
+}
+
+# The marker path gets exactly the install.lock treatment: only an
+# owner-private, singular, non-symlink regular file may be trusted or
+# replaced in place.
+assert_setup_marker_safe() {
+  if [ -e "$setup_marker_path" ] || [ -L "$setup_marker_path" ]; then
+    if [ ! -f "$setup_marker_path" ] || [ -L "$setup_marker_path" ] \
+        || [ ! -O "$setup_marker_path" ]; then
+      refuse "the first-light presentation marker is unsafe"
+    fi
+    [ "$(stat -c '%a:%h' -- "$setup_marker_path")" = "600:1" ] \
+      || refuse "the presentation marker is not private and singular"
+  fi
+}
+
+# Published before the installer runs, so the launch stage can tell "the run
+# stage started and then refused" from "it never started at all".
+publish_setup_presentation() {
+  local attempt="$1" staged="$setup_marker_path.new" interactive=false
+  if [ -t 0 ] && [ -t 1 ]; then
+    interactive=true
+  fi
+  assert_setup_marker_safe
+  rm -f -- "$staged"
+  # noclobber makes the create O_EXCL|O_CREAT, so a symlink racing into the
+  # staged path cannot redirect this write out of the owner-only directory.
+  set -C
+  printf '{"attempt":"%s","pid":%s,"ts":%(%s)T,"tty":%s,"v":1}\n' \
+    "$attempt" "$$" -1 "$interactive" >"$staged"
+  set +C
+  mv -f -- "$staged" "$setup_marker_path"
+  if [ ! -f "$setup_marker_path" ] || [ -L "$setup_marker_path" ] \
+      || [ ! -O "$setup_marker_path" ]; then
+    refuse "the presentation marker could not be published safely"
+  fi
+  [ "$(stat -c '%a:%h' -- "$setup_marker_path")" = "600:1" ] \
+    || refuse "the published presentation marker is not private and singular"
+  # The shared path is what the cockpit reads, so the last attempt to start
+  # owns it.  Proof that THIS attempt presented therefore also lands in a
+  # per-attempt file, which a later attempt can never overwrite.
+  if [ -n "$attempt" ]; then
+    rm -f -- "$setup_marker_path.$attempt" "$setup_marker_path.$attempt.new"
+    set -C
+    cat -- "$setup_marker_path" >"$setup_marker_path.$attempt.new"
+    set +C
+    mv -f -- "$setup_marker_path.$attempt.new" \
+      "$setup_marker_path.$attempt"
+  fi
+}
+
+# Absence of a readable, owner-private marker naming this exact attempt is
+# never a started run stage.  Every read re-checks type, owner, and mode.
+setup_presented() {
+  local attempt="$1" path marker
+  path="$setup_marker_path.$attempt"
+  if [ -L "$path" ] || [ ! -f "$path" ] || [ ! -O "$path" ]; then
+    return 1
+  fi
+  [ "$(stat -c '%a:%h' -- "$path")" = "600:1" ] || return 1
+  marker="$(head -c 4096 -- "$path")" || return 1
+  # The marker names the attempt and records whether the run stage actually
+  # got a terminal.  Only both together are presentation: a run without a tty
+  # holds no window, so announcing one would claim what did not happen.
+  case "$marker" in
+    *"\"attempt\":\"$attempt\""*)
+      case "$marker" in
+        *'"tty":true'*) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
+trap hold_setup_terminal EXIT
+trap 'setup_interrupted INT 130' INT
+trap 'setup_interrupted TERM 143' TERM
+# Closing the first-light window delivers SIGHUP.  Untrapped, the EXIT hold
+# would run with a status the installer never produced.
+trap 'setup_interrupted HUP 129' HUP
+
+# Only the run stage owns a terminal.  Arm its hold before the first refusal
+# can fire, so a named refusal is readable too and not just the installer's
+# own exit.
+if [ "${1:-}" = run ]; then
+  setup_hold_armed=1
+fi
 
 case "${HOME:-}" in
   /*) ;;
@@ -37,6 +214,7 @@ if [ ! -f "$INSTALLER" ] || [ -L "$INSTALLER" ] \
 fi
 
 setup_runtime_dir="$XDG_RUNTIME_DIR/khephri.sia-first-light"
+setup_marker_path="$setup_runtime_dir/terminal.json"
 if [ ! -e "$setup_runtime_dir" ]; then
   install -d -m 0700 -- "$setup_runtime_dir"
 fi
@@ -46,18 +224,66 @@ if [ ! -d "$setup_runtime_dir" ] || [ -L "$setup_runtime_dir" ] \
 fi
 [ "$(stat -c '%a' -- "$setup_runtime_dir")" = 700 ] \
   || refuse "the first-light runtime directory is not owner-only"
+# Everything this helper creates under that directory — the presentation
+# marker and the install lock — is owner-private by construction, never by
+# whatever umask the caller happened to have.
+umask 077
 
 case "${1:-}" in
   launch)
+    # The caller may bring its own attempt id so it can bind the answer to
+    # the click it made; a bare launch draws one.  Either way the id is only
+    # a freshness token on an owner-private file, never an authorization.
+    [ "$#" -le 2 ] || refuse "launch takes at most one attempt id"
     command -v uwsm-app >/dev/null 2>&1 \
       || refuse "uwsm-app is unavailable"
     command -v xdg-terminal-exec >/dev/null 2>&1 \
       || refuse "xdg-terminal-exec is unavailable"
-    exec uwsm-app -- xdg-terminal-exec \
+    attempt_id="${2:-}"
+    if [ -n "$attempt_id" ]; then
+      valid_attempt_id "$attempt_id" \
+        || refuse "the first-light attempt id is malformed"
+    else
+      attempt_id="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+        || refuse "cannot draw a first-light attempt id"
+      valid_attempt_id "$attempt_id" \
+        || refuse "cannot draw a first-light attempt id"
+    fi
+    # Refuse before spawning anything if the marker path is already hostile.
+    assert_setup_marker_safe
+    # --hold stays as belt and braces for terminals that honour it.  The run
+    # stage holds first, so on such a terminal the operator closes a window
+    # that is already finished; on Alacritty --hold is dropped and the run
+    # stage is the only hold there is.
+    uwsm-app -- xdg-terminal-exec \
       --app-id=org.omarchy.sia-first-light \
-      --title="SIA first light" --hold -- "$HELPER" run
+      --title="SIA first light" --hold -- "$HELPER" run "$attempt_id" &
+    waited=0
+    while [ "$waited" -lt "$SETUP_PRESENT_SECONDS" ]; do
+      if setup_presented "$attempt_id"; then
+        rm -f -- "$setup_marker_path.$attempt_id"
+        printf 'SIA first light: the setup shell started.\n'
+        exit 0
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    rm -f -- "$setup_marker_path.$attempt_id"
+    # The spawned terminal is not ours to kill — uwsm-app hands it to the
+    # session manager — so this refuses on what was observed and claims
+    # nothing about a window that may still appear.
+    refuse "no setup shell started within ${SETUP_PRESENT_SECONDS}s"
     ;;
   run)
+    [ "$#" -le 2 ] || refuse "run takes at most one attempt id"
+    setup_attempt="${2:-}"
+    if [ -n "$setup_attempt" ] && ! valid_attempt_id "$setup_attempt"; then
+      refuse "the first-light attempt id is malformed"
+    fi
+    # The run stage starting is a fact about what the desktop opened, not a
+    # prediction about the install, so it is recorded before any installer
+    # byte runs.
+    publish_setup_presentation "$setup_attempt"
     lock_path="$setup_runtime_dir/install.lock"
     if [ -e "$lock_path" ] || [ -L "$lock_path" ]; then
       if [ ! -f "$lock_path" ] || [ -L "$lock_path" ] \
@@ -67,7 +293,6 @@ case "${1:-}" in
       [ "$(stat -c '%a:%h' -- "$lock_path")" = "600:1" ] \
         || refuse "the first-light lock is not private and singular"
     fi
-    umask 077
     exec {setup_lock_fd}>>"$lock_path"
     [ "$(stat -c '%a:%h' -- "$lock_path")" = "600:1" ] \
       || refuse "the first-light lock changed while opening"
@@ -88,7 +313,18 @@ case "${1:-}" in
       SIA_REPLACE_OLLAMA_RUNTIME SIA_REPLACE_OLLAMA_UNIT \
       SIA_REPLACE_PLUGIN SIA_REPLACE_RUNTIME SIA_REPLACE_SCHEMA_PACK \
       SIA_REPLACE_SIA_CLI SIA_REPLACE_TOOLCHAIN
-    exec "$INSTALLER"
+    # The installer is a child, not an exec target, so this shell stays alive
+    # to own the hold and keeps the advisory lock fd open for the whole run.
+    # It is waited on rather than run in the foreground because bash defers a
+    # trap until a foreground command returns, and `wait` is interruptible: a
+    # signal arriving mid-install is acted on now, not after the install.
+    # Nothing captures the status: errexit makes the installer's own exit
+    # status this helper's exit status, and the EXIT hold reports it without
+    # replacing it.
+    "$INSTALLER" &
+    setup_installer_pid=$!
+    wait "$setup_installer_pid"
+    setup_installer_done=1
     ;;
   *)
     refuse "expected launch or run"

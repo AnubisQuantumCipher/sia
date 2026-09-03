@@ -69,6 +69,10 @@ Item {
   property string restoreRequestId: ""
   property string restoreExpectedPreparedId: ""
   property bool setupLaunchRequested: false
+  property bool setupTerminalPresented: false
+  property bool setupTerminalMissing: false
+  property real setupRequestedAtSec: 0
+  property string setupAttemptId: ""
   readonly property int continuityInputMaxLength: 4096
   readonly property int continuityResponseMaxLength: 65536
 
@@ -81,6 +85,9 @@ Item {
   readonly property string installCompletionPath:
     (Quickshell.env("HOME") || "")
       + "/.local/state/sia/managed-install/first-light.json"
+  readonly property string setupPresencePath:
+    (Quickshell.env("XDG_RUNTIME_DIR") || "")
+      + "/khephri.sia-first-light/terminal.json"
   readonly property string pluginVersion:
     root.manifest && typeof root.manifest.version === "string"
       && root.manifest.version !== "" ? root.manifest.version
@@ -1636,9 +1643,28 @@ Item {
     // click/key action; loading or enabling the plugin never executes setup.
     if (!root.setupActionAllowed || root.setupLaunchRequested) return
     root.setupLaunchRequested = true
+    root.setupTerminalPresented = false
+    root.setupTerminalMissing = false
+    // A click is a request, not an outcome.  Draw the id this click will be
+    // answered by, stamp it, then read presentation back from the runtime
+    // marker the helper publishes under that id, under a deadline.
+    root.setupAttemptId = Model.drawAttemptId()
+    root.setupRequestedAtSec = Math.floor(Date.now() / 1000)
+    setupPresenceApply.restart()
+    setupPresenceDeadline.restart()
     Quickshell.execDetached([
       "/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV",
-      root.setupHelperPath, "launch"])
+      root.setupHelperPath, "launch", root.setupAttemptId])
+  }
+
+  function setupPresenceMessage() {
+    // A late start supersedes the deadline's honest "never observed": the
+    // deadline reports what had been seen by then, not a final verdict.
+    if (root.setupTerminalPresented)
+      return "Setup terminal started. SIA holds that window open at the end, on success and on a named refusal. If you cannot see it, check your other workspaces. This gate clears only after the matching resident release reaches first light."
+    if (root.setupTerminalMissing)
+      return "Setup terminal requested, but SIA never observed the installer shell start. If it starts later it is the real installer and holds itself open. Otherwise open a terminal yourself and run install.sh from the plugin checkout, or repair the terminal handler on this desktop, then try again."
+    return "Setup terminal requested. Waiting for the installer shell to start…"
   }
 
   function setupEyebrow() {
@@ -1762,6 +1788,15 @@ Item {
     continuityPage = "overview"
     restoreConfirmOpen = false
     setupLaunchRequested = false
+    setupTerminalPresented = false
+    setupTerminalMissing = false
+    // Model.setupTerminalPresented refuses an empty id and a zero stamp, so
+    // clearing both keeps a marker from an earlier cockpit session from
+    // being read as this session's presentation.
+    setupAttemptId = ""
+    setupRequestedAtSec = 0
+    setupPresenceApply.stop()
+    setupPresenceDeadline.stop()
     readyProc.cancel()
     clearReadyCheck()
     // Opening requests fresh bytes without discarding the last validated
@@ -1960,6 +1995,25 @@ Item {
     }
   }
 
+  function applySetupPresence(text) {
+    try {
+      const parsed = JSON.parse(text)
+      if (!Model.setupTerminalPresented(parsed, root.setupRequestedAtSec,
+                                        root.setupAttemptId))
+        return
+      root.setupTerminalPresented = true
+      root.setupTerminalMissing = false
+      // The deadline may already have re-armed the button on the honest
+      // report that nothing was seen in time.  A shell that starts later is
+      // still this click's installer, so close the launch gate again rather
+      // than let a second press open a window that can only refuse on the
+      // install lock.
+      root.setupLaunchRequested = true
+      setupPresenceApply.stop()
+      setupPresenceDeadline.stop()
+    } catch (e) { }
+  }
+
   function applyInstallCompletion(text) {
     try {
       const parsed = JSON.parse(text)
@@ -2058,6 +2112,37 @@ Item {
   }
   Timer { id: installCompletionApply; interval: 150; repeat: false
           onTriggered: installCompletionFile.reload() }
+
+  FileView {
+    id: setupPresenceFile
+    path: root.setupPresencePath
+    watchChanges: true
+    printErrors: false
+    // Reading this owner-only marker is the whole new capability: it observes
+    // that the installer shell started in a terminal.  It is not readiness,
+    // it starts nothing, and an absent or unreadable marker is fail-closed.
+    onLoaded: root.applySetupPresence(text())
+    onLoadFailed: { }
+    onFileChanged: {
+      // A change is worth exactly one reload.  Only launchSetup() starts the
+      // repeating poll, and only under the deadline that is guaranteed to
+      // stop it, so an unrequested marker change can never leave a timer
+      // running for the life of the shell.
+      if (setupPresenceDeadline.running) setupPresenceApply.restart()
+      else setupPresenceFile.reload()
+    }
+  }
+  Timer { id: setupPresenceApply; interval: 500; repeat: true
+          onTriggered: setupPresenceFile.reload() }
+  Timer { id: setupPresenceDeadline; interval: 25000; repeat: false
+          onTriggered: {
+            // The helper waits 20s for its own marker.  Past that the honest
+            // report is that no installer shell was observed, not silence.
+            setupPresenceApply.stop()
+            if (root.setupTerminalPresented) return
+            root.setupTerminalMissing = true
+            root.setupLaunchRequested = false
+          } }
 
   Timer {
     interval: 1000; running: root.opened; repeat: true
@@ -4772,7 +4857,7 @@ Item {
                 anchors.margins: Style.space(8)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Installation runs visibly in a terminal and this cockpit stays locked until the matching runtime publishes status after `sia ready`."
+                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Your click asks this desktop to open a terminal and SIA holds that window open at the end, on success and on a named refusal; the cockpit reports whether the installer shell was actually observed to start rather than assuming a window appeared. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.65)
                 font.family: root.fontFamily
@@ -4803,7 +4888,7 @@ Item {
               focusPolicy: Qt.StrongFocus
               hoverEnabled: true
               Accessible.name: root.setupActionLabel()
-              Accessible.description: "Open the visible SIA installer terminal after reviewing the local installation boundary."
+              Accessible.description: "Ask this desktop to open the SIA installer terminal after reviewing the local installation boundary; the cockpit then reports whether the installer shell actually started."
               onClicked: root.launchSetup()
               background: Rectangle {
                 radius: Style.cornerRadius
@@ -4829,13 +4914,14 @@ Item {
             }
 
             Text {
-              visible: root.setupLaunchRequested
+              visible: root.setupLaunchRequested || root.setupTerminalMissing
+                || root.setupTerminalPresented
               width: parent.width
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
-              text: "Setup terminal requested. Keep it open; this gate clears only after the matching resident release reaches first light."
+              text: root.setupPresenceMessage()
               wrapMode: Text.WordWrap
-              color: root.accent
+              color: root.setupTerminalMissing ? root.urgent : root.accent
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               horizontalAlignment: Text.AlignHCenter

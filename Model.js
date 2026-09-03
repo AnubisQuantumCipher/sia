@@ -11,7 +11,7 @@
 // one edge of the canvas.
 .pragma library
 
-function releaseVersion() { return "1.7.3" }
+function releaseVersion() { return "1.7.4" }
 
 // The checkout and the resident runtime advance as one release generation.
 // Only an exact release match may expose the cockpit.  Comparison stays on
@@ -121,6 +121,41 @@ function guidedLifecycle(status, completion, pluginVersion) {
   if (runtime === "update") return "update"
   return installCompletionReady(completion, pluginVersion)
     ? "ready" : "repair"
+}
+
+// A click asks the desktop to open a terminal; nothing in the desktop
+// contract guarantees one appears, and xdg-terminal-exec drops --hold on a
+// terminal that declares no TerminalArgHold=.  The run stage therefore
+// publishes an owner-private marker the moment it starts, and that start is
+// read back from it here.  It is evidence the installer shell began running
+// with a terminal attached, never evidence that a window was mapped: nothing
+// here queries the compositor.  The id is a per-click freshness token on an
+// owner-private file, not a secret or an authorization: it exists so a
+// marker left by an earlier attempt cannot answer this click, which a
+// whole-second timestamp alone cannot rule out.
+function drawAttemptId() {
+  var hex = "0123456789abcdef"
+  var out = ""
+  for (var i = 0; i < 32; i++)
+    out += hex.charAt(Math.floor(Math.random() * 16))
+  return out
+}
+
+function setupTerminalPresented(marker, requestedAtSec, requestedAttempt) {
+  if (!marker || typeof marker !== "object" || marker.v !== 1) return false
+  if (typeof requestedAttempt !== "string"
+      || !/^[0-9a-f]{32}$/.test(requestedAttempt)) return false
+  if (marker.attempt !== requestedAttempt) return false
+  // The run stage records whether it actually got a terminal, and holds the
+  // window only when it did.  A marker that says otherwise is evidence
+  // against presentation, never for it.
+  if (marker.tty !== true) return false
+  if (typeof marker.ts !== "number") return false
+  var stamp = marker.ts
+  var requested = Number(requestedAtSec)
+  if (!isFinite(stamp) || Math.floor(stamp) !== stamp) return false
+  if (!isFinite(requested) || requested <= 0) return false
+  return stamp >= Math.floor(requested)
 }
 
 // Keep this policy paired with manifest.json's staleAfterSec schema. Both UI

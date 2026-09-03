@@ -8,10 +8,12 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -22,7 +24,7 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.7.3"
+RELEASE_VERSION = "1.7.4"
 
 
 def _read(relative):
@@ -141,7 +143,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.4"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": "1.7.5"}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -179,10 +181,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.4"}, installing,
+                "guidedLifecycle", {"version": "1.7.5"}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.4", "state": "ready"}
+        newer_ready = {"v": 1, "version": "1.7.5", "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -347,15 +349,33 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         self.assertNotRegex(helper, r"(?m)(?:^|[;&|()\s])eval(?:\s|$)")
         self.assertNotRegex(helper, r"\b(?:bash|sh)\s+-c\b")
-        self.assertIn("exec uwsm-app -- xdg-terminal-exec", compact)
+        self.assertIn("uwsm-app -- xdg-terminal-exec", compact)
         self.assertIn("--hold", helper)
+        # No shipped surface may promise a window this cannot witness.
+        for document in ("README.md", "SECURITY.md", "docs/MANUAL.md",
+                         "docs/WHITEPAPER.md"):
+            with self.subTest(document=document):
+                self.assertNotIn("visible terminal", _read(document))
         self.assertIn("XDG_RUNTIME_DIR", helper)
         self.assertNotIn("/tmp", helper)
         self.assertIn("install -d -m 0700", compact)
         self.assertIn("umask 077", compact)
         self.assertIn("flock -n", compact)
-        self.assertRegex(helper, r'exec\s+"\$INSTALLER"')
         self.assertIn("unset BASH_ENV ENV", helper)
+        # F3: visibility is SIA's to own.  xdg-terminal-exec drops --hold on a
+        # terminal that declares no TerminalArgHold=, so neither stage may
+        # hand its process image away and lose the ability to hold or report.
+        self.assertNotIn("exec uwsm-app", compact)
+        self.assertNotRegex(helper, r'exec\s+"\$INSTALLER"')
+        self.assertRegex(helper, r'(?m)^\s*"\$INSTALLER" &$')
+        self.assertRegex(helper, r'(?m)^\s*wait "\$setup_installer_pid"$')
+        self.assertIn("trap hold_setup_terminal EXIT", helper)
+        # Closing the first-light window delivers SIGHUP; untrapped, the hold
+        # would announce a status the installer never produced.
+        self.assertIn("trap 'setup_interrupted HUP 129' HUP", helper)
+        self.assertIn("SETUP_PRESENT_SECONDS=20", helper)
+        self.assertIn("if [ -t 0 ] && [ -t 1 ]; then", helper)
+        self.assertRegex(helper, r"(?m)^\s*read -r \|\| true$")
 
         consent_variables = (
             "SIA_ADOPT_EXISTING_CORPUS",
@@ -375,8 +395,13 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "SIA_REPLACE_TOOLCHAIN",
         )
         unset_at = helper.index("unset BASH_ENV ENV")
-        exec_at = helper.index('exec "$INSTALLER"')
-        self.assertLess(unset_at, exec_at)
+        installer_at = helper.index('    "$INSTALLER"')
+        publish_at = helper.index(
+            'publish_setup_presentation "$setup_attempt"')
+        self.assertLess(unset_at, installer_at)
+        # The start is recorded before any installer byte runs, so a run
+        # that refuses later still proves the run stage started.
+        self.assertLess(publish_at, installer_at)
         for variable in consent_variables:
             self.assertIn(variable, helper)
 
@@ -418,6 +443,421 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             'step "9/9 agents', 1)[0]
         self.assertIn('"$SIA_PLUGIN_STAGE/bin/sia-setup"', desktop)
 
+    def _first_light_rig(self, root, installer_body, present_seconds=None):
+        """Stage a helper copy beside a scripted installer."""
+        plugin = Path(root) / "plugin"
+        helper = plugin / "bin" / "sia-setup"
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(REPO / "bin" / "sia-setup", helper)
+        if present_seconds is not None:
+            source = helper.read_text(encoding="utf-8")
+            shortened = source.replace(
+                "SETUP_PRESENT_SECONDS=20",
+                f"SETUP_PRESENT_SECONDS={present_seconds}")
+            self.assertNotEqual(source, shortened)
+            helper.write_text(shortened, encoding="utf-8")
+        installer = plugin / "install.sh"
+        installer.write_text(installer_body, encoding="utf-8")
+        installer.chmod(0o700)
+        home = Path(root) / "home"
+        runtime = Path(root) / "runtime"
+        home.mkdir()
+        runtime.mkdir()
+        environment = os.environ.copy()
+        environment.update({
+            "HOME": str(home), "XDG_RUNTIME_DIR": str(runtime)})
+        return helper, runtime, environment
+
+    # A terminal that gives its child no pty is not a terminal, so the
+    # presenting stand-in allocates a real one and answers the hold; the
+    # non-presenting one runs nothing at all.
+    _PTY_TERMINAL = (
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "argv = sys.argv[1:]\n"
+        "argv = argv[argv.index('--') + 1:] if '--' in argv else argv\n"
+        "if os.fork():\n"
+        "    raise SystemExit(0)\n"
+        "os.setsid()\n"
+        "leader, follower = os.openpty()\n"
+        "if os.fork():\n"
+        "    os.close(follower)\n"
+        "    while True:\n"
+        "        try:\n"
+        "            if not os.read(leader, 65536):\n"
+        "                break\n"
+        "            os.write(leader, b'\\n')\n"
+        "        except OSError:\n"
+        "            break\n"
+        "    raise SystemExit(0)\n"
+        "os.close(leader)\n"
+        "for stream in (0, 1, 2):\n"
+        "    os.dup2(follower, stream)\n"
+        "os.execvp(argv[0], argv)\n")
+
+    def _stage_fake_terminal(self, root, environment, presents=True):
+        """Stand in for uwsm-app and a terminal that ignores --hold."""
+        fake_bin = Path(root) / "bin"
+        fake_bin.mkdir()
+        launcher = fake_bin / "uwsm-app"
+        launcher.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'if [ "${1:-}" = "--" ]; then shift; fi\n'
+            'exec "$@"\n', encoding="utf-8")
+        launcher.chmod(0o700)
+        body = self._PTY_TERMINAL if presents else (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "exit 0\n")
+        terminal = fake_bin / "xdg-terminal-exec"
+        terminal.write_text(body, encoding="utf-8")
+        terminal.chmod(0o700)
+        environment["PATH"] = (
+            str(fake_bin) + os.pathsep + environment["PATH"])
+
+    def test_setup_run_publishes_presentation_before_the_installer_runs(self):
+        attempt = "0123456789abcdef" * 2
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'first_light="$XDG_RUNTIME_DIR/khephri.sia-first-light"\n'
+                'stat -c "%a:%h" -- "$first_light/terminal.json" \\\n'
+                '  > "$SIA_TEST_REPORT"\n'
+                'cat -- "$first_light/terminal.json" >> "$SIA_TEST_REPORT"\n'
+                'if flock -n 9; then echo lock-free >> "$SIA_TEST_REPORT"\n'
+                'else echo lock-held >> "$SIA_TEST_REPORT"\n'
+                'fi 9>>"$first_light/install.lock"\n')
+            report = Path(root) / "report"
+            environment["SIA_TEST_REPORT"] = str(report)
+            result = subprocess.run(
+                [str(helper), "run", attempt], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=120, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = report.read_text(encoding="utf-8").splitlines()
+        # The marker is owner-private and singular exactly like install.lock,
+        # and it already exists when the installer's first line runs.
+        self.assertEqual(lines[0], "600:1")
+        published = json.loads(lines[1])
+        self.assertEqual(published["v"], 1)
+        self.assertEqual(published["attempt"], attempt)
+        self.assertFalse(published["tty"])
+        self.assertIsInstance(published["ts"], int)
+        self.assertIsInstance(published["pid"], int)
+        # Dropping the exec must not drop the lock: this shell now holds the
+        # advisory lock for the whole installer run.
+        self.assertEqual(lines[2], "lock-held")
+
+    def test_setup_run_propagates_the_installer_exit_status_without_a_hold(
+            self):
+        for expected in (0, 7):
+            with tempfile.TemporaryDirectory() as root:
+                helper, _, environment = self._first_light_rig(
+                    root,
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    f"exit {expected}\n")
+                result = subprocess.run(
+                    [str(helper), "run"], cwd=root, env=environment,
+                    text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, timeout=120, check=False)
+            # Reporting the outcome must never replace it, and a run whose
+            # stdin and stdout are pipes must never block on the hold.
+            self.assertEqual(result.returncode, expected, result.stderr)
+            self.assertIn(f"exit status {expected}", result.stdout)
+            self.assertNotIn("Press Enter", result.stdout)
+
+    def test_setup_run_holds_a_real_terminal_and_keeps_the_status(self):
+        if not hasattr(os, "openpty"):
+            self.skipTest("no pty support for the terminal hold check")
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\nset -euo pipefail\nexit 3\n")
+            leader, follower = os.openpty()
+            try:
+                process = subprocess.Popen(
+                    [str(helper), "run"], cwd=root, env=environment,
+                    stdin=follower, stdout=follower, stderr=follower,
+                    close_fds=True)
+                os.close(follower)
+                try:
+                    process.wait(timeout=5)
+                    held = False
+                except subprocess.TimeoutExpired:
+                    held = True
+                    os.write(leader, b"\n")
+                    process.wait(timeout=30)
+                transcript = b""
+                os.set_blocking(leader, False)
+                try:
+                    while True:
+                        chunk = os.read(leader, 65536)
+                        if not chunk:
+                            break
+                        transcript += chunk
+                except (BlockingIOError, OSError):
+                    pass
+            finally:
+                os.close(leader)
+        # A terminal is exactly where the operator must be able to read the
+        # outcome, so the helper waits there and still exits 3.
+        self.assertTrue(held)
+        self.assertEqual(process.returncode, 3)
+        self.assertIn(b"Press Enter when you have read this.", transcript)
+        self.assertIn(b"exit status 3", transcript)
+
+    def test_setup_launch_confirms_the_run_stage_actually_started(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, runtime, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf ran > "$SIA_TEST_REPORT"\n',
+                present_seconds=10)
+            environment["SIA_TEST_REPORT"] = str(Path(root) / "report")
+            self._stage_fake_terminal(root, environment)
+            result = subprocess.run(
+                [str(helper), "launch"], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=120, check=False)
+            marker = json.loads(
+                (runtime / "khephri.sia-first-light"
+                 / "terminal.json").read_text(encoding="utf-8"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("the setup shell started", result.stdout)
+        # The wait is bound to a fresh nonce, so an older marker can never
+        # be read as this attempt's run stage.
+        self.assertRegex(marker["attempt"], r"^[0-9a-f]{32}$")
+
+    def test_setup_launch_refuses_when_the_run_stage_never_starts(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf ran > "$SIA_TEST_REPORT"\n',
+                present_seconds=2)
+            report = Path(root) / "report"
+            environment["SIA_TEST_REPORT"] = str(report)
+            self._stage_fake_terminal(root, environment, presents=False)
+            result = subprocess.run(
+                [str(helper), "launch"], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=120, check=False)
+            ran = report.exists()
+        # Exiting 0 into silence was the defect: an unobserved run stage is
+        # a named refusal, and in this rig no installer byte ran.
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no setup shell started", result.stderr)
+        self.assertFalse(ran)
+
+    def test_setup_refuses_a_hostile_pre_existing_presentation_marker(self):
+        for stage in ("launch", "run"):
+            for name, prepare in (
+                    ("symlink", lambda target: target.symlink_to("/etc")),
+                    ("mode", lambda target: (
+                        target.write_text("{}", encoding="utf-8"),
+                        target.chmod(0o644))),
+                    ("links", lambda target: (
+                        target.write_text("{}", encoding="utf-8"),
+                        target.chmod(0o600),
+                        os.link(target, target.parent / "shadow")))):
+                with tempfile.TemporaryDirectory() as root:
+                    helper, runtime, environment = self._first_light_rig(
+                        root,
+                        "#!/usr/bin/env bash\n"
+                        "set -euo pipefail\n"
+                        'printf ran > "$SIA_TEST_REPORT"\n',
+                        present_seconds=2)
+                    report = Path(root) / "report"
+                    environment["SIA_TEST_REPORT"] = str(report)
+                    self._stage_fake_terminal(root, environment)
+                    first_light = runtime / "khephri.sia-first-light"
+                    first_light.mkdir(mode=0o700)
+                    prepare(first_light / "terminal.json")
+                    result = subprocess.run(
+                        [str(helper), stage], cwd=root, env=environment,
+                        text=True, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, timeout=120, check=False)
+                    ran = report.exists()
+                label = f"{stage}/{name}"
+                # A marker is only ever trusted or replaced under the same
+                # ownership rules the install lock already enforces.
+                self.assertEqual(result.returncode, 2, label)
+                self.assertIn(
+                    "presentation marker", result.stderr, label)
+                self.assertFalse(ran, label)
+
+    def test_setup_run_stops_the_installer_on_a_directed_signal(self):
+        with tempfile.TemporaryDirectory() as root:
+            done = Path(root) / "installer-finished"
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "sleep 6\n"
+                f"printf 'done\\n' > {done}\n")
+            child = subprocess.Popen(
+                [str(helper), "run", "b" * 32], cwd=root, env=environment,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1.5)
+            sent = time.monotonic()
+            child.send_signal(signal.SIGTERM)
+            status = child.wait(timeout=30)
+            elapsed = time.monotonic() - sent
+            finished = done.exists()
+        # bash defers a trap until a foreground command returns, so the
+        # installer is waited on: a signal is acted on now, and an install
+        # that was stopped is never reported as one that ran.
+        self.assertFalse(finished)
+        self.assertLess(elapsed, 3.0)
+        self.assertEqual(status, 143)
+
+    def test_a_refused_second_attempt_keeps_the_first_attempt_proof(self):
+        first = "0" * 31 + "1"
+        second = "0" * 31 + "2"
+        with tempfile.TemporaryDirectory() as root:
+            helper, runtime, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf ready > "$SIA_TEST_GATE"\n'
+                'while [ ! -e "$SIA_TEST_RELEASE" ]; do sleep 0.05; done\n')
+            gate = Path(root) / "gate"
+            release = Path(root) / "release"
+            environment["SIA_TEST_GATE"] = str(gate)
+            environment["SIA_TEST_RELEASE"] = str(release)
+            holder = subprocess.Popen(
+                [str(helper), "run", first], cwd=root, env=environment,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                deadline = time.monotonic() + 30
+                while not gate.exists():
+                    if time.monotonic() > deadline:
+                        self.fail("the first attempt never installed")
+                    time.sleep(0.05)
+                refused = subprocess.run(
+                    [str(helper), "run", second], cwd=root,
+                    env=environment, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, timeout=120, check=False)
+                first_light = runtime / "khephri.sia-first-light"
+                proof = first_light / ("terminal.json." + first)
+                # The lock refused the second attempt.  That refusal must
+                # not erase the running attempt's proof of presentation.
+                self.assertEqual(refused.returncode, 2, refused.stderr)
+                self.assertIn("another SIA installer is already running",
+                              refused.stderr)
+                self.assertTrue(proof.is_file())
+                self.assertEqual(
+                    json.loads(proof.read_text(encoding="utf-8"))["attempt"],
+                    first)
+            finally:
+                release.write_text("go", encoding="utf-8")
+                holder.wait(timeout=60)
+
+    def test_setup_run_refuses_a_malformed_attempt_id(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf ran > "$SIA_TEST_REPORT"\n')
+            report = Path(root) / "report"
+            environment["SIA_TEST_REPORT"] = str(report)
+            result = subprocess.run(
+                [str(helper), "run", "../../etc"], cwd=root,
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, timeout=120, check=False)
+            ran = report.exists()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("attempt id is malformed", result.stderr)
+        self.assertFalse(ran)
+
+    def test_cockpit_reports_presentation_instead_of_promising_it(self):
+        cockpit = _read("Cockpit.qml")
+        # The old copy promised something no desktop contract can deliver.
+        self.assertNotIn("Installation runs visibly in a terminal", cockpit)
+        self.assertNotIn("Setup terminal requested. Keep it open;", cockpit)
+        self.assertNotIn("Open the visible SIA installer terminal", cockpit)
+        self.assertIn(
+            "Your click asks this desktop to open a terminal", cockpit)
+        self.assertIn(
+            "SIA holds that window open at the end, on success and on a "
+            "named refusal", cockpit)
+        self.assertIn(
+            "Setup terminal requested, but SIA never observed the "
+            "installer shell start.", cockpit)
+        # The helper cannot kill the terminal it asked the session manager
+        # for, so neither surface may claim a late window installed nothing.
+        self.assertNotIn("nothing was installed", cockpit)
+        self.assertNotIn("nothing is installed", cockpit)
+        self.assertIn("Setup terminal started.", cockpit)
+        # The retired vocabulary claimed a mapped window; the marker only
+        # ever witnessed an installer shell starting with a tty attached.
+        self.assertNotIn("Setup terminal presented", cockpit)
+        self.assertNotIn("actually presented", cockpit)
+        self.assertIn("readonly property string setupPresencePath:", cockpit)
+        self.assertIn("khephri.sia-first-light/terminal.json", cockpit)
+        self.assertIn("Model.setupTerminalPresented(", cockpit)
+
+        presence = cockpit[
+            cockpit.index("id: setupPresenceFile"):
+            cockpit.index("id: setupPresenceApply")]
+        self.assertIn("watchChanges: true", presence)
+        self.assertIn("root.applySetupPresence(text())", presence)
+        # Observing a marker must not become a second execution edge.
+        self.assertNotIn("execDetached", presence)
+        self.assertNotIn("Process", presence)
+        launch = _balanced_body(cockpit, "function launchSetup()")
+        self.assertIn("root.setupRequestedAtSec = ", launch)
+        self.assertIn("root.setupAttemptId = Model.drawAttemptId()", launch)
+        self.assertIn('root.setupHelperPath, "launch", root.setupAttemptId',
+                      launch)
+        self.assertIn("setupPresenceDeadline.restart()", launch)
+        # An unrequested marker change is worth one reload, never a poll that
+        # outlives the wait that asked for it.
+        self.assertIn("setupPresenceDeadline.running", presence)
+        # A terminal that presents late must not leave the operator with no
+        # status at all.
+        self.assertIn(
+            "visible: root.setupLaunchRequested || root.setupTerminalMissing"
+            "\n                || root.setupTerminalPresented", cockpit)
+
+        # Presentation is bound to the id this click drew and to the run
+        # stage's own report that it got a terminal.  Anything else — an
+        # earlier attempt, a run with no tty, an unstamped marker — is not
+        # this click's window.
+        attempt = "a1b2c3d4" * 4
+        other = "0" * 32
+        base = {"v": 1, "ts": 1000, "tty": True, "attempt": attempt}
+        for marker, requested, wanted, expected in (
+                (base, 1000, attempt, "true"),
+                (dict(base, ts=1001), 1000, attempt, "true"),
+                (dict(base, ts=999), 1000, attempt, "false"),
+                (dict(base, ts="1000"), 1000, attempt, "false"),
+                (dict(base, v=2), 1000, attempt, "false"),
+                ({"v": 1, "tty": True, "attempt": attempt}, 1000, attempt,
+                 "false"),
+                (dict(base, tty=False), 1000, attempt, "false"),
+                (dict(base, attempt=other), 1000, attempt, "false"),
+                (base, 1000, "not-hex", "false"),
+                (base, 0, attempt, "false"),
+                (None, 1000, attempt, "false")):
+            self.assertEqual(
+                self._model_call(
+                    "setupTerminalPresented", marker, requested, wanted),
+                expected, (marker, requested, wanted))
+        # The id is drawn per click, so two clicks are never answered by one
+        # marker.
+        drawn = {self._model_call("drawAttemptId") for _ in range(3)}
+        self.assertEqual(len(drawn), 3)
+        for value in drawn:
+            self.assertRegex(value, r"^[0-9a-f]{32}$")
+
     def test_installer_authority_refuses_release_downgrades_under_lease(self):
         guard = REPO / "bin" / "siarelease.py"
         self.assertTrue(guard.is_file())
@@ -454,14 +894,14 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.4")
+            write_runtime(resident, "1.7.5")
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
 
             resident.unlink()
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.4", "state": "ready"}),
+                "v": 1, "version": "1.7.5", "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()

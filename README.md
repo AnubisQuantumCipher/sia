@@ -17,12 +17,15 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.3.** Continuity now shows its authenticated live
-schedule in the cockpit: whether automatic protection is on, the last and next
-hourly timer trigger, the next weekly deep restore check, and the persistent/no-wake
-sleep policy. After repository setup, the hourly copy needs no button press.
-The optional **Make extra copy now** action captures, uploads, and immediately
-round-trip-verifies a new snapshot when you want a fresh recovery point now.
+**Current release: v1.7.4.** An outside review of the module-split series
+turned three invariants that held by discipline into invariants that hold by
+test: the façade export set each extracted child publishes, the runtime
+member-set rung ladder across all four digest sites, and the bind() seam that
+keeps a parent façade out of a child's own calls. Chasing the review's fourth
+report — an installer terminal that appeared only at the end — turned up a
+shipped defect: `xdg-terminal-exec` silently drops `--hold` on the default
+desktop. SIA now holds that terminal itself and reports whether the installer
+shell was ever observed to start.
 
 ![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
 
@@ -49,12 +52,16 @@ omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 
 The enabled surface detects that the resident brain is absent and presents a
 **SETUP** gate. Open the cockpit from the SIA bar item and choose **Begin
-first light**. That explicit action opens SIA's fail-closed `install.sh` in a
-visible terminal — loading or enabling the QML never runs the installer by
-itself. First light is substantial: it downloads pinned local toolchains and
-the embedding runtime, builds gbrain, pulls the pinned local embedding model,
-creates this machine's signing identity and empty corpus, and installs user
-services. Review the disclosure in the gate before continuing.
+first light**. That explicit action asks this desktop to open a terminal and
+run SIA's fail-closed `install.sh` in it — loading or enabling the QML never
+runs the installer by itself. SIA holds that terminal open when the installer
+finishes, on success and on a named refusal, and the cockpit reports whether
+the installer shell was actually observed to start. First light is
+substantial: it downloads pinned
+local toolchains and the embedding runtime, builds gbrain, pulls the pinned
+local embedding model, creates this machine's signing identity and empty
+corpus, and installs user services. Review the disclosure in the gate before
+continuing.
 
 Installation is complete only when the installed runtime version matches the
 plugin, the first-light pulse publishes, and `sia ready` passes; until then
@@ -338,8 +345,9 @@ The short version of the contract; the full mechanics are in the
 SIA is listed as
 [`khephri.sia`](https://plugins.omarchy.org/plugin.html?id=khephri.sia).
 Omarchy has no install/update/remove lifecycle hooks, so SIA presents an
-explicit cockpit gate and launches `install.sh` in a visible terminal only
-after you press the setup/update button. The Marketplace page may continue to
+explicit cockpit gate and, only after you press the setup/update button, asks
+the desktop to open a terminal running `install.sh`; the cockpit reports
+whether that installer shell actually started. The Marketplace page may continue to
 display **Manual setup** until a maintainer removes its registry override;
 that catalog label does not change the repository's guided flow. Every release
 is validated locally with `omarchy plugin validate .` and listing updates go
