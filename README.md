@@ -17,7 +17,7 @@ watch its thought stream and ask it about the memory it has admitted.
 The machine remembers. You can audit every word of what it remembers, because
 the corpus is markdown in git and the daemon signs its own acts.
 
-**Current release: v1.7.7.** The nightly judge audit had reported the same
+**Current release: v1.7.8.** The nightly judge audit had reported the same
 score for five days, and reading it as a limit of the grader was comfortable
 and wrong. SEKHMET really did restart wireplumber last August — four times,
 signed in its own ledger — and SIA ingested those rows as evidence and then
@@ -27,7 +27,10 @@ the week's gist kept the *intent* to heal and dropped every record that it
 sorted ahead of `events` and the epoch was never shown to the judge at all.
 Both are fixed, and so is a third: evidence excerpts took a page's first
 420 characters, which on an epoch is its frontmatter, so the judge was handed
-metadata and no evidence. Twelve tests fail on a revert. The compacted
+metadata and no evidence. And a fourth: both lanes cite the same page, and the excerpt was chosen
+first-wins, so a 220-character head beat the window that carried the answer.
+The audit that had scored 1/2 since it was written now scores 2/2 on the
+installed runtime. Twenty-one tests fail on a revert. The compacted
 originals were in git throughout; what changed is what live memory can answer
 from.
 

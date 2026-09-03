@@ -1184,6 +1184,37 @@ def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
     return (text, citations) if with_citations else text
 
 
+
+def _best_excerpt(candidates, normalized, claim):
+    """Between two valid views of one page, show the judge the one that bears
+    on the claim.
+
+    Both retrieval lanes can cite the same page, and each brings its own
+    excerpt: the semantic lane a short positional chunk, the organ lane a
+    window centred on the claim.  Taking whichever arrived first meant the
+    recall lane's head silently won.  Measured: the SEKHMET week-35 epoch was
+    delivered as its own title and boilerplate in 220 characters while the
+    organ lane's 446-character view of the same page — carrying
+    ``OUTCOME:restart_wireplumber  ok`` — was discarded, so the judge abstained
+    on a page that was admitted and did contain the answer.
+
+    Rank by how many of the claim's own terms a candidate carries, then by
+    length, so more evidence beats less.  Ties keep the earlier candidate, so
+    the choice stays deterministic.  Every candidate is still required to be a
+    substring of the page as currently read: this chooses among admitted
+    views, it never widens what may be admitted.
+    """
+    terms = set(_EVIDENCE_TERM_RE.findall(claim.lower()))
+    best, best_rank = None, None
+    for candidate in candidates:
+        if not candidate or candidate not in normalized:
+            continue
+        lowered = candidate.lower()
+        rank = (sum(1 for term in terms if term in lowered), len(candidate))
+        if best_rank is None or rank > best_rank:
+            best, best_rank = candidate, rank
+    return best
+
 def _grading_evidence(claim):
     recall = _recall(claim)
     if not recall.completed:
@@ -1211,8 +1242,8 @@ def _grading_evidence(claim):
                 f"cited evidence page could not be re-opened: {slug}") \
                 from exc
         normalized = " ".join(text.split())
-        excerpt = next((candidate for candidate in candidates.get(slug, [])
-                        if candidate and candidate in normalized), None)
+        excerpt = _best_excerpt(
+            candidates.get(slug, []), normalized, claim)
         if excerpt is None:
             # A stale index excerpt is not admitted as if it described the
             # currently observed corpus page.

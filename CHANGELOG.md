@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.7.8 — 2026-09-03 · the audit passes, and it never had
+
+`sia judge-audit` has scored resolution 1/2 since the day it was written. The
+one it missed was `SEKHMET successfully restarted wireplumber at least once
+during August 2026` — a claim that is true, and signed four times over in
+SEKHMET's own ledger. It now resolves TRUE against the real corpus on the
+installed runtime: **resolution 2/2, abstention 4/4**.
+
+Getting there took four defects, and they were one mistake wearing four
+costumes: *keep by position, and hope the part that matters is at the front.*
+
+- **Consolidation sampled exemplars by position** (1.7.6). The first two log
+  bullets and the last. Four `OUTCOME:restart_wireplumber  ok` rows sat in the
+  middle and were dropped, so the week's gist kept the intent to heal and lost
+  every record that it worked.
+- **The epoch lane was starved by a lexical accident** (1.7.6). Grading sorted
+  both evidence lanes into one list by full path and sliced the tail, and
+  `epochs` sorts before `events`. Consolidated history was on the allowlist
+  and unreachable at the same time.
+- **Excerpts took a page's first bytes** (1.7.7), which on an epoch is its
+  frontmatter. The judge received metadata — including an aggregate
+  `outcome: 5`, a count that is not an instance — and no evidence.
+- **And the excerpt was chosen first-wins.** Both lanes cite the same page and
+  each brings a view of it; taking whichever arrived first meant the semantic
+  lane's 220-character head silently beat the organ lane's 446-character
+  window carrying the outcome. Views are now ranked by how many of the claim's
+  own terms they carry, then by length, ties keeping the earlier candidate.
+  Every candidate must still be a substring of the page as currently read:
+  this chooses among admitted views, it never widens what may be admitted.
+
+Four regression tests for the last one, each pinning the defect. Twenty-one
+across the four. The judge was right every single time; so was every
+abstention, and so was the truth-boundary line that said absence of recall is
+not evidence of absence.
+
 ## 1.7.7 — 2026-09-03 · a prefix is not an excerpt
 
 1.7.6 fixed consolidation and the epoch lane, and the audit still abstained.

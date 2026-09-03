@@ -4171,6 +4171,60 @@ class GradingExcerptsShowTheEvidence(unittest.TestCase):
         self.assertLessEqual(len(excerpt), 200)
 
 
+
+class GradingPrefersTheExcerptThatBearsOnTheClaim(unittest.TestCase):
+    """Both retrieval lanes can cite the same page and each brings its own
+    excerpt. Taking whichever arrived first meant the semantic lane's short
+    positional head silently beat the organ lane's claim-centred window.
+    Measured: the week-35 epoch reached the judge as its own title in 220
+    characters while the 446-character view carrying
+    ``OUTCOME:restart_wireplumber  ok`` was discarded, so the judge abstained
+    on a page that was admitted and did contain the answer."""
+
+    PAGE = (
+        "# SEKHMET — 2026 week 35 Consolidated from 2 day-memories; "
+        "originals verbatim in corpus git history. ## Exemplars "
+        "- 2026-08-24 · 22:13:56Z GENESIS:init sekhmet - "
+        "- 2026-08-24 · 22:14:21Z INTENT:restart_wireplumber wireplumber_down "
+        "- 2026-08-24 · 22:14:21Z OUTCOME:restart_wireplumber  ok "
+        "- 2026-08-24 · 23:06:14Z OBS:change sekhmet ok")
+    CLAIM = ("SEKHMET successfully restarted wireplumber at least once "
+             "during August 2026")
+
+    def setUp(self):
+        self.siatakes = _load("siatakes_best_excerpt",
+                              os.path.join(BIN, "siatakes.py"))
+
+    def test_the_view_carrying_the_evidence_wins_over_the_earlier_head(self):
+        head = self.PAGE[:120]
+        bearing = self.PAGE[self.PAGE.index("## Exemplars"):]
+        chosen = self.siatakes._best_excerpt(
+            [head, bearing], self.PAGE, self.CLAIM)
+        self.assertIn("OUTCOME:restart_wireplumber", chosen)
+        # The defect, pinned: first-wins picked the head.
+        self.assertNotIn("OUTCOME:restart_wireplumber", head)
+
+    def test_a_candidate_absent_from_the_page_is_never_admitted(self):
+        self.assertIsNone(self.siatakes._best_excerpt(
+            ["a stale excerpt from another generation"], self.PAGE,
+            self.CLAIM),
+            "choosing among views must not widen what may be admitted")
+
+    def test_selection_is_deterministic_on_a_tie(self):
+        first = self.PAGE[:100]
+        second = self.PAGE[100:200]
+        self.assertEqual(
+            self.siatakes._best_excerpt(
+                [first, second], self.PAGE, "zzzz"),
+            first, "a tie keeps the earlier candidate")
+
+    def test_no_valid_candidate_yields_none(self):
+        self.assertIsNone(
+            self.siatakes._best_excerpt([], self.PAGE, self.CLAIM))
+        self.assertIsNone(
+            self.siatakes._best_excerpt([""], self.PAGE, self.CLAIM))
+
+
 class SkillSenseContainment(unittest.TestCase):
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",
