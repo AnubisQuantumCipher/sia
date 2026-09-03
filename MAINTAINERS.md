@@ -22,8 +22,8 @@ invitations for the lanes they know best:
   no HIGH and no MEDIUM, three seams where a real property was held by
   discipline rather than by a check, and one report that the guided
   installer's terminal appeared only at the end of the install. The three
-  seams are closed in 1.7.4; the terminal report traced to two defects on
-  this side, closed in 1.7.4 and 1.7.5; and the review lane is standing for
+  seams are closed in 1.7.5; the terminal report traced to two defects on
+  this side, closed in the same release; and the review lane is standing for
   the remaining extractions on their own timeline.
 - **[@webdevtodayjason](https://github.com/webdevtodayjason)** — the Obsidian
   organ and its records-not-content contract, which exists because of their

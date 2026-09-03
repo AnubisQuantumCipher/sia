@@ -1,33 +1,6 @@
 # Changelog
 
-## 1.7.5 — 2026-09-03 · the cockpit steps aside
-
-1.7.4 called @m10ust's late-appearing terminal "unreproduced". It was not a
-compositor quirk; it was this cockpit standing in front of its own terminal.
-
-- **The overlay occluded the terminal it asked for.** The cockpit is a
-  layer-shell `Overlay` surface, which sits above every normal window by
-  protocol, and it holds keyboard focus while visible. The first-light gate is
-  an opaque full-cockpit rectangle that also paints over the close button and
-  the "Esc = close" hint. So a click opened the installer terminal *behind*
-  the cockpit with no visible way out, and the window only came to the front
-  when `install.sh` ran `omarchy restart shell` near the end and the overlay
-  was destroyed — a terminal that "only appeared at the end of the install."
-- **Now it yields.** Once the installer shell is observed to start — the
-  nonce-bound, tty-checked marker from 1.7.4 — the cockpit shows that it is
-  stepping aside and dismisses itself a moment later, so the terminal is in
-  front with the keyboard. Reopening the cockpit lands on the existing
-  installing lifecycle, which reports progress honestly. If no shell is ever
-  observed, the cockpit stays and says so, exactly as before.
-- **The gate carries its own exit.** Esc has always closed the cockpit; the
-  gate now says so on the screen it covers, so no operator is trapped behind
-  an overlay while a terminal waits underneath it.
-- **Copy corrected.** The boundary text, README, manual, whitepaper and
-  maintainers file no longer describe the report as unexplained. What the
-  marker witnesses is unchanged: an installer shell running with a terminal
-  attached, not a mapped window.
-
-## 1.7.4 — 2026-09-03 · what held by discipline now holds by test
+## 1.7.5 — 2026-09-03 · what held by discipline now holds by test
 
 [@m10ust](https://github.com/m10ust) took the standing review invitation and
 audited the v1.5.2...v1.6.0 module-split diff: all four digest routines, the
@@ -35,10 +8,8 @@ release/staging file lists, `bin/siagraph.py`, the bind/invoke façade, and the
 test mirror. No HIGH, no MEDIUM — the extraction was clean. What the review
 found instead were three places where a real property was held by convention
 rather than by a check, plus one report that the guided installer's terminal
-appeared only at the end of the install. The three checks land here. Chasing
-the fourth turned up a shipped defect — a silently dropped `--hold` — which
-this release fixes; the late window @m10ust actually saw is still
-unreproduced, and this release detects it no better than the last one did.
+appeared only at the end of the install. The three checks land here. The
+fourth was not a compositor quirk: it was two defects on this side, both fixed.
 
 - **The façade export set is pinned.** `bin/siagraph.py` and
   `bin/siasenses.py` capture their exports positionally at import, and sialib
@@ -48,8 +19,10 @@ unreproduced, and this release detects it no better than the last one did.
   children, asserts the three views (`_EXPORTED_FUNCTIONS`,
   `_CHILD_FUNCTIONS`, `_ORIGINAL_CHILD_FUNCTIONS`) describe one set, that
   every export is a plain function defined in that file, that no bind-control
-  name leaks into the set, and that neither child imports a SIA core module.
-  The next extraction adds one dict entry and inherits all of it.
+  name leaks into the set, that neither child imports a SIA core module, and
+  that both `bind()` branches behave for every pinned child. Which modules are
+  façade children is discovered, not hand-listed, so the next extraction is
+  pinned the moment it captures its own exports.
 - **The v4→v5 salt rung has a regression contract.** A tree carrying
   `siagraph.py` but missing v4-era members must still classify as v5, so it
   can never be measured as a complete older tree. Dropping the v5 rung from
@@ -58,7 +31,8 @@ unreproduced, and this release detects it no better than the last one did.
   runtime missing four v4 members. Five new tests plant complete, migrating
   and partial trees against all four digest sites, prove the sites agree
   byte-for-byte and refuse identically, and pin the four rung ladders as one
-  text so a rung added to one site and not the others fails loudly.
+  text — each bounded to its own function, with a count that catches a fifth
+  unpinned copy — so a rung added to one site and not the others fails loudly.
 - **The bind() delegate-restore mirror is exercised directly.** One child
   instance is shared by every dynamically loaded sialib alias; `invoke()`'s
   per-call rebind is what isolates them, and the branch that tells a delegate
@@ -74,26 +48,40 @@ unreproduced, and this release detects it no better than the last one did.
   `--hold` when the resolved terminal declares no `TerminalArgHold=`, which is
   true of Alacritty, the Omarchy default. The installer window therefore
   closed the instant `install.sh` exited, taking any named refusal with it.
-  `bin/sia-setup` now runs the installer as a child rather than exec-ing it,
-  keeps the advisory lock for the whole run, prints the outcome, and holds the
-  terminal itself — only when stdin and stdout are a tty, never wedging a
-  scripted run, and never replacing the installer's exit status. Interrupt,
-  terminate and hangup — the signal a closed window actually delivers — stop
-  the installer, disarm the hold, and exit with the conventional status; a
-  signal the helper does not trap can no longer make the hold announce a
-  status the installer never produced.
-- **A terminal that never starts is now a named refusal.** The run stage
+  `bin/sia-setup` now runs the installer as a waited child rather than
+  exec-ing it, keeps the advisory lock for the whole run, prints the outcome,
+  and holds the terminal itself — only when stdin and stdout are a tty, never
+  wedging a scripted run or a background process group, and never replacing
+  the installer's exit status. Interrupt, terminate and hangup — the signal a
+  closed window actually delivers — stop the installer, disarm the hold, and
+  exit with the conventional status; a signal the helper does not trap can no
+  longer make the hold announce a status the installer never produced.
+- **A run stage that never starts is a named refusal.** The run stage
   publishes an owner-private, singular marker under `$XDG_RUNTIME_DIR` before
   the first installer byte, recording the attempt id and whether it actually
-  got a tty; the launch stage binds a fresh nonce to that marker and refuses
-  by name if the run stage has not started within twenty seconds, instead of
-  exiting zero into silence. The cockpit is a second, independent observer of
-  the same marker and reports **started**, **waiting**, or **never observed**.
-  What the marker witnesses is exactly that: an installer shell running with a
-  terminal attached. Nothing queries the compositor, so a window mapped late
-  or onto another workspace stays outside what SIA can see — and the copy in
-  the cockpit, README, manual, whitepaper and security notes no longer
-  promises a visible terminal the desktop may not deliver.
+  got a tty, mirrored per attempt so a lock-refused second click cannot erase
+  the winner's evidence. The launch stage binds a fresh nonce to that marker
+  and refuses by name if the run stage has not started within twenty seconds,
+  instead of exiting zero into silence. The cockpit is a second, independent
+  observer of the same marker, bound to the nonce its own click drew, and
+  reports **started**, **waiting**, or **never observed**. What the marker
+  witnesses is exactly that: an installer shell running with a terminal
+  attached. Nothing queries the compositor.
+- **The cockpit steps aside.** The cockpit is a layer-shell `Overlay` surface,
+  which sits above every normal window by protocol, and it holds keyboard
+  focus while visible; the first-light gate is an opaque full-cockpit
+  rectangle that also paints over the close button and the "Esc = close"
+  hint. So a click opened the installer terminal *behind* the cockpit with no
+  visible way out, and the window only came to the front when `install.sh`
+  ran `omarchy restart shell` near the end and the overlay was destroyed — a
+  terminal that "only appeared at the end of the install". Once the installer
+  shell is observed to start, the cockpit now says it is stepping aside and
+  dismisses itself a moment later, so the terminal is in front with the
+  keyboard; reopening lands on the existing installing lifecycle. If no shell
+  is ever observed the cockpit stays and says so. The gate now states
+  on-screen that Esc closes it, and the copy in the cockpit, README, manual,
+  whitepaper and security notes no longer promises a visible terminal the
+  desktop may not deliver.
 - **The shell-lint lane is green again.** `shellcheck` had reported SC2015 on
   `install.sh` since 1.7.2, so CI's shell job was red across two releases. The
   chained guard is now two guards, and a plugin tree generation that was never

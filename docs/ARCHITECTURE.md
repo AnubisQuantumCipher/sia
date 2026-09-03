@@ -89,7 +89,7 @@ dropped from 517 KB to 477 KB; the 857-test suite and a façade-identity smoke
 (delegates resolve, `GraphProjectionPending` is one shared class across the
 boundary, `except sialib.X` catches a `siagraph` raise) are green.
 
-**v1.7.4 — the façade contract stopped being a convention.** An outside
+**v1.7.5 — the façade contract stopped being a convention.** An outside
 review of the v1.5.2…v1.6.0 diff found no HIGH and no MEDIUM, and named three
 properties the extraction relied on that nothing enforced. Each now has a
 test: the exact export set and count of every façade child (so a future

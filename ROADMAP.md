@@ -49,7 +49,7 @@ freeze ends on evidence, not on mood.
 **Standing gates (enforced, not aspirational):**
 - The full test suite (900+) and the real-gbrain contract lane green on every commit; a
   contract-lane skip in CI is a failure. The shell-lint lane counts: shellcheck reported
-  one finding on `install.sh` between v1.7.2 and v1.7.4, and a red lane is a red gate.
+  one finding on `install.sh` between v1.7.2 and v1.7.5, and a red lane is a red gate.
 - `README.md` stays ≤ 500 lines (a shape test enforces this — a size ceiling like the
   marketplace's 512 KB cap, not a vocabulary assertion).
 - Any new gbrain invocation shape lands with a probe in `tests/test_gbrain_contract.py`
@@ -147,7 +147,7 @@ repo itself.
 | Release | Extraction | Lines (approx.) | Status |
 |---|---|---|---|
 | **v1.6.0** | **exports lane → `bin/siagraph.py`** | ~1,000 | **DONE** — 857-test suite + façade smoke green; sialib 517 KB → 477 KB |
-| **v1.7.4** | **outside audit of that extraction, closed** | — | **DONE** — @m10ust: no HIGH/MEDIUM; the three conventions it named are now tests (façade export pin, four-site rung ladder, `bind()` seam) |
+| **v1.7.5** | **outside audit of that extraction, closed** | — | **DONE** — @m10ust: no HIGH/MEDIUM; the three conventions it named are now tests (façade export pin, four-site rung ladder, `bind()` seam) |
 | v1.6.1 | thought-pages + recovery/legacy replay | ~1,870 | next; `test_thought_recovery.py` is the gate |
 | v1.6.2 | cursors lane | ~1,100 | last (senses-substrate; most entangled) |
 
