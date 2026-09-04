@@ -5,7 +5,7 @@
 #
 # Most tests here, and nearly every recovery/fence test, treat the two
 # installers as TEXT.  The _*_shell() helpers below split a 10,000-line
-# script on verbatim source markers ("runtime_tree_digest() {", "\nPY\n}\n",
+# script on verbatim source markers ("runtime_tree_digest() {", "\n}\n",
 # "\n}\n\nwrite_runtime_receipt", ...) and execute the lifted fragment under
 # bash.  That is the only way to exercise an installer's fail-closed branches
 # without running the real thing against a real machine, so the coupling is
@@ -80,6 +80,10 @@ def _load(name, path):
     return module
 
 
+SIARELEASE = _load(
+    "siarelease_test_support", os.path.join(REPO, "bin", "siarelease.py"))
+
+
 ABSENT_USER_UNIT = (
     'if [ "$1 $2" = "--user show" ]; then\n'
     '  echo "LoadState=not-found"; echo "ActiveState=inactive"\n'
@@ -99,43 +103,7 @@ def _managed_file_receipt(path, kind):
 
 
 def _runtime_digest(root):
-    legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                    "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-    modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                       "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                       "siamind.py", "siaqueue.py", "siatakes.py")
-    modern_v3_names = modern_v2_names + ("siasenses.py",)
-    modern_v4_names = modern_v3_names + (
-        "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-        "sia-continuity-worker")
-    modern_v5_names = modern_v4_names + ("siagraph.py",)
-    modern_v6_names = modern_v5_names + ("siathought.py",)
-    modern = any(os.path.lexists(os.path.join(root, name))
-                 for name in ("sia-brainstem.py", "sia-cli"))
-    v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-    v4 = any(os.path.lexists(os.path.join(root, name))
-             for name in ("siacapsule.py", "siabackup.py",
-                          "sia-continuity-worker"))
-    v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-    v6 = os.path.lexists(os.path.join(root, "siathought.py"))
-    if v6:
-        names, salt = modern_v6_names, b"sia-runtime-v6\0"
-    elif v5:
-        names, salt = modern_v5_names, b"sia-runtime-v5\0"
-    elif v4:
-        names, salt = modern_v4_names, b"sia-runtime-v4\0"
-    elif v3:
-        names, salt = modern_v3_names, b"sia-runtime-v3\0"
-    elif modern:
-        names, salt = modern_v2_names, b"sia-runtime-v2\0"
-    else:
-        names, salt = legacy_names, b"sia-runtime-v1\0"
-    digest = hashlib.sha256(salt)
-    for name in names:
-        with open(os.path.join(root, name), "rb") as stream:
-            content = stream.read()
-        digest.update(name.encode() + b"\0" + hashlib.sha256(content).digest())
-    return digest.hexdigest()
+    return SIARELEASE.runtime_tree_digest(root)
 
 
 def _managed_cli_runtime(home):
@@ -248,63 +216,56 @@ def _fenced_runtime_authorization_shell(script):
 
 def _runtime_tree_digest_shell(script):
     body = script.split("runtime_tree_digest() {", 1)[1].split(
-        "\nPY\n}", 1)[0]
-    return "runtime_tree_digest() {" + body + "\nPY\n}\n"
+        "\n}", 1)[0]
+    authority = shlex.quote(os.path.join(REPO, "bin", "siarelease.py"))
+    return (f"REPO={shlex.quote(REPO)}\n"
+            f"SIA_RELEASE_AUTHORITY={authority}\n"
+            "runtime_tree_digest() {" + body + "\n}\n")
 
 
 def _uninstaller_fenced_runtime_shell(script):
     body = script.split(
         "fenced_runtime_authorized() {", 1)[1].split(
             "\n}\n\ncapture_runtime_removal_authority", 1)[0]
-    return "fenced_runtime_authorized() {" + body + "\n}\n"
+    authority = shlex.quote(os.path.join(REPO, "bin", "siarelease.py"))
+    return (f"SIA_RELEASE_AUTHORITY={authority}\n"
+            "fenced_runtime_authorized() {" + body + "\n}\n")
 
 
-# The rung ladder decides which member set a runtime receipt covers, and it
-# is hand-copied to four places.  A rung added to one and not the others is
-# the regression these sites exist to make loud.
-RUNTIME_RUNG_SITES = (
-    ("install.sh", "\nruntime_tree_digest() {", "\nPY\n}\n"),
-    ("uninstall.sh", "\nruntime_tree_digest() {", "\nPY\n}\n"),
-    ("uninstall.sh", "\nfenced_runtime_authorized() {", "\nPY\n}\n"),
-    ("tests/test_release.py", "\ndef _runtime_digest(root):", "\n\ndef "),
-)
+LEGACY_RUNTIME_NAMES = (
+    "sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+    "siamind.py", "siaqueue.py", "siatakes.py")
 
-RUNTIME_RUNG_OPENING = "legacy_names = ("
-RUNTIME_RUNG_CLOSING = r'b"sia-runtime-v1\0"'
-
-MODERN_V4_RUNTIME_NAMES = (
+MODERN_V2_RUNTIME_NAMES = (
     "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger", "sia-mcp",
-    "siabench.py", "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py",
-    "siasenses.py", "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "siabench.py", "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
+
+MODERN_V3_RUNTIME_NAMES = MODERN_V2_RUNTIME_NAMES + ("siasenses.py",)
+
+MODERN_V4_RUNTIME_NAMES = MODERN_V3_RUNTIME_NAMES + (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker")
 
 MODERN_V5_RUNTIME_NAMES = MODERN_V4_RUNTIME_NAMES + ("siagraph.py",)
 MODERN_V6_RUNTIME_NAMES = MODERN_V5_RUNTIME_NAMES + ("siathought.py",)
 
-
-def _runtime_rung_source(relative, marker, terminator):
-    # Bound the search to the marked function.  An unbounded search would
-    # answer with the NEXT function's ladder once a site loses its own,
-    # turning a real divergence into a passing comparison.
-    text = _read(relative)
-    start = text.index(marker) + len(marker)
-    region = text[start:text.index(terminator, start)]
-    found = region.count(RUNTIME_RUNG_OPENING)
-    if found != 1:
-        raise AssertionError(
-            f"{relative} {marker.strip()} holds {found} rung ladders")
-    opening = region.index(RUNTIME_RUNG_OPENING)
-    closing = region.index(RUNTIME_RUNG_CLOSING, opening)
-    return textwrap.dedent(
-        region[region.rindex("\n", 0, opening) + 1:
-               closing + len(RUNTIME_RUNG_CLOSING)]) + "\n"
-
-
-def _runtime_rung_classification(relative, marker, terminator, root):
-    namespace = {"os": os, "root": root, "runtime": root}
-    exec(compile(_runtime_rung_source(relative, marker, terminator),
-                 relative + " rung", "exec"), namespace)
-    return namespace["salt"], namespace["names"]
+# Independent historical fixtures, not an operational ladder.  These pin the
+# bytes already accepted by shipped receipts so editing the one production
+# authority cannot silently rewrite an older rung's digest contract.
+RUNTIME_RUNG_FIXTURES = (
+    ("v1", b"sia-runtime-v1\0", LEGACY_RUNTIME_NAMES,
+     "f9dc027491272df1e17648cb4dc936b2928a0f15953758b72495f8a29fad29d7"),
+    ("v2", b"sia-runtime-v2\0", MODERN_V2_RUNTIME_NAMES,
+     "cf26e711604a57f8e539646beca7b0027aa1ad051e3729b92f45f4c0cc3f0544"),
+    ("v3", b"sia-runtime-v3\0", MODERN_V3_RUNTIME_NAMES,
+     "c0042e7df7d9c09ba1247b6d25140b0f91afee0d8e7df1200d4831988ed3dbf4"),
+    ("v4", b"sia-runtime-v4\0", MODERN_V4_RUNTIME_NAMES,
+     "f96c9529bcb56570278b53d0edef86976268ed52a948deb81db1c0ab129ae212"),
+    ("v5", b"sia-runtime-v5\0", MODERN_V5_RUNTIME_NAMES,
+     "e8e8e2c5fe0aab2a5823d887d525aa49e123e18d391b90058b8363fb2e0c6db8"),
+    ("v6", b"sia-runtime-v6\0", MODERN_V6_RUNTIME_NAMES,
+     "3ba7772c833c658c6ad4be4273d5dbff5324fc123824dd62c75514a38a8e182f"),
+)
 
 
 def _plant_runtime_tree(runtime, names):
@@ -1293,9 +1254,7 @@ recover_publication_receipts_from_fence
 
     def test_runtime_v3_digest_migrates_without_replacing_valid_v2_tree(self):
         installer = _read("install.sh")
-        digest_function = "runtime_tree_digest() {" + installer.split(
-            "runtime_tree_digest() {", 1)[1].split(
-                "\n}\n\nruntime_receipt_valid", 1)[0] + "\n}\n"
+        digest_function = _runtime_tree_digest_shell(installer)
         receipt_function = "runtime_receipt_valid() {" + installer.split(
             "runtime_receipt_valid() {", 1)[1].split(
                 "\n}\n\nfenced_managed_file_authorized", 1)[0] + "\n}\n"
@@ -1304,15 +1263,11 @@ recover_publication_receipts_from_fence
                 "\n}\n\nrecover_publication_receipts_from_fence", 1)[0] \
             + "\n}\n"
         functions = digest_function + receipt_function + preflight_function
-        modern_v2_names = (
-            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
-            "siaqueue.py", "siatakes.py")
         with tempfile.TemporaryDirectory() as root:
             share = os.path.join(root, "share")
             runtime = os.path.join(share, "bin")
             receipt = os.path.join(root, "managed", "runtime")
-            for name in modern_v2_names:
+            for name in MODERN_V2_RUNTIME_NAMES:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
 
             def write_receipt():
@@ -1374,21 +1329,14 @@ preflight_runtime
             self.assertNotEqual(preflight().returncode, 0)
 
     def test_uninstaller_fence_requires_complete_v3_runtime(self):
-        uninstaller = _read("uninstall.sh")
-        function = "fenced_runtime_authorized() {" + uninstaller.split(
-            "fenced_runtime_authorized() {", 1)[1].split(
-                "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
-        modern_v3_names = (
-            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
-            "siaqueue.py", "siatakes.py", "siasenses.py")
+        function = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
             managed = os.path.join(root, "managed")
             journal = os.path.join(managed, "launch-fence.json")
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            for name in modern_v3_names:
+            for name in MODERN_V3_RUNTIME_NAMES:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
             digest = _runtime_digest(runtime)
             _write(
@@ -1450,91 +1398,134 @@ fenced_runtime_authorized
         self.assertEqual(
             len(staged), len(set(staged)),
             f"install.sh stages a runtime member more than once: {staged}")
-        missing = sorted(set(MODERN_V6_RUNTIME_NAMES) - set(staged))
-        unmeasured = sorted(set(staged) - set(MODERN_V6_RUNTIME_NAMES))
+        latest_names = SIARELEASE.LATEST_RUNTIME_NAMES
+        missing = sorted(set(latest_names) - set(staged))
+        unmeasured = sorted(set(staged) - set(latest_names))
         self.assertEqual(
             (missing, unmeasured), ([], []),
-            f"install.sh stages {len(staged)} runtime members but the v5 "
-            f"rung ladder covers {len(MODERN_V6_RUNTIME_NAMES)}. In the "
+            f"install.sh stages {len(staged)} runtime members but the latest "
+            f"rung ladder covers {len(latest_names)}. In the "
             f"ladder yet never staged (digest will refuse): {missing}. "
             f"Staged yet outside the ladder (installed unmeasured by any "
             f"receipt): {unmeasured}")
 
-    def test_runtime_digest_rung_ladder_is_identical_at_every_site(self):
-        # Four hand-maintained copies of the rung ladder decide which member
-        # set a receipt covers. A rung added to one site and not the others
-        # is the regression this guards: extraction, not measurement.
-        ladders = {}
-        for site in RUNTIME_RUNG_SITES:
-            ladders[site] = " ".join(
-                _runtime_rung_source(*site).split()).replace(
-                    "os.path.join(runtime,", "os.path.join(root,")
-        # The dict is keyed by four distinct sites, so its length proves
-        # nothing on its own; count the ladders in the tree instead, so a
-        # fifth copy pasted somewhere new cannot go unpinned.
-        self.assertEqual(len(ladders), 4)
-        self.assertEqual(
-            sum(_read(relative).count(RUNTIME_RUNG_OPENING)
-                for relative in ("install.sh", "uninstall.sh",
-                                 "tests/test_release.py")),
-            len(RUNTIME_RUNG_SITES) + 1)
-        reference = ladders[RUNTIME_RUNG_SITES[0]]
-        for site, ladder in ladders.items():
-            with self.subTest(site=site):
-                self.assertEqual(ladder, reference)
-        self.assertIn(r'b"sia-runtime-v6\0"', reference)
-        self.assertIn(
-            'modern_v6_names = modern_v5_names + ("siathought.py",)',
-            reference)
-        with tempfile.TemporaryDirectory() as root:
-            runtime = os.path.join(root, "bin")
-            _plant_runtime_tree(runtime, MODERN_V6_RUNTIME_NAMES)
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v6\0")
-                    self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
+    def test_runtime_ladder_has_one_authority_and_every_consumer_delegates(
+            self):
+        authority = _read("bin/siarelease.py")
+        installer = _read("install.sh")
+        uninstaller = _read("uninstall.sh")
+
+        # A copied declaration can drift even when today's copies agree.
+        # Keep every membership, marker, and salt decision in siarelease.
+        for relative, source in (("install.sh", installer),
+                                 ("uninstall.sh", uninstaller)):
+            with self.subTest(relative=relative):
+                self.assertNotIn("legacy_names = (", source)
+                self.assertNotIn("modern_v6_names =", source)
+                self.assertNotIn("sia-runtime-v", source)
+        self.assertEqual(authority.count("RUNTIME_LADDER = ("), 1)
+
+        install_digest = installer.split(
+            "runtime_tree_digest() {", 1)[1].split(
+                "\n}\n\nruntime_receipt_valid", 1)[0]
+        uninstall_digest = uninstaller.split(
+            "runtime_tree_digest() {", 1)[1].split(
+                "\n}\nruntime_receipt_valid", 1)[0]
+        uninstall_fence = uninstaller.split(
+            "fenced_runtime_authorized() {", 1)[1].split(
+                "\n}\n\ncapture_runtime_removal_authority", 1)[0]
+        self.assertIn('"$REPO/bin/siarelease.py" runtime-tree-digest',
+                      install_digest)
+        self.assertIn('"$SIA_RELEASE_AUTHORITY" runtime-tree-digest',
+                      uninstall_digest)
+        self.assertIn('"$SIA_RELEASE_AUTHORITY" runtime-authorize-fence',
+                      uninstall_fence)
+
+    def test_runtime_ladder_authority_preserves_every_shipped_rung(self):
+        authority = SIARELEASE
+        for rung, expected_salt, expected_names, expected_digest in \
+                RUNTIME_RUNG_FIXTURES:
+            with self.subTest(rung=rung), \
+                    tempfile.TemporaryDirectory() as runtime:
+                _plant_runtime_tree(runtime, expected_names)
+                salt, names = authority.runtime_rung(runtime)
+                self.assertEqual(salt, expected_salt)
+                self.assertEqual(names, expected_names)
+                self.assertEqual(
+                    authority.runtime_tree_digest(runtime), expected_digest)
+
+    def test_runtime_ladder_schema_refuses_malformed_authority(self):
+        ladder = SIARELEASE.RUNTIME_LADDER
+
+        def changed(index, *, salt=None, names=None, selectors=None):
+            result = list(ladder)
+            old_salt, old_names, old_selectors = result[index]
+            result[index] = (
+                old_salt if salt is None else salt,
+                old_names if names is None else names,
+                old_selectors if selectors is None else selectors)
+            return tuple(result)
+
+        malformed = {
+            "empty": (),
+            "duplicate salt": changed(0, salt=ladder[1][0]),
+            "duplicate member": changed(
+                0, names=ladder[0][1] + (ladder[0][1][0],)),
+            "non-cumulative": changed(
+                0, names=tuple(
+                    name for name in ladder[0][1] if name != "sia-ledger")),
+            "selector outside introduction": changed(
+                0, selectors=("sia-brainstem",)),
+            "nested member": changed(
+                0, names=ladder[0][1] + ("nested/member",)),
+            "nul member": changed(
+                0, names=ladder[0][1] + ("member\0tail",)),
+            "nested selector": changed(
+                0, selectors=("nested/siathought.py",)),
+        }
+        for case, candidate in malformed.items():
+            with self.subTest(case=case):
+                with self.assertRaises(ValueError):
+                    SIARELEASE.validate_runtime_ladder(candidate)
+
+        # Validation is part of the executable classification boundary, not
+        # an optional test helper a caller can forget to invoke.
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ()):
+            with self.assertRaises(ValueError):
+                SIARELEASE.runtime_rung(runtime)
+            with self.assertRaises(ValueError):
+                SIARELEASE.runtime_tree_digest(runtime)
 
     def test_a_partial_tree_classifies_by_its_marker_not_completeness(self):
-        # Classification is by presence of the rung marker, never by
-        # completeness. A tree carrying siagraph.py but missing v4-era
-        # members must still be measured with the v5 salt over the whole v5
-        # member set, so it can never be mistaken for a complete v4 tree.
+        # Marker presence selects the newest applicable contract even when a
+        # required older member is absent.  Digesting must refuse that partial
+        # newer tree; it must not fall back to an older receipt.
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "bin")
             _plant_runtime_tree(runtime, MODERN_V4_RUNTIME_NAMES)
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site, rung="v4"):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v4\0")
-                    self.assertEqual(names, MODERN_V4_RUNTIME_NAMES)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v4\0")
+            self.assertEqual(names, MODERN_V4_RUNTIME_NAMES)
+
             _write(os.path.join(runtime, "siagraph.py"), "siagraph.py\n",
                    0o644)
             for name in ("siacapsule.py", "siarestoreadmit.py",
                          "sia-continuity-worker", "siasenses.py"):
                 os.unlink(os.path.join(runtime, name))
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site, rung="partial-v5"):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v5\0")
-                    self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
-                    self.assertIn("siacapsule.py", names)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v5\0")
+            self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
+            self.assertIn("siacapsule.py", names)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
-            # The same property one rung up: siathought.py is the v6 marker,
-            # so a tree carrying it while still missing v4-era members is a
-            # partial v6 — never a complete v5 that happens to be short.
-            _write(os.path.join(runtime, "siathought.py"), "siathought.py\n",
-                   0o644)
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site, rung="partial-v6"):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v6\0")
-                    self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
-                    self.assertIn("siagraph.py", names)
+
+            _write(
+                os.path.join(runtime, "siathought.py"), "siathought.py\n",
+                0o644)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v6\0")
+            self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
+            self.assertIn("siagraph.py", names)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
 
     def test_runtime_v5_digest_migrates_without_replacing_valid_v4_tree(self):
@@ -1705,11 +1696,10 @@ fenced_runtime_authorized
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_runtime_digest_sites_agree_byte_for_byte_across_v4_v5(self):
-        # The installer, both uninstaller copies and the test mirror must
-        # measure the same tree identically and refuse identically; a
-        # disagreement means one lane's receipt silently stops authorizing
-        # another lane.
+    def test_runtime_digest_consumers_agree_across_v4_v5_v6(self):
+        # Both normal shell consumers delegate to the authority and the
+        # uninstaller's fenced path must accept exactly the same receipt
+        # bytes, including the current top rung.
         installer_digest = _runtime_tree_digest_shell(_read("install.sh"))
         uninstaller_digest = _runtime_tree_digest_shell(_read("uninstall.sh"))
         fence = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
@@ -1720,6 +1710,7 @@ fenced_runtime_authorized
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
             graph = os.path.join(runtime, "siagraph.py")
+            thought = os.path.join(runtime, "siathought.py")
             member = os.path.join(runtime, "siarestoreadmit.py")
             _plant_runtime_tree(runtime, MODERN_V4_RUNTIME_NAMES)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
@@ -1768,9 +1759,11 @@ fenced_runtime_authorized
                     check=False).returncode == 0
 
             measured = {}
-            for rung in ("v4", "v5"):
+            for rung in ("v4", "v5", "v6"):
                 if rung == "v5":
                     _write(graph, "siagraph.py\n", 0o644)
+                elif rung == "v6":
+                    _write(thought, "siathought.py\n", 0o644)
                 mirror = _runtime_digest(runtime)
                 measured[rung] = mirror
                 for site, result in (
@@ -1782,9 +1775,11 @@ fenced_runtime_authorized
                 with self.subTest(rung=rung, site="uninstall.sh fence"):
                     self.assertTrue(fence_admits(mirror))
             self.assertNotEqual(measured["v4"], measured["v5"])
+            self.assertNotEqual(measured["v5"], measured["v6"])
             self.assertFalse(fence_admits(measured["v4"]))
+            self.assertFalse(fence_admits(measured["v5"]))
 
-            # Every site refuses the partial v5 tree, and none of them falls
+            # Every site refuses the partial v6 tree, and none of them falls
             # back to a digest either stored receipt would accept.
             os.unlink(member)
             for site, result in (
@@ -1792,11 +1787,11 @@ fenced_runtime_authorized
                     ("uninstall.sh", shell_digest(uninstaller_digest))):
                 with self.subTest(site=site):
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertNotIn(measured["v4"], result.stdout)
-                    self.assertNotIn(measured["v5"], result.stdout)
+                    for prior in measured.values():
+                        self.assertNotIn(prior, result.stdout)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
-            self.assertFalse(fence_admits(measured["v4"]))
-            self.assertFalse(fence_admits(measured["v5"]))
+            for prior in measured.values():
+                self.assertFalse(fence_admits(prior))
 
     def test_fenced_runtime_authorization_requires_exact_journal_and_tombstone(
             self):
@@ -3081,9 +3076,22 @@ retain_unowned_cli_before_fence
                 "\n}\n", 1)[0] + "\n}\n"
         self.assertIn("except BaseException as error:", body)
         self.assertNotIn("except Exception as error:", body)
+
+        def run_preflight(root, failure):
+            environment = os.environ.copy()
+            environment.update({
+                "PYTHONPATH": root,
+                "SIA_TEST_CRYPTOGRAPHY_FAILURE": failure,
+            })
+            return subprocess.run(
+                ["bash", "-c", "set -euo pipefail\n" + body
+                 + "\npreflight_python_capabilities\n"
+                 + "echo REACHED_MUTATION_PHASE"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+
         with tempfile.TemporaryDirectory() as root:
-            # Stand in for the panic: an import that raises something which is
-            # not an Exception, exactly as pyo3's PanicException is not.
+            # Preserve the historical import-panic regression.
             _write(os.path.join(root, "cryptography", "__init__.py"), "")
             _write(os.path.join(root, "cryptography", "hazmat",
                                 "__init__.py"), "")
@@ -3091,20 +3099,67 @@ retain_unowned_cli_before_fence
                                 "__init__.py"),
                    'class _Panic(BaseException):\n    pass\n'
                    'raise _Panic("Python API call failed unexpectedly")\n')
-            environment = os.environ.copy()
-            environment["PYTHONPATH"] = root
-            result = subprocess.run(
-                ["bash", "-c", "set -euo pipefail\n" + body
-                 + "\npreflight_python_capabilities\n"
-                 + "echo REACHED_MUTATION_PHASE"],
-                env=environment, text=True, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, check=False)
-        # Fail closed, and say the reason rather than dumping a traceback.
-        self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("REACHED_MUTATION_PHASE", result.stdout)
+            imported = run_preflight(root, "import-panic")
+        self.assertNotEqual(imported.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", imported.stdout)
         self.assertIn("python-cryptography with Ed25519 support is required",
-                      result.stderr)
-        self.assertNotIn("Traceback (most recent call last)", result.stderr)
+                      imported.stderr)
+        self.assertNotIn("Traceback (most recent call last)", imported.stderr)
+
+        with tempfile.TemporaryDirectory() as root:
+            # Import succeeds; generate() is the compiled-backend boundary.
+            for package in (
+                    "cryptography", "cryptography/hazmat",
+                    "cryptography/hazmat/primitives",
+                    "cryptography/hazmat/primitives/asymmetric"):
+                _write(os.path.join(root, package, "__init__.py"), "")
+            _write(os.path.join(
+                root, "cryptography", "hazmat", "primitives",
+                "serialization.py"), "")
+            _write(os.path.join(
+                root, "cryptography", "hazmat", "primitives", "asymmetric",
+                "ed25519.py"), r'''
+import os
+
+class _Panic(BaseException):
+    pass
+
+class Ed25519PrivateKey:
+    @classmethod
+    def generate(cls):
+        failure = os.environ["SIA_TEST_CRYPTOGRAPHY_FAILURE"]
+        if failure == "backend-panic":
+            raise _Panic("Rust Ed25519 backend panicked")
+        if failure == "keyboard-interrupt":
+            raise KeyboardInterrupt("operator interrupted backend probe")
+        if failure == "system-exit":
+            raise SystemExit(73)
+        raise AssertionError("test did not select a backend failure")
+
+class Ed25519PublicKey:
+    pass
+''')
+            panicked = run_preflight(root, "backend-panic")
+            interrupted = run_preflight(root, "keyboard-interrupt")
+            exited = run_preflight(root, "system-exit")
+
+        self.assertNotEqual(panicked.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", panicked.stdout)
+        self.assertIn("python-cryptography cannot generate, raw-serialize",
+                      panicked.stderr)
+        self.assertNotIn("Traceback (most recent call last)", panicked.stderr)
+
+        self.assertNotEqual(interrupted.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", interrupted.stdout)
+        self.assertIn("KeyboardInterrupt", interrupted.stderr)
+        self.assertNotIn("python-cryptography cannot generate",
+                         interrupted.stderr)
+
+        self.assertEqual(exited.returncode, 73)
+        self.assertNotIn("REACHED_MUTATION_PHASE", exited.stdout)
+        self.assertNotIn("python-cryptography cannot generate", exited.stderr)
+        self.assertEqual(
+            body.count("except (KeyboardInterrupt, SystemExit):"), 2)
 
     def test_uninstaller_owner_lock_open_failure_is_aggregated(self):
         uninstaller = _read("uninstall.sh")
@@ -6894,7 +6949,12 @@ remove_managed_skill
         self.assertIn("validStaleAfterSec", cockpit)
         self.assertIn("validStaleAfterSec", panel)
         self.assertIn("root.shell.shellConfig", cockpit)
-        self.assertIn("root.staleAfterSec * 1000", cockpit)
+        self.assertRegex(
+            cockpit,
+            r"Model\.timestampStale\(\s*root\.status\.ts,\s*root\.nowMs,"
+            r"\s*root\.staleAfterSec\)")
+        self.assertIn(
+            "interval: 1000; running: root.opened; repeat: true", cockpit)
         self.assertIn("root.staleAfterSec * 1000", panel)
         self.assertNotRegex(cockpit, r">\s*240\s*\*\s*1000")
 

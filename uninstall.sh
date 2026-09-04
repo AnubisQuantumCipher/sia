@@ -46,6 +46,48 @@ case "${1:-}" in
   *) echo "usage: ./uninstall.sh [--purge]" >&2; exit 2 ;;
 esac
 
+SIA_UNINSTALL_SOURCE="$(
+  cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd
+)" || {
+  echo "refusing uninstall because its release source is inaccessible" >&2
+  exit 2
+}
+SIA_RELEASE_AUTHORITY=""
+SIA_RELEASE_AUTHORITY_FD=""
+
+hold_release_authority() {
+  local source="$1"
+  if ! exec {SIA_RELEASE_AUTHORITY_FD}< "$source"; then
+    echo "refusing uninstall because its release authority is missing" >&2
+    return 1
+  fi
+  if ! python3 - "$SIA_RELEASE_AUTHORITY_FD" <<'PY'
+import os
+import stat
+import sys
+
+info = os.fstat(int(sys.argv[1]))
+if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+        or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o022:
+    raise SystemExit("release authority is not owner-controlled")
+PY
+  then
+    eval "exec ${SIA_RELEASE_AUTHORITY_FD}>&-"
+    SIA_RELEASE_AUTHORITY_FD=""
+    return 1
+  fi
+  SIA_RELEASE_AUTHORITY="/proc/self/fd/$SIA_RELEASE_AUTHORITY_FD"
+}
+
+close_release_authority() {
+  if [ -n "$SIA_RELEASE_AUTHORITY_FD" ]; then
+    eval "exec ${SIA_RELEASE_AUTHORITY_FD}>&-"
+    SIA_RELEASE_AUTHORITY_FD=""
+  fi
+}
+
+hold_release_authority "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" || exit 2
+
 SHARE_DIR="$HOME/.local/share/sia"
 RUNTIME_BIN_DIR="$SHARE_DIR/bin"
 STATE_DIR="$HOME/.local/state/sia"
@@ -3318,77 +3360,7 @@ remove_first_light_completion() {
   remove_managed_metadata "$FIRST_LIGHT_COMPLETION" "$expected"
 }
 runtime_tree_digest() {
-  python3 - "$1" <<'PY'
-import hashlib
-import os
-import stat
-import sys
-
-root = sys.argv[1]
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern_v6_names = modern_v5_names + ("siathought.py",)
-modern = any(os.path.lexists(os.path.join(root, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(root, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-v6 = os.path.lexists(os.path.join(root, "siathought.py"))
-if v6:
-    names, salt = modern_v6_names, b"sia-runtime-v6\0"
-elif v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-for name in names:
-    path = os.path.join(root, name)
-    descriptor = os.open(path, flags)
-    member = hashlib.sha256()
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid:
-            raise SystemExit(1)
-        while True:
-            chunk = os.read(descriptor, 1_048_576)
-            if not chunk:
-                break
-            member.update(chunk)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(current.st_mode) or current.st_uid != uid \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise SystemExit(1)
-    finally:
-        os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member.digest())
-print(digest.hexdigest())
-PY
+  python3 "$SIA_RELEASE_AUTHORITY" runtime-tree-digest "$1"
 }
 runtime_receipt_valid() {
   local digest
@@ -3492,152 +3464,9 @@ PY
 }
 
 fenced_runtime_authorized() {
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$LIFECYCLE_TOMBSTONE" \
-      "$RUNTIME_RECEIPT" "$RUNTIME_BIN_DIR" <<'PY'
-import hashlib
-import json
-import os
-import re
-import stat
-import sys
-
-journal, tombstone, receipt, runtime = sys.argv[1:]
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-def read_owned(path, limit):
-    descriptor = os.open(path, flags)
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid \
-                or before.st_size > limit:
-            raise RuntimeError("unsafe managed metadata")
-        chunks = []
-        remaining = limit + 1
-        while remaining:
-            chunk = os.read(descriptor, min(remaining, 1_048_576))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        content = b"".join(chunks)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if len(content) != before.st_size or len(content) > limit \
-                or not stat.S_ISREG(current.st_mode) \
-                or current.st_uid != uid or b"\0" in content \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise RuntimeError("managed metadata changed while reading")
-        return content
-    finally:
-        os.close(descriptor)
-
-try:
-    payload = json.loads(read_owned(journal, 1_048_576))
-    marker = os.lstat(tombstone)
-    contents = read_owned(receipt, 65_536).decode("utf-8")
-    runtime_info = os.lstat(runtime)
-except (FileNotFoundError, OSError, RuntimeError, UnicodeError,
-        ValueError, json.JSONDecodeError):
-    raise SystemExit(1)
-if not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
-        or not stat.S_ISDIR(runtime_info.st_mode) \
-        or runtime_info.st_uid != uid \
-        or not isinstance(payload, dict) \
-        or payload.get("schema") != "sia-launch-fence-v1" \
-        or set(payload) != {"schema", "runtime_before_digest",
-                            "runtime_digest", "cli_digest", "entries"} \
-        or not isinstance(payload["entries"], list):
-    raise SystemExit(1)
-before_digest = payload["runtime_before_digest"]
-if not isinstance(before_digest, str) \
-        or re.fullmatch(r"[0-9a-f]{64}", before_digest) is None:
-    raise SystemExit(1)
-expected = (f"managed-by=khephri.sia\nkind=runtime\npath={runtime}\n"
-            f"sha256={before_digest}\n")
-if contents != expected:
-    raise SystemExit(1)
-entries = {}
-for entry in payload["entries"]:
-    if not isinstance(entry, dict) \
-            or set(entry) != {"path", "device", "inode", "mode", "sha256"} \
-            or not isinstance(entry["path"], str) \
-            or entry["path"] in entries \
-            or any(isinstance(entry[key], bool)
-                   or not isinstance(entry[key], int) or entry[key] < 0
-                   for key in ("device", "inode", "mode")) \
-            or entry["mode"] > 0o7777 \
-            or re.fullmatch(r"[0-9a-f]{64}",
-                            str(entry.get("sha256", ""))) is None:
-        raise SystemExit(1)
-    entries[entry["path"]] = entry
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern_v6_names = modern_v5_names + ("siathought.py",)
-modern = any(os.path.lexists(os.path.join(runtime, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(runtime, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(runtime, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(runtime, "siagraph.py"))
-v6 = os.path.lexists(os.path.join(runtime, "siathought.py"))
-if v6:
-    names, salt = modern_v6_names, b"sia-runtime-v6\0"
-elif v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-for name in names:
-    path = os.path.join(runtime, name)
-    info = os.lstat(path)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
-        raise SystemExit(1)
-    if stat.S_IMODE(info.st_mode) == 0:
-        entry = entries.get(path)
-        if entry is None or (info.st_dev, info.st_ino) != (
-                entry["device"], entry["inode"]):
-            raise SystemExit(1)
-        member_digest = bytes.fromhex(entry["sha256"])
-    else:
-        descriptor = os.open(path, flags)
-        try:
-            held = os.fstat(descriptor)
-            if not stat.S_ISREG(held.st_mode) or held.st_uid != uid \
-                    or (held.st_dev, held.st_ino) != (
-                        info.st_dev, info.st_ino):
-                raise SystemExit(1)
-            member = hashlib.sha256()
-            while chunk := os.read(descriptor, 1_048_576):
-                member.update(chunk)
-            member_digest = member.digest()
-        finally:
-            os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member_digest)
-if digest.hexdigest() != before_digest:
-    raise SystemExit(1)
-PY
+  python3 "$SIA_RELEASE_AUTHORITY" runtime-authorize-fence \
+    "$LAUNCH_FENCE_JOURNAL" "$LIFECYCLE_TOMBSTONE" \
+    "$RUNTIME_RECEIPT" "$RUNTIME_BIN_DIR"
 }
 
 capture_runtime_removal_authority() {
@@ -5162,6 +4991,8 @@ elif [ "$SIA_BRAINSTEM_RETIRED_BARRIER_PRESENT" -eq 1 ]; then
     echo "retired sia-brainstem barrier recovery copy retained because uninstall has failures" >&2
   fi
 fi
+
+close_release_authority
 
 if [ -n "$PLUGIN_BACKUP" ]; then
   echo "previous plugin tree retained at $PLUGIN_BACKUP"

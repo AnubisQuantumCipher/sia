@@ -23,9 +23,9 @@ and are the pattern to follow:
 | `bin/siamind.py` | ~91 KB | activation, bonding, PPR rerank, stability |
 | `bin/siaqueue.py` | ~28 KB | agent note queue |
 | `bin/siarestoreadmit.py` | ~11 KB | restore admission |
-| `bin/siarelease.py` | ~6 KB | release stamping |
+| `bin/siarelease.py` | 19,053 bytes | release checks and runtime-receipt authority |
 
-## What remains in `bin/sialib.py` (10.7k lines)
+## What remains in `bin/sialib.py` (8,985 lines)
 
 Measured lane map (banner comments; approximate ranges):
 
@@ -64,14 +64,19 @@ Three verified constraints make a naive "move the code and re-import" wrong:
    the template: the child receives sialib's namespace through an explicit
    `bind(globals())` and per-call `invoke`, so patched globals keep working
    and there is exactly one copy of mutable state.
-3. **The runtime member set is versioned in several places at once.** A new
-   module file requires a new `sia-runtime-vN` name set in
-   `install.sh` (`runtime_tree_digest`), in `uninstall.sh` (twice), and in
-   `tests/test_release.py` (`_runtime_digest`), plus `SIA_RELEASE_FILES`, the
-   staging copy loop, the installer-content assertions, and the test
-   runtime-copy lists. The receipt format versions the member set precisely
-   so a partial tree can never validate as an older one — which also means
-   every extraction is a deliberate receipt revision.
+3. **The runtime member set has one production authority.**
+   `bin/siarelease.py:RUNTIME_LADDER` owns every shipped salt, marker, and
+   cumulative member set. `install.sh` and `uninstall.sh` delegate normal
+   digesting to that helper, and fenced uninstall authorization delegates its
+   mode-zero digest path there too. A new module still requires a deliberate
+   `sia-runtime-vN` rung, `SIA_RELEASE_FILES`, the staging copy loop, and test
+   fixtures, but it never requires another executable ladder copy. Marker
+   presence selects the newest applicable rung even for a partial tree, so a
+   missing required member refuses instead of validating as an older runtime.
+   The authority is release-source code, not a member of the runtime it
+   authenticates; the uninstaller holds its owner-controlled source descriptor
+   across plugin archival so the final runtime check neither becomes circular
+   nor loses its helper midway through removal.
 
 ## Extraction progress
 
@@ -82,9 +87,10 @@ from four entry points, only 8 names referenced from 14 parent functions, no
 import-time execution beyond constants, one exception class that stays
 parent-owned), so it led rather than the originally-guessed thought-recovery
 cluster. The move used the exact `siasenses` bind/invoke façade, added a
-`sia-runtime-v5` member set to all four digest routines and the installer/test
-file lists, and required no change to the graph/domain test suites — the façade
-keeps every `sialib.<name>` working and mirrors test monkeypatches. `sialib.py`
+`sia-runtime-v5` member set to the then-four digest routines (now consolidated
+in `siarelease.py`) and the installer/test file lists, and required no change
+to the graph/domain test suites — the façade keeps every `sialib.<name>`
+working and mirrors test monkeypatches. `sialib.py`
 dropped from 517 KB to 477 KB; the 857-test suite and a façade-identity smoke
 (delegates resolve, `GraphProjectionPending` is one shared class across the
 boundary, `except sialib.X` catches a `siagraph` raise) are green.
@@ -94,14 +100,22 @@ review of the v1.5.2…v1.6.0 diff found no HIGH and no MEDIUM, and named three
 properties the extraction relied on that nothing enforced. Each now has a
 test: the exact export set and count of every façade child (so a future
 extraction that drops a name fails on a readable number rather than silently
-un-publishing a sialib delegate); the four rung ladders pinned as one text
-plus behavioural proof that a partial v5 tree still classifies as v5 at all
-four sites; and the three branches of `bind()`, including the delegate-marked
+un-publishing a sialib delegate); the then-four rung ladders pinned as one text
+plus behavioural proof that a partial v5 tree still classifies as v5 at every
+site; and the three branches of `bind()`, including the delegate-marked
 branch that keeps a child's intra-module calls on its own raw implementations
 rather than on the parent façade. Which modules are façade children is now
 discovered rather than hand-listed, so the next extraction is pinned the
 moment it captures its own exports, and adding one dict entry to
 `FACADE_CHILD_EXPORTS` inherits every guard above.
+
+**Current — the runtime ladder is an API, not synchronized prose.** Release
+tests now pin each historical rung with an independent member fixture and
+golden digest, reject ladder declarations in either shell script, exercise the
+normal and fenced consumers through the helper CLI, and cover the current v6
+uninstall fence member by member. A separate descriptor-lifetime regression
+archives the helper's containing plugin directory before the final digest and
+proves the held authority remains usable and is then closed.
 
 **v1.6.1 — thought pages + recovery/legacy replay are fully child-owned.**
 The initial extraction left its context managers and a duplicate directory

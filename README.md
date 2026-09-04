@@ -34,9 +34,9 @@ installed runtime. Twenty-one tests fail on a revert. The compacted
 originals were in git throughout; what changed is what live memory can answer
 from.
 
-![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
+![Example SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](preview.png)
 
-*The current cockpit after a verified repository round trip. **RECOVERY
+*Example SIA cockpit after a verified repository round trip. **RECOVERY
 READY** reports a ready, identity-matching recovery copy; it is not a
 substitute for the clean-machine restore drill.*
 

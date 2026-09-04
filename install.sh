@@ -168,7 +168,7 @@ try:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey, Ed25519PublicKey)
-except KeyboardInterrupt:
+except (KeyboardInterrupt, SystemExit):
     raise
 except BaseException as error:
     # BaseException, not Exception, and the difference is the whole point of
@@ -223,7 +223,7 @@ try:
     restored_public = Ed25519PublicKey.from_public_bytes(public_raw)
     message = b"sia-installer-ed25519-preflight-v1"
     restored_public.verify(restored_private.sign(message), message)
-except KeyboardInterrupt:
+except (KeyboardInterrupt, SystemExit):
     raise
 except BaseException as error:
     # Same reason as the import above, and this block is the likelier place
@@ -6504,77 +6504,7 @@ complete_gbrain_bootstrap() {
 }
 
 runtime_tree_digest() {
-  python3 - "$1" <<'PY'
-import hashlib
-import os
-import stat
-import sys
-
-root = sys.argv[1]
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern_v6_names = modern_v5_names + ("siathought.py",)
-modern = any(os.path.lexists(os.path.join(root, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(root, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-v6 = os.path.lexists(os.path.join(root, "siathought.py"))
-if v6:
-    names, salt = modern_v6_names, b"sia-runtime-v6\0"
-elif v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-for name in names:
-    path = os.path.join(root, name)
-    descriptor = os.open(path, flags)
-    member = hashlib.sha256()
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid:
-            raise SystemExit(f"unsafe runtime member: {name}")
-        while True:
-            chunk = os.read(descriptor, 1_048_576)
-            if not chunk:
-                break
-            member.update(chunk)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(current.st_mode) or current.st_uid != uid \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise SystemExit(f"runtime member changed while hashing: {name}")
-    finally:
-        os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member.digest())
-print(digest.hexdigest())
-PY
+  python3 "$REPO/bin/siarelease.py" runtime-tree-digest "$1"
 }
 
 runtime_receipt_valid() {
@@ -8600,7 +8530,7 @@ PY
 SIA_RELEASE_FILES=(
   manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
-  uninstall.sh assets/cockpit.png bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
+  uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
   bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
   bin/siamind.py bin/siaqueue.py bin/siarelease.py

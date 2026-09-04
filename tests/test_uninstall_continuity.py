@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused continuity-unit and runtime-v5 uninstall regressions."""
+"""Focused continuity-unit and current-runtime uninstall regressions."""
 
 import json
 import os
@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 try:
     from test_release import (  # type: ignore
         REPO,
+        SIARELEASE,
         _fake_command,
         _managed_cli_runtime,
         _managed_file_receipt,
@@ -22,11 +23,14 @@ try:
         _read,
         _read_path,
         _runtime_digest,
+        _runtime_tree_digest_shell,
+        _uninstaller_fenced_runtime_shell,
         _write,
     )
 except ModuleNotFoundError:
     from tests.test_release import (  # type: ignore
         REPO,
+        SIARELEASE,
         _fake_command,
         _managed_cli_runtime,
         _managed_file_receipt,
@@ -34,6 +38,8 @@ except ModuleNotFoundError:
         _read,
         _read_path,
         _runtime_digest,
+        _runtime_tree_digest_shell,
+        _uninstaller_fenced_runtime_shell,
         _write,
     )
 
@@ -47,31 +53,20 @@ CONTINUITY_UNITS = (
 BACKUP_TIMER, _BACKUP_CHECK_TIMER, BACKUP_SERVICE, _BACKUP_CHECK_SERVICE = \
     CONTINUITY_UNITS
 
-MODERN_V4_NAMES = (
-    "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-    "sia-mcp", "siabench.py", "sialib.py", "siamind.py", "siaqueue.py",
-    "siatakes.py", "siasenses.py", "siacapsule.py", "siabackup.py",
-    "siarestoreadmit.py", "sia-continuity-worker",
-)
-# uninstall.sh has shipped a v5 rung since the graph projection lane
-# (siagraph.py) joined the managed runtime, salt "sia-runtime-v5\0".  This
-# fixture stopped at v4, and because a v4 tree contains no siagraph.py the
-# uninstaller quietly selected the v4 rung: the test passed while the top
-# step of the shipped ladder -- the one the resident install actually runs
-# on -- was never executed once.  Keep both rungs enumerated here so the
-# fence is pinned at the rung it is really asked to defend.
-MODERN_V5_NAMES = MODERN_V4_NAMES + ("siagraph.py",)
+MODERN_V4_NAMES = SIARELEASE.MODERN_V4_RUNTIME_NAMES
+MODERN_V5_NAMES = SIARELEASE.MODERN_V5_RUNTIME_NAMES
+MODERN_V6_NAMES = SIARELEASE.MODERN_V6_RUNTIME_NAMES
 
-# Members each rung ADDED over its predecessor.  A rung is only pinned when
-# every one of them is load-bearing, including the member whose mere
-# presence selects the rung: deleting siagraph.py from a v5 tree demotes the
-# digest to the v4 rung, and a fence that still authorized after that
-# demotion would let a caller shed a member to reach weaker ground.
+# Members each rung added over its predecessor.  A rung is only pinned when
+# every one of them is load-bearing, including each marker whose presence
+# selects newer ground; shedding a marker must never leave an older receipt
+# authorized for the mutated tree.
 V4_NEW_MEMBERS = (
     "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker",
 )
 V5_NEW_MEMBERS = V4_NEW_MEMBERS + ("siagraph.py",)
+V6_NEW_MEMBERS = V5_NEW_MEMBERS + ("siathought.py",)
 
 
 SYSTEMCTL_FIXTURE = r'''
@@ -418,12 +413,8 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
 
     def _fence_script(self):
         uninstaller = _read("uninstall.sh")
-        digest_function = "runtime_tree_digest() {" + uninstaller.split(
-            "runtime_tree_digest() {", 1)[1].split(
-                "\n}\nruntime_receipt_valid", 1)[0] + "\n}\n"
-        fence_function = "fenced_runtime_authorized() {" + uninstaller.split(
-            "fenced_runtime_authorized() {", 1)[1].split(
-                "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
+        digest_function = _runtime_tree_digest_shell(uninstaller)
+        fence_function = _uninstaller_fenced_runtime_shell(uninstaller)
         # "set -eu", not "set -u": under plain -u a failed digest comparison
         # is discarded and the script's status comes from the fence alone, so
         # the rung/salt half of the ladder was asserted by a line that could
@@ -499,14 +490,60 @@ fenced_runtime_authorized
                     promotion + "\n", 0o644)
                 self.assertNotEqual(authorize().returncode, 0, promotion)
 
-    def test_runtime_v5_digest_and_fence_require_every_new_member(self):
+    def test_current_runtime_digest_and_fence_require_every_new_member(self):
         script = self._fence_script()
         for rung, names, added, promotion in (
                 ("v4", MODERN_V4_NAMES, V4_NEW_MEMBERS, "siagraph.py"),
-                ("v5", MODERN_V5_NAMES, V5_NEW_MEMBERS, None)):
+                ("v5", MODERN_V5_NAMES, V5_NEW_MEMBERS, "siathought.py"),
+                ("v6", MODERN_V6_NAMES, V6_NEW_MEMBERS, None)):
             with self.subTest(rung=rung):
                 self._assert_rung_pins_every_member(
                     script, names, added, promotion)
+
+    def test_release_authority_fd_survives_plugin_archive_and_closes(self):
+        uninstaller = _read("uninstall.sh")
+        hold = "hold_release_authority() {" + uninstaller.split(
+            "hold_release_authority() {", 1)[1].split(
+                "\n}\n\nclose_release_authority", 1)[0] + "\n}\n"
+        close = "close_release_authority() {" + uninstaller.split(
+            "close_release_authority() {", 1)[1].split(
+                "\n}\n\nhold_release_authority", 1)[0] + "\n}\n"
+        with tempfile.TemporaryDirectory() as root:
+            plugin = os.path.join(root, "plugin")
+            archive = os.path.join(root, "plugin-archive")
+            source = os.path.join(plugin, "bin", "siarelease.py")
+            runtime = os.path.join(root, "runtime")
+            _write(source, _read("bin/siarelease.py"), 0o600)
+            for name in MODERN_V6_NAMES:
+                _write(os.path.join(runtime, name), name + "\n", 0o644)
+            digest = _runtime_digest(runtime)
+            script = hold + close + r'''
+set -eu
+SIA_RELEASE_AUTHORITY=""
+SIA_RELEASE_AUTHORITY_FD=""
+hold_release_authority "$TEST_SOURCE"
+held="$SIA_RELEASE_AUTHORITY"
+mv -- "$TEST_PLUGIN" "$TEST_ARCHIVE"
+[ ! -e "$TEST_SOURCE" ]
+[ "$(python3 "$SIA_RELEASE_AUTHORITY" runtime-tree-digest \
+  "$TEST_RUNTIME")" = "$TEST_DIGEST" ]
+close_release_authority
+[ -z "$SIA_RELEASE_AUTHORITY_FD" ]
+[ ! -e "$held" ]
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "TEST_ARCHIVE": archive,
+                "TEST_DIGEST": digest,
+                "TEST_PLUGIN": plugin,
+                "TEST_RUNTIME": runtime,
+                "TEST_SOURCE": source,
+            })
+            result = subprocess.run(
+                ["bash", "-c", script], env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_purge_removes_continuity_secrets_but_normal_uninstall_retains_them(self):
         for purge in (False, True):
