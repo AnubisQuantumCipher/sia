@@ -115,6 +115,19 @@ class NotificationGenerationScan(unittest.TestCase):
             cursors["notify.generation"],
             self.sialib._source_tree_path_generation(self.history))
 
+    def test_in_progress_v1_candidate_migrates_without_replaying_its_prefix(self):
+        self._write("alpha.json")
+        self._write("bravo.json")
+        cursors = {}
+        self.sialib.sense_notify(cursors)
+        cursors["notify.scan"]["schema"] = \
+            "sia-notification-directory-scan-v1"
+        cursors["notify.scan"].pop("truncated")
+
+        self.assertEqual(self._finish_scan(cursors), [])
+        self.assertIn("notify.generation", cursors)
+        self.assertNotIn("notify.scan", cursors)
+
     def test_legacy_high_water_migrates_by_replay_not_silent_baseline(self):
         self._write("zulu.json")
         self._write("alpha.json")
@@ -182,6 +195,36 @@ class NotificationGenerationScan(unittest.TestCase):
         self.assertEqual(
             cursors["notify.generation"],
             self.sialib._source_tree_path_generation(self.history))
+
+    def test_over_capacity_history_commits_a_bounded_newest_generation(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        os.unlink(os.path.join(self.history, "baseline.json"))
+        for name, stamp in (
+                ("old.json", 10),
+                ("middle.json", 20),
+                ("newest.json", 30)):
+            self._write(name)
+            os.utime(os.path.join(self.history, name), ns=(stamp, stamp))
+
+        with mock.patch.object(
+                self.sialib, "MAX_LEDGER_PENDING_RECORDS", 2):
+            events = self._finish_scan(cursors)
+
+        summaries = {event.summary for event in events}
+        self.assertIn("fixture: newest.json", summaries)
+        self.assertIn("fixture: middle.json", summaries)
+        self.assertNotIn("fixture: old.json", summaries)
+        self.assertTrue(any(event.kind == "source-truncated"
+                            for event in events))
+        self.assertIn("notify.generation", cursors)
+        self.assertNotIn("notify.scan_tainted", cursors)
+        self.assertNotIn("notify.scan_mode", cursors)
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=AssertionError("completed generation rescanned")):
+            self.assertEqual(self.sialib.sense_notify(cursors), [])
 
     def test_ambiguous_notification_json_refuses_the_generation(self):
         self._write("baseline.json")

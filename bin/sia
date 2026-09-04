@@ -653,7 +653,17 @@ def _health_footer(keyword_only=False, recall_degraded="",
     elif errors is not None:
         bits.append("sense errors unknown")
     snap = g.get("snapshot")
-    if isinstance(snap, dict) and isinstance(snap.get("complete"), bool):
+    status_graph_id = st.get("graph_publication_id")
+    graph_id = g.get("publication_id")
+    status_graph_known = isinstance(status_graph_id, str) \
+        and bool(status_graph_id)
+    graph_id_known = isinstance(graph_id, str) and bool(graph_id)
+    if status_graph_known and graph_id_known \
+            and status_graph_id != graph_id:
+        bits.append("GRAPH GENERATION MISMATCH")
+    elif not status_graph_known or not graph_id_known:
+        bits.append("GRAPH GENERATION UNKNOWN")
+    elif isinstance(snap, dict) and isinstance(snap.get("complete"), bool):
         bits.append("graph complete" if snap["complete"]
                     else "GRAPH PARTIAL")
     else:

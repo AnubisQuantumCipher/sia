@@ -1815,7 +1815,8 @@ _NOTIFY_LEGACY_CURSOR_KEYS = frozenset({
     "notify.cycle_max",
 })
 _NOTIFY_SCAN_MODES = frozenset({"baseline", "replay"})
-_NOTIFY_SCAN_SCHEMA = "sia-notification-directory-scan-v1"
+_NOTIFY_SCAN_SCHEMA = "sia-notification-directory-scan-v2"
+_NOTIFY_SCAN_LEGACY_SCHEMA = "sia-notification-directory-scan-v1"
 
 
 def _notify_generation(value):
@@ -1835,22 +1836,48 @@ def _notify_scan_candidate(value):
     if value is None:
         return {
             "schema": _NOTIFY_SCAN_SCHEMA, "generation": None,
-            "sources": [],
+            "sources": [], "truncated": False,
         }
+    if isinstance(value, dict) \
+            and value.get("schema") == _NOTIFY_SCAN_LEGACY_SCHEMA \
+            and set(value) == {"schema", "generation", "sources"}:
+        legacy_sources = value.get("sources")
+        if isinstance(legacy_sources, list) and all(
+                _agent_source_capture_valid(source, suffix=None)
+                for source in legacy_sources):
+            legacy_sources = sorted(
+                legacy_sources, key=_notification_source_order, reverse=True)
+        value = dict(
+            value, schema=_NOTIFY_SCAN_SCHEMA,
+            sources=legacy_sources, truncated=False)
     if not isinstance(value, dict) \
-            or set(value) != {"schema", "generation", "sources"} \
+            or set(value) != {
+                "schema", "generation", "sources", "truncated"} \
             or value.get("schema") != _NOTIFY_SCAN_SCHEMA \
             or not isinstance(value.get("sources"), list) \
+            or not isinstance(value.get("truncated"), bool) \
             or len(value["sources"]) > MAX_LEDGER_PENDING_RECORDS \
             or any(not _agent_source_capture_valid(source, suffix=None)
                    for source in value["sources"]) \
             or len({source["name"] for source in value["sources"]}) \
-            != len(value["sources"]):
+            != len(value["sources"]) \
+            or value["sources"] != sorted(
+                value["sources"], key=_notification_source_order,
+                reverse=True) \
+            or (value["truncated"]
+                and len(value["sources"]) != MAX_LEDGER_PENDING_RECORDS):
         raise ValueError("notification directory scan cursor is invalid")
     generation = _notify_generation(value.get("generation"))
     if generation is None or value["generation"] != generation:
         raise ValueError("notification directory scan cursor is invalid")
     return value
+
+
+def _notification_source_order(source):
+    """Newest stable notification captures win a bounded generation."""
+    return (
+        source["mtime_ns"], source["ctime_ns"],
+        source["name"].encode("utf-8", errors="backslashreplace"))
 
 
 def sense_notify(cursors):
@@ -1991,12 +2018,12 @@ def sense_notify(cursors):
                 "notify", f"duplicate notification record "
                 f"{source['name']}"))
             continue
-        if len(scan["sources"]) >= MAX_LEDGER_PENDING_RECORDS:
-            scan_tainted = True
-            evs.append(_source_entry_refusal_event(
-                "notify", f"notification record {source['name']}"))
-            continue
         scan["sources"].append(source)
+        scan["sources"].sort(
+            key=_notification_source_order, reverse=True)
+        if len(scan["sources"]) > MAX_LEDGER_PENDING_RECORDS:
+            del scan["sources"][MAX_LEDGER_PENDING_RECORDS:]
+            scan["truncated"] = True
     cursors[taint_key] = scan_tainted
     if not complete:
         cursors[scan_key] = scan
@@ -2020,6 +2047,13 @@ def sense_notify(cursors):
         cursors[mode_key] = mode
         cursors[taint_key] = True
         return evs
+    if scan["truncated"]:
+        evs.append(Event(
+            "notify", utcnow(), "source-truncated",
+            "notification history exceeded its bounded source state; "
+            "only the newest stable records were admitted",
+            {"organs/notify"}, {"source-truncated", "refusal"},
+            occurrence="source-truncated:notify:notification-history"))
     if mode == "replay":
         for name, app, summary in admitted:
             token = _source_entity_token(name, "notification")

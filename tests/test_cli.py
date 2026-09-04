@@ -389,6 +389,29 @@ class DispatchAndOwnership(unittest.TestCase):
 
 
 class HonestStatusLanguage(unittest.TestCase):
+    def test_health_footer_binds_graph_claim_to_status_generation(self):
+        status = {
+            "ts": "2026-09-04T08:05:57Z",
+            "graph_publication_id": "generation-a",
+            "integrity": {"verdict": "pass"},
+        }
+        graph = {
+            "publication_id": "generation-b",
+            "snapshot": {"complete": True},
+        }
+        with mock.patch.object(
+                sia.sialib, "read_json", side_effect=(status, graph)):
+            mismatched = sia._health_footer()
+        self.assertIn("GRAPH GENERATION MISMATCH", mismatched)
+        self.assertNotIn("graph complete", mismatched)
+
+        graph["publication_id"] = status["graph_publication_id"]
+        with mock.patch.object(
+                sia.sialib, "read_json", side_effect=(status, graph)):
+            matched = sia._health_footer()
+        self.assertIn("graph complete", matched)
+        self.assertNotIn("GRAPH GENERATION MISMATCH", matched)
+
     def test_health_footer_refuses_malformed_snapshot_shapes_without_crashing(self):
         cases = (
             ([], {}),
