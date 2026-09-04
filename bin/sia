@@ -26,11 +26,13 @@
                         clearly-labeled synthesis page + thought — and may
                         propose falsifiable takes
   sia take "claim" [--confidence 0.7] [--by YYYY-MM-DD] [--domain d]
-                        register a falsifiable prediction (holder: user)
+                        register a falsifiable prediction (holder: user);
+                        -- ends options, so claim text may begin with -
   sia takes             list predictions and their status
   sia intend "task" --by YYYY-MM-DD
                         prospective memory: a commitment the brain surfaces
-                        as its deadline nears (--list · --done <id> [note])
+                        as its deadline nears (--list · --done <id> [note]);
+                        -- ends options here too
   sia grade [id]        grade due predictions now (configured judge,
                         deterministic Brier); with id, grade that one
   sia calibration [--cursor N]
@@ -580,7 +582,43 @@ def _existing_corpus_page(slug):
         return False
 
 
-def _health_footer(keyword_only=False, recall_degraded=""):
+def _reinforce(slugs, src):
+    """Queue recall reinforcement for the brainstem and say so when it is
+    refused.
+
+    Every recall verb goes through here because `ask` and `recall` had
+    already drifted apart: both printed this same refusal, but `recall`
+    returned 1 and `ask` returned 0, so the same broken touch queue was a
+    failure through one verb and a success through the other. One path
+    means the message and the status decision cannot diverge again.
+
+    The status contract this pins: a refused reinforcement is NOT a failed
+    answer. Exit status answers "did the caller get the memory it asked
+    for?", and the memory is already on stdout, correct and origin-labeled,
+    when the touch queue is down. Reinforcement is a write-behind side
+    effect on a separate queue that the brainstem drains later.
+
+    So both verbs return 0 and the refusal travels in-band instead: on
+    stderr here, and in the answer's own truth-boundary line. The opposite
+    choice — failing `ask` too — was rejected because `ask` already spends
+    status 1 on "result admission refused", which means no trustworthy
+    answer was printed at all. Two opposite situations behind one status is
+    exactly the ambiguity this audit found.
+
+    Fail-closed is kept where it carries meaning: `rehearse` exists to
+    reinforce, so it still refuses (see cmd_rehearse) using the reason
+    recorded by its caller.
+    """
+    import siamind
+    if siamind.queue_touches(slugs, src=src):
+        return True
+    print("reinforcement refused: touch queue is unavailable; "
+          "the memory above still stands", file=sys.stderr)
+    return False
+
+
+def _health_footer(keyword_only=False, recall_degraded="",
+                   reinforcement_refused=False):
     """Every recall answer carries its truth boundary — the same grain the
     cockpit shows: sense freshness, chain state, snapshot completeness,
     recall mode. An answer over a degraded brain must say so inline."""
@@ -612,6 +650,11 @@ def _health_footer(keyword_only=False, recall_degraded=""):
                 else "semantic recall")
     if recall_degraded:
         bits.append(recall_degraded)
+    if reinforcement_refused:
+        # Returning 0 on a refused touch is only honest if the answer
+        # itself carries the fact. stderr can be discarded; this line
+        # travels with the memory.
+        bits.append("not reinforced: touch queue unavailable")
     bits.append("absence of recall ≠ evidence of absence")
     return "boundary: " + " · ".join(bits)
 
@@ -686,15 +729,15 @@ def cmd_ask(q, touch=True):
                   f"{sialib.clip(title, 120)}")
             if excerpt:
                 print(f"        {excerpt}")
+        not_reinforced = False
         if touch:
-            if not siamind.queue_touches(
-                    [s for s, _ in ranked[:5]], src="user-ask"):
-                print("reinforcement refused: touch queue is unavailable",
-                      file=sys.stderr)
+            not_reinforced = not _reinforce(
+                [s for s, _ in ranked[:5]], "user-ask")
         print()
         print(_health_footer(keyword_only="keyword-only"
                              in (r.stderr or ""),
-                             recall_degraded=recall_degraded))
+                             recall_degraded=recall_degraded,
+                             reinforcement_refused=not_reinforced))
         return 0
     except Exception as exc:
         print("SIA recall refused: origin-labeled result admission failed "
@@ -706,7 +749,6 @@ def cmd_ask(q, touch=True):
 
 
 def cmd_recall(slug, touch=True, touch_result=None):
-    import siamind
     if isinstance(touch_result, dict):
         touch_result.clear()
         touch_result["queued"] = False
@@ -728,10 +770,13 @@ def cmd_recall(slug, touch=True, touch_result=None):
     sys.stdout.write(sialib.strip_controls(r.stdout))
     sys.stderr.write(sialib.strip_controls(r.stderr))
     if r.returncode == 0 and touch:
-        if not siamind.queue_touches([slug], src="user-recall"):
-            print("reinforcement refused: touch queue is unavailable",
-                  file=sys.stderr)
-            return 1
+        if not _reinforce([slug], "user-recall"):
+            # Same contract as cmd_ask: the page is already on stdout, so
+            # the read succeeded. Record the reason instead of failing, and
+            # let a caller whose purpose IS reinforcement decide (rehearse).
+            if isinstance(touch_result, dict):
+                touch_result["reason"] = "touch-queue-unavailable"
+            return r.returncode
         if isinstance(touch_result, dict):
             touch_result["queued"] = True
     return r.returncode
@@ -847,6 +892,13 @@ def cmd_rehearse(argv):
     elif rc == 0 and touch_result.get("reason") == "unverified-jackal-page":
         print("\nrehearsal touch not queued: an unverified JACKAL page is "
               "recall-visible but intentionally excluded from reinforcement")
+    elif rc == 0 and touch_result.get("reason") == "touch-queue-unavailable":
+        # `recall` reports 0 because the page was delivered. `rehearse` is
+        # not a read verb: its whole product is the queued touch that the
+        # next dream grades as q=5. With no touch queued it accomplished
+        # nothing, so it refuses rather than reporting a rehearsal that
+        # never happened.
+        return 1
     return rc
 
 
@@ -1231,6 +1283,15 @@ def cmd_take(argv):
     i = 0
     while i < len(argv):
         a = argv[i]
+        if a == "--":
+            # POSIX end-of-options. The guard below cannot tell a typo'd
+            # flag from a real claim that opens with a minus sign, so it
+            # refuses both — which left an honest take like
+            # "-1 regressions will land by March" permanently
+            # unregisterable. "--" is the caller saying "the rest is text".
+            # Only the first one terminates; any later "--" is claim text.
+            claim.extend(argv[i + 1:])
+            break
         if a == "--confidence" and i + 1 < len(argv):
             conf = argv[i + 1]; i += 2
         elif a == "--by" and i + 1 < len(argv):
@@ -1243,6 +1304,7 @@ def cmd_take(argv):
             # a silently misattributed commitment instead of a usage message.
             print("usage: sia take \"claim\" [--confidence 0.7] "
                   "[--by YYYY-MM-DD] [--domain d]")
+            print("       sia take [options] -- <claim beginning with ->")
             print(f"take refused: unrecognized option {a!r}; "
                   "nothing was registered")
             return 2
@@ -1251,6 +1313,7 @@ def cmd_take(argv):
     if not claim:
         print("usage: sia take \"claim\" [--confidence 0.7] "
               "[--by YYYY-MM-DD] [--domain d]")
+        print("       sia take [options] -- <claim beginning with ->")
         return 2
     try:
         with sialib.corpus_owner(), \
@@ -1667,12 +1730,21 @@ def cmd_intend(argv):
     text, by = [], None
     i = 0
     while i < len(argv):
+        if argv[i] == "--":
+            # Same end-of-options rule as `sia take`: an intent whose text
+            # begins with "-" is otherwise unfilable, and here it would be
+            # worse than a refusal — this loop treats an unknown option as
+            # text, so "sia intend --hepl ..." would silently commit a
+            # typo as prospective memory. "--" makes the boundary explicit.
+            text.extend(argv[i + 1:])
+            break
         if argv[i] == "--by" and i + 1 < len(argv):
             by = argv[i + 1]; i += 2
         else:
             text.append(argv[i]); i += 1
     if not text or not by:
         print("usage: sia intend \"what to do\" --by YYYY-MM-DD\n"
+              "       sia intend --by YYYY-MM-DD -- <text beginning with ->\n"
               "       sia intend --list | --done <id> [note…]")
         return 2
     try:

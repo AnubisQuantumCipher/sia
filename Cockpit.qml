@@ -42,6 +42,7 @@ Item {
   property bool verifyOk: false
   property string graphBoundary: ""
   property string statusBoundary: ""
+  property string thoughtsBoundary: ""
   property bool readyChecked: false
   property bool readyOk: false
   property string readyDetail: ""
@@ -73,6 +74,12 @@ Item {
   property bool setupTerminalMissing: false
   property real setupRequestedAtSec: 0
   property string setupAttemptId: ""
+  // How long this cockpit has continuously observed one unchanged
+  // `installing` record.  Deliberately NOT cleared by open()/close(): the
+  // whole point is that it outlives a cockpit summon, because the failure it
+  // catches — an installer that died — is invisible within any one summon.
+  property string installingRecordKey: ""
+  property real installingObservedAtMs: 0
   readonly property int continuityInputMaxLength: 4096
   readonly property int continuityResponseMaxLength: 65536
 
@@ -104,6 +111,13 @@ Item {
       : Model.guidedLifecycle(root.statusLoadValid ? root.status : null,
                               root.installCompletion, root.pluginVersion)
   readonly property bool setupRequired: root.releaseLifecycle !== "ready"
+  // A caveat on the wording, never a lifecycle.  It cannot reach
+  // releaseLifecycle, so no timeout can move this gate to ready, and it
+  // asserts nothing about the installer beyond what SIA has observed.
+  readonly property bool installerProgressUnobserved:
+    root.releaseLifecycle === "installing"
+      && Model.installingProgressUnobserved(root.installingObservedAtMs,
+                                            root.nowMs)
   readonly property bool setupActionAllowed:
     ["setup", "installing", "update", "repair"]
       .indexOf(root.releaseLifecycle) !== -1
@@ -179,9 +193,29 @@ Item {
     return true
   }
 
+  function validLedgerSummary(ledger) {
+    // `head` may legitimately be empty: sialib publishes seq 0 with an empty
+    // head when it cannot read the chain, and that is a real answer the
+    // cockpit is supposed to show.  Its being a string is what matters, so
+    // the vitals row cannot concatenate `undefined` into a chain claim.
+    return root.isPlainRecord(ledger)
+      && root.isNonNegativeCount(ledger.seq)
+      && typeof ledger.head === "string"
+  }
+
   function validStatusSnapshot(snapshot) {
+    // Validate exactly what the surface renders.  This admitted snapshots
+    // without `pages`, `graph_edges`, `pulse_seq` or `ledger`, and every one
+    // of those is read unguarded further down: the vitals row printed
+    // "memories: undefined" and the chain row "ledger seq undefined · …"
+    // from a snapshot the boundary machinery had just declared good.  A
+    // field the UI reads is part of the shape, or the boundary is a fiction.
     return root.isPlainRecord(snapshot)
       && typeof snapshot.ts === "string" && typeof snapshot.state === "string"
+      && root.isNonNegativeCount(snapshot.pages)
+      && root.isNonNegativeCount(snapshot.graph_edges)
+      && root.isNonNegativeCount(snapshot.pulse_seq)
+      && root.validLedgerSummary(snapshot.ledger)
       && root.projectionDebtKnownFor(snapshot)
       && root.validMindSummary(snapshot.mind)
       && root.validAgentRelay(snapshot.agent_queue)
@@ -1673,7 +1707,9 @@ Item {
     if (root.releaseLifecycle === "setup")
       return "FIRST LIGHT · LOCAL BRAIN NOT YET INSTALLED"
     if (root.releaseLifecycle === "installing")
-      return "FIRST LIGHT · INSTALLATION IN PROGRESS"
+      return root.installerProgressUnobserved
+        ? "FIRST LIGHT · NO INSTALLER PROGRESS OBSERVED"
+        : "FIRST LIGHT · INSTALLATION IN PROGRESS"
     if (root.releaseLifecycle === "update")
       return "RELEASE ALIGNMENT · RUNTIME UPDATE REQUIRED"
     if (root.releaseLifecycle === "ahead")
@@ -1686,7 +1722,9 @@ Item {
     if (root.releaseLifecycle === "setup")
       return "  Give this machine a memory"
     if (root.releaseLifecycle === "installing")
-      return "  First light is underway"
+      return root.installerProgressUnobserved
+        ? "  First light has gone quiet"
+        : "  First light is underway"
     if (root.releaseLifecycle === "update") return "  Finish the SIA update"
     if (root.releaseLifecycle === "ahead") return "  Update this cockpit"
     return "  Repair the release boundary"
@@ -1698,7 +1736,9 @@ Item {
     if (root.releaseLifecycle === "setup")
       return "The Marketplace installed SIA's cockpit. The resident brain is not complete; first light remains a deliberate local action."
     if (root.releaseLifecycle === "installing")
-      return "A matching installer recorded work in progress. Keep its terminal open, or retry here only if that terminal has ended."
+      return root.installerProgressUnobserved
+        ? "A matching installer recorded work in progress, and SIA has watched that record sit unchanged for longer than a first light takes. That is not evidence the installer failed, and SIA is not claiming it did: this cockpit cannot see whether that terminal is still running, and the install lock it holds is per-boot and unreadable from here. Check for the installer terminal. If it is gone, retry here; the installer verifies ownership and refuses unsafe replacement. Nothing is installed and nothing is ready until the matching runtime publishes status."
+        : "A matching installer recorded work in progress. Keep its terminal open, or retry here only if that terminal has ended."
     if (root.releaseLifecycle === "update") {
       var installed = root.status && typeof root.status.version === "string"
         ? root.status.version : "a legacy runtime"
@@ -1719,7 +1759,9 @@ Item {
   function setupActionLabel() {
     if (root.releaseLifecycle === "setup") return "BEGIN FIRST LIGHT"
     if (root.releaseLifecycle === "installing")
-      return "REOPEN OR RETRY IN TERMINAL"
+      return root.installerProgressUnobserved
+        ? "RETRY FIRST LIGHT IN TERMINAL"
+        : "REOPEN OR RETRY IN TERMINAL"
     if (root.releaseLifecycle === "update") return "FINISH UPDATE"
     return "RUN SAFE REPAIR"
   }
@@ -1792,7 +1834,11 @@ Item {
     setupTerminalMissing = false
     // Model.setupTerminalPresented refuses an empty id and a zero stamp, so
     // clearing both keeps a marker from an earlier cockpit session from
-    // being read as this session's presentation.
+    // being read as the presentation belonging to this one.
+    // (Deliberately apostrophe-free: the release contract test extracts this
+    // body by scanning braces with a quote state machine that does not skip
+    // comments, so a lone apostrophe here silently swallows the closing brace
+    // and the test fails somewhere else entirely.)
     setupAttemptId = ""
     setupRequestedAtSec = 0
     setupPresenceApply.stop()
@@ -1800,6 +1846,11 @@ Item {
     setupYield.stop()
     readyProc.cancel()
     clearReadyCheck()
+    // The 1s clock only runs while the cockpit is open, so on summon nowMs
+    // still holds whatever it read when the cockpit was last closed. Every
+    // age on this screen, the installing horizon included, is measured
+    // against it; re-read it before any of them are painted.
+    nowMs = Date.now()
     // Opening requests fresh bytes without discarding the last validated
     // generation. Cold startup and every failed load still resolve fail-closed.
     statusFile.reload(); installCompletionFile.reload()
@@ -1856,6 +1907,10 @@ Item {
   }
 
   onReleaseLifecycleChanged: {
+    // Ahead of the visibility guard on purpose.  The horizon has to keep
+    // running while the cockpit is closed, which is where an installer
+    // usually dies.
+    root.noteInstallingObservation()
     if (!root.cockpitVisible) return
     Qt.callLater(function() {
       if (!root.cockpitVisible) return
@@ -1917,11 +1972,55 @@ Item {
     }
   }
 
+  // The thought stream is the plane that carries model-origin prose, so it
+  // is the one plane whose shape must never be assumed.  `kind` and `origin`
+  // are painted into the row as the honesty labels themselves; a record
+  // missing either rendered the literal word "undefined" beside prose, which
+  // is worse than showing nothing — it looks like a label.
+  //
+  // `origin` stays optional on purpose.  sialib.load_thoughts deliberately
+  // leaves genuinely unlabeled legacy rows unlabeled rather than laundering
+  // them into a classification, and the delegate renders those as
+  // legacy-unlabeled.  Requiring it here would reject the very rows that
+  // boundary exists to expose.
+  function validThought(thought) {
+    if (!root.isPlainRecord(thought)) return false
+    if (typeof thought.ts !== "string" || thought.ts === "") return false
+    if (typeof thought.kind !== "string" || thought.kind === "") return false
+    if (typeof thought.text !== "string" || thought.text === "") return false
+    if (thought.origin !== undefined && typeof thought.origin !== "string")
+      return false
+    return true
+  }
+
+  function validThoughtStream(stream) {
+    if (!root.isPlainRecord(stream)) return false
+    if (stream.v !== 1 || !Array.isArray(stream.thoughts)) return false
+    for (var i = 0; i < stream.thoughts.length; i++)
+      if (!root.validThought(stream.thoughts[i])) return false
+    return true
+  }
+
+  function thoughtsRejected() {
+    root.thoughtsBoundary = root.thoughts.length
+      ? "last good thought stream; latest thought stream rejected"
+      : "no valid thought stream"
+  }
+
   function applyThoughts(text) {
     try {
       const t = JSON.parse(text)
-      root.thoughts = (t.thoughts || []).slice(-40).reverse()
-    } catch (e) { }
+      if (!root.validThoughtStream(t)) {
+        root.thoughtsRejected()
+        return
+      }
+      root.thoughts = t.thoughts.slice(-40).reverse()
+      root.thoughtsBoundary = ""
+    } catch (e) {
+      // A silent catch here meant a truncated or mid-replace read quietly
+      // froze the stream with no mark on screen at all.
+      root.thoughtsRejected()
+    }
   }
 
   function applyContinuity(text) {
@@ -2020,11 +2119,36 @@ Item {
     } catch (e) { }
   }
 
+  function installCompletionKey(completion) {
+    if (!root.isPlainRecord(completion)) return ""
+    return String(completion.v) + "/" + String(completion.state)
+      + "/" + String(completion.version)
+  }
+
+  // Start the horizon when this exact installing record is first seen, and
+  // restart it whenever the record changes.  A second install writing a new
+  // record is a fresh installer and is owed the full bound again, even
+  // though the lifecycle string never left "installing".
+  function noteInstallingObservation() {
+    var key = root.releaseLifecycle === "installing"
+      ? root.installCompletionKey(root.installCompletion) : ""
+    if (key === "") {
+      root.installingRecordKey = ""
+      root.installingObservedAtMs = 0
+      return
+    }
+    if (key !== root.installingRecordKey) {
+      root.installingRecordKey = key
+      root.installingObservedAtMs = Date.now()
+    }
+  }
+
   function applyInstallCompletion(text) {
     try {
       const parsed = JSON.parse(text)
       root.installCompletion = parsed
     } catch (e) { root.installCompletion = null }
+    root.noteInstallingObservation()
   }
 
   FileView {
@@ -2058,6 +2182,16 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: root.applyGraph(text())
+    onLoadFailed: {
+      // statusFile has always resolved a failed load into a boundary; these
+      // three planes did not, so a snapshot deleted or made unreadable after
+      // a good load left its last-good pixels on screen with an EMPTY
+      // boundary string — the display reading as freshly confirmed at the
+      // exact moment its source stopped existing.
+      root.graphBoundary = root.graph
+        ? "last good graph; resident graph snapshot unavailable"
+        : "resident graph snapshot unavailable"
+    }
     onFileChanged: graphApply.restart()
   }
   Timer { id: graphApply; interval: 200; repeat: false
@@ -2069,6 +2203,11 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: root.applyThoughts(text())
+    onLoadFailed: {
+      root.thoughtsBoundary = root.thoughts.length
+        ? "last good thought stream; resident thought stream unavailable"
+        : "resident thought stream unavailable"
+    }
     onFileChanged: thoughtsApply.restart()
   }
   Timer { id: thoughtsApply; interval: 200; repeat: false
@@ -2080,6 +2219,11 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: root.applyContinuity(text())
+    onLoadFailed: {
+      root.continuityBoundary = root.continuity
+        ? "last good continuity status; resident continuity status unavailable"
+        : "resident continuity status unavailable"
+    }
     onFileChanged: continuityApply.restart()
   }
   Timer { id: continuityApply; interval: 150; repeat: false
@@ -2108,6 +2252,7 @@ Item {
     onLoadFailed: {
       root.installCompletion = null
       root.installCompletionResolved = true
+      root.noteInstallingObservation()
     }
     onFileChanged: {
       // First-light is an install lifecycle barrier, not a routine status
@@ -4715,6 +4860,20 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
+              }
+              Text {
+                // Rows on screen must never outlive the statement that they
+                // are current.  If the stream was rejected or vanished, the
+                // header says so directly above the prose it qualifies.
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                visible: root.thoughtsBoundary !== ""
+                width: thoughtHeader.width
+                text: root.thoughtsBoundary
+                wrapMode: Text.WordWrap
+                color: root.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
             }
 

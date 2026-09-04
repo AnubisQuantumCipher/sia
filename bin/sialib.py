@@ -1969,6 +1969,51 @@ def _bounded_seen_names(value):
     return names
 
 
+# A paginated snapshot sense pairs a monotone high-water name
+# ("<sense>.last") with a per-cycle seen-set ("<sense>.seen").  The seen-set
+# exists for exactly one reason: one scan cycle spans several pulses, so a
+# name emitted on page 1 must not be emitted again on page 3 of the same
+# cycle.  Nothing else reads it, and nothing ever pruned it — notify.seen
+# therefore grew from the moment the notification history first outgrew a
+# single scan page until it reached MAX_SOURCE_SCAN_ENTRIES, after which
+# sense_notify refuses every further entry.  That is a permanently deaf
+# notify organ about a thousand notifications later, signing its deafness
+# as ordinary source-entry refusals so it reads as a source problem rather
+# than a cursor leak.
+#
+# The bound has to be the scan cycle, not a count.  A count-based LRU would
+# forget the oldest name in the CURRENT cycle and re-emit it on a later
+# page, which is the duplicate the seen-set was added to prevent.  The
+# high-water cursor is monotone (it only ever moves to a larger name) and
+# the sense only considers names strictly greater than it, so a seen name
+# at or below the cursor can never be a candidate again: dropping it is
+# invisible to dedupe.  A completed cycle advances the cursor to its own
+# maximum, so it empties the set outright, and an in-flight cycle keeps
+# every name it can still be asked about.
+_SEEN_SET_CURSORS = (("notify.seen", "notify.last"),)
+
+
+def _compact_seen_set_cursors(cursors):
+    """Retire seen-set names the high-water cursor has already passed."""
+    for seen_key, last_key in _SEEN_SET_CURSORS:
+        seen = cursors.get(seen_key)
+        last = cursors.get(last_key)
+        if not isinstance(seen, list) or not isinstance(last, str):
+            # A missing or malformed pair is left exactly as found; the
+            # sense that owns the cursor raises its own named refusal, and
+            # compaction must never be the thing that decides a cursor is
+            # invalid.
+            continue
+        kept = [name for name in seen
+                if isinstance(name, str) and name > last]
+        if len(kept) == len(seen):
+            continue
+        if kept:
+            cursors[seen_key] = kept
+        else:
+            cursors.pop(seen_key, None)
+
+
 def _stable_bounded_source_tail(path, max_bytes=None):
     """Read only the bounded, complete-line tail of a stable regular file."""
     if max_bytes is None:
@@ -6501,6 +6546,11 @@ def _commit_sense_cursors(cursors):
             except OSError:
                 pass
     PENDING_CURSOR_RENAMES.clear()
+    # No name the high-water cursor has already passed reaches the durable
+    # file.  With the trial-side pass this pins the seen-set to the cycle
+    # that owns it in both directions: what a sense reads and what survives
+    # a reboot.  An unpruned set is what deafened the notify organ.
+    _compact_seen_set_cursors(cursors)
     save_error = None
     try:
         save_cursors(cursors)
@@ -8432,6 +8482,12 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     custom_seen_names = set()
     for sense, custom_index in sense_runs:
         trial = copy.deepcopy(cursors)
+        # Retire passed seen-set names on the trial before the sense reads
+        # them.  Compacting here rather than after the sense returns is what
+        # heals a cursor file that has ALREADY reached the seen-set bound:
+        # such an install would otherwise spend one more pulse refusing
+        # every entry it senses before the set could be emptied.
+        _compact_seen_set_cursors(trial)
         entry_refusals_present = SOURCE_ENTRY_REFUSALS_KEY in trial
         entry_refusals_before = copy.deepcopy(
             trial.get(SOURCE_ENTRY_REFUSALS_KEY))
@@ -10294,7 +10350,8 @@ def _append_bench_trend_once(record, receipt_id):
             return False
         valid_lines.append(line.encode("utf-8"))
     # The cockpit consumes only a recent projection. Rotate that derived
-    # window before it can strand a durable dream-unit receipt at the file
+    # window before it can strand a durable dream-unit receipt at the file's
+    # row and byte bounds.
     prior = collections.deque(
         valid_lines,
         maxlen=MAX_BENCH_TREND_ROWS - 1)
@@ -10464,9 +10521,9 @@ def _dream_transaction_guarded(memo_update, now, memo):
         _recover_pending_dream_publication(memo)
     _settle_pending_publication(
         memo, "publish pending corpus migration before dream")
-    # The nightly job is independent units with separate ledgers/failure:
-    # failure — a bad grade must never block an epoch merge, and a
-    # A failed heuristic drift tripwire must never block the gbrain cycle.
+    # The nightly job is independent units with separate ledgers and
+    # failure domains — a bad grade must never block an epoch merge, and a
+    # failed heuristic drift tripwire must never block the gbrain cycle.
     ncomp = nepoch = nkept = 0
     if not consolidation_recovery_active:
         consolidation_marker = _mark_consolidation_pending(memo)

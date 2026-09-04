@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 """Release-shape and installer supply-chain regression tests."""
 
+# KNOWN, DELIBERATE COUPLING -- read before editing install.sh/uninstall.sh.
+#
+# Most tests here, and nearly every recovery/fence test, treat the two
+# installers as TEXT.  The _*_shell() helpers below split a 10,000-line
+# script on verbatim source markers ("runtime_tree_digest() {", "\nPY\n}\n",
+# "\n}\n\nwrite_runtime_receipt", ...) and execute the lifted fragment under
+# bash.  That is the only way to exercise an installer's fail-closed branches
+# without running the real thing against a real machine, so the coupling is
+# the point, not an accident waiting to be refactored away.
+#
+# The price is that renaming an installer function, moving a closing brace,
+# reordering two functions, or reflowing a heredoc breaks tests here for
+# reasons that are not behavioural.  That price is accepted: silent
+# divergence between the installer and the guard that pins it is the worse
+# failure, and it is the failure these markers exist to make loud.
+#
+# So: edit the installers knowingly.  When a split marker stops matching, the
+# repair is to re-point the marker at the moved source -- never to delete the
+# assertion it feeds, and never to relax it into something that still passes.
+
 import ast
 import hashlib
 import fcntl
@@ -287,6 +307,82 @@ def _plant_runtime_tree(runtime, names):
         _write(os.path.join(runtime, name), name + "\n", 0o644)
 
 
+def _staged_runtime_members(script):
+    # Recover the runtime members install.sh actually stages, from the
+    # installer source rather than from a second hand-kept list.  A restated
+    # list would drift in exactly the same silence as the rung ladder it is
+    # meant to police, which is the whole defect.
+    #
+    # The block stages three ways -- a loop over modules, a loop over
+    # commands, and bare install(1) lines -- so both the loop word lists and
+    # the literal destinations have to be read back out.
+    marker = '\nstep "3/9 runtime"\n'
+    terminator = "\nSTAGED_RUNTIME_DIGEST="
+    if script.count(marker) != 1 or script.count(terminator) != 1:
+        raise AssertionError(
+            "install.sh runtime staging block is no longer uniquely "
+            "delimited by its step banner and its digest assignment; "
+            "re-point this extractor at the moved source")
+    region = script.split(marker, 1)[1].split(terminator, 1)[0]
+    # Fold shell line continuations first: the module list wraps across
+    # three physical lines and would otherwise be read short.
+    flat = region.replace("\\\n", " ")
+    staged = []
+    for match in re.finditer(
+            r'"\$SIA_RUNTIME_STAGE/(\$?[A-Za-z0-9_.-]+)"', flat):
+        token = match.group(1)
+        if not token.startswith("$"):
+            staged.append(token)
+            continue
+        variable = token[1:]
+        loop = re.search(
+            r"\bfor " + re.escape(variable) + r" in ([^;]+); do", flat)
+        if loop is None:
+            raise AssertionError(
+                f"install.sh stages ${variable} with no visible `for "
+                f"{variable} in ...` list to expand")
+        staged.extend(shlex.split(loop.group(1)))
+    return tuple(staged)
+
+
+# The marketplace refuses to snapshot a source file larger than this, so a
+# file that crosses it is not shippable at all.
+MARKETPLACE_SCAN_CAP = 524288
+
+# The guard below fires at 95% of that cap -- 498,073 bytes, still 26,215
+# bytes short of unshippable.  The threshold is deliberately not 99%: it has
+# to fire while a module extraction can still be planned and landed calmly,
+# so crossing it is a scheduling signal, not a release blocker.  Raising this
+# number to buy silence is the one repair that is not available; the repair
+# is to make the file smaller.
+MARKETPLACE_SCAN_HEADROOM_FLOOR = MARKETPLACE_SCAN_CAP * 95 // 100
+
+
+def _marketplace_scanned_sources():
+    # The marketplace snapshot scans by extension, plus the four
+    # extensionless executables in bin/.  The hard cap test and the headroom
+    # guard must walk exactly one set: if they diverge, one of them is
+    # policing files the marketplace never reads, and the other is silently
+    # missing files it does.
+    extensions = {".js", ".py", ".qml", ".sh"}
+    extensionless = {
+        os.path.join("bin", name) for name in (
+            "sia", "sia-brainstem", "sia-ledger", "sia-mcp")}
+    found = []
+    for directory, subdirectories, filenames in os.walk(REPO):
+        subdirectories[:] = [
+            name for name in subdirectories
+            if name not in {".git", "assets", "__pycache__"}]
+        for filename in filenames:
+            absolute = os.path.join(directory, filename)
+            relative = os.path.relpath(absolute, REPO)
+            if (os.path.splitext(filename)[1] not in extensions
+                    and relative not in extensionless):
+                continue
+            found.append((relative, absolute))
+    return sorted(found)
+
+
 class ReleaseContract(unittest.TestCase):
     def setUp(self):
         self._xdg_runtime = tempfile.TemporaryDirectory(
@@ -411,24 +507,36 @@ class ReleaseContract(unittest.TestCase):
 
     def test_marketplace_scanned_source_files_fit_the_static_limit(self):
         # Observed from the marketplace baseline's source-snapshot guard.
-        cap = 524288
-        extensions = {".js", ".py", ".qml", ".sh"}
-        extensionless = {
-            os.path.join("bin", name) for name in (
-                "sia", "sia-brainstem", "sia-ledger", "sia-mcp")}
-        for directory, subdirectories, filenames in os.walk(REPO):
-            subdirectories[:] = [
-                name for name in subdirectories
-                if name not in {".git", "assets", "__pycache__"}]
-            for filename in filenames:
-                absolute = os.path.join(directory, filename)
-                relative = os.path.relpath(absolute, REPO)
-                if (os.path.splitext(filename)[1] not in extensions
-                        and relative not in extensionless):
-                    continue
-                with self.subTest(path=relative):
-                    self.assertFalse(os.path.islink(absolute))
-                    self.assertLessEqual(os.path.getsize(absolute), cap)
+        for relative, absolute in _marketplace_scanned_sources():
+            with self.subTest(path=relative):
+                self.assertFalse(os.path.islink(absolute))
+                self.assertLessEqual(
+                    os.path.getsize(absolute), MARKETPLACE_SCAN_CAP)
+
+    def test_marketplace_scanned_sources_keep_headroom_under_the_limit(self):
+        # The cap test above only tells us we have not shipped an
+        # unpublishable file YET; it goes green at 524,287 bytes and offers
+        # no warning on the way up.  bin/sialib.py has been walking toward
+        # the ceiling for several releases, so this guard converts the
+        # remaining slack into a deadline that is visible in CI while the
+        # planned module extraction can still be scheduled.
+        #
+        # The failure names the exact bytes free on purpose: "over 95%" is
+        # not actionable, "15,823 bytes left" is.
+        crowded = []
+        for relative, absolute in _marketplace_scanned_sources():
+            size = os.path.getsize(absolute)
+            if size > MARKETPLACE_SCAN_HEADROOM_FLOOR:
+                crowded.append(
+                    f"{relative} is {size} bytes with only "
+                    f"{MARKETPLACE_SCAN_CAP - size} bytes free of the "
+                    f"{MARKETPLACE_SCAN_CAP}-byte cap")
+        self.assertEqual(
+            crowded, [],
+            "marketplace per-file scan headroom is nearly gone (guard "
+            f"trips above {MARKETPLACE_SCAN_HEADROOM_FLOOR} bytes, 95% of "
+            f"the {MARKETPLACE_SCAN_CAP}-byte cap): " + "; ".join(crowded)
+            + ". Extract a module; raising the threshold is not a repair.")
 
     def test_operator_docs_state_installer_and_removal_boundaries(self):
         readme = _read("README.md")
@@ -1320,6 +1428,32 @@ fenced_runtime_authorized
             self.assertEqual(result.returncode, 0, result.stderr)
             os.unlink(os.path.join(runtime, "siasenses.py"))
             self.assertNotEqual(authorize().returncode, 0)
+
+    def test_staged_runtime_members_match_the_v5_rung_member_set(self):
+        # Two independent hand-maintained lists have to agree and nothing
+        # made them: install.sh stages the runtime tree one install(1) line
+        # at a time, while the rung ladder decides which members the receipt
+        # written straight afterwards actually measures.
+        #
+        # Staged but not in the ladder: the module is installed into $BINDIR
+        # and the publication receipt covering that tree never hashes it, so
+        # a later tamper of exactly that file verifies clean.  In the ladder
+        # but never staged: runtime_tree_digest refuses on a tree the
+        # installer just published, and the install cannot complete.  Both
+        # halves are silent at authoring time, so pin them to each other.
+        staged = _staged_runtime_members(_read("install.sh"))
+        self.assertEqual(
+            len(staged), len(set(staged)),
+            f"install.sh stages a runtime member more than once: {staged}")
+        missing = sorted(set(MODERN_V5_RUNTIME_NAMES) - set(staged))
+        unmeasured = sorted(set(staged) - set(MODERN_V5_RUNTIME_NAMES))
+        self.assertEqual(
+            (missing, unmeasured), ([], []),
+            f"install.sh stages {len(staged)} runtime members but the v5 "
+            f"rung ladder covers {len(MODERN_V5_RUNTIME_NAMES)}. In the "
+            f"ladder yet never staged (digest will refuse): {missing}. "
+            f"Staged yet outside the ladder (installed unmeasured by any "
+            f"receipt): {unmeasured}")
 
     def test_runtime_digest_rung_ladder_is_identical_at_every_site(self):
         # Four hand-maintained copies of the rung ladder decide which member

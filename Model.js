@@ -123,6 +123,41 @@ function guidedLifecycle(status, completion, pluginVersion) {
     ? "ready" : "repair"
 }
 
+// `installing` is a record, not a lease.  Nothing in the first-light file
+// expires it, and the install.lock the run stage holds lives under
+// XDG_RUNTIME_DIR, so it is per-boot and invisible to this surface.  A
+// crashed or killed installer therefore left the cockpit painting
+// "INSTALLATION IN PROGRESS" forever, which is a claim about the present
+// that no one is checking.
+//
+// The record itself carries no clock: siarelease._completion_release pins
+// its schema to exactly {v, version, state}, and that pin is a fail-closed
+// downgrade guard, so a timestamp cannot simply be added to it here.  The
+// only honest clock available to a pixels-only surface is how long THIS
+// cockpit has continuously observed this exact record.  That is what the
+// caller passes in, and it is why the wording this unlocks says the
+// installer has not reported progress rather than that it started long ago.
+//
+// The bound is a judgement, not a measurement: a first light downloads
+// pinned restic, Bun, gbrain and Ollama artifacts, builds gbrain, and pulls
+// a local embedding model.  Ninety minutes is well past any of that on the
+// hardware SIA targets while still being a bound.  Keep it far away from
+// staleAfterMaxSec(); that clock times the brainstem pulse, not an install.
+function installingUnobservedAfterSec() { return 5400 }
+
+// Returns whether the installing record has gone unobserved past the bound.
+// Unknown inputs answer false: this predicate may only ever add a caveat to
+// the gate, so when the clock itself is unreadable the honest move is to say
+// nothing new rather than to accuse a running installer.  It never reports
+// readiness or failure, and no caller may promote a lifecycle from it.
+function installingProgressUnobserved(observedAtMs, nowMs) {
+  var observed = Number(observedAtMs)
+  var now = Number(nowMs)
+  if (!isFinite(observed) || observed <= 0) return false
+  if (!isFinite(now) || now < observed) return false
+  return (now - observed) >= installingUnobservedAfterSec() * 1000
+}
+
 // A click asks the desktop to open a terminal; nothing in the desktop
 // contract guarantees one appears, and xdg-terminal-exec drops --hold on a
 // terminal that declares no TerminalArgHold=.  The run stage therefore
@@ -358,6 +393,30 @@ function continuityCanApply(status) {
   var prepared = status.prepared
   return isPlainRecord(prepared) && prepared.prepared_id !== ""
     && prepared.snapshot_id !== "" && prepared.ledger_head !== ""
+}
+
+// The bar had no clock for continuity at all, only for the brainstem pulse.
+// A continuity worker that is uninstalled, masked, or wedged stops writing
+// while its last file survives, so the widget went on painting yesterday's
+// "verified" as though someone were still checking.  siabackup._publish_status
+// stamps updated_at on every publication and sia-backup.timer fires hourly,
+// so a real clock does exist here; six silent publications is far past timer
+// jitter, a suspend, or one long copy.  Withdrawing a claim is the only thing
+// this bound may do: staleness never promotes a state and never invents one.
+function continuityStaleAfterSec() { return 21600 }
+
+// Unreadable input answers stale.  This predicate exists to stop a reassuring
+// mark from outliving the subsystem, so its unknown case must fall towards
+// "not reporting", the opposite of the installing-horizon predicate above,
+// which may only add a caveat.
+function continuityStale(status, nowMs, staleAfterSec) {
+  if (!isPlainRecord(status)) return true
+  var stamped = Date.parse(status.updated_at)
+  if (!(stamped > 0)) return true
+  var now = Number(nowMs)
+  var horizon = Number(staleAfterSec)
+  if (!isFinite(now) || !isFinite(horizon) || horizon <= 0) return true
+  return (now - stamped) > horizon * 1000
 }
 
 function continuityBarMark(status) {

@@ -2136,7 +2136,22 @@ def choose_abstention_threshold(samples):
     return best[1], "calibrated-descriptive"
 
 
-def _evidence_rank(question, results, k=TOP_K):
+def _evidence_rank(question, results, k=None):
+    """Rank of the first result carrying the question's answer witness.
+
+    INVARIANT: the retrieval window that SCORES a question is the same
+    window generation used to ADMIT it.  Binding this default to TOP_K at
+    def time froze scoring at the import-time value while generation
+    (which reads the global at call time, see the source-slug gates in
+    question building) followed a patched one, so changing TOP_K for a run
+    changed which questions were generated without changing how deep the
+    scorer looked -- a benchmark silently measuring a window nobody
+    configured.  Resolve the default at call time so both sides read one
+    source of truth; an explicit k still overrides for a caller that means
+    a different window.
+    """
+    if k is None:
+        k = TOP_K
     if question["answer"] == ABSTAIN:
         return None
     witness = question.get("answer_witness")

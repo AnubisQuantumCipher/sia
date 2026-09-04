@@ -1,5 +1,7 @@
 # SIA — The Omarchy Brain · User's Manual
 
+**Describes SIA v1.7.8 · 2026-09-04**
+
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*
 
@@ -307,13 +309,17 @@ Everything lives under one command: `sia`.
 
 ```
 sia status                    # one-screen state
+sia version                   # the installed SIA runtime release
 sia ready                     # exit nonzero unless memory is reconciled
 sia ask "question"            # semantic recall: dense embeddings seeded
                               #   through the knowledge graph (spreading
                               #   activation) and re-ranked by ACT-R
                               #   activation. Recalling STRENGTHENS the
                               #   memories returned (reconsolidation).
+sia query "question"          # alias for ask; identical behavior
+sia ask "question" --no-touch # same answer, no reinforcement (see below)
 sia recall <slug>             # read one memory page verbatim
+sia recall <slug> --no-touch  # same page, no reinforcement
 sia think                     # recent thoughts
 sia graph                     # graph snapshot statistics
 sia context                   # bounded context pack for agents/sessions
@@ -322,6 +328,19 @@ sia context                   # bounded context pack for agents/sessions
 Notes on `ask`: results show a blended score; "no matches" is not proof of
 absence — the brain only finds what shares meaning with your words. If
 ollama is down, search degrades to keyword-only and says so.
+
+**`--no-touch` — reading without reinforcing.** An ordinary `ask` or
+`recall` is a write: it strengthens the memories it returned, which is the
+point during normal use. That is exactly wrong when you are *measuring* the
+brain rather than using it. Auditing what SIA remembers, sampling recall
+quality, or reviewing pages before a release all read many memories for
+reasons that have nothing to do with their real importance, and each such
+read inflates the activation of whatever the audit happened to touch — the
+observation changes the thing observed, and the next audit inherits the
+distortion. `--no-touch` returns the identical answer and suppresses the
+reinforcement write, so the measurement leaves no trace in what it measured.
+Use it for every audit, evaluation, or bulk read; use the plain form when
+you are genuinely using the memory.
 
 ### Stability, pins, and rehearsal
 
@@ -387,6 +406,23 @@ proposal you approved
 (a model that mints the takes it later helps grade is too neat a loop).
 Model output never masquerades as deterministic thought: every synthesis
 is labeled with the model that produced it.
+
+```
+sia note "text"               # queue a durable note for the brainstem
+sia note "text" --from author # attribute it to a named agent or session
+sia judge-audit               # exercise the configured judge against
+                              #   engineered evidence states; writes an
+                              #   owner-private report
+```
+
+A note is stored as **model-origin** memory and is labeled that way forever;
+it is never promoted to evidence by being useful or by being repeated. Write
+only durable, non-sensitive context a later session would otherwise have to
+rediscover — never secrets, and never scratch. `judge-audit` is how you find
+out whether the configured judge still refuses when it should: it feeds the
+judge evidence states with known correct verdicts, so a judge that has
+started accepting unsupported claims is caught by the audit rather than by a
+bad answer in production.
 
 ### Predictions and grading (outcome learning)
 
@@ -861,6 +897,7 @@ sia backup now
 sia backup status
 sia backup schedule
 sia backup list
+sia backup check
 ```
 
 The environment file may contain only the adapter's allowlisted variables.
@@ -882,6 +919,13 @@ the computer solely for Continuity, and their persistent calendar policy runs
 a missed event after the user timer becomes active again. Work is serialized,
 duplicate scheduled requests are coalesced, and closing the cockpit does not
 stop an accepted worker.
+
+`sia backup check` runs that same weekly verification on demand, and it is
+the only command that performs a *new* repository round trip. Uploading
+proves only that bytes left this machine; `check` proves they can come back.
+It is also the command that promotes a snapshot to `latest` ready health, so
+protection is not green until a check has passed against the snapshot you are
+actually relying on.
 
 Run `sia backup schedule` to inspect the authenticated live schedule. Its
 closed JSON reports whether Continuity is configured and automatic, when the
@@ -969,6 +1013,24 @@ that a never-started apply left the coherent target unchanged. It restarts the
 brainstem only after core debt is resolved, then requires the same fresh
 post-restart proof before a terminal verified result. Follow with `sia ready`,
 `sia ledger`, and `sia restore status`.
+
+Finally, run `sia backup check` on the recovered machine:
+
+```bash
+sia backup check
+sia backup status
+```
+
+Recovery is not finished when the restore reports verified. The post-restart
+proof can only mark that one correlated restore operation verified; it says
+nothing about the repository's continued ability to protect the machine that
+now exists. During apply, the adapter rebinds `~/.config/sia/continuity.json`
+from the fresh target identity to the adopted source identity, and that
+rebind does not promote anything either. Only `sia backup check`'s new
+repository round trip can promote the now-identity-matching snapshot into
+`latest` ready health. Skip it and the restore looks complete while the
+cockpit still refuses to show protection green — the machine is restored but
+unprotected, which is the worst state to mistake for done.
 
 The CLI is canonical. The cockpit is a thin view/controller over the same
 request, typed-confirmation, and correlated-status contract; it cannot weaken

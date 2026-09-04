@@ -23,6 +23,10 @@ BarWidget {
   property bool statusLoadValid: false
   property bool installCompletionResolved: false
   property bool stale: true
+  // Continuity gets its own clock, separate from the brainstem pulse: the
+  // two subsystems publish on completely different cadences and a single
+  // `stale` flag would have to pick one of them to lie about.
+  property bool continuityStale: true
   property real nowMs: Date.now()
 
   readonly property string statusPath:
@@ -34,9 +38,11 @@ BarWidget {
     (Quickshell.env("HOME") || "")
       + "/.local/state/sia/managed-install/first-light.json"
   readonly property string pluginVersion: Model.releaseVersion()
-  readonly property string runtimeLifecycle:
-    Model.runtimeLifecycle(root.statusLoadValid ? root.status : null,
-                           root.pluginVersion)
+  // There is deliberately no `runtimeLifecycle` property here.  The bar used
+  // to compute one and never read it; the only lifecycle this widget may act
+  // on is releaseLifecycle, which also weighs the first-light completion
+  // record.  A second, laxer lifecycle sitting unread beside it was an
+  // invitation to bind the wrong one.
   readonly property string releaseLifecycle:
     !root.statusResolved || !root.installCompletionResolved ? "checking"
       : Model.guidedLifecycle(root.statusLoadValid ? root.status : null,
@@ -73,7 +79,10 @@ BarWidget {
   }
 
   function indicatorColor() {
-    if (root.continuity) {
+    // A stale record may not tint the glyph.  Both non-default tones are
+    // claims about right now — "danger" that something is wrong, "busy" that
+    // work is under way — and neither survives the worker going silent.
+    if (root.continuity && !root.continuityStale) {
       var tone = Model.continuityTone(root.continuity.state)
       if (tone === "danger") return root.urgentColor
       if (tone === "busy") return Color.accent
@@ -81,12 +90,28 @@ BarWidget {
     return root.stateColor()
   }
 
+  function continuityBarMark() {
+    // Withdraw the mark to "unknown" rather than repaint the last state: the
+    // mark is the operator's at-a-glance recovery signal and an empty one
+    // reads as "verified, nothing to do".
+    if (root.continuityStale) return "?"
+    return Model.continuityBarMark(root.continuity)
+  }
+
   function continuityText() {
     if (!root.continuity) return "continuity status unavailable"
     var label = Model.continuityStateLabel(root.continuity.state)
       .toLowerCase()
     var detail = String(root.continuity.detail || "").trim()
-    return detail !== "" ? label + " — " + detail : label
+    var text = detail !== "" ? label + " — " + detail : label
+    if (root.continuityStale)
+      return "continuity not reporting · last published " + text
+    return text
+  }
+
+  function refreshContinuityStale() {
+    root.continuityStale = Model.continuityStale(
+      root.continuity, root.nowMs, Model.continuityStaleAfterSec())
   }
 
   function tooltip() {
@@ -144,6 +169,10 @@ BarWidget {
       const parsed = JSON.parse(text)
       if (Model.validContinuityStatus(parsed)) root.continuity = parsed
     } catch (e) { /* mid-replace read; keep last-known-good */ }
+    // Re-clock on every read, accepted or rejected.  A file that keeps being
+    // rewritten with bytes this widget refuses is exactly as unreported as
+    // one that stopped being written at all.
+    root.refreshContinuityStale()
   }
 
   function applyInstallCompletion(text) {
@@ -186,6 +215,15 @@ BarWidget {
     watchChanges: true
     printErrors: false
     onLoaded: root.applyContinuity(text())
+    onLoadFailed: {
+      // The brain status has had this discipline since the beginning;
+      // continuity did not, so a deleted or unreadable status file left the
+      // last good record painted forever and the bar went on reassuring an
+      // operator about a subsystem that was no longer there.  Drop to
+      // unknown: a missing file is not evidence of a healthy copy.
+      root.continuity = null
+      root.continuityStale = true
+    }
     onFileChanged: continuityApply.restart()
   }
 
@@ -226,6 +264,9 @@ BarWidget {
         root.stale = !(ts > 0) ||
           (root.nowMs - ts) > root.staleAfterSec * 1000
       }
+      // Continuity crosses its horizon without any file changing, so the
+      // tick has to ask, not wait to be told.
+      root.refreshContinuityStale()
     }
   }
 
@@ -242,8 +283,8 @@ BarWidget {
          : root.releaseLifecycle === "ahead" ? " AHEAD"
          : root.eventsToday > 0 && !root.stale ? " " + root.eventsToday : "")
       + (root.releaseLifecycle === "ready"
-         && Model.continuityBarMark(root.continuity) !== ""
-         ? " " + Model.continuityBarMark(root.continuity) : "")
+         && root.continuityBarMark() !== ""
+         ? " " + root.continuityBarMark() : "")
     slotSize: Style.bar.statusSlot
     // the stock slot is one-glyph wide; grow with the painted count so the
     // neighbouring widget can't paint over our number

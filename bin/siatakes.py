@@ -372,6 +372,40 @@ CALIBRATION_NON_CLAIMS = [
 ]
 
 
+def _calibration_population_status(n, true_n, false_n):
+    """Classify one resolved-take population against the display gates.
+
+    INVARIANT: every calibration surface describes the same population
+    the same way.  The streaming natural-history summary and the
+    explicitly-supplied population summary each used to carry a private
+    copy of this cascade with the thresholds inlined, so a gate tightened
+    on one side only would have let `sia takes calibration` and the
+    natural-history page disagree about whether the very same takes were
+    displayable -- exactly the overclaim these gates exist to prevent.
+    One cascade, one set of thresholds, both readers.
+
+    Returns (population_status, monitoring_display_eligible, reason).
+    """
+    if not n:
+        return ("no-resolved-outcomes", False,
+                "no resolved outcomes; no score is defined")
+    if n == 1:
+        return ("single-case", False,
+                "one resolved case; report the case, not population "
+                "performance")
+    if n < CALIBRATION_MIN_RESOLVED:
+        return ("descriptive-series", False,
+                "below the declared monitoring display gate; descriptive "
+                "series only")
+    if min(true_n, false_n) < CALIBRATION_MIN_OUTCOME_CLASS:
+        return ("outcome-imbalanced", False,
+                "too few observations in one outcome class for the "
+                "monitoring display")
+    return ("monitoring-population", True,
+            "display gate met; aggregate remains descriptive and "
+            "non-random")
+
+
 def _utcnow():
     return datetime.datetime.now(datetime.timezone.utc)
 
@@ -2575,29 +2609,8 @@ def _history_stats_report(stats):
     n = int(stats.get("resolved", 0))
     true_n = int(stats.get("true", 0))
     false_n = int(stats.get("false", 0))
-    if not n:
-        population_status = "no-resolved-outcomes"
-        eligible = False
-        reason = "no resolved outcomes; no score is defined"
-    elif n == 1:
-        population_status = "single-case"
-        eligible = False
-        reason = "one resolved case; report the case, not population performance"
-    elif n < CALIBRATION_MIN_RESOLVED:
-        population_status = "descriptive-series"
-        eligible = False
-        reason = ("below the declared monitoring display gate; descriptive "
-                  "series only")
-    elif min(true_n, false_n) < CALIBRATION_MIN_OUTCOME_CLASS:
-        population_status = "outcome-imbalanced"
-        eligible = False
-        reason = ("too few observations in one outcome class for the "
-                  "monitoring display")
-    else:
-        population_status = "monitoring-population"
-        eligible = True
-        reason = ("display gate met; aggregate remains descriptive and "
-                  "non-random")
+    population_status, eligible, reason = \
+        _calibration_population_status(n, true_n, false_n)
     brier = accuracy = mean_confidence = outcome_rate = None
     if n:
         denominator = Decimal(n)
@@ -4486,29 +4499,8 @@ def _calibration_population(takes):
     n = len(rows)
     true_n = sum(1 for _, o, _ in rows if o == 1)
     false_n = n - true_n
-    if not n:
-        population_status = "no-resolved-outcomes"
-        eligible = False
-        reason = "no resolved outcomes; no score is defined"
-    elif n == 1:
-        population_status = "single-case"
-        eligible = False
-        reason = "one resolved case; report the case, not population performance"
-    elif n < CALIBRATION_MIN_RESOLVED:
-        population_status = "descriptive-series"
-        eligible = False
-        reason = ("below the declared monitoring display gate; descriptive "
-                  "series only")
-    elif min(true_n, false_n) < CALIBRATION_MIN_OUTCOME_CLASS:
-        population_status = "outcome-imbalanced"
-        eligible = False
-        reason = ("too few observations in one outcome class for the "
-                  "monitoring display")
-    else:
-        population_status = "monitoring-population"
-        eligible = True
-        reason = ("display gate met; aggregate remains descriptive and "
-                  "non-random")
+    population_status, eligible, reason = \
+        _calibration_population_status(n, true_n, false_n)
 
     brier = None
     accuracy = None

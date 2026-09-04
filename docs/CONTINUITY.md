@@ -1,5 +1,7 @@
 # SIA continuity
 
+**Describes SIA v1.7.8 · 2026-09-04**
+
 SIA continuity is the backup and clean-machine recovery boundary for the
 Omarchy Brain. The brain owns a storage-independent freeze/thaw contract:
 freeze creates a signed portable capsule from documented authoritative roots;

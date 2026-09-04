@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -1613,6 +1614,308 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(),
                          ["_continuity-worker", request_path])
+
+
+class PostRestartResidentProof(unittest.TestCase):
+    """Real /proc coverage for the post-restart resident-brainstem proof.
+
+    ``_post_restart_observation`` is the only thing standing between a
+    half-finished restore and a green light: it binds the systemd-reported
+    MainPID to that PID's own ``/proc`` cmdline and ``exe``, and re-reads the
+    PID after the observation so a daemon that restarted mid-attestation
+    cannot be laundered into success.  Every supervisor test in this file
+    replaces the whole function with a dict, so the proof itself had no
+    behavioural coverage at all.  These tests drive it against real child
+    processes whose /proc entries are genuinely readable.
+    """
+
+    SCRIPT = ("import sys\n"
+              "sys.stdout.write('ready\\n')\n"
+              "sys.stdout.flush()\n"
+              "sys.stdin.read()\n")
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="sia-restart-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.bin = os.path.join(self.temp.name, "bin")
+        os.makedirs(self.bin, mode=0o700)
+        # The proof resolves the expected program against sialib.BIN, so the
+        # fixture's installed-runtime directory has to stand in for it.
+        patcher = mock.patch.object(siabackup.sialib, "BIN", self.bin)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.report = {"ActiveState": "active", "MainPID": "0"}
+        self.returncode = 0
+        systemctl = mock.patch.object(
+            siabackup.sialib, "_run_bounded_text_process",
+            side_effect=self._systemctl)
+        systemctl.start()
+        self.addCleanup(systemctl.stop)
+
+    def _systemctl(self, command, **_kwargs):
+        """Stand in for the systemd query only; /proc stays real."""
+        self.assertEqual(command[:2], ["systemctl", "--user"])
+        stdout = "".join(
+            f"{key}={value}\n" for key, value in self.report.items())
+        return subprocess.CompletedProcess(
+            command, self.returncode, stdout=stdout, stderr="")
+
+    @staticmethod
+    def _reap(process):
+        try:
+            if not process.stdin.closed:
+                process.stdin.close()
+            process.wait(timeout=10)
+        except Exception:
+            process.kill()
+            process.wait(timeout=10)
+        finally:
+            process.stdout.close()
+
+    def _spawn(self, *, program="sia-brainstem.py", argv0=None,
+               executable=None):
+        script = os.path.join(self.bin, program)
+        if not os.path.lexists(script):
+            with open(script, "w", encoding="ascii") as stream:
+                stream.write(self.SCRIPT)
+            os.chmod(script, 0o600)
+        environment = dict(os.environ)
+        if executable is not None:
+            # A copied interpreter still needs the real stdlib prefix; only
+            # the /proc/<pid>/exe path is under test here.
+            environment["PYTHONHOME"] = sys.prefix
+        process = subprocess.Popen(
+            [argv0 or sys.executable, script], executable=executable,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, env=environment)
+        self.addCleanup(self._reap, process)
+        # Read the child's own handshake so the exec has certainly happened
+        # before anything reads its /proc entries.
+        self.assertEqual(process.stdout.readline(), "ready\n")
+        return process
+
+    def _attest(self, process):
+        self.report["MainPID"] = str(process.pid)
+        return {"kind": "restore-apply", "prepared_id": "d" * 32,
+                "capsule_id": "a" * 32, "restart_pid": str(process.pid)}
+
+    def test_post_restart_proof_accepts_one_stable_matching_resident(self):
+        process = self._spawn()
+        debt = self._attest(process)
+        observation = {"ready": True, "sia_ledger_verified": True,
+                       "committed": True}
+        with mock.patch.object(
+                siabackup, "_live_restore_observation",
+                return_value=observation) as observed:
+            self.assertEqual(
+                siabackup._post_restart_observation(debt), observation)
+        observed.assert_called_once_with(debt)
+
+    def test_post_restart_proof_refuses_a_resident_that_restarted(self):
+        first = self._spawn()
+        debt = self._attest(first)
+        replacements = []
+
+        def restart_midway(_debt):
+            # The daemon dies and systemd replaces it while the signed
+            # observation is being taken: the proof must not carry the
+            # earlier PID's evidence over to the new process.
+            self._reap(first)
+            second = self._spawn()
+            replacements.append(second)
+            self.report["MainPID"] = str(second.pid)
+            return {"ready": True, "sia_ledger_verified": True,
+                    "committed": True}
+
+        with mock.patch.object(
+                siabackup, "_live_restore_observation",
+                side_effect=restart_midway):
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        self.assertEqual(len(replacements), 1)
+
+    def test_post_restart_proof_refuses_a_pid_the_debt_never_attested(self):
+        attested = self._spawn()
+        debt = self._attest(attested)
+        other = self._spawn(program="sia-brainstem.py")
+        self.report["MainPID"] = str(other.pid)
+        with mock.patch.object(
+                siabackup, "_live_restore_observation") as observed:
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        observed.assert_not_called()
+
+    def test_post_restart_proof_refuses_a_resident_running_another_program(
+            self):
+        process = self._spawn(program="sia-thoughts.py")
+        debt = self._attest(process)
+        with mock.patch.object(
+                siabackup, "_live_restore_observation") as observed:
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        observed.assert_not_called()
+
+    def test_post_restart_proof_refuses_a_forged_interpreter_argv(self):
+        forged = os.path.join(self.temp.name, "not-the-interpreter")
+        process = self._spawn(argv0=forged, executable=sys.executable)
+        debt = self._attest(process)
+        with mock.patch.object(
+                siabackup, "_live_restore_observation") as observed:
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        observed.assert_not_called()
+
+    def test_post_restart_proof_refuses_an_exe_that_is_not_the_interpreter(
+            self):
+        # argv can be written by anyone who can exec; /proc/<pid>/exe cannot.
+        # A copied interpreter presents a truthful-looking cmdline and the
+        # wrong executable, which is exactly what the exe check exists for.
+        copy = os.path.join(self.temp.name, "impostor-python")
+        shutil.copy2(os.path.realpath(sys.executable), copy)
+        process = self._spawn(executable=copy)
+        debt = self._attest(process)
+        with mock.patch.object(
+                siabackup, "_live_restore_observation") as observed:
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        observed.assert_not_called()
+
+    def test_post_restart_proof_refuses_unusable_unit_reports(self):
+        process = self._spawn()
+        debt = self._attest(process)
+        live = str(process.pid)
+        reports = (
+            {"ActiveState": "inactive", "MainPID": live},
+            {"ActiveState": "activating", "MainPID": live},
+            {"ActiveState": "active", "MainPID": "0"},
+            {"ActiveState": "active", "MainPID": ""},
+            {"ActiveState": "active", "MainPID": " " + live},
+            {"ActiveState": "active"},
+            {"ActiveState": "active", "MainPID": live, "Extra": "1"},
+        )
+        with mock.patch.object(
+                siabackup, "_live_restore_observation") as observed:
+            for report in reports:
+                with self.subTest(report=report):
+                    self.report = report
+                    self.assertIsNone(
+                        siabackup._post_restart_observation(debt))
+            self.returncode = 1
+            self.report = {"ActiveState": "active", "MainPID": live}
+            self.assertIsNone(siabackup._post_restart_observation(debt))
+        observed.assert_not_called()
+
+
+class RestoreAdoptionCommitment(unittest.TestCase):
+    """Real signed-ledger coverage for the "committed" determination.
+
+    ``_live_restore_observation`` decides whether a restore actually adopted
+    the recovered identity by scanning the verified SIA ledger for exactly
+    one ``RESTORE:adopt`` row bound to this prepared/capsule pair.  A green
+    restore hangs off that one boolean, yet every test that reached it did so
+    through a mocked observation, so neither the exact match nor the
+    ambiguity refusal was ever executed.  These tests build genuine signed
+    ledgers with bin/sia-ledger and let the real scan read them.
+    """
+
+    PREPARED_ID = "d" * 32
+    CAPSULE_ID = "a" * 32
+    CONTENT = "0" * 64
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="sia-adopt-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.share = os.path.join(self.temp.name, "share")
+        os.makedirs(self.share, mode=0o700)
+        self._ledger("init")
+        for name, value in (("SHARE", self.share),
+                            ("BIN", os.path.join(REPO, "bin"))):
+            patcher = mock.patch.object(siabackup.sialib, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        # Readiness is a separate live property; pin it so these tests speak
+        # only about the signed adoption transition.
+        readiness = mock.patch.object(
+            siabackup.sialib, "memory_readiness",
+            return_value=(True, "ready"))
+        readiness.start()
+        self.addCleanup(readiness.stop)
+
+    def _ledger(self, command, *arguments):
+        result = subprocess.run(
+            [sys.executable, os.path.join(REPO, "bin", "sia-ledger"),
+             command, self.share, *arguments],
+            capture_output=True, text=True, timeout=120, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def _adopt(self, *, prepared_id=None, capsule_id=None):
+        self._ledger("append", "RESTORE:adopt",
+                     prepared_id or self.PREPARED_ID,
+                     capsule_id or self.CAPSULE_ID, self.CONTENT, "0")
+
+    def _debt(self):
+        return {"kind": "restore-apply", "prepared_id": self.PREPARED_ID,
+                "capsule_id": self.CAPSULE_ID}
+
+    def test_adoption_is_uncommitted_without_a_signed_adopt_row(self):
+        observed = siabackup._live_restore_observation(self._debt())
+        self.assertTrue(observed["sia_ledger_verified"])
+        self.assertIs(observed["committed"], False)
+        self.assertEqual(observed["ledger_sequence"], 1)
+
+    def test_adoption_is_committed_by_its_exact_signed_row(self):
+        self._adopt()
+        observed = siabackup._live_restore_observation(self._debt())
+        self.assertTrue(observed["sia_ledger_verified"])
+        self.assertIs(observed["committed"], True)
+        self.assertEqual(observed["ledger_sequence"], 2)
+
+    def test_adoption_ignores_rows_bound_to_another_restore(self):
+        self._adopt(prepared_id="e" * 32)
+        self._adopt(capsule_id="b" * 32)
+        self._ledger("append", "RESTORE:intent", self.PREPARED_ID,
+                     self.CAPSULE_ID, self.CONTENT, "0")
+        observed = siabackup._live_restore_observation(self._debt())
+        self.assertIs(observed["committed"], False)
+        self.assertEqual(observed["ledger_sequence"], 4)
+
+    def test_adoption_ambiguity_refuses_instead_of_guessing(self):
+        self._adopt()
+        self._adopt()
+        with self.assertRaisesRegex(
+                ValueError, "restore adoption transition is ambiguous"):
+            siabackup._live_restore_observation(self._debt())
+
+    def test_adoption_is_undetermined_without_apply_debt(self):
+        self._adopt()
+        for debt in (None, {"kind": "restore-recover"}):
+            with self.subTest(debt=debt):
+                observed = siabackup._live_restore_observation(debt)
+                self.assertIsNone(observed["committed"])
+
+    def test_observation_blocks_when_the_generation_moves_underneath_it(self):
+        self._adopt()
+        real_health = siabackup.siacapsule._health_observation
+
+        def append_during_health():
+            # A concurrent signed append is exactly the race the before/after
+            # head comparison exists to catch: the scanned bytes would no
+            # longer describe the generation the attestation reports.
+            observation = real_health()
+            self._ledger("append", "PULSE:tick", "sia", "-",
+                         self.CONTENT, "0")
+            return observation
+
+        with mock.patch.object(
+                siabackup.siacapsule, "_health_observation",
+                side_effect=append_during_health):
+            with self.assertRaisesRegex(
+                    siabackup.BlockedError, "generation changed"):
+                siabackup._live_restore_observation(self._debt())
+
+    def test_observation_refuses_a_target_with_no_generation_head(self):
+        empty = os.path.join(self.temp.name, "no-ledger")
+        os.makedirs(empty, mode=0o700)
+        with mock.patch.object(siabackup.sialib, "SHARE", empty):
+            with self.assertRaisesRegex(
+                    ValueError, "no nonempty generation head"):
+                siabackup._live_restore_observation(self._debt())
 
 
 if __name__ == "__main__":

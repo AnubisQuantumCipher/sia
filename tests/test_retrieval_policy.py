@@ -9,9 +9,12 @@ keeps measuring the blend lane regardless of the flag, so the hypothesis stays
 under instrumentation and can earn its default back with a measured win.
 """
 
+import ast
 import importlib.machinery
 import importlib.util
 import os
+import subprocess
+import sys
 import unittest
 
 try:
@@ -22,6 +25,9 @@ except ModuleNotFoundError:
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin")
+# Set in the child this file spawns to check its own direct execution, so
+# the child does not spawn another one forever.
+_DIRECT_SELFTEST_ENV = "SIA_RETRIEVAL_POLICY_DIRECT_SELFTEST"
 
 
 def _load(name, path):
@@ -78,10 +84,6 @@ class AssociativeRerankPolicy(unittest.TestCase):
                 pass
         self.assertIn("retrieval-unknown-key", recorded)
         self.assertIn("retrieval-associative-rerank-must-be-bool", recorded)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class RehearsalEfficacyPartition(unittest.TestCase):
@@ -155,3 +157,48 @@ class AskHonorsRerankDefault(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("off by measured default", rendered)
         self.assertIn("[evidence] events/x/day", rendered)
+
+
+class DirectExecutionRunsEveryCase(unittest.TestCase):
+    """The __main__ block must sit below every TestCase in this file.
+
+    Incident: the block was written directly under AssociativeRerankPolicy,
+    above RehearsalEfficacyPartition and AskHonorsRerankDefault.  Running
+    `python3 tests/test_retrieval_policy.py` therefore called
+    unittest.main() while those two classes did not yet exist, graded the
+    four cases defined so far, and exited 0 — a green run that had silently
+    skipped the rest.  Only the `python3 -m unittest` lane ever saw them.
+    """
+
+    def test_main_block_is_the_last_top_level_statement(self):
+        with open(os.path.abspath(__file__), encoding="utf-8") as stream:
+            tree = ast.parse(stream.read())
+        guards = [(index, node) for index, node in enumerate(tree.body)
+                  if isinstance(node, ast.If)
+                  and "__main__" in ast.dump(node.test)]
+        self.assertEqual(len(guards), 1, "expected one __main__ guard")
+        index, _node = guards[0]
+        self.assertEqual(index, len(tree.body) - 1,
+                         "__main__ guard must be the last statement")
+
+    def test_direct_execution_collects_every_class(self):
+        # The inner run executes this file again, so it must not spawn a
+        # third: the env flag makes the child skip this case only.
+        if os.environ.get(_DIRECT_SELFTEST_ENV):
+            self.skipTest("inner run spawned by the direct-execution guard")
+        environment = dict(os.environ)
+        environment[_DIRECT_SELFTEST_ENV] = "1"
+        completed = subprocess.run(
+            [sys.executable, os.path.abspath(__file__)],
+            capture_output=True, text=True, env=environment, cwd=REPO,
+            timeout=300)
+        report = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, report)
+        for name in ("AssociativeRerankPolicy",
+                     "RehearsalEfficacyPartition",
+                     "AskHonorsRerankDefault"):
+            self.assertIn(name, report, report)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

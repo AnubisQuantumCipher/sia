@@ -60,6 +60,9 @@ class DreamPublication(unittest.TestCase):
             },
         }
         self.mind = {}
+        self.corpus_pages = set()
+        self.gbrain_calls = []
+        self.mind_saves = []
         self.written_memo = None
         self.ledger_rows = []
         self.thought_rows = []
@@ -74,8 +77,46 @@ class DreamPublication(unittest.TestCase):
          self.sialib.LIFECYCLE_TOMBSTONE) = self.old_state_paths
         self.state_root.cleanup()
 
+    def _schedule_rehearsal(self, *slugs, when=0.0):
+        """Make pages genuinely due through the real ACT-R/SM-2 planner.
+
+        Seeding the mind is what drags the real per-page embed into this
+        class' coverage instead of a hand-written report. Issue #3 shipped
+        because that embed named no --source, so gbrain answered "Page not
+        found" every night while the ledger recorded reviewed=0 for the
+        project's whole life; a stubbed rehearsal cannot see that at all.
+        """
+        mind = copy.deepcopy(self.mind)
+        mind.setdefault("nodes", {})
+        mind.setdefault("edges", {})
+        for slug in slugs:
+            # arousal >= SM2_IMPORTANCE_AROUSAL makes the node important;
+            # the second touch supplies the deterministic SM-2 quality
+            # signal. Both go through siamind so the node shape is the one
+            # production writes, not one this test invented.
+            self.sialib.siamind.touch(mind, slug, ts=when, src="organ",
+                                      arousal=0.8)
+            self.sialib.siamind.touch(mind, slug, ts=when + 1.0,
+                                      src="user-recall")
+            self.corpus_pages.add(slug)
+        self.mind = mind
+
+    def _embed_like_gbrain(self, args):
+        """Answer an embed the way the real gbrain binary answers it.
+
+        gbrain resolves a slug inside exactly one registered source, so a
+        missing --source is not a harmless argument difference: the binary
+        searches "default", finds nothing, and refuses. Reproducing that
+        refusal here means a dream cycle that ever loses --source again
+        fails these tests instead of quietly reporting reviewed=0.
+        """
+        if list(args[2:]) != ["--source", self.sialib.GBRAIN_SOURCE]:
+            return self._result(
+                1, f"Page not found: {args[1]} (source=default)\n")
+        return self._result(os.EX_OK)
+
     def _run(self, *, result, commit="clean", sync=(True, ""),
-             graph=(False, False, False), rehearse=None, ledger=None,
+             graph=(False, False, False), embed=None, ledger=None,
              due_takes=None, grade_take=None, grade_summary=None,
              muse=None, save_mind=None, consolidate=None,
              add_thought=None, commit_grade=None):
@@ -102,15 +143,16 @@ class DreamPublication(unittest.TestCase):
                 ("page", self.memo.get("sync_needed", False)))
             self.thought_rows.append(args + ((kwargs,) if kwargs else ()))
 
-        def default_rehearsal(*, now=None, stage=None):
-            report = {
-                "reviewed": [], "embedded": 0, "failed": 0,
-                "missing": 0, "planned": [], "decay": {}}
-            mind = copy.deepcopy(self.mind)
-            if stage is not None:
-                stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            return report
+        # rehearse_memories is deliberately NOT stubbed in this class: the
+        # whole nightly rehearsal runs for real and only the subprocess
+        # boundary is faked here. Issue #3 lived for the project's entire
+        # life behind a stub at the function boundary, which reported a
+        # healthy shape while the real embed refused every night.
+        def call_gbrain(args, timeout=120, json_out=False):
+            self.gbrain_calls.append(list(args))
+            if args and args[0] == "embed":
+                return (embed or self._embed_like_gbrain)(list(args))
+            return result
 
         def load_mind(*_args, **_kwargs):
             return copy.deepcopy(self.mind)
@@ -119,6 +161,7 @@ class DreamPublication(unittest.TestCase):
             if save_mind is not None:
                 save_mind(mind)
             self.mind = copy.deepcopy(mind)
+            self.mind_saves.append(copy.deepcopy(mind))
 
         def queue_transition(_order, action, arg1, arg2, content):
             row = (action, arg1, arg2, content)
@@ -136,12 +179,12 @@ class DreamPublication(unittest.TestCase):
             "durable_ledger_append": ledger or capture_ledger,
             "queue_ledger_transition": queue_transition,
             "_settle_ledger_transition": None,
-            "rehearse_memories": rehearse or default_rehearsal,
+            "page_exists": lambda slug: slug in self.corpus_pages,
             "read_json": {},
             "ledger_head": (False, ""),
             "export_thoughts": None,
             "log": None,
-            "gbrain": result,
+            "gbrain": call_gbrain,
             "load_memo": self.memo,
             "add_thought": add_thought or capture_thought,
             "atomic_write": capture_write,
@@ -264,25 +307,49 @@ class DreamPublication(unittest.TestCase):
                 if row == ("memo", False)),
             self.trace.index(("graph", True)))
 
+    def test_dream_rehearsal_embeds_in_the_registered_source(self):
+        """The nightly embed must address gbrain's registered source.
+
+        This is issue #3 itself: the per-page embed named no --source for
+        the project's whole life, gbrain resolved the slug in "default",
+        answered "Page not found", and the ledger recorded reviewed=0 every
+        night while nobody read it. The cycle is driven end to end here so
+        losing --source again breaks a test instead of a year of sleep.
+        """
+        self._schedule_rehearsal("events/test/day")
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+        self.assertIn(
+            ["embed", "events/test/day", "--source",
+             self.sialib.GBRAIN_SOURCE], self.gbrain_calls)
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertEqual(rehearsed[-1][1], "reviewed=1")
+        self.assertIn("embedded=1 failed=0 missing=0", rehearsed[-1][2])
+        rested = [row for row in self.thought_rows
+                  if row[1] == "dream"
+                  and "I rehearsed 1 important memories" in row[2]]
+        self.assertEqual(len(rested), 1)
+        self.assertIs(rested[0][4], False)
+        # The SM-2 schedule only advances on a committed embed, so a
+        # persisted review record is the proof the real path ran.
+        self.assertEqual(
+            self.mind["nodes"]["events/test/day"]["review"]["reviews"], 1)
+
     def test_rehearsal_total_failure_emits_urgent_thought(self):
-        def rehearsal(*, now=None, stage=None):
-            report = {
-                "reviewed": [], "embedded": 0, "failed": 2, "missing": 0,
-                "planned": [
-                    {"slug": "events/a", "embed": "failed",
-                     "error": "Page not found: events/a (source=default)"},
-                    {"slug": "events/b", "embed": "failed",
-                     "error": "Page not found: events/b (source=default)"},
-                ], "decay": {}}
-            mind = copy.deepcopy(self.mind)
-            if stage is not None:
-                stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            return report
+        self._schedule_rehearsal("events/a", "events/b")
+
+        def refuse(args):
+            return self._result(
+                1, f"Page not found: {args[1]} (source=default)\n")
 
         self._run(result=self._result(
             os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
-            rehearse=rehearsal)
+            embed=refuse)
+        self.assertEqual(
+            [call for call in self.gbrain_calls if call[0] == "embed"],
+            [["embed", "events/a", "--source", self.sialib.GBRAIN_SOURCE],
+             ["embed", "events/b", "--source", self.sialib.GBRAIN_SOURCE]])
         failing = [row for row in self.thought_rows
                    if row[1] == "dream" and "could not rehearse" in row[2]]
         self.assertEqual(len(failing), 1)
@@ -290,6 +357,49 @@ class DreamPublication(unittest.TestCase):
         self.assertIn("Page not found", failing[0][2])
         self.assertEqual(failing[0][3], ["events/a", "events/b"])
         self.assertIs(failing[0][4], True)
+        # A refused embed must not advance the schedule; the page stays due
+        # so tomorrow retries it rather than silently dropping it.
+        self.assertIsNone(
+            self.mind["nodes"]["events/a"]["review"]["last_quality"])
+
+    def test_missing_corpus_page_is_reported_without_an_embed(self):
+        """A page the corpus no longer holds is never handed to gbrain."""
+        self._schedule_rehearsal("events/test/day")
+        self.corpus_pages.clear()
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+        self.assertEqual(
+            [call for call in self.gbrain_calls if call[0] == "embed"], [])
+        failing = [row for row in self.thought_rows
+                   if row[1] == "dream" and "could not rehearse" in row[2]]
+        self.assertEqual(len(failing), 1)
+        self.assertIn("1 missing page(s)", failing[0][2])
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertIn("embedded=0 failed=0 missing=1", rehearsed[-1][2])
+
+    def test_rehearsal_subprocess_failure_stays_in_its_own_domain(self):
+        """A crashing embed is signed and never blocks the dream cycle.
+
+        Rehearsal is one failure domain among several on purpose: a broken
+        embed must not cost the night its gbrain cycle or its publication.
+        """
+        def explode(_args):
+            raise OSError("gbrain binary vanished")
+
+        report = {"status": "ok", "totals": {}}
+        self._schedule_rehearsal("events/test/day")
+        self.assertEqual(
+            self._run(result=self._result(os.EX_OK, json.dumps(report)),
+                      embed=explode),
+            report)
+        errors = [row for row in self.ledger_rows
+                  if row[0] == "DREAM:rehearse" and row[1] == "error"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("gbrain binary vanished", errors[0][2])
+        self.assertEqual(self.ledger_rows[-1][:2],
+                         ("DREAM:publish", "ok"))
+        self.assertNotIn("dream_unit", self.mind)
 
     def test_write_ahead_marker_precedes_consolidation_mutation(self):
         def consolidate():
@@ -395,19 +505,8 @@ class DreamPublication(unittest.TestCase):
         self.assertTrue(write.called)
 
     def test_rehearsal_keeper_failure_cannot_save_and_retry_can_commit(self):
-        report = {
-            "reviewed": [{"slug": "events/test/day", "quality": 5}],
-            "embedded": 1, "failed": 0, "missing": 0,
-            "planned": [], "decay": {}}
-        state_saves = []
+        self._schedule_rehearsal("events/test/day")
         refuse_once = [True]
-
-        def rehearsal(*, now=None, stage=None):
-            mind = copy.deepcopy(self.mind)
-            stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            state_saves.append("saved")
-            return report
 
         def keeper(*row):
             self.ledger_rows.append(row)
@@ -419,11 +518,16 @@ class DreamPublication(unittest.TestCase):
             os.EX_OK, json.dumps({"status": "ok", "totals": {}}))
         with self.assertRaisesRegex(
                 self.sialib.LedgerTransitionError, "keeper refused"):
-            self._run(result=cycle, rehearse=rehearsal, ledger=keeper)
-        self.assertEqual(state_saves, ["saved"])
+            self._run(result=cycle, ledger=keeper)
+        # Exactly one mind save: rehearsal's own. The settle that the
+        # keeper refused must not have written a second, unsigned one.
+        self.assertEqual(len(self.mind_saves), 1)
         self.assertEqual(self.mind["dream_unit"]["unit"], "rehearse")
+        self.assertEqual(
+            self.mind["nodes"]["events/test/day"]["review"]["last_quality"],
+            5)
 
-        self._run(result=cycle, rehearse=rehearsal, ledger=keeper)
+        self._run(result=cycle, ledger=keeper)
         self.assertNotIn("dream_unit", self.mind)
         attempts = [row for row in self.ledger_rows
                     if row[0] == "DREAM:rehearse"]

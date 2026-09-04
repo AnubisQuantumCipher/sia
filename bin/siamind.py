@@ -1872,6 +1872,43 @@ def _low_traffic_path(adj, traffic, a, b, max_hops, min_nodes=4):
 # ---------------------------------------------------------- PPR retrieval
 # Used out-of-process by `sia ask` against the exported graph snapshot.
 
+
+def _ppr_power_iteration(pers, adj):
+    """Run the PPR power iteration and return the UN-normalised rank vector.
+
+    Split out of ``ppr_rerank`` so the mass invariant can actually be tested.
+    The caller divides by ``max(rank)``, and that normalisation is why a pure
+    leak — dropping the dangling teleport entirely — is invisible from the
+    outside: both updates have the form ``c*pers + (1-damping)*A*rank`` and
+    differ only in ``c``, so their fixed points lie on the same ray and the
+    normalised output is identical. Mass conservation is a property of this
+    vector, not of the ranking, so it has to be asserted here or not at all.
+    """
+    rank = pers[:]
+    for _ in range(PPR_ITers):
+        nxt = [PPR_DAMPING * p for p in pers]
+        dangling = 0.0
+        for i, r in enumerate(rank):
+            if r == 0:
+                continue
+            if not adj[i]:
+                dangling += (1 - PPR_DAMPING) * r
+                continue
+            total_w = sum(w for _, w in adj[i]) or 1.0
+            share = (1 - PPR_DAMPING) * r / total_w
+            for j, weight in adj[i]:
+                nxt[j] += share * weight
+        if dangling:
+            # dangling mass teleports back to the personalization vector, so
+            # rank that reaches a sink returns to the seeds instead of
+            # evaporating. Without this the total shrinks every iteration.
+            for k, pk in enumerate(pers):
+                if pk:
+                    nxt[k] += dangling * pk
+        rank = nxt
+    return rank
+
+
 def ppr_rerank(graph, dense_hits, alpha=0.6, beta=0.25, gamma=0.15,
                mind=None, now=None, origins=None):
     """HippoRAG-style: dense hits seed Personalized PageRank over the typed
@@ -1940,26 +1977,7 @@ def ppr_rerank(graph, dense_hits, alpha=0.6, beta=0.25, gamma=0.15,
         return fallback()        # uncertainty fallback retains origin policy
     tot = sum(pers) or 1.0
     pers = [p / tot for p in pers]
-    rank = pers[:]
-    for _ in range(PPR_ITers):
-        nxt = [PPR_DAMPING * p for p in pers]
-        dangling = 0.0
-        for i, r in enumerate(rank):
-            if r == 0:
-                continue
-            if not adj[i]:
-                dangling += (1 - PPR_DAMPING) * r
-                continue
-            total_w = sum(w for _, w in adj[i]) or 1.0
-            share = (1 - PPR_DAMPING) * r / total_w
-            for j, weight in adj[i]:
-                nxt[j] += share * weight
-        if dangling:
-            # dangling mass teleports back to the personalization vector
-            for k, pk in enumerate(pers):
-                if pk:
-                    nxt[k] += dangling * pk
-        rank = nxt
+    rank = _ppr_power_iteration(pers, adj)
     rmax = max(rank) or 1.0
     acts = {}
     if mind:

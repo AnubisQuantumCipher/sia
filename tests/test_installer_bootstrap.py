@@ -1,3 +1,8 @@
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 import json
 import os
 import shlex

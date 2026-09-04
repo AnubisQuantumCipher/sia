@@ -53,7 +53,11 @@ freeze ends on evidence, not on mood.
 - `README.md` stays ≤ 500 lines (a shape test enforces this — a size ceiling like the
   marketplace's 512 KB cap, not a vocabulary assertion).
 - Any new gbrain invocation shape lands with a probe in `tests/test_gbrain_contract.py`
-  in the same commit.
+  in the same commit. `GbrainArgvGate` in that file enforces it: it reads every argv
+  the runtime hands gbrain out of `bin/`'s own AST and fails on any subcommand path
+  this lane does not probe. It was written after the v1.7.5 audit found this gate
+  held by discipline alone — and it immediately caught two shapes that had already
+  slipped through, `query` and `schema validate`.
 - **`main` is frozen while marketplace verification is pending.** The verify flow binds
   one exact SHA and the automation refuses when that SHA is no longer default-branch
   HEAD, so any push to `main` invalidates the evidence chain it is waiting on. Landing
@@ -67,6 +71,11 @@ freeze ends on evidence, not on mood.
     `main` — once, carrying the fix for that finding and nothing else that was waiting.
     Everything else keeps waiting on its branch. If a push to `main` cannot be traced to
     a block on the commit currently bound, the freeze applies and the answer is no.
+  - The rule is mechanically checked by the `marketplace-freeze` job in
+    `.github/workflows/ci.yml`, which reads the declaration below and turns a push
+    to the frozen branch that is not the bound commit red. It cannot protect the
+    branch — that is a GitHub setting — but the rule is no longer invisible, and a
+    declaration it cannot read is a failure rather than a silent pass.
 
 ---
 
@@ -233,10 +242,19 @@ maintainer's constraint is not "bind a good commit" but "bind the commit that is
 currently HEAD" — and this repository kept moving HEAD.
 
 The correction is upstream of the verify form: **do not push to `main` while a
-verification is pending.** v1.7.8 (`2307182…`) is bound with the form intact. Until the
-listing flips or the maintainer closes the cycle, releases queue on branches. After it
-flips, normal cadence resumes — one re-bind per release, after tagging, and never while
-validation is in flight.
+verification is pending.** The current review binds `8a624ef…` with the form intact.
+Until the listing flips or the maintainer closes the cycle, releases queue on branches.
+After it flips, normal cadence resumes — one re-bind per release, after tagging, and
+never while validation is in flight.
+
+The binding is declared here, in one machine-readable line, because a rule only a
+reader can see is the rule that was already broken three times. CI reads this exact
+line (`.github/workflows/ci.yml`, job `marketplace-freeze`): while the state is
+`pending`, a push to the named branch that is not the named commit fails the build.
+Closing the cycle means editing the line to `state=none`; re-binding means editing
+`sha=` and nothing else in the same commit, because no commit can name its own SHA.
+
+    sia-freeze: state=pending branch=main sha=8a624efc911457ae393a72758ade8729de5ba45d
 
 ---
 

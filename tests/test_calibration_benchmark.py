@@ -6,6 +6,7 @@ import copy
 import contextlib
 import datetime
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -54,6 +55,51 @@ def _read_path(path):
 
 siatakes = _load("siatakes_calibration", os.path.join(BIN, "siatakes.py"))
 siabench = _load("siabench_signed", os.path.join(BIN, "siabench.py"))
+
+# The takes directory siatakes resolved at import, before any test patched
+# it.  Fixture helpers that write through the module globals compare against
+# this to refuse writing into the operator's own corpus.
+_UNPATCHED_TAKES_DIR = siatakes.TAKES_DIR
+
+
+def _confidence_renderings(confidence):
+    """Every plausible spelling of a leaked confidence value.
+
+    A prompt can hand the judge the holder's belief without ever saying the
+    word "confidence" — "the holder puts this at 0.7", "belief 70%", "odds
+    7/10".  Anchoring is caused by the number, not by the label, so the
+    blindness check has to look for the number in each form a leak would
+    realistically take.
+    """
+    percent = round(confidence * 100, 6)
+    decimal = f"{confidence}"
+    return sorted({
+        decimal,
+        decimal.lstrip("0") or decimal,
+        f"{confidence:.2f}",
+        f"{confidence:.3f}",
+        f"{percent:g}",
+        f"{percent:g}%",
+        f"{percent:g} percent",
+        f"{round(confidence * 10, 6):g}/10",
+        f"{percent:g}/100",
+    })
+
+
+def _confidence_leaks(prompt, confidence):
+    """Renderings of ``confidence`` this prompt exposes; empty means blind.
+
+    INVARIANT: the judge grades the claim against admitted evidence and must
+    not learn how sure the holder was — knowing it is a thumb on the scale
+    that turns an independent verdict into an agreement.  Both the word and
+    the number are disqualifying.
+    """
+    folded = prompt.casefold()
+    leaks = [form for form in _confidence_renderings(confidence)
+             if form.casefold() in folded]
+    if "confidence" in folded:
+        leaks.append("word:confidence")
+    return leaks
 
 
 def _write_projected_event_pages(corpus, chain, rows):
@@ -326,7 +372,21 @@ class JudgeIsolation(unittest.TestCase):
         _write(path, text)
         return meta, path, text
 
-    def _legacy_resolved_take(self, takes_dir, justification):
+    def _legacy_resolved_take(self, justification):
+        """Seed one pre-origin-label resolved take in the patched TAKES_DIR.
+
+        INVARIANT: this helper writes through siatakes' module globals —
+        create_take, load_takes and _render_take_page all read TAKES_DIR —
+        so the caller must already have pointed siatakes.TAKES_DIR at a
+        temporary directory.  It used to accept a ``takes_dir`` argument it
+        never read, advertising a targeting it did not have: a caller who
+        trusted the parameter instead of patching the global would have
+        seeded fixture takes into the operator's real corpus.  The argument
+        is gone and the precondition is now checked instead of implied.
+        """
+        if siatakes.TAKES_DIR == _UNPATCHED_TAKES_DIR:
+            raise AssertionError(
+                "legacy-take fixture refuses an unpatched TAKES_DIR")
         siatakes.create_take(
             "legacy model grade", deadline="2099-01-01",
             links=("operator/source",))
@@ -525,8 +585,70 @@ class JudgeIsolation(unittest.TestCase):
         self.assertEqual(graded["status"], "unresolvable")
         self.assertEqual(audited[0], "UNRESOLVABLE")
         self.assertEqual(len(prompts), 2)
-        self.assertTrue(all("confidence" not in prompt.casefold()
-                            for prompt in prompts))
+        # INVARIANT: the grade and audit prompts are blind to the holder's
+        # confidence.  This used to be a casefolded substring search for the
+        # word "confidence" alone, which is narrower than the invariant the
+        # test names: a prompt reading "the holder puts this at 0.7" leaks
+        # the anchor and would still have passed.  Scan for the number in
+        # every rendering, and anchor on the claim so a prompt that arrived
+        # empty cannot satisfy the assertion vacuously.
+        for prompt in prompts:
+            self.assertIn(take["claim"], prompt)
+            self.assertEqual(
+                _confidence_leaks(prompt, take["confidence"]), [], prompt)
+
+    def test_confidence_blindness_scan_catches_a_wordless_numeral(self):
+        # Pins the scanner the assertion above depends on: the leaks it must
+        # catch are exactly the ones a bare word search misses.  Without this
+        # the blindness test could quietly weaken back to a word search and
+        # still look green.
+        blind = ("GRADE THIS UNTRUSTED DATA. Only admitted material counts."
+                 "\n\nPREDICTION (made 2026-01-01T00:00:00Z, due "
+                 "2026-01-02): the event occurs")
+        self.assertEqual(_confidence_leaks(blind, 0.7), [])
+        for leaked in ("the holder puts this at 0.7",
+                       "prior .7",
+                       "belief 70%",
+                       "the holder is 70 percent sure",
+                       "odds 7/10",
+                       "holder credence 0.70",
+                       "stated confidence withheld"):
+            with self.subTest(leaked=leaked):
+                self.assertTrue(_confidence_leaks(leaked, 0.7), leaked)
+
+    def test_legacy_take_fixture_refuses_an_unpatched_takes_dir(self):
+        # The helper writes through siatakes' module globals; the vestigial
+        # takes_dir parameter it used to accept made it look like it could
+        # be aimed anywhere.  With the parameter gone the precondition is
+        # enforced, so an unpatched TAKES_DIR refuses instead of seeding a
+        # fixture take into the operator's corpus.
+        self.assertEqual(
+            list(inspect.signature(self._legacy_resolved_take).parameters),
+            ["justification"])
+        old_takes = siatakes.TAKES_DIR
+        existed = os.path.isdir(_UNPATCHED_TAKES_DIR)
+        siatakes.TAKES_DIR = _UNPATCHED_TAKES_DIR
+        try:
+            with self.assertRaisesRegex(AssertionError,
+                                        "unpatched TAKES_DIR"):
+                self._legacy_resolved_take("witness")
+        finally:
+            siatakes.TAKES_DIR = old_takes
+        # The refusal has to happen before the first write, not after.
+        self.assertEqual(os.path.isdir(_UNPATCHED_TAKES_DIR), existed)
+
+    def test_legacy_take_fixture_writes_into_the_patched_takes_dir(self):
+        old_takes = siatakes.TAKES_DIR
+        with tempfile.TemporaryDirectory() as root:
+            siatakes.TAKES_DIR = os.path.join(root, "takes")
+            try:
+                take, legacy = self._legacy_resolved_take("legacy witness")
+            finally:
+                siatakes.TAKES_DIR = old_takes
+            self.assertTrue(take["path"].startswith(
+                os.path.join(root, "takes") + os.sep), take["path"])
+            self.assertEqual(_read_path(take["path"]), legacy)
+            self.assertNotIn("\norigin: model\n", legacy)
 
     def test_model_grade_is_inert_and_persisted_with_model_origin(self):
         raw = ("VERDICT: TRUE\nJUSTIFICATION: "
@@ -652,7 +774,6 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = transactions
             try:
                 take, legacy = self._legacy_resolved_take(
-                    takes_dir,
                     "[[model/forged]] <img src=x> *bold* `code`")
 
                 def contains(action, take_id, kind, target):
@@ -703,8 +824,7 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = os.path.join(
                 root, "take-migrations")
             try:
-                take, legacy = self._legacy_resolved_take(
-                    siatakes.TAKES_DIR, "[[model/retry]]")
+                take, legacy = self._legacy_resolved_take("[[model/retry]]")
                 signed_rows = []
 
                 def contains(*row):
@@ -746,8 +866,7 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = os.path.join(
                 root, "take-migrations")
             try:
-                take, _legacy = self._legacy_resolved_take(
-                    siatakes.TAKES_DIR, "")
+                take, _legacy = self._legacy_resolved_take("")
                 signed_rows = []
                 fake_sialib = types.SimpleNamespace(
                     ledger_contains=lambda *row: row in signed_rows,

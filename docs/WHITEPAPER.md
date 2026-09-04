@@ -1,6 +1,6 @@
 # SIA: An Evidence-Grounded Neurocognitive Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-09-01 · v1.5**
+**Khephri Labs · open source (MIT) · 2026-09-04 · v1.7.8**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 
@@ -16,7 +16,9 @@ metadata — into a single knowledge graph over a git-versioned markdown
 corpus, indexed by gbrain (PGLite + local embeddings). On top of storage
 it implements a deterministic neurocognitive layer drawn from the memory
 literature: ACT-R activation, Hebbian co-activation, spreading-activation
-retrieval (HippoRAG), dopaminergic novelty gating, surprisal against
+retrieval (HippoRAG — implemented and instrumented, but shipping
+default-off since it measured below plain dense retrieval on 2026-09-02;
+§4.3), dopaminergic novelty gating, surprisal against
 learned baselines, a Global-Workspace attention model, sleep-cycle
 systems consolidation with flashbulb preservation, and outcome learning
 via Brier-scored predictions. Retrieval additionally uses non-destructive
@@ -729,11 +731,23 @@ vocabulary, it is not ready, whatever the citation says.
 ships as deterministic policy with an instrument attached, and it is
 promoted — or a new hypothesis lane is opened — only when its instrument
 shows it beating the plain alternative, never on citation or plausibility.
-The shipped example is §4.3's associative tie-breaker: graph influence is
-the tested release-selected policy because it matched dense retrieval on
-the historical probe set, and a tripwire regression is an operator-visible
-warning that must be investigated before any future policy is accepted.
-Anything without that measured showing stays behind its gate.
+Matching the plain alternative is not promotion: a tie leaves the
+citation-motivated mechanism carrying unearned default authority, so the
+rule requires a win.
+
+The worked example is §4.3's associative tie-breaker, and it is an example
+of the rule *demoting* something. On 2026-09-02, over a probe set extended
+from 13 to 22 organ-gated probes, the blend measured uniformly below plain
+dense retrieval: slug match@5 0.86 versus 0.91, reciprocal slug rank 0.67
+versus 0.71, match@1 0.50 versus 0.59. Graph influence in `sia ask`
+therefore ships **default-off** behind the validated
+`retrieval.associative_rerank` key; the answer footer states the mode
+either way. The nightly tripwire still measures the blend lane regardless
+of the flag, so the hypothesis stays instrumented and can earn its default
+back — under the same rule that demoted it, which now means beating dense,
+not tying it. A tripwire regression is an operator-visible warning that
+must be investigated before any future policy is accepted. Anything
+without that measured showing stays behind its gate.
 
 Typed edge inference now has two deliberately separate deterministic lanes:
 gbrain runs its person/company entity gazetteer after each sync, while SIA

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused continuity-unit and runtime-v4 uninstall regressions."""
+"""Focused continuity-unit and runtime-v5 uninstall regressions."""
 
 import json
 import os
@@ -53,6 +53,25 @@ MODERN_V4_NAMES = (
     "siatakes.py", "siasenses.py", "siacapsule.py", "siabackup.py",
     "siarestoreadmit.py", "sia-continuity-worker",
 )
+# uninstall.sh has shipped a v5 rung since the graph projection lane
+# (siagraph.py) joined the managed runtime, salt "sia-runtime-v5\0".  This
+# fixture stopped at v4, and because a v4 tree contains no siagraph.py the
+# uninstaller quietly selected the v4 rung: the test passed while the top
+# step of the shipped ladder -- the one the resident install actually runs
+# on -- was never executed once.  Keep both rungs enumerated here so the
+# fence is pinned at the rung it is really asked to defend.
+MODERN_V5_NAMES = MODERN_V4_NAMES + ("siagraph.py",)
+
+# Members each rung ADDED over its predecessor.  A rung is only pinned when
+# every one of them is load-bearing, including the member whose mere
+# presence selects the rung: deleting siagraph.py from a v5 tree demotes the
+# digest to the v4 rung, and a fence that still authorized after that
+# demotion would let a caller shed a member to reach weaker ground.
+V4_NEW_MEMBERS = (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "sia-continuity-worker",
+)
+V5_NEW_MEMBERS = V4_NEW_MEMBERS + ("siagraph.py",)
 
 
 SYSTEMCTL_FIXTURE = r'''
@@ -397,7 +416,7 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
             self.assertIn("ambiguous archive recovery retained", result.stderr)
             self.assertIn("purge blocked", result.stderr)
 
-    def test_runtime_v4_digest_and_fence_require_every_new_member(self):
+    def _fence_script(self):
         uninstaller = _read("uninstall.sh")
         digest_function = "runtime_tree_digest() {" + uninstaller.split(
             "runtime_tree_digest() {", 1)[1].split(
@@ -405,13 +424,30 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
         fence_function = "fenced_runtime_authorized() {" + uninstaller.split(
             "fenced_runtime_authorized() {", 1)[1].split(
                 "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
+        # "set -eu", not "set -u": under plain -u a failed digest comparison
+        # is discarded and the script's status comes from the fence alone, so
+        # the rung/salt half of the ladder was asserted by a line that could
+        # not fail the test.  Both functions are a single python3 heredoc, so
+        # -e adds no spurious early exit.
+        return digest_function + fence_function + r'''
+set -eu
+LAUNCH_FENCE_JOURNAL="$TEST_JOURNAL"
+LIFECYCLE_TOMBSTONE="$TEST_TOMBSTONE"
+RUNTIME_RECEIPT="$TEST_RECEIPT"
+RUNTIME_BIN_DIR="$TEST_RUNTIME"
+[ "$(runtime_tree_digest "$RUNTIME_BIN_DIR")" = "$TEST_DIGEST" ]
+fenced_runtime_authorized
+'''
+
+    def _assert_rung_pins_every_member(
+            self, script, names, added, promotion=None):
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
             managed = os.path.join(root, "managed")
             receipt = os.path.join(managed, "runtime")
             journal = os.path.join(managed, "launch-fence.json")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            for name in MODERN_V4_NAMES:
+            for name in names:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
             digest = _runtime_digest(runtime)
             _write(
@@ -430,15 +466,6 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
                 }, sort_keys=True, separators=(",", ":")) + "\n",
                 0o600)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
-            script = digest_function + fence_function + r'''
-set -u
-LAUNCH_FENCE_JOURNAL="$TEST_JOURNAL"
-LIFECYCLE_TOMBSTONE="$TEST_TOMBSTONE"
-RUNTIME_RECEIPT="$TEST_RECEIPT"
-RUNTIME_BIN_DIR="$TEST_RUNTIME"
-[ "$(runtime_tree_digest "$RUNTIME_BIN_DIR")" = "$TEST_DIGEST" ]
-fenced_runtime_authorized
-'''
             environment = os.environ.copy()
             environment.update({
                 "TEST_JOURNAL": journal,
@@ -456,13 +483,30 @@ fenced_runtime_authorized
 
             result = authorize()
             self.assertEqual(result.returncode, 0, result.stderr)
-            for name in ("siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-                         "sia-continuity-worker"):
+            for name in added:
                 with self.subTest(missing=name):
                     path = os.path.join(runtime, name)
                     os.unlink(path)
                     self.assertNotEqual(authorize().returncode, 0)
                     _write(path, name + "\n", 0o644)
+            self.assertEqual(authorize().returncode, 0)
+            if promotion is not None:
+                # Dropping a later rung's member into an earlier rung's tree
+                # re-selects the ladder: the receipt was signed under the
+                # older salt and member list and must stop authorizing.
+                _write(
+                    os.path.join(runtime, promotion),
+                    promotion + "\n", 0o644)
+                self.assertNotEqual(authorize().returncode, 0, promotion)
+
+    def test_runtime_v5_digest_and_fence_require_every_new_member(self):
+        script = self._fence_script()
+        for rung, names, added, promotion in (
+                ("v4", MODERN_V4_NAMES, V4_NEW_MEMBERS, "siagraph.py"),
+                ("v5", MODERN_V5_NAMES, V5_NEW_MEMBERS, None)):
+            with self.subTest(rung=rung):
+                self._assert_rung_pins_every_member(
+                    script, names, added, promotion)
 
     def test_purge_removes_continuity_secrets_but_normal_uninstall_retains_them(self):
         for purge in (False, True):

@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -1388,6 +1389,139 @@ class CapsuleBoundaryTests(unittest.TestCase):
             check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+
+class RestoreQuiescenceCapabilityTests(unittest.TestCase):
+    """Behavioural coverage for the four-descriptor quiescence proof.
+
+    ``validate_restore_capability`` is the central safety property of the
+    restore ceremony: before a single live byte moves it proves that this
+    process already holds the lifecycle, brainstem, corpus, and gbrain locks
+    exclusively.  Every thaw and recovery test in this file mocks it away, so
+    a regression that admitted an unheld, shared, or stale descriptor would
+    have passed the entire suite while leaving a live daemon writing into the
+    roots a restore is about to replace.  These tests take and release the
+    real flocks instead.
+    """
+
+    BINDINGS = (
+        ("lifecycle_fd", "LIFECYCLE_LOCK", "lifecycle"),
+        ("brainstem_fd", "BRAINSTEM_OWNER_LOCK", "brainstem"),
+        ("corpus_fd", "CORPUS_OWNER_LOCK", "corpus"),
+        ("gbrain_fd", "GBRAIN_OWNER_LOCK", "gbrain"),
+    )
+
+    def setUp(self):
+        self.fixture = tempfile.TemporaryDirectory(prefix="sia-quiesce-test-")
+        self.addCleanup(self.fixture.cleanup)
+        self.paths = {}
+        for key, constant, _label in self.BINDINGS:
+            path = os.path.join(self.fixture.name, key + ".lock")
+            with open(path, "wb"):
+                pass
+            os.chmod(path, 0o600)
+            self.paths[key] = path
+            patcher = mock.patch.object(sialib, constant, path)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _close(descriptor):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+    def _open(self, key):
+        descriptor = os.open(self.paths[key], os.O_RDWR)
+        self.addCleanup(self._close, descriptor)
+        return descriptor
+
+    def _held_capability(self):
+        """Hold all four locks exclusively, as a real worker already does."""
+        capability = {}
+        for key, _constant, _label in self.BINDINGS:
+            descriptor = self._open(key)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            capability[key] = descriptor
+        return capability
+
+    def test_quiescence_admits_only_while_every_lock_is_still_held(self):
+        capability = self._held_capability()
+        self.assertTrue(siacapsule.validate_restore_capability(capability))
+        # Each descriptor is released and retaken on its own so a regression
+        # that stopped checking one of the four is caught by name.
+        for key, _constant, label in self.BINDINGS:
+            with self.subTest(lock=label):
+                fcntl.flock(capability[key], fcntl.LOCK_UN)
+                with self.assertRaisesRegex(
+                        ValueError, label + " capability is not held"):
+                    siacapsule.validate_restore_capability(capability)
+                fcntl.flock(capability[key], fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertTrue(
+                    siacapsule.validate_restore_capability(capability))
+
+    def test_quiescence_refuses_a_shared_holder_beside_another_reader(self):
+        # A shared lease is what an ordinary reader holds.  Quiescence means
+        # nobody else can be reading either, so a downgraded descriptor with
+        # a live sibling reader must refuse rather than count as held.
+        capability = self._held_capability()
+        fcntl.flock(capability["corpus_fd"], fcntl.LOCK_SH)
+        sibling = self._open("corpus_fd")
+        fcntl.flock(sibling, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        with self.assertRaisesRegex(
+                ValueError, "corpus capability is not exclusive"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_a_descriptor_bound_to_a_replaced_lock(self):
+        # A descriptor can outlive its path.  Holding the old inode proves
+        # nothing about the lock a racing daemon would actually take today.
+        capability = self._held_capability()
+        replacement = self.paths["gbrain_fd"] + ".replacement"
+        with open(replacement, "wb"):
+            pass
+        os.chmod(replacement, 0o600)
+        os.rename(replacement, self.paths["gbrain_fd"])
+        with self.assertRaisesRegex(
+                ValueError, "gbrain capability does not bind its live lock"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_descriptors_bound_to_the_wrong_lock(self):
+        # Four held descriptors are not the proof; the proof is that each one
+        # binds its own root's lock.  Swapping two must refuse.
+        capability = self._held_capability()
+        capability["corpus_fd"], capability["gbrain_fd"] = (
+            capability["gbrain_fd"], capability["corpus_fd"])
+        with self.assertRaisesRegex(
+                ValueError, "corpus capability does not bind its live lock"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_capabilities_of_the_wrong_shape(self):
+        capability = self._held_capability()
+        cases = (
+            None,
+            {key: value for key, value in capability.items()
+             if key != "corpus_fd"},
+            {**capability, "extra_fd": capability["corpus_fd"]},
+        )
+        for case in cases:
+            with self.subTest(capability=case):
+                with self.assertRaisesRegex(
+                        ValueError, "restore capability has invalid shape"):
+                    siacapsule.validate_restore_capability(case)
+
+    def test_quiescence_refuses_values_that_are_not_open_descriptors(self):
+        # ``True`` is the dangerous one: it is an int subclass, so a laxer
+        # check would treat it as descriptor 1 and validate the worker's own
+        # stdout as the lifecycle lock.
+        held = self._held_capability()
+        for value in (True, -1, "3", None):
+            with self.subTest(descriptor=value):
+                capability = dict(held, lifecycle_fd=value)
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "lifecycle capability descriptor is invalid"):
+                    siacapsule.validate_restore_capability(capability)
 
 
 if __name__ == "__main__":

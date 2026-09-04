@@ -111,6 +111,17 @@ operator's corpus.
 
 ## 1.7.5 — 2026-09-03 · what held by discipline now holds by test
 
+*There is no 1.7.4 entry and no `v1.7.4` tag, and this heading carries the
+title 1.7.4 was written under. Commit `8cdfa3e` did bump the manifest to
+1.7.4 with the three checks below, and called the fourth thing the review
+reported — the installer terminal that "appeared only at the end of the
+install" — unreproduced. Before anything was tagged it turned out to be two
+defects on this side, so the cockpit fix landed as a second entry and
+`3b0762d` folded both into this one: one release for one review. 1.7.4 was
+spent on an untagged commit and is left unused rather than reissued, because
+one version number naming two different trees is exactly the kind of
+bookkeeping this project refuses elsewhere.*
+
 [@m10ust](https://github.com/m10ust) took the standing review invitation and
 audited the v1.5.2...v1.6.0 module-split diff: all four digest routines, the
 release/staging file lists, `bin/siagraph.py`, the bind/invoke façade, and the

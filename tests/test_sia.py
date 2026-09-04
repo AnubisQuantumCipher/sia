@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """SIA test suite — the invariants the whitepaper claims were verified in
-review, now shipped as executable checks. Pure stdlib (unittest), no
-network, no daemon, no brain. Run: python3 -m unittest -v tests.test_sia
-(from the repo root), or ./tests/test_sia.py.
+review, now shipped as executable checks. unittest, never pytest; it
+never opens a socket, starts the daemon, or reads the real brain. It is
+NOT, however, pure stdlib: `cryptography` is imported at module scope and
+is load-bearing (Ed25519 ledger fixtures), chain and vault fixtures shell
+out to git, and the process-bound tests read /proc — so importing it
+needs `cryptography` and running it needs a Linux host with git. Run:
+python3 -m unittest -v tests.test_sia (from the repo root), or
+./tests/test_sia.py.
 
 Covers the load-bearing correctness properties a reviewer would poke at
 first: cursor/replay semantics, epoch-merge idempotence, ledger verify,
@@ -10,7 +15,8 @@ PageRank mass conservation, novelty-as-absence, empirical surprise incl.
 absence detection, redaction fail-closed, and touch-source weighting.
 """
 
-import contextlib, copy, datetime, hashlib, importlib.machinery, importlib.util, json, os, re, shlex, sqlite3, stat
+import ast, contextlib, copy, datetime, hashlib, importlib.machinery
+import importlib.util, json, os, re, shlex, sqlite3, stat
 import subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
@@ -655,6 +661,26 @@ class PPRMass(unittest.TestCase):
     """Personalized PageRank: dangling mass returns to the personalization
     vector (no rank leaks to zero); dense order is the primary signal."""
 
+    # ppr_rerank returns a BLEND, never the rank vector: with no `mind`
+    # the score is base * (1 + K * rank_i / rank_max), where base is
+    # (dense / dmax) * the origin weight. Divide out the base, then
+    # divide every remainder by the top hit's, and rank_i / rank_max
+    # comes back with K cancelled — so these tests pin the mass
+    # invariant and not the tuning constant next to it.
+    #
+    # What this CANNOT see, stated so nobody reads more into it: losing
+    # the teleport entirely leaves the fixed point on the same ray
+    # (both updates are c * pers + (1 - damping) * A * rank, differing
+    # only in c), so every rank_i / rank_max is unchanged and the total
+    # is not recoverable through this API. What changes shape — and what
+    # is pinned below — is whether the dangling mass comes back to the
+    # dangling SEEDS in the right proportion.
+    def _rank_shares(self, out, bases):
+        excess = {slug: score / bases[slug] - 1.0 for slug, score in out}
+        top = max(excess.values())
+        self.assertGreater(top, 0.0, "no PPR contribution to recover")
+        return {slug: value / top for slug, value in excess.items()}
+
     def test_dangling_conserved(self):
         graph = {"nodes": [{"id": c} for c in "abcde"],
                  "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
@@ -666,6 +692,45 @@ class PPRMass(unittest.TestCase):
         self.assertIn("d", slugs)
         # top hit is the strongest dense seed
         self.assertEqual(out[0][0], "a")
+        # Mass. Personalization is a = 2/3, d = 1/3 ((dense / dmax) over
+        # max(1, deg)), and the conserving fixed point of the damping-0.5
+        # walk is rank = [7, 4, 1, 3, 0] / 15 — total exactly 1, with 'd'
+        # holding 3/15 although no edge points at it. Every unit of that
+        # arrived by teleport, so d/a = 3/7 IS the returned dangling
+        # mass: a walk that handed it back only to nodes with edges
+        # leaves d at 18/49, and one that dropped dangling seeds from the
+        # personalization vector leaves it at 0. The old version of this
+        # test asserted membership and order only, which all three
+        # satisfy. Tolerance: 30 power iterations at damping 0.5 leave
+        # ~1e-9 of residual here, and the nearest wrong answer is 0.09
+        # away, so 1e-6 is both stable and decisive.
+        shares = self._rank_shares(out, {"a": 1.0, "d": 0.5})
+        self.assertGreater(shares["d"], 0.0, "dangling rank leaked to 0")
+        self.assertAlmostEqual(shares["d"], 3 / 7, delta=1e-6)
+        self.assertAlmostEqual(sum(shares.values()), 10 / 7, delta=1e-6)
+
+    def test_total_rank_mass_stays_one(self):
+        # Same graph, every node seeded, so the whole rank vector is
+        # observable in the output instead of two entries of it.
+        # Personalization is [2, 1, 2, 2, 2] / 9 and the conserving fixed
+        # point is rank = [3, 4, 3, 2, 2] / 14: total 1, top rank 2/7 at
+        # 'b'. Rank reaches the caller divided by that top rank, so a
+        # conserved total of 1 has to show up as shares summing to
+        # 1 / (2/7) = 7/2. Returning the dangling mass only to nodes with
+        # edges sums to ~3.32; dropping the dangling seeds from the
+        # personalization vector, 2.5 with two nodes at flat zero.
+        graph = {"nodes": [{"id": c} for c in "abcde"],
+                 "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
+        hits = [(c, 1.0) for c in "abcde"]
+        shares = self._rank_shares(
+            siamind.ppr_rerank(graph, hits), {c: 1.0 for c in "abcde"})
+        self.assertAlmostEqual(sum(shares.values()), 7 / 2, delta=1e-6)
+        for slug, expected in (("a", 3 / 4), ("b", 1.0), ("c", 3 / 4),
+                               ("d", 1 / 2), ("e", 1 / 2)):
+            with self.subTest(slug=slug):
+                self.assertGreater(shares[slug], 0.0,
+                                   "rank leaked to zero")
+                self.assertAlmostEqual(shares[slug], expected, delta=1e-6)
 
     def test_uncertainty_fallback(self):
         # empty graph -> pure dense order preserved
@@ -710,6 +775,46 @@ class PPRMass(unittest.TestCase):
             "takes/new-open", "take", "derived"), "derived")
 
 
+    def test_dangling_mass_is_conserved_not_leaked(self):
+        """The invariant the class name claims, asserted on the vector.
+
+        Through ``ppr_rerank`` this is untestable: the caller divides by
+        ``max(rank)``, and a pure leak scales the whole vector uniformly, so
+        the ranking is byte-identical either way. Deleting the teleport block
+        was therefore invisible to every earlier test in this class. Assert it
+        on ``_ppr_power_iteration``, where the mass still exists.
+        """
+        siamind = _load("siamind_ppr_mass", os.path.join(BIN, "siamind.py"))
+        # Node 1 is a sink: everything that reaches it must come back to the
+        # seeds rather than evaporate.
+        pers = [1.0, 0.0]
+        adj = [[(1, 1.0)], []]
+        rank = siamind._ppr_power_iteration(pers, adj)
+        self.assertAlmostEqual(
+            sum(rank), 1.0, places=9,
+            msg="dangling mass leaked instead of teleporting to the seeds")
+
+    def test_a_leaking_iteration_is_caught_by_that_assertion(self):
+        """Prove the guard bites: the same graph, with the teleport removed,
+        loses mass. This is the mutation the old test could not see."""
+        siamind = _load("siamind_ppr_leak", os.path.join(BIN, "siamind.py"))
+        pers = [1.0, 0.0]
+        adj = [[(1, 1.0)], []]
+        damping = siamind.PPR_DAMPING
+        rank = pers[:]
+        for _ in range(siamind.PPR_ITers):
+            nxt = [damping * p for p in pers]
+            for i, r in enumerate(rank):
+                if r and adj[i]:
+                    total = sum(w for _, w in adj[i]) or 1.0
+                    share = (1 - damping) * r / total
+                    for j, weight in adj[i]:
+                        nxt[j] += share * weight
+            rank = nxt          # no teleport: the sink swallows the mass
+        self.assertLess(
+            sum(rank), 0.999,
+            "a leaking iteration must not satisfy the conservation check")
+
 class Novelty(unittest.TestCase):
     """Novelty measures ABSENCE, not first-sighting age: a continuously
     seen entity never re-fires the 30-day bonus."""
@@ -726,6 +831,16 @@ class Novelty(unittest.TestCase):
         s3, _ = siamind.novelty(mind, "o", "k", ["e"], ["k"] * 10,
                                 now + 3600 + 40 * 86400)
         self.assertGreaterEqual(s3, 0.2)
+        # Bands alone do not say it: s2 < 0.4 and s3 >= 0.2 are both true
+        # of s2 = 0.35, s3 = 0.25 — the non-return scoring ABOVE the
+        # genuine return, which is the claim inverted. An absence window
+        # read as 30 minutes instead of 30 days lands exactly there
+        # (s2 = s3 = 0.2) and passed the bands unchanged. Ordering is the
+        # claim: the 30-day bonus re-fires for the return and for
+        # nothing else, and a return is still worth less than a first
+        # sighting.
+        self.assertGreater(s3, s2)
+        self.assertGreater(s1, s3)
 
 
 class Surprise(unittest.TestCase):
@@ -2238,6 +2353,172 @@ class BuiltinSourceBounds(unittest.TestCase):
                     self.sialib.sense_agents({})
             finally:
                 self.sialib.HOME = old_home
+
+
+class NotifySeenSetBound(unittest.TestCase):
+    """notify.seen is bounded by the scan cycle, not by an LRU count.
+
+    The per-cycle seen-set was never pruned, so it grew for the life of the
+    install.  Once it reached MAX_SOURCE_SCAN_ENTRIES sense_notify refused
+    every further entry, and the notify organ went permanently deaf while
+    reporting the deafness as ordinary source-entry refusals.
+    """
+
+    def setUp(self):
+        self.sialib = _load("sialib_notify_seen_bound",
+                            os.path.join(BIN, "sialib.py"))
+
+    def _write_notification(self, history, name):
+        with open(os.path.join(history, name), "w") as stream:
+            json.dump({"app": "fixture", "summary": name}, stream)
+
+    def _drive_scan_cycle(self, cursors):
+        """Run pulses until one full notify scan cycle completes.
+
+        Each iteration mirrors the pulse: the sense is handed an isolated
+        cursor trial that has already been compacted, and the trial is
+        merged back only after the sense returns.
+        """
+        events = []
+        for _pulse in range(64):
+            trial = copy.deepcopy(cursors)
+            self.sialib._compact_seen_set_cursors(trial)
+            events.extend(self.sialib.sense_notify(trial))
+            cursors.clear()
+            cursors.update(trial)
+            page = cursors.get("source.notify.page") or {}
+            if page.get("cookie", 0) == 0 \
+                    and not cursors.get("notify.pending"):
+                return events
+        self.fail("notify scan cycle never completed")
+
+    def test_seen_set_keeps_only_names_the_cursor_can_still_offer(self):
+        cursors = {"notify.last": "c",
+                   "notify.seen": ["a", "c", "d", "e"]}
+        self.sialib._compact_seen_set_cursors(cursors)
+        # "a" and "c" are at or below the high-water name, so the sense's
+        # own candidate filter already excludes them; dropping them cannot
+        # resurrect a reported notification.  "d" and "e" are still
+        # reachable this cycle and must survive.
+        self.assertEqual(cursors["notify.seen"], ["d", "e"])
+        self.assertEqual(cursors["notify.last"], "c")
+
+    def test_completed_cycle_retires_the_whole_seen_set(self):
+        cursors = {"notify.last": "e", "notify.seen": ["c", "d", "e"]}
+        self.sialib._compact_seen_set_cursors(cursors)
+        self.assertNotIn("notify.seen", cursors)
+
+    def test_malformed_cursor_pair_is_left_for_the_sense_to_refuse(self):
+        # Compaction must never be the thing that decides a cursor is
+        # invalid; the sense that owns it raises its own named refusal.
+        for cursors in ({"notify.last": None, "notify.seen": ["a"]},
+                        {"notify.last": "a", "notify.seen": "a"},
+                        {"notify.seen": ["a"]}):
+            before = copy.deepcopy(cursors)
+            self.sialib._compact_seen_set_cursors(cursors)
+            self.assertEqual(cursors, before)
+
+    def test_notify_stays_audible_past_the_seen_set_bound(self):
+        with tempfile.TemporaryDirectory() as home:
+            history = os.path.join(
+                home, ".local/state/omarchy/notifications/history")
+            os.makedirs(history)
+            for index in range(12):
+                self._write_notification(history, f"n{index:04d}")
+            # An organ already caught up on a paginated history: the scan
+            # cycle is the only thing the seen-set has to survive.
+            cursors = {"notify.last": "n0011", "notify.paginated": True}
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            heard, refused = [], []
+            try:
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 8):
+                    for round_index in range(8):
+                        for offset in range(3):
+                            self._write_notification(
+                                history, f"p{round_index:02d}{offset}")
+                        events = self._drive_scan_cycle(cursors)
+                        heard.append(len([event for event in events
+                                          if event.kind == "notification"]))
+                        refused.extend(
+                            event.summary for event in events
+                            if event.kind == "source-entry-refused")
+            finally:
+                self.sialib.HOME = old_home
+        # 24 notifications across 8 cycles, three times the seen-set bound.
+        # Unpruned, the set crosses that bound during the third cycle and
+        # every notification after it is refused instead of reported.
+        self.assertEqual(refused, [])
+        self.assertEqual(heard, [3] * 8)
+        self.assertEqual(cursors["notify.last"], "p072")
+        # The persisted set never carries more than the cycle it belongs
+        # to: the last cycle's three names survive until the next pulse
+        # compacts them away, and nothing older than that is ever kept.
+        self.assertEqual(cursors["notify.seen"], ["p070", "p071", "p072"])
+        self.sialib._compact_seen_set_cursors(cursors)
+        self.assertNotIn("notify.seen", cursors)
+
+    def test_published_cursor_file_never_carries_a_passed_name(self):
+        with tempfile.TemporaryDirectory() as state:
+            with mock.patch.object(self.sialib, "STATE", state), \
+                    mock.patch.object(
+                        self.sialib, "CURSORS_PATH",
+                        os.path.join(state, "cursors.json")):
+                self.sialib.PENDING_CURSOR_RENAMES.clear()
+                cursors = {"notify.last": "d",
+                           "notify.seen": ["b", "d", "f"]}
+                errors, save_error = \
+                    self.sialib._commit_sense_cursors(cursors)
+                self.assertEqual((errors, save_error), ([], None))
+                published = self.sialib.load_cursors()
+        self.assertEqual(published["notify.seen"], ["f"])
+        self.assertEqual(published["notify.last"], "d")
+
+
+class LoadBearingCommentIntegrity(unittest.TestCase):
+    """A garbled explanatory comment is a defect, not cosmetics.
+
+    Two blocks in sialib.py shipped broken: the bench-trend rotation
+    comment stopped mid-phrase before naming the bound it protects, and
+    the dream-unit comment stuttered "failure / failure" across a line
+    break and then restarted its own clause.  Both describe why a bound
+    exists, which is the only thing a later reader has to go on.
+    """
+
+    ANCHORS = ("    prior = collections.deque(",
+               "    ncomp = nepoch = nkept = 0")
+
+    def setUp(self):
+        with open(os.path.join(BIN, "sialib.py"), encoding="utf-8") as src:
+            self.lines = src.read().splitlines()
+
+    def _comment_block_above(self, anchor):
+        index = self.lines.index(anchor)
+        block = []
+        while index > 0 and self.lines[index - 1].strip().startswith("#"):
+            index -= 1
+            block.insert(0, self.lines[index].strip().lstrip("#").strip())
+        self.assertTrue(block, f"no comment block above {anchor!r}")
+        return block
+
+    def test_comment_blocks_end_in_a_finished_sentence(self):
+        for anchor in self.ANCHORS:
+            block = self._comment_block_above(anchor)
+            self.assertTrue(
+                block[-1].endswith("."),
+                f"comment above {anchor!r} stops mid-sentence: "
+                f"{block[-1]!r}")
+
+    def test_comment_blocks_do_not_stutter_across_a_line_break(self):
+        for anchor in self.ANCHORS:
+            block = self._comment_block_above(anchor)
+            words = re.findall(r"[A-Za-z']+", " ".join(block).lower())
+            repeats = [first for first, second in zip(words, words[1:])
+                       if first == second]
+            self.assertEqual(
+                repeats, [],
+                f"comment above {anchor!r} repeats a word: {repeats}")
 
 
 class ObsidianVaultOrgan(unittest.TestCase):
@@ -6669,6 +6950,127 @@ class BoundedGraphProjection(unittest.TestCase):
                     RuntimeError, "backfill exceeded its generation ceiling"):
             self.sialib._reconcile_legacy_memory_authority({})
         self.assertEqual(take_advance.call_count, 2)
+
+class ProcessWideOsPatches(unittest.TestCase):
+    """`mock.patch.object(<module>.os, ...)` reaches the whole process.
+
+    Every module in bin/ does a plain `import os`, so `sialib.os` IS the
+    stdlib module object: the patch is not scoped to the module named in
+    the target, it replaces that attribute for everything running in the
+    interpreter until the block exits. Under the single-threaded
+    unittest runner that is safe, and at most of these sites it is the
+    only way to fail one exact syscall at one exact moment while the
+    real one still answers every other call. It stops being safe the day
+    any of this runs in parallel — xdist-style workers, a thread, an
+    async runner — because an unrelated test then picks up the injected
+    failure and reports it as its own defect.
+
+    So the inventory is frozen rather than forbidden: a new site has to
+    be added below on purpose, with its reason, instead of arriving in a
+    diff that reads as ordinary mocking. Where a test only needs a
+    tripwire ("this call must never happen"), the module-local form
+    `mock.patch.object(sialib, "os", <shim>)` rebinds one module's own
+    name and leaves the stdlib module alone — prefer it.
+    """
+
+    # (test file, patched expression, attribute). A leading "self." is
+    # normalised away: `self.sialib.os` and `sialib.os` are the same
+    # object, and which one a test writes is only style.
+    ACCEPTED = frozenset({
+        # Crash injection mid-commit. The durable write must really
+        # happen up to the chosen call and fail exactly there, so the
+        # recovery path is exercised against a real half-written tree.
+        ("test_sia.py", "sialib.os", "fsync"),
+        ("test_sia.py", "sialib.os", "unlink"),
+        ("test_thought_recovery.py", "sialib.os", "unlink"),
+        # Swap the file out from under a check (TOCTOU). Both stats have
+        # to be answered for real; only the moment between them moves.
+        ("test_calibration_benchmark.py", "siatakes.os", "fstat"),
+        ("test_calibration_benchmark.py", "siatakes.os", "stat"),
+        ("test_dream.py", "sialib.os", "lstat"),
+        ("test_release.py", "os", "fstat"),
+        ("test_release.py", "os", "stat"),
+        ("test_sia.py", "sialib.os", "read"),
+        ("test_staging_recovery.py", "siaqueue.os", "lstat"),
+        # Surveillance: record every path opened to prove a note body is
+        # never read, which needs the real open underneath each call.
+        ("test_sia.py", "sialib.os", "open"),
+        # Tripwires — the call must never be reached at all. These four
+        # need nothing underneath and could move to the module-local
+        # shim form; they are accepted, not endorsed.
+        ("test_calibration_benchmark.py", "siabench.os", "walk"),
+        ("test_calibration_benchmark.py", "siatakes.os", "listdir"),
+        ("test_ledger_recovery.py", "sialib.os", "listdir"),
+        ("test_sia.py", "sialib.os", "listdir"),
+        # A kernel and an owner the test host cannot supply otherwise.
+        ("test_ledger_init_recovery.py", "KEEPER.os", "O_TMPFILE"),
+        ("test_ledger_init_recovery.py", "KEEPER.os", "geteuid"),
+    })
+
+    ADVICE = ("patch a module-local shim — mock.patch.object(<module>, "
+              "'os', shim) — or add the site to "
+              "ProcessWideOsPatches.ACCEPTED with its reason")
+
+    @staticmethod
+    def _expression(node):
+        """Render an attribute chain back into dotted source text."""
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        parts.append(node.id if isinstance(node, ast.Name) else "<expr>")
+        text = ".".join(reversed(parts))
+        return text[len("self."):] if text.startswith("self.") else text
+
+    def _patched_os_attributes(self):
+        found = set()
+        tests = os.path.join(REPO, "tests")
+        for name in sorted(os.listdir(tests)):
+            if not name.endswith(".py"):
+                continue
+            with open(os.path.join(tests, name), encoding="utf-8") as src:
+                tree = ast.parse(src.read(), filename=name)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not node.args:
+                    continue
+                call = self._expression(node.func)
+                target = self._expression(node.args[0])
+                if call.endswith("patch.object"):
+                    if target != "os" and not target.endswith(".os"):
+                        continue
+                    # A computed attribute name is unreadable here, so it
+                    # is reported rather than guessed at.
+                    attribute = "<computed>"
+                    if len(node.args) > 1 \
+                            and isinstance(node.args[1], ast.Constant):
+                        attribute = node.args[1].value
+                    found.add((name, target, attribute))
+                elif call == "patch" or call.endswith(".patch"):
+                    # A string target reaches the same module attribute
+                    # by another road; it must not be a way around this.
+                    literal = node.args[0]
+                    if isinstance(literal, ast.Constant) \
+                            and isinstance(literal.value, str) \
+                            and ".os." in literal.value:
+                        module, _, attribute = literal.value.rpartition(".")
+                        found.add((name, module, attribute))
+        return found
+
+    def test_no_unlisted_process_wide_os_patch(self):
+        unlisted = self._patched_os_attributes() - self.ACCEPTED
+        self.assertEqual(
+            unlisted, set(),
+            f"process-wide os patch not accepted anywhere: {self.ADVICE}")
+
+    def test_accepted_sites_all_still_exist(self):
+        # A list that has drifted from the tests stops being a guard and
+        # starts being folklore, so a removed site is a failure too.
+        stale = self.ACCEPTED - self._patched_os_attributes()
+        self.assertEqual(
+            stale, set(),
+            "ProcessWideOsPatches.ACCEPTED lists sites that are gone; "
+            "delete these entries")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
