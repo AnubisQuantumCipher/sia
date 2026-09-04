@@ -917,6 +917,7 @@ def export_graph(require_complete=True):
         _append_graph_failure(
             failed_ops, "graph_projection_state:" + str(exc)[:120])
     graph = {"v": 2, "ts": iso(),
+             "publication_id": uuid.uuid4().hex,
              "nodes": sorted(keep.values(), key=lambda n: n["id"]),
              "edges": edges,
              "pages_total": pages_total,

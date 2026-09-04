@@ -231,7 +231,8 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
 
     def _valid_stream(self, stream):
         prelude = self._cockpit_logic(
-            "isPlainRecord", "validThought", "validThoughtStream")
+            "isPlainRecord", "validOriginLabel", "validThought",
+            "validThoughtStream")
         return self._run(prelude, "validThoughtStream", [stream])
 
     def _thought(self, **overrides):
@@ -265,6 +266,10 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
             {"v": 1, "thoughts": [self._thought(kind="")]}))
         self.assertFalse(self._valid_stream(
             {"v": 1, "thoughts": [self._thought(origin=7)]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(origin="invented")]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(urgent="false")]}))
         self.assertFalse(self._valid_stream({"v": 1, "thoughts": "no"}))
         self.assertFalse(self._valid_stream({"thoughts": []}))
         self.assertFalse(self._valid_stream(None))
@@ -409,7 +414,7 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
 
         self._contains(
             _qml_function(cockpit, "applyInstallCompletion"),
-            "root.noteInstallingObservation()", "applyInstallCompletion")
+            "root.noteInstallingObservation(", "applyInstallCompletion")
         lifecycle = cockpit.index("onReleaseLifecycleChanged:")
         handler = cockpit[lifecycle:_scan_block(
             cockpit, cockpit.index("{", lifecycle)) + 1]
@@ -417,6 +422,28 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
             handler.index("root.noteInstallingObservation()"),
             handler.index("if (!root.cockpitVisible) return"),
             "the horizon must keep running while the cockpit is closed")
+
+    def test_same_release_republication_restarts_only_from_file_change(self):
+        cockpit = _read("Cockpit.qml")
+        self.assertIn(
+            "property bool installCompletionPublicationChanged: false",
+            cockpit)
+        note = _qml_function(cockpit, "noteInstallingObservation")
+        self.assertIn("publicationChanged", note)
+        self.assertIn("|| publicationChanged", note)
+        apply_body = _qml_function(cockpit, "applyInstallCompletion")
+        self.assertIn("publicationChanged", apply_body)
+        completion_view = _qml_element(cockpit, "id: installCompletionFile")
+        self.assertIn(
+            "root.installCompletionPublicationChanged = true",
+            completion_view)
+        self.assertIn(
+            "root.installCompletionPublicationChanged = false",
+            completion_view)
+        for name in ("open", "close"):
+            self.assertNotIn(
+                "installCompletionPublicationChanged",
+                _qml_function(cockpit, name), name)
 
     # ------------------------------------------------------- finding 8
 

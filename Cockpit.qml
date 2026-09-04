@@ -80,6 +80,7 @@ Item {
   // catches — an installer that died — is invisible within any one summon.
   property string installingRecordKey: ""
   property real installingObservedAtMs: 0
+  property bool installCompletionPublicationChanged: false
   readonly property int continuityInputMaxLength: 4096
   readonly property int continuityResponseMaxLength: 65536
 
@@ -156,9 +157,17 @@ Item {
       && root.focusedWorkspaceName !== root.workspaceLockName
   readonly property bool cockpitVisible:
     root.opened && !root.workspaceLockMismatch
+  readonly property bool continuityStale:
+    Model.continuityStale(root.continuity, root.nowMs,
+                          Model.continuityStaleAfterSec())
+  readonly property var currentContinuity:
+    !root.continuityStale && root.continuityBoundary === ""
+      ? root.continuity : null
   readonly property string continuityState:
-    root.continuity ? root.continuity.state : "unknown"
+    root.currentContinuity ? root.currentContinuity.state : "unknown"
   readonly property color continuityColor: {
+    if (root.continuityStale || root.continuityBoundary !== "")
+      return root.urgent
     if (root.restoreCorrelationLost) return root.urgent
     if (root.restoreVerificationPending) return root.accent
     var tone = Model.continuityTone(root.continuityState)
@@ -221,6 +230,69 @@ Item {
       && root.validAgentRelay(snapshot.agent_queue)
   }
 
+  function validOriginLabel(value) {
+    return ["evidence", "derived", "model", "legacy-unlabeled"]
+      .indexOf(value) !== -1
+  }
+
+  function validGraphSnapshot(candidate) {
+    if (!root.isPlainRecord(candidate) || candidate.v !== 2
+        || !(Date.parse(candidate.ts) > 0)
+        || typeof candidate.publication_id !== "string"
+        || candidate.publication_id === ""
+        || !root.isNonNegativeCount(candidate.pages_total)
+        || typeof candidate.pages_total_complete !== "boolean"
+        || !Array.isArray(candidate.nodes) || !Array.isArray(candidate.edges)
+        || !root.isPlainRecord(candidate.snapshot)) return false
+    var snapshot = candidate.snapshot
+    if (typeof snapshot.complete !== "boolean"
+        || !root.isNonNegativeCount(snapshot.truncated)
+        || !root.isNonNegativeCount(snapshot.omitted_nodes)
+        || !root.isNonNegativeCount(snapshot.omitted_edges)
+        || typeof snapshot.omissions_imply_absence !== "boolean"
+        || !root.isNonNegativeCount(snapshot.aged_out)
+        || !root.isNonNegativeCount(snapshot.window_days)
+        || !root.isPlainRecord(snapshot.counts_by_kind)
+        || !Array.isArray(snapshot.failed_ops)) return false
+    for (var failureIndex = 0;
+         failureIndex < snapshot.failed_ops.length; failureIndex++)
+      if (typeof snapshot.failed_ops[failureIndex] !== "string"
+          || snapshot.failed_ops[failureIndex] === "") return false
+    var ids = ({})
+    var observedKinds = ({})
+    for (var nodeIndex = 0; nodeIndex < candidate.nodes.length; nodeIndex++) {
+      var node = candidate.nodes[nodeIndex]
+      if (!root.isPlainRecord(node)
+          || typeof node.id !== "string" || node.id === ""
+          || typeof node.t !== "string" || node.t === ""
+          || typeof node.title !== "string"
+          || !(Date.parse(node.ts) > 0)
+          || !root.validOriginLabel(node.origin)
+          || !root.isNonNegativeCount(node.deg)
+          || !root.isNonNegativeCount(node.din)
+          || !root.isNonNegativeCount(node.dout)
+          || ids[node.id]) return false
+      ids[node.id] = true
+      observedKinds[node.t] = (observedKinds[node.t] || 0) + 1
+    }
+    for (var edgeIndex = 0; edgeIndex < candidate.edges.length; edgeIndex++) {
+      var edge = candidate.edges[edgeIndex]
+      if (!root.isPlainRecord(edge)
+          || typeof edge.s !== "string" || !ids[edge.s]
+          || typeof edge.d !== "string" || !ids[edge.d]
+          || typeof edge.t !== "string" || edge.t === ""
+          || typeof edge.why !== "string") return false
+    }
+    for (var kind in snapshot.counts_by_kind)
+      if (!root.isNonNegativeCount(snapshot.counts_by_kind[kind])
+          || snapshot.counts_by_kind[kind] !== (observedKinds[kind] || 0))
+        return false
+    for (var observedKind in observedKinds)
+      if (snapshot.counts_by_kind[observedKind] !== observedKinds[observedKind])
+        return false
+    return candidate.pages_total >= candidate.nodes.length
+  }
+
   function graphHasNode(id) {
     return root.nodeById(id) !== null
   }
@@ -257,6 +329,34 @@ Item {
     root.readyDetail = ""
   }
 
+  function snapshotBasis() {
+    if (!Model.snapshotGenerationsMatch(root.status, root.graph)
+        || !root.status || !root.status.ledger) return ""
+    return root.status.publication_id + "/" + root.graph.publication_id
+      + "/" + String(root.status.ledger.seq) + "/"
+      + String(root.status.ledger.head)
+  }
+
+  function clearVerification() {
+    root.verifyMsg = ""
+    root.verifyOk = false
+    verifyProc.basis = ""
+    verifyProc.launchPending = false
+    if (verifyProc.running) verifyProc.running = false
+  }
+
+  function startVerification() {
+    root.clearVerification()
+    var current = root.snapshotBasis()
+    if (current === "") {
+      root.verifyMsg = "CHAIN VERIFICATION INCOMPLETE — snapshots are not one generation"
+      return
+    }
+    verifyProc.basis = current
+    verifyProc.launchPending = true
+    verifyProc.running = true
+  }
+
   function projectionDebtDetail() {
     var keys = root.projectionDebtKeys()
     if (!keys.length) return ""
@@ -270,6 +370,8 @@ Item {
   function graphSnapshotText() {
     if (root.graphBoundary !== "") return root.graphBoundary
     if (!root.graph || !root.graph.ts) return "no graph snapshot"
+    if (!Model.snapshotGenerationsMatch(root.status, root.graph))
+      return "mixed status/graph generations; no combined snapshot claim"
     var complete = root.snap && root.snap.complete === true
     return "graph published " + Model.timeAgo(root.graph.ts, root.nowMs)
       + " · " + (complete ? "complete" : "partial")
@@ -283,6 +385,8 @@ Item {
   }
 
   function continuityStateText() {
+    if (root.continuityBoundary !== "") return "STATUS UNAVAILABLE"
+    if (root.continuityStale) return "STATUS STALE"
     if (root.restoreCorrelationLost) return "NEEDS ATTENTION"
     if (root.restoreVerificationPending) return "RESTORE VERIFYING"
     if (!root.continuity) return "STATUS UNAVAILABLE"
@@ -290,6 +394,8 @@ Item {
   }
 
   function continuityRepositoryText() {
+    if (root.continuityStale)
+      return "The last continuity publication is stale."
     if (!root.continuity) return "No continuity status has been published."
     var display = String(root.continuity.repository_display || "").trim()
     if (display !== "") return display
@@ -314,6 +420,8 @@ Item {
 
   function continuityDetailText() {
     if (root.continuityBoundary !== "") return root.continuityBoundary
+    if (root.continuityStale)
+      return "Last good continuity status is stale; no recovery state is current."
     if (!root.continuity) return "The continuity worker is not reporting."
     var detail = String(root.continuity.detail || "").trim()
     return detail !== "" ? detail : root.continuityLatestText()
@@ -428,8 +536,8 @@ Item {
   }
 
   function preparedRestore() {
-    return root.continuity && root.continuity.prepared
-      ? root.continuity.prepared : null
+    return root.currentContinuity && root.currentContinuity.prepared
+      ? root.currentContinuity.prepared : null
   }
 
   function clearRestoreCeremony() {
@@ -444,7 +552,7 @@ Item {
     var prepared = root.preparedRestore()
     if (root.restoreVerificationPending || root.restoreCorrelationLost
         || !prepared
-        || !Model.continuityCanApply(root.continuity)) return false
+        || !Model.continuityCanApply(root.currentContinuity)) return false
     return root.restorePhraseInput === "RESTORE"
       && root.restorePreparedSnapshotInput === prepared.snapshot_id
       && root.restoreLedgerHeadInput === prepared.ledger_head
@@ -460,16 +568,16 @@ Item {
       else if (root.continuityPage === "connect")
         connectRepositoryField.forceActiveFocus()
       else if (root.continuityPage === "restore") {
-        if (Model.continuityCanApply(root.continuity))
+        if (Model.continuityCanApply(root.currentContinuity))
           restorePhraseField.forceActiveFocus()
         else if (root.continuityState === "restoring")
           continuityCloseButton.forceActiveFocus()
         else restoreSnapshotField.forceActiveFocus()
       }
-      else if (Model.continuityCanBackUp(root.continuity))
+      else if (Model.continuityCanBackUp(root.currentContinuity))
         continuityCloseButton.forceActiveFocus()
-      else if (Model.continuityCanPrepare(root.continuity)
-               || Model.continuityCanApply(root.continuity))
+      else if (Model.continuityCanPrepare(root.currentContinuity)
+               || Model.continuityCanApply(root.currentContinuity))
         overviewRestoreButton.forceActiveFocus()
       else if (!root.continuity
                || root.continuityState === "unconfigured")
@@ -485,8 +593,8 @@ Item {
     continuityScheduleRefresh.restart()
     if (root.continuityPage === "restore"
         && root.restoreSnapshotInput.trim() === ""
-        && root.continuity && root.continuity.latest)
-      root.restoreSnapshotInput = root.continuity.latest.snapshot_id
+        && root.currentContinuity && root.currentContinuity.latest)
+      root.restoreSnapshotInput = root.currentContinuity.latest.snapshot_id
     root.focusContinuityPage()
   }
 
@@ -569,7 +677,7 @@ Item {
         "A restore is already waiting for readiness and SIA signed-ledger verification.")
       return
     }
-    if (!prepared || !Model.continuityCanApply(root.continuity)) {
+    if (!prepared || !Model.continuityCanApply(root.currentContinuity)) {
       root.continuityRefusal(
         "Restore is not prepared. Prepare and verify the snapshot first.")
       return
@@ -994,7 +1102,7 @@ Item {
                   id: overviewBackupButton
                   visible: !!root.continuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanBackUp(root.continuity)
+                  enabled: Model.continuityCanBackUp(root.currentContinuity)
                     && !continuityProc.working
                   text: continuityProc.working
                     ? "Requesting…" : "Make extra copy now"
@@ -1011,7 +1119,7 @@ Item {
                   id: overviewCheckButton
                   visible: !!root.continuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanCheck(root.continuity)
+                  enabled: Model.continuityCanCheck(root.currentContinuity)
                     && !continuityProc.working
                   text: "Check backup"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1027,8 +1135,8 @@ Item {
                   id: overviewRestoreButton
                   visible: !!root.continuity
                     && root.continuityState !== "unconfigured"
-                  enabled: (Model.continuityCanPrepare(root.continuity)
-                            || Model.continuityCanApply(root.continuity))
+                  enabled: (Model.continuityCanPrepare(root.currentContinuity)
+                            || Model.continuityCanApply(root.currentContinuity))
                     && !continuityProc.working
                   text: "Restore…"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1320,7 +1428,7 @@ Item {
                 Ui.Button {
                   text: continuityProc.working
                     ? "Requesting…" : "Prepare restore"
-                  enabled: Model.continuityCanPrepare(root.continuity)
+                  enabled: Model.continuityCanPrepare(root.currentContinuity)
                     && !continuityProc.working
                     && root.restoreSnapshotInput.trim() !== ""
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1336,7 +1444,7 @@ Item {
 
               Column {
                 visible: root.continuityState === "prepared"
-                  && Model.continuityCanApply(root.continuity)
+                  && Model.continuityCanApply(root.currentContinuity)
                 width: parent.width
                 spacing: Style.spacing.md
 
@@ -1822,8 +1930,7 @@ Item {
     if (root.workspaceLockMismatch) root.clearWorkspaceLock()
     opened = true
     workspaceLockFeedback = ""
-    verifyMsg = ""
-    verifyOk = false
+    root.clearVerification()
     continuityActionMsg = ""
     continuityActionOk = false
     continuitySheetOpen = false
@@ -1877,6 +1984,7 @@ Item {
 
   function close() {
     opened = false
+    root.clearVerification()
     playing = false
     revealT = 1.0
     hoverId = ""
@@ -1920,6 +2028,7 @@ Item {
   }
 
   function applyStatus(text) {
+    root.clearVerification()
     try {
       const parsed = JSON.parse(text)
       if (!root.validStatusSnapshot(parsed)) {
@@ -1933,9 +2042,8 @@ Item {
       root.statusBoundary = ""
       readyProc.cancel()
       root.clearReadyCheck()
-      const ts = Date.parse(parsed.ts)
-      root.stale = !(ts > 0) ||
-        (Date.now() - ts) > root.staleAfterSec * 1000
+      root.stale = Model.timestampStale(
+        parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
       root.statusLoadValid = false
       root.statusBoundary = root.status
@@ -1944,17 +2052,16 @@ Item {
   }
 
   function applyGraph(text) {
+    root.clearVerification()
     try {
       const g = JSON.parse(text)
-      if (!g || !Array.isArray(g.nodes) || !Array.isArray(g.edges)
-          || g.pages_total === undefined || typeof g.ts !== "string"
-          || !root.isPlainRecord(g.snapshot)
-          || typeof g.snapshot.complete !== "boolean"
-          || !Array.isArray(g.snapshot.failed_ops)) {
+      if (!root.validGraphSnapshot(g)) {
         root.graphBoundary = root.graph
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
         return
       }
+      if (graphCanvas.width > 0)
+        Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       root.graph = g
       root.graphBoundary = ""
       readyProc.cancel()
@@ -1963,8 +2070,6 @@ Item {
         root.selectedId = ""
       if (root.hoverId !== "" && !root.graphHasNode(root.hoverId))
         root.hoverId = ""
-      if (graphCanvas.width > 0)
-        Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       graphCanvas.requestPaint()
     } catch (e) {
       root.graphBoundary = root.graph
@@ -1988,7 +2093,9 @@ Item {
     if (typeof thought.ts !== "string" || thought.ts === "") return false
     if (typeof thought.kind !== "string" || thought.kind === "") return false
     if (typeof thought.text !== "string" || thought.text === "") return false
-    if (thought.origin !== undefined && typeof thought.origin !== "string")
+    if (thought.origin !== undefined
+        && !root.validOriginLabel(thought.origin)) return false
+    if (thought.urgent !== undefined && typeof thought.urgent !== "boolean")
       return false
     return true
   }
@@ -2045,7 +2152,14 @@ Item {
       }
       if (root.restoreVerificationPending) {
         var operation = root.matchingRestoreOperation(parsed)
-        if (operation && (operation.phase === "accepted"
+        var publicationStale = Model.continuityStale(
+          parsed, Date.now(), Model.continuityStaleAfterSec())
+        if (publicationStale) {
+          root.restoreVerificationPending = false
+          root.restoreCorrelationLost = true
+          root.continuityActionOk = false
+          root.continuityActionMsg = "Restore correlation is stale; no terminal verification is current."
+        } else if (operation && (operation.phase === "accepted"
                           || operation.phase === "running")) {
           root.continuityActionOk = false
           root.continuityActionMsg = "Restore is running. Readiness and SIA signed-ledger verification are still pending."
@@ -2064,6 +2178,11 @@ Item {
           root.restoreVerificationPending = false
           root.continuityActionOk = false
           root.continuityActionMsg = "The exact restore request did not reach verified readiness. Review continuity details before retrying."
+        } else if (!operation) {
+          root.restoreVerificationPending = false
+          root.restoreCorrelationLost = true
+          root.continuityActionOk = false
+          root.continuityActionMsg = "Restore request correlation disappeared before terminal verification."
         }
       }
       if (root.continuitySheetOpen
@@ -2129,7 +2248,7 @@ Item {
   // restart it whenever the record changes.  A second install writing a new
   // record is a fresh installer and is owed the full bound again, even
   // though the lifecycle string never left "installing".
-  function noteInstallingObservation() {
+  function noteInstallingObservation(publicationChanged) {
     var key = root.releaseLifecycle === "installing"
       ? root.installCompletionKey(root.installCompletion) : ""
     if (key === "") {
@@ -2137,18 +2256,18 @@ Item {
       root.installingObservedAtMs = 0
       return
     }
-    if (key !== root.installingRecordKey) {
+    if (key !== root.installingRecordKey || publicationChanged === true) {
       root.installingRecordKey = key
       root.installingObservedAtMs = Date.now()
     }
   }
 
-  function applyInstallCompletion(text) {
+  function applyInstallCompletion(text, publicationChanged) {
     try {
       const parsed = JSON.parse(text)
       root.installCompletion = parsed
     } catch (e) { root.installCompletion = null }
-    root.noteInstallingObservation()
+    root.noteInstallingObservation(publicationChanged)
   }
 
   FileView {
@@ -2246,10 +2365,13 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: {
-      root.applyInstallCompletion(text())
+      var publicationChanged = root.installCompletionPublicationChanged
+      root.installCompletionPublicationChanged = false
+      root.applyInstallCompletion(text(), publicationChanged)
       root.installCompletionResolved = true
     }
     onLoadFailed: {
+      root.installCompletionPublicationChanged = false
       root.installCompletion = null
       root.installCompletionResolved = true
       root.noteInstallingObservation()
@@ -2257,6 +2379,7 @@ Item {
     onFileChanged: {
       // First-light is an install lifecycle barrier, not a routine status
       // refresh.  Withdraw validated pixels until the changed record settles.
+      root.installCompletionPublicationChanged = true
       root.installCompletionResolved = false
       installCompletionApply.restart()
     }
@@ -2305,18 +2428,35 @@ Item {
     onTriggered: {
       root.nowMs = Date.now()
       if (root.status) {
-        const ts = Date.parse(root.status.ts)
-        root.stale = !(ts > 0) ||
-          (root.nowMs - ts) > root.staleAfterSec * 1000
+        root.stale = Model.timestampStale(
+          root.status.ts, root.nowMs, root.staleAfterSec)
       }
     }
   }
 
   Process {
     id: verifyProc
+    property string basis: ""
+    property bool launchPending: false
     command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
     stdout: StdioCollector { waitForEnd: true }
+    onStarted: verifyProc.launchPending = false
+    onRunningChanged: {
+      if (!running && verifyProc.launchPending) {
+        verifyProc.launchPending = false
+        verifyProc.basis = ""
+        if (root.opened) {
+          root.verifyOk = false
+          root.verifyMsg = "CHAIN VERIFICATION INCOMPLETE — command did not start"
+        }
+      }
+    }
     onExited: function(code) {
+      var accepted = root.opened && verifyProc.basis !== ""
+        && verifyProc.basis === root.snapshotBasis()
+      verifyProc.launchPending = false
+      verifyProc.basis = ""
+      if (!accepted) return
       root.verifyOk = code === 0
       root.verifyMsg = code === 0
         ? "SIA signed ledger re-verified ✓"
@@ -3283,7 +3423,7 @@ Item {
                   id: cardBackupButton
                   visible: !!root.continuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanBackUp(root.continuity)
+                  enabled: Model.continuityCanBackUp(root.currentContinuity)
                     && !continuityProc.working
                   text: continuityProc.working ? "Requesting…" : "Extra copy"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -3302,8 +3442,8 @@ Item {
                   id: cardRestoreButton
                   visible: !!root.continuity
                     && root.continuityState !== "unconfigured"
-                  enabled: (Model.continuityCanPrepare(root.continuity)
-                            || Model.continuityCanApply(root.continuity))
+                  enabled: (Model.continuityCanPrepare(root.currentContinuity)
+                            || Model.continuityCanApply(root.currentContinuity))
                     && !continuityProc.working
                   text: "Restore…"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -3839,11 +3979,7 @@ Item {
                   anchors.fill: parent
                   hoverEnabled: true
                   enabled: !verifyProc.running
-                  onClicked: {
-                    root.verifyMsg = ""
-                    root.verifyOk = false
-                    verifyProc.running = true
-                  }
+                  onClicked: root.startVerification()
                 }
               }
               Text {

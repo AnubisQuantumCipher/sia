@@ -69,6 +69,15 @@ function residentStatusShape(status) {
   return true
 }
 
+function snapshotGenerationsMatch(status, graph) {
+  return isPlainRecord(status) && isPlainRecord(graph)
+    && typeof status.graph_publication_id === "string"
+    && status.graph_publication_id !== ""
+    && typeof graph.publication_id === "string"
+    && graph.publication_id !== ""
+    && status.graph_publication_id === graph.publication_id
+}
+
 function legacyResidentStatus(status) {
   return status && status.version === undefined
     && residentStatusShape(status)
@@ -211,6 +220,19 @@ function validStaleAfterSec(value, fallback) {
       && safeFallback <= staleAfterMaxSec())
     return safeFallback
   return staleAfterDefaultSec()
+}
+
+// A timestamp is fresh only while it lies inside the observed clock's past
+// horizon. A future stamp is not evidence of a fresh publication: accepting
+// it would let one bad clock preserve a reassuring state indefinitely.
+function timestampStale(value, nowMs, staleAfterSec) {
+  var stamped = Date.parse(value)
+  var now = Number(nowMs)
+  var horizon = Number(staleAfterSec)
+  if (!(stamped > 0) || !isFinite(now) || !isFinite(horizon)
+      || horizon <= 0) return true
+  var age = now - stamped
+  return age < 0 || age > horizon * 1000
 }
 
 // ------------------------------------------------------------- continuity
@@ -411,12 +433,7 @@ function continuityStaleAfterSec() { return 21600 }
 // which may only add a caveat.
 function continuityStale(status, nowMs, staleAfterSec) {
   if (!isPlainRecord(status)) return true
-  var stamped = Date.parse(status.updated_at)
-  if (!(stamped > 0)) return true
-  var now = Number(nowMs)
-  var horizon = Number(staleAfterSec)
-  if (!isFinite(now) || !isFinite(horizon) || horizon <= 0) return true
-  return (now - stamped) > horizon * 1000
+  return timestampStale(status.updated_at, nowMs, staleAfterSec)
 }
 
 function continuityBarMark(status) {

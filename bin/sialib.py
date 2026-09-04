@@ -6425,6 +6425,9 @@ def _recover_pending_pulse_publication(memo):
         if not isinstance(current, dict):
             current = {}
         if current.get("publication_id") != marker["id"]:
+            recovered_graph = read_json(GRAPH_PATH, {})
+            if not isinstance(recovered_graph, dict):
+                recovered_graph = {}
             recovered_errors = current.get("errors", {})
             if not isinstance(recovered_errors, dict):
                 recovered_errors = {}
@@ -6436,6 +6439,8 @@ def _recover_pending_pulse_publication(memo):
                 current, v=1, ts=iso(), state="degraded",
                 pulse_seq=marker["seq"], day=effects["day"],
                 publication_id=marker["id"],
+                graph_publication_id=recovered_graph.get(
+                    "publication_id", ""),
                 events_pulse=effects["events_pulse"],
                 events_today=sum(
                     state["today"] for state in organs.values()),
@@ -7350,6 +7355,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     st = {"v": 1, "version": VERSION, "ts": iso(), "state": state,
           "pulse_seq": seq, "day": day,
           "publication_id": (status_marker or {}).get("id", ""),
+          "graph_publication_id": prev_graph.get("publication_id", ""),
           "events_pulse": len(events),
           "events_today": sum(o.get("today", 0) for o in organs_st.values()),
           "organs": organs_st, "errors": errors,
