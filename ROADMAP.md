@@ -60,6 +60,13 @@ freeze ends on evidence, not on mood.
   work during a pending verification is not a tradeoff against velocity; it is the
   reason the last three verification attempts produced no publishable chain. Queue on a
   branch, and push only after the listing flips or the maintainer closes the cycle.
+  - The one exception, and it is deliberately not a loophole: **a reviewer block on the
+    bound commit itself.** A block ends that attempt, so there is no longer a validation
+    in flight for a push to invalidate; and the fix has to be at HEAD, because HEAD is
+    the only thing the next attempt can bind. A blocking finding may therefore move
+    `main` — once, carrying the fix for that finding and nothing else that was waiting.
+    Everything else keeps waiting on its branch. If a push to `main` cannot be traced to
+    a block on the commit currently bound, the freeze applies and the answer is no.
 
 ---
 
