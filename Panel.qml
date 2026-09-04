@@ -125,10 +125,12 @@ BarWidget {
     if (root.releaseLifecycle === "repair")
       return "SIA — installation state needs repair · click to continue safely"
     if (root.releaseLifecycle === "ahead") {
-      var resident = root.status && typeof root.status.version === "string"
-        ? root.status.version : "newer runtime"
-      return "SIA — resident " + resident + " is newer than cockpit "
-        + root.pluginVersion + " · update the plugin checkout"
+      var resident = Model.aheadVersion(
+        root.runtimeEvidence, root.pluginVersion)
+      return resident !== ""
+        ? "SIA — resident " + resident + " is newer than cockpit "
+          + root.pluginVersion + " · update the plugin checkout"
+        : "SIA — a newer resident runtime is present · update the plugin checkout"
     }
     if (root.releaseLifecycle === "update") {
       var installed = root.status && typeof root.status.version === "string"

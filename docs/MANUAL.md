@@ -1194,6 +1194,11 @@ entries are interpreted beneath your home directory:
 ] } }
 ```
 
+The skills organ activates for any non-empty validated root roster; activation
+is not tied to the first default (`.claude/skills`) or to a root being present
+at process start. This lets its durable removal guard reconcile after a root
+disappears across a brainstem restart.
+
 The CLI reloads configuration on its next invocation. The brainstem is a
 resident process and keeps its import-time configuration, so after changing
 custom senses, skill roots, or judge settings run:
@@ -1204,9 +1209,20 @@ sia status
 ```
 
 It opens the root, child directory, and manifest with no-follow semantics.
-A symlinked or unopenable root makes that root incomplete and the aggregate
-source partial; symlinked child directories or manifests are skipped rather
-than cataloged. Each manifest's bounded frontmatter head is captured once, with
+A configured root that has never been observed and is absent is a clean empty
+optional source, so unused defaults cannot hold the removal guard forever. Once
+a root has been observed, its disappearance remains incomplete. A symlinked or
+otherwise unopenable root also makes the aggregate source partial; symlinked
+child directories or manifests are skipped rather than cataloged. Each
+clean absence is retained in the bounded continuation and checked again after
+the final configured root reaches EOF. If that root appears during a paginated
+aggregate, the aggregate becomes partial and cannot authorize a removal. The
+same bounded continuation retains every enumerated child name, including
+children with no admissible manifest, plus each completed root generation.
+Before publication it rechecks those generations and replays every covered
+manifest path; any later appearance, disappearance, or changed capture makes
+the aggregate partial. Each admitted manifest's bounded frontmatter head is
+captured with
 before/after/current-path identity checks both at capture and after root
 validation. The sanitized description, head digest, and file metadata are kept
 together in the cursor snapshot, so event rendering never reopens the file and

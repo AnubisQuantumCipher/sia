@@ -127,6 +127,12 @@ function runtimeLifecycleEvidence(status, statusValid, prior, pluginVersion) {
   return runtimeLifecycle(prior, pluginVersion) === "ahead" ? prior : null
 }
 
+function aheadVersion(evidence, pluginVersion) {
+  var compared = isPlainRecord(evidence)
+    ? compareReleaseVersions(evidence.version, pluginVersion) : null
+  return compared !== null && compared > 0 ? evidence.version : ""
+}
+
 function installCompletionReady(completion, pluginVersion) {
   return !!completion && typeof completion === "object"
     && completion.v === 1 && completion.state === "ready"

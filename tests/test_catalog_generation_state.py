@@ -435,7 +435,10 @@ class SkillCatalogContinuation(unittest.TestCase):
         self.original_entries = self.sialib._bounded_source_entries
 
     def _write(self, name, description=None):
-        path = os.path.join(self.root, name)
+        self._write_at(self.root, name, description)
+
+    def _write_at(self, root, name, description=None):
+        path = os.path.join(root, name)
         os.makedirs(path, exist_ok=True)
         with open(os.path.join(path, "SKILL.md"), "w") as stream:
             stream.write(
@@ -521,6 +524,12 @@ class SkillCatalogContinuation(unittest.TestCase):
             {"skills.snapshot": {}, "skills.partial": "false"},
             {"skills.snapshot": {}, "skills.truncated": 0},
             {"skills.snapshot": {}, "skills.removal_guard": None},
+            {"skills.snapshot": {}, "skills.root_history": None},
+            {"skills.snapshot": {}, "skills.root_history": []},
+            {"skills.snapshot": {}, "skills.root_history": [
+                "sia-skill-root-history-v1", ["not-a-root-id"]]},
+            {"skills.snapshot": {}, "skills.root_history": [
+                "sia-skill-root-history-v1", [{"unhashable": True}]]},
         )
         for cursors in cases:
             with self.subTest(cursors=cursors):
@@ -670,6 +679,211 @@ class SkillCatalogContinuation(unittest.TestCase):
         self.assertTrue(any(event.kind == "removed"
                             for event in second_complete))
 
+    def test_never_observed_absent_root_does_not_block_removal(self):
+        missing_root = os.path.join(self.tmp.name, "never-installed-skills")
+        self._write("resident", "present root")
+        self.sialib.SKILL_ROOTS = [self.root, missing_root]
+        cursors = {}
+
+        initial = self.sialib.sense_skills(cursors)
+
+        self.assertFalse(cursors["skills.partial"])
+        self.assertFalse(any(event.kind == "source-refused"
+                             for event in initial))
+        shutil.rmtree(os.path.join(self.root, "resident"))
+
+        removed = self.sialib.sense_skills(cursors)
+
+        self.assertNotIn("resident", cursors["skills.snapshot"])
+        self.assertFalse(cursors["skills.partial"])
+        self.assertTrue(any(event.kind == "removed" for event in removed))
+
+    def test_legacy_absence_guard_converges_with_missing_optional_root(self):
+        missing_root = os.path.join(self.tmp.name, "never-installed-skills")
+        self._write("resident", "present root")
+        self.sialib.SKILL_ROOTS = [self.root, missing_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        cursors["skills.partial"] = True
+        cursors["skills.removal_guard"] = True
+        shutil.rmtree(os.path.join(self.root, "resident"))
+
+        guarded = self.sialib.sense_skills(cursors)
+
+        self.assertFalse(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertEqual(cursors["skills.snapshot"]["resident"]["roots"], [])
+        self.assertFalse(any(event.kind == "removed" for event in guarded))
+
+        converged = self.sialib.sense_skills(cursors)
+
+        self.assertNotIn("resident", cursors["skills.snapshot"])
+        self.assertTrue(any(event.kind == "removed" for event in converged))
+
+    def test_previously_observed_root_disappearance_still_guards_removal(self):
+        second_root = os.path.join(self.tmp.name, "observed-skills")
+        os.makedirs(second_root)
+        self._write("resident", "present root")
+        self.sialib.SKILL_ROOTS = [self.root, second_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        shutil.rmtree(os.path.join(self.root, "resident"))
+        os.rmdir(second_root)
+
+        events = self.sialib.sense_skills(cursors)
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertEqual(cursors["skills.snapshot"]["resident"]["roots"], [])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
+    def test_absent_root_before_paginated_root_never_becomes_observed(self):
+        missing_root = os.path.join(self.tmp.name, "never-installed-skills")
+        self._write("alpha")
+        self._write("bravo")
+        self.sialib.SKILL_ROOTS = [missing_root, self.root]
+        present_root_id = self.sialib._skill_root_id(self.root)
+        cursors = {}
+
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            self.sialib.sense_skills(cursors)
+            self.assertEqual(
+                cursors["skills.root_history"][1], [present_root_id])
+            self._finish(cursors)
+
+        self.assertEqual(
+            cursors["skills.root_history"][1], [present_root_id])
+        shutil.rmtree(os.path.join(self.root, "alpha"))
+        shutil.rmtree(os.path.join(self.root, "bravo"))
+
+        removed = self.sialib.sense_skills(cursors)
+
+        self.assertFalse(cursors["skills.partial"])
+        self.assertEqual(cursors["skills.snapshot"], {})
+        self.assertTrue(any(event.kind == "removed" for event in removed))
+
+    def test_absent_root_is_rechecked_before_removal(self):
+        missing_root = os.path.join(self.tmp.name, "initially-absent-skills")
+        self._write("resident")
+        self.sialib.SKILL_ROOTS = [missing_root, self.root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        self._write("alpha")
+        self._write("bravo")
+        shutil.rmtree(os.path.join(self.root, "resident"))
+
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            events = self.sialib.sense_skills(cursors)
+            self.assertIn("skills.scan", cursors)
+            appeared = os.path.join(missing_root, "resident")
+            os.makedirs(appeared)
+            with open(os.path.join(appeared, "SKILL.md"), "w") as stream:
+                stream.write("---\ndescription: appeared\n---\n")
+            events.extend(self._finish(cursors))
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertIn(
+            self.sialib._skill_root_id(missing_root),
+            cursors["skills.root_history"][1])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
+    def test_completed_empty_root_is_rechecked_before_removal(self):
+        early_root = os.path.join(self.tmp.name, "early-skills")
+        os.makedirs(early_root)
+        self._write("resident")
+        self.sialib.SKILL_ROOTS = [early_root, self.root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        self._write("alpha")
+        self._write("bravo")
+        shutil.rmtree(os.path.join(self.root, "resident"))
+
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            events = self.sialib.sense_skills(cursors)
+            self.assertIn("skills.scan", cursors)
+            self._write_at(early_root, "resident", "appeared")
+            events.extend(self._finish(cursors))
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
+    def test_completed_root_rechecks_previously_manifestless_child(self):
+        later_root = os.path.join(self.tmp.name, "later-skills")
+        os.makedirs(later_root)
+        os.makedirs(os.path.join(self.root, "resident"))
+        self._write_at(later_root, "resident", "later root")
+        self.sialib.SKILL_ROOTS = [self.root, later_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        self._write_at(later_root, "alpha")
+        self._write_at(later_root, "bravo")
+        shutil.rmtree(os.path.join(later_root, "resident"))
+
+        events = []
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            for _attempt in range(self.sialib.MAX_SOURCE_SCAN_ENTRIES):
+                events.extend(self.sialib.sense_skills(cursors))
+                if cursors.get("skills.scan", {}).get("root_index") == 1:
+                    break
+            else:
+                self.fail("skill scan did not reach the later root")
+            self._write("resident", "appeared manifest")
+            events.extend(self._finish(cursors))
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
+    def test_completed_root_rechecks_positive_manifest_capture(self):
+        later_root = os.path.join(self.tmp.name, "later-skills")
+        os.makedirs(later_root)
+        self._write("resident", "before")
+        self._write_at(later_root, "alpha")
+        self._write_at(later_root, "bravo")
+        self.sialib.SKILL_ROOTS = [self.root, later_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        self._write("resident", "middle")
+
+        events = []
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            for _attempt in range(self.sialib.MAX_SOURCE_SCAN_ENTRIES):
+                events.extend(self.sialib.sense_skills(cursors))
+                if cursors.get("skills.scan", {}).get("root_index") == 1:
+                    break
+            else:
+                self.fail("skill scan did not reach the later root")
+            self._write("resident", "after")
+            events.extend(self._finish(cursors))
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertEqual(
+            cursors["skills.snapshot"]["resident"]["description"],
+            "before")
+        self.assertFalse(any(event.kind == "updated" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
     def test_over_cap_catalog_reaches_later_manifests_without_removal(self):
         self._write("resident")
         cursors = {}
@@ -695,6 +909,29 @@ class SkillCatalogContinuation(unittest.TestCase):
         self.assertTrue(any(
             name in " ".join(event.summary for event in refused)
             for name in ("new-alpha", "new-bravo")))
+
+    def test_manifestless_coverage_over_cap_blocks_removal(self):
+        self._write("resident")
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        shutil.rmtree(os.path.join(self.root, "resident"))
+        os.makedirs(os.path.join(self.root, "empty-alpha"))
+        os.makedirs(os.path.join(self.root, "empty-bravo"))
+
+        with mock.patch.object(
+                self.sialib, "MAX_SKILL_SNAPSHOT_ENTRIES", 1), \
+                mock.patch.object(
+                    self.sialib, "_bounded_source_entries",
+                    side_effect=self._one_entry_page):
+            events = self._finish(cursors)
+
+        self.assertTrue(cursors["skills.partial"])
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-entry-refused"
+                            for event in events))
+        self.assertTrue(any(event.kind == "catalog-truncated"
+                            for event in events))
 
     def test_unchanged_stable_catalog_has_no_duplicate_diff_events(self):
         self._write("alpha")
@@ -752,6 +989,38 @@ class SkillCatalogContinuation(unittest.TestCase):
                 ValueError, "skill catalog scan cursor is invalid"):
             self.sialib._validated_skill_scan(scan, [root_id])
 
+    def test_legacy_scan_restart_does_not_invent_a_missing_root(self):
+        missing_root = os.path.join(self.tmp.name, "never-installed-skills")
+        self._write("alpha")
+        self._write("bravo")
+        self.sialib.SKILL_ROOTS = [missing_root, self.root]
+        cursors = {"skills.snapshot": {}}
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            self.sialib.sense_skills(cursors)
+
+        legacy = copy.deepcopy(cursors["skills.scan"])
+        missing_root_id, present_root_id = legacy["roots"]
+        legacy["schema"] = "sia-skill-catalog-scan-v1"
+        legacy.pop("entries")
+        legacy.pop("known_roots")
+        legacy.pop("absent_roots")
+        legacy.pop("completed_roots")
+        legacy["tainted_roots"] = [missing_root_id]
+        before = copy.deepcopy(legacy)
+
+        restarted = self.sialib._validated_skill_scan(
+            legacy, legacy["roots"], known_root_ids=[])
+
+        self.assertEqual(legacy, before)
+        self.assertEqual(restarted["schema"], "sia-skill-catalog-scan-v2")
+        self.assertEqual(restarted["known_roots"], [present_root_id])
+        self.assertEqual(restarted["root_index"], 0)
+        self.assertIsNone(restarted["page"])
+        self.assertEqual(restarted["entries"], [])
+        self.assertEqual(restarted["rows"], [])
+
     def test_skill_cursor_requires_exact_rows_and_page_index_pairing(self):
         self._write("alpha")
         self._write("bravo")
@@ -765,12 +1034,98 @@ class SkillCatalogContinuation(unittest.TestCase):
         extra["rows"][0]["manifest"]["laundered"] = True
         finished_index = copy.deepcopy(scan)
         finished_index["root_index"] = len(finished_index["roots"])
+        missing_history = copy.deepcopy(scan)
+        missing_history.pop("known_roots")
+        missing_absence = copy.deepcopy(scan)
+        missing_absence.pop("absent_roots")
+        missing_entries = copy.deepcopy(scan)
+        missing_entries.pop("entries")
+        missing_completions = copy.deepcopy(scan)
+        missing_completions.pop("completed_roots")
+        uncovered_row = copy.deepcopy(scan)
+        uncovered_row["entries"] = []
+        hostile_entry = copy.deepcopy(scan)
+        hostile_entry["entries"][0]["name"] = "../outside"
+        hostile_entry["entries"][0]["name_id"] = hashlib.sha256(
+            os.fsencode("../outside")).hexdigest()
+        unknown_history = copy.deepcopy(scan)
+        unknown_history["known_roots"].append("0" * 64)
+        duplicate_history = copy.deepcopy(scan)
+        duplicate_history["known_roots"].append(
+            duplicate_history["known_roots"][0])
+        unknown_absence = copy.deepcopy(scan)
+        unknown_absence["absent_roots"].append("0" * 64)
+        overlapping_absence = copy.deepcopy(scan)
+        overlapping_absence["absent_roots"].append(
+            overlapping_absence["known_roots"][0])
+        premature_completion = copy.deepcopy(scan)
+        premature_completion["completed_roots"].append({
+            "root_id": premature_completion["roots"][0],
+            "generation": {
+                field: premature_completion["page"][field]
+                for field in self.sialib.SOURCE_TREE_GENERATION_FIELDS},
+        })
 
-        for invalid in (extra, finished_index):
+        for invalid in (
+                extra, finished_index, missing_history, missing_absence,
+                missing_entries, missing_completions, uncovered_row,
+                hostile_entry, unknown_history, duplicate_history,
+                unknown_absence,
+                overlapping_absence, premature_completion):
             with self.assertRaisesRegex(
                     ValueError, "skill catalog scan cursor is invalid"):
                 self.sialib._validated_skill_scan(
                     invalid, invalid["roots"])
+
+        cursors["skills.root_history"] = [
+            "sia-skill-root-history-v1", []]
+        before = copy.deepcopy(cursors)
+        with self.assertRaisesRegex(
+                ValueError, "skill catalog scan cursor is invalid"):
+            self.sialib.sense_skills(cursors)
+        self.assertEqual(cursors, before)
+
+        for malformed in (None, [], "invalid"):
+            malformed_cursors = {
+                "skills.snapshot": {}, "skills.scan": malformed}
+            before = copy.deepcopy(malformed_cursors)
+            with self.assertRaisesRegex(
+                    ValueError, "skill catalog scan cursor is invalid"):
+                self.sialib.sense_skills(malformed_cursors)
+            self.assertEqual(malformed_cursors, before)
+
+    def test_completed_root_cursor_requires_exact_generation(self):
+        early_root = os.path.join(self.tmp.name, "early-skills")
+        os.makedirs(early_root)
+        self._write("alpha")
+        self._write("bravo")
+        self.sialib.SKILL_ROOTS = [early_root, self.root]
+        cursors = {"skills.snapshot": {}}
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=self._one_entry_page):
+            self.sialib.sense_skills(cursors)
+        scan = cursors["skills.scan"]
+        known = cursors["skills.root_history"][1]
+        self.assertEqual(len(scan["completed_roots"]), 1)
+
+        missing_field = copy.deepcopy(scan)
+        missing_field["completed_roots"][0]["generation"].pop("ctime_ns")
+        boolean_field = copy.deepcopy(scan)
+        boolean_field["completed_roots"][0]["generation"]["device"] = True
+        duplicate = copy.deepcopy(scan)
+        duplicate["completed_roots"].append(copy.deepcopy(
+            duplicate["completed_roots"][0]))
+        missing_completion = copy.deepcopy(scan)
+        missing_completion["completed_roots"] = []
+
+        for invalid in (
+                missing_field, boolean_field, duplicate,
+                missing_completion):
+            with self.assertRaisesRegex(
+                    ValueError, "skill catalog scan cursor is invalid"):
+                self.sialib._validated_skill_scan(
+                    invalid, invalid["roots"], known_root_ids=known)
 
 
 if __name__ == "__main__":

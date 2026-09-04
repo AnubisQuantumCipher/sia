@@ -4676,6 +4676,33 @@ class GradingPrefersTheExcerptThatBearsOnTheClaim(unittest.TestCase):
 
 
 class SkillSenseContainment(unittest.TestCase):
+    def test_configured_non_claude_root_activates_the_skills_organ(self):
+        sialib = _load("sialib_skill_configured_activation",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            configured = os.path.join(home, ".agents/skills")
+            os.makedirs(configured)
+            sialib.HOME = home
+            sialib.CONFIG = {
+                "skills": {"roots": [".agents/skills"]},
+            }
+
+            sialib.SKILL_ROOTS = sialib._configured_skill_roots()
+            organs = sialib._build_organs()
+            senses = [
+                sense for sense in sialib._ALL_SENSES
+                if sialib._SENSE_ORGAN.get(sense.__name__, "") in organs]
+
+            self.assertEqual(sialib.SKILL_ROOTS, [configured])
+            self.assertIn("skills", organs)
+            self.assertIn(sialib.sense_skills, senses)
+
+            os.rmdir(configured)
+            self.assertIn(
+                "skills", sialib._build_organs(),
+                "a restart with all configured roots absent must still "
+                "run the sense so prior catalog state can converge")
+
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",
                       os.path.join(BIN, "sialib.py"))
@@ -4712,7 +4739,7 @@ class SkillSenseContainment(unittest.TestCase):
             self.assertIs(first.SENSES[-1], first.sense_custom)
             self.assertIs(second.SENSES[-1], second.sense_custom)
 
-    def test_skill_snapshot_captures_once_with_digest_and_description(self):
+    def test_skill_snapshot_replays_once_with_digest_and_description(self):
         sialib = _load("sialib_skill_single_capture",
                        os.path.join(BIN, "sialib.py"))
         with tempfile.TemporaryDirectory() as directory:
@@ -4728,17 +4755,17 @@ class SkillSenseContainment(unittest.TestCase):
             original = sialib._read_skill_manifest
             calls = []
 
-            def capture_once(capture_root, name):
+            def capture_and_replay(capture_root, name):
                 calls.append((capture_root, name))
-                if len(calls) > 1:
-                    raise AssertionError("skill manifest reopened")
+                if len(calls) > 2:
+                    raise AssertionError("skill manifest replay exceeded bound")
                 return original(capture_root, name)
 
             with mock.patch.object(
                     sialib, "_read_skill_manifest",
-                    side_effect=capture_once):
+                    side_effect=capture_and_replay):
                 events = sialib.sense_skills({"skills.snapshot": {}})
-            self.assertEqual(calls, [(root, "stable")])
+            self.assertEqual(calls, [(root, "stable"), (root, "stable")])
             installed = [event for event in events
                          if event.kind == "installed"]
             self.assertEqual(len(installed), 1)

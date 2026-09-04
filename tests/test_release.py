@@ -2995,7 +2995,7 @@ retain_unowned_cli_before_fence
             "_skill_root_generation_matches", "_skill_root_id",
             "_skill_root_refusal", "_skill_snapshot_from_rows",
             "_store_agent_state", "_validated_skill_scan",
-            "_validated_skill_snapshot",
+            "_validated_skill_root_history", "_validated_skill_snapshot",
             "_verified_builtin_attest_rows",
             "_worldline_cursor", "_worldline_decode_text",
             "_worldline_observation", "_worldline_observation_digest",

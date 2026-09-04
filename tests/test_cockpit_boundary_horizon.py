@@ -239,6 +239,12 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
         self.assertEqual(evidence, {"version": "1.7.9"})
         self.assertEqual(self._model_call(
             "guidedLifecycle", evidence, completion, "1.7.8"), "ahead")
+        self.assertEqual(self._model_call(
+            "aheadVersion", evidence, "1.7.8"), "1.7.9")
+        self.assertEqual(self._model_call(
+            "aheadVersion", {"version": "1.7.8"}, "1.7.8"), "")
+        self.assertEqual(self._model_call(
+            "aheadVersion", {"version": "invalid"}, "1.7.8"), "")
         for surface in ("Cockpit.qml", "Panel.qml"):
             source = _read(surface)
             apply_status = " ".join(
@@ -263,6 +269,23 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
                 self.assertIn(
                     "Model.guidedLifecycle(root.runtimeEvidence, "
                     "root.installCompletion, root.pluginVersion)", compact)
+
+        cockpit_ahead = _qml_function(
+            _read("Cockpit.qml"), "setupDescription").split(
+                'if (root.releaseLifecycle === "ahead")', 1)[1]
+        panel_ahead = _qml_function(_read("Panel.qml"), "tooltip").split(
+            'if (root.releaseLifecycle === "ahead")', 1)[1].split(
+                'if (root.releaseLifecycle === "update")', 1)[0]
+        for label, source in (
+                ("Cockpit.qml", cockpit_ahead),
+                ("Panel.qml", panel_ahead)):
+            with self.subTest(ahead_surface=label):
+                compact_ahead = " ".join(source.split())
+                self.assertIn("Model.aheadVersion(", compact_ahead)
+                self.assertIn(
+                    "root.runtimeEvidence, root.pluginVersion)",
+                    compact_ahead)
+                self.assertNotIn("root.status.version", source)
 
         cockpit = " ".join(_read("Cockpit.qml").split())
         self.assertIn(

@@ -1836,11 +1836,13 @@ Item {
         + ". The installer verifies ownership and retains the corpus and signing identity while advancing the runtime."
     }
     if (root.releaseLifecycle === "ahead") {
-      var resident = root.status && typeof root.status.version === "string"
-        ? root.status.version : "newer"
-      return "Resident SIA " + resident + " is newer than cockpit "
-        + root.pluginVersion
-        + ". Installation is disabled to prevent a downgrade. Run `omarchy plugin update khephri.sia`, then reopen the cockpit."
+      var resident = Model.aheadVersion(
+        root.runtimeEvidence, root.pluginVersion)
+      return (resident !== ""
+        ? "Resident SIA " + resident + " is newer than cockpit "
+          + root.pluginVersion + "."
+        : "A newer resident SIA runtime was observed.")
+        + " Installation is disabled to prevent a downgrade. Run `omarchy plugin update khephri.sia`, then reopen the cockpit."
     }
     return "SIA could not establish a matching resident status and first-light completion record. The repair action re-enters the fail-closed installer, which verifies ownership and refuses unsafe replacement."
   }

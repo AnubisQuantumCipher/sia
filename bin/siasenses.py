@@ -2539,14 +2539,7 @@ def sense_agents(cursors):
 
 
 def _configured_skill_roots():
-    skills = CONFIG.get("skills", {})
-    roots = skills.get("roots", DEFAULT_SKILL_ROOTS) \
-        if isinstance(skills, dict) else DEFAULT_SKILL_ROOTS
-    if not isinstance(roots, list) or len(roots) > MAX_CONFIG_TAGS \
-            or any(not isinstance(root, str) or not root.strip()
-                   or len(root) > MAX_CONFIG_PATH_CHARS for root in roots):
-        roots = DEFAULT_SKILL_ROOTS
-    return [os.path.join(HOME, root) for root in roots]
+    return _configured_skill_root_paths()
 
 
 
@@ -2794,18 +2787,45 @@ def _skill_description(name):
     return ""
 
 
-_SKILL_SCAN_SCHEMA = "sia-skill-catalog-scan-v1"
+_SKILL_SCAN_SCHEMA_V1 = "sia-skill-catalog-scan-v1"
+_SKILL_SCAN_SCHEMA = "sia-skill-catalog-scan-v2"
+_SKILL_ROOT_HISTORY_SCHEMA = "sia-skill-root-history-v1"
 
 
 def _skill_root_id(root):
     return hashlib.sha256(_skill_name_bytes(root)).hexdigest()
 
 
-def _new_skill_scan(root_ids, prior_truncated=False, prior_guard=False):
+def _validated_skill_root_history(value, root_ids, snapshot, *, present=True):
+    """Load exact root-presence history and seed upgrades from provenance."""
+    if not present:
+        stored = []
+    elif isinstance(value, list) and len(value) == 2 \
+            and value[0] == _SKILL_ROOT_HISTORY_SCHEMA \
+            and isinstance(value[1], list) \
+            and len(value[1]) <= MAX_CONFIG_TAGS \
+            and all(isinstance(root_id, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", root_id) is not None
+                    for root_id in value[1]) \
+            and len(value[1]) == len(set(value[1])):
+        stored = value[1]
+    else:
+        raise ValueError("skill catalog state is invalid")
+    known = set(stored)
+    for state in snapshot.values():
+        for row in state["roots"]:
+            known.add(row["root_id"])
+    return [root_id for root_id in root_ids if root_id in known]
+
+
+def _new_skill_scan(root_ids, prior_truncated=False, prior_guard=False,
+                    known_roots=()):
     return {
         "schema": _SKILL_SCAN_SCHEMA, "roots": list(root_ids),
-        "root_index": 0, "page": None, "rows": [],
+        "root_index": 0, "page": None, "entries": [], "rows": [],
         "tainted_roots": [], "truncated_roots": [],
+        "known_roots": list(known_roots), "absent_roots": [],
+        "completed_roots": [],
         "prior_truncated": bool(prior_truncated),
         "prior_removal_guard": bool(prior_guard),
     }
@@ -2878,16 +2898,33 @@ def _validated_skill_snapshot(value):
 
 
 def _validated_skill_scan(value, root_ids, prior_truncated=False,
-                          prior_guard=False):
+                          prior_guard=False, known_root_ids=None, *,
+                          present=True):
     """Validate the bounded continuation for one configured root roster."""
-    if value is None or not isinstance(value, dict) \
-            or value.get("schema") != _SKILL_SCAN_SCHEMA \
-            or value.get("roots") != list(root_ids):
-        return _new_skill_scan(root_ids, prior_truncated, prior_guard)
-    if set(value) != {
+    if not present:
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    if not isinstance(value, dict):
+        raise ValueError("skill catalog scan cursor is invalid")
+    if value.get("roots") != list(root_ids):
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    schema = value.get("schema")
+    if schema not in {_SKILL_SCAN_SCHEMA_V1, _SKILL_SCAN_SCHEMA}:
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    legacy = schema == _SKILL_SCAN_SCHEMA_V1
+    expected_fields = {
             "schema", "roots", "root_index", "page", "rows",
             "tainted_roots", "truncated_roots", "prior_truncated",
-            "prior_removal_guard"}:
+            "prior_removal_guard"}
+    if not legacy:
+        expected_fields.update({
+            "entries", "known_roots", "absent_roots", "completed_roots"})
+    if set(value) != expected_fields:
         raise ValueError("skill catalog scan cursor is invalid")
     index = value.get("root_index")
     rows = value.get("rows")
@@ -2951,16 +2988,120 @@ def _validated_skill_scan(value, root_ids, prior_truncated=False,
         if row_key in row_keys:
             raise ValueError("skill catalog scan cursor is invalid")
         row_keys.add(row_key)
+    if legacy:
+        known = set(known_root_ids or ())
+        known.update(row["root_id"] for row in rows)
+        known.add(root_ids[index])
+        known.update(root_id for root_id in root_ids[:index]
+                     if root_id not in tainted)
+        # V1 retained neither negative child coverage nor completed-root
+        # generations. Its private candidate cannot be upgraded into exact
+        # removal authority, so restart it while preserving observed roots
+        # and the pre-scan guard state.
+        return _new_skill_scan(
+            root_ids, value["prior_truncated"],
+            value["prior_removal_guard"],
+            [root_id for root_id in root_ids if root_id in known])
+    known = value.get("known_roots")
+    absent = value.get("absent_roots")
+    if not isinstance(known, list) \
+            or len(known) > MAX_CONFIG_TAGS \
+            or any(root_id not in root_ids for root_id in known) \
+            or len(known) != len(set(known)) \
+            or known != [root_id for root_id in root_ids
+                          if root_id in set(known)] \
+            or root_ids[index] not in known \
+            or any(row["root_id"] not in known for row in rows) \
+            or known_root_ids is not None \
+            and known != list(known_root_ids):
+        raise ValueError("skill catalog scan cursor is invalid")
+    entries = value.get("entries")
+    entry_names = {}
+    if not isinstance(entries, list) \
+            or len(entries) > MAX_SKILL_SNAPSHOT_ENTRIES:
+        raise ValueError("skill catalog scan cursor is invalid")
+    for entry in entries:
+        name_bytes = _skill_name_bytes(entry.get("name", "")) \
+            if isinstance(entry, dict) else b""
+        if not isinstance(entry, dict) \
+                or set(entry) != {"root_id", "name", "name_id"} \
+                or entry["root_id"] not in reached_roots \
+                or entry["root_id"] in tainted \
+                or not isinstance(entry["name"], str) \
+                or not name_bytes or name_bytes in {b".", b".."} \
+                or b"/" in name_bytes or b"\0" in name_bytes \
+                or len(name_bytes) > MAX_CORPUS_COMPONENT_BYTES \
+                or not isinstance(entry["name_id"], str) \
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", entry["name_id"]) is None \
+                or entry["name_id"] \
+                != hashlib.sha256(name_bytes).hexdigest():
+            raise ValueError("skill catalog scan cursor is invalid")
+        entry_key = (entry["root_id"], entry["name_id"])
+        if entry_key in entry_names:
+            raise ValueError("skill catalog scan cursor is invalid")
+        entry_names[entry_key] = entry["name"]
+    if any(row_key not in entry_names for row_key in row_keys) \
+            or any(entry_names[(row["root_id"], row["name_id"])]
+                   != row["name"] for row in rows):
+        raise ValueError("skill catalog scan cursor is invalid")
+    completed = value.get("completed_roots")
+    if not isinstance(completed, list) \
+            or len(completed) > MAX_CONFIG_TAGS:
+        raise ValueError("skill catalog scan cursor is invalid")
+    completed_ids = []
+    generation_fields = set(SOURCE_TREE_GENERATION_FIELDS)
+    for completion in completed:
+        if not isinstance(completion, dict) \
+                or set(completion) != {"root_id", "generation"} \
+                or completion["root_id"] not in prior_roots \
+                or completion["root_id"] in completed_ids \
+                or not isinstance(completion["generation"], dict) \
+                or set(completion["generation"]) != generation_fields:
+            raise ValueError("skill catalog scan cursor is invalid")
+        try:
+            _source_tree_directory_generation(completion["generation"])
+        except ValueError as exc:
+            raise ValueError(
+                "skill catalog scan cursor is invalid") from exc
+        completed_ids.append(completion["root_id"])
+    if completed_ids != [root_id for root_id in root_ids
+                          if root_id in set(completed_ids)]:
+        raise ValueError("skill catalog scan cursor is invalid")
+    if not isinstance(absent, list) \
+            or len(absent) > MAX_CONFIG_TAGS \
+            or any(root_id not in root_ids for root_id in absent) \
+            or len(absent) != len(set(absent)) \
+            or absent != [root_id for root_id in root_ids
+                           if root_id in set(absent)] \
+            or any(root_id not in prior_roots for root_id in absent) \
+            or set(absent) & (set(known) | set(tainted)
+                              | set(truncated)) \
+            or set(completed_ids) & (set(absent) | set(tainted)) \
+            or any(root_id not in set(absent) | set(tainted)
+                   | set(completed_ids) for root_id in prior_roots) \
+            or any(root_id not in known for root_id in completed_ids) \
+            or any(entry["root_id"] != root_ids[index]
+                   and entry["root_id"] not in completed_ids
+                   for entry in entries):
+        raise ValueError("skill catalog scan cursor is invalid")
     return value
 
 
 def _discard_skill_root_candidate(scan, root_id):
     scan["rows"] = [
         row for row in scan["rows"] if row["root_id"] != root_id]
+    scan["entries"] = [
+        row for row in scan["entries"] if row["root_id"] != root_id]
     scan["tainted_roots"] = [
         value for value in scan["tainted_roots"] if value != root_id]
     scan["truncated_roots"] = [
         value for value in scan["truncated_roots"] if value != root_id]
+    scan["absent_roots"] = [
+        value for value in scan["absent_roots"] if value != root_id]
+    scan["completed_roots"] = [
+        value for value in scan["completed_roots"]
+        if value["root_id"] != root_id]
 
 
 def _skill_root_refusal(root, timestamp=None):
@@ -3088,11 +3229,13 @@ def _skill_catalog_event(kind, skill, source_state, timestamp):
 def sense_skills(cursors):
     """Scan skill roots through a resumable, generation-stable aggregate.
 
-    Each pulse reads at most one bounded page from the current root. Captures
-    stay private in a cursor candidate until every configured root reaches a
-    stable EOF. A root-generation reset drops that root's earlier captures.
-    Refused or over-cap aggregates may add/update observations, but never use
-    missing rows as evidence of removal.
+    Each pulse reads at most one bounded page from the current root. Positive
+    captures and negative child-name coverage stay private in a cursor
+    candidate until every configured root reaches a stable EOF. A
+    root-generation reset drops that root's earlier captures. Completed roots
+    are revalidated across the aggregate boundary. Refused or over-cap
+    aggregates may add/update observations, but never use missing rows as
+    evidence of removal.
     """
     if "skills.snapshot" in cursors:
         prev = _validated_skill_snapshot(cursors["skills.snapshot"])
@@ -3110,13 +3253,19 @@ def sense_skills(cursors):
             continue
         skill_roots.append(root)
         root_ids.append(root_id)
+    root_history_key = "skills.root_history"
+    known_root_ids = _validated_skill_root_history(
+        cursors.get(root_history_key), root_ids, prev or {},
+        present=root_history_key in cursors)
     scan_key = "skills.scan"
     prior_truncated = cursors.get("skills.truncated", False)
     prior_guard = cursors.get(
         "skills.removal_guard",
         cursors.get("skills.partial", prior_truncated))
     scan = _validated_skill_scan(
-        cursors.get(scan_key), root_ids, prior_truncated, prior_guard)
+        cursors.get(scan_key), root_ids, prior_truncated, prior_guard,
+        known_root_ids, present=scan_key in cursors)
+    known_roots = set(scan["known_roots"])
     evs = []
 
     while scan["root_index"] < len(skill_roots):
@@ -3127,6 +3276,17 @@ def sense_skills(cursors):
         try:
             entries, root_truncated, next_page = _list_skill_entries(
                 root, page_before)
+        except FileNotFoundError:
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id in known_roots:
+                if root_id not in scan["tainted_roots"]:
+                    scan["tainted_roots"].append(root_id)
+                evs.append(_skill_root_refusal(root))
+            elif root_id not in scan["absent_roots"]:
+                scan["absent_roots"].append(root_id)
+            scan["root_index"] += 1
+            scan["page"] = None
+            continue
         except (OSError, RuntimeError, ValueError):
             _discard_skill_root_candidate(scan, root_id)
             if root_id not in scan["tainted_roots"]:
@@ -3135,6 +3295,9 @@ def sense_skills(cursors):
             scan["root_index"] += 1
             scan["page"] = None
             continue
+        known_roots.add(root_id)
+        scan["known_roots"] = [
+            value for value in root_ids if value in known_roots]
 
         if next_page.get("reset"):
             # `_bounded_source_entries` already returned a page from the new
@@ -3176,8 +3339,26 @@ def sense_skills(cursors):
             scan["page"] = None
             continue
 
-        for name, capture in page_rows:
+        page_captures = {name: capture for name, capture in page_rows}
+        for name in entries:
             raw_id = hashlib.sha256(_skill_name_bytes(name)).hexdigest()
+            covered = next((
+                entry for entry in scan["entries"]
+                if entry["root_id"] == root_id
+                and entry["name_id"] == raw_id), None)
+            if covered is None:
+                if len(scan["entries"]) >= MAX_SKILL_SNAPSHOT_ENTRIES:
+                    if root_id not in scan["truncated_roots"]:
+                        scan["truncated_roots"].append(root_id)
+                        evs.append(_source_entry_refusal_event(
+                            "skills", "skill root entry coverage for "
+                            f"{_skill_display_name(root)}"))
+                    continue
+                scan["entries"].append({
+                    "root_id": root_id, "name": name, "name_id": raw_id})
+            capture = page_captures.get(name)
+            if capture is None:
+                continue
             duplicate = next((
                 row for row in scan["rows"]
                 if row["root_id"] == root_id and row["name_id"] == raw_id),
@@ -3202,10 +3383,14 @@ def sense_skills(cursors):
         if root_truncated:
             scan["page"] = next_page
             cursors[scan_key] = scan
+            cursors[root_history_key] = [
+                _SKILL_ROOT_HISTORY_SCHEMA,
+                [value for value in root_ids if value in known_roots],
+            ]
             cursors["skills.partial"] = True
             cursors["skills.truncated"] = bool(
                 scan["truncated_roots"]
-                or len(scan["rows"]) >= MAX_SKILL_SNAPSHOT_ENTRIES)
+                or len(scan["entries"]) >= MAX_SKILL_SNAPSHOT_ENTRIES)
             return evs
 
         # EOF validates every manifest captured from earlier pages too; a
@@ -3229,8 +3414,89 @@ def sense_skills(cursors):
             if root_id not in scan["tainted_roots"]:
                 scan["tainted_roots"].append(root_id)
             evs.append(_skill_root_refusal(root))
+        else:
+            scan["completed_roots"].append({
+                "root_id": root_id,
+                "generation": _source_tree_directory_generation(next_page),
+            })
         scan["root_index"] += 1
         scan["page"] = None
+
+    # A clean optional-root absence has no filesystem generation to retain.
+    # Recheck every such absence after the last root reaches EOF; if a root
+    # appeared (or can no longer be classified as absent), this aggregate is
+    # incomplete and therefore cannot authorize a removal.
+    directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                       | getattr(os, "O_NOFOLLOW", 0)
+                       | getattr(os, "O_DIRECTORY", 0))
+    roots_by_id = dict(zip(root_ids, skill_roots))
+    for root_id in list(scan["absent_roots"]):
+        root = roots_by_id[root_id]
+        try:
+            descriptor = _open_source_nofollow(root, directory_flags)
+        except FileNotFoundError:
+            continue
+        except (OSError, RuntimeError, ValueError):
+            pass
+        else:
+            os.close(descriptor)
+            known_roots.add(root_id)
+        scan["absent_roots"] = [
+            value for value in scan["absent_roots"] if value != root_id]
+        if root_id not in scan["tainted_roots"]:
+            scan["tainted_roots"].append(root_id)
+        evs.append(_skill_root_refusal(root))
+
+    # Completed roots also need a final aggregate-bound check. Directory
+    # generation proves that the enumerated child-name set did not change;
+    # replaying every bounded child covers both captured manifests and stable
+    # negative observations where SKILL.md was absent or inadmissible.
+    for completion in list(scan["completed_roots"]):
+        root_id = completion["root_id"]
+        root = roots_by_id[root_id]
+        generation = completion["generation"]
+        try:
+            root_current = _skill_root_generation_matches(root, generation)
+        except (OSError, RuntimeError, ValueError):
+            root_current = False
+        expected_rows = {
+            (row["root_id"], row["name_id"]): row
+            for row in scan["rows"] if row["root_id"] == root_id}
+        if root_current:
+            for entry in scan["entries"]:
+                if entry["root_id"] != root_id:
+                    continue
+                expected = expected_rows.get((root_id, entry["name_id"]))
+                try:
+                    capture = _read_skill_manifest(root, entry["name"])
+                except RuntimeError:
+                    root_current = False
+                    break
+                except OSError:
+                    if expected is not None:
+                        root_current = False
+                        break
+                    continue
+                current = {
+                    "description": capture["description"],
+                    "manifest": capture["manifest"],
+                }
+                if expected is None or current != {
+                        "description": expected["description"],
+                        "manifest": expected["manifest"]}:
+                    root_current = False
+                    break
+        if root_current:
+            try:
+                root_current = _skill_root_generation_matches(
+                    root, generation)
+            except (OSError, RuntimeError, ValueError):
+                root_current = False
+        if not root_current:
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id not in scan["tainted_roots"]:
+                scan["tainted_roots"].append(root_id)
+            evs.append(_skill_root_refusal(root))
 
     observed = _skill_snapshot_from_rows(scan["rows"])
     partial = bool(scan["tainted_roots"] or scan["truncated_roots"])
@@ -3251,6 +3517,10 @@ def sense_skills(cursors):
         scan["truncated_roots"] or overflow)
     cursors["skills.partial"] = partial
     cursors["skills.removal_guard"] = partial
+    cursors[root_history_key] = [
+        _SKILL_ROOT_HISTORY_SCHEMA,
+        [value for value in root_ids if value in known_roots],
+    ]
     cursors.pop(scan_key, None)
 
     for skill in overflow:

@@ -69,6 +69,9 @@ MAX_CONFIG_TEXT_CHARS = 2000
 MAX_SOURCE_NAME_CHARS = 200
 MAX_CONFIG_TAGS = 8
 MAX_STATE_JSON_BYTES = 16_777_216
+DEFAULT_SKILL_ROOTS = [
+    ".claude/skills", ".agents/skills", ".omp/skills",
+    ".copilot/skills", ".config/agents/skills"]
 
 CONFIG_ERRORS = []
 
@@ -278,6 +281,19 @@ def load_config():
 CONFIG = load_config()
 
 
+def _configured_skill_root_paths():
+    """Return the one validated skill-root roster used by activation/scans."""
+    skills = CONFIG.get("skills", {})
+    roots = skills.get("roots", DEFAULT_SKILL_ROOTS) \
+        if isinstance(skills, dict) else DEFAULT_SKILL_ROOTS
+    if not isinstance(roots, list) or len(roots) > MAX_CONFIG_TAGS \
+            or any(not _strict_config_string(
+                       root, nonempty=True, limit=MAX_CONFIG_PATH_CHARS)
+                   for root in roots):
+        roots = DEFAULT_SKILL_ROOTS
+    return [os.path.join(HOME, root) for root in roots]
+
+
 def associative_rerank_enabled(config=None):
     """Whether `sia ask` applies the graph-influenced associative rerank.
 
@@ -326,7 +342,9 @@ BASE_ORGANS = {
     "notify":      ("Notifications", "desktop notification stream"),
     "agents":      ("Agents",       "AI-agent usage meters (Omarchy Quattro)"),
 }
-# optional integrations: active only when their data exists on this box
+# Optional integrations activate when their data exists. Skills is the one
+# stateful exception: a non-empty configured roster remains active through
+# total source absence so its persisted removal guard can reconcile.
 OPTIONAL_ORGANS = {
     "jackal":    ("JACKAL",    "deterministic mathematical evidence kernel",
                   ".local/state/jackal"),
@@ -386,6 +404,12 @@ def _build_organs():
                               OBSIDIAN_VAULT, ".git")))
             except (OSError, RuntimeError, ValueError):
                 active = False
+        elif key == "skills":
+            # Registration must survive a restart while every configured
+            # root is absent. The sense owns the distinction between a clean
+            # never-observed absence and a previously observed source loss;
+            # omitting it here would strand its durable removal guard.
+            active = bool(_configured_skill_root_paths())
         else:
             probe_path = (probe if os.path.isabs(probe)
                           else os.path.join(HOME, probe))
@@ -2717,9 +2741,6 @@ JOURNAL_TIMEOUT_SECONDS = 30
 # Personal skill roots, in the precedence order the agent loaders use.
 # One graph node per skill NAME: the same slug in several roots is one
 # skill installed in several places, not several skills.
-DEFAULT_SKILL_ROOTS = [
-    ".claude/skills", ".agents/skills", ".omp/skills",
-    ".copilot/skills", ".config/agents/skills"]
 MAX_SKILL_SNAPSHOT_ENTRIES = MAX_SOURCE_TAIL_RECORDS
 MAX_SKILL_MANIFEST_HEAD_BYTES = 8192
 

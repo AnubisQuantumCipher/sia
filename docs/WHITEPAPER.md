@@ -801,13 +801,16 @@ The skills sense is intentionally shallower than a recursive skill search: it
 admits only real skill directories directly contained by configured roots and
 a real directly contained regular `SKILL.md`. Root, child, and manifest opens
 use no-follow semantics, so symlinked entries are not cataloged. A bounded
-manifest head is captured once and bound to before/after/current-path identity,
-head digest, metadata, and its sanitized description. The exact capture drives
-both the cursor diff and event text; no later rendering pass rereads the
-manifest. The manifest identities are revalidated after the root generation,
-and observed churn makes the root partial while retaining prior rows. This is
-an ingestion boundary, not a validation of the skill's instructions or a
-hostile same-user filesystem snapshot after the final observation.
+manifest head is bound to before/after/current-path identity, head digest,
+metadata, and its sanitized description. The bounded continuation also retains
+every enumerated child name, including children whose manifest was absent or
+inadmissible, and each completed root generation. At aggregate completion it
+brackets one replay of those covered manifest paths with root-generation
+checks; any changed positive or negative observation makes the root partial
+while retaining prior rows. The exact admitted capture drives both the cursor
+diff and event text; no later rendering pass rereads the manifest. This is an
+ingestion boundary, not a validation of the skill's instructions or a hostile
+same-user filesystem snapshot after the final observation.
 
 The v1.5 plugin separates discoverability from lifecycle authority. Omarchy's
 standard add-and-enable command clones, validates, and loads the QML, but its
