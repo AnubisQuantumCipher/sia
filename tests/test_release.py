@@ -27,6 +27,7 @@ import fcntl
 import importlib.machinery
 import importlib.util
 import inspect
+import io
 import json
 import os
 import re
@@ -482,10 +483,9 @@ class ReleaseContract(unittest.TestCase):
     def test_marketplace_scanned_sources_keep_headroom_under_the_limit(self):
         # The cap test above only tells us we have not shipped an
         # unpublishable file YET; it goes green at 524,287 bytes and offers
-        # no warning on the way up.  bin/sialib.py has been walking toward
-        # the ceiling for several releases, so this guard converts the
-        # remaining slack into a deadline that is visible in CI while the
-        # planned module extraction can still be scheduled.
+        # no warning on the way up.  This guard converts the remaining slack
+        # into a deadline visible in CI while a module extraction can still
+        # be scheduled.
         #
         # The failure names the exact bytes free on purpose: "over 95%" is
         # not actionable, "15,823 bytes left" is.
@@ -503,6 +503,29 @@ class ReleaseContract(unittest.TestCase):
             f"trips above {MARKETPLACE_SCAN_HEADROOM_FLOOR} bytes, 95% of "
             f"the {MARKETPLACE_SCAN_CAP}-byte cap): " + "; ".join(crowded)
             + ". Extract a module; raising the threshold is not a repair.")
+
+    def test_architecture_does_not_duplicate_live_module_measurements(self):
+        architecture = _read("docs/ARCHITECTURE.md")
+        split_modules = architecture.split(
+            "## What is already split", 1)[1].split("\n## ", 1)[0]
+        section = architecture.split(
+            "## What remains in `bin/sialib.py`", 1)[1].split(
+                "\n## ", 1)[0]
+
+        self.assertIn("| Module | Lane |", split_modules)
+        self.assertNotIn("| Module | Size | Lane |", split_modules)
+        self.assertNotRegex(split_modules, r"(?:\bbytes\b|\bKB\b)")
+        self.assertIn("wc -lc bin/sialib.py", section)
+        self.assertIn(
+            "test_marketplace_scanned_source_files_fit_the_static_limit",
+            section)
+        self.assertIn(
+            "test_marketplace_scanned_sources_keep_headroom_under_the_limit",
+            section)
+        self.assertNotIn("| Lane |", section)
+        # This live section deliberately contains no numeric measurements;
+        # historical release measurements remain in Extraction progress.
+        self.assertNotRegex(section, r"[0-9]")
 
     def test_operator_docs_state_installer_and_removal_boundaries(self):
         readme = _read("README.md")
@@ -1382,7 +1405,7 @@ fenced_runtime_authorized
             os.unlink(os.path.join(runtime, "siasenses.py"))
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_staged_runtime_members_match_the_v6_rung_member_set(self):
+    def test_staged_runtime_members_match_the_latest_rung_member_set(self):
         # Two independent hand-maintained lists have to agree and nothing
         # made them: install.sh stages the runtime tree one install(1) line
         # at a time, while the rung ladder decides which members the receipt
@@ -1398,7 +1421,9 @@ fenced_runtime_authorized
         self.assertEqual(
             len(staged), len(set(staged)),
             f"install.sh stages a runtime member more than once: {staged}")
-        latest_names = SIARELEASE.LATEST_RUNTIME_NAMES
+        self.assertNotIn("LATEST_RUNTIME_NAMES", _read("bin/siarelease.py"))
+        SIARELEASE.validate_runtime_ladder()
+        latest_names = SIARELEASE.RUNTIME_LADDER[0][1]
         missing = sorted(set(latest_names) - set(staged))
         unmeasured = sorted(set(staged) - set(latest_names))
         self.assertEqual(
@@ -1408,6 +1433,122 @@ fenced_runtime_authorized
             f"ladder yet never staged (digest will refuse): {missing}. "
             f"Staged yet outside the ladder (installed unmeasured by any "
             f"receipt): {unmeasured}")
+
+    def test_runtime_fence_metadata_parser_is_strict_and_named(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _plant_runtime_tree(runtime, LEGACY_RUNTIME_NAMES)
+            before_digest = _runtime_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            payload = {
+                "schema": "sia-launch-fence-v1",
+                "runtime_before_digest": before_digest,
+                "runtime_digest": "",
+                "cli_digest": "",
+                "entries": [{
+                    "path": os.path.join(root, "unused-entry"),
+                    "device": 0,
+                    "inode": 0,
+                    "mode": 0,
+                    "sha256": "0" * 64,
+                }],
+            }
+
+            def authorize_raw(raw):
+                _write(journal, raw + "\n", 0o600)
+                stderr = io.StringIO()
+                with mock.patch.object(sys, "stderr", stderr):
+                    status = SIARELEASE.main([
+                        "runtime-authorize-fence", journal, tombstone,
+                        receipt, runtime])
+                return status, stderr.getvalue()
+
+            valid_optional_digests = (
+                ("", ""),
+                (hashlib.sha256(b"published runtime").hexdigest(),
+                 hashlib.sha256(b"published cli").hexdigest()),
+            )
+            for runtime_digest, cli_digest in valid_optional_digests:
+                with self.subTest(
+                        valid_runtime=runtime_digest, valid_cli=cli_digest):
+                    candidate = dict(
+                        payload, runtime_digest=runtime_digest,
+                        cli_digest=cli_digest)
+                    status, stderr = authorize_raw(json.dumps(
+                        candidate, sort_keys=True, separators=(",", ":")))
+                    self.assertEqual(status, 0, stderr)
+
+            canonical = json.dumps(
+                payload, sort_keys=True, separators=(",", ":"))
+            ambiguous = {
+                "duplicate top-level field": canonical.replace(
+                    '"schema":"sia-launch-fence-v1"',
+                    '"schema":"discarded",'
+                    '"schema":"sia-launch-fence-v1"', 1),
+                "duplicate nested field": canonical.replace(
+                    '"path":', '"path":"discarded","path":', 1),
+                "NaN": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":NaN', 1),
+                "Infinity": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":Infinity', 1),
+                "negative Infinity": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":-Infinity', 1),
+            }
+            for case, raw in ambiguous.items():
+                with self.subTest(case=case):
+                    status, stderr = authorize_raw(raw)
+                    self.assertEqual(status, 2)
+                    self.assertEqual(
+                        stderr,
+                        "SIA runtime fence refused: invalid runtime "
+                        "launch-fence metadata\n")
+
+            invalid_optional_digests = (
+                None, True, [], {}, "A" * 64, "not-a-digest")
+            for field in ("runtime_digest", "cli_digest"):
+                for value in invalid_optional_digests:
+                    with self.subTest(field=field, value=value):
+                        candidate = dict(payload)
+                        candidate[field] = value
+                        status, stderr = authorize_raw(json.dumps(
+                            candidate, sort_keys=True,
+                            separators=(",", ":")))
+                        self.assertEqual(status, 2)
+                        self.assertEqual(
+                            stderr,
+                            "SIA runtime fence refused: invalid runtime "
+                            "launch-fence digest\n")
+
+            with mock.patch.object(
+                    SIARELEASE.json, "loads",
+                    side_effect=RecursionError("deep JSON")):
+                status, stderr = authorize_raw(canonical)
+            self.assertEqual(status, 2)
+            self.assertEqual(
+                stderr,
+                "SIA runtime fence refused: invalid runtime "
+                "launch-fence metadata\n")
+            self.assertNotIn("Traceback", stderr)
+
+            class ParserPanic(BaseException):
+                pass
+
+            _write(journal, canonical + "\n", 0o600)
+            with mock.patch.object(
+                    SIARELEASE.json, "loads",
+                    side_effect=ParserPanic("native parser panic")):
+                with self.assertRaises(ParserPanic):
+                    SIARELEASE.authorize_fenced_runtime(
+                        journal, tombstone, receipt, runtime)
 
     def test_runtime_ladder_has_one_authority_and_every_consumer_delegates(
             self):
@@ -2824,15 +2965,19 @@ retain_unowned_cli_before_fence
             "reconcile_thought_pages", "write_thought",
         ),
         "siasenses": (
-            "_attest_generation", "_attest_rows",
+            "_agent_scan_candidate", "_agent_source_capture",
+            "_agent_source_capture_matches", "_agent_source_capture_valid",
+            "_agent_transition_events", "_attest_generation", "_attest_rows",
             "_await_process_exit_unreaped", "_configured_skill_roots",
             "_custom_json_record_refusal", "_custom_match_literals",
+            "_discard_skill_root_candidate",
             "_journal_abort_process", "_journal_catalog_cursor",
             "_journal_create_tmp", "_journal_file_identity", "_journal_msg",
             "_journal_refusal", "_journal_require_exact_cursor",
             "_journal_seed_cursor", "_journal_unlink_tmp", "_journalctl",
             "_journalctl_projected_records", "_journalctl_records",
-            "_list_skill_entries", "_obsidian_commit_record",
+            "_list_skill_entries", "_new_skill_scan", "_notify_generation",
+            "_obsidian_commit_record",
             "_obsidian_control_file", "_obsidian_git_directory_identity",
             "_obsidian_git_environment", "_obsidian_git_metadata",
             "_obsidian_object_name", "_parse_custom_json_record",
@@ -2842,7 +2987,11 @@ retain_unowned_cli_before_fence
             "_skill_description_from_head", "_skill_display_name",
             "_skill_entity_token", "_skill_manifest_capture_matches",
             "_skill_manifest_identity", "_skill_name_bytes",
-            "_skill_root_generation_matches", "_verified_builtin_attest_rows",
+            "_skill_catalog_event", "_skill_positive_merge",
+            "_skill_root_generation_matches", "_skill_root_id",
+            "_skill_root_refusal", "_skill_snapshot_from_rows",
+            "_store_agent_state", "_validated_skill_scan",
+            "_verified_builtin_attest_rows",
             "_worldline_cursor", "_worldline_decode_text",
             "_worldline_observation", "_worldline_observation_digest",
             "_worldline_ordering_identity", "_worldline_refusal_event",

@@ -42,7 +42,6 @@ RUNTIME_LADDER = (
      ("sia-brainstem.py", "sia-cli")),
     (b"sia-runtime-v1\0", LEGACY_RUNTIME_NAMES, ()),
 )
-LATEST_RUNTIME_NAMES = MODERN_V6_RUNTIME_NAMES
 
 
 def validate_runtime_ladder(ladder=None):
@@ -189,15 +188,20 @@ def authorize_fenced_runtime(journal, tombstone, receipt, runtime):
     uid = os.geteuid()
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
+    encoded = _read_fence_owned(journal, 1_048_576, uid, flags)
     try:
         payload = json.loads(
-            _read_fence_owned(journal, 1_048_576, uid, flags))
-        marker = os.lstat(tombstone)
-        contents = _read_fence_owned(
-            receipt, 65_536, uid, flags).decode("utf-8")
-        runtime_info = os.lstat(runtime)
-    except (UnicodeError, json.JSONDecodeError) as error:
+            encoded, object_pairs_hook=_unique_object,
+            parse_constant=_invalid_constant)
+    except (UnicodeError, ValueError, RecursionError) as error:
         raise ValueError("invalid runtime launch-fence metadata") from error
+    marker = os.lstat(tombstone)
+    receipt_payload = _read_fence_owned(receipt, 65_536, uid, flags)
+    try:
+        contents = receipt_payload.decode("utf-8")
+    except UnicodeError as error:
+        raise ValueError("invalid runtime launch-fence metadata") from error
+    runtime_info = os.lstat(runtime)
     if not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
             or not stat.S_ISDIR(runtime_info.st_mode) \
             or runtime_info.st_uid != uid \
@@ -211,6 +215,11 @@ def authorize_fenced_runtime(journal, tombstone, receipt, runtime):
     if not isinstance(before_digest, str) \
             or re.fullmatch(r"[0-9a-f]{64}", before_digest) is None:
         raise ValueError("invalid runtime launch-fence digest")
+    for key in ("runtime_digest", "cli_digest"):
+        value = payload[key]
+        if not isinstance(value, str) \
+                or value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ValueError("invalid runtime launch-fence digest")
     expected = (
         f"managed-by=khephri.sia\nkind=runtime\npath={runtime}\n"
         f"sha256={before_digest}\n")
@@ -357,7 +366,7 @@ def _unique_object(pairs):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("first-light completion has duplicate fields")
+            raise ValueError("JSON object has duplicate fields")
         result[key] = value
     return result
 
