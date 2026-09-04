@@ -284,14 +284,28 @@ CONFIG = load_config()
 def _configured_skill_root_paths():
     """Return the one validated skill-root roster used by activation/scans."""
     skills = CONFIG.get("skills", {})
-    roots = skills.get("roots", DEFAULT_SKILL_ROOTS) \
-        if isinstance(skills, dict) else DEFAULT_SKILL_ROOTS
+    if not isinstance(skills, dict):
+        _record_config_error("skills-must-be-object")
+        return []
+    roots = skills.get("roots", DEFAULT_SKILL_ROOTS)
     if not isinstance(roots, list) or len(roots) > MAX_CONFIG_TAGS \
             or any(not _strict_config_string(
                        root, nonempty=True, limit=MAX_CONFIG_PATH_CHARS)
+                   or "\0" in root or os.path.isabs(root)
                    for root in roots):
-        roots = DEFAULT_SKILL_ROOTS
-    return [os.path.join(HOME, root) for root in roots]
+        _record_config_error("skills-roots-invalid")
+        return []
+    home = os.path.abspath(HOME)
+    resolved = [os.path.abspath(os.path.join(home, root)) for root in roots]
+    try:
+        contained = all(
+            os.path.commonpath((home, root)) == home for root in resolved)
+    except ValueError:
+        contained = False
+    if not contained:
+        _record_config_error("skills-roots-outside-home")
+        return []
+    return resolved
 
 
 def associative_rerank_enabled(config=None):

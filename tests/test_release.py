@@ -85,6 +85,18 @@ SIARELEASE = _load(
     "siarelease_test_support", os.path.join(REPO, "bin", "siarelease.py"))
 
 
+class _OsShim:
+    """Module-local syscall overrides without patching the global os module."""
+
+    def __init__(self, **overrides):
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(os, name)
+
+
 ABSENT_USER_UNIT = (
     'if [ "$1 $2" = "--user show" ]; then\n'
     '  echo "LoadState=not-found"; echo "ActiveState=inactive"\n'
@@ -1637,6 +1649,250 @@ fenced_runtime_authorized
                 SIARELEASE.runtime_rung(runtime)
             with self.assertRaises(ValueError):
                 SIARELEASE.runtime_tree_digest(runtime)
+
+    def test_runtime_digest_refuses_member_over_declared_bound(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder), \
+                mock.patch.object(
+                    SIARELEASE, "MAX_RUNTIME_SOURCE_BYTES", 4):
+            _write(os.path.join(runtime, "member"), "12345", 0o600)
+
+            with self.assertRaisesRegex(ValueError, "byte bound"):
+                SIARELEASE.runtime_tree_digest(runtime)
+
+    def test_runtime_digest_refuses_root_generation_swap(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as parent, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(parent, "runtime")
+            replacement = os.path.join(parent, "replacement")
+            archive = os.path.join(parent, "archive")
+            for root, label in ((runtime, "old"), (replacement, "new")):
+                _write(os.path.join(root, "alpha"), label + " alpha", 0o600)
+                _write(os.path.join(root, "bravo"), label + " bravo", 0o600)
+            original_open = os.open
+            swapped = False
+
+            def swap_before_second_member(path, flags, *args, **kwargs):
+                nonlocal swapped
+                target = os.fspath(path)
+                if not swapped and target in {
+                        "bravo", os.path.join(runtime, "bravo")}:
+                    os.rename(runtime, archive)
+                    os.rename(replacement, runtime)
+                    swapped = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=swap_before_second_member)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime tree changed"):
+                SIARELEASE.runtime_tree_digest(runtime)
+            self.assertTrue(swapped)
+
+    def test_runtime_digest_revalidates_earlier_members_at_completion(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            alpha = os.path.join(runtime, "alpha")
+            _write(alpha, "old alpha", 0o600)
+            _write(os.path.join(runtime, "bravo"), "stable bravo", 0o600)
+            original_open = os.open
+            changed = False
+
+            def change_first_before_second_open(
+                    path, flags, *args, **kwargs):
+                nonlocal changed
+                if not changed and os.fspath(path) == "bravo":
+                    _write(alpha, "new alpha", 0o600)
+                    changed = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=change_first_before_second_open)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime member changed"):
+                SIARELEASE.runtime_tree_digest(runtime)
+            self.assertTrue(changed)
+
+    def test_fenced_runtime_refuses_member_over_declared_bound(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _write(os.path.join(runtime, "member"), "12345", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+
+            with mock.patch.object(
+                    SIARELEASE, "MAX_RUNTIME_SOURCE_BYTES", 4), \
+                    self.assertRaisesRegex(ValueError, "byte bound"):
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime)
+
+    def test_fenced_runtime_accepts_stable_attested_mode_zero_member(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            member = os.path.join(runtime, "member")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _write(member, "fenced member", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            info = os.lstat(member)
+            with open(member, "rb") as stream:
+                member_digest = hashlib.sha256(stream.read()).hexdigest()
+            os.chmod(member, 0)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [{
+                        "path": member,
+                        "device": info.st_dev,
+                        "inode": info.st_ino,
+                        "mode": stat.S_IMODE(info.st_mode),
+                        "sha256": member_digest,
+                    }],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+
+            self.assertEqual(
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime),
+                before_digest)
+
+    def test_fenced_runtime_closes_mode_zero_fd_when_inspection_fails(self):
+        if not getattr(SIARELEASE.os, "O_PATH", 0):
+            return
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            member = os.path.join(runtime, "member")
+            _write(member, "fenced member", 0o600)
+            info = os.lstat(member)
+            os.chmod(member, 0)
+            entries = {member: {
+                "device": info.st_dev,
+                "inode": info.st_ino,
+                "sha256": "0" * 64,
+            }}
+            original_open = os.open
+            original_fstat = os.fstat
+            member_descriptor = None
+
+            def capture_member_descriptor(path, flags, *args, **kwargs):
+                nonlocal member_descriptor
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if os.fspath(path) == "member":
+                    member_descriptor = descriptor
+                return descriptor
+
+            def refuse_member_fstat(descriptor):
+                if descriptor == member_descriptor:
+                    raise OSError("synthetic member fstat refusal")
+                return original_fstat(descriptor)
+
+            with mock.patch.object(
+                    SIARELEASE, "os", _OsShim(
+                        open=capture_member_descriptor,
+                        fstat=refuse_member_fstat)), \
+                    self.assertRaisesRegex(
+                        OSError, "synthetic member fstat refusal"):
+                SIARELEASE._measure_runtime_tree(runtime, entries)
+            self.assertIsNotNone(member_descriptor)
+            with self.assertRaises(OSError):
+                original_fstat(member_descriptor)
+
+    def test_fenced_runtime_refuses_root_generation_swap(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            replacement = os.path.join(root, "replacement")
+            archive = os.path.join(root, "archive")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            for tree in (runtime, replacement):
+                _write(os.path.join(tree, "alpha"), "same alpha", 0o600)
+                _write(os.path.join(tree, "bravo"), "same bravo", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            original_open = os.open
+            swapped = False
+
+            def swap_before_second_member(path, flags, *args, **kwargs):
+                nonlocal swapped
+                target = os.fspath(path)
+                if not swapped and target in {
+                        "bravo", os.path.join(runtime, "bravo")}:
+                    os.rename(runtime, archive)
+                    os.rename(replacement, runtime)
+                    swapped = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=swap_before_second_member)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime tree changed"):
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime)
+            self.assertTrue(swapped)
 
     def test_a_partial_tree_classifies_by_its_marker_not_completeness(self):
         # Marker presence selects the newest applicable contract even when a

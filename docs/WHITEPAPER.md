@@ -579,6 +579,14 @@ time cannot leave a stale publication token. Post-rename recovery accepts only
 the journal-bound old/new digest and the rename-induced metadata transition;
 independent replacements remain preserved refusals.
 
+Runtime-receipt measurement is rooted in one held, current-user-owned
+directory descriptor. Ladder markers and allowlisted members are inspected
+relative to that descriptor, each readable member has a fixed byte ceiling,
+and all held member generations plus the root's current named generation are
+revalidated before either ordinary digesting or fenced authorization returns.
+This prevents one receipt measurement from combining members of two directory
+generations during a concurrent rename.
+
 Tree CAS is descriptor-rooted and generation-bound. Parent, root, directories,
 and regular files must be current-user-owned and non-group/world-writable;
 regular files must have one link. Each symlink inode must itself be stable,
@@ -798,9 +806,11 @@ same bounded dispatch, with batch framing enabled only for revisions that
 define it.
 
 The skills sense is intentionally shallower than a recursive skill search: it
-admits only real skill directories directly contained by configured roots and
-a real directly contained regular `SKILL.md`. Root, child, and manifest opens
-use no-follow semantics, so symlinked entries are not cataloged. A bounded
+admits only real skill directories directly contained by configured,
+HOME-contained relative roots and a real directly contained regular
+`SKILL.md`. Absolute or lexically escaping roots are refused. Root, child, and
+manifest opens use no-follow semantics, so symlinked entries are not
+cataloged. A bounded
 manifest head is bound to before/after/current-path identity, head digest,
 metadata, and its sanitized description. The bounded continuation also retains
 every enumerated child name, including children whose manifest was absent or

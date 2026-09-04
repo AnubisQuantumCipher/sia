@@ -52,11 +52,15 @@ Three verified constraints make a naive "move the code and re-import" wrong:
    `bin/siarelease.py:RUNTIME_LADDER` owns every shipped salt, marker, and
    cumulative member set. `install.sh` and `uninstall.sh` delegate normal
    digesting to that helper, and fenced uninstall authorization delegates its
-   mode-zero digest path there too. A new module still requires a deliberate
-   `sia-runtime-vN` rung, `SIA_RELEASE_FILES`, the staging copy loop, and test
-   fixtures, but it never requires another executable ladder copy. Marker
-   presence selects the newest applicable rung even for a partial tree, so a
-   missing required member refuses instead of validating as an older runtime.
+   mode-zero digest path there too. The authority pins the owned runtime root,
+   opens every member relative to that descriptor, enforces the per-member
+   byte bound, and revalidates every held member plus the root's named
+   generation before returning a digest. A new module still requires a
+   deliberate `sia-runtime-vN` rung, `SIA_RELEASE_FILES`, the staging copy
+   loop, and test fixtures, but it never requires another executable ladder
+   copy. Marker presence selects the newest applicable rung even for a partial
+   tree, so a missing required member refuses instead of validating as an
+   older runtime.
    The authority is release-source code, not a member of the runtime it
    authenticates; the uninstaller holds its owner-controlled source descriptor
    across plugin archival so the final runtime check neither becomes circular

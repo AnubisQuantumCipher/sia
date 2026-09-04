@@ -1184,8 +1184,10 @@ indexed memory.
 
 The skills sense likewise admits only a real skill directory directly beneath
 a configured root containing a real, directly contained regular `SKILL.md`.
-Configure precedence-ordered roots in `~/.config/sia/config.json`; relative
-entries are interpreted beneath your home directory:
+Configure precedence-ordered roots in `~/.config/sia/config.json`. Entries must
+be relative and remain contained beneath your home directory after lexical
+normalization; absolute and escaping `..` paths are refused and disable the
+skills organ until configuration is repaired:
 
 ```json
 { "skills": { "roots": [
@@ -1579,8 +1581,11 @@ writing a content receipt; modified unmarked files and unowned runtime trees
 require the printed
 `SIA_REPLACE_*` consent. The runtime receipt covers only the allowlisted
 shipped member names and their content and requires those members to be
-regular files; it does not attest to extra entries. Runtime replacement or
-removal archives the entire prior tree, extras included. The general
+bounded, current-user-owned regular files; it does not attest to extra entries.
+Digesting pins the runtime root, opens members relative to that
+descriptor, and revalidates every member and the root's named generation
+before returning. Runtime replacement or removal archives the entire prior
+tree, extras included. The general
 descriptor-rooted tree-CAS used for managed archives has a separately strict
 shape: its parent/root/directories must be current-user-owned and
 non-group/world-writable, and each regular file must also be single-link.

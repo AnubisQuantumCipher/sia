@@ -4676,6 +4676,52 @@ class GradingPrefersTheExcerptThatBearsOnTheClaim(unittest.TestCase):
 
 
 class SkillSenseContainment(unittest.TestCase):
+    def test_configured_skill_roots_refuse_home_escape(self):
+        sialib = _load("sialib_skill_root_containment",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home, \
+                tempfile.TemporaryDirectory() as outside:
+            sialib.HOME = home
+            for supplied, expected_error in (
+                    ("../outside", "skills-roots-outside-home"),
+                    (outside, "skills-roots-invalid")):
+                with self.subTest(root=supplied):
+                    sialib.CONFIG = {"skills": {"roots": [supplied]}}
+                    sialib.CONFIG_ERRORS.clear()
+
+                    self.assertEqual(sialib._configured_skill_roots(), [])
+                    self.assertEqual(sialib._configured_skill_root_paths(), [])
+                    self.assertEqual(sialib.CONFIG_ERRORS, [{
+                        "config": "config.json", "error": expected_error}])
+                    self.assertNotIn("skills", sialib._build_organs())
+
+    def test_malformed_skill_root_roster_disables_without_defaults(self):
+        sialib = _load("sialib_skill_root_malformed",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            sialib.HOME = home
+            cases = (
+                ({"skills": "not-an-object"}, "skills-must-be-object"),
+                ({"skills": {"roots": ".agents/skills"}},
+                 "skills-roots-invalid"),
+                ({"skills": {"roots": [""]}}, "skills-roots-invalid"),
+            )
+            for config, expected_error in cases:
+                with self.subTest(config=config):
+                    sialib.CONFIG = config
+                    sialib.CONFIG_ERRORS.clear()
+
+                    self.assertEqual(sialib._configured_skill_roots(), [])
+                    self.assertEqual(sialib.CONFIG_ERRORS, [{
+                        "config": "config.json", "error": expected_error}])
+                    self.assertNotIn("skills", sialib._build_organs())
+
+            sialib.CONFIG = {"skills": {"roots": []}}
+            sialib.CONFIG_ERRORS.clear()
+            self.assertEqual(sialib._configured_skill_roots(), [])
+            self.assertEqual(sialib.CONFIG_ERRORS, [])
+            self.assertNotIn("skills", sialib._build_organs())
+
     def test_configured_non_claude_root_activates_the_skills_organ(self):
         sialib = _load("sialib_skill_configured_activation",
                        os.path.join(BIN, "sialib.py"))
