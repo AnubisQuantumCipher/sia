@@ -58,6 +58,8 @@ ACTR_D = 0.5          # canonical ACT-R base-level decay
 ACTR_K = 5            # Petrov hybrid: exact timestamps kept
 PPR_DAMPING = 0.5     # HippoRAG's tuned damping factor
 PPR_ITers = 30
+PPR_TIEBREAK_GAIN = 0.15
+ACTIVATION_TIEBREAK_GAIN = 0.08
 EPISODIC_DAYS = int(os.environ.get("SIA_EPISODIC_DAYS", "14"))
 WORKSPACE_K = 7
 # Stability is an attention lens, never a deletion policy.  These defaults and
@@ -1759,12 +1761,14 @@ def rebuild_workspace(mind, organ_arousal, now=None):
             + 2.0 * organ_arousal.get(_ws_bucket(slug), 0.0)
         cands[slug] = score
     incumbents = set(mind.get("workspace", []))
-    def key(item):
+
+    def adjusted_score(item):
         return item[1] + (0.2 if item[0] in incumbents else 0.0)
-    ranked = sorted(cands.items(), key=key, reverse=True)
+    ranked = sorted(
+        cands.items(), key=lambda item: (-adjusted_score(item), item[0]))
     ws, per_bucket = [], {}
     for item in ranked:
-        if key(item) < -2.5:                  # ignition (on the sort key —
+        if adjusted_score(item) < -2.5:       # ignition (on the sort key —
             break                             # monotone, so break is safe)
         b = _ws_bucket(item[0])
         if per_bucket.get(b, 0) >= 2:         # lateral inhibition
@@ -1909,10 +1913,11 @@ def _ppr_power_iteration(pers, adj):
     return rank
 
 
-def ppr_rerank(graph, dense_hits, alpha=0.6, beta=0.25, gamma=0.15,
-               mind=None, now=None, origins=None):
+def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None):
     """HippoRAG-style: dense hits seed Personalized PageRank over the typed
-    graph (damping 0.5, specificity 1/deg); blend dense + PPR + ACT-R.
+    graph (damping 0.5, specificity 1/deg). Dense score remains primary;
+    named, benchmark-frozen gains apply PPR and ACT-R as multiplicative
+    tie-breakers rather than advertising ineffective tuning parameters.
     dense_hits: [(slug, score)] best-first. Returns [(slug, blended)]."""
     if not dense_hits:
         return dense_hits
@@ -2001,7 +2006,7 @@ def ppr_rerank(graph, dense_hits, alpha=0.6, beta=0.25, gamma=0.15,
             * ORIGIN_WEIGHT.get(origin_class(
                 slug, types.get(slug, ""), declared_origins.get(slug)),
                 ORIGIN_WEIGHT["legacy-unlabeled"]) \
-            * (1 + 0.15 * p + 0.08 * a)
+            * (1 + PPR_TIEBREAK_GAIN * p + ACTIVATION_TIEBREAK_GAIN * a)
         if mind and slug in mind.get("nodes", {}):
             blended *= retention(mind["nodes"][slug], now)
         out.append((slug, blended))
@@ -2015,6 +2020,25 @@ def ppr_rerank(graph, dense_hits, alpha=0.6, beta=0.25, gamma=0.15,
 ORIGIN_WEIGHT = {"evidence": 1.0, "derived": 0.85, "model": 0.55,
                  "legacy-unlabeled": 0.55}
 
+# Missing origin metadata is classified only when both the canonical corpus
+# namespace and its shipped page type agree.  This is provenance policy, not
+# merely schema recognition: an unknown or misplaced unlabeled page must never
+# inherit evidence status from the catch-all behavior used by older releases.
+_UNLABELED_NAMESPACE_TYPE_ORIGIN = {
+    "organs": ("organ", "evidence"),
+    "events": ("event-day", "evidence"),
+    "epochs": ("epoch", "evidence"),
+    "units": ("unit", "evidence"),
+    "packages": ("package", "evidence"),
+    "projects": ("project", "evidence"),
+    "skills": ("skill", "evidence"),
+    "intents": ("intent", "evidence"),
+    "synthesis": ("synthesis", "model"),
+    "notes": ("note", "model"),
+    "thoughts": ("thought", "legacy-unlabeled"),
+    "takes": ("take", "legacy-unlabeled"),
+}
+
 def origin_class(slug, ptype="", declared_origin=None):
     # The JACKAL integration's ledger and receipt-file observations are
     # recall, not proof. Namespace precedence keeps legacy pages without an
@@ -2025,17 +2049,13 @@ def origin_class(slug, ptype="", declared_origin=None):
         return declared_origin
     if declared_origin is not None:
         return "legacy-unlabeled"
-    if slug.startswith(("synthesis/", "notes/")) \
-            or ptype in ("synthesis", "note"):
-        return "model"       # agent/model prose — never competes as evidence
-    if slug.startswith("thoughts/") or ptype == "thought":
-        return "legacy-unlabeled"
-    if slug.startswith("takes/") or ptype == "take":
-        # New open takes declare derived and graded takes declare model.
-        # An unlabelled legacy take may already contain model-written grade
-        # prose, so absence must not promote the mixed page to derived.
-        return "legacy-unlabeled"
-    return "evidence"
+    if slug == "sia/cortex" and ptype == "organ":
+        return "evidence"
+    namespace = slug.split("/", 1)[0]
+    policy = _UNLABELED_NAMESPACE_TYPE_ORIGIN.get(namespace)
+    if policy is not None and ptype == policy[0]:
+        return policy[1]
+    return "legacy-unlabeled"
 
 
 def _append_queue(record, queue_path=None):

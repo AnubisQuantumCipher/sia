@@ -685,7 +685,9 @@ class PPRMass(unittest.TestCase):
         graph = {"nodes": [{"id": c} for c in "abcde"],
                  "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
         # 'd' is dangling (no edges); its mass must not vanish
-        out = siamind.ppr_rerank(graph, [("a", 1.0), ("d", 0.5)])
+        out = siamind.ppr_rerank(
+            graph, [("a", 1.0), ("d", 0.5)],
+            origins={slug: "evidence" for slug in "abcde"})
         self.assertTrue(out, "must return results")
         slugs = [s for s, _ in out]
         self.assertIn("a", slugs)
@@ -723,7 +725,10 @@ class PPRMass(unittest.TestCase):
                  "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
         hits = [(c, 1.0) for c in "abcde"]
         shares = self._rank_shares(
-            siamind.ppr_rerank(graph, hits), {c: 1.0 for c in "abcde"})
+            siamind.ppr_rerank(
+                graph, hits,
+                origins={slug: "evidence" for slug in "abcde"}),
+            {c: 1.0 for c in "abcde"})
         self.assertAlmostEqual(sum(shares.values()), 7 / 2, delta=1e-6)
         for slug, expected in (("a", 3 / 4), ("b", 1.0), ("c", 3 / 4),
                                ("d", 1 / 2), ("e", 1 / 2)):
@@ -773,6 +778,64 @@ class PPRMass(unittest.TestCase):
             "takes/legacy-graded", "take"), "legacy-unlabeled")
         self.assertEqual(siamind.origin_class(
             "takes/new-open", "take", "derived"), "derived")
+
+    def test_removed_tuning_arguments_cannot_masquerade_as_controls(self):
+        graph = {"nodes": [], "edges": []}
+        hits = [("events/example/day", 1.0)]
+        for name in ("alpha", "beta", "gamma"):
+            with self.subTest(name=name), self.assertRaises(TypeError):
+                siamind.ppr_rerank(graph, hits, **{name: 0.0})
+        with self.assertRaises(TypeError):
+            siamind.ppr_rerank(graph, hits, 0.0)
+
+    def test_named_ppr_tiebreak_gain_drives_the_actual_blend(self):
+        graph = {
+            "nodes": [
+                {"id": "events/a/day", "t": "event-day"},
+                {"id": "events/b/day", "t": "event-day"},
+            ],
+            "edges": [{"s": "events/a/day", "d": "events/b/day"}],
+        }
+        hits = [("events/a/day", 1.0), ("events/b/day", 1.0)]
+        rank = [1.0, 0.0]
+        with mock.patch.object(
+                siamind, "_ppr_power_iteration", return_value=rank), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0):
+            disabled = siamind.ppr_rerank(graph, hits)
+        self.assertEqual(dict(disabled)["events/a/day"],
+                         dict(disabled)["events/b/day"])
+
+        with mock.patch.object(
+                siamind, "_ppr_power_iteration", return_value=rank):
+            enabled = siamind.ppr_rerank(graph, hits)
+        self.assertGreater(dict(enabled)["events/a/day"],
+                           dict(enabled)["events/b/day"])
+
+    def test_named_activation_tiebreak_gain_drives_the_actual_blend(self):
+        graph = {
+            "nodes": [
+                {"id": "events/a/day", "t": "event-day"},
+                {"id": "events/b/day", "t": "event-day"},
+            ],
+            "edges": [{"s": "events/a/day", "d": "events/b/day"}],
+        }
+        hits = [("events/a/day", 1.0), ("events/b/day", 1.0)]
+        mind = {"nodes": {}, "edges": {}}
+        activations = {"events/a/day": 0.0, "events/b/day": 1.0}
+        with mock.patch.object(
+                siamind, "activations", return_value=activations), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0), \
+                mock.patch.object(siamind, "ACTIVATION_TIEBREAK_GAIN", 0.0):
+            disabled = siamind.ppr_rerank(graph, hits, mind=mind)
+        self.assertEqual(dict(disabled)["events/a/day"],
+                         dict(disabled)["events/b/day"])
+
+        with mock.patch.object(
+                siamind, "activations", return_value=activations), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0):
+            enabled = siamind.ppr_rerank(graph, hits, mind=mind)
+        self.assertGreater(dict(enabled)["events/b/day"],
+                           dict(enabled)["events/a/day"])
 
 
     def test_dangling_mass_is_conserved_not_leaked(self):
@@ -3117,6 +3180,44 @@ class CorpusOriginLabels(unittest.TestCase):
         self.assertEqual(self.sialib.corpus_origin("events/duplicate-type",
                                                   "event-day"),
                          "legacy-unlabeled")
+
+    def test_unlabeled_origin_requires_matching_namespace_and_type(self):
+        expected = (
+            ("sia/cortex", "organ", "evidence"),
+            ("organs/journal", "organ", "evidence"),
+            ("events/journal/day", "event-day", "evidence"),
+            ("epochs/journal/week", "epoch", "evidence"),
+            ("units/example", "unit", "evidence"),
+            ("packages/example", "package", "evidence"),
+            ("projects/example", "project", "evidence"),
+            ("skills/example", "skill", "evidence"),
+            ("intents/example", "intent", "evidence"),
+            ("synthesis/example", "synthesis", "model"),
+            ("notes/example", "note", "model"),
+            ("thoughts/example", "thought", "legacy-unlabeled"),
+            ("takes/example", "take", "legacy-unlabeled"),
+        )
+        for slug, page_type, origin in expected:
+            with self.subTest(slug=slug):
+                self._page(slug, f"type: {page_type}")
+                self.assertEqual(self.sialib.corpus_origin(slug), origin)
+
+        mismatches = (
+            ("unknown/page", "alien"),
+            ("unknown/event", "event-day"),
+            ("events/wrong-type", "unit"),
+            ("sia/not-cortex", "organ"),
+        )
+        for slug, page_type in mismatches:
+            with self.subTest(slug=slug):
+                self._page(slug, f"type: {page_type}")
+                self.assertEqual(
+                    self.sialib.corpus_origin(slug), "legacy-unlabeled")
+
+        self._page(
+            "custom/declared", "type: alien\norigin: evidence")
+        self.assertEqual(
+            self.sialib.corpus_origin("custom/declared"), "evidence")
 
     def test_legacy_jackal_pages_are_non_evidence_and_false_prose_is_inert(self):
         self._page(

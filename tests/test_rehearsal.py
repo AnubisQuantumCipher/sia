@@ -317,6 +317,25 @@ class Stability(unittest.TestCase):
         self.assertGreater(ranked[0][1], ranked[1][1])
 
 
+class Workspace(unittest.TestCase):
+    def test_equal_scores_use_canonical_slug_order(self):
+        slugs = ["units/zeta", "packages/alpha", "projects/middle"]
+        expected = sorted(slugs)
+
+        for order in (slugs, list(reversed(slugs))):
+            with self.subTest(order=order):
+                mind = {
+                    "nodes": {
+                        slug: {"n": 1.0, "t0": 100.0,
+                               "rt": [[100.0, 1.0]]}
+                        for slug in order
+                    },
+                    "workspace": [],
+                }
+                self.assertEqual(
+                    siamind.rebuild_workspace(mind, {}, now=100.0), expected)
+
+
 class SM2(unittest.TestCase):
     def test_primary_intervals_and_lapse_restart(self):
         review = {"ef": 2.5, "reps": 0, "interval_days": 0,
