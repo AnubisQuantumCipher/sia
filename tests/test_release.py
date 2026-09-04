@@ -6955,7 +6955,15 @@ remove_managed_skill
             r"\s*root\.staleAfterSec\)")
         self.assertIn(
             "interval: 1000; running: root.opened; repeat: true", cockpit)
-        self.assertIn("root.staleAfterSec * 1000", panel)
+        self.assertRegex(
+            panel,
+            r"Model\.timestampStale\(\s*parsed\.ts,\s*Date\.now\(\),"
+            r"\s*root\.staleAfterSec\)")
+        self.assertRegex(
+            panel,
+            r"Model\.timestampStale\(\s*root\.status\.ts,\s*root\.nowMs,"
+            r"\s*root\.staleAfterSec\)")
+        self.assertNotIn("root.staleAfterSec * 1000", panel)
         self.assertNotRegex(cockpit, r">\s*240\s*\*\s*1000")
 
     def test_cockpit_exposes_snapshot_and_live_memory_boundaries(self):

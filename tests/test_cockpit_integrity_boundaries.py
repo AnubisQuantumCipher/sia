@@ -149,6 +149,48 @@ function statusAt(stamp, nowIso) {
         timer = _qml_element(cockpit, "interval: 1000; running: root.opened")
         self.assertIn("Model.timestampStale(", timer)
 
+    def test_panel_future_status_is_stale_on_load_and_on_the_clock_tick(self):
+        panel = _read("Panel.qml")
+        apply_status = _qml_function(panel, "applyStatus")
+        timer = _qml_element(panel, "interval: 5000; running: true")
+        status = {
+            "v": 1,
+            "ts": "2999-09-04T08:05:57Z",
+            "state": "thinking",
+            "publication_id": "a780a1590f1e41d19e68c31c0ee93c88",
+            "projection_debt": {"graph": "", "consolidation": ""},
+            "mind": {
+                "nodes": 0, "edges": 0, "decay_active": 0,
+                "decay_demoted": 0, "rehearsal_eligible": 0,
+                "rehearsal_due": 0, "pinned": 0,
+            },
+            "agent_queue": {
+                "materialized": 0, "refused": 0, "acknowledged": 0,
+            },
+        }
+        wrapper = apply_status + """
+var Model = {
+  residentStatusShape: residentStatusShape,
+  timestampStale: timestampStale
+}
+var root = {
+  status: null, statusLoadValid: false, stale: false,
+  staleAfterSec: staleAfterDefaultSec()
+}
+function panelStatusAt(snapshot, nowIso) {
+  Date.now = function() { return Date.parse(nowIso) }
+  applyStatus(JSON.stringify(snapshot))
+  return { valid: root.statusLoadValid, stale: root.stale }
+}
+"""
+        self.assertEqual(self._run(
+            wrapper, "panelStatusAt",
+            [status, "2026-09-04T08:05:57Z"], sources=("Model.js",)),
+            {"valid": True, "stale": True})
+        self.assertIn("Model.timestampStale(", apply_status)
+        self.assertIn("Model.timestampStale(", timer)
+        self.assertNotIn("root.staleAfterSec * 1000", panel)
+
     def test_cockpit_withdraws_stale_continuity_everywhere(self):
         cockpit = _read("Cockpit.qml")
         self.assertIn("readonly property bool continuityStale:", cockpit)

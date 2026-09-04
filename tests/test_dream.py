@@ -356,6 +356,24 @@ class DreamPublication(unittest.TestCase):
         self.assertEqual(len(published), 1)
         self.assertIn("due memory deferred", published[0][2])
 
+    def test_multiwindow_deferral_does_not_promise_the_next_window(self):
+        slugs = tuple(
+            f"events/multiwindow/page-{index}"
+            for index in range(self.sialib.siamind.WORKSPACE_K * 3))
+        self._schedule_rehearsal(*slugs)
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+
+        embeds = [call for call in self.gbrain_calls if call[0] == "embed"]
+        deferred = len(slugs) - len(embeds)
+        self.assertGreater(deferred, self.sialib.siamind.WORKSPACE_K)
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "I rehearsed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn(
+            "remain due for later rotating nightly windows", published[0][2])
+        self.assertNotIn("to the next nightly window", published[0][2])
+
     def test_partial_rehearsal_failure_is_not_hidden_by_one_success(self):
         self._schedule_rehearsal("events/partial/available",
                                  "events/partial/refused")

@@ -155,9 +155,8 @@ BarWidget {
       }
       root.status = parsed
       root.statusLoadValid = true
-      const ts = Date.parse(parsed.ts)
-      root.stale = !(ts > 0) ||
-        (Date.now() - ts) > root.staleAfterSec * 1000
+      root.stale = Model.timestampStale(
+        parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
       root.statusLoadValid = false
       /* mid-replace read; keep last-known-good pixels, but fail the gate */
@@ -260,9 +259,8 @@ BarWidget {
     onTriggered: {
       root.nowMs = Date.now()
       if (root.status) {
-        const ts = Date.parse(root.status.ts)
-        root.stale = !(ts > 0) ||
-          (root.nowMs - ts) > root.staleAfterSec * 1000
+        root.stale = Model.timestampStale(
+          root.status.ts, root.nowMs, root.staleAfterSec)
       }
       // Continuity crosses its horizon without any file changing, so the
       // tick has to ask, not wait to be told.

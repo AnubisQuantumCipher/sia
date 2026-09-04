@@ -8697,7 +8697,8 @@ def _dream_transaction_guarded(memo_update, now, memo):
             deferred_text = ("" if not deferred else
                 f" {deferred} additional due "
                 f"{'memory' if deferred == 1 else 'memories'} deferred "
-                f"to the next nightly window.")
+                f"beyond this nightly window; their schedules remain due "
+                f"for later rotating nightly windows.")
             failure_text = ("" if not (
                 rehearsal["failed"] or rehearsal["missing"]) else
                 f" {rehearsal['failed']} embed failure(s), "
