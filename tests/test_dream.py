@@ -336,6 +336,44 @@ class DreamPublication(unittest.TestCase):
         self.assertEqual(
             self.mind["nodes"]["events/test/day"]["review"]["reviews"], 1)
 
+    def test_bounded_rehearsal_deferral_is_signed_and_visible(self):
+        slugs = tuple(
+            f"events/deferred/page-{index}"
+            for index in range(self.sialib.siamind.WORKSPACE_K + 1))
+        self._schedule_rehearsal(*slugs)
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+
+        embeds = [call for call in self.gbrain_calls if call[0] == "embed"]
+        self.assertEqual(len(embeds), self.sialib.siamind.WORKSPACE_K)
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertIn(
+            f"deferred={len(slugs) - self.sialib.siamind.WORKSPACE_K}",
+            rehearsed[-1][2])
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "I rehearsed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn("due memory deferred", published[0][2])
+
+    def test_partial_rehearsal_failure_is_not_hidden_by_one_success(self):
+        self._schedule_rehearsal("events/partial/available",
+                                 "events/partial/refused")
+
+        def partial(args):
+            if args[1].endswith("/refused"):
+                return self._result(1, "embedding runtime refused\n")
+            return self._embed_like_gbrain(args)
+
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
+            embed=partial)
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "I rehearsed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn("1 embed failure", published[0][2])
+        self.assertIs(published[0][4], True)
+
     def test_rehearsal_total_failure_emits_urgent_thought(self):
         self._schedule_rehearsal("events/a", "events/b")
 
@@ -577,7 +615,8 @@ class DreamPublication(unittest.TestCase):
             self.assertEqual(saved, [])
             self.sialib.rehearse_memories(now=1, stage=publish)
 
-        self.assertEqual(saved, [{"reviewed": "events/test/day"}])
+        self.assertEqual(saved, [{"reviewed": "events/test/day",
+                                  "rehearsal_cursor": 0}])
 
     def test_musing_keeper_failure_cannot_save_and_retry_can_commit(self):
         state_saves = []

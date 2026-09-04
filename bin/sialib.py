@@ -8635,8 +8635,9 @@ def rehearse_memories(now=None, stage=None):
             failed += 1
         attempted.append(item)
     # Attempts advance the durable fairness cursor even when an embed fails
-    # or its corpus page is absent. The save below is the publication barrier:
-    # no caller receives a report claiming deferral until this state commits.
+    # or its corpus page is absent. The stage callback binds that cursor and
+    # report into the same pending receipt; the save below commits both before
+    # production can publish the signed result from the receipt.
     mind["rehearsal_cursor"] = next_cursor
     decay = siamind.decay_sweep(mind, now=now)
     report = {"reviewed": reviewed, "embedded": embedded, "failed": failed,
@@ -8748,6 +8749,16 @@ def _dream_transaction_guarded(memo_update, now, memo):
         def stage_rehearsal(mind, rehearsal):
             reviewed = rehearsal["reviewed"]
             thought = None
+            deferred = rehearsal["deferred"]
+            deferred_text = ("" if not deferred else
+                f" {deferred} additional due "
+                f"{'memory' if deferred == 1 else 'memories'} deferred "
+                f"to the next nightly window.")
+            failure_text = ("" if not (
+                rehearsal["failed"] or rehearsal["missing"]) else
+                f" {rehearsal['failed']} embed failure(s), "
+                f"{rehearsal['missing']} missing page(s); those schedules "
+                f"remain due.")
             if reviewed:
                 qualities = {}
                 for item in reviewed:
@@ -8761,10 +8772,11 @@ def _dream_transaction_guarded(memo_update, now, memo):
                     f"their SM-2 schedule ({quality_text}); "
                     f"{rehearsal['embedded']} pages re-embedded. Decay "
                     f"only changes retrieval salience; it never deletes "
-                    f"evidence.")
+                    f"evidence.{failure_text}{deferred_text}")
                 thought = (
                     "dream", thought_text,
-                    [item["slug"] for item in reviewed[:5]], False)
+                    [item["slug"] for item in reviewed[:5]],
+                    bool(rehearsal["failed"] or rehearsal["missing"]))
             elif rehearsal["failed"] or rehearsal["missing"]:
                 reasons = sorted({item["error"]
                                   for item in rehearsal["planned"]
@@ -8776,8 +8788,8 @@ def _dream_transaction_guarded(memo_update, now, memo):
                     f"{len(rehearsal['planned'])} due memories: "
                     f"{rehearsal['failed']} embed failure(s), "
                     f"{rehearsal['missing']} missing page(s). The SM-2 "
-                    f"queue cannot advance until embedding succeeds."
-                    f"{detail}",
+                    f"schedules for those attempted pages remain due."
+                    f"{deferred_text}{detail}",
                     [item["slug"] for item in rehearsal["planned"][:5]],
                     True)
             _stage_dream_unit(
@@ -8785,7 +8797,8 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 f"reviewed={len(reviewed)}",
                 f"embedded={rehearsal['embedded']} "
                 f"failed={rehearsal['failed']} "
-                f"missing={rehearsal['missing']}",
+                f"missing={rehearsal['missing']} "
+                f"deferred={deferred}",
                 json.dumps(reviewed, sort_keys=True), thought=thought)
 
         rehearsal = rehearse_memories(now=now, stage=stage_rehearsal)
