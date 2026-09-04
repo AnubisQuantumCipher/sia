@@ -54,7 +54,12 @@ freeze ends on evidence, not on mood.
   marketplace's 512 KB cap, not a vocabulary assertion).
 - Any new gbrain invocation shape lands with a probe in `tests/test_gbrain_contract.py`
   in the same commit.
-- No retarget of marketplace issue #4078; `3cb08d8…` is final, as promised there.
+- **`main` is frozen while marketplace verification is pending.** The verify flow binds
+  one exact SHA and the automation refuses when that SHA is no longer default-branch
+  HEAD, so any push to `main` invalidates the evidence chain it is waiting on. Landing
+  work during a pending verification is not a tradeoff against velocity; it is the
+  reason the last three verification attempts produced no publishable chain. Queue on a
+  branch, and push only after the listing flips or the maintainer closes the cycle.
 
 ---
 
@@ -212,10 +217,19 @@ Deferred with reasons, not forgotten:
 
 ## Marketplace track (external, in parallel)
 
-v1.5.1 (`3cb08d8…`) is bound in verify issue #4078 with the form intact and a stated
-promise of no further retargets. When the maintainer publishes: confirm the listing flips,
-then normal cadence — each future release re-binds through the same verify flow, once,
-after tagging. Nothing else; the churn is over.
+Verify issue #4078 has been retargeted three times, and every retarget had a defensible
+local reason: a grading defect that should not have become the verified snapshot
+(`ac3483fd` → `3cb08d8`), then two shipped releases (`3cb08d8` → `817717d`), then four
+defect-fix releases on 2026-09-03 that closed a real memory-loss bug (`817717d` →
+`2307182`, v1.7.8). Each reason was good and the pattern was still churn, because the
+maintainer's constraint is not "bind a good commit" but "bind the commit that is
+currently HEAD" — and this repository kept moving HEAD.
+
+The correction is upstream of the verify form: **do not push to `main` while a
+verification is pending.** v1.7.8 (`2307182…`) is bound with the form intact. Until the
+listing flips or the maintainer closes the cycle, releases queue on branches. After it
+flips, normal cadence resumes — one re-bind per release, after tagging, and never while
+validation is in flight.
 
 ---
 
