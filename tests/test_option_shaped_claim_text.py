@@ -145,6 +145,18 @@ class TakeEndOfOptions(unittest.TestCase):
 
 
 class IntendEndOfOptions(unittest.TestCase):
+    def test_typos_are_refused_without_the_marker(self):
+        for argv in (["--hepl", "ship", "it", "--by", "2099-01-01"],
+                     ["ship", "it", "--biy", "2099-01-01", "--by",
+                      "2099-01-02"]):
+            with self.subTest(argv=argv), \
+                    _registrations("intend") as recorded, \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                status = sia.cmd_intend(argv)
+            self.assertEqual(status, 2)
+            self.assertEqual(recorded, [])
+            self.assertIn("nothing was registered", out.getvalue())
+
     def test_text_beginning_with_a_minus_is_registerable(self):
         with _registrations("intend") as recorded, \
                 contextlib.redirect_stdout(io.StringIO()):

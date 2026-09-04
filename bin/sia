@@ -1738,8 +1738,15 @@ def cmd_intend(argv):
             # typo as prospective memory. "--" makes the boundary explicit.
             text.extend(argv[i + 1:])
             break
-        if argv[i] == "--by" and i + 1 < len(argv):
+        if argv[i] == "--by":
+            if i + 1 >= len(argv):
+                print("usage: sia intend \"what to do\" --by YYYY-MM-DD")
+                return 2
             by = argv[i + 1]; i += 2
+        elif argv[i].startswith("-"):
+            print("refusing option-shaped intent text; use -- before text "
+                  "that begins with '-'. nothing was registered")
+            return 2
         else:
             text.append(argv[i]); i += 1
     if not text or not by:
