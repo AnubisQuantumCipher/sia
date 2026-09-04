@@ -6,27 +6,16 @@ module, so one runtime state survives the dynamic aliases the test suite
 loads sialib under, and explicit test patches of these helpers are mirrored
 back into intra-module calls.  See ``docs/ARCHITECTURE.md``.
 
-Two things this lane owns did **not** come with it, and both refusals are
-load-bearing.
-
-``_THOUGHT_RECOVERY_LIBC`` and ``_ThoughtRecoveryDirent`` stay in the core.
-They execute ``ctypes.CDLL`` at module-body time, and a child that did that
-would build a second libc handle for every alias the suite loads — the exact
-duplicate state the façade exists to prevent.  The one function that reads
-that handle, ``_read_legacy_thought_directory_page``, moved here and reaches
-it through ``bind()`` instead.
-
-The two ``@contextlib.contextmanager`` helpers stay in the core as well, and
-the reason is a limit of the façade rather than of the code.  ``invoke()``
-binds this module's globals, calls the target, and releases the lock when the
-call returns — but calling a context manager only *constructs* it.  Its body
-runs later, at ``__enter__``, outside that bind and outside that lock, so a
-different sialib alias may have re-bound this module in between.  A context
-manager therefore cannot be a delegate, and rather than export one with a
-caveat it stays where its globals are stable.  Both are read from here through
-``bind()``; nothing outside this lane calls them.
+The façade also carries this lane's context managers safely across the child
+boundary.  ``invoke()`` returns a bound proxy for the explicitly named
+context exports; that proxy rebinds the owning ``sialib`` globals under the
+shared lock for both ``__enter__`` and ``__exit__`` without holding the lock
+across caller code.  The legacy directory reader similarly reuses the core's
+single generic ``_SOURCE_LIBC`` handle through ``bind()``.  No thought-only
+ABI state remains in the core.
 """
 
+import contextlib as _contextlib
 import threading as _threading
 
 def _canonical_thought_page_record(thought):
@@ -177,6 +166,120 @@ def _thought_legacy_scan_path():
 
 def _thought_recovery_lock_path():
     return os.path.join(STATE, THOUGHT_RECOVERY_LOCK_NAME)
+
+
+@_contextlib.contextmanager
+def _thought_legacy_catalog():
+    """Open the bounded-query catalog for canonical JSON index records."""
+    ensure_durable_directory(STATE, mode=0o700)
+    path = _thought_legacy_catalog_path()
+    existed = os.path.lexists(path)
+    if existed:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise ValueError("legacy thought catalog is not an owned file")
+    connection = sqlite3.connect(path, timeout=2.0)
+    try:
+        if hasattr(connection, "setlimit"):
+            connection.setlimit(
+                sqlite3.SQLITE_LIMIT_LENGTH,
+                MAX_THOUGHT_RECOVERY_RECORD_BYTES)
+        connection.execute("PRAGMA trusted_schema=OFF")
+        connection.execute("PRAGMA journal_mode=DELETE")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS legacy_thought_index ("
+            "index_name TEXT PRIMARY KEY NOT NULL, "
+            "entry_json TEXT NOT NULL) WITHOUT ROWID")
+        objects = connection.execute(
+            "SELECT type, name FROM sqlite_schema "
+            "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").fetchall()
+        if objects != [("table", "legacy_thought_index")]:
+            raise ValueError("legacy thought catalog schema is invalid")
+        columns = connection.execute(
+            "PRAGMA table_info(legacy_thought_index)").fetchall()
+        column_shape = [(row[1], row[2], row[3], row[5])
+                        for row in columns]
+        if column_shape != [
+                ("index_name", "TEXT", 1, 1),
+                ("entry_json", "TEXT", 1, 0)]:
+            raise ValueError("legacy thought catalog columns are invalid")
+        connection.commit()
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise ValueError("legacy thought catalog changed while opened")
+        os.chmod(path, 0o600)
+        if not existed:
+            _sync_directory(STATE)
+        yield connection
+    finally:
+        connection.close()
+
+
+@_contextlib.contextmanager
+def _thought_mind_replay_catalog():
+    """Open exact, bounded-query replay journals for every thought source."""
+    ensure_durable_directory(STATE, mode=0o700)
+    path = _thought_mind_replay_path()
+    existed = os.path.lexists(path)
+    if existed:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise ValueError("thought mind replay journal is not an owned file")
+    connection = sqlite3.connect(path, timeout=2.0)
+    try:
+        if hasattr(connection, "setlimit"):
+            connection.setlimit(
+                sqlite3.SQLITE_LIMIT_LENGTH,
+                MAX_THOUGHT_RECOVERY_RECORD_BYTES)
+        connection.execute("PRAGMA trusted_schema=OFF")
+        connection.execute("PRAGMA journal_mode=DELETE")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS thought_mind_replay ("
+            "record_id TEXT PRIMARY KEY NOT NULL, "
+            "claim_id TEXT NOT NULL, claim_sha256 TEXT NOT NULL, "
+            "state TEXT NOT NULL) WITHOUT ROWID")
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS native_thought_mind_replay ("
+            "record_id TEXT PRIMARY KEY NOT NULL, "
+            "claim_id TEXT NOT NULL, claim_sha256 TEXT NOT NULL, "
+            "state TEXT NOT NULL, queue_id TEXT NOT NULL) WITHOUT ROWID")
+        objects = connection.execute(
+            "SELECT type, name FROM sqlite_schema "
+            "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").fetchall()
+        if objects != [
+                ("table", "native_thought_mind_replay"),
+                ("table", "thought_mind_replay")]:
+            raise ValueError("thought mind replay journal schema is invalid")
+        expected_legacy_columns = [
+            ("record_id", "TEXT", 1, 1),
+            ("claim_id", "TEXT", 1, 0),
+            ("claim_sha256", "TEXT", 1, 0),
+            ("state", "TEXT", 1, 0)]
+        legacy_columns = connection.execute(
+            "PRAGMA table_info(thought_mind_replay)").fetchall()
+        legacy_shape = [(row[1], row[2], row[3], row[5])
+                        for row in legacy_columns]
+        native_columns = connection.execute(
+            "PRAGMA table_info(native_thought_mind_replay)").fetchall()
+        native_shape = [(row[1], row[2], row[3], row[5])
+                        for row in native_columns]
+        if legacy_shape != expected_legacy_columns \
+                or native_shape != expected_legacy_columns + [
+                    ("queue_id", "TEXT", 1, 0)]:
+            raise ValueError(
+                "thought mind replay journal columns are invalid")
+        connection.commit()
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise ValueError("thought mind replay journal changed while opened")
+        os.chmod(path, 0o600)
+        if not existed:
+            _sync_directory(STATE)
+        yield connection
+    finally:
+        connection.close()
 
 
 def _ensure_private_recovery_directory(path):
@@ -554,19 +657,19 @@ def _read_legacy_thought_directory_page(
             raise ThoughtDirectoryGenerationChanged(
                 "legacy thought directory changed between bounded pages")
         scan_descriptor = os.dup(descriptor)
-        directory_pointer = _THOUGHT_RECOVERY_LIBC.fdopendir(scan_descriptor)
+        directory_pointer = _SOURCE_LIBC.fdopendir(scan_descriptor)
         if not directory_pointer:
             saved_errno = ctypes.get_errno()
             os.close(scan_descriptor)
             raise OSError(saved_errno, os.strerror(saved_errno), directory)
         if cookie:
-            _THOUGHT_RECOVERY_LIBC.seekdir(directory_pointer, cookie)
+            _SOURCE_LIBC.seekdir(directory_pointer, cookie)
         selected = []
         inspected = 0
         complete = False
         while inspected < limit:
             ctypes.set_errno(0)
-            record = _THOUGHT_RECOVERY_LIBC.readdir(directory_pointer)
+            record = _SOURCE_LIBC.readdir(directory_pointer)
             if not record:
                 saved_errno = ctypes.get_errno()
                 if saved_errno:
@@ -591,7 +694,7 @@ def _read_legacy_thought_directory_page(
                              "mtime_ns": info.st_mtime_ns,
                              "ctime_ns": info.st_ctime_ns})
         next_cookie = (0 if complete else int(
-            _THOUGHT_RECOVERY_LIBC.telldir(directory_pointer)))
+            _SOURCE_LIBC.telldir(directory_pointer)))
         if next_cookie < 0:
             raise ValueError("legacy thought directory cookie is invalid")
         after = os.fstat(descriptor)
@@ -602,7 +705,7 @@ def _read_legacy_thought_directory_page(
                 "legacy thought directory changed while scanned") from exc
     finally:
         if directory_pointer:
-            _THOUGHT_RECOVERY_LIBC.closedir(directory_pointer)
+            _SOURCE_LIBC.closedir(directory_pointer)
         os.close(descriptor)
     finished_generation = _thought_directory_generation(after)
     target_generation = _thought_directory_generation(target)
@@ -1773,11 +1876,15 @@ _EXPORTED_FUNCTIONS = tuple(
 _CHILD_FUNCTIONS = frozenset(_EXPORTED_FUNCTIONS)
 _ORIGINAL_CHILD_FUNCTIONS = {
     name: globals()[name] for name in _EXPORTED_FUNCTIONS}
+_CONTEXT_EXPORTS = frozenset({
+    "_thought_legacy_catalog", "_thought_mind_replay_catalog",
+})
 _MISSING = object()
 _BIND_LOCK = _threading.RLock()
 _BIND_CONTROL_NAMES = frozenset({
     "_EXPORTED_FUNCTIONS", "_CHILD_FUNCTIONS", "_ORIGINAL_CHILD_FUNCTIONS",
-    "_MISSING", "_BIND_LOCK", "_BIND_CONTROL_NAMES", "bind", "invoke",
+    "_CONTEXT_EXPORTS", "_MISSING", "_BIND_LOCK", "_BIND_CONTROL_NAMES",
+    "_BoundInvocationContext", "bind", "invoke",
 })
 
 
@@ -1804,11 +1911,52 @@ def bind(parent_globals):
             globals()[name] = value
 
 
+class _BoundInvocationContext:
+    """Rebind one owner at each context-protocol boundary."""
+
+    def __init__(self, parent_globals, target, args, kwargs):
+        self._parent_globals = parent_globals
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs
+        self._manager = None
+        self._state = "new"
+
+    def __enter__(self):
+        if self._state != "new":
+            raise RuntimeError("SIA thought context manager is single-use")
+        self._state = "opening"
+        with _BIND_LOCK:
+            bind(self._parent_globals)
+            try:
+                manager = self._target(*self._args, **self._kwargs)
+                self._manager = manager
+                value = manager.__enter__()
+            except BaseException:
+                self._manager = None
+                self._state = "closed"
+                raise
+        self._state = "entered"
+        return value
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._state != "entered":
+            raise RuntimeError("SIA thought context manager is not entered")
+        manager = self._manager
+        self._manager = None
+        self._state = "closed"
+        with _BIND_LOCK:
+            bind(self._parent_globals)
+            return manager.__exit__(exc_type, exc_value, traceback)
+
+
 def invoke(parent_globals, name, *args, **kwargs):
     """Bind and call one exported child function as one re-entrant action."""
     target = _ORIGINAL_CHILD_FUNCTIONS.get(name)
     if target is None:
         raise AttributeError(f"unknown SIA thought export: {name}")
+    if name in _CONTEXT_EXPORTS:
+        return _BoundInvocationContext(parent_globals, target, args, kwargs)
     with _BIND_LOCK:
         bind(parent_globals)
         return target(*args, **kwargs)

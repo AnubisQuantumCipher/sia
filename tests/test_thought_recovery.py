@@ -516,7 +516,7 @@ class ThoughtRecovery(unittest.TestCase):
                 thought_dir, f"noise-{position:03d}"), "wb").close()
 
         calls = []
-        original_readdir = self.sialib._THOUGHT_RECOVERY_LIBC.readdir
+        original_readdir = self.sialib._SOURCE_LIBC.readdir
 
         def counted_readdir(pointer):
             calls.append(None)
@@ -525,7 +525,7 @@ class ThoughtRecovery(unittest.TestCase):
         with mock.patch.object(
                 self.sialib, "MAX_THOUGHT_RECOVERY_RECORDS", 2), \
                 mock.patch.object(
-                    self.sialib._THOUGHT_RECOVERY_LIBC, "readdir",
+                    self.sialib._SOURCE_LIBC, "readdir",
                     side_effect=counted_readdir):
             with self.sialib.corpus_owner():
                 self.assertIsNone(

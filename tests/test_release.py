@@ -2802,13 +2802,13 @@ retain_unowned_cli_before_fence
             "_save_thought_legacy_scan",
             "_schedule_legacy_thought_reset_locked",
             "_sync_directory", "_thought_directory_generation",
-            "_thought_legacy_catalog_batch",
+            "_thought_legacy_catalog", "_thought_legacy_catalog_batch",
             "_thought_legacy_catalog_path",
             "_thought_legacy_index_bytes",
             "_thought_legacy_index_dir",
             "_thought_legacy_index_entry",
             "_thought_legacy_scan_path",
-            "_thought_mind_replay_intent",
+            "_thought_mind_replay_catalog", "_thought_mind_replay_intent",
             "_thought_mind_replay_path",
             "_thought_mind_replay_records", "_thought_page_parts",
             "_thought_queue_binding",
@@ -2931,8 +2931,14 @@ retain_unowned_cli_before_fence
                         self.assertIs(target, getattr(module, export))
                         self.assertTrue(inspect.isfunction(target))
                         self.assertEqual(target.__module__, module.__name__)
+                        implementation = target
+                        if export in getattr(module, "_CONTEXT_EXPORTS", ()):
+                            implementation = target.__wrapped__
+                            self.assertTrue(inspect.isgeneratorfunction(
+                                implementation))
                         self.assertEqual(
-                            os.path.realpath(target.__code__.co_filename),
+                            os.path.realpath(
+                                implementation.__code__.co_filename),
                             os.path.realpath(path))
                 # bind()'s delegate branch is what keeps a parent façade out
                 # of the child's own calls: a value marked
@@ -2984,12 +2990,81 @@ retain_unowned_cli_before_fence
                 # lock import is the whole import surface.
                 self.assertTrue(imported.isdisjoint(core),
                                 sorted(imported.intersection(core)))
-                self.assertEqual(imported, {"threading"})
+                expected_imports = {"threading"}
+                if name == "siathought":
+                    expected_imports.add("contextlib")
+                self.assertEqual(imported, expected_imports)
                 # Loading the child must stay side-effect free: no SIA
                 # module may reach sys.modules as a consequence.
                 before = set(sys.modules)
                 self._facade_child(name)
                 self.assertTrue(core.isdisjoint(set(sys.modules) - before))
+
+    def test_siathought_context_exports_are_child_owned_and_reuse_source_libc(self):
+        module = self._facade_child("siathought")
+        context_exports = frozenset({
+            "_thought_legacy_catalog", "_thought_mind_replay_catalog",
+        })
+        self.assertEqual(module._CONTEXT_EXPORTS, context_exports)
+        self.assertTrue(context_exports.issubset(module._CHILD_FUNCTIONS))
+
+        core_path = os.path.join(REPO, "bin", "sialib.py")
+        core_tree = ast.parse(_read_path(core_path), core_path)
+        core_definitions = {
+            node.name for node in ast.walk(core_tree)
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef))}
+        self.assertTrue(context_exports.isdisjoint(core_definitions))
+        self.assertNotIn("_ThoughtRecoveryDirent", core_definitions)
+        self.assertNotIn("_THOUGHT_RECOVERY_LIBC", _read_path(core_path))
+
+        child_path = os.path.join(REPO, "bin", "siathought.py")
+        child_tree = ast.parse(_read_path(child_path), child_path)
+        reader = next(
+            node for node in ast.walk(child_tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_read_legacy_thought_directory_page")
+        reader_names = {
+            node.id for node in ast.walk(reader) if isinstance(node, ast.Name)}
+        self.assertIn("_SOURCE_LIBC", reader_names)
+        self.assertNotIn("_THOUGHT_RECOVERY_LIBC", reader_names)
+
+    def test_siathought_context_invoke_rebinds_each_protocol_phase(self):
+        module = self._facade_child("siathought")
+        phases = []
+
+        class SuppressedError(Exception):
+            pass
+
+        class RecordingContext:
+            def __enter__(self):
+                phases.append(("enter", module.ACTIVE))
+                return module.ACTIVE
+
+            def __exit__(self, exc_type, _exc, _traceback):
+                phases.append(("exit", module.ACTIVE, exc_type))
+                return exc_type is SuppressedError
+
+        def context_factory():
+            phases.append(("factory", module.ACTIVE))
+            return RecordingContext()
+
+        module._ORIGINAL_CHILD_FUNCTIONS[
+            "_thought_legacy_catalog"] = context_factory
+        first = {"ACTIVE": "first"}
+        second = {"ACTIVE": "second"}
+        manager = module.invoke(first, "_thought_legacy_catalog")
+        self.assertEqual(phases, [])
+        module.bind(second)
+        with manager as active:
+            self.assertEqual(active, "first")
+            module.bind(second)
+            raise SuppressedError("the wrapped manager suppresses this")
+        self.assertEqual(phases, [
+            ("factory", "first"),
+            ("enter", "first"),
+            ("exit", "first", SuppressedError),
+        ])
 
 
     def test_preflight_names_a_panicking_cryptography_backend(self):

@@ -103,13 +103,26 @@ discovered rather than hand-listed, so the next extraction is pinned the
 moment it captures its own exports, and adding one dict entry to
 `FACADE_CHILD_EXPORTS` inherits every guard above.
 
-**Next: v1.6.1 — the thought-pages + recovery/legacy-replay cluster** (~1,870
-lines, ~66 functions). Its verified map is on file: zero references from any
-other `bin/` module, but two hazards the exports lane did not have — an
-import-time ctypes block (`_THOUGHT_RECOVERY_LIBC` + `_ThoughtRecoveryDirent`,
-which must stay parent-side) and two `@contextlib.contextmanager` decorators
-(so the child imports `contextlib` itself). Its dedicated
-`tests/test_thought_recovery.py` is the gate.
+**v1.6.1 — thought pages + recovery/legacy replay are fully child-owned.**
+The initial extraction left its context managers and a duplicate directory
+ABI in `sialib`; the completed boundary removes both exceptions. `siathought`
+declares its context exports explicitly, and `invoke()` returns a one-shot
+proxy that binds the owning `sialib` namespace under the shared lock while
+constructing/entering the real manager and binds it again while exiting. The
+lock is deliberately released across caller code, so another dynamically
+loaded `sialib` alias can run without deadlock while each suspended generator
+still resumes against its own `STATE`, patches, and helper identities. The
+proxy returns the wrapped `__exit__` result unchanged, preserving exception
+suppression.
+
+The legacy directory reader now consumes the existing generic `_SOURCE_LIBC`
+ABI through `bind()`; no thought-specific ctypes class, handle, or patch seam
+remains in `sialib`. Existing callers retain the same
+`sialib._thought_legacy_catalog()` and
+`sialib._thought_mind_replay_catalog()` spellings because the ordinary
+delegate publication loop exports them from the child. Release tests pin the
+context set, ownership, import surface, per-phase rebinding, suppression, and
+single ABI source; `tests/test_thought_recovery.py` remains the behavior gate.
 
 **Then: v1.6.2 — the cursors lane** last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
