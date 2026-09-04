@@ -288,6 +288,92 @@ class AgentCatalogGeneration(unittest.TestCase):
 
         self.assertEqual(cursors, before)
 
+    def test_legacy_agent_rows_migrate_with_source_directory_absent(self):
+        raw_agent = "Legacy Agent"
+        raw_limit = "Daily Limit"
+        agent_id = self.sialib._source_entity_token(raw_agent, "agent")
+        limit_id = self.sialib._source_entity_token(
+            raw_limit, "agent-limit")
+        legacy_row = {
+            "tokens": 5,
+            "limits": {raw_limit: 80},
+        }
+        cursors_by_format = (
+            {"agents.state": {raw_agent: copy.deepcopy(legacy_row)}},
+            {"agents.state": self._wrapped({
+                agent_id: copy.deepcopy(legacy_row)})},
+        )
+        os.rmdir(self.usage)
+
+        for cursors in cursors_by_format:
+            with self.subTest(cursors=cursors):
+                self.assertEqual(self.sialib.sense_agents(cursors), [])
+                self.assertEqual(self._state(cursors), {
+                    agent_id: {
+                        "tokens": 5,
+                        "limits": {limit_id: 80},
+                        "generation": 0,
+                    },
+                })
+
+    def test_legacy_agent_row_migrates_before_live_source_replacement(self):
+        self._write("legacy", tokens=10, limits=[
+            {"label": "Daily Limit", "percent": 0.9},
+        ])
+        limit_id = self.sialib._source_entity_token(
+            "Daily Limit", "agent-limit")
+        legacy = {
+            "legacy": {
+                "tokens": 5,
+                "limits": {"Daily Limit": 80},
+            },
+        }
+        for stored in (legacy, self._wrapped(legacy)):
+            cursors = {"agents.state": copy.deepcopy(stored)}
+            with self.subTest(tagged=isinstance(stored, list)):
+                self._finish(cursors)
+                self.assertEqual(self._state(cursors)["legacy"], {
+                    "tokens": 10,
+                    "limits": {limit_id: 90},
+                    "generation": 0,
+                })
+
+    def test_malformed_legacy_agent_rows_refuse_without_mutation(self):
+        malformed = (
+            {"tokens": True, "limits": {}},
+            {"tokens": 5, "limits": {"window": True}},
+            {"tokens": 5, "limits": {"": 80}},
+            {"tokens": 5, "limits": {"\ud800": 80}},
+            {"tokens": 5, "limits": {"window": 101}},
+            {"tokens": 5, "limits": {}, "unexpected": 0},
+        )
+        for row in malformed:
+            for stored in (
+                    {"legacy": copy.deepcopy(row)},
+                    self._wrapped({"legacy": copy.deepcopy(row)})):
+                cursors = {"agents.state": stored}
+                before = copy.deepcopy(cursors)
+                with self.subTest(row=row, tagged=isinstance(stored, list)), \
+                        self.assertRaisesRegex(
+                            ValueError,
+                            "source cursor agents.state is invalid"):
+                    self.sialib.sense_agents(cursors)
+                self.assertEqual(cursors, before)
+
+    def test_legacy_source_key_collisions_refuse_without_mutation(self):
+        rows = (
+            ("a+b", {"tokens": 5, "limits": {}, "generation": 0}),
+            ("a_2bb", {"tokens": 7, "limits": {}, "generation": 0}),
+        )
+        for ordered in (rows, tuple(reversed(rows))):
+            cursors = {"agents.state": dict(ordered)}
+            before = copy.deepcopy(cursors)
+            with self.subTest(keys=tuple(cursors["agents.state"])), \
+                    self.assertRaisesRegex(
+                        ValueError, "source cursor agents.state is invalid"):
+                self.sialib.sense_agents(cursors)
+            self.assertEqual(cursors, before)
+
     def test_malformed_agent_source_rows_cannot_replace_prior_state(self):
         prior = {
             "alpha": {

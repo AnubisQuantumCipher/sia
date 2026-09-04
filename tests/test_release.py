@@ -2968,6 +2968,7 @@ retain_unowned_cli_before_fence
             "_agent_scan_candidate", "_agent_source_capture",
             "_agent_source_capture_matches", "_agent_source_capture_valid",
             "_agent_transition_events", "_agent_usage_row_valid",
+            "_normalized_agent_usage_row",
             "_attest_generation", "_attest_rows",
             "_await_process_exit_unreaped", "_configured_skill_roots",
             "_custom_json_record_refusal", "_custom_match_literals",

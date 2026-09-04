@@ -2031,7 +2031,8 @@ def _source_entity_token(value, namespace):
     return prefix + "_h" + hashlib.sha256(raw_bytes).hexdigest()
 
 
-def _bounded_source_state(cursors, key, namespace, *, value_validator=None):
+def _bounded_source_state(cursors, key, namespace, *, value_validator=None,
+                          value_normalizer=None):
     """Load a bounded versioned map whose keys are already canonical tokens."""
     present = key in cursors
     raw = cursors.get(key)
@@ -2067,9 +2068,14 @@ def _bounded_source_state(cursors, key, namespace, *, value_validator=None):
             token = _source_entity_token(source_key, namespace)
         else:
             token = source_key
-        if value_validator is not None and not value_validator(value):
+        normalized_value = value_normalizer(value) \
+            if value_normalizer is not None else value
+        if value_validator is not None \
+                and not value_validator(normalized_value):
             raise ValueError(f"source cursor {key} is invalid")
-        state.setdefault(token, value)
+        if token in state:
+            raise ValueError(f"source cursor {key} is invalid")
+        state[token] = normalized_value
     # A tagged list is structurally disjoint from every legacy map, so a pair
     # of unlucky source IDs cannot masquerade as the cursor wrapper itself.
     cursors[key] = ["sia-source-entity-state-v1", state]

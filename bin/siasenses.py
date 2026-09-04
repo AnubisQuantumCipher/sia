@@ -2147,6 +2147,34 @@ def _agent_usage_row_valid(value):
         for label_id, percent in value["limits"].items())
 
 
+def _normalized_agent_usage_row(value):
+    """Migrate only the exact pre-generation agent row schema."""
+    if _agent_usage_row_valid(value):
+        return copy.deepcopy(value)
+    if not isinstance(value, dict) \
+            or set(value) != {"tokens", "limits"} \
+            or isinstance(value["tokens"], bool) \
+            or not isinstance(value["tokens"], int) \
+            or value["tokens"] < 0 \
+            or not isinstance(value["limits"], dict) \
+            or len(value["limits"]) > MAX_CONFIG_TAGS:
+        return value
+    limits = {}
+    for raw_label, percent in value["limits"].items():
+        if not _strict_config_string(
+                raw_label, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
+                or isinstance(percent, bool) \
+                or not isinstance(percent, int) \
+                or not 0 <= percent <= 100:
+            return value
+        label_id = _source_entity_token(raw_label, "agent-limit")
+        if label_id in limits:
+            return value
+        limits[label_id] = percent
+    return {
+        "tokens": value["tokens"], "limits": limits, "generation": 0}
+
+
 def _agent_scan_candidate(value):
     """Validate one bounded, generation-scoped agent scan candidate."""
     if value is None:
@@ -2276,7 +2304,8 @@ def sense_agents(cursors):
     d = os.path.join(HOME, ".local/state/omarchy/agents/usage")
     state, state_truncated = _bounded_source_state(
         cursors, "agents.state", "agent",
-        value_validator=_agent_usage_row_valid)
+        value_validator=_agent_usage_row_valid,
+        value_normalizer=_normalized_agent_usage_row)
     if state_truncated:
         evs.append(_source_truncation_event("agents", "agent usage cursor"))
     page_key = "source.agents.page"
