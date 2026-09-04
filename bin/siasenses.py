@@ -1809,33 +1809,88 @@ def sense_codex(cursors):
     return evs
 
 
+_NOTIFY_LEGACY_CURSOR_KEYS = frozenset({
+    "notify.last", "notify.pending", "notify.pending_complete",
+    "notify.paginated", "notify.baselining", "notify.seen",
+    "notify.cycle_max",
+})
+_NOTIFY_SCAN_MODES = frozenset({"baseline", "replay"})
+
+
+def _notify_generation(value):
+    """Return one canonical completed notification-directory generation."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("notification directory generation is invalid")
+    generation = _source_tree_directory_generation(value)
+    if value != generation:
+        raise ValueError("notification directory generation is invalid")
+    return generation
+
+
 def sense_notify(cursors):
+    """Rescan a changed notification-directory generation from its root.
+
+    A completed generation is a cheap unchanged-directory gate.  A changed
+    directory is paged from the beginning, and a between-page mutation makes
+    the generic directory cursor restart that scan.  Replays deliberately use
+    source-stable occurrence identities; durable event admission, not a
+    lossy lexical high-water mark, decides which observations are already in
+    the corpus.
+    """
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/notifications/history")
-    pending = _bounded_seen_names(cursors.get("notify.pending"))
-    if pending:
-        names = pending
-        complete = bool(cursors.get("notify.pending_complete", False))
-        paginated = True
-    else:
-        cursors.pop("notify.pending", None)
-        cursors.pop("notify.pending_complete", None)
-        page_key = "source.notify.page"
-        page_before = cursors.get(page_key)
-        began_at_start = page_before is None or (
-            isinstance(page_before, dict)
-            and page_before.get("cookie", 0) == 0)
+    page_key = "source.notify.page"
+    mode_key = "notify.scan_mode"
+    generation_key = "notify.generation"
+
+    legacy = any(key in cursors for key in _NOTIFY_LEGACY_CURSOR_KEYS)
+    for key in _NOTIFY_LEGACY_CURSOR_KEYS:
+        cursors.pop(key, None)
+
+    completed_generation = _notify_generation(cursors.get(generation_key))
+    mode = cursors.get(mode_key)
+    if mode is not None and mode not in _NOTIFY_SCAN_MODES:
+        raise ValueError("notification directory scan mode is invalid")
+
+    if legacy:
+        # A lexical cursor cannot prove which lower-sorting names it missed.
+        # Restart from the root and let durable occurrence admission suppress
+        # observations that were already published before this upgrade.
+        cursors.pop(page_key, None)
+        mode = "replay"
+
+    page_present = page_key in cursors
+    if page_present and mode is None:
+        raise ValueError("notification directory scan state is incomplete")
+
+    if not page_present:
         try:
-            entries, complete, _inspected, next_page = \
-                _bounded_source_entries(d, page_before)
+            current_generation = _source_tree_path_generation(d)
         except FileNotFoundError:
-            cursors.pop(page_key, None)
+            if mode is not None:
+                cursors[mode_key] = mode
             return evs
-        cursors[page_key] = next_page
-        names = [entry["name"] for entry in entries
-                 if stat.S_ISREG(entry["mode"])]
-        paginated = bool(cursors.get("notify.paginated", False)) \
-            or not (complete and began_at_start)
+        if mode is None:
+            if completed_generation == current_generation:
+                return evs
+            mode = ("baseline" if completed_generation is None
+                    else "replay")
+        page_before = None
+    else:
+        page_before = cursors[page_key]
+
+    cursors[mode_key] = mode
+    try:
+        entries, complete, _inspected, next_page = \
+            _bounded_source_entries(d, page_before)
+    except FileNotFoundError:
+        # Preserve the scan mode but discard a cookie into a vanished
+        # generation.  Reappearance begins at the directory root.
+        cursors.pop(page_key, None)
+        return evs
+    cursors[page_key] = next_page
 
     def append_notification(name):
         try:
@@ -1854,60 +1909,14 @@ def sense_notify(cursors):
             {"organs/notify"}, {"notification"},
             occurrence=f"notification:{token}"))
 
-    last = cursors.get("notify.last")
-    if last is not None and not isinstance(last, str):
-        raise ValueError("notification cursor is invalid")
-    if not paginated:
-        if last is None:
-            cursors["notify.last"] = names[-1] if names else ""
-            return evs
-        new = [name for name in names if name > last]
-        batch = new[:100]
-        for name in batch:
-            append_notification(name)
-        if batch:
-            cursors["notify.last"] = batch[-1]
-        return evs
-
-    cursors["notify.paginated"] = True
-    if last is None:
-        last = ""
-        cursors["notify.last"] = last
-        cursors["notify.baselining"] = True
-    baselining = bool(cursors.get("notify.baselining", False))
-    seen = _bounded_seen_names(cursors.get("notify.seen")) or []
-    seen_set = set(seen)
-    cycle_max = cursors.get("notify.cycle_max", "")
-    if not isinstance(cycle_max, str):
-        raise ValueError("notification page cursor is invalid")
-    candidates = [name for name in names if name > last]
-    batch = candidates[:100]
-    remainder = candidates[100:]
-    for name in batch:
-        cycle_max = max(cycle_max, name)
-        if name in seen_set:
-            continue
-        if len(seen) >= MAX_SOURCE_SCAN_ENTRIES:
-            evs.append(_source_entry_refusal_event(
-                "notify", f"notification record {name}"))
-            continue
-        if not baselining:
-            append_notification(name)
-        seen.append(name)
-        seen_set.add(name)
-    cursors["notify.seen"] = sorted(seen)
-    cursors["notify.cycle_max"] = cycle_max
-    if remainder:
-        cursors["notify.pending"] = remainder
-        cursors["notify.pending_complete"] = complete
-    else:
-        cursors.pop("notify.pending", None)
-        cursors.pop("notify.pending_complete", None)
-        if complete:
-            cursors["notify.last"] = max(last, cycle_max)
-            cursors["notify.cycle_max"] = ""
-            if baselining:
-                cursors["notify.baselining"] = False
+    if mode == "replay":
+        for entry in entries:
+            if stat.S_ISREG(entry["mode"]):
+                append_notification(entry["name"])
+    if complete:
+        cursors[generation_key] = _source_tree_directory_generation(next_page)
+        cursors.pop(page_key, None)
+        cursors.pop(mode_key, None)
     return evs
 
 

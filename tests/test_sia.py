@@ -2335,7 +2335,7 @@ class BuiltinSourceBounds(unittest.TestCase):
             self.assertIn("git.a_2bb", cursors)
             self.assertEqual(repeated, [])
 
-    def test_paginated_notifications_refuse_overflow_per_entry(self):
+    def test_paginated_notifications_process_every_bounded_page(self):
         with tempfile.TemporaryDirectory() as home:
             history = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
@@ -2354,18 +2354,20 @@ class BuiltinSourceBounds(unittest.TestCase):
                         self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 2):
                     for _unused in range(len(names) + 1):
                         events.extend(self.sialib.sense_notify(cursors))
-                        page = cursors.get("source.notify.page", {})
-                        if cursors.get("notify.paginated") \
-                                and page.get("cookie") == 0 \
-                                and not cursors.get("notify.pending"):
+                        if "source.notify.page" not in cursors:
                             break
             finally:
                 self.sialib.HOME = old_home
-            self.assertTrue(any(event.kind == "notification"
-                                for event in events))
-            self.assertTrue(any(event.kind == "source-entry-refused"
-                                for event in events))
-            self.assertEqual(cursors["notify.last"], max(names))
+            self.assertEqual(
+                {event.summary for event in events},
+                {f"fixture: {name}" for name in names})
+            self.assertFalse(any(event.kind == "source-entry-refused"
+                                 for event in events))
+            self.assertIn("notify.generation", cursors)
+            self.assertFalse(any(
+                key in cursors for key in (
+                    "notify.last", "notify.pending", "notify.seen",
+                    "notify.cycle_max")))
 
     def test_builtin_snapshot_senses_do_not_use_listdir_or_glob(self):
         with tempfile.TemporaryDirectory() as home:
@@ -2416,127 +2418,6 @@ class BuiltinSourceBounds(unittest.TestCase):
                     self.sialib.sense_agents({})
             finally:
                 self.sialib.HOME = old_home
-
-
-class NotifySeenSetBound(unittest.TestCase):
-    """notify.seen is bounded by the scan cycle, not by an LRU count.
-
-    The per-cycle seen-set was never pruned, so it grew for the life of the
-    install.  Once it reached MAX_SOURCE_SCAN_ENTRIES sense_notify refused
-    every further entry, and the notify organ went permanently deaf while
-    reporting the deafness as ordinary source-entry refusals.
-    """
-
-    def setUp(self):
-        self.sialib = _load("sialib_notify_seen_bound",
-                            os.path.join(BIN, "sialib.py"))
-
-    def _write_notification(self, history, name):
-        with open(os.path.join(history, name), "w") as stream:
-            json.dump({"app": "fixture", "summary": name}, stream)
-
-    def _drive_scan_cycle(self, cursors):
-        """Run pulses until one full notify scan cycle completes.
-
-        Each iteration mirrors the pulse: the sense is handed an isolated
-        cursor trial that has already been compacted, and the trial is
-        merged back only after the sense returns.
-        """
-        events = []
-        for _pulse in range(64):
-            trial = copy.deepcopy(cursors)
-            self.sialib._compact_seen_set_cursors(trial)
-            events.extend(self.sialib.sense_notify(trial))
-            cursors.clear()
-            cursors.update(trial)
-            page = cursors.get("source.notify.page") or {}
-            if page.get("cookie", 0) == 0 \
-                    and not cursors.get("notify.pending"):
-                return events
-        self.fail("notify scan cycle never completed")
-
-    def test_seen_set_keeps_only_names_the_cursor_can_still_offer(self):
-        cursors = {"notify.last": "c",
-                   "notify.seen": ["a", "c", "d", "e"]}
-        self.sialib._compact_seen_set_cursors(cursors)
-        # "a" and "c" are at or below the high-water name, so the sense's
-        # own candidate filter already excludes them; dropping them cannot
-        # resurrect a reported notification.  "d" and "e" are still
-        # reachable this cycle and must survive.
-        self.assertEqual(cursors["notify.seen"], ["d", "e"])
-        self.assertEqual(cursors["notify.last"], "c")
-
-    def test_completed_cycle_retires_the_whole_seen_set(self):
-        cursors = {"notify.last": "e", "notify.seen": ["c", "d", "e"]}
-        self.sialib._compact_seen_set_cursors(cursors)
-        self.assertNotIn("notify.seen", cursors)
-
-    def test_malformed_cursor_pair_is_left_for_the_sense_to_refuse(self):
-        # Compaction must never be the thing that decides a cursor is
-        # invalid; the sense that owns it raises its own named refusal.
-        for cursors in ({"notify.last": None, "notify.seen": ["a"]},
-                        {"notify.last": "a", "notify.seen": "a"},
-                        {"notify.seen": ["a"]}):
-            before = copy.deepcopy(cursors)
-            self.sialib._compact_seen_set_cursors(cursors)
-            self.assertEqual(cursors, before)
-
-    def test_notify_stays_audible_past_the_seen_set_bound(self):
-        with tempfile.TemporaryDirectory() as home:
-            history = os.path.join(
-                home, ".local/state/omarchy/notifications/history")
-            os.makedirs(history)
-            for index in range(12):
-                self._write_notification(history, f"n{index:04d}")
-            # An organ already caught up on a paginated history: the scan
-            # cycle is the only thing the seen-set has to survive.
-            cursors = {"notify.last": "n0011", "notify.paginated": True}
-            old_home = self.sialib.HOME
-            self.sialib.HOME = home
-            heard, refused = [], []
-            try:
-                with mock.patch.object(
-                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 8):
-                    for round_index in range(8):
-                        for offset in range(3):
-                            self._write_notification(
-                                history, f"p{round_index:02d}{offset}")
-                        events = self._drive_scan_cycle(cursors)
-                        heard.append(len([event for event in events
-                                          if event.kind == "notification"]))
-                        refused.extend(
-                            event.summary for event in events
-                            if event.kind == "source-entry-refused")
-            finally:
-                self.sialib.HOME = old_home
-        # 24 notifications across 8 cycles, three times the seen-set bound.
-        # Unpruned, the set crosses that bound during the third cycle and
-        # every notification after it is refused instead of reported.
-        self.assertEqual(refused, [])
-        self.assertEqual(heard, [3] * 8)
-        self.assertEqual(cursors["notify.last"], "p072")
-        # The persisted set never carries more than the cycle it belongs
-        # to: the last cycle's three names survive until the next pulse
-        # compacts them away, and nothing older than that is ever kept.
-        self.assertEqual(cursors["notify.seen"], ["p070", "p071", "p072"])
-        self.sialib._compact_seen_set_cursors(cursors)
-        self.assertNotIn("notify.seen", cursors)
-
-    def test_published_cursor_file_never_carries_a_passed_name(self):
-        with tempfile.TemporaryDirectory() as state:
-            with mock.patch.object(self.sialib, "STATE", state), \
-                    mock.patch.object(
-                        self.sialib, "CURSORS_PATH",
-                        os.path.join(state, "cursors.json")):
-                self.sialib.PENDING_CURSOR_RENAMES.clear()
-                cursors = {"notify.last": "d",
-                           "notify.seen": ["b", "d", "f"]}
-                errors, save_error = \
-                    self.sialib._commit_sense_cursors(cursors)
-                self.assertEqual((errors, save_error), ([], None))
-                published = self.sialib.load_cursors()
-        self.assertEqual(published["notify.seen"], ["f"])
-        self.assertEqual(published["notify.last"], "d")
 
 
 class LoadBearingCommentIntegrity(unittest.TestCase):
@@ -4221,29 +4102,39 @@ class EvidenceCursorHealth(unittest.TestCase):
                 self.sialib.ORGANS = old_organs
                 self.sialib.CONFIG_ERRORS[:] = old_errors
 
-    def test_notification_cap_advances_only_through_processed_batch(self):
+    def test_notification_page_advances_only_through_processed_entries(self):
         with tempfile.TemporaryDirectory() as home:
             history = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
             os.makedirs(history)
-            names = []
-            for index in range(101):
-                name = f"{index:03d}.json"
-                names.append(name)
+            names = ("alpha.json", "bravo.json")
+            for name in names:
                 with open(os.path.join(history, name), "w") as stream:
                     json.dump({"app": "fixture", "summary": name}, stream)
             old_home = self.sialib.HOME
             self.sialib.HOME = home
             cursors = {"notify.last": ""}
             try:
-                first = self.sialib.sense_notify(cursors)
-                self.assertTrue(first)
-                self.assertEqual(cursors["notify.last"], names[-2])
-                second = self.sialib.sense_notify(cursors)
-                self.assertTrue(second)
-                self.assertEqual(cursors["notify.last"], names[-1])
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 1):
+                    first = self.sialib.sense_notify(cursors)
+                    first_page = copy.deepcopy(
+                        cursors["source.notify.page"])
+                    second = self.sialib.sense_notify(cursors)
+                    second_page = copy.deepcopy(
+                        cursors["source.notify.page"])
+                    completed = self.sialib.sense_notify(cursors)
             finally:
                 self.sialib.HOME = old_home
+            self.assertEqual(len(first), 1)
+            self.assertEqual(len(second), 1)
+            self.assertEqual(
+                {event.summary for event in first + second},
+                {f"fixture: {name}" for name in names})
+            self.assertNotEqual(first_page["cookie"], second_page["cookie"])
+            self.assertEqual(completed, [])
+            self.assertNotIn("source.notify.page", cursors)
+            self.assertIn("notify.generation", cursors)
 
 
 class ChildModuleBindSeam(unittest.TestCase):
