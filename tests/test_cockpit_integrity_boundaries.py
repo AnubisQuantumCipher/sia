@@ -7,6 +7,11 @@ import shutil
 import subprocess
 import unittest
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 from tests.test_cockpit_boundary_horizon import (
     _JsRunner,
     _qml_element,
