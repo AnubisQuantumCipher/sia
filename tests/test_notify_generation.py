@@ -157,6 +157,32 @@ class NotificationGenerationScan(unittest.TestCase):
             {event.summary for event in second_appended},
             {"fixture: alpha.json"})
 
+    def test_refused_generation_is_rescanned_after_in_place_repair(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        completed = dict(cursors["notify.generation"])
+
+        broken = os.path.join(self.history, "repair.json")
+        with open(broken, "w") as stream:
+            stream.write("not-json")
+        refused = self._finish_scan(cursors)
+
+        self.assertTrue(any(event.kind == "source-entry-refused"
+                            for event in refused))
+        self.assertEqual(cursors["notify.generation"], completed)
+        self.assertTrue(cursors["notify.scan_tainted"])
+
+        self._write("repair.json")
+        repaired = self._finish_scan(cursors)
+
+        self.assertIn("fixture: repair.json",
+                      {event.summary for event in repaired})
+        self.assertNotIn("notify.scan_tainted", cursors)
+        self.assertEqual(
+            cursors["notify.generation"],
+            self.sialib._source_tree_path_generation(self.history))
+
     def test_removed_high_water_model_has_no_second_cursor_authority(self):
         with open(os.path.join(BIN, "sialib.py"), encoding="utf-8") as stream:
             source = stream.read()
