@@ -8604,7 +8604,9 @@ def rehearse_memories(now=None, stage=None):
     now = time.time() if now is None else float(now)
     mind = siamind.load_mind(now=now)
     siamind.sync_graph_state(mind, read_json(GRAPH_PATH, {}), now=now)
-    planned = siamind.plan_rehearsal(mind, now=now)
+    due = siamind.plan_rehearsal(mind, now=now)
+    planned, next_cursor, deferred = siamind.select_rehearsal_window(
+        due, mind.get("rehearsal_cursor", 0))
     reviewed, attempted = [], []
     embedded = failed = missing = 0
     for plan in planned:
@@ -8632,9 +8634,14 @@ def rehearse_memories(now=None, stage=None):
             item["error"] = _embed_failure_reason(result)
             failed += 1
         attempted.append(item)
+    # Attempts advance the durable fairness cursor even when an embed fails
+    # or its corpus page is absent. The save below is the publication barrier:
+    # no caller receives a report claiming deferral until this state commits.
+    mind["rehearsal_cursor"] = next_cursor
     decay = siamind.decay_sweep(mind, now=now)
     report = {"reviewed": reviewed, "embedded": embedded, "failed": failed,
-              "missing": missing, "planned": attempted, "decay": decay}
+              "missing": missing, "planned": attempted,
+              "deferred": deferred, "decay": decay}
     if stage is not None:
         stage(mind, report)
     siamind.save_mind(mind)

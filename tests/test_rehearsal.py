@@ -967,6 +967,62 @@ class DreamIntegration(unittest.TestCase):
             self.assertEqual(len(sialib.siamind.plan_rehearsal(
                 saved_missing, now=2)), 1)
 
+    def test_failed_rehearsals_are_bounded_deferred_and_rotated(self):
+        sialib = _load("sialib_rehearsal_rotation",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(corpus)
+            os.makedirs(state)
+            sialib.CORPUS = corpus
+            sialib.GRAPH_PATH = os.path.join(state, "graph.json")
+            sialib.siamind.MIND_PATH = os.path.join(state, "mind.json")
+
+            slugs = [f"events/fairness/page-{index}"
+                     for index in range(sialib.siamind.WORKSPACE_K * 2)]
+            for slug in slugs:
+                path = os.path.join(corpus, slug + ".md")
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as page:
+                    page.write("# due\n")
+            graph = {"nodes": [{"id": slug} for slug in slugs],
+                     "edges": []}
+            sialib.atomic_write(sialib.GRAPH_PATH, json.dumps(graph))
+            mind = {"nodes": {}, "edges": {}}
+            for slug in slugs:
+                sialib.siamind.touch(
+                    mind, slug, ts=0, src="organ", arousal=0.8)
+                sialib.siamind.touch(
+                    mind, slug, ts=1, src="user-recall")
+            sialib.siamind.save_mind(mind)
+
+            calls = []
+
+            class Result:
+                returncode, stdout, stderr = 1, "", "still unavailable"
+
+            sialib.gbrain = lambda args, timeout=0: \
+                calls.append(args[1]) or Result()
+            first = sialib.rehearse_memories(now=2)
+            first_attempts = list(calls)
+            saved_first = sialib.siamind.load_mind(now=2)
+            calls.clear()
+            second = sialib.rehearse_memories(now=2)
+
+            self.assertEqual(len(first_attempts), sialib.siamind.WORKSPACE_K)
+            self.assertEqual(len(calls), sialib.siamind.WORKSPACE_K)
+            self.assertEqual(first["deferred"], sialib.siamind.WORKSPACE_K)
+            self.assertEqual(second["deferred"], sialib.siamind.WORKSPACE_K)
+            self.assertTrue(set(first_attempts).isdisjoint(calls))
+            self.assertNotEqual(saved_first["rehearsal_cursor"], 0)
+
+    def test_rehearsal_cursor_is_validated_instead_of_reset(self):
+        broken = siamind._empty_mind()
+        broken["rehearsal_cursor"] = "first-page"
+        with self.assertRaisesRegex(ValueError, "rehearsal cursor"):
+            siamind.migrate_mind(broken, now=1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

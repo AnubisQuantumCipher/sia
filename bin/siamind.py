@@ -100,6 +100,7 @@ def _empty_mind():
     return {"v": MIND_VERSION, "nodes": {}, "edges": {}, "ewma": {},
             "seen": {}, "hourbuf": {}, "cooldown": {},
             "workspace": [], "musing_day": "", "decay": {},
+            "rehearsal_cursor": 0,
             "event_applied": [], "event_batch_applied": None,
             "event_transition_pending": None}
 
@@ -215,6 +216,11 @@ def migrate_mind(raw, now=None):
             and (not isinstance(batch_identity, str)
                  or re.fullmatch(r"[0-9a-f]{32}", batch_identity) is None):
         raise ValueError("mind event batch replay state is invalid")
+    rehearsal_cursor = mind.get("rehearsal_cursor")
+    if isinstance(rehearsal_cursor, bool) \
+            or not isinstance(rehearsal_cursor, int) \
+            or rehearsal_cursor < 0:
+        raise ValueError("mind rehearsal cursor must be a non-negative integer")
     for slug, node in list(mind["nodes"].items()):
         if not isinstance(node, dict):
             raise ValueError(f"mind node {slug!r} must be an object")
@@ -1524,6 +1530,31 @@ def plan_rehearsal(mind, now=None):
                             "quality": sm2_quality(node, since=since),
                             "due_at": due_at})
     return planned
+
+
+def select_rehearsal_window(planned, cursor, limit=WORKSPACE_K):
+    """Choose one bounded rotating window without changing the plan.
+
+    The persisted cursor moves by attempts, not successes. A missing page or
+    failed embed therefore cannot hold every lexically later due page behind
+    it forever. ``WORKSPACE_K`` is the existing measured attention bound; the
+    nightly worker does not invent a second cognitive batch size.
+    """
+    if not isinstance(planned, list):
+        raise ValueError("rehearsal plan must be a list")
+    if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0:
+        raise ValueError("rehearsal cursor must be a non-negative integer")
+    if isinstance(limit, bool) or not isinstance(limit, int) \
+            or limit <= 0 or limit > WORKSPACE_K:
+        raise ValueError("rehearsal window exceeds the attention bound")
+    if not planned:
+        return [], 0, 0
+    start = cursor % len(planned)
+    attempted = min(limit, len(planned))
+    selected = [planned[(start + offset) % len(planned)]
+                for offset in range(attempted)]
+    return selected, (start + attempted) % len(planned), \
+        len(planned) - attempted
 
 
 def apply_rehearsal(mind, planned, now=None):
