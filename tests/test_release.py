@@ -2780,6 +2780,46 @@ retain_unowned_cli_before_fence
                 self._facade_child(name)
                 self.assertTrue(core.isdisjoint(set(sys.modules) - before))
 
+
+    def test_preflight_names_a_panicking_cryptography_backend(self):
+        # A python-cryptography whose compiled extension does not match the
+        # running interpreter fails inside its Rust extension, and pyo3
+        # surfaces that as pyo3_runtime.PanicException, which derives from
+        # BaseException so a panic is never silently swallowed. Catching only
+        # Exception meant the one failure this preflight exists to name was
+        # the one it could not name. Reported from a sandbox whose
+        # _cffi_backend was built for a different Python minor version.
+        installer = _read("install.sh")
+        body = "preflight_python_capabilities() {" + installer.split(
+            "preflight_python_capabilities() {", 1)[1].split(
+                "\n}\n", 1)[0] + "\n}\n"
+        self.assertIn("except BaseException as error:", body)
+        self.assertNotIn("except Exception as error:", body)
+        with tempfile.TemporaryDirectory() as root:
+            # Stand in for the panic: an import that raises something which is
+            # not an Exception, exactly as pyo3's PanicException is not.
+            _write(os.path.join(root, "cryptography", "__init__.py"), "")
+            _write(os.path.join(root, "cryptography", "hazmat",
+                                "__init__.py"), "")
+            _write(os.path.join(root, "cryptography", "hazmat", "primitives",
+                                "__init__.py"),
+                   'class _Panic(BaseException):\n    pass\n'
+                   'raise _Panic("Python API call failed unexpectedly")\n')
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = root
+            result = subprocess.run(
+                ["bash", "-c", "set -euo pipefail\n" + body
+                 + "\npreflight_python_capabilities\n"
+                 + "echo REACHED_MUTATION_PHASE"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+        # Fail closed, and say the reason rather than dumping a traceback.
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", result.stdout)
+        self.assertIn("python-cryptography with Ed25519 support is required",
+                      result.stderr)
+        self.assertNotIn("Traceback (most recent call last)", result.stderr)
+
     def test_uninstaller_owner_lock_open_failure_is_aggregated(self):
         uninstaller = _read("uninstall.sh")
         body = uninstaller.split("acquire_owner_lock() {", 1)[1].split(

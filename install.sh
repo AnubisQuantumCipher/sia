@@ -168,7 +168,18 @@ try:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey, Ed25519PublicKey)
-except Exception as error:
+except KeyboardInterrupt:
+    raise
+except BaseException as error:
+    # BaseException, not Exception, and the difference is the whole point of
+    # this check.  A python-cryptography whose compiled extension does not
+    # match the running interpreter fails inside its Rust extension, and pyo3
+    # surfaces that as pyo3_runtime.PanicException — which derives from
+    # BaseException precisely so that a panic is not silently swallowed by an
+    # ordinary `except Exception`.  Catching only Exception meant the one
+    # failure this preflight exists to name was the one it could not name:
+    # the installer still refused and mutated nothing, but it did so with a
+    # raw Rust traceback instead of the sentence below.
     raise SystemExit(
         "python-cryptography with Ed25519 support is required: "
         f"{error}") from error
@@ -212,7 +223,13 @@ try:
     restored_public = Ed25519PublicKey.from_public_bytes(public_raw)
     message = b"sia-installer-ed25519-preflight-v1"
     restored_public.verify(restored_private.sign(message), message)
-except Exception as error:
+except KeyboardInterrupt:
+    raise
+except BaseException as error:
+    # Same reason as the import above, and this block is the likelier place
+    # to need it: generate/sign/verify actually enter the Rust extension, so
+    # a panic here is a panic in library code we just called rather than one
+    # raised while a module was still being initialised.
     raise SystemExit(
         "python-cryptography cannot generate, raw-serialize, sign, and "
         f"verify Ed25519 keys: {error}") from error
