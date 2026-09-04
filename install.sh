@@ -10078,6 +10078,23 @@ install_agent_skill() {
   local installed_marker skill_stage marker_stage rollback_archive
   local marker_rollback_archive owned_generations
   local retain_previous=0
+  # A cross-tool instruction change is its own consent, separate from
+  # installing SIA.  Everything else in this installer acts on SIA's own
+  # roots and services; this one writes a file that ANOTHER program reads as
+  # instructions and follows, and it persists after that program is next
+  # started.  The keybinding above already treats a change to the operator's
+  # desktop as opt-in, and the MCP step below only ever prints the exact
+  # command rather than registering anything.  This is the same class of act
+  # and gets the same treatment: declined by default, with the manual path
+  # printed so nothing is lost by declining.  Reported by HANCORE-linux on
+  # marketplace verify issue #4078.
+  if [ "${SIA_INSTALL_AGENT_SKILL:-0}" != "1" ]; then
+    echo "  agent skill not installed — it would write instructions that"
+    echo "  Claude Code reads and follows, at $SKILL_FILE"
+    echo "  set SIA_INSTALL_AGENT_SKILL=1 when running install.sh to consent,"
+    echo "  or copy it yourself from $SIA_ORIGINAL_REPO/skill/SKILL.md"
+    return 0
+  fi
   for candidate in "$HOME/.claude" "$HOME/.claude/skills" "$SKILL_DIR"; do
     if [ -L "$candidate" ]; then
       echo "  agent skill preserved: symbolic config path $candidate"

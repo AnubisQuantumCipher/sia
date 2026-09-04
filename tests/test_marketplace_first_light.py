@@ -950,3 +950,57 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrossToolConsent(unittest.TestCase):
+    """Installing SIA must not change how another program behaves.
+
+    Reported by HANCORE-linux on marketplace verify issue #4078: the installer
+    wrote an agent skill under ``~/.claude/skills/sia`` — a file Claude Code
+    reads and follows as instructions, persisting after SIA's own step is
+    over — while the visible consent boundary enumerated five categories of
+    action and did not name that one. The installer already treated the
+    Hyprland keybinding as opt-in and refused to register MCP clients at all,
+    so the one surface that changed another tool's instructions was the one
+    surface with no separate consent.
+    """
+
+    def test_the_agent_skill_is_declined_unless_named_on_the_command_line(
+            self):
+        installer = _read("install.sh")
+        body = "install_agent_skill() {" + installer.split(
+            "install_agent_skill() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        self.assertIn('"${SIA_INSTALL_AGENT_SKILL:-0}" != "1"', body)
+        # The gate must precede every write, so a default run cannot reach
+        # mkdir/stage/publish at all.
+        gate = body.index('SIA_INSTALL_AGENT_SKILL')
+        for writer in ('mkdir -p "$SKILL_DIR"', 'owned_file_cas'):
+            with self.subTest(writer=writer):
+                self.assertLess(gate, body.index(writer))
+
+    def test_declining_still_tells_you_how_to_do_it_yourself(self):
+        installer = _read("install.sh")
+        self.assertIn("agent skill not installed", installer)
+        self.assertIn("skill/SKILL.md", installer)
+
+    def test_every_cross_tool_surface_is_opt_in_or_advisory(self):
+        installer = _read("install.sh")
+        # keybinding: opt-in. skill: opt-in. MCP: printed, never executed.
+        self.assertIn('"${SIA_INSTALL_KEYBINDING:-0}" != "1"', installer)
+        self.assertIn('"${SIA_INSTALL_AGENT_SKILL:-0}" != "1"', installer)
+        self.assertNotRegex(
+            installer, r'(?m)^\s*claude mcp add\b',
+            "MCP registration must be printed for the operator, never run")
+
+    def test_the_consent_boundary_names_the_cross_tool_category(self):
+        cockpit = _read("Cockpit.qml")
+        self.assertIn("YOUR CLICK WILL NOT", cockpit)
+        self.assertIn("change how any other tool behaves", cockpit)
+        for surface in ("agent skill", "keybinding", "MCP registration"):
+            with self.subTest(surface=surface):
+                self.assertIn(surface, cockpit)
+
+    def test_the_security_note_states_the_same_boundary(self):
+        security = _read("SECURITY.md")
+        self.assertIn("SIA_INSTALL_AGENT_SKILL=1", security)
+        self.assertIn(".claude/skills/sia/SKILL.md", security)
