@@ -329,6 +329,14 @@ Item {
     root.readyDetail = ""
   }
 
+  function processAttemptIsCurrent(activeAttempt, attempt) {
+    // The object identity is the generation.  A basis, pid or mutable flag is
+    // not enough: a canceled process may deliver collectors and exit signals
+    // after another attempt for the same published snapshot has started.
+    return !!attempt && activeAttempt === attempt
+      && attempt.acceptResults === true
+  }
+
   function snapshotBasis() {
     if (!Model.snapshotGenerationsMatch(root.status, root.graph)
         || !root.status || !root.status.ledger) return ""
@@ -340,9 +348,7 @@ Item {
   function clearVerification() {
     root.verifyMsg = ""
     root.verifyOk = false
-    verifyProc.basis = ""
-    verifyProc.launchPending = false
-    if (verifyProc.running) verifyProc.running = false
+    verifyProc.cancel()
   }
 
   function startVerification() {
@@ -352,9 +358,7 @@ Item {
       root.verifyMsg = "CHAIN VERIFICATION INCOMPLETE — snapshots are not one generation"
       return
     }
-    verifyProc.basis = current
-    verifyProc.launchPending = true
-    verifyProc.running = true
+    verifyProc.start(current)
   }
 
   function projectionDebtDetail() {
@@ -2434,33 +2438,107 @@ Item {
     }
   }
 
-  Process {
+  QtObject {
     id: verifyProc
-    property string basis: ""
-    property bool launchPending: false
-    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
-    stdout: StdioCollector { waitForEnd: true }
-    onStarted: verifyProc.launchPending = false
-    onRunningChanged: {
-      if (!running && verifyProc.launchPending) {
-        verifyProc.launchPending = false
-        verifyProc.basis = ""
+    property var activeAttempt: null
+    readonly property bool running:
+      !!activeAttempt && activeAttempt.running
+    readonly property string basis:
+      activeAttempt ? activeAttempt.basis : ""
+    readonly property bool launchPending:
+      !!activeAttempt && activeAttempt.launchPending
+
+    function retire(attempt) {
+      if (!attempt) return
+      if (activeAttempt === attempt) activeAttempt = null
+      attempt.acceptResults = false
+      attempt.launchPending = false
+      if (attempt.running) attempt.running = false
+      if (!attempt.destructionQueued) {
+        attempt.destructionQueued = true
+        Qt.callLater(function() { attempt.destroy() })
+      }
+    }
+
+    function cancel() {
+      var attempt = activeAttempt
+      if (!attempt) return
+      // Retire the identity before stopping the child.  `running = false`
+      // may synchronously deliver callbacks on some Quickshell versions.
+      activeAttempt = null
+      attempt.acceptResults = false
+      attempt.launchPending = false
+      if (attempt.running) attempt.running = false
+      if (!attempt.destructionQueued) {
+        attempt.destructionQueued = true
+        Qt.callLater(function() { attempt.destroy() })
+      }
+    }
+
+    function start(basis) {
+      if (activeAttempt) return false
+      var attempt = verifyAttemptComponent.createObject(root, {
+        "basis": basis
+      })
+      if (!attempt) {
         if (root.opened) {
           root.verifyOk = false
           root.verifyMsg = "CHAIN VERIFICATION INCOMPLETE — command did not start"
         }
+        return false
+      }
+      activeAttempt = attempt
+      attempt.running = true
+      return true
+    }
+
+    function markLaunchFailure(attempt) {
+      if (!root.processAttemptIsCurrent(activeAttempt, attempt)) return
+      retire(attempt)
+      if (root.opened) {
+        root.verifyOk = false
+        root.verifyMsg = "CHAIN VERIFICATION INCOMPLETE — command did not start"
       }
     }
-    onExited: function(code) {
-      var accepted = root.opened && verifyProc.basis !== ""
-        && verifyProc.basis === root.snapshotBasis()
-      verifyProc.launchPending = false
-      verifyProc.basis = ""
+
+    function finish(attempt, code) {
+      var accepted = root.opened
+        && root.processAttemptIsCurrent(activeAttempt, attempt)
+        && attempt.basis !== ""
+        && verifyProc.basis === attempt.basis
+        && attempt.basis === root.snapshotBasis()
+      retire(attempt)
       if (!accepted) return
       root.verifyOk = code === 0
       root.verifyMsg = code === 0
         ? "SIA signed ledger re-verified ✓"
         : "CHAIN VERIFICATION INCOMPLETE"
+    }
+  }
+
+  Component {
+    id: verifyAttemptComponent
+    Process {
+      id: verifyAttempt
+      property bool acceptResults: true
+      property bool destructionQueued: false
+      property string basis: ""
+      property bool launchPending: true
+      property bool startedForAttempt: false
+      command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
+      stdout: StdioCollector { waitForEnd: true }
+      onStarted: {
+        verifyAttempt.startedForAttempt = true
+        verifyAttempt.launchPending = false
+      }
+      onRunningChanged: {
+        if (!running && verifyAttempt.launchPending
+            && !verifyAttempt.startedForAttempt)
+          verifyProc.markLaunchFailure(verifyAttempt)
+      }
+      onExited: function(code) {
+        verifyProc.finish(verifyAttempt, code)
+      }
     }
   }
 
@@ -2567,102 +2645,135 @@ Item {
   // `sia ready` is the only live memory-readiness predicate. Status and graph
   // are intentionally last-published snapshots, so this process runs solely
   // on an explicit cockpit action and never infers readiness from a snapshot.
-  Process {
+  QtObject {
     id: readyProc
-    property string outText: ""
-    property string errText: ""
-    property int exitCode: 0
-    property bool exited: false
-    property bool outDone: false
-    property bool errDone: false
-    property bool launchFailed: false
-    // A failed exec does not produce an `exited` signal in Quickshell 0.3,
-    // so retain the start boundary independently of normal completion.
-    property bool launchPending: false
-    property bool startedForAttempt: false
-    property bool discardResult: false
-    property bool checking: false
-    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "ready"]
+    property var activeAttempt: null
+    readonly property bool checking: !!activeAttempt
+    readonly property bool running:
+      !!activeAttempt && activeAttempt.running
+    readonly property bool launchPending:
+      !!activeAttempt && activeAttempt.launchPending
 
     function startCheck() {
-      if (checking || running) return
-      outText = ""
-      errText = ""
-      exitCode = 0
-      exited = false
-      outDone = false
-      errDone = false
-      launchFailed = false
-      launchPending = true
-      startedForAttempt = false
-      discardResult = false
-      checking = true
+      if (readyProc.launchPending || activeAttempt) return false
       root.clearReadyCheck()
-      running = true
+      var attempt = readyAttemptComponent.createObject(root)
+      if (!attempt) {
+        readyProc.markLaunchFailure()
+        return false
+      }
+      activeAttempt = attempt
+      attempt.running = true
+      return true
     }
 
     function cancel() {
       // Snapshot and overlay boundaries must not later acquire a result from
       // an earlier process/collector callback.
-      discardResult = true
-      launchPending = false
-      checking = false
-      if (running) running = false
+      var attempt = activeAttempt
+      if (!attempt) return
+      activeAttempt = null
+      attempt.acceptResults = false
+      attempt.launchPending = false
+      if (attempt.running) attempt.running = false
+      if (!attempt.destructionQueued) {
+        attempt.destructionQueued = true
+        Qt.callLater(function() { attempt.destroy() })
+      }
     }
 
-    function markLaunchFailure() {
-      if (discardResult || launchFailed) return
-      launchPending = false
-      launchFailed = true
-      checking = false
+    function retire(attempt) {
+      if (!attempt) return
+      if (activeAttempt === attempt) activeAttempt = null
+      attempt.acceptResults = false
+      attempt.launchPending = false
+      if (attempt.running) attempt.running = false
+      if (!attempt.destructionQueued) {
+        attempt.destructionQueued = true
+        Qt.callLater(function() { attempt.destroy() })
+      }
+    }
+
+    function markLaunchFailure(attempt) {
+      if (!attempt) {
+        root.readyChecked = true
+        root.readyOk = false
+        root.readyDetail = "could not start the local sia readiness command"
+        return
+      }
+      if (!root.processAttemptIsCurrent(activeAttempt, attempt)) return
+      retire(attempt)
       root.readyChecked = true
       root.readyOk = false
       root.readyDetail = "could not start the local sia readiness command"
     }
 
-    function settle() {
-      if (discardResult || launchFailed || !exited || !outDone || !errDone)
+    function settle(attempt) {
+      if (!root.processAttemptIsCurrent(activeAttempt, attempt)
+          || !attempt.exited
+          || !attempt.outDone || !attempt.errDone)
         return
-      checking = false
-      var detail = (outText + "\n" + errText)
+      var detail = (attempt.outText + "\n" + attempt.errText)
         .replace(/^\s+|\s+$/g, "")
+      var succeeded = attempt.exitCode === 0
+      retire(attempt)
       root.readyChecked = true
-      root.readyOk = exitCode === 0
+      root.readyOk = succeeded
       root.readyDetail = detail || (root.readyOk
         ? "sia ready returned success" : "sia ready returned a refusal")
     }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        readyProc.outText = String(text || "")
-        readyProc.outDone = true
-        readyProc.settle()
+  }
+
+  Component {
+    id: readyAttemptComponent
+    Process {
+      id: readyAttempt
+      property bool acceptResults: true
+      property bool destructionQueued: false
+      property string outText: ""
+      property string errText: ""
+      property int exitCode: 0
+      property bool exited: false
+      property bool outDone: false
+      property bool errDone: false
+      // A failed exec does not produce an `exited` signal in Quickshell 0.3,
+      // so retain the start boundary independently of normal completion.
+      property bool launchPending: true
+      property bool startedForAttempt: false
+      command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "ready"]
+      stdout: StdioCollector {
+        waitForEnd: true
+        onStreamFinished: {
+          readyAttempt.outText = String(text || "")
+          readyAttempt.outDone = true
+          readyProc.settle(readyAttempt)
+        }
       }
-    }
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        readyProc.errText = String(text || "")
-        readyProc.errDone = true
-        readyProc.settle()
+      stderr: StdioCollector {
+        waitForEnd: true
+        onStreamFinished: {
+          readyAttempt.errText = String(text || "")
+          readyAttempt.errDone = true
+          readyProc.settle(readyAttempt)
+        }
       }
-    }
-    // Quickshell's Process reports a failed exec as a transition back to
-    // !running without an exited signal. Its public `started` signal lets us
-    // distinguish that from a process which started and later completed.
-    onStarted: {
-      readyProc.startedForAttempt = true
-      readyProc.launchPending = false
-    }
-    onRunningChanged: {
-      if (!running && readyProc.launchPending
-          && !readyProc.startedForAttempt)
-        readyProc.markLaunchFailure()
-    }
-    onExited: function(code) {
-      readyProc.exitCode = code
-      readyProc.exited = true
-      readyProc.settle()
+      // Quickshell's Process reports a failed exec as a transition back to
+      // !running without an exited signal. Its public `started` signal lets us
+      // distinguish that from a process which started and later completed.
+      onStarted: {
+        readyAttempt.startedForAttempt = true
+        readyAttempt.launchPending = false
+      }
+      onRunningChanged: {
+        if (!running && readyAttempt.launchPending
+            && !readyAttempt.startedForAttempt)
+          readyProc.markLaunchFailure(readyAttempt)
+      }
+      onExited: function(code) {
+        readyAttempt.exitCode = code
+        readyAttempt.exited = true
+        readyProc.settle(readyAttempt)
+      }
     }
   }
 
@@ -2972,6 +3083,22 @@ Item {
           Rectangle {
             id: workspaceLockControl
             readonly property real maximumTextWidth: Style.space(180)
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: workspaceLockText.text
+            Accessible.description: root.workspaceLockActive
+              ? "Release the cockpit workspace lock"
+              : "Keep the cockpit visible only on the focused workspace"
+            Accessible.onPressAction: root.toggleWorkspaceLock()
+            Keys.onPressed: function(event) {
+              if (!event.isAutoRepeat
+                  && (event.key === Qt.Key_Return
+                      || event.key === Qt.Key_Enter
+                      || event.key === Qt.Key_Space)) {
+                root.toggleWorkspaceLock()
+                event.accepted = true
+              }
+            }
             anchors.verticalCenter: parent.verticalCenter
             width: workspaceLockText.width + Style.space(16)
             height: workspaceLockText.implicitHeight + Style.space(8)
@@ -2979,9 +3106,9 @@ Item {
             color: workspaceLockArea.containsMouse
               ? Qt.alpha(root.workspaceLockActive ? root.accent : root.fg, 0.18)
               : Qt.alpha(root.workspaceLockActive ? root.accent : root.fg, 0.08)
-            border.color: Qt.alpha(
-              root.workspaceLockActive ? root.accent : root.fg, 0.25)
-            border.width: 1
+            border.color: workspaceLockControl.activeFocus ? root.accent
+              : Qt.alpha(root.workspaceLockActive ? root.accent : root.fg, 0.25)
+            border.width: workspaceLockControl.activeFocus ? 2 : 1
             Text {
               id: workspaceLockText
               anchors.centerIn: parent
@@ -3003,7 +3130,10 @@ Item {
               id: workspaceLockArea
               anchors.fill: parent
               hoverEnabled: true
-              onClicked: root.toggleWorkspaceLock()
+              onClicked: {
+                workspaceLockControl.forceActiveFocus()
+                root.toggleWorkspaceLock()
+              }
             }
             // Use Omarchy's themed surface rather than Qt Quick Controls'
             // bright default tooltip. The lock lives in a deliberately dark,
@@ -3030,14 +3160,29 @@ Item {
             }
           }
           Rectangle {
+            id: closeControl
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close SIA cockpit"
+            Accessible.onPressAction: root.dismiss()
+            Keys.onPressed: function(event) {
+              if (!event.isAutoRepeat
+                  && (event.key === Qt.Key_Return
+                      || event.key === Qt.Key_Enter
+                      || event.key === Qt.Key_Space)) {
+                root.dismiss()
+                event.accepted = true
+              }
+            }
             anchors.verticalCenter: parent.verticalCenter
             width: closeText.implicitWidth + Style.space(16)
             height: closeText.implicitHeight + Style.space(8)
             radius: Style.cornerRadius
             color: closeArea.containsMouse
               ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
-            border.color: Qt.alpha(root.fg, 0.25)
-            border.width: 1
+            border.color: closeControl.activeFocus
+              ? root.accent : Qt.alpha(root.fg, 0.25)
+            border.width: closeControl.activeFocus ? 2 : 1
             Text {
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
@@ -3052,7 +3197,10 @@ Item {
               id: closeArea
               anchors.fill: parent
               hoverEnabled: true
-              onClicked: root.dismiss()
+              onClicked: {
+                closeControl.forceActiveFocus()
+                root.dismiss()
+              }
             }
           }
         }
@@ -3103,15 +3251,36 @@ Item {
             font.pixelSize: Style.font.caption
           }
           Rectangle {
+            id: liveReadyControl
+            activeFocusOnTab: true
+            enabled: !readyProc.checking && !readyProc.running
+            Accessible.role: Accessible.Button
+            Accessible.name: readyText.text
+            Accessible.description: root.readyDetail !== ""
+              ? root.readyDetail
+              : "Run the explicit live SIA memory-readiness check"
+            Accessible.onPressAction: {
+              if (liveReadyControl.enabled) readyProc.startCheck()
+            }
+            Keys.onPressed: function(event) {
+              if (liveReadyControl.enabled && !event.isAutoRepeat
+                  && (event.key === Qt.Key_Return
+                      || event.key === Qt.Key_Enter
+                      || event.key === Qt.Key_Space)) {
+                readyProc.startCheck()
+                event.accepted = true
+              }
+            }
             width: readyText.implicitWidth + Style.space(14)
             height: readyText.implicitHeight + Style.space(6)
             radius: height / 2
             color: liveReadyArea.containsMouse
               ? Qt.alpha(root.fg, 0.16) : Qt.alpha(root.fg, 0.07)
-            border.color: root.readyChecked
-              ? Qt.alpha(root.readyOk ? root.accent : root.urgent, 0.65)
-              : Qt.alpha(root.fg, 0.22)
-            border.width: 1
+            border.color: liveReadyControl.activeFocus ? root.accent
+              : root.readyChecked
+                ? Qt.alpha(root.readyOk ? root.accent : root.urgent, 0.65)
+                : Qt.alpha(root.fg, 0.22)
+            border.width: liveReadyControl.activeFocus ? 2 : 1
             Text {
               id: readyText
               anchors.centerIn: parent
@@ -3131,8 +3300,11 @@ Item {
               id: liveReadyArea
               anchors.fill: parent
               hoverEnabled: true
-              enabled: !readyProc.checking && !readyProc.running
-              onClicked: readyProc.startCheck()
+              enabled: liveReadyControl.enabled
+              onClicked: {
+                liveReadyControl.forceActiveFocus()
+                readyProc.startCheck()
+              }
             }
             // `sia ready` diagnostics cross a process boundary, so keep the
             // tooltip on the same plain-text rendering contract as snapshots.
@@ -3957,13 +4129,33 @@ Item {
                 font.pixelSize: Style.font.caption
               }
               Rectangle {
+                id: verifyControl
+                activeFocusOnTab: true
+                enabled: !verifyProc.running
+                Accessible.role: Accessible.Button
+                Accessible.name: verifyBtnText.text
+                Accessible.description:
+                  "Verify the signed SIA ledger against the displayed snapshot generation"
+                Accessible.onPressAction: {
+                  if (verifyControl.enabled) root.startVerification()
+                }
+                Keys.onPressed: function(event) {
+                  if (verifyControl.enabled && !event.isAutoRepeat
+                      && (event.key === Qt.Key_Return
+                          || event.key === Qt.Key_Enter
+                          || event.key === Qt.Key_Space)) {
+                    root.startVerification()
+                    event.accepted = true
+                  }
+                }
                 width: verifyBtnText.implicitWidth + Style.space(16)
                 height: verifyBtnText.implicitHeight + Style.space(6)
                 radius: Style.cornerRadius
                 color: verifyBtnArea.containsMouse
                   ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
-                border.color: Qt.alpha(root.fg, 0.25)
-                border.width: 1
+                border.color: verifyControl.activeFocus
+                  ? root.accent : Qt.alpha(root.fg, 0.25)
+                border.width: verifyControl.activeFocus ? 2 : 1
                 Text {
                   textFormat: Text.PlainText
                   renderType: Text.NativeRendering
@@ -3978,8 +4170,11 @@ Item {
                   id: verifyBtnArea
                   anchors.fill: parent
                   hoverEnabled: true
-                  enabled: !verifyProc.running
-                  onClicked: root.startVerification()
+                  enabled: verifyControl.enabled
+                  onClicked: {
+                    verifyControl.forceActiveFocus()
+                    root.startVerification()
+                  }
                 }
               }
               Text {
@@ -4712,6 +4907,22 @@ Item {
           }
 
           Rectangle {
+            id: replayControl
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: replayText.text
+            Accessible.description:
+              "Replay or stop the bounded graph-growth visualization"
+            Accessible.onPressAction: root.toggleGraphReplay()
+            Keys.onPressed: function(event) {
+              if (!event.isAutoRepeat
+                  && (event.key === Qt.Key_Return
+                      || event.key === Qt.Key_Enter
+                      || event.key === Qt.Key_Space)) {
+                root.toggleGraphReplay()
+                event.accepted = true
+              }
+            }
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.margins: Style.space(10)
@@ -4720,8 +4931,9 @@ Item {
             radius: Style.cornerRadius
             color: replayArea.containsMouse
               ? Qt.alpha(root.fg, 0.18) : Qt.alpha(root.fg, 0.08)
-            border.color: Qt.alpha(root.fg, 0.25)
-            border.width: 1
+            border.color: replayControl.activeFocus
+              ? root.accent : Qt.alpha(root.fg, 0.25)
+            border.width: replayControl.activeFocus ? 2 : 1
             Text {
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
@@ -4737,6 +4949,7 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               onClicked: {
+                replayControl.forceActiveFocus()
                 root.toggleGraphReplay()
               }
             }
@@ -4759,11 +4972,39 @@ Item {
               delegate: Item {
                 id: chip
                 required property var modelData
+                activeFocusOnTab: true
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: "Show " + chip.modelData.label
+                  + " graph nodes"
+                Accessible.description:
+                  "Toggle this memory kind in the bounded graph display"
+                Accessible.checked:
+                  !root.hiddenKinds[chip.modelData.role]
+                Accessible.onPressAction:
+                  root.toggleKind(chip.modelData.role)
+                Keys.onPressed: function(event) {
+                  if (!event.isAutoRepeat
+                      && (event.key === Qt.Key_Return
+                          || event.key === Qt.Key_Enter
+                          || event.key === Qt.Key_Space)) {
+                    root.toggleKind(chip.modelData.role)
+                    event.accepted = true
+                  }
+                }
                 width: chipRow.implicitWidth
                 height: chipRow.implicitHeight
-                opacity: root.hiddenKinds[chip.modelData.role] ? 0.3 : 1.0
+                Rectangle {
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(3)
+                  radius: Style.cornerRadius
+                  color: "transparent"
+                  border.color: root.accent
+                  border.width: 1
+                  visible: chip.activeFocus
+                }
                 Row {
                   id: chipRow
+                  opacity: root.hiddenKinds[chip.modelData.role] ? 0.3 : 1.0
                   spacing: Style.space(4)
                   Rectangle {
                     width: 8; height: 8; radius: 4
@@ -4782,7 +5023,10 @@ Item {
                 MouseArea {
                   anchors.fill: parent
                   anchors.margins: -Style.space(3)
-                  onClicked: root.toggleKind(chip.modelData.role)
+                  onClicked: {
+                    chip.forceActiveFocus()
+                    root.toggleKind(chip.modelData.role)
+                  }
                 }
               }
             }
