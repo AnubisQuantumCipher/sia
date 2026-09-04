@@ -4897,7 +4897,7 @@ Item {
               width: parent.width
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
-              text: "YOUR CLICK MAY · download pinned restic, Bun, gbrain, and Ollama artifacts; build gbrain; pull the pinned local embedding model; create a signing identity and empty corpus only when no owned brain exists; and install or restart user services."
+              text: "YOUR CLICK MAY · download pinned restic, Bun, gbrain, and Ollama artifacts; build gbrain; pull the pinned local embedding model; create a signing identity and empty corpus only when no owned brain exists; and install or restart user services. YOUR CLICK WILL NOT · change how any other tool behaves. The agent skill that gives Claude Code instructions about SIA, the SUPER+SHIFT+B keybinding, and MCP registration are each declined unless you opt into them by name on the command line; the installer prints how."
               wrapMode: Text.WordWrap
               color: Qt.alpha(root.fg, 0.72)
               font.family: root.fontFamily

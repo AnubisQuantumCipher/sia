@@ -386,6 +386,18 @@ generation, and manager-state checks make interference visible at observed
 boundaries and fail closed, but do not turn the daemon into a hostile same-user
 sandbox.
 
+**Nothing SIA installs changes another program's behaviour unless you ask for
+it by name.** Three integrations touch surfaces SIA does not own: the agent
+skill at `~/.claude/skills/sia/SKILL.md`, which Claude Code reads and follows
+as instructions; the optional `SUPER+SHIFT+B` Hyprland keybinding; and MCP
+client registration. Each is declined by default. The skill and the keybinding
+require `SIA_INSTALL_AGENT_SKILL=1` and `SIA_INSTALL_KEYBINDING=1` respectively
+at the install command line, and MCP registration is never performed at all —
+the installer only prints the exact command for you to run. The first-light
+gate states this before you press anything. A cross-tool instruction change is
+a different category of act from installing SIA's own services, and it is
+consented to separately.
+
 The daemon runs unsandboxed as your user (like any Omarchy plugin — read
 the code before installing). The QML surfaces render dynamic snapshot strings
 with `Text.PlainText`. Their ordinary process actions use fixed SIA command

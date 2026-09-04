@@ -5251,7 +5251,8 @@ install_agent_skill
 ''')
             result = subprocess.run(
                 ["bash", "-c", script, "skill-install-race", skill_dir,
-                 release], env={**os.environ, "RACE_TARGET": skill},
+                 release], env={**os.environ, "RACE_TARGET": skill,
+                      "SIA_INSTALL_AGENT_SKILL": "1"},
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 check=False)
             self.assertNotEqual(result.returncode, 0)
@@ -5284,6 +5285,7 @@ install_agent_skill
             result = subprocess.run(
                 ["bash", "-c", script, "skill-marker-race", skill_dir,
                  release], env={**os.environ, "RACE_MARKER": marker,
+                      "SIA_INSTALL_AGENT_SKILL": "1",
                                 "RACE_SKILL": skill}, text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(result.returncode, 0)
@@ -5305,7 +5307,8 @@ remove_managed_skill
 ''')
             result = subprocess.run(
                 ["bash", "-c", script, "skill-uninstall-race", skill_dir],
-                env={**os.environ, "RACE_TARGET": skill}, text=True,
+                env={**os.environ, "RACE_TARGET": skill,
+                      "SIA_INSTALL_AGENT_SKILL": "1"}, text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(_read_path(skill), "concurrent writer\n")
