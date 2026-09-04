@@ -180,13 +180,26 @@ jobs:
             exit 0
           fi
           # The one act that must stay possible on a frozen branch: no commit
-          # can name its own SHA, so rebinding is always a second commit. It is
-          # exempt only when ROADMAP.md is the entire diff.
+          # can name its own SHA, so rebinding is always a second commit. The
+          # exemption is the declaration replacement itself, not arbitrary
+          # prose smuggled through under the same filename.
           if changed="$(git diff --name-only \
                 "${SIA_FREEZE_HEAD}^" "$SIA_FREEZE_HEAD" 2>/dev/null)" \
              && [ "$changed" = ROADMAP.md ]; then
-            echo "::notice::rebinding commit: ROADMAP.md alone changed"
-            exit 0
+            changed_lines="$(git diff --unified=0 --no-color \
+              "${SIA_FREEZE_HEAD}^" "$SIA_FREEZE_HEAD" -- ROADMAP.md \
+              | sed -n '/^[+-][^+-]/p')"
+            removed="$(printf '%s\n' "$changed_lines" \
+              | grep -cE '^-[[:space:]]*sia-freeze:' || true)"
+            added="$(printf '%s\n' "$changed_lines" \
+              | grep -cE '^\+[[:space:]]*sia-freeze:' || true)"
+            unrelated="$(printf '%s\n' "$changed_lines" \
+              | grep -vE '^[+-][[:space:]]*sia-freeze:' || true)"
+            if [ "$removed" = 1 ] && [ "$added" = 1 ] \
+               && [ -z "$unrelated" ]; then
+              echo "::notice::rebinding commit: only the sia-freeze declaration changed"
+              exit 0
+            fi
           fi
           echo "refusing: marketplace verification is pending on $sha, but" \
             "$branch HEAD is ${SIA_FREEZE_HEAD:-?}. The verify flow binds one" \

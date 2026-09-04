@@ -69,20 +69,24 @@ def _git(root, *argv):
                    capture_output=True)
 
 
-def _fixture(declaration, second_commit=("work.txt",)):
+def _fixture(declaration, second_commit=("work.txt",),
+             initial_roadmap=None, second_roadmap=None):
     """A two-commit repository whose HEAD changed the named files."""
     root = tempfile.mkdtemp(prefix="sia-freeze-")
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.email", "freeze@test")
     _git(root, "config", "user.name", "freeze")
-    for name, body in (("ROADMAP.md", "base\n"), ("work.txt", "base\n")):
+    for name, body in (("ROADMAP.md", initial_roadmap or "base\n"),
+                       ("work.txt", "base\n")):
         with open(os.path.join(root, name), "w", encoding="utf-8") as stream:
             stream.write(body)
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "base")
     for name in second_commit:
-        with open(os.path.join(root, name), "a", encoding="utf-8") as stream:
-            stream.write("second\n")
+        mode = "w" if name == "ROADMAP.md" and second_roadmap is not None \
+            else "a"
+        with open(os.path.join(root, name), mode, encoding="utf-8") as stream:
+            stream.write(second_roadmap if mode == "w" else "second\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "second")
     head = subprocess.run(("git", "rev-parse", "HEAD"), cwd=root, check=True,
@@ -96,8 +100,10 @@ def _fixture(declaration, second_commit=("work.txt",)):
 
 
 def _run_gate(declaration, head=None, event="push", ref_type="branch",
-              ref_name="main", second_commit=("work.txt",)):
-    root, real_head = _fixture(declaration, second_commit)
+              ref_name="main", second_commit=("work.txt",),
+              initial_roadmap=None, second_roadmap=None):
+    root, real_head = _fixture(
+        declaration, second_commit, initial_roadmap, second_roadmap)
     script = os.path.join(root, "gate.sh")
     with open(script, "w", encoding="utf-8") as stream:
         stream.write(_freeze_script())
@@ -117,6 +123,8 @@ def _run_gate(declaration, head=None, event="push", ref_type="branch",
 
 PENDING = "    sia-freeze: state=pending branch=main sha=" + BOUND + "\n"
 PENDING_HEAD = "    sia-freeze: state=pending branch=main sha={HEAD}\n"
+PREVIOUS_PENDING = (
+    "    sia-freeze: state=pending branch=main sha=" + "0" * 40 + "\n")
 
 
 class MarketplaceFreezeGate(unittest.TestCase):
@@ -157,9 +165,20 @@ class MarketplaceFreezeGate(unittest.TestCase):
         self.assertIn("HEAD is the bound commit", result.stdout)
 
     def test_a_roadmap_only_rebinding_commit_passes(self):
-        result = _run_gate(PENDING, second_commit=("ROADMAP.md",))
+        result = _run_gate(
+            PENDING, second_commit=("ROADMAP.md",),
+            initial_roadmap=PREVIOUS_PENDING, second_roadmap=PENDING)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("rebinding commit", result.stdout)
+
+    def test_unrelated_roadmap_prose_is_not_a_rebinding_commit(self):
+        result = _run_gate(
+            PENDING, second_commit=("ROADMAP.md",),
+            initial_roadmap=PREVIOUS_PENDING + "old prose\n",
+            second_roadmap=PENDING + "changed prose\n")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("refusing: marketplace verification is pending",
+                      result.stderr)
 
     def test_work_smuggled_in_beside_a_roadmap_edit_is_refused(self):
         result = _run_gate(PENDING,

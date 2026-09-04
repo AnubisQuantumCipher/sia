@@ -71,6 +71,10 @@ freeze ends on evidence, not on mood.
     `main` — once, carrying the fix for that finding and nothing else that was waiting.
     Everything else keeps waiting on its branch. If a push to `main` cannot be traced to
     a block on the commit currently bound, the freeze applies and the answer is no.
+    Because automation cannot observe the reviewer's decision, record the ended attempt
+    first with a declaration-only `state=none` commit. That administrative closure is not
+    the fix: the following push is the one permitted fix-only movement of `main`, and a
+    later validation attempt must bind its resulting exact SHA separately.
   - The rule is mechanically checked by the `marketplace-freeze` job in
     `.github/workflows/ci.yml`, which reads the declaration below and turns a push
     to the frozen branch that is not the bound commit red. It cannot protect the
