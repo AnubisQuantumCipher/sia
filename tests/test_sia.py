@@ -3028,6 +3028,33 @@ class Redaction(unittest.TestCase):
         self.assertNotIn("<img", event.summary)
         self.assertNotIn("[forged](", event.summary)
 
+    def test_event_capacity_accepts_duplicate_normalized_values(self):
+        bound = self.sialib.MAX_LEDGER_PENDING_RECORDS
+        links = [f"projects/event-capacity-{index}"
+                 for index in range(bound)]
+        tags = [f"tag-{index}" for index in range(bound)]
+        event = self.sialib.Event(
+            "test", self.sialib.utcnow(), "capacity", "duplicates",
+            links=links + [links[0]], tags=tags + [" TAG 0 "])
+        self.assertEqual(event.links, set(links))
+        self.assertEqual(event.tags, set(tags))
+
+    def test_event_capacity_refuses_excess_unique_links_and_tags(self):
+        bound = self.sialib.MAX_LEDGER_PENDING_RECORDS
+        links = [f"projects/event-capacity-{index}"
+                 for index in range(bound)]
+        tags = [f"tag-{index}" for index in range(bound)]
+        with self.assertRaisesRegex(
+                ValueError, "event links exceed their unique-value bound"):
+            self.sialib.Event(
+                "test", self.sialib.utcnow(), "capacity", "links",
+                links=links + ["projects/event-capacity-overflow"])
+        with self.assertRaisesRegex(
+                ValueError, "event tags exceed their unique-value bound"):
+            self.sialib.Event(
+                "test", self.sialib.utcnow(), "capacity", "tags",
+                tags=tags + ["tag-overflow"])
+
 
 class SignedSiaLedgerProjection(unittest.TestCase):
     def setUp(self):

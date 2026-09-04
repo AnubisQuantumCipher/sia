@@ -994,6 +994,9 @@ class ThoughtDirectoryGenerationChanged(ValueError):
 MAX_CORPUS_COMPONENT_BYTES = 255
 MAX_CORPUS_LEAF_BYTES = 252
 THOUGHT_ORIGINS = frozenset({"evidence", "derived", "model"})
+LEGACY_MODEL_THOUGHT_KINDS = frozenset({
+    "grade", "ponder", "note", "take",
+})
 
 
 def _canonical_thought_origin(value):
@@ -1055,7 +1058,7 @@ def _canonical_thought_inbox_item(item, *, queued):
     # that label. A pre-upgrade queued model-prose kind has stronger lexical
     # evidence, so recover it as model rather than laundering it as derived.
     default_origin = ("model" if queued and "origin" not in item
-                      and kind in {"grade", "ponder", "note", "take"}
+                      and kind in LEGACY_MODEL_THOUGHT_KINDS
                       else "derived")
     origin = _canonical_thought_origin(item.get("origin", default_origin))
     if not isinstance(text, str) or not text.strip() \
@@ -1277,6 +1280,27 @@ def redact(text, organ="?"):
     return out
 
 
+def _validated_event_values(field, values, canonicalize):
+    """Normalize one Event collection and refuse excess unique meaning."""
+    normalized = set()
+    for value in values:
+        candidate = canonicalize(value)
+        if candidate in normalized:
+            continue
+        if len(normalized) >= MAX_LEDGER_PENDING_RECORDS:
+            raise ValueError(
+                f"event {field} exceed their unique-value bound")
+        normalized.add(candidate)
+    return normalized
+
+
+def _canonical_event_tag(value):
+    tag = sanitize_slugpart(str(value))
+    if len(tag) > MAX_SOURCE_NAME_CHARS:
+        raise ValueError("event tag exceeds its canonical bound")
+    return tag
+
+
 class Event:
     """One observed happening. links are corpus slugs (no .md).
     Summaries pass the redaction boundary at construction — fail closed."""
@@ -1298,14 +1322,11 @@ class Event:
             raise ValueError("event organ or kind exceeds its canonical bound")
         self.summary = clip(redact(summary, self.organ),
                             MAX_THOUGHT_INBOX_TEXT)
-        self.links = set(sorted(
-            {_canonical_corpus_slug(str(link)) for link in links})[
-                :MAX_LEDGER_PENDING_RECORDS])
-        normalized_tags = {sanitize_slugpart(str(tag)) for tag in tags}
-        if any(len(tag) > MAX_SOURCE_NAME_CHARS for tag in normalized_tags):
-            raise ValueError("event tag exceeds its canonical bound")
-        self.tags = set(sorted(normalized_tags)[
-            :MAX_LEDGER_PENDING_RECORDS])
+        self.links = _validated_event_values(
+            "links", links,
+            lambda link: _canonical_corpus_slug(str(link)))
+        self.tags = _validated_event_values(
+            "tags", tags, _canonical_event_tag)
         if not isinstance(occurrence, str):
             raise ValueError("event occurrence identity is invalid")
         occurrence = strip_controls(occurrence)
@@ -4246,7 +4267,7 @@ def load_thoughts():
         for item in store["thoughts"]:
             if "origin" in item:
                 item["origin"] = _canonical_thought_origin(item["origin"])
-            elif item.get("kind") in {"grade", "ponder", "note"}:
+            elif item.get("kind") in LEGACY_MODEL_THOUGHT_KINDS:
                 # These historical kinds are unambiguously model prose.
                 # Other unlabeled legacy rows remain unlabeled so readers
                 # expose the legacy boundary instead of laundering them as

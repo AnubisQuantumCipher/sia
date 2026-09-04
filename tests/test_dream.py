@@ -1009,6 +1009,36 @@ class ThoughtOrigins(unittest.TestCase):
             [row.get("origin") for row in loaded["thoughts"]],
             ["model", "model", "model", None])
 
+    def test_legacy_model_thought_kinds_are_one_shared_policy(self):
+        self.assertEqual(self.sialib.LEGACY_MODEL_THOUGHT_KINDS,
+                         frozenset({"grade", "ponder", "note", "take"}))
+        queued_at = "2026-01-02T03:04:05Z"
+
+        def queued(kind, queue_id):
+            return {"kind": kind, "text": "legacy model prose",
+                    "_queue_id": queue_id, "_queued_at": queued_at}
+
+        with mock.patch.object(
+                self.sialib, "LEGACY_MODEL_THOUGHT_KINDS",
+                frozenset({"take"})):
+            queued_take = self.sialib._canonical_thought_inbox_item(
+                queued("take", "a" * 32), queued=True)
+            queued_note = self.sialib._canonical_thought_inbox_item(
+                queued("note", "b" * 32), queued=True)
+            legacy = {"v": 1, "thoughts": [
+                {"kind": "take", "text": "operator prediction"},
+                {"kind": "note", "text": "agent prose"},
+            ]}
+            with mock.patch.object(
+                    self.sialib, "read_state_json", return_value=legacy):
+                loaded = self.sialib.load_thoughts()
+
+        self.assertEqual(queued_take["origin"], "model")
+        self.assertEqual(queued_note["origin"], "derived")
+        self.assertEqual(
+            [row.get("origin") for row in loaded["thoughts"]],
+            ["model", None])
+
     def test_write_thought_persists_origin_and_upgrades_exact_legacy_retry(self):
         thought = {
             "ts": "2026-01-02T03:04:05Z", "kind": "note",
