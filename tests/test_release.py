@@ -109,6 +109,7 @@ def _runtime_digest(root):
         "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
         "sia-continuity-worker")
     modern_v5_names = modern_v4_names + ("siagraph.py",)
+    modern_v6_names = modern_v5_names + ("siathought.py",)
     modern = any(os.path.lexists(os.path.join(root, name))
                  for name in ("sia-brainstem.py", "sia-cli"))
     v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
@@ -116,7 +117,10 @@ def _runtime_digest(root):
              for name in ("siacapsule.py", "siabackup.py",
                           "sia-continuity-worker"))
     v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-    if v5:
+    v6 = os.path.lexists(os.path.join(root, "siathought.py"))
+    if v6:
+        names, salt = modern_v6_names, b"sia-runtime-v6\0"
+    elif v5:
         names, salt = modern_v5_names, b"sia-runtime-v5\0"
     elif v4:
         names, salt = modern_v4_names, b"sia-runtime-v4\0"
@@ -275,6 +279,7 @@ MODERN_V4_RUNTIME_NAMES = (
     "sia-continuity-worker")
 
 MODERN_V5_RUNTIME_NAMES = MODERN_V4_RUNTIME_NAMES + ("siagraph.py",)
+MODERN_V6_RUNTIME_NAMES = MODERN_V5_RUNTIME_NAMES + ("siathought.py",)
 
 
 def _runtime_rung_source(relative, marker, terminator):
@@ -1429,7 +1434,7 @@ fenced_runtime_authorized
             os.unlink(os.path.join(runtime, "siasenses.py"))
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_staged_runtime_members_match_the_v5_rung_member_set(self):
+    def test_staged_runtime_members_match_the_v6_rung_member_set(self):
         # Two independent hand-maintained lists have to agree and nothing
         # made them: install.sh stages the runtime tree one install(1) line
         # at a time, while the rung ladder decides which members the receipt
@@ -1445,12 +1450,12 @@ fenced_runtime_authorized
         self.assertEqual(
             len(staged), len(set(staged)),
             f"install.sh stages a runtime member more than once: {staged}")
-        missing = sorted(set(MODERN_V5_RUNTIME_NAMES) - set(staged))
-        unmeasured = sorted(set(staged) - set(MODERN_V5_RUNTIME_NAMES))
+        missing = sorted(set(MODERN_V6_RUNTIME_NAMES) - set(staged))
+        unmeasured = sorted(set(staged) - set(MODERN_V6_RUNTIME_NAMES))
         self.assertEqual(
             (missing, unmeasured), ([], []),
             f"install.sh stages {len(staged)} runtime members but the v5 "
-            f"rung ladder covers {len(MODERN_V5_RUNTIME_NAMES)}. In the "
+            f"rung ladder covers {len(MODERN_V6_RUNTIME_NAMES)}. In the "
             f"ladder yet never staged (digest will refuse): {missing}. "
             f"Staged yet outside the ladder (installed unmeasured by any "
             f"receipt): {unmeasured}")
@@ -1477,21 +1482,21 @@ fenced_runtime_authorized
         for site, ladder in ladders.items():
             with self.subTest(site=site):
                 self.assertEqual(ladder, reference)
-        self.assertIn(r'b"sia-runtime-v5\0"', reference)
+        self.assertIn(r'b"sia-runtime-v6\0"', reference)
         self.assertIn(
-            'modern_v5_names = modern_v4_names + ("siagraph.py",)',
+            'modern_v6_names = modern_v5_names + ("siathought.py",)',
             reference)
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "bin")
-            _plant_runtime_tree(runtime, MODERN_V5_RUNTIME_NAMES)
+            _plant_runtime_tree(runtime, MODERN_V6_RUNTIME_NAMES)
             for site in RUNTIME_RUNG_SITES:
                 with self.subTest(site=site):
                     salt, names = _runtime_rung_classification(*site,
                                                                root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v5\0")
-                    self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
+                    self.assertEqual(salt, b"sia-runtime-v6\0")
+                    self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
 
-    def test_partial_v5_runtime_tree_still_classifies_as_the_v5_rung(self):
+    def test_a_partial_tree_classifies_by_its_marker_not_completeness(self):
         # Classification is by presence of the rung marker, never by
         # completeness. A tree carrying siagraph.py but missing v4-era
         # members must still be measured with the v5 salt over the whole v5
@@ -1517,6 +1522,19 @@ fenced_runtime_authorized
                     self.assertEqual(salt, b"sia-runtime-v5\0")
                     self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
                     self.assertIn("siacapsule.py", names)
+            self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
+            # The same property one rung up: siathought.py is the v6 marker,
+            # so a tree carrying it while still missing v4-era members is a
+            # partial v6 — never a complete v5 that happens to be short.
+            _write(os.path.join(runtime, "siathought.py"), "siathought.py\n",
+                   0o644)
+            for site in RUNTIME_RUNG_SITES:
+                with self.subTest(site=site, rung="partial-v6"):
+                    salt, names = _runtime_rung_classification(*site,
+                                                               root=runtime)
+                    self.assertEqual(salt, b"sia-runtime-v6\0")
+                    self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
+                    self.assertIn("siagraph.py", names)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
 
     def test_runtime_v5_digest_migrates_without_replacing_valid_v4_tree(self):
@@ -1608,7 +1626,7 @@ preflight_runtime
             os.unlink(graph)
             self.assertEqual(preflight().returncode, 0)
 
-    def test_uninstaller_fence_requires_complete_v5_runtime(self):
+    def test_uninstaller_fence_requires_complete_v6_runtime(self):
         function = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
@@ -1616,9 +1634,9 @@ preflight_runtime
             journal = os.path.join(managed, "launch-fence.json")
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            graph = os.path.join(runtime, "siagraph.py")
+            marker = os.path.join(runtime, "siathought.py")
             member = os.path.join(runtime, "siarestoreadmit.py")
-            _plant_runtime_tree(runtime, MODERN_V5_RUNTIME_NAMES)
+            _plant_runtime_tree(runtime, MODERN_V6_RUNTIME_NAMES)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
 
             def publish_fence():
@@ -1664,24 +1682,24 @@ fenced_runtime_authorized
             publish_fence()
             self.assertEqual(authorize().returncode, 0)
 
-            # Dropping the rung marker is a rollback, not a shorter v5 tree.
-            os.unlink(graph)
+            # Dropping the rung marker is a rollback, not a shorter v6 tree.
+            os.unlink(marker)
             self.assertNotEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             self.assertEqual(authorize().returncode, 0)
 
-            # A fence cut from the complete v4 tree never authorizes the v5
+            # A fence cut from the complete v5 tree never authorizes the v6
             # tree that grew out of it.
-            os.unlink(graph)
+            os.unlink(marker)
             publish_fence()
             self.assertEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             self.assertNotEqual(authorize().returncode, 0)
 
-            # A partial v5 tree authorizes against neither rung's fence.
+            # A partial v6 tree authorizes against neither rung's fence.
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             _write(member, "siarestoreadmit.py\n", 0o644)
             publish_fence()
             os.unlink(member)
@@ -2149,7 +2167,7 @@ retain_unowned_cli_before_fence
                 process.communicate(timeout=2)
 
             _write(target, _read("bin/sia"), 0o644)
-            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+            for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
@@ -2704,7 +2722,7 @@ retain_unowned_cli_before_fence
     def test_new_sialib_rejects_loaded_old_installed_launchers(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
-            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+            for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
@@ -2750,6 +2768,65 @@ retain_unowned_cli_before_fence
             "_suppress_shadowed_mentions", "_validate_domain_regex",
             "_yaml_scalar", "corpus_edges", "export_graph",
             "load_domain_edge_spec",
+        ),
+        "siathought": (
+            "_acknowledge_thought_recovery_claim",
+            "_apply_thought_recovery_claim",
+            "_archive_legacy_reset_path",
+            "_assert_legacy_thought_directory_generation",
+            "_canonical_thought_page_record",
+            "_clear_legacy_thought_mind_replay_locked",
+            "_clear_native_thought_mind_replay_locked",
+            "_clear_thought_mind_replay_scope_locked",
+            "_commit_thought_legacy_claim",
+            "_current_legacy_thought_directory_generation",
+            "_decode_exact_thought_page",
+            "_ensure_private_recovery_directory",
+            "_execute_legacy_thought_reset_locked",
+            "_finalize_native_thought_mind_replay",
+            "_index_legacy_thought_batch_locked",
+            "_legacy_thought_claim_locked",
+            "_list_thought_recovery_records_locked",
+            "_load_thought_legacy_scan",
+            "_mark_thought_mind_replay_applied_locked",
+            "_materialize_thought_recovery_page",
+            "_pending_external_thought_queue_ids",
+            "_persist_thought", "_prepare_thought_recovery_claim",
+            "_queue_thought_recovery", "_queued_thought_slug",
+            "_read_legacy_thought_directory_page",
+            "_read_thought_legacy_index_entry",
+            "_read_thought_page_text",
+            "_read_thought_recovery_claim",
+            "_read_thought_recovery_record",
+            "_remove_empty_thought_mind_replay_artifacts_locked",
+            "_save_thought_legacy_scan",
+            "_schedule_legacy_thought_reset_locked",
+            "_sync_directory", "_thought_directory_generation",
+            "_thought_legacy_catalog_batch",
+            "_thought_legacy_catalog_path",
+            "_thought_legacy_index_bytes",
+            "_thought_legacy_index_dir",
+            "_thought_legacy_index_entry",
+            "_thought_legacy_scan_path",
+            "_thought_mind_replay_intent",
+            "_thought_mind_replay_path",
+            "_thought_mind_replay_records", "_thought_page_parts",
+            "_thought_queue_binding",
+            "_thought_recovery_claim_basis",
+            "_thought_recovery_claim_bytes",
+            "_thought_recovery_claim_document",
+            "_thought_recovery_claim_path",
+            "_thought_recovery_debt", "_thought_recovery_dir",
+            "_thought_recovery_lock_path",
+            "_thought_recovery_receipt", "_thought_recovery_record",
+            "_thought_recovery_record_bytes",
+            "_upsert_thought_legacy_catalog",
+            "_validated_thought_directory_generation",
+            "_validated_thought_legacy_scan",
+            "_validated_thought_recovery_receipt",
+            "_write_thought_legacy_index",
+            "_write_thought_recovery_claim_locked",
+            "reconcile_thought_pages", "write_thought",
         ),
         "siasenses": (
             "_attest_generation", "_attest_rows",

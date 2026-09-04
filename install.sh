@@ -6521,6 +6521,7 @@ modern_v4_names = modern_v3_names + (
     "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker")
 modern_v5_names = modern_v4_names + ("siagraph.py",)
+modern_v6_names = modern_v5_names + ("siathought.py",)
 modern = any(os.path.lexists(os.path.join(root, name))
              for name in ("sia-brainstem.py", "sia-cli"))
 v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
@@ -6528,7 +6529,10 @@ v4 = any(os.path.lexists(os.path.join(root, name))
          for name in ("siacapsule.py", "siabackup.py",
                       "sia-continuity-worker"))
 v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-if v5:
+v6 = os.path.lexists(os.path.join(root, "siathought.py"))
+if v6:
+    names, salt = modern_v6_names, b"sia-runtime-v6\0"
+elif v5:
     names, salt = modern_v5_names, b"sia-runtime-v5\0"
 elif v4:
     names, salt = modern_v4_names, b"sia-runtime-v4\0"
@@ -8598,7 +8602,7 @@ SIA_RELEASE_FILES=(
   SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
   uninstall.sh assets/cockpit.png bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
-  bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siasenses.py bin/siarestoreadmit.py
+  bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
   bin/siamind.py bin/siaqueue.py bin/siarelease.py
   bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
@@ -9323,7 +9327,7 @@ step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
 for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siatakes.py siabench.py siaqueue.py siacapsule.py siabackup.py \
-    siagraph.py; do
+    siagraph.py siathought.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done
