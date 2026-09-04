@@ -42,23 +42,41 @@ function nonNegativeInteger(value) {
     && Math.floor(value) === value && value >= 0
 }
 
+function validUtcSecondTimestamp(value) {
+  if (typeof value !== "string"
+      || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value))
+    return false
+  var parsed = Date.parse(value)
+  return parsed > 0
+    && new Date(parsed).toISOString().replace(".000Z", "Z") === value
+}
+
+function timestampObservedBy(value, nowMs) {
+  var now = Number(nowMs)
+  return validUtcSecondTimestamp(value) && isFinite(now)
+    && Date.parse(value) <= now
+}
+
+// This is the exact set emitted by sialib's status publisher.  Surfaces may
+// add presentation-only lifecycle labels elsewhere, but they must not admit
+// those labels as producer state.
+var STATUS_STATES = ["failed", "degraded", "thinking", "ok"]
+
 // Status snapshots published before release stamping still have a narrow,
 // distinctive schema.  Recognize that real legacy shape for upgrade routing;
 // a generic versionless object remains a repair condition.
 function residentStatusShape(status) {
-  if (!status || typeof status !== "object" || Array.isArray(status)
-      || status.v !== 1 || typeof status.ts !== "string"
-      || typeof status.state !== "string"
+  if (!isPlainRecord(status)
+      || status.v !== 1 || !validUtcSecondTimestamp(status.ts)
+      || STATUS_STATES.indexOf(status.state) === -1
+      || !nonNegativeInteger(status.events_today)
+      || !isPlainRecord(status.errors)
       || typeof status.publication_id !== "string"
-      || !status.projection_debt
-      || typeof status.projection_debt !== "object"
-      || Array.isArray(status.projection_debt)
+      || !isPlainRecord(status.projection_debt)
       || typeof status.projection_debt.graph !== "string"
       || typeof status.projection_debt.consolidation !== "string"
-      || !status.mind || typeof status.mind !== "object"
-      || Array.isArray(status.mind)
-      || !status.agent_queue || typeof status.agent_queue !== "object"
-      || Array.isArray(status.agent_queue)) return false
+      || !isPlainRecord(status.mind)
+      || !isPlainRecord(status.agent_queue)) return false
   var mindFields = ["nodes", "edges", "decay_active", "decay_demoted",
                     "rehearsal_eligible", "rehearsal_due", "pinned"]
   var relayFields = ["materialized", "refused", "acknowledged"]
@@ -92,6 +110,21 @@ function runtimeLifecycle(status, pluginVersion) {
   if (compared < 0) return "update"
   if (compared > 0) return "ahead"
   return "ready"
+}
+
+// Rendering requires the exact current producer schema, but downgrade
+// prevention has a deliberately smaller authority: a syntactically valid
+// newer release number is enough to block an older cockpit from treating an
+// unfamiliar future state as repairable by downgrade. Rejected equal/older
+// records carry no lifecycle authority. Once ahead has been observed, a
+// malformed replacement cannot erase it; a later admitted status can.
+function runtimeLifecycleEvidence(status, statusValid, prior, pluginVersion) {
+  if (statusValid && residentStatusShape(status)) return status
+  var compared = isPlainRecord(status)
+    ? compareReleaseVersions(status.version, pluginVersion) : null
+  if (compared !== null && compared > 0)
+    return ({version: status.version})
+  return runtimeLifecycle(prior, pluginVersion) === "ahead" ? prior : null
 }
 
 function installCompletionReady(completion, pluginVersion) {
@@ -226,6 +259,7 @@ function validStaleAfterSec(value, fallback) {
 // horizon. A future stamp is not evidence of a fresh publication: accepting
 // it would let one bad clock preserve a reassuring state indefinitely.
 function timestampStale(value, nowMs, staleAfterSec) {
+  if (!validUtcSecondTimestamp(value)) return true
   var stamped = Date.parse(value)
   var now = Number(nowMs)
   var horizon = Number(staleAfterSec)
@@ -306,12 +340,7 @@ function validContinuityOperation(value) {
 
 function validContinuityScheduleTimestamp(value, nullable) {
   if (nullable && value === null) return true
-  if (typeof value !== "string"
-      || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(value))
-    return false
-  var parsed = Date.parse(value)
-  return parsed > 0
-    && new Date(parsed).toISOString().replace(".000Z", "Z") === value
+  return validUtcSecondTimestamp(value)
 }
 
 function validContinuityScheduleTimer(value, cadence) {
@@ -478,9 +507,10 @@ function thoughtMark(kind) {
 // ---------------------------------------------------------------- format
 
 function timeAgo(isoTs, nowMs) {
+  if (!timestampObservedBy(isoTs, nowMs)) return ""
   var t = Date.parse(isoTs)
-  if (!(t > 0)) return ""
-  var s = Math.max(0, Math.floor((nowMs - t) / 1000))
+  var now = Number(nowMs)
+  var s = Math.floor((now - t) / 1000)
   if (s < 90) return s + "s ago"
   if (s < 5400) return Math.round(s / 60) + "m ago"
   if (s < 129600) return Math.round(s / 3600) + "h ago"
@@ -549,10 +579,11 @@ function nodeRadius(n) {
 }
 
 function freshness(n, nowMs) {
+  if (!n || typeof n !== "object"
+      || !timestampObservedBy(n.ts, nowMs)) return 0
   var t = Date.parse(n.ts)
-  if (!(t > 0)) return 0
-  var age = (nowMs - t) / 1000
-  if (age < 0) age = 0
+  var now = Number(nowMs)
+  var age = (now - t) / 1000
   return Math.max(0, 1 - age / 1800)   // fades over 30 min
 }
 

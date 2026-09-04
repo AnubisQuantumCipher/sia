@@ -139,7 +139,7 @@ def _judge_config():
                     after.st_mtime_ns, after.st_ctime_ns)
         if observed != finished or len(raw) > MAX_CONFIG_BYTES:
             return "none", ""
-        root = json.loads(raw.decode("utf-8"))
+        root = siaqueue.strict_json_loads(raw.decode("utf-8"))
     except Exception:
         return "none", ""
     if not isinstance(root, dict) or not isinstance(root.get("judge"), dict):
@@ -885,7 +885,7 @@ def _load_proposal_queue(path):
     if len(raw) > MAX_PROPOSAL_QUEUE_BYTES:
         raise ValueError("proposal queue byte quota exceeded")
     try:
-        value = json.loads(raw)
+        value = siaqueue.strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError):
         raise ValueError("proposal queue is invalid JSON") from None
     if not isinstance(value, list):
@@ -1041,7 +1041,7 @@ def _recall(query, k=6):
                 False, "", frozenset(),
                 "grading recall query did not complete successfully")
         i = r.stdout.index("[")
-        res = json.loads(r.stdout[i:])
+        res = siaqueue.strict_json_loads(r.stdout[i:])
         if not isinstance(res, list):
             raise ValueError("grading recall response is not a result list")
         seen, lines = set(), []
@@ -1375,7 +1375,7 @@ def grade_take(t, persist=None):
         match = re.search(r"^sia_take: (.*)$", pre_judge_text, re.M)
         try:
             current_open = _validated_take_metadata(
-                json.loads(match.group(1))) if match else None
+                siaqueue.strict_json_loads(match.group(1))) if match else None
         except (TypeError, UnicodeError, ValueError, RecursionError):
             current_open = None
         expected_open = {
@@ -1480,7 +1480,7 @@ def _read_transaction_json(path):
         path, MAX_TRANSACTION_JOURNAL_BYTES, "transaction journal",
         private=True)
     try:
-        return json.loads(raw)
+        return siaqueue.strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("transaction journal is malformed") from exc
 
@@ -1989,7 +1989,7 @@ def _load_history_state(kind, *, create=False):
                 exclusive=True)
         return state
     try:
-        return _validate_history_state(json.loads(raw), kind)
+        return _validate_history_state(siaqueue.strict_json_loads(raw), kind)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("natural-history state is malformed") from exc
 
@@ -2017,7 +2017,7 @@ def _read_history_json(path, label):
     except FileNotFoundError:
         return None
     try:
-        value = json.loads(raw)
+        value = siaqueue.strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is malformed") from exc
     if not isinstance(value, dict):
@@ -2222,7 +2222,7 @@ def _history_page_metadata(kind, path, text):
     if len(matches) != 1:
         raise ValueError(f"{kind} page must have one metadata row")
     try:
-        meta = json.loads(matches[0])
+        meta = siaqueue.strict_json_loads(matches[0])
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{kind} page metadata is invalid") from exc
     meta = (_validated_take_metadata(meta) if kind == "take"
@@ -3492,7 +3492,8 @@ def _render_take_page(t, verdict, justification, evidence_snapshots=()):
         raise ValueError("take changed while the judge was running")
     current = re.search(r"^sia_take: (.*)$", text, re.M)
     try:
-        current_status = json.loads(current.group(1)).get("status") \
+        current_status = siaqueue.strict_json_loads(
+            current.group(1)).get("status") \
             if current else None
     except (AttributeError, TypeError, UnicodeError, ValueError,
             RecursionError):
@@ -3784,7 +3785,7 @@ def _legacy_v1_page(path, source_text):
     if len(metadata_lines) != 1:
         raise ValueError("legacy take must have one metadata line")
     try:
-        raw_metadata = json.loads(metadata_lines[0])
+        raw_metadata = siaqueue.strict_json_loads(metadata_lines[0])
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("legacy take metadata JSON is invalid") from exc
     take = _legacy_v1_metadata(raw_metadata, path)
@@ -4024,7 +4025,7 @@ def _take_migration_candidate(slug, path):
         if len(metadata_lines) != 1:
             raise ValueError("take page must have one metadata line")
         try:
-            current_metadata = json.loads(metadata_lines[0])
+            current_metadata = siaqueue.strict_json_loads(metadata_lines[0])
         except (UnicodeError, ValueError, RecursionError) as exc:
             raise ValueError("take page metadata JSON is invalid") from exc
         take = _validated_take_metadata(current_metadata)

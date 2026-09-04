@@ -623,29 +623,49 @@ def _health_footer(keyword_only=False, recall_degraded="",
     cockpit shows: sense freshness, chain state, snapshot completeness,
     recall mode. An answer over a degraded brain must say so inline."""
     import datetime as _dt
-    st = sialib.read_json(sialib.STATUS_PATH, {})
-    g = sialib.read_json(sialib.GRAPH_PATH, {})
+    raw_status = sialib.read_json(sialib.STATUS_PATH, {})
+    raw_graph = sialib.read_json(sialib.GRAPH_PATH, {})
+    st = raw_status if isinstance(raw_status, dict) else {}
+    g = raw_graph if isinstance(raw_graph, dict) else {}
     bits = []
     try:
         age = (_dt.datetime.now(_dt.timezone.utc)
                - _dt.datetime.strptime(st.get("ts", ""),
                                        "%Y-%m-%dT%H:%M:%SZ")
                .replace(tzinfo=_dt.timezone.utc)).total_seconds()
-        bits.append("senses live" if age < 240
-                    else f"SENSES STALE ({int(age // 60)}m)")
+        if age < 0:
+            bits.append("SENSES STALE (future timestamp)")
+        elif age < 240:
+            bits.append("senses live")
+        else:
+            bits.append(f"SENSES STALE ({int(age // 60)}m)")
     except Exception:
         bits.append("SENSES UNKNOWN")
-    ic = st.get("integrity", {})
-    bits.append(f"chains {ic.get('verdict', 'unknown')}")
-    if st.get("errors"):
-        bits.append(f"{len(st['errors'])} sense error(s)")
-    snap = g.get("snapshot", {})
-    if snap:
-        bits.append("graph complete" if snap.get("complete")
+    ic = st.get("integrity")
+    verdict = ic.get("verdict") if isinstance(ic, dict) else None
+    if verdict not in {"pass", "fail", "degraded", "unknown"}:
+        verdict = "unknown"
+    bits.append(f"chains {verdict}")
+    errors = st.get("errors")
+    if isinstance(errors, dict):
+        if errors:
+            bits.append(f"{len(errors)} sense error(s)")
+    elif errors is not None:
+        bits.append("sense errors unknown")
+    snap = g.get("snapshot")
+    if isinstance(snap, dict) and isinstance(snap.get("complete"), bool):
+        bits.append("graph complete" if snap["complete"]
                     else "GRAPH PARTIAL")
-    red = st.get("redactions", {})
-    if red:
-        bits.append(f"{sum(red.values())} span(s) redacted at ingest")
+    else:
+        bits.append("GRAPH UNKNOWN")
+    red = st.get("redactions")
+    if isinstance(red, dict) and all(
+            isinstance(value, int) and not isinstance(value, bool)
+            and value >= 0 for value in red.values()):
+        if red:
+            bits.append(f"{sum(red.values())} span(s) redacted at ingest")
+    elif red is not None:
+        bits.append("redactions unknown")
     bits.append("keyword-only recall" if keyword_only
                 else "semantic recall")
     if recall_degraded:
@@ -660,9 +680,9 @@ def _health_footer(keyword_only=False, recall_degraded="",
 
 
 def cmd_ask(q, touch=True):
-    """Semantic recall upgraded with hippocampal-style completion: dense
-    hits seed Personalized PageRank over the typed graph (HippoRAG,
-    damping 0.5, 1/deg specificity) blended with ACT-R activation."""
+    """Semantic recall uses origin-weighted dense ordering by measured
+    default. The optional retrieval.associative_rerank configuration seeds
+    graph PPR from dense hits and blends it with ACT-R activation."""
     import siamind
     r = _gbrain_query(q, json_out=True)
     try:
@@ -670,7 +690,7 @@ def cmd_ask(q, touch=True):
             raise RuntimeError("memory engine query did not complete")
         i = r.stdout.index("[")
         try:
-            results = json.loads(r.stdout[i:])
+            results = sialib._strict_json_loads(r.stdout[i:])
         except (UnicodeError, ValueError, RecursionError) as exc:
             raise ValueError("memory engine JSON is malformed") from exc
         if not isinstance(results, list):
@@ -713,7 +733,8 @@ def cmd_ask(q, touch=True):
                 graph = sialib.read_json(sialib.GRAPH_PATH, None)
                 mind = siamind.load_mind()
                 ranked = siamind.ppr_rerank(
-                    graph, dense, mind=mind, origins=origins)
+                    graph, dense, mind=mind, origins=origins,
+                    require_associative=True)
             except Exception:
                 ranked = siamind.ppr_rerank(None, dense, origins=origins)
                 recall_degraded = "associative rerank unavailable; origin-safe fallback"
@@ -1650,7 +1671,7 @@ def cmd_agent_propose(raw):
     """Queue one validated model-origin take through the lifecycle CLI."""
     import siatakes
     try:
-        value = json.loads(raw)
+        value = sialib._strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError):
         print("proposal rejected: payload is malformed JSON")
         return 2

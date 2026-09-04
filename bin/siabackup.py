@@ -461,18 +461,9 @@ def _read_regular(path, label, *, private=False,
 
 
 def _decode_json(raw, label):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"{label} contains duplicate JSON keys")
-            result[key] = value
-        return result
-
     try:
-        return json.loads(raw.decode("utf-8", "strict"),
-                          object_pairs_hook=unique)
-    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        return sialib._strict_json_loads(raw.decode("utf-8", "strict"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is not strict JSON") from exc
 
 
@@ -2138,8 +2129,8 @@ def _snapshot_rows(*, restic_path=None, latest=False, snapshot_id=None,
     raw = _run_restic(
         arguments, config=config, restic_path=restic_path)
     try:
-        value = json.loads(raw)
-    except (ValueError, RecursionError) as exc:
+        value = sialib._strict_json_loads(raw)
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("restic snapshot response is malformed") from exc
     rows = value.get("snapshots") if isinstance(value, dict) else value
     if not isinstance(rows, list):

@@ -276,6 +276,45 @@ class JsonParserBoundaries(unittest.TestCase):
             self.assertTrue(all(os.path.exists(path) for path in (
                 proposal_path, transaction_path, history_path, record_path)))
 
+    def test_take_authority_refuses_ambiguous_json(self):
+        with tempfile.TemporaryDirectory() as root:
+            proposal_path = os.path.join(root, "proposals.json")
+            transaction_path = os.path.join(root, "transaction.json")
+            record_path = os.path.join(root, "record.json")
+            cases = (
+                (proposal_path, '[{"claim":"safe","claim":"private"}]',
+                 lambda: siatakes._load_proposal_queue(proposal_path),
+                 "proposal queue is invalid JSON"),
+                (transaction_path,
+                 '{"phase":"safe","phase":"private"}',
+                 lambda: siatakes._read_transaction_json(transaction_path),
+                 "transaction journal is malformed"),
+                (record_path, '{"key":"safe","key":"private"}',
+                 lambda: siatakes._read_history_json(
+                     record_path, "natural-history record"),
+                 "natural-history record is malformed"),
+            )
+            for path, raw, call, expected in cases:
+                with self.subTest(expected=expected):
+                    _write(path, raw)
+                    os.chmod(path, 0o600)
+                    with self.assertRaisesRegex(ValueError, expected):
+                        call()
+                    self.assertTrue(os.path.exists(path))
+
+    def test_take_proposal_queue_refuses_non_utf8_json_encoding(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "proposals.json")
+            with open(path, "wb") as stream:
+                stream.write('[{"claim":"private"}]'.encode("utf-16"))
+            os.chmod(path, 0o600)
+
+            with self.assertRaisesRegex(
+                    ValueError, "proposal queue is invalid JSON"):
+                siatakes._load_proposal_queue(path)
+
+            self.assertTrue(os.path.exists(path))
+
     def test_benchmark_parser_limits_are_clean_refusals(self):
         completed = mock.Mock(returncode=0, stdout="[]", stderr="")
         for parser_error in (ValueError, RecursionError):
@@ -317,6 +356,28 @@ class JsonParserBoundaries(unittest.TestCase):
             self.assertEqual(
                 str(manifest_refusal.exception),
                 "benchmark dataset manifests are malformed")
+
+    def test_benchmark_json_boundaries_refuse_ambiguous_records(self):
+        completed = mock.Mock(
+            returncode=0,
+            stdout='[{"slug":"safe","slug":"private","score":1}]',
+            stderr="")
+        with mock.patch.object(siabench.sialib, "gbrain",
+                               return_value=completed), \
+                self.assertRaisesRegex(
+                    siabench.BenchmarkRefusal,
+                    "gbrain retrieval output could not be admitted"):
+            siabench._engine(["query", "fixture"])
+
+        for raw in (
+                '{"id":"safe","id":"private"}\n',
+                '{"id":"safe","answer":NaN}\n',
+                '{"id":"safe","answer":Infinity}\n',
+                '{"id":"safe","answer":-Infinity}\n'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                    siabench.BenchmarkRefusal,
+                    "benchmark JSONL row is malformed"):
+                siabench._parse_jsonl(raw, "predictions.jsonl")
 
 
 class JudgeIsolation(unittest.TestCase):
@@ -425,6 +486,10 @@ class JudgeIsolation(unittest.TestCase):
                 '{"judge":{"backend":""}}',
                 '{"judge":{"backend":"unknown","model":"x"}}',
                 '{"judge":{"backend":"claude","model":3}}',
+                '{"judge":{"backend":"none"},"judge":'
+                '{"backend":"claude","model":"private"}}',
+                '{"judge":{"backend":"none","backend":"claude",'
+                '"model":"private"}}',
             )
             try:
                 for content in cases:
@@ -3405,7 +3470,8 @@ class SignedLedgerDataset(unittest.TestCase):
     def test_explicitly_disabled_chain_config_is_omitted_without_refusal(self):
         original = siabench.sialib.CONFIG
         siabench.sialib.CONFIG = {**original, "chains": [
-            {"name": "example", "enabled": False}
+            {"_comment": "documented inert entry",
+             "name": "example", "enabled": False}
         ]}
         try:
             registry = siabench.sialib._chain_cmds()
@@ -3413,6 +3479,27 @@ class SignedLedgerDataset(unittest.TestCase):
             siabench.sialib.CONFIG = original
         self.assertFalse(any(name.startswith("config-error-")
                              for name in registry))
+
+    def test_mistyped_chain_disable_is_an_explicit_refusal(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        original = siabench.sialib.CONFIG
+        siabench.sialib.CONFIG = {**original, "chains": [{
+            "name": "must-remain-inert", "ledger": ledger,
+            "verifier": verifier,
+            "verify": [verifier, ledger, "--quiet"],
+            "enable": False,
+        }]}
+        try:
+            registry = siabench.sialib._chain_cmds()
+        finally:
+            siabench.sialib.CONFIG = original
+        self.assertNotIn("must-remain-inert", registry)
+        errors = [binding[2][1]
+                  for name, binding in registry.items()
+                  if name.startswith("config-error-")]
+        self.assertTrue(errors)
+        self.assertIn("unknown keys", errors[0])
 
     def test_partial_known_chain_remains_in_scope_as_a_refusal(self):
         original = (siabench.sialib.HOME, siabench.sialib.ATTEST,

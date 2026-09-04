@@ -46,11 +46,18 @@ class CockpitIntegrityBoundaries(unittest.TestCase):
             _qml_function(cockpit, name) for name in names
         ).replace("root.", "")
 
-    def _valid_graph(self, graph):
-        logic = self._cockpit_logic(
+    def _valid_graph(self, graph, now="2026-09-04T08:05:57Z"):
+        logic = "var Model = { timestampObservedBy: timestampObservedBy }\n"
+        logic += self._cockpit_logic(
             "isNonNegativeCount", "isPlainRecord", "validOriginLabel",
             "validGraphSnapshot")
-        return self._run(logic, "validGraphSnapshot", [graph])
+        logic += """
+function validGraphAt(graph, nowIso) {
+  return validGraphSnapshot(graph, Date.parse(nowIso))
+}
+"""
+        return self._run(
+            logic, "validGraphAt", [graph, now], sources=("Model.js",))
 
     @staticmethod
     def _graph():
@@ -91,6 +98,13 @@ class CockpitIntegrityBoundaries(unittest.TestCase):
         bad = self._graph(); bad["pages_total"] = None; mutations.append(bad)
         bad = self._graph(); bad["publication_id"] = ""; mutations.append(bad)
         bad = self._graph(); bad["ts"] = "not-a-date"; mutations.append(bad)
+        bad = self._graph(); bad["ts"] = "2026-02-30T08:05:57Z";
+        mutations.append(bad)
+        bad = self._graph(); bad["ts"] = "2999-09-04T08:05:57Z";
+        mutations.append(bad)
+        bad = self._graph()
+        bad["nodes"][0]["ts"] = "2999-09-04T08:05:57Z"
+        mutations.append(bad)
 
         for bad in mutations:
             with self.subTest(graph=bad):
@@ -98,7 +112,7 @@ class CockpitIntegrityBoundaries(unittest.TestCase):
 
     def test_graph_is_committed_only_after_candidate_sync(self):
         body = _qml_function(_read("Cockpit.qml"), "applyGraph")
-        self.assertIn("root.validGraphSnapshot(g)", body)
+        self.assertIn("root.validGraphSnapshot(g, Date.now())", body)
         self.assertIn("Model.syncGraph(g", body)
         self.assertLess(body.index("Model.syncGraph(g"),
                         body.index("root.graph = g"))
@@ -148,6 +162,9 @@ function statusAt(stamp, nowIso) {
             sources=("Model.js",)))
         self.assertTrue(self._run(
             wrapper, "statusAt", [future, now], sources=("Model.js",)))
+        self.assertTrue(self._run(
+            wrapper, "statusAt", ["2026-02-30T08:05:57Z", now],
+            sources=("Model.js",)))
         cockpit = _read("Cockpit.qml")
         self.assertIn("Model.timestampStale(",
                       _qml_function(cockpit, "applyStatus"))
@@ -160,8 +177,11 @@ function statusAt(stamp, nowIso) {
         timer = _qml_element(panel, "interval: 5000; running: true")
         status = {
             "v": 1,
+            "version": "1.7.8",
             "ts": "2999-09-04T08:05:57Z",
             "state": "thinking",
+            "events_today": 0,
+            "errors": {},
             "publication_id": "a780a1590f1e41d19e68c31c0ee93c88",
             "projection_debt": {"graph": "", "consolidation": ""},
             "mind": {
@@ -176,22 +196,32 @@ function statusAt(stamp, nowIso) {
         wrapper = apply_status + """
 var Model = {
   residentStatusShape: residentStatusShape,
+  runtimeLifecycleEvidence: runtimeLifecycleEvidence,
   timestampStale: timestampStale
 }
 var root = {
   status: null, statusLoadValid: false, stale: false,
+  runtimeEvidence: null, pluginVersion: "1.7.8",
   staleAfterSec: staleAfterDefaultSec()
 }
 function panelStatusAt(snapshot, nowIso) {
   Date.now = function() { return Date.parse(nowIso) }
   applyStatus(JSON.stringify(snapshot))
-  return { valid: root.statusLoadValid, stale: root.stale }
+  return {
+    valid: root.statusLoadValid,
+    stale: root.stale,
+    evidenceVersion: root.runtimeEvidence
+      ? root.runtimeEvidence.version : null
+  }
 }
 """
         self.assertEqual(self._run(
             wrapper, "panelStatusAt",
             [status, "2026-09-04T08:05:57Z"], sources=("Model.js",)),
-            {"valid": True, "stale": True})
+            {"valid": True, "stale": True, "evidenceVersion": "1.7.8"})
+        self.assertIn("Model.runtimeLifecycleEvidence(", apply_status)
+        self.assertIn("root.runtimeEvidence", apply_status)
+        self.assertIn("root.pluginVersion", apply_status)
         self.assertIn("Model.timestampStale(", apply_status)
         self.assertIn("Model.timestampStale(", timer)
         self.assertNotIn("root.staleAfterSec * 1000", panel)

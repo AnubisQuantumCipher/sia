@@ -133,6 +133,39 @@ class AgentSpool(unittest.TestCase):
                                  "request is malformed JSON")
                 self.assertTrue(os.path.exists(path))
 
+    def test_request_parser_refuses_ambiguous_and_nonstandard_json(self):
+        with tempfile.TemporaryDirectory() as state:
+            receipt = siaqueue.enqueue_note(
+                state, "safe", "safe request")
+            queue_dir = os.path.join(state, siaqueue.QUEUE_DIRNAME)
+            path = next(
+                os.path.join(queue_dir, name)
+                for name in os.listdir(queue_dir)
+                if name.endswith(".json"))
+            prefix = (
+                '{"schema":"' + siaqueue.SCHEMA + '","request_id":"'
+                + receipt["request_id"] + '","queued_at":"'
+                + receipt["queued_at"]
+                + '","operation":"note","payload":')
+            cases = (
+                prefix + '{"author":"safe","text":"safe request"},'
+                '"payload":{"author":"private","text":"private"}}',
+                prefix + '{"author":"safe","text":NaN}}',
+                prefix + '{"author":"safe","text":Infinity}}',
+                prefix + '{"author":"safe","text":-Infinity}}',
+            )
+            for raw in cases:
+                with self.subTest(raw=raw):
+                    with open(path, "w", encoding="utf-8") as stream:
+                        stream.write(raw)
+                    os.chmod(path, 0o600)
+                    pending, errors = siaqueue.pending(state)
+                    self.assertEqual(pending, [])
+                    self.assertEqual(errors[0]["error"],
+                                     "request is malformed JSON")
+                    self.assertNotIn("private", str(errors))
+                    self.assertTrue(os.path.exists(path))
+
     def test_symlink_request_is_refused_without_reading_target(self):
         with tempfile.TemporaryDirectory() as state:
             queue_dir = os.path.join(state, siaqueue.QUEUE_DIRNAME)
@@ -1215,6 +1248,38 @@ class McpResources(unittest.TestCase):
             (None, "init", "bad", "params", "after"),
             "a valid JSON-RPC notification gets no reply")
 
+    def test_stdio_parser_refuses_ambiguous_and_nonstandard_json(self):
+        params = (
+            '"params":{"protocolVersion":"2025-03-26",'
+            '"capabilities":{},"clientInfo":{"name":"unit",'
+            '"version":"1"}}')
+        ambiguous = (
+            '{"jsonrpc":"2.0","id":"ambiguous","method":"ping",'
+            '"method":"initialize",' + params + '}')
+        nonstandard = (
+            '{"jsonrpc":"2.0","id":"nonstandard","method":NaN}')
+        initialize = (
+            '{"jsonrpc":"2.0","id":"init","method":"initialize",'
+            + params + '}')
+        incoming = io.StringIO(
+            ambiguous + "\n" + nonstandard + "\n" + initialize + "\n")
+        outgoing = io.StringIO()
+        old_stdin, old_stdout = siamcp.sys.stdin, siamcp.sys.stdout
+        try:
+            siamcp.sys.stdin, siamcp.sys.stdout = incoming, outgoing
+            siamcp.main()
+        finally:
+            siamcp.sys.stdin, siamcp.sys.stdout = old_stdin, old_stdout
+
+        rows = [json.loads(line) for line in outgoing.getvalue().splitlines()]
+        self.assertEqual(
+            [row.get("error", {}).get("code") for row in rows[:2]],
+            [-32700, -32700])
+        self.assertIsNone(rows[0].get("id"))
+        self.assertIsNone(rows[1].get("id"))
+        self.assertEqual(rows[2]["id"], "init")
+        self.assertIn("result", rows[2])
+
     def test_hostile_json_scalars_and_parser_limits_do_not_kill_stdio(self):
         initialize = json.dumps({
             "jsonrpc": "2.0", "id": "init", "method": "initialize",
@@ -1274,11 +1339,11 @@ class McpResources(unittest.TestCase):
         real_loads = json.loads
         calls = iter((RecursionError("nesting ceiling"), None))
 
-        def bounded_parser(value):
+        def bounded_parser(value, **kwargs):
             failure = next(calls)
             if failure is not None:
                 raise failure
-            return real_loads(value)
+            return real_loads(value, **kwargs)
 
         try:
             siamcp.sys.stdin, siamcp.sys.stdout = incoming, outgoing

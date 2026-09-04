@@ -95,6 +95,8 @@ AROUSAL = {
 SAFETY_TAGS = {"integrity-failure", "crash", "coredump", "collapse",
                "failed", "refusal"}   # flashbulb class in the attention lens
 
+_strict_json_loads = siaqueue.strict_json_loads
+
 
 def _empty_mind():
     return {"v": MIND_VERSION, "nodes": {}, "edges": {}, "ewma": {},
@@ -332,7 +334,7 @@ def load_mind(now=None):
                                                   after.st_ino):
         raise ValueError("mind state changed while read or exceeds its bound")
     try:
-        raw = json.loads(raw_bytes.decode("utf-8"))
+        raw = _strict_json_loads(raw_bytes.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("mind state is unreadable or malformed") from exc
     return migrate_mind(raw, now=now)
@@ -532,7 +534,7 @@ def save_mind(mind):
                 "mind state changed while read or exceeds its bound")
         try:
             previous = previous_bytes.decode("utf-8")
-            migrate_mind(json.loads(previous))
+            migrate_mind(_strict_json_loads(previous))
         except (UnicodeError, ValueError, RecursionError) as exc:
             raise ValueError(
                 "prior mind state is unreadable or malformed") from exc
@@ -1028,7 +1030,7 @@ def _load_touch_refusal_locked(queue_path):
         return {"schema": TOUCH_QUEUE_REFUSAL_SCHEMA, "count": 0,
                 "last": None, "receipts": {}}
     try:
-        value = json.loads(raw.decode("utf-8", errors="strict"))
+        value = _strict_json_loads(raw.decode("utf-8", errors="strict"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("touch queue refusal state is malformed") from exc
     if not isinstance(value, dict) or set(value) != {
@@ -1072,7 +1074,7 @@ def _record_touch_tail_refusal_locked(
     state["last"] = last
     encoded = json.dumps(
         state, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=True)
+        ensure_ascii=True, allow_nan=False)
     _atomic_state_text(_touch_refusal_path(queue_path), encoded)
     return state
 
@@ -1098,7 +1100,7 @@ def _repair_touch_tail_locked(path):
 
 def _parse_touch_json_line(line):
     try:
-        return json.loads(line)
+        return _strict_json_loads(line)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("touch queue contains malformed JSON") from exc
 
@@ -1908,6 +1910,10 @@ def _low_traffic_path(adj, traffic, a, b, max_hops, min_nodes=4):
 # Used out-of-process by `sia ask` against the exported graph snapshot.
 
 
+class AssociativeRerankUnavailable(RuntimeError):
+    """The configured graph lane could not influence this result set."""
+
+
 def _ppr_power_iteration(pers, adj):
     """Run the PPR power iteration and return the UN-normalised rank vector.
 
@@ -1944,7 +1950,8 @@ def _ppr_power_iteration(pers, adj):
     return rank
 
 
-def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None):
+def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None,
+               require_associative=False):
     """HippoRAG-style: dense hits seed Personalized PageRank over the typed
     graph (damping 0.5, specificity 1/deg). Dense score remains primary;
     named, benchmark-frozen gains apply PPR and ACT-R as multiplicative
@@ -1964,7 +1971,9 @@ def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None):
     if isinstance(origins, dict):
         declared_origins.update(origins)
 
-    def fallback():
+    def fallback(reason):
+        if require_associative:
+            raise AssociativeRerankUnavailable(reason)
         out = []
         for slug, score in dense_hits:
             weighted = score * ORIGIN_WEIGHT.get(origin_class(
@@ -1979,7 +1988,7 @@ def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None):
         return out
 
     if not graph or not graph.get("edges"):
-        return fallback()
+        return fallback("graph has no usable edges")
     nodes = [n["id"] for n in graph["nodes"]]
     idx = {s: i for i, s in enumerate(nodes)}
     adj = [[] for _ in nodes]
@@ -2004,13 +2013,16 @@ def ppr_rerank(graph, dense_hits, *, mind=None, now=None, origins=None):
     dmax = max(s for _, s in dense_hits) or 1.0
     pers = [0.0] * len(nodes)
     seeded = False
+    seeded_indices = []
     for slug, score in dense_hits:
         i = idx.get(slug)
         if i is not None:
             pers[i] = (score / dmax) / max(1, deg[i])
             seeded = True
-    if not seeded:
-        return fallback()        # uncertainty fallback retains origin policy
+            seeded_indices.append(i)
+    if not seeded or not any(adj[i] for i in seeded_indices):
+        return fallback(
+            "graph has no connected dense seed")
     tot = sum(pers) or 1.0
     pers = [p / tot for p in pers]
     rank = _ppr_power_iteration(pers, adj)
@@ -2095,7 +2107,8 @@ def _append_queue(record, queue_path=None):
         record = dict(record)
         deduplicate = "id" in record
         record.setdefault("id", uuid.uuid4().hex)
-        encoded = (json.dumps(record, separators=(",", ":")) + "\n") \
+        encoded = (json.dumps(
+            record, separators=(",", ":"), allow_nan=False) + "\n") \
             .encode("utf-8")
         with _touch_queue_lock(queue_path):
             total = 0

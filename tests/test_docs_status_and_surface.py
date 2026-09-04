@@ -24,6 +24,7 @@ try:
 except ModuleNotFoundError:
     from tests import sia_test_home  # type: ignore
 
+import ast
 import io
 import json
 import os
@@ -172,6 +173,26 @@ class ManualCoversTheWholeCliSurface(unittest.TestCase):
         self.assertIn("sia recall <slug> --no-touch", flat)
         # The audit rationale is the reason it exists.
         self.assertIn("audit", flat.lower())
+
+    def test_ask_docs_name_dense_default_and_optional_rerank(self):
+        section = _flat(
+            _section(_read("docs/MANUAL.md"), "## 3. The CLI")).lower()
+        tree = ast.parse(_read("bin/sia"), filename="bin/sia")
+        command = next(
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "cmd_ask")
+        docstring = _flat(ast.get_docstring(command) or "").lower()
+
+        for surface, text in (("manual", section), ("cli", docstring)):
+            with self.subTest(surface=surface):
+                self.assertIn("origin-weighted dense", text)
+                self.assertIn("measured default", text)
+                self.assertIn("retrieval.associative_rerank", text)
+                self.assertIn("optional", text)
+
+        self.assertNotIn(
+            "dense embeddings seeded through the knowledge graph", section)
 
     def test_manual_documents_every_advertised_command(self):
         section = _flat(_section(_read("docs/MANUAL.md"), "## 3. The CLI"))

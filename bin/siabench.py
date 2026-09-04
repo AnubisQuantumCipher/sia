@@ -104,7 +104,7 @@ def _engine(args, timeout=180):
         if not isinstance(result.stdout, str):
             raise ValueError("result output is not text")
         i = result.stdout.index("[")
-        payload = json.loads(result.stdout[i:])
+        payload = siaqueue.strict_json_loads(result.stdout[i:])
         if not isinstance(payload, list):
             raise ValueError("result is not a list")
         for item in payload:
@@ -1227,7 +1227,7 @@ class _CorpusWitnessResolver:
             if len(values) != 1:
                 raise ValueError("epoch lineage field is missing or duplicated")
             try:
-                return json.loads(values[0])
+                return siaqueue.strict_json_loads(values[0])
             except (UnicodeError, ValueError, RecursionError) as exc:
                 raise ValueError("epoch lineage field is malformed") from exc
 
@@ -1276,7 +1276,7 @@ class _CorpusWitnessResolver:
             return None, "event-witness-missing"
         try:
             try:
-                entry = json.loads(
+                entry = siaqueue.strict_json_loads(
                     artifact["raw"].decode("utf-8", errors="strict"))
             except (UnicodeError, ValueError, RecursionError) as exc:
                 raise ValueError("event index JSON is malformed") from exc
@@ -1923,7 +1923,7 @@ def _parse_jsonl(content, source, *, require_trailing_lf=False):
         if not line.strip():
             continue
         try:
-            row = json.loads(line)
+            row = siaqueue.strict_json_loads(line)
         except (UnicodeError, ValueError, RecursionError) as exc:
             raise BenchmarkRefusal(
                 f"benchmark JSONL row is malformed at line {line_no}") \
@@ -1969,8 +1969,8 @@ def load_dataset(dataset_dir):
         raise BenchmarkRefusal(
             "benchmark dataset contains non-UTF-8 text") from exc
     try:
-        manifest = json.loads(manifest_bytes)
-        private_manifest = json.loads(private_manifest_bytes)
+        manifest = siaqueue.strict_json_loads(manifest_bytes)
+        private_manifest = siaqueue.strict_json_loads(private_manifest_bytes)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise BenchmarkRefusal(
             "benchmark dataset manifests are malformed") from exc
@@ -2298,7 +2298,8 @@ def _verify_source_pages(bundle, corpus=None):
             data, _token, observed_digest = _read_nofollow_regular(
                 os.path.join(corpus, *relative.split("/")),
                 max_bytes=sialib.MAX_EVENT_INDEX_BYTES)
-            entry = json.loads(data.decode("utf-8", errors="strict"))
+            entry = siaqueue.strict_json_loads(
+                data.decode("utf-8", errors="strict"))
             entry = sialib._canonical_event_index_entry(entry)
             expected_relative = sialib._event_index_relative(
                 entry["organ"], entry["event_id"]).replace(os.sep, "/")

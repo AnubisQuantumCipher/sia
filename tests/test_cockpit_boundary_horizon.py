@@ -153,6 +153,8 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
             "version": "1.7.8",
             "ts": "2026-09-04T08:05:57Z",
             "state": "thinking",
+            "events_today": 0,
+            "errors": {},
             "pulse_seq": 7780,
             "pages": 1894,
             "graph_edges": 465,
@@ -170,11 +172,12 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
         return snapshot
 
     def _valid_snapshot(self, snapshot):
-        prelude = self._cockpit_logic(
-            "isNonNegativeCount", "isPlainRecord", "validMindSummary",
-            "validAgentRelay", "validLedgerSummary",
+        prelude = "var Model = { residentStatusShape: residentStatusShape }\n"
+        prelude += self._cockpit_logic(
+            "isNonNegativeCount", "isPlainRecord", "validLedgerSummary",
             "projectionDebtKnownFor", "validStatusSnapshot")
-        return self._run(prelude, "validStatusSnapshot", [snapshot])
+        return self._run(
+            prelude, "validStatusSnapshot", [snapshot], sources=("Model.js",))
 
     def test_status_validator_requires_every_field_the_vitals_render(self):
         # The vitals row prints status.pages and status.graph_edges, the
@@ -184,7 +187,8 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
         # under a boundary that claimed the status was good.
         self.assertTrue(self._valid_snapshot(self._snapshot()))
 
-        for field in ("pages", "graph_edges", "pulse_seq", "ledger"):
+        for field in ("pages", "graph_edges", "pulse_seq", "ledger",
+                      "events_today", "errors"):
             missing = self._snapshot()
             del missing[field]
             self.assertFalse(
@@ -197,6 +201,77 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
             self._snapshot(ledger={"seq": "7612", "head": "abc"})))
         self.assertFalse(self._valid_snapshot(self._snapshot(pages=-1)))
         self.assertFalse(self._valid_snapshot(self._snapshot(pages=1.5)))
+        self.assertFalse(self._valid_snapshot(
+            self._snapshot(events_today=-1)))
+        self.assertFalse(self._valid_snapshot(
+            self._snapshot(events_today=1.5)))
+        self.assertFalse(self._valid_snapshot(
+            self._snapshot(errors=[])))
+
+    def test_status_common_shape_uses_only_producer_states(self):
+        for state in ("failed", "degraded", "thinking", "ok"):
+            snapshot = self._snapshot(state=state)
+            with self.subTest(state=state):
+                self.assertTrue(
+                    self._model_call("residentStatusShape", snapshot))
+                self.assertTrue(self._valid_snapshot(snapshot))
+
+        for state in ("", "ready", "healthy", "unknown", 7, None):
+            snapshot = self._snapshot(state=state)
+            with self.subTest(state=state):
+                self.assertFalse(
+                    self._model_call("residentStatusShape", snapshot))
+                self.assertFalse(self._valid_snapshot(snapshot))
+
+        impossible = self._snapshot(ts="2026-02-30T08:05:57Z")
+        self.assertFalse(self._model_call(
+            "residentStatusShape", impossible))
+        self.assertFalse(self._valid_snapshot(impossible))
+
+    def test_ahead_runtime_evidence_survives_status_render_rejection(self):
+        status = self._snapshot(version="1.7.9", state="sleeping")
+        completion = {"v": 1, "state": "ready", "version": "1.7.8"}
+        self.assertFalse(self._valid_snapshot(status))
+
+        evidence = self._model_call(
+            "runtimeLifecycleEvidence", status, False, None, "1.7.8")
+
+        self.assertEqual(evidence, {"version": "1.7.9"})
+        self.assertEqual(self._model_call(
+            "guidedLifecycle", evidence, completion, "1.7.8"), "ahead")
+        for surface in ("Cockpit.qml", "Panel.qml"):
+            source = _read(surface)
+            apply_status = " ".join(
+                _qml_function(source, "applyStatus").split())
+            status_file = " ".join(
+                _qml_element(source, "id: statusFile").split())
+            compact = " ".join(source.split())
+            with self.subTest(surface=surface):
+                self.assertIn("property var runtimeEvidence: null", source)
+                self.assertIn(
+                    "Model.runtimeLifecycleEvidence( parsed, valid, "
+                    "root.runtimeEvidence, root.pluginVersion)",
+                    apply_status)
+                self.assertIn(
+                    "Model.runtimeLifecycleEvidence( null, false, "
+                    "root.runtimeEvidence, root.pluginVersion)",
+                    apply_status)
+                self.assertIn(
+                    "Model.runtimeLifecycleEvidence( null, false, "
+                    "root.runtimeEvidence, root.pluginVersion)",
+                    status_file)
+                self.assertIn(
+                    "Model.guidedLifecycle(root.runtimeEvidence, "
+                    "root.installCompletion, root.pluginVersion)", compact)
+
+        cockpit = " ".join(_read("Cockpit.qml").split())
+        self.assertIn(
+            "Model.runtimeLifecycle(root.runtimeEvidence, "
+            "root.pluginVersion)", cockpit)
+
+        body = _qml_function(_read("Cockpit.qml"), "validStatusSnapshot")
+        self.assertIn("Model.residentStatusShape(snapshot)", body)
+        self.assertNotIn("snapshot.state", body)
 
     def test_tightening_the_shape_did_not_strand_legacy_upgrades(self):
         # statusLoadValid gates what guidedLifecycle is even shown, so
@@ -229,11 +304,19 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
 
     # ------------------------------------------------------- finding 6
 
-    def _valid_stream(self, stream):
-        prelude = self._cockpit_logic(
+    def _valid_stream(self, stream, now="2026-09-04T08:05:57Z"):
+        prelude = "var Model = { timestampObservedBy: timestampObservedBy }\n"
+        prelude += self._cockpit_logic(
             "isPlainRecord", "validOriginLabel", "validThought",
             "validThoughtStream")
-        return self._run(prelude, "validThoughtStream", [stream])
+        prelude += """
+function validThoughtStreamAt(stream, nowIso) {
+  return validThoughtStream(stream, Date.parse(nowIso))
+}
+"""
+        return self._run(
+            prelude, "validThoughtStreamAt", [stream, now],
+            sources=("Model.js",))
 
     def _thought(self, **overrides):
         thought = {
@@ -270,6 +353,17 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
             {"v": 1, "thoughts": [self._thought(origin="invented")]}))
         self.assertFalse(self._valid_stream(
             {"v": 1, "thoughts": [self._thought(urgent="false")]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(ts="not-a-date")]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(
+                ts="2026-02-30T08:05:57Z")]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(
+                ts="09/04/2026 07:34:01")]}))
+        self.assertFalse(self._valid_stream(
+            {"v": 1, "thoughts": [self._thought(
+                ts="2999-09-04T08:05:57Z")]}))
         self.assertFalse(self._valid_stream({"v": 1, "thoughts": "no"}))
         self.assertFalse(self._valid_stream({"thoughts": []}))
         self.assertFalse(self._valid_stream(None))
@@ -286,7 +380,7 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
     def test_thought_stream_failure_sets_a_boundary_and_keeps_last_good(self):
         cockpit = _read("Cockpit.qml")
         apply_body = _qml_function(cockpit, "applyThoughts")
-        self.assertIn("validThoughtStream", apply_body)
+        self.assertIn("validThoughtStream(t, Date.now())", apply_body)
         self.assertIn("thoughtsRejected()", apply_body)
         # The silent catch(e){} was the whole defect: a truncated read froze
         # the stream with no mark on screen at all.
@@ -301,6 +395,65 @@ class CockpitBoundaryHorizonTests(unittest.TestCase):
                        'visible: root.thoughtsBoundary !== ""',
                        "text: root.thoughtsBoundary"):
             self._contains(cockpit, needle, "Cockpit.qml")
+
+    def test_invalid_or_future_times_never_look_recent_or_fresh(self):
+        wrapper = """
+function timeAgoAt(stamp, nowIso) {
+  return timeAgo(stamp, Date.parse(nowIso))
+}
+function freshnessAt(stamp, nowIso) {
+  return freshness({ts: stamp}, Date.parse(nowIso))
+}
+"""
+        now = "2026-09-04T08:05:57Z"
+        for stamp in (
+                "", "not-a-date", "2026-02-30T08:05:57Z",
+                "09/04/2026 08:05:57", "2999-09-04T08:05:57Z"):
+            with self.subTest(stamp=stamp):
+                self.assertEqual(self._run(
+                    wrapper, "timeAgoAt", [stamp, now],
+                    sources=("Model.js",)), "")
+                self.assertEqual(self._run(
+                    wrapper, "freshnessAt", [stamp, now],
+                    sources=("Model.js",)), 0)
+
+        self.assertEqual(self._run(
+            wrapper, "timeAgoAt", [now, "not-a-date"],
+            sources=("Model.js",)), "")
+        self.assertEqual(self._run(
+            wrapper, "freshnessAt", [now, "not-a-date"],
+            sources=("Model.js",)), 0)
+        self.assertNotEqual(self._run(
+            wrapper, "timeAgoAt", [now, now], sources=("Model.js",)), "")
+        self.assertGreater(self._run(
+            wrapper, "freshnessAt", [now, now], sources=("Model.js",)), 0)
+
+    def test_rejected_status_never_paints_zero_or_clear(self):
+        cockpit = _read("Cockpit.qml")
+        start = cockpit.index("readonly property string eventsToday:")
+        events = cockpit[start:cockpit.index("\n  readonly", start + 1)]
+        self.assertIn("root.statusLoadValid", events)
+        self.assertIn(': "—"', events)
+        self.assertNotIn(": 0", events)
+
+        marker = 'text: "published snapshot sensors reporting ✓'
+        marker_at = cockpit.index(marker)
+        visible_at = cockpit.rfind("visible:", 0, marker_at)
+        clear_rule = cockpit[visible_at:marker_at]
+        self.assertIn("root.statusLoadValid", clear_rule)
+        self.assertIn("root.isPlainRecord(root.status.errors)", clear_rule)
+        self.assertNotIn("!root.status.errors", clear_rule)
+
+        errors_at = cockpit.index("Object.keys(root.status.errors).sort()")
+        model_at = cockpit.rfind("model:", 0, errors_at)
+        error_rule = cockpit[model_at:errors_at]
+        self.assertIn("root.statusLoadValid", error_rule)
+        self.assertIn("root.isPlainRecord(root.status.errors)", error_rule)
+
+        state_start = cockpit.index("readonly property string brainState:")
+        state_rule = cockpit[
+            state_start:cockpit.index("\n  readonly", state_start + 1)]
+        self.assertIn("statusLoadValid", state_rule)
 
     # ------------------------------------------------------- finding 5
 

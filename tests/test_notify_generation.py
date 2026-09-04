@@ -183,6 +183,107 @@ class NotificationGenerationScan(unittest.TestCase):
             cursors["notify.generation"],
             self.sialib._source_tree_path_generation(self.history))
 
+    def test_ambiguous_notification_json_refuses_the_generation(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        completed = dict(cursors["notify.generation"])
+        ambiguous = os.path.join(self.history, "ambiguous.json")
+        with open(ambiguous, "w") as stream:
+            stream.write(
+                '{"app":"fixture","summary":"safe",'
+                '"summary":"private"}')
+
+        events = self._finish_scan(cursors)
+
+        self.assertTrue(any(event.kind == "source-entry-refused"
+                            for event in events))
+        self.assertFalse(any(event.kind == "notification"
+                             for event in events))
+        self.assertNotIn("private", " ".join(
+            event.summary for event in events))
+        self.assertEqual(cursors["notify.generation"], completed)
+        self.assertTrue(cursors["notify.scan_tainted"])
+
+    def test_notification_schema_refuses_nontext_nonfinite_and_invalid_unicode(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        completed = dict(cursors["notify.generation"])
+        candidate = os.path.join(self.history, "candidate.json")
+        overbound = ("x" * self.sialib.MAX_CONFIG_TEXT_CHARS) + "x"
+        cases = (
+            '{"app":"fixture","summary":1e999}',
+            '{"app":"fixture","summary":-1e999}',
+            '{"app":"fixture","summary":{"private":"nested"}}',
+            '{"app":{"private":"nested"},"summary":"safe"}',
+            '{"app":"fixture","summary":"\\ud800"}',
+            json.dumps({"app": "fixture", "summary": overbound}),
+        )
+        for raw in cases:
+            with self.subTest(raw=raw):
+                with open(candidate, "w", encoding="utf-8") as stream:
+                    stream.write(raw)
+
+                events = self._finish_scan(cursors)
+
+                self.assertTrue(any(event.kind == "source-entry-refused"
+                                    for event in events))
+                self.assertFalse(any(event.kind == "notification"
+                                     for event in events))
+                self.assertNotIn("private", " ".join(
+                    event.summary for event in events))
+                self.assertEqual(cursors["notify.generation"], completed)
+                self.assertTrue(cursors["notify.scan_tainted"])
+
+    def test_late_refusal_discards_earlier_page_notifications(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        completed = dict(cursors["notify.generation"])
+        self._write("alpha.json")
+        refused = os.path.join(self.history, "zulu.json")
+        with open(refused, "w") as stream:
+            stream.write('{"app":"fixture","summary":NaN}')
+
+        first = self.sialib.sense_notify(cursors)
+        events = first + self._finish_scan(cursors)
+
+        self.assertFalse(any(event.kind == "notification"
+                             for event in events))
+        self.assertTrue(any(event.kind == "source-entry-refused"
+                            for event in events))
+        self.assertEqual(cursors["notify.generation"], completed)
+        self.assertTrue(cursors["notify.scan_tainted"])
+
+    def test_orphan_scan_candidate_is_discarded_before_generation_gate(self):
+        self._write("baseline.json")
+        cursors = {}
+        self.assertEqual(self._finish_scan(cursors), [])
+        cursors["notify.scan"] = {"laundered": "second authority"}
+
+        with mock.patch.object(
+                self.sialib, "_bounded_source_entries",
+                side_effect=AssertionError("unchanged generation rescanned")):
+            self.assertEqual(self.sialib.sense_notify(cursors), [])
+
+        self.assertNotIn("notify.scan", cursors)
+
+    def test_source_record_json_rejects_nonfinite_numbers(self):
+        path = os.path.join(self.history, "constant.json")
+        for raw in (
+                '{"app":"fixture","summary":NaN}',
+                '{"app":"fixture","summary":Infinity}',
+                '{"app":"fixture","summary":-Infinity}',
+                '{"app":"fixture","summary":1e999}',
+                '{"app":"fixture","summary":-1e999}'):
+            with self.subTest(raw=raw):
+                with open(path, "w") as stream:
+                    stream.write(raw)
+                with self.assertRaisesRegex(ValueError, "is malformed"):
+                    self.sialib._read_bounded_source_json(
+                        path, "notification fixture")
+
     def test_removed_high_water_model_has_no_second_cursor_authority(self):
         with open(os.path.join(BIN, "sialib.py"), encoding="utf-8") as stream:
             source = stream.read()

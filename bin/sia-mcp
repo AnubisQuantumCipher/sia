@@ -13,6 +13,9 @@ labeled and weighted below evidence by construction.
 import datetime, json, math, os, re, selectors, signal, subprocess, sys, time
 import urllib.parse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import siaqueue
+
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
 STATE = os.path.join(HOME, ".local/state/sia")
@@ -911,7 +914,7 @@ def main():
         if not line:
             continue
         try:
-            payload = json.loads(line)
+            payload = siaqueue.strict_json_loads(line)
         # The stdlib parser can also reject a deeply nested value or an
         # integer token beyond Python's configured digit ceiling.  Both are
         # malformed protocol input, not reasons to terminate the server.

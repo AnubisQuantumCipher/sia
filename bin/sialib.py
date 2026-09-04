@@ -72,6 +72,8 @@ MAX_STATE_JSON_BYTES = 16_777_216
 
 CONFIG_ERRORS = []
 
+_strict_json_loads = siaqueue.strict_json_loads
+
 
 def _record_config_error(code):
     if not isinstance(code, str) or not code \
@@ -92,6 +94,115 @@ def _strict_config_string(value, *, nonempty=False, limit=None):
     except UnicodeError:
         return False
     return True
+
+
+_CUSTOM_SENSE_ENTRY_KEYS = frozenset({
+    "_comment", "name", "organ", "description", "path", "type",
+    "enabled", "match", "exclude", "field", "kind", "tags",
+})
+
+
+def _validated_custom_match_literals(value, *, field="match"):
+    """Return the one finite literal grammar shared by every config user."""
+    if field not in {"match", "exclude"}:
+        raise ValueError("custom literal field is invalid")
+    if value is None or value == "":
+        return ()
+    if not _strict_config_string(value, limit=MAX_CONFIG_TEXT_CHARS):
+        raise ValueError(f"{field} must be a bounded string")
+    alternatives = value.split("|")
+    if len(alternatives) > MAX_CONFIG_TAGS \
+            or any(not literal for literal in alternatives):
+        raise ValueError(
+            f"{field} must contain bounded non-empty literal alternatives")
+    regex_operators = set(r"\.^$*+?{}[]()")
+    if any(regex_operators.intersection(literal)
+           for literal in alternatives):
+        raise ValueError(
+            f"{field} supports literal alternatives only, not regex syntax")
+    return tuple(alternatives)
+
+
+def _validated_custom_sense_entry(value):
+    """Validate and normalize one custom source for sensing and its organ."""
+    if not isinstance(value, dict):
+        raise ValueError("configuration entry must be an object")
+    if any(key not in _CUSTOM_SENSE_ENTRY_KEYS for key in value):
+        raise ValueError("configuration entry has unknown keys")
+    if "enabled" in value and not isinstance(value["enabled"], bool):
+        raise ValueError("enabled must be boolean")
+    if value.get("enabled") is False:
+        return None
+
+    description = value.get("description", "custom evidence stream")
+    if not _strict_config_string(
+            description, limit=MAX_CONFIG_TEXT_CHARS):
+        raise ValueError("description must be a bounded string")
+    if not _strict_config_string(
+            value.get("name"), nonempty=True,
+            limit=MAX_CONFIG_TEXT_CHARS):
+        raise ValueError("name must be a non-empty string")
+    name = sanitize_slugpart(value["name"])
+    source_id = f"sense_custom:{name}"
+    if len(name) > MAX_SOURCE_NAME_CHARS \
+            or len(source_id) > MAX_SOURCE_NAME_CHARS:
+        raise ValueError("name exceeds its canonical source bound")
+
+    organ_value = value.get("organ", name)
+    if not _strict_config_string(
+            organ_value, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS):
+        raise ValueError("organ must be a non-empty string")
+    organ = sanitize_slugpart(organ_value)
+    if len(organ) > MAX_SOURCE_NAME_CHARS:
+        raise ValueError("organ exceeds its canonical bound")
+
+    path_value = value.get("path")
+    if not _strict_config_string(
+            path_value, nonempty=True, limit=MAX_CONFIG_PATH_CHARS):
+        raise ValueError("path must be a non-empty string")
+    stream_type = value.get("type", "lines")
+    if stream_type not in {"lines", "jsonl"}:
+        raise ValueError("type must be lines or jsonl")
+    match_literals = _validated_custom_match_literals(value.get("match"))
+    exclude_literals = _validated_custom_match_literals(
+        value.get("exclude"), field="exclude")
+
+    field = value.get("field", "message")
+    if not _strict_config_string(
+            field, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
+        raise ValueError("field must be a non-empty string")
+    kind_value = value.get("kind", "event")
+    if not _strict_config_string(
+            kind_value, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS):
+        raise ValueError("kind must be a non-empty string")
+    kind = sanitize_slugpart(kind_value)
+    if len(kind) > MAX_SOURCE_NAME_CHARS:
+        raise ValueError("kind exceeds its canonical bound")
+
+    tags_value = value.get("tags", [])
+    if not isinstance(tags_value, list) \
+            or len(tags_value) > MAX_CONFIG_TAGS \
+            or any(not _strict_config_string(
+                       tag, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS)
+                   for tag in tags_value):
+        raise ValueError("tags must be a list of non-empty strings")
+    tags = {sanitize_slugpart(tag) for tag in tags_value} | {organ}
+    if any(len(tag) > MAX_SOURCE_NAME_CHARS for tag in tags):
+        raise ValueError("tag exceeds its canonical bound")
+
+    return {
+        "name": name,
+        "source_id": source_id,
+        "organ": organ,
+        "description": description,
+        "path": os.path.expanduser(path_value),
+        "stream_type": stream_type,
+        "match_literals": match_literals,
+        "exclude_literals": exclude_literals,
+        "field": field,
+        "kind": kind,
+        "tags": tags,
+    }
 
 def load_config():
     CONFIG_ERRORS.clear()
@@ -126,7 +237,7 @@ def load_config():
             _record_config_error("config-invalid-utf8")
             return {}
         try:
-            value = json.loads(text)
+            value = _strict_json_loads(text)
         except (UnicodeError, ValueError, RecursionError):
             _record_config_error("config-invalid-json")
             return {}
@@ -285,26 +396,18 @@ def _build_organs():
     if not isinstance(configured, list) \
             or len(configured) > MAX_CONFIG_BYTES:
         configured = []
+    seen_custom_names = set()
     for cs in configured:
-        if not isinstance(cs, dict) or cs.get("enabled") is False \
-                or ("enabled" in cs
-                    and not isinstance(cs.get("enabled"), bool)):
+        try:
+            normalized = _validated_custom_sense_entry(cs)
+        except ValueError:
             continue
-        name = cs.get("name")
-        organ = cs.get("organ", name)
-        description = cs.get("description", "custom evidence stream")
-        if not _strict_config_string(
-                name, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
-                or not _strict_config_string(
-                    organ, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
-                or not _strict_config_string(
-                    description, limit=MAX_CONFIG_TEXT_CHARS):
+        if normalized is None or normalized["name"] in seen_custom_names:
             continue
-        o = sanitize_slugpart(organ)
-        if len(o) > MAX_SOURCE_NAME_CHARS \
-                or re.fullmatch(r"[a-z0-9_][a-z0-9._-]*", o) is None:
-            continue
-        organs.setdefault(o, (o, description))
+        seen_custom_names.add(normalized["name"])
+        organ = normalized["organ"]
+        organs.setdefault(
+            organ, (organ, normalized["description"]))
     for key in disabled:
         organs.pop(key, None)
     return organs
@@ -499,18 +602,9 @@ def read_json(path, default):
                     after.st_mtime_ns, after.st_ctime_ns)
         if observed != finished or len(raw) > MAX_STATE_JSON_BYTES:
             return default
-        return json.loads(raw.decode("utf-8"))
+        return _strict_json_loads(raw.decode("utf-8"))
     except (OSError, UnicodeError, ValueError, RecursionError):
         return default
-
-
-def _strict_json_object(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError("duplicate JSON key")
-        value[key] = item
-    return value
 
 
 def read_state_json(path, default, label):
@@ -551,9 +645,7 @@ def read_state_json(path, default, label):
                 if observed != finished or len(raw) > MAX_STATE_JSON_BYTES:
                     raise RuntimeError(
                         f"{label} state changed while read or exceeds its bound")
-                value = json.loads(
-                    raw.decode("utf-8"),
-                    object_pairs_hook=_strict_json_object)
+                value = _strict_json_loads(raw.decode("utf-8"))
         except (OSError, UnicodeError, ValueError, RecursionError) as exc:
             raise RuntimeError(
                 f"{label} state is unreadable or malformed") from exc
@@ -1102,7 +1194,7 @@ def _read_thought_inbox(path):
     if observed != finished or len(raw) > MAX_THOUGHT_INBOX_BYTES:
         raise ValueError("thought inbox changed while read or exceeds its bound")
     try:
-        inbox = json.loads(raw.decode("utf-8"))
+        inbox = _strict_json_loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("thought inbox is malformed") from exc
     if not isinstance(inbox, list) or len(inbox) > MAX_THOUGHT_INBOX_ITEMS:
@@ -1461,7 +1553,7 @@ def load_cursors():
     return read_state_json(CURSORS_PATH, {}, "evidence cursor")
 
 def save_cursors(c):
-    encoded = json.dumps(c, indent=1, sort_keys=True)
+    encoded = json.dumps(c, indent=1, sort_keys=True, allow_nan=False)
     if len(encoded.encode("utf-8")) > MAX_STATE_JSON_BYTES:
         raise ValueError("evidence cursor state exceeds its byte bound")
     atomic_write(CURSORS_PATH, encoded)
@@ -1939,15 +2031,18 @@ def _source_entity_token(value, namespace):
     return prefix + "_h" + hashlib.sha256(raw_bytes).hexdigest()
 
 
-def _bounded_source_state(cursors, key, namespace):
+def _bounded_source_state(cursors, key, namespace, *, value_validator=None):
     """Load a bounded versioned map whose keys are already canonical tokens."""
+    present = key in cursors
     raw = cursors.get(key)
-    if raw is None:
+    tagged = False
+    if not present:
         entries = {}
     elif isinstance(raw, list) and len(raw) == 2 \
             and raw[0] == "sia-source-entity-state-v1" \
             and isinstance(raw[1], dict):
         entries = raw[1]
+        tagged = True
     elif isinstance(raw, dict):
         # Pre-schema maps already persisted lossy canonical tokens. Preserve
         # each valid key exactly for a one-time conservative migration; the
@@ -1961,13 +2056,19 @@ def _bounded_source_state(cursors, key, namespace):
         if len(state) >= MAX_SOURCE_SCAN_ENTRIES:
             truncated = True
             break
-        if not isinstance(source_key, str) \
-                or re.fullmatch(r"[a-z0-9_][a-z0-9._-]*", source_key) is None \
-                or len(source_key) > MAX_SOURCE_NAME_CHARS \
-                or len(source_key.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
+        canonical_key = isinstance(source_key, str) \
+            and re.fullmatch(
+                r"[a-z0-9_][a-z0-9._-]*", source_key) is not None \
+            and len(source_key) <= MAX_SOURCE_NAME_CHARS \
+            and len(source_key.encode("utf-8")) <= MAX_CORPUS_LEAF_BYTES
+        if tagged and not canonical_key:
+            raise ValueError(f"source cursor {key} is invalid")
+        if not canonical_key:
             token = _source_entity_token(source_key, namespace)
         else:
             token = source_key
+        if value_validator is not None and not value_validator(value):
+            raise ValueError(f"source cursor {key} is invalid")
         state.setdefault(token, value)
     # A tagged list is structurally disjoint from every legacy map, so a pair
     # of unlucky source IDs cannot masquerade as the cursor wrapper itself.
@@ -2061,7 +2162,7 @@ def _read_bounded_source_json(path, label):
                                                   after.st_ino):
         raise RuntimeError(f"{label} changed while reading")
     try:
-        value = json.loads(raw.decode("utf-8"))
+        value = _strict_json_loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is malformed") from exc
     if not isinstance(value, dict):
@@ -2861,7 +2962,7 @@ class ConsolidationCapacityError(RuntimeError):
 
 def _parse_sia_counts(raw, label):
     try:
-        counts = json.loads(raw)
+        counts = _strict_json_loads(raw)
     except (TypeError, UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} sia_counts is malformed") from exc
     if not isinstance(counts, dict) or any(
@@ -3172,7 +3273,7 @@ def _read_event_index_entry(organ, event_id):
     if observed != finished or len(raw) > MAX_EVENT_INDEX_BYTES:
         raise ValueError("consolidated event index entry changed while read")
     try:
-        entry = json.loads(raw.decode("utf-8"))
+        entry = _strict_json_loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("consolidated event index entry is malformed") from exc
     entry = _canonical_event_index_entry(entry)
@@ -3589,11 +3690,12 @@ def gbrain(args, timeout=120, json_out=False):
         r = _FailedRun(reason)
     if json_out:
         try:
-            return json.loads(r.stdout[r.stdout.index("["):] if "[" in r.stdout
-                              else r.stdout)
+            return _strict_json_loads(
+                r.stdout[r.stdout.index("["):] if "[" in r.stdout
+                else r.stdout)
         except Exception:
             try:
-                return json.loads(r.stdout[r.stdout.index("{"):])
+                return _strict_json_loads(r.stdout[r.stdout.index("{"):])
             except Exception:
                 return None
     return r
@@ -3617,7 +3719,7 @@ def _gbrain_call_unlocked(op, params, timeout=120, owner_fd=None):
         i = out.find(opener)
         if i >= 0:
             try:
-                return json.loads(out[i:])
+                return _strict_json_loads(out[i:])
             except Exception:
                 continue
     return None
@@ -3794,6 +3896,14 @@ def _chain_cmds():
         if not isinstance(c, dict):
             _invalid_chain_binding(chains, c,
                                    "chain entry must be an object")
+            continue
+        allowed = {
+            "_comment", "name", "ledger", "verifier", "verify", "enabled"}
+        unknown = sorted(set(c) - allowed)
+        if unknown:
+            _invalid_chain_binding(
+                chains, c, "chain entry has unknown keys: "
+                + ", ".join(str(key) for key in unknown))
             continue
         if c.get("enabled") is False:
             continue
@@ -4065,7 +4175,7 @@ def _read_pending_record(path):
     if observed != finished or len(raw) > MAX_LEDGER_PENDING_RECORD_BYTES:
         raise ValueError("ledger recovery record changed while read")
     try:
-        record = json.loads(raw.decode("utf-8"))
+        record = _strict_json_loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("ledger recovery record is malformed") from exc
     if not isinstance(record, dict) or record.get("schema") not in {
@@ -4538,11 +4648,11 @@ del _sialib_graph_name
 def export_status(st):
     snapshot = dict(st)
     snapshot["version"] = VERSION
-    atomic_write(STATUS_PATH, json.dumps(snapshot))
+    atomic_write(STATUS_PATH, json.dumps(snapshot, allow_nan=False))
 
 
 def export_thoughts(store):
-    atomic_write(THOUGHTS_PATH, json.dumps(store))
+    atomic_write(THOUGHTS_PATH, json.dumps(store, allow_nan=False))
 
 
 # ---------------------------------------------------------------- pulse
@@ -4584,7 +4694,7 @@ def load_memo():
     if observed != finished or len(raw) > MAX_MEMO_BYTES:
         raise RuntimeError("brainstem memo changed while read")
     try:
-        value = json.loads(raw)
+        value = _strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise RuntimeError("brainstem memo is unreadable or malformed") \
             from exc
@@ -4594,7 +4704,7 @@ def load_memo():
 
 
 def _memo_text(value):
-    encoded = json.dumps(value)
+    encoded = json.dumps(value, allow_nan=False)
     if len(encoded.encode("utf-8")) > MAX_MEMO_BYTES:
         raise ValueError("brainstem memo exceeds its byte bound")
     return encoded
@@ -5212,7 +5322,7 @@ def _bench_trend_snapshot(path=None, include_metadata=False):
         legacy_truncated = False
     for line in lines:
         try:
-            record = json.loads(line)
+            record = _strict_json_loads(line)
             date = record.get("date")
             metric = record.get("slug_match_at_5_blend")
             if metric is None:
@@ -7397,7 +7507,7 @@ def _epoch_json_field(frontmatter, key, label, default):
     if len(values) != 1:
         raise RuntimeError(f"{label} has duplicate {key}")
     try:
-        return json.loads(values[0])
+        return _strict_json_loads(values[0])
     except (TypeError, UnicodeError, ValueError, RecursionError) as exc:
         raise RuntimeError(f"{label} {key} is malformed") from exc
 
@@ -8465,7 +8575,7 @@ def _append_bench_trend_once(record, receipt_id):
     valid_lines = []
     for line in lines:
         try:
-            prior = json.loads(line)
+            prior = _strict_json_loads(line)
         except (TypeError, UnicodeError, ValueError, RecursionError):
             legacy_truncated = True
             continue
@@ -8890,7 +9000,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
             i = r.stdout.find(opener)
             if i >= 0:
                 try:
-                    parsed = json.loads(r.stdout[i:])
+                    parsed = _strict_json_loads(r.stdout[i:])
                     if isinstance(parsed, dict):
                         rep = parsed
                 except Exception:

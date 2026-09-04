@@ -311,11 +311,11 @@ Everything lives under one command: `sia`.
 sia status                    # one-screen state
 sia version                   # the installed SIA runtime release
 sia ready                     # exit nonzero unless memory is reconciled
-sia ask "question"            # semantic recall: dense embeddings seeded
-                              #   through the knowledge graph (spreading
-                              #   activation) and re-ranked by ACT-R
-                              #   activation. Recalling STRENGTHENS the
-                              #   memories returned (reconsolidation).
+sia ask "question"            # origin-weighted dense recall is the measured
+                              #   default. The optional, configuration-
+                              #   dependent retrieval.associative_rerank
+                              #   enables graph PPR + ACT-R reranking.
+                              #   Recalling STRENGTHENS returned memories.
 sia query "question"          # alias for ask; identical behavior
 sia ask "question" --no-touch # same answer, no reinforcement (see below)
 sia recall <slug>             # read one memory page verbatim
@@ -325,9 +325,11 @@ sia graph                     # graph snapshot statistics
 sia context                   # bounded context pack for agents/sessions
 ```
 
-Notes on `ask`: results show a blended score; "no matches" is not proof of
-absence — the brain only finds what shares meaning with your words. If
-ollama is down, search degrades to keyword-only and says so.
+Notes on `ask`: the measured default uses origin-weighted dense ordering.
+The optional `retrieval.associative_rerank` configuration adds graph PPR and
+ACT-R reranking. "No matches" is not proof of absence — the brain only finds
+what shares meaning with your words. If ollama is down, search degrades to
+keyword-only and says so.
 
 **`--no-touch` — reading without reinforcing.** An ordinary `ask` or
 `recall` is a write: it strengthens the memories it returned, which is the

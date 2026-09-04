@@ -68,6 +68,7 @@ class CapsuleBoundaryTests(unittest.TestCase):
                     "1 " + self.ledger_head + "\n")
         self._write(os.path.join(self.corpus, "memory.md"), "remember me\n")
         os.mkdir(os.path.join(self.corpus, ".git"), 0o700)
+
         self._write(os.path.join(self.corpus, ".git", "HEAD"),
                     "ref: refs/heads/main\n")
         self._write(os.path.join(self.corpus, "legitimate.lock"),
@@ -142,6 +143,16 @@ class CapsuleBoundaryTests(unittest.TestCase):
             patcher.start()
         self._publish_gbrain_fixture()
         self._publish_receipt()
+
+    def test_capsule_json_decoder_refuses_ambiguity_and_constants(self):
+        for raw in (
+                b'{"state":"safe","state":"private"}',
+                b'{"state":NaN}',
+                b'{"state":Infinity}',
+                b'{"state":-Infinity}'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                    ValueError, "^capsule fixture is not strict JSON$"):
+                siacapsule._strict_json(raw, "capsule fixture")
 
     def tearDown(self):
         for patcher in reversed(self.patches):

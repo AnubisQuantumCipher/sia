@@ -135,6 +135,32 @@ class DispatchAndOwnership(unittest.TestCase):
                 output.getvalue(),
                 "proposal rejected: payload is malformed JSON\n")
 
+    def test_agent_proposal_refuses_ambiguous_and_nonstandard_json(self):
+        ambiguous = (
+            '{"claim":"safe","claim":"private","confidence":0.7,'
+            '"deadline":"2026-12-31","domain":"general",'
+            '"proposed":"agent","source":"sia/cortex"}')
+        nonstandard = (
+            '{"claim":"safe","confidence":NaN,'
+            '"deadline":"2026-12-31","domain":"general",'
+            '"proposed":"agent","source":"sia/cortex"}')
+        for raw in (ambiguous, nonstandard):
+            output = io.StringIO()
+            with self.subTest(raw=raw), \
+                    mock.patch.object(
+                        siatakes, "validate_proposal",
+                        return_value={"proposal_id": "a" * 20}) as validate, \
+                    mock.patch.object(siatakes, "locked_proposals") as locked, \
+                    contextlib.redirect_stdout(output):
+                result = sia.cmd_agent_propose(raw)
+            self.assertEqual(result, 2)
+            self.assertEqual(
+                output.getvalue(),
+                "proposal rejected: payload is malformed JSON\n")
+            validate.assert_not_called()
+            locked.assert_not_called()
+            self.assertNotIn("private", output.getvalue())
+
     def test_gated_dispatch_holds_one_reentrant_corpus_lease(self):
         trace = []
         held = {"value": False}
@@ -363,6 +389,39 @@ class DispatchAndOwnership(unittest.TestCase):
 
 
 class HonestStatusLanguage(unittest.TestCase):
+    def test_health_footer_refuses_malformed_snapshot_shapes_without_crashing(self):
+        cases = (
+            ([], {}),
+            ({}, []),
+            ({"ts": "2026-01-01T00:00:00Z", "integrity": []}, {}),
+            ({"ts": "2026-01-01T00:00:00Z", "errors": []},
+             {"snapshot": []}),
+            ({"ts": "2026-01-01T00:00:00Z",
+              "redactions": {"fixture": "many"}}, {}),
+        )
+        for status, graph in cases:
+            with self.subTest(status=status, graph=graph), \
+                    mock.patch.object(
+                        sia.sialib, "read_json",
+                        side_effect=(status, graph)):
+                footer = sia._health_footer()
+            self.assertTrue(footer.startswith("boundary: "))
+            self.assertIn("absence of recall", footer)
+            self.assertNotIn("graph complete", footer)
+
+    def test_health_footer_never_calls_a_future_snapshot_live(self):
+        status = {
+            "ts": "9999-12-31T23:59:59Z",
+            "integrity": {"verdict": "unknown"},
+        }
+        with mock.patch.object(
+                sia.sialib, "read_json", side_effect=(status, {})):
+            footer = sia._health_footer()
+        self.assertNotIn("senses live", footer)
+        self.assertIn("SENSES STALE", footer)
+        self.assertIn("future timestamp", footer)
+        self.assertNotRegex(footer, r"STALE \(-[0-9]+m\)")
+
     def test_ask_refuses_malformed_json_without_unlabeled_fallback(self):
         result = types.SimpleNamespace(returncode=0, stdout="not-json",
                                        stderr="")
@@ -377,6 +436,30 @@ class HonestStatusLanguage(unittest.TestCase):
         query.assert_called_once()
         self.assertIn("result admission failed", errors.getvalue())
         self.assertIn("boundary: refused", output.getvalue())
+
+    def test_ask_refuses_ambiguous_and_nonstandard_engine_json(self):
+        cases = (
+            '[{"slug":"events/safe","slug":"events/private",'
+            '"score":1,"type":"event-day","title":"private",'
+            '"chunk_text":"private"}]',
+            '[{"slug":"events/safe","score":NaN,"type":"event-day",'
+            '"title":"safe","chunk_text":"safe"}]',
+        )
+        for raw in cases:
+            result = types.SimpleNamespace(
+                returncode=0, stdout=raw, stderr="")
+            output, errors = io.StringIO(), io.StringIO()
+            with self.subTest(raw=raw), \
+                    mock.patch.object(sia, "_gbrain_query",
+                                      return_value=result), \
+                    mock.patch.object(sia, "_health_footer",
+                                      return_value="boundary: refused"), \
+                    contextlib.redirect_stdout(output), \
+                    contextlib.redirect_stderr(errors):
+                self.assertEqual(sia.cmd_ask("memory", touch=False), 1)
+            self.assertIn("memory engine JSON is malformed", errors.getvalue())
+            self.assertNotIn("private", output.getvalue())
+            self.assertIn("boundary: refused", output.getvalue())
 
     def test_ask_parser_limits_use_a_clean_admission_refusal(self):
         result = types.SimpleNamespace(returncode=0, stdout="[]", stderr="")
@@ -423,6 +506,52 @@ class HonestStatusLanguage(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("[model] thoughts/model", rendered)
         self.assertIn("origin-safe fallback", rendered)
+
+    def test_enabled_rerank_labels_empty_and_unseedable_graph_fallbacks(self):
+        result = types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{
+                "slug": "events/selected", "score": 1,
+                "type": "event-day", "title": "selected",
+                "chunk_text": "memory",
+            }]), stderr="")
+        graphs = (
+            None,
+            {},
+            {
+                "nodes": [
+                    {"id": "events/other-a", "t": "event-day"},
+                    {"id": "events/other-b", "t": "event-day"},
+                ],
+                "edges": [{
+                    "s": "events/other-a", "d": "events/other-b",
+                    "t": "related",
+                }],
+            },
+        )
+        mind = sys.modules["siamind"]
+        for graph in graphs:
+            output = io.StringIO()
+            with self.subTest(graph=graph), \
+                    mock.patch.object(sia, "_gbrain_query",
+                                      return_value=result), \
+                    mock.patch.object(sia.sialib, "corpus_origin",
+                                      return_value="evidence"), \
+                    mock.patch.object(sia.sialib, "read_json",
+                                      return_value=graph), \
+                    mock.patch.object(
+                        sia.sialib, "associative_rerank_enabled",
+                        return_value=True), \
+                    mock.patch.object(mind, "load_mind", return_value={}), \
+                    mock.patch.object(
+                        sia, "_health_footer",
+                        side_effect=lambda **kwargs:
+                        "boundary: " + kwargs.get("recall_degraded", "")), \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_ask("memory", touch=False), 0)
+            self.assertIn(
+                "associative rerank unavailable; origin-safe fallback",
+                output.getvalue())
 
     def test_recall_success_is_explicitly_origin_labeled(self):
         result = types.SimpleNamespace(returncode=0, stdout="# page\n",

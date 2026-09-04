@@ -16,7 +16,7 @@ absence detection, redaction fail-closed, and touch-source weighting.
 """
 
 import ast, contextlib, copy, datetime, hashlib, importlib.machinery
-import importlib.util, json, os, re, shlex, sqlite3, stat
+import importlib.util, json, os, re, shlex, shutil, sqlite3, stat
 import subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
@@ -3235,6 +3235,26 @@ class EvidenceCursorHealth(unittest.TestCase):
             finally:
                 self.sialib.CURSORS_PATH = old_path
 
+    def test_cursor_writer_refuses_nonfinite_state_without_replacing_prior(self):
+        with tempfile.TemporaryDirectory() as state:
+            old_path = self.sialib.CURSORS_PATH
+            self.sialib.CURSORS_PATH = os.path.join(state, "cursors.json")
+            prior = '{"stable":true}\n'
+            with open(self.sialib.CURSORS_PATH, "w", encoding="utf-8") \
+                    as stream:
+                stream.write(prior)
+            try:
+                for value in (
+                        float("nan"), float("inf"), float("-inf")):
+                    with self.subTest(value=value), self.assertRaises(
+                            ValueError):
+                        self.sialib.save_cursors({"poison": value})
+                    with open(self.sialib.CURSORS_PATH, encoding="utf-8") \
+                            as stream:
+                        self.assertEqual(stream.read(), prior)
+            finally:
+                self.sialib.CURSORS_PATH = old_path
+
     def test_negative_line_and_byte_cursors_refuse_without_advancing(self):
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
             stream.write("first\nsecond\nthird\n")
@@ -3677,6 +3697,80 @@ class EvidenceCursorHealth(unittest.TestCase):
             self.sialib.CONFIG = old_config
             os.unlink(path)
 
+    def test_custom_jsonl_refuses_ambiguous_and_nonstandard_records(self):
+        private = "private-value-must-not-be-selected"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write(
+                '{"message":"safe","message":"' + private + '"}\n')
+            stream.write('{"message":NaN}\n')
+            stream.write('{"message":"reachable"}\n')
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        cursors = {"custom.fixture": 0}
+        self.sialib.CONFIG = {"custom_senses": [{
+            "name": "fixture", "path": path, "type": "jsonl",
+            "field": "message", "kind": "event", "tags": []}]}
+        try:
+            for ordinal in range(2):
+                events, errors = self.sialib.sense_custom(cursors)
+                self.assertEqual((events, errors), ([], []))
+                refusal = self.sialib._take_source_record_refusals(cursors)
+                self.assertEqual(refusal[0]["reason"],
+                                 "malformed-json-record")
+                self.assertEqual(refusal[0]["ordinal"], ordinal)
+                self.assertNotIn(private, json.dumps(
+                    refusal, sort_keys=True))
+            events, errors = self.sialib.sense_custom(cursors)
+            self.assertEqual(errors, [])
+            self.assertEqual([event.summary for event in events],
+                             ["reachable"])
+        finally:
+            self.sialib.CONFIG = old_config
+            os.unlink(path)
+
+    def test_custom_sense_unknown_key_refuses_without_reading(self):
+        private = "SHOULD-NOT-BE-INGESTED"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write(private + "\n")
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        cursors = {"custom.disabled-source": 0}
+        self.sialib.CONFIG = {"custom_senses": [{
+            "_comment": "mistyped disable must remain inert",
+            "name": "disabled-source", "organ": "should-be-inert",
+            "path": path, "enable": False,
+        }]}
+        try:
+            self.assertNotIn("should-be-inert", self.sialib._build_organs())
+            events, errors, successful = self.sialib.sense_custom(
+                cursors, include_sources=True)
+            self.assertEqual(events, [])
+            self.assertEqual(successful, [])
+            self.assertIn("unknown keys", errors[0]["error"])
+            self.assertEqual(cursors, {"custom.disabled-source": 0})
+            self.assertNotIn(private, json.dumps(errors, sort_keys=True))
+        finally:
+            self.sialib.CONFIG = old_config
+            os.unlink(path)
+
+    def test_custom_organ_registry_uses_the_complete_source_schema(self):
+        old_config = self.sialib.CONFIG
+        self.sialib.CONFIG = {"custom_senses": [{
+            "name": "missing-path",
+            "organ": "must-not-activate",
+        }]}
+        try:
+            self.assertNotIn("must-not-activate",
+                             self.sialib._build_organs())
+            events, errors, successful = self.sialib.sense_custom(
+                {}, include_sources=True)
+            self.assertEqual(events, [])
+            self.assertEqual(successful, [])
+            self.assertIn("path must be a non-empty string",
+                          errors[0]["error"])
+        finally:
+            self.sialib.CONFIG = old_config
+
     def test_custom_jsonl_missing_field_refuses_without_exposing_other_fields(self):
         secret = "unrelated-private-value-must-never-render"
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
@@ -3902,6 +3996,63 @@ class EvidenceCursorHealth(unittest.TestCase):
             self.sialib.CONFIG = old_config
             self.sialib.CONFIG_ERRORS[:] = old_errors
 
+    def test_config_parser_rejects_duplicate_keys_and_constants(self):
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            config_path = os.path.join(root, "config.json")
+            old_path = self.sialib.CONFIG_PATH
+            self.sialib.CONFIG_PATH = config_path
+            try:
+                cases = (
+                    '{"custom_senses":[],"custom_senses":['
+                    '{"name":"accepted","path":"/tmp/private"}]}',
+                    '{"custom_senses":[],"_comment":NaN}',
+                    '{"custom_senses":[],"_comment":Infinity}',
+                    '{"custom_senses":[],"_comment":-Infinity}',
+                )
+                for raw in cases:
+                    with self.subTest(raw=raw):
+                        with open(config_path, "w", encoding="utf-8") \
+                                as stream:
+                            stream.write(raw)
+                        self.assertEqual(self.sialib.load_config(), {})
+                        self.assertEqual(
+                            self.sialib.CONFIG_ERRORS,
+                            [{"config": "config.json",
+                              "error": "config-invalid-json"}])
+            finally:
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_memo_json_rejects_ambiguity_and_nonfinite_output(self):
+        old_path = self.sialib.MEMO_PATH
+        with tempfile.TemporaryDirectory() as root:
+            self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+            try:
+                for raw in (
+                        '{"sync_needed":true,"sync_needed":false}',
+                        '{"sync_needed":NaN}',
+                        '{"sync_needed":Infinity}',
+                        '{"sync_needed":-Infinity}'):
+                    with self.subTest(raw=raw):
+                        with open(self.sialib.MEMO_PATH, "w") as stream:
+                            stream.write(raw)
+                        with self.assertRaisesRegex(
+                                RuntimeError,
+                                "brainstem memo is unreadable or malformed"):
+                            self.sialib.load_memo()
+                with self.assertRaises(ValueError):
+                    self.sialib._memo_text({"sync_needed": float("nan")})
+                with open(self.sialib.MEMO_PATH, "wb") as stream:
+                    stream.write(
+                        '{"sync_needed":true}'.encode("utf-16"))
+                with self.assertRaisesRegex(
+                        RuntimeError,
+                        "brainstem memo is unreadable or malformed"):
+                    self.sialib.load_memo()
+            finally:
+                self.sialib.MEMO_PATH = old_path
+
     def test_custom_json_surrogate_is_refused_and_next_row_progresses(self):
         with tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", delete=False) as stream:
@@ -4102,7 +4253,7 @@ class EvidenceCursorHealth(unittest.TestCase):
                 self.sialib.ORGANS = old_organs
                 self.sialib.CONFIG_ERRORS[:] = old_errors
 
-    def test_notification_page_advances_only_through_processed_entries(self):
+    def test_notification_pages_publish_only_after_clean_eof(self):
         with tempfile.TemporaryDirectory() as home:
             history = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
@@ -4126,13 +4277,12 @@ class EvidenceCursorHealth(unittest.TestCase):
                     completed = self.sialib.sense_notify(cursors)
             finally:
                 self.sialib.HOME = old_home
-            self.assertEqual(len(first), 1)
-            self.assertEqual(len(second), 1)
+            self.assertEqual(first, [])
+            self.assertEqual(second, [])
             self.assertEqual(
-                {event.summary for event in first + second},
+                {event.summary for event in completed},
                 {f"fixture: {name}" for name in names})
             self.assertNotEqual(first_page["cookie"], second_page["cookie"])
-            self.assertEqual(completed, [])
             self.assertNotIn("source.notify.page", cursors)
             self.assertIn("notify.generation", cursors)
 
@@ -4799,18 +4949,19 @@ class SkillSenseContainment(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = os.path.join(directory, "skills")
             os.makedirs(root)
+            previous = os.path.join(root, "previous")
+            os.makedirs(previous)
+            with open(os.path.join(previous, "SKILL.md"), "w") as stream:
+                stream.write("---\ndescription: prior\n---\n")
+            sialib.SKILL_ROOTS = [root]
+            cursors = {}
+            sialib.sense_skills(cursors)
+            shutil.rmtree(previous)
             for name in ("one", "two", "three"):
                 skill = os.path.join(root, name)
                 os.makedirs(skill)
                 with open(os.path.join(skill, "SKILL.md"), "w") as stream:
                     stream.write("---\ndescription: bounded\n---\n")
-            sialib.SKILL_ROOTS = [root]
-            cursors = {
-                "skills.snapshot": {
-                    "previous": {"name": "previous", "mtime": 0,
-                                 "roots": []}},
-                "skills.truncated": False,
-            }
             with mock.patch.object(
                     sialib, "MAX_SKILL_SNAPSHOT_ENTRIES", 2):
                 events = sialib.sense_skills(cursors)

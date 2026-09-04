@@ -17,6 +17,7 @@ BarWidget {
   readonly property color urgentColor: bar ? bar.urgent : Color.urgent
 
   property var status: null
+  property var runtimeEvidence: null
   property var installCompletion: null
   property var continuity: null
   property bool statusResolved: false
@@ -45,7 +46,7 @@ BarWidget {
   // invitation to bind the wrong one.
   readonly property string releaseLifecycle:
     !root.statusResolved || !root.installCompletionResolved ? "checking"
-      : Model.guidedLifecycle(root.statusLoadValid ? root.status : null,
+      : Model.guidedLifecycle(root.runtimeEvidence,
                               root.installCompletion, root.pluginVersion)
   readonly property string brainState:
     releaseLifecycle !== "ready" ? releaseLifecycle
@@ -149,7 +150,10 @@ BarWidget {
   function applyStatus(text) {
     try {
       const parsed = JSON.parse(text)
-      if (!Model.residentStatusShape(parsed)) {
+      const valid = Model.residentStatusShape(parsed)
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        parsed, valid, root.runtimeEvidence, root.pluginVersion)
+      if (!valid) {
         root.statusLoadValid = false
         return
       }
@@ -158,6 +162,8 @@ BarWidget {
       root.stale = Model.timestampStale(
         parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        null, false, root.runtimeEvidence, root.pluginVersion)
       root.statusLoadValid = false
       /* mid-replace read; keep last-known-good pixels, but fail the gate */
     }
@@ -194,6 +200,8 @@ BarWidget {
       root.statusResolved = true
     }
     onLoadFailed: {
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        null, false, root.runtimeEvidence, root.pluginVersion)
       root.status = null
       root.statusLoadValid = false
       root.stale = true

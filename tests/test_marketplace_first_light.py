@@ -123,7 +123,9 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         legacy_status = {
             "v": 1,
             "ts": "2026-09-01T00:00:00Z",
-            "state": "ready",
+            "state": "ok",
+            "events_today": 0,
+            "errors": {},
             "publication_id": "legacy-publication",
             "projection_debt": {"graph": "", "consolidation": ""},
             "mind": {
@@ -196,7 +198,11 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             model)
         for surface in ("Panel.qml", "Cockpit.qml"):
             source = _read(surface)
-            self.assertIn("Model.guidedLifecycle(", source, surface)
+            compact = " ".join(source.split())
+            self.assertIn(
+                "Model.guidedLifecycle(root.runtimeEvidence, "
+                "root.installCompletion, root.pluginVersion)",
+                compact, surface)
             self.assertIn('"setup"', source, surface)
             self.assertIn("update", source.casefold(), surface)
             self.assertIn("repair", source.casefold(), surface)
@@ -218,7 +224,11 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn("function installCompletionReady(", model)
         for surface in ("Panel.qml", "Cockpit.qml"):
             source = _read(surface)
-            self.assertIn("Model.guidedLifecycle(", source, surface)
+            compact = " ".join(source.split())
+            self.assertIn(
+                "Model.guidedLifecycle(root.runtimeEvidence, "
+                "root.installCompletion, root.pluginVersion)",
+                compact, surface)
             self.assertIn("managed-install/first-light.json", source, surface)
             self.assertIn("releaseLifecycle", source, surface)
 
@@ -254,6 +264,16 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 status_view.index("root.applyStatus(text())"),
                 status_view.index("root.statusResolved = true"))
             self.assertIn("onLoadFailed:", status_view)
+            status_failure = status_view[
+                status_view.index("onLoadFailed:"):]
+            compact_failure = " ".join(status_failure.split())
+            evidence_update = (
+                "root.runtimeEvidence = Model.runtimeLifecycleEvidence( "
+                "null, false, root.runtimeEvidence, root.pluginVersion)")
+            self.assertIn(evidence_update, compact_failure)
+            self.assertLess(
+                compact_failure.index(evidence_update),
+                compact_failure.index("root.statusResolved = true"))
             self.assertIn("onFileChanged:", status_view)
             self.assertIn("statusApply.restart()", status_view)
             self.assertNotIn("root.statusResolved = false", status_view)
@@ -265,7 +285,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             self.assertIn(
                 "root.installCompletionResolved = true", completion_view)
             self.assertLess(
-                completion_view.index("root.applyInstallCompletion(text())"),
+                completion_view.index("root.applyInstallCompletion("),
                 completion_view.index(
                     "root.installCompletionResolved = true"))
             self.assertIn("onLoadFailed:", completion_view)
@@ -829,7 +849,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn("WlrLayershell.layer: WlrLayer.Overlay", cockpit)
         presence_apply = cockpit[
             cockpit.index("function applySetupPresence(text)"):
-            cockpit.index("function applyInstallCompletion(text)")]
+            cockpit.index("function applyInstallCompletion(")]
         self.assertIn("setupYield.restart()", presence_apply)
         yield_timer = cockpit[
             cockpit.index("id: setupYield"):

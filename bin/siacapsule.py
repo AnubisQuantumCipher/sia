@@ -387,18 +387,9 @@ def _read_regular(path, label, *, maximum=MAX_DOCUMENT_BYTES,
 
 
 def _strict_json(raw, label):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"{label} contains a duplicate JSON key")
-            result[key] = value
-        return result
-
     try:
-        return json.loads(raw.decode("utf-8", "strict"),
-                          object_pairs_hook=unique)
-    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        return sialib._strict_json_loads(raw.decode("utf-8", "strict"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is not strict JSON") from exc
 
 

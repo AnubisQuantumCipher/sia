@@ -16,6 +16,7 @@ import errno
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -34,6 +35,36 @@ _LEGACY_ENQUEUE_RE = re.compile(r"^\.enqueue-[A-Za-z0-9_-]{1,200}$")
 STAGING_DIR_SUFFIX = ".sia-stage"
 STAGING_LOCK_NAME = "publish.lock"
 STAGING_PAYLOAD_NAME = "payload"
+
+
+def _strict_json_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _reject_nonstandard_json_constant(value):
+    raise ValueError(f"nonstandard JSON constant {value!r}")
+
+
+def _finite_json_float(value):
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("JSON number is outside the finite float domain")
+    return parsed
+
+
+def strict_json_loads(value):
+    """Decode standards-only JSON without ambiguous object authority."""
+    if isinstance(value, (bytes, bytearray)):
+        value = bytes(value).decode("utf-8", errors="strict")
+    return json.loads(
+        value, object_pairs_hook=_strict_json_object,
+        parse_constant=_reject_nonstandard_json_constant,
+        parse_float=_finite_json_float)
 
 
 def _utc_stamp():
@@ -547,7 +578,7 @@ def _read_open_request(path, name):
         raise ValueError("request exceeds byte limit")
     try:
         raw = raw_bytes.decode("utf-8")
-        record = json.loads(raw)
+        record = strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("request is malformed JSON") from exc
     _validate_record(record, name)

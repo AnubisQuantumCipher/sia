@@ -25,6 +25,7 @@ Item {
   property string workspaceLockFeedback: ""
 
   property var status: null
+  property var runtimeEvidence: null
   property var installCompletion: null
   property bool statusResolved: false
   property bool statusLoadValid: false
@@ -105,11 +106,10 @@ Item {
   readonly property string setupHelperPath:
     root.pluginRoot + "/bin/sia-setup"
   readonly property string runtimeLifecycle:
-    Model.runtimeLifecycle(root.statusLoadValid ? root.status : null,
-                           root.pluginVersion)
+    Model.runtimeLifecycle(root.runtimeEvidence, root.pluginVersion)
   readonly property string releaseLifecycle:
     !root.statusResolved || !root.installCompletionResolved ? "checking"
-      : Model.guidedLifecycle(root.statusLoadValid ? root.status : null,
+      : Model.guidedLifecycle(root.runtimeEvidence,
                               root.installCompletion, root.pluginVersion)
   readonly property bool setupRequired: root.releaseLifecycle !== "ready"
   // A caveat on the wording, never a lifecycle.  It cannot reach
@@ -140,9 +140,11 @@ Item {
 
   readonly property string brainState:
     releaseLifecycle !== "ready" ? releaseLifecycle
-      : stale ? "stale" : (status && status.state ? status.state : "unknown")
-  readonly property int eventsToday:
-    status && status.events_today ? status.events_today : 0
+      : stale ? "stale"
+      : (statusLoadValid && status ? status.state : "unknown")
+  readonly property string eventsToday:
+    root.statusLoadValid && root.status
+      ? String(root.status.events_today) : "—"
   readonly property var snap:
     graph && graph.snapshot ? graph.snapshot : null
   readonly property real staleAfterSec: configuredStaleAfterSec()
@@ -185,23 +187,6 @@ Item {
     return !!value && typeof value === "object" && !Array.isArray(value)
   }
 
-  function validMindSummary(mind) {
-    if (!root.isPlainRecord(mind)) return false
-    var fields = ["nodes", "edges", "decay_active", "decay_demoted",
-                  "rehearsal_eligible", "rehearsal_due", "pinned"]
-    for (var i = 0; i < fields.length; i++)
-      if (!root.isNonNegativeCount(mind[fields[i]])) return false
-    return true
-  }
-
-  function validAgentRelay(relay) {
-    if (!root.isPlainRecord(relay)) return false
-    var fields = ["materialized", "refused", "acknowledged"]
-    for (var i = 0; i < fields.length; i++)
-      if (!root.isNonNegativeCount(relay[fields[i]])) return false
-    return true
-  }
-
   function validLedgerSummary(ledger) {
     // `head` may legitimately be empty: sialib publishes seq 0 with an empty
     // head when it cannot read the chain, and that is a real answer the
@@ -213,21 +198,13 @@ Item {
   }
 
   function validStatusSnapshot(snapshot) {
-    // Validate exactly what the surface renders.  This admitted snapshots
-    // without `pages`, `graph_edges`, `pulse_seq` or `ledger`, and every one
-    // of those is read unguarded further down: the vitals row printed
-    // "memories: undefined" and the chain row "ledger seq undefined · …"
-    // from a snapshot the boundary machinery had just declared good.  A
-    // field the UI reads is part of the shape, or the boundary is a fiction.
-    return root.isPlainRecord(snapshot)
-      && typeof snapshot.ts === "string" && typeof snapshot.state === "string"
+    // Model owns the producer's shared status contract.  Cockpit adds only
+    // the fields this surface alone renders unguarded.
+    return Model.residentStatusShape(snapshot)
       && root.isNonNegativeCount(snapshot.pages)
       && root.isNonNegativeCount(snapshot.graph_edges)
       && root.isNonNegativeCount(snapshot.pulse_seq)
       && root.validLedgerSummary(snapshot.ledger)
-      && root.projectionDebtKnownFor(snapshot)
-      && root.validMindSummary(snapshot.mind)
-      && root.validAgentRelay(snapshot.agent_queue)
   }
 
   function validOriginLabel(value) {
@@ -235,9 +212,9 @@ Item {
       .indexOf(value) !== -1
   }
 
-  function validGraphSnapshot(candidate) {
+  function validGraphSnapshot(candidate, nowMs) {
     if (!root.isPlainRecord(candidate) || candidate.v !== 2
-        || !(Date.parse(candidate.ts) > 0)
+        || !Model.timestampObservedBy(candidate.ts, nowMs)
         || typeof candidate.publication_id !== "string"
         || candidate.publication_id === ""
         || !root.isNonNegativeCount(candidate.pages_total)
@@ -266,7 +243,7 @@ Item {
           || typeof node.id !== "string" || node.id === ""
           || typeof node.t !== "string" || node.t === ""
           || typeof node.title !== "string"
-          || !(Date.parse(node.ts) > 0)
+          || !Model.timestampObservedBy(node.ts, nowMs)
           || !root.validOriginLabel(node.origin)
           || !root.isNonNegativeCount(node.deg)
           || !root.isNonNegativeCount(node.din)
@@ -2035,7 +2012,10 @@ Item {
     root.clearVerification()
     try {
       const parsed = JSON.parse(text)
-      if (!root.validStatusSnapshot(parsed)) {
+      const valid = root.validStatusSnapshot(parsed)
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        parsed, valid, root.runtimeEvidence, root.pluginVersion)
+      if (!valid) {
         root.statusLoadValid = false
         root.statusBoundary = root.status
           ? "last good status; latest status rejected" : "no valid status"
@@ -2049,6 +2029,8 @@ Item {
       root.stale = Model.timestampStale(
         parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        null, false, root.runtimeEvidence, root.pluginVersion)
       root.statusLoadValid = false
       root.statusBoundary = root.status
         ? "last good status; latest status rejected" : "no valid status"
@@ -2059,7 +2041,7 @@ Item {
     root.clearVerification()
     try {
       const g = JSON.parse(text)
-      if (!root.validGraphSnapshot(g)) {
+      if (!root.validGraphSnapshot(g, Date.now())) {
         root.graphBoundary = root.graph
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
         return
@@ -2092,9 +2074,12 @@ Item {
   // them into a classification, and the delegate renders those as
   // legacy-unlabeled.  Requiring it here would reject the very rows that
   // boundary exists to expose.
-  function validThought(thought) {
+  function validThought(thought, nowMs) {
     if (!root.isPlainRecord(thought)) return false
     if (typeof thought.ts !== "string" || thought.ts === "") return false
+    var now = Number(nowMs)
+    if (!(now > 0) || !Model.timestampObservedBy(thought.ts, now))
+      return false
     if (typeof thought.kind !== "string" || thought.kind === "") return false
     if (typeof thought.text !== "string" || thought.text === "") return false
     if (thought.origin !== undefined
@@ -2104,11 +2089,11 @@ Item {
     return true
   }
 
-  function validThoughtStream(stream) {
+  function validThoughtStream(stream, nowMs) {
     if (!root.isPlainRecord(stream)) return false
     if (stream.v !== 1 || !Array.isArray(stream.thoughts)) return false
     for (var i = 0; i < stream.thoughts.length; i++)
-      if (!root.validThought(stream.thoughts[i])) return false
+      if (!root.validThought(stream.thoughts[i], nowMs)) return false
     return true
   }
 
@@ -2121,7 +2106,7 @@ Item {
   function applyThoughts(text) {
     try {
       const t = JSON.parse(text)
-      if (!root.validThoughtStream(t)) {
+      if (!root.validThoughtStream(t, Date.now())) {
         root.thoughtsRejected()
         return
       }
@@ -2284,6 +2269,8 @@ Item {
       root.statusResolved = true
     }
     onLoadFailed: {
+      root.runtimeEvidence = Model.runtimeLifecycleEvidence(
+        null, false, root.runtimeEvidence, root.pluginVersion)
       root.statusLoadValid = false
       root.statusResolved = true
       root.statusBoundary = root.status
@@ -4569,7 +4556,8 @@ Item {
                 }
               }
               Repeater {
-                model: root.status && root.status.errors
+                model: root.statusLoadValid && root.status
+                  && root.isPlainRecord(root.status.errors)
                   ? Object.keys(root.status.errors).sort() : []
                 delegate: Text {
                   id: errRow
@@ -4619,9 +4607,9 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !root.stale && root.status
-                  && (!root.status.errors
-                      || Object.keys(root.status.errors).length === 0)
+                visible: !root.stale && root.statusLoadValid && root.status
+                  && root.isPlainRecord(root.status.errors)
+                  && Object.keys(root.status.errors).length === 0
                   && !(root.status && root.status.sync_note)
                   && root.snap && root.snap.complete === true
                   && (!root.snap.failed_ops

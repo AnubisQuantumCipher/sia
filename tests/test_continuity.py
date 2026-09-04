@@ -61,6 +61,16 @@ class ContinuityTransport(unittest.TestCase):
         self.addCleanup(public_patcher.stop)
         siabackup._ensure_layout()
 
+    def test_continuity_json_decoder_refuses_ambiguity_and_constants(self):
+        for raw in (
+                b'{"state":"safe","state":"private"}',
+                b'{"state":NaN}',
+                b'{"state":Infinity}',
+                b'{"state":-Infinity}'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                    ValueError, "^continuity fixture is not strict JSON$"):
+                siabackup._decode_json(raw, "continuity fixture")
+
     @staticmethod
     def _runner(_command):
         return subprocess.CompletedProcess([], 0, stdout="", stderr="")

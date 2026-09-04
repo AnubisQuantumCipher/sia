@@ -222,7 +222,7 @@ class AgentCatalogGeneration(unittest.TestCase):
         prior = {
             "alpha": {
                 "tokens": 5, "generation": 0,
-                "limits": {"first": 1, "retained": 2},
+                "limits": {"retained": 2},
             },
         }
         self._write("alpha", tokens=10, limits=[
@@ -272,6 +272,66 @@ class AgentCatalogGeneration(unittest.TestCase):
         self.assertEqual(self._state(cursors)[captured], prior[captured])
         self.assertTrue(any(event.kind == "source-entry-refused"
                             for event in events))
+
+    def test_malformed_authoritative_agent_state_refuses_without_mutation(self):
+        cursors = {
+            "agents.state": [
+                "sia-source-entity-state-v1",
+                {"lost": "malformed"},
+            ],
+        }
+        before = copy.deepcopy(cursors)
+
+        with self.assertRaisesRegex(
+                ValueError, "source cursor agents.state is invalid"):
+            self._finish(cursors)
+
+        self.assertEqual(cursors, before)
+
+    def test_malformed_agent_source_rows_cannot_replace_prior_state(self):
+        prior = {
+            "alpha": {
+                "tokens": 5,
+                "limits": {"retained": 80},
+                "generation": 0,
+            },
+        }
+        cases = (
+            {"id": "alpha", "todayTotalTokens": 10.75, "limits": []},
+            {"id": "alpha", "todayTotalTokens": 10, "limits": 0},
+            {"id": 0, "todayTotalTokens": 10, "limits": []},
+            {"id": "alpha", "todayTotalTokens": 10, "limits": [
+                {"label": {"private": "nested"}, "percent": 10},
+            ]},
+            {"id": "alpha", "todayTotalTokens": 10, "limits": [
+                {"label": "window", "percent": -20},
+            ]},
+            {"id": "alpha", "todayTotalTokens": 10, "limits": [
+                {"label": "window", "percent": 101},
+            ]},
+            {"id": "alpha", "todayTotalTokens": 10, "limits": [
+                {"label": "window", "percent": 10},
+                {"label": "window", "percent": 90},
+            ]},
+        )
+        for index, record in enumerate(cases):
+            with self.subTest(record=record):
+                for name in os.listdir(self.usage):
+                    os.unlink(os.path.join(self.usage, name))
+                with open(os.path.join(
+                        self.usage, f"source-{index}.json"), "w") as stream:
+                    json.dump(record, stream)
+                cursors = {"agents.state": self._wrapped(prior)}
+
+                with mock.patch.object(
+                        self.sialib, "MAX_CONFIG_TAGS", 8):
+                    events = self._finish(cursors)
+
+                self.assertEqual(self._state(cursors), prior)
+                self.assertTrue(any(
+                    event.kind == "source-entry-refused" for event in events))
+                self.assertNotIn("private", " ".join(
+                    event.summary for event in events))
 
 
 class SkillCatalogContinuation(unittest.TestCase):
@@ -367,6 +427,162 @@ class SkillCatalogContinuation(unittest.TestCase):
         self.assertFalse(any(event.kind == "removed" for event in events))
         self.assertTrue(any(event.kind == "source-refused"
                             for event in events))
+
+    def test_malformed_authoritative_skill_state_refuses_without_mutation(self):
+        cases = (
+            {"skills.snapshot": []},
+            {"skills.snapshot": {"broken": {"name": "broken"}}},
+            {"skills.snapshot": {}, "skills.partial": "false"},
+            {"skills.snapshot": {}, "skills.truncated": 0},
+            {"skills.snapshot": {}, "skills.removal_guard": None},
+        )
+        for cursors in cases:
+            with self.subTest(cursors=cursors):
+                before = copy.deepcopy(cursors)
+                with self.assertRaisesRegex(
+                        ValueError, "skill catalog state is invalid"):
+                    self.sialib.sense_skills(cursors)
+                self.assertEqual(cursors, before)
+
+    def test_partial_shared_skill_preserves_unreadable_root_provenance(self):
+        second_root = os.path.join(self.tmp.name, "second-skills")
+        os.makedirs(os.path.join(second_root, "shared"))
+        with open(os.path.join(
+                second_root, "shared", "SKILL.md"), "w") as stream:
+            stream.write("---\ndescription: shared\n---\n")
+        self._write("shared")
+        self.sialib.SKILL_ROOTS = [self.root, second_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        prior = copy.deepcopy(cursors["skills.snapshot"])
+        original = self.sialib._list_skill_entries
+
+        def refuse_second(root, page_state=None):
+            if root == second_root:
+                raise OSError("second root unavailable")
+            return original(root, page_state)
+
+        with mock.patch.object(
+                self.sialib, "_list_skill_entries",
+                side_effect=refuse_second):
+            events = self.sialib.sense_skills(cursors)
+
+        self.assertEqual(cursors["skills.snapshot"], prior)
+        self.assertTrue(cursors["skills.partial"])
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+        self.assertFalse(any(event.kind == "updated" for event in events))
+
+    def test_partial_shared_skill_overlays_observed_root_only(self):
+        second_root = os.path.join(self.tmp.name, "second-skills")
+        os.makedirs(os.path.join(second_root, "shared"))
+        with open(os.path.join(
+                second_root, "shared", "SKILL.md"), "w") as stream:
+            stream.write("---\ndescription: second\n---\n")
+        self._write("shared", "first")
+        self.sialib.SKILL_ROOTS = [self.root, second_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        prior = copy.deepcopy(cursors["skills.snapshot"]["shared"])
+        second_root_id = self.sialib._skill_root_id(second_root)
+        prior_second = next(
+            row for row in prior["roots"]
+            if row["root_id"] == second_root_id)
+        self._write("shared", "first updated")
+        original = self.sialib._list_skill_entries
+
+        def refuse_second(root, page_state=None):
+            if root == second_root:
+                raise OSError("second root unavailable")
+            return original(root, page_state)
+
+        with mock.patch.object(
+                self.sialib, "_list_skill_entries",
+                side_effect=refuse_second):
+            events = self.sialib.sense_skills(cursors)
+
+        current = cursors["skills.snapshot"]["shared"]
+        current_second = next(
+            row for row in current["roots"]
+            if row["root_id"] == second_root_id)
+        self.assertEqual(current_second, prior_second)
+        self.assertEqual(
+            [row["root_id"] for row in current["roots"]],
+            [self.sialib._skill_root_id(self.root), second_root_id])
+        self.assertEqual(current["description"], "first updated")
+        self.assertTrue(any(event.kind == "updated" for event in events))
+
+    def test_partial_shared_skill_drops_completed_root_provenance(self):
+        second_root = os.path.join(self.tmp.name, "second-skills")
+        os.makedirs(os.path.join(second_root, "shared"))
+        with open(os.path.join(
+                second_root, "shared", "SKILL.md"), "w") as stream:
+            stream.write("---\ndescription: second\n---\n")
+        self._write("shared", "first")
+        self.sialib.SKILL_ROOTS = [self.root, second_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        first_root_id = self.sialib._skill_root_id(self.root)
+        second_root_id = self.sialib._skill_root_id(second_root)
+        shutil.rmtree(os.path.join(self.root, "shared"))
+        original = self.sialib._list_skill_entries
+
+        def refuse_second(root, page_state=None):
+            if root == second_root:
+                raise OSError("second root unavailable")
+            return original(root, page_state)
+
+        with mock.patch.object(
+                self.sialib, "_list_skill_entries",
+                side_effect=refuse_second):
+            events = self.sialib.sense_skills(cursors)
+
+        current = cursors["skills.snapshot"]["shared"]
+        self.assertEqual(
+            [row["root_id"] for row in current["roots"]],
+            [second_root_id])
+        self.assertNotIn(first_root_id, {
+            row["root_id"] for row in current["roots"]})
+        self.assertEqual(current["description"], "second")
+        self.assertFalse(any(event.kind in {"updated", "removed"}
+                             for event in events))
+
+    def test_partial_absence_keeps_only_a_rootless_removal_guard(self):
+        second_root = os.path.join(self.tmp.name, "second-skills")
+        os.makedirs(second_root)
+        self._write("resident", "first")
+        self.sialib.SKILL_ROOTS = [self.root, second_root]
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        shutil.rmtree(os.path.join(self.root, "resident"))
+        original = self.sialib._list_skill_entries
+
+        def refuse_second(root, page_state=None):
+            if root == second_root:
+                raise OSError("second root unavailable")
+            return original(root, page_state)
+
+        with mock.patch.object(
+                self.sialib, "_list_skill_entries",
+                side_effect=refuse_second):
+            partial_events = self.sialib.sense_skills(cursors)
+
+        guarded = cursors["skills.snapshot"]["resident"]
+        self.assertEqual(guarded["roots"], [])
+        self.assertEqual(guarded["description"], "")
+        self.assertFalse(any(event.kind in {"updated", "removed"}
+                             for event in partial_events))
+
+        first_complete = self.sialib.sense_skills(cursors)
+        self.assertIn("resident", cursors["skills.snapshot"])
+        self.assertEqual(cursors["skills.snapshot"]["resident"]["roots"], [])
+        self.assertFalse(any(event.kind == "removed"
+                             for event in first_complete))
+
+        second_complete = self.sialib.sense_skills(cursors)
+        self.assertNotIn("resident", cursors["skills.snapshot"])
+        self.assertTrue(any(event.kind == "removed"
+                            for event in second_complete))
 
     def test_over_cap_catalog_reaches_later_manifests_without_removal(self):
         self._write("resident")

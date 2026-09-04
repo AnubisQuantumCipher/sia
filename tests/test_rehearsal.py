@@ -136,6 +136,32 @@ class Migration(unittest.TestCase):
             finally:
                 siamind.MIND_PATH = old_path
 
+    def test_mind_loader_rejects_duplicate_keys_and_constants(self):
+        with tempfile.TemporaryDirectory() as state:
+            old_path = siamind.MIND_PATH
+            siamind.MIND_PATH = os.path.join(state, "mind.json")
+            valid_batch = "a" * 32
+            cases = (
+                '{"nodes":{},"edges":{},'
+                '"event_batch_applied":"' + valid_batch + '",'
+                '"event_batch_applied":null}',
+                '{"nodes":{},"edges":{},"private":NaN}',
+                '{"nodes":{},"edges":{},"private":Infinity}',
+                '{"nodes":{},"edges":{},"private":-Infinity}',
+            )
+            try:
+                for raw in cases:
+                    with self.subTest(raw=raw):
+                        with open(siamind.MIND_PATH, "w") as stream:
+                            stream.write(raw)
+                        os.chmod(siamind.MIND_PATH, 0o600)
+                        with self.assertRaisesRegex(
+                                ValueError,
+                                "^mind state is unreadable or malformed$"):
+                            siamind.load_mind(now=1)
+            finally:
+                siamind.MIND_PATH = old_path
+
     def test_save_refuses_an_oversized_existing_mind_without_reading_it_all(self):
         with tempfile.TemporaryDirectory() as state:
             old_path = siamind.MIND_PATH
@@ -467,6 +493,19 @@ print(json.dumps(mind_module.muse(
 
 
 class Queue(unittest.TestCase):
+    def test_queue_writer_refuses_nonfinite_time_without_mutating_state(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "touches.jsonl")
+            prior = b'{"id":"prior","ts":10,"op":"pin","slug":"x"}\n'
+            for value in (float("nan"), float("inf"), float("-inf")):
+                with self.subTest(value=value):
+                    with open(path, "wb") as stream:
+                        stream.write(prior)
+                    self.assertFalse(siamind.queue_pin(
+                        "new", True, ts=value, queue_path=path))
+                    with open(path, "rb") as stream:
+                        self.assertEqual(stream.read(), prior)
+
     def test_unpin_uses_independent_recovery_lane(self):
         with tempfile.TemporaryDirectory() as root:
             old_queue = siamind.TOUCH_QUEUE
