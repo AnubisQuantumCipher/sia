@@ -257,6 +257,19 @@ class RawVectorModelContract(unittest.TestCase):
                     with self._plan(admitted, **override):
                         self.fail("unsafe launch admitted")
 
+    def test_readonly_runtime_roots_are_actual_mounts_before_remount(self):
+        with self._admit() as admitted, self._plan(admitted) as plan:
+            argv = plan.argv
+            mounts = {argv[index + 1] for index, token in enumerate(argv[:-1])
+                      if token == "--tmpfs"}
+            readonly = {argv[index + 1] for index, token in enumerate(argv[:-1])
+                        if token == "--remount-ro"}
+            self.assertEqual(readonly, {"/runtime", "/models", "/usr", "/empty"})
+            self.assertTrue(readonly <= mounts,
+                            "bwrap cannot remount a plain --dir mount-table entry")
+            for root in readonly:
+                self.assertLess(argv.index(root), argv.index("--remount-ro"))
+
     def test_model_service_generation_change_refuses_and_reaps_only_owned_service(self):
         service = mock.Mock(pid=321)
         service.poll.return_value = None

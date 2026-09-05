@@ -555,7 +555,11 @@ sealed descriptors too. There are no shared host directory mounts.
                 "--unshare-ipc", "--unshare-uts", "--die-with-parent", "--new-session",
                 "--clearenv", "--cap-drop", "ALL", "--proc", "/proc", "--dev", "/dev",
                 "--size", "64000000", "--tmpfs", "/work", "--dir", "/work/home", "--dir", "/work/tmp",
-                "--dir", "/work/gbrain", "--dir", "/empty", "--chdir", "/empty",
+                "--dir", "/work/gbrain",
+                "--size", "64000000", "--tmpfs", "/runtime",
+                "--size", "64000000", "--tmpfs", "/models",
+                "--size", "64000000", "--tmpfs", "/usr",
+                "--size", "64000000", "--tmpfs", "/empty", "--chdir", "/empty",
                 "--symlink", "usr/lib", "/lib"]
         directories = set()
         for item in files:
