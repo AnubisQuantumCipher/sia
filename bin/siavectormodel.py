@@ -674,9 +674,13 @@ def _process(pid):
     fields = raw[raw.rindex(")") + 2:].split()
     executable = os.readlink(prefix + "/exe")
     with open(prefix + "/exe", "rb") as stream:
+        before = os.fstat(stream.fileno())
         sha, size = _hash_fd(stream.fileno(), MAX_SEALED_BYTES)
+        if _generation(before) != _generation(os.fstat(stream.fileno())):
+            raise ModelRefusal("process executable generation changed while hashing")
     return {"pid": pid, "ppid": int(fields[1]), "starttime": fields[19],
             "executable": executable, "executable_sha256": sha,
+            "executable_device": before.st_dev, "executable_inode": before.st_ino,
             "executable_bytes": size,
             "argv": Path(prefix + "/cmdline").read_bytes().rstrip(b"\0").decode().split("\0"),
             "network_namespace": os.readlink(prefix + "/ns/net"),
@@ -684,14 +688,45 @@ def _process(pid):
             "pid_namespace": os.readlink(prefix + "/ns/pid")}
 
 
+def _mounted_executable_identity(path):
+    """Read the immutable mount object, independently of /proc display names.
+
+ro-bind-data can expose an already-unlinked backing inode. Its link count is
+not a source-package alias admission rule: the namespace's immutable mount,
+opened without following links, supplies the actual object authority here.
+"""
+    descriptor = None
+    try:
+        descriptor = _open(path, os.O_RDONLY)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not before.st_mode & 0o111 \
+                or not 0 < before.st_size <= MAX_SEALED_BYTES \
+                or os.pread(descriptor, 4, 0) != b"\x7fELF":
+            raise ModelRefusal("mounted runtime executable is not a bounded regular ELF")
+        sha, size = _hash_fd(descriptor, MAX_SEALED_BYTES)
+        if _generation(before) != _generation(os.fstat(descriptor)) or size != before.st_size:
+            raise ModelRefusal("mounted runtime executable generation changed")
+        return {"device": before.st_dev, "inode": before.st_ino, "sha256": sha}
+    except (OSError, ValueError) as exc:
+        raise ModelRefusal("mounted runtime executable identity refused") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def _serving_generation(config, service):
     if service.poll() is not None:
         raise ModelRefusal("owned model service generation exited")
     identity = config["model_identity"]
     try:
+        service_mount = _mounted_executable_identity("/runtime/ollama/bin/ollama")
+        runner_mount = _mounted_executable_identity("/runtime/ollama/lib/ollama/llama-server")
         parent = _process(service.pid)
-        if parent["executable"] != "/runtime/ollama/bin/ollama" \
-                or parent["executable_sha256"] != identity["ollama_sha256"]:
+        if parent["executable_device"] != service_mount["device"] \
+                or parent["executable_inode"] != service_mount["inode"] \
+                or parent["executable_sha256"] != identity["ollama_sha256"] \
+                or service_mount["sha256"] != identity["ollama_sha256"] \
+                or runner_mount["sha256"] != identity["runner_sha256"]:
             raise ModelRefusal("owned model service executable generation mismatch")
         runners = []
         for name in os.listdir("/proc"):
@@ -700,7 +735,9 @@ def _serving_generation(config, service):
                     info = _process(int(name))
                 except (OSError, ValueError, ModelRefusal):
                     continue
-                if info["ppid"] == service.pid and info["executable"] == "/runtime/ollama/lib/ollama/llama-server":
+                if info["ppid"] == service.pid \
+                        and info["executable_device"] == runner_mount["device"] \
+                        and info["executable_inode"] == runner_mount["inode"]:
                     runners.append(info)
         if len(runners) != 1:
             raise ModelRefusal("owned model runner generation is missing or ambiguous")

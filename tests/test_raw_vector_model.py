@@ -418,6 +418,97 @@ class RawVectorModelContract(unittest.TestCase):
             (parent / "index").rename(parent / "previous-index")
             (parent / "index").mkdir(mode=0o700)
 
+    def test_process_probe_binds_inode_from_the_open_executable_descriptor(self):
+        observed = self.model._process(os.getpid())
+        expected = os.stat("/proc/self/exe")
+        self.assertEqual(observed.get("executable_device"), expected.st_dev)
+        self.assertEqual(observed.get("executable_inode"), expected.st_ino)
+
+    def test_mounted_executable_identity_hashes_nofollow_regular_leaf(self):
+        probe = getattr(self.model, "_mounted_executable_identity", None)
+        self.assertTrue(callable(probe), "explicit immutable mount identity probe must exist")
+        target = self.package / "bin" / "ollama"
+        observed = probe(str(target))
+        expected = target.stat()
+        self.assertEqual(observed["device"], expected.st_dev)
+        self.assertEqual(observed["inode"], expected.st_ino)
+        self.assertEqual(observed["sha256"], digest(target.read_bytes()))
+        alias = self.root / "executable-alias"
+        alias.symlink_to(target)
+        with self.assertRaises(self.model.ModelRefusal):
+            probe(str(alias))
+
+    def _serving_probe_fixture(self, *, changed=None):
+        service = mock.Mock(pid=321)
+        service.poll.return_value = None
+        parent_stat = (self.package / "bin" / "ollama").stat()
+        runner_stat = (self.library / "llama-server").stat()
+        parent = {
+            "pid": 321, "ppid": 320, "starttime": "parent-generation",
+            "executable": "/bwrap-copy/anonymous-ollama (deleted)",
+            "executable_device": parent_stat.st_dev, "executable_inode": parent_stat.st_ino,
+            "executable_sha256": digest(b"\x7fELFollama"),
+            "argv": ["/runtime/ollama/bin/ollama", "serve"],
+            "network_namespace": "net:[fixture]",
+        }
+        model_path = "/models/blobs/" + self.model_blob["digest"].replace(":", "-")
+        runner = {
+            "pid": 322, "ppid": 321, "starttime": "runner-generation",
+            "executable": "/bwrap-copy/anonymous-runner (deleted)",
+            "executable_device": runner_stat.st_dev, "executable_inode": runner_stat.st_ino,
+            "executable_sha256": digest(b"\x7fELFrunner"),
+            "argv": ["/runtime/ollama/lib/ollama/llama-server", "--model", model_path],
+            "network_namespace": "net:[fixture]",
+        }
+        mounted = {
+            "/runtime/ollama/bin/ollama": {"device": parent_stat.st_dev, "inode": parent_stat.st_ino,
+                                           "sha256": parent["executable_sha256"]},
+            "/runtime/ollama/lib/ollama/llama-server": {"device": runner_stat.st_dev, "inode": runner_stat.st_ino,
+                                                       "sha256": runner["executable_sha256"]},
+        }
+        config = {"model_name": "nomic-embed-text:v1.5", "model_identity": {
+            "ollama_sha256": parent["executable_sha256"], "runner_sha256": runner["executable_sha256"],
+            "model_path": model_path, "manifest_sha256": self.manifest_digest}}
+        if changed:
+            selected, field, value = changed
+            (parent if selected == "service" else runner)[field] = value
+        response = {"models": [{"digest": self.manifest_digest,
+                                "name": "nomic-embed-text:v1.5", "size_vram": 0}]}
+        processes = {321: parent, 322: runner}
+        return service, config, processes, mounted, response
+
+    def test_serving_executable_display_alias_is_not_mistaken_for_object_authority(self):
+        service, config, processes, mounted, response = self._serving_probe_fixture()
+        with mock.patch.object(self.model, "_process", side_effect=processes.__getitem__), \
+                mock.patch.object(self.model, "_mounted_executable_identity", create=True,
+                                  side_effect=mounted.__getitem__) as mount_probe, \
+                mock.patch.object(os, "listdir", return_value=["321", "322"]), \
+                mock.patch.object(self.model, "_api", return_value=response):
+            try:
+                result = self.model._serving_generation(config, service)
+            except self.model.ModelRefusal as exc:
+                self.fail("same sealed executable inode/hash was rejected by display alias: " + str(exc))
+        self.assertEqual(result["service"], processes[321])
+        self.assertEqual(result["runner"], processes[322])
+        self.assertEqual(set(call.args[0] for call in mount_probe.call_args_list), set(mounted))
+
+    def test_serving_executable_inode_device_or_hash_mismatch_refuses(self):
+        for changed in (("service", "executable_inode", -1),
+                        ("runner", "executable_inode", -1),
+                        ("service", "executable_device", -1),
+                        ("runner", "executable_device", -1),
+                        ("service", "executable_sha256", "0" * 64),
+                        ("runner", "executable_sha256", "0" * 64)):
+            service, config, processes, mounted, response = self._serving_probe_fixture(changed=changed)
+            with self.subTest(changed=changed), \
+                    mock.patch.object(self.model, "_process", side_effect=processes.__getitem__), \
+                    mock.patch.object(self.model, "_mounted_executable_identity", create=True,
+                                      side_effect=mounted.__getitem__), \
+                    mock.patch.object(os, "listdir", return_value=["321", "322"]), \
+                    mock.patch.object(self.model, "_api", return_value=response), \
+                    self.assertRaises(self.model.ModelRefusal):
+                self.model._serving_generation(config, service)
+
 
 if __name__ == "__main__":
     unittest.main()
