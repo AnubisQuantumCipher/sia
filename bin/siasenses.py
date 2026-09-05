@@ -6,6 +6,7 @@ create a second, stale runtime state.  The owning core binds its current
 namespace immediately before each public sensing call instead.
 """
 
+import errno as _errno
 import threading as _threading
 
 def sense_jackal(cursors):
@@ -155,9 +156,9 @@ def sense_jackal(cursors):
     return evs
 
 
-def _attest_rows(path, cursors, key):
+def _attest_rows(path, cursors, key, *, source_fd=None):
     rows = []
-    for line in tail_lines(path, cursors, key):
+    for line in tail_lines(path, cursors, key, source_fd=source_fd):
         p = line.split("\t")
         if len(p) == 9:
             rows.append(p)
@@ -171,23 +172,28 @@ def _attest_generation(path, label):
         info = os.fstat(descriptor)
     finally:
         os.close(descriptor)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-        raise RuntimeError(f"{label} is not an owned regular file")
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1:
+        raise RuntimeError(
+            f"{label} is not an owned single-link regular file")
     return _journal_file_identity(info)
 
 
 def _verified_builtin_attest_rows(chain, cursors, key):
     """Verify and tail one unchanged built-in ledger generation.
 
-    The caller's cursor is isolated until the same ledger and verifier file
-    identities are observed before verification and after the bounded tail.
-    Thus no row appended/replaced after keeper success can become evidence in
-    this transaction.
+    Keep the descriptor-bound verifier and its declared authority inputs alive
+    through the bounded tail. The caller's cursor commits only after every
+    retained generation still matches, including keeper sidecars.
     """
     binding = _chain_cmds().get(chain)
     if binding is None:
         return []
-    ledger, tool, command = binding
+    try:
+        ledger, tool, command, inputs = _normalize_chain_binding(binding)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{chain} ledger projection binding is invalid") from exc
     if command and command[0] == INVALID_CHAIN_SENTINEL:
         raise RuntimeError(f"{chain} ledger projection binding is invalid")
     if not os.path.lexists(ledger) and not os.path.lexists(tool):
@@ -195,26 +201,41 @@ def _verified_builtin_attest_rows(chain, cursors, key):
     if not os.path.lexists(ledger) or not os.path.lexists(tool):
         raise RuntimeError(f"{chain} ledger projection keeper is incomplete")
     trial = copy.deepcopy(cursors)
-    ledger_before = _attest_generation(ledger, f"{chain} ledger")
-    tool_before = _attest_generation(tool, f"{chain} verifier")
     try:
-        verified = _run_bounded_text_process(
-            command, env=None, timeout=60, cwd=None,
-            label=f"{chain} ledger verifier")
+        with _bound_chain_verification(
+                chain, ledger, tool, command, inputs) as bound:
+            bound_ledger = next(
+                record for record in bound["records"]
+                if record["path"] == ledger and not record["directory"])
+            for record in bound["records"]:
+                if record["path"] not in (ledger, tool):
+                    continue
+                info = os.fstat(record["fd"])
+                if info.st_uid != os.geteuid() or info.st_nlink != 1:
+                    raise RuntimeError(
+                        f"{record['label']} is not an owned single-link "
+                        "regular file")
+            verified = _run_bounded_text_process(
+                bound["command"], env=bound["env"], timeout=60,
+                cwd=bound["cwd"],
+                label=f"{chain} ledger verifier", pass_fds=bound["pass_fds"],
+                output_limit=MAX_CONFIG_BYTES, isolate_process_tree=True,
+                retain_output=False)
+            if verified.returncode != 0:
+                raise RuntimeError(f"{chain} keeper exited nonzero")
+            if not all(_chain_generation_matches(record)
+                       for record in bound["records"]):
+                raise RuntimeError(
+                    f"{chain} ledger projection changed after keeper verification")
+            rows = _attest_rows(
+                ledger, trial, key, source_fd=bound_ledger["fd"])
+            if not all(_chain_generation_matches(record)
+                       for record in bound["records"]):
+                raise RuntimeError(
+                    f"{chain} ledger projection changed after keeper verification")
     except Exception as exc:
         raise RuntimeError(
-            f"{chain} ledger projection keeper did not run") from exc
-    if verified.returncode != 0:
-        detail = (verified.stderr or verified.stdout
-                  or "keeper refused")[-160:]
-        raise RuntimeError(
-            f"{chain} ledger projection refused: {detail}")
-    rows = _attest_rows(ledger, trial, key)
-    ledger_after = _attest_generation(ledger, f"{chain} ledger")
-    tool_after = _attest_generation(tool, f"{chain} verifier")
-    if ledger_before != ledger_after or tool_before != tool_after:
-        raise RuntimeError(
-            f"{chain} ledger projection changed after keeper verification")
+            f"{chain} ledger projection refused: {exc}") from exc
     cursors.clear()
     cursors.update(trial)
     return rows
@@ -296,7 +317,7 @@ def sense_sia(cursors):
     """Project verified SIA lifecycle rows into answer-bearing memory pages.
 
     PULSE rows are deliberately excluded: projecting one would itself make
-    the corpus dirty and mint another PULSE row, creating an endogenous loop.
+    the corpus dirty and mint another PULSE row, creating a feedback loop.
     Benchmark-result rows are excluded for the analogous evaluation-feedback
     reason. Source refusal rows are also terminal evidence, not fresh source
     material: projecting one and refusing that projection could otherwise
@@ -1132,7 +1153,7 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
             "journalctl", "-o", "json", "--output-fields=__CURSOR",
             "--no-pager", f"--cursor-file={catalog_tmp}"] + args
         catalog_rows = _journalctl_records(
-            catalog_cmd, record_limit=MAX_JOURNAL_CURSOR_BYTES,
+            catalog_cmd, record_limit=MAX_STATE_JSON_BYTES,
             output_limit=MAX_STATE_JSON_BYTES)
         catalog = [_journal_catalog_cursor(row) for row in catalog_rows]
         if len(catalog) != len(set(catalog)):
@@ -1274,8 +1295,16 @@ def sense_guardian(cursors):
             cursors.pop(page_key, None)
             continue
         cursors[page_key] = next_page
-        names = [entry["name"] for entry in entries
-                 if not entry["name"].endswith(".applied")]
+        names = []
+        for entry in entries:
+            name = entry["name"]
+            if name.endswith(".applied"):
+                continue
+            if not stat.S_ISREG(entry["mode"]):
+                evs.append(_source_entry_refusal_event(
+                    "guardian", f"guardian {label} {name}"))
+                continue
+            names.append(name)
         seen = _bounded_seen_names(cursors.get(key))
         if seen is None:
             seen = []
@@ -1321,6 +1350,10 @@ def sense_git(cursors):
     cursors[page_key] = next_page
     directory_reset = bool(next_page.get("reset", False))
     repos = [entry for entry in entries if stat.S_ISDIR(entry["mode"])]
+    special_project_entries = [
+        entry for entry in entries
+        if not stat.S_ISDIR(entry["mode"])
+        and not stat.S_ISREG(entry["mode"])]
     cycle_value = cursors.get("source.git.cycle")
     if began_at_start or directory_reset:
         cycle_live = []
@@ -1336,6 +1369,10 @@ def sense_git(cursors):
         else:
             cycle_live = _bounded_seen_names(cycle_value.get("live")) or []
             cycle_coverage = cycle_value["coverage"]
+    for entry in special_project_entries:
+        cycle_coverage = False
+        evs.append(_source_entry_refusal_event(
+            "projects", f"project repository {entry['name']}"))
     cycle_live_set = set(cycle_live)
     admitted = _bounded_seen_names(cursors.get("source.git.repositories"))
     if admitted is None:
@@ -1657,11 +1694,52 @@ def sense_obsidian(cursors):
         os.close(git_fd)
 
 
+def _session_cursor_row_valid(value):
+    """Accept one canonical session row, including its upgrade-only shape."""
+    if not isinstance(value, dict) or set(value) not in ({
+            "size", "announced", "generation"}, {
+            "size", "announced", "generation", "snapshot_generation"}):
+        return False
+    integer_fields = {"size", "generation"}
+    if "snapshot_generation" in value:
+        integer_fields.add("snapshot_generation")
+    return isinstance(value["announced"], bool) and all(
+        not isinstance(value[field], bool)
+        and isinstance(value[field], int) and value[field] >= 0
+        for field in integer_fields)
+
+
+def _normalized_session_cursor_row(value):
+    """Migrate only byte-exact historical session row schemas."""
+    if _session_cursor_row_valid(value):
+        return copy.deepcopy(value)
+    if isinstance(value, dict) and set(value) == {"size", "announced"} \
+            and not isinstance(value["size"], bool) \
+            and isinstance(value["size"], int) and value["size"] >= 0 \
+            and isinstance(value["announced"], bool):
+        return {**value, "generation": 0}
+    if isinstance(value, dict) and set(value) == {
+            "off", "n", "title", "announced", "cwd"} \
+            and all(not isinstance(value[field], bool)
+                    and isinstance(value[field], int) and value[field] >= 0
+                    for field in ("off", "n")) \
+            and isinstance(value["announced"], bool) \
+            and _strict_config_string(
+                value["title"], limit=MAX_CONFIG_TEXT_CHARS) \
+            and _strict_config_string(
+                value["cwd"], limit=MAX_CONFIG_PATH_CHARS):
+        return {"size": value["off"], "announced": value["announced"],
+                "generation": 0}
+    return value
+
+
 def sense_claude(cursors):
     """Claude sessions from filesystem metadata only; payloads are unopened."""
     evs = []
     sessions, state_truncated = _bounded_source_state(
-        cursors, "claude.sessions", "claude-session")
+        cursors, "claude.sessions", "claude-session",
+        value_validator=_session_cursor_row_valid,
+        value_normalizer=_normalized_session_cursor_row)
     if state_truncated:
         evs.append(_source_truncation_event(
             "claude-code", "Claude session cursor"))
@@ -1683,8 +1761,9 @@ def sense_claude(cursors):
                 "claude-code", f"Claude session {sid_raw}"))
             continue
         if st is None:
-            # first sighting: only announce if the file is fresh (< 1 h old)
-            fresh = (time.time() - source["mtime"]) < 3600
+            # First observation: announce only if the file is fresh (< 1 h old).
+            age = time.time() - source["mtime"]
+            fresh = 0 <= age < 3600
             sessions[sid] = {"size": size, "announced": fresh,
                              "generation": 0,
                              "snapshot_generation": snapshot_generation}
@@ -1715,7 +1794,7 @@ def sense_claude(cursors):
                    "generation": generation,
                    "snapshot_generation": snapshot_generation})
         if not was_announced:
-            # an old session woke up after we first saw it — start reporting
+            # An old session grew after its initial observation; start reporting.
             evs.append(Event("claude-code", utcnow(), "session",
                              f"agent session {clip(sid_raw, 8)}… resumed",
                              {"organs/claude-code"}, {"claude-code"},
@@ -1742,10 +1821,12 @@ def sense_codex(cursors):
     """Codex CLI sessions — metadata only (existence, growth), never
     payload bodies. Dated tree: ~/.codex/sessions/YYYY/MM/DD/*.jsonl.
     Closes the coverage gap where MCP advertised Codex but only Claude
-    was a first-class session organ."""
+    was a first-class session source."""
     evs = []
     sessions, state_truncated = _bounded_source_state(
-        cursors, "codex.sessions", "codex-session")
+        cursors, "codex.sessions", "codex-session",
+        value_validator=_session_cursor_row_valid,
+        value_normalizer=_normalized_session_cursor_row)
     if state_truncated:
         evs.append(_source_truncation_event("codex", "Codex session cursor"))
     files, complete_snapshot, refused, snapshot_generation = \
@@ -1766,7 +1847,8 @@ def sense_codex(cursors):
                 "codex", f"Codex session {sid_raw}"))
             continue
         if st is None:
-            fresh = (time.time() - source["mtime"]) < 3600
+            age = time.time() - source["mtime"]
+            fresh = 0 <= age < 3600
             sessions[sid] = {"size": size, "announced": fresh,
                              "generation": 0,
                              "snapshot_generation": snapshot_generation}
@@ -1814,9 +1896,21 @@ _NOTIFY_LEGACY_CURSOR_KEYS = frozenset({
     "notify.paginated", "notify.baselining", "notify.seen",
     "notify.cycle_max",
 })
-_NOTIFY_SCAN_MODES = frozenset({"baseline", "replay"})
-_NOTIFY_SCAN_SCHEMA = "sia-notification-directory-scan-v2"
-_NOTIFY_SCAN_LEGACY_SCHEMA = "sia-notification-directory-scan-v1"
+_NOTIFY_SCAN_MODES = frozenset({"baseline", "replay", "empty-replay"})
+_NOTIFY_SCAN_SCHEMA = "sia-notification-directory-scan-v3"
+_NOTIFY_SCAN_LEGACY_SCHEMAS = frozenset({
+    "sia-notification-directory-scan-v1",
+    "sia-notification-directory-scan-v2",
+})
+_NOTIFY_BASELINE_SCHEMA = "sia-notification-baseline-v1"
+_NOTIFY_OPAQUE_CAUSES = frozenset({
+    "baseline-unstable", "legacy-ambiguous", "v2-migration"})
+# Arithmetic evidence: status=exact, parsed=256*8, exact=2048; parsed=256*2,
+# exact=512. Exact rational arithmetic outside the Lean certificate chain;
+# NOT formal-bounded.
+_NOTIFY_FILTER_BYTES = 256
+_NOTIFY_FILTER_BITS = 2048
+_NOTIFY_FILTER_HEX_CHARS = 512
 
 
 def _notify_generation(value):
@@ -1837,25 +1931,18 @@ def _notify_scan_candidate(value):
         return {
             "schema": _NOTIFY_SCAN_SCHEMA, "generation": None,
             "sources": [], "truncated": False,
+            "baseline_bits": "0" * _NOTIFY_FILTER_HEX_CHARS,
         }
-    if isinstance(value, dict) \
-            and value.get("schema") == _NOTIFY_SCAN_LEGACY_SCHEMA \
-            and set(value) == {"schema", "generation", "sources"}:
-        legacy_sources = value.get("sources")
-        if isinstance(legacy_sources, list) and all(
-                _agent_source_capture_valid(source, suffix=None)
-                for source in legacy_sources):
-            legacy_sources = sorted(
-                legacy_sources, key=_notification_source_order, reverse=True)
-        value = dict(
-            value, schema=_NOTIFY_SCAN_SCHEMA,
-            sources=legacy_sources, truncated=False)
     if not isinstance(value, dict) \
             or set(value) != {
-                "schema", "generation", "sources", "truncated"} \
+                "schema", "generation", "sources", "truncated",
+                "baseline_bits"} \
             or value.get("schema") != _NOTIFY_SCAN_SCHEMA \
             or not isinstance(value.get("sources"), list) \
             or not isinstance(value.get("truncated"), bool) \
+            or not isinstance(value.get("baseline_bits"), str) \
+            or len(value["baseline_bits"]) != _NOTIFY_FILTER_HEX_CHARS \
+            or re.fullmatch(r"[0-9a-f]+", value["baseline_bits"]) is None \
             or len(value["sources"]) > MAX_LEDGER_PENDING_RECORDS \
             or any(not _agent_source_capture_valid(source, suffix=None)
                    for source in value["sources"]) \
@@ -1873,23 +1960,267 @@ def _notify_scan_candidate(value):
     return value
 
 
+def _notification_name_valid(value):
+    """Whether a cursor value can be one exact filesystem component."""
+    if not isinstance(value, str):
+        return False
+    try:
+        raw = os.fsencode(value)
+    except UnicodeError:
+        return False
+    return bool(raw) and raw not in {b".", b".."} \
+        and b"/" not in raw and b"\0" not in raw \
+        and len(raw) <= MAX_CORPUS_COMPONENT_BYTES
+
+
+def _notify_baseline(value):
+    """Return one immutable exact/filter baseline or opaque boundary."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) \
+            or value.get("schema") != _NOTIFY_BASELINE_SCHEMA:
+        raise ValueError("notification baseline cursor is invalid")
+    if value.get("kind") == "exact":
+        if set(value) != {"schema", "kind", "names"} \
+                or not isinstance(value.get("names"), list) \
+                or len(value["names"]) > MAX_LEDGER_PENDING_RECORDS \
+                or any(not _notification_name_valid(name)
+                       for name in value["names"]) \
+                or len(set(value["names"])) != len(value["names"]) \
+                or value["names"] != sorted(
+                    value["names"], key=os.fsencode):
+            raise ValueError("notification baseline cursor is invalid")
+        return {"schema": _NOTIFY_BASELINE_SCHEMA, "kind": "exact",
+                "names": list(value["names"])}
+    if value.get("kind") == "filter":
+        if set(value) != {"schema", "kind", "bits"} \
+                or not isinstance(value.get("bits"), str) \
+                or len(value["bits"]) != _NOTIFY_FILTER_HEX_CHARS \
+                or re.fullmatch(r"[0-9a-f]+", value["bits"]) is None \
+                or value["bits"] == "0" * _NOTIFY_FILTER_HEX_CHARS:
+            raise ValueError("notification baseline cursor is invalid")
+        return dict(value)
+    if value.get("kind") == "opaque":
+        if set(value) != {"schema", "kind", "cause"} \
+                or value.get("cause") not in _NOTIFY_OPAQUE_CAUSES:
+            raise ValueError("notification baseline cursor is invalid")
+        return dict(value)
+    raise ValueError("notification baseline cursor is invalid")
+
+
+def _notify_opaque_baseline(cause):
+    if cause not in _NOTIFY_OPAQUE_CAUSES:
+        raise ValueError("notification baseline cause is invalid")
+    return {"schema": _NOTIFY_BASELINE_SCHEMA,
+            "kind": "opaque", "cause": cause}
+
+
+def _notify_filter_add(bits, name):
+    """Add a raw leaf name to the fixed one-sided membership filter."""
+    digest = hashlib.sha256(
+        (_NOTIFY_BASELINE_SCHEMA + "\0").encode("ascii")
+        + os.fsencode(name)).digest()
+    bit = int.from_bytes(digest, "big") % _NOTIFY_FILTER_BITS
+    byte_index, bit_index = divmod(bit, 8)
+    updated = bytearray.fromhex(bits)
+    updated[byte_index] |= 1 << bit_index
+    return updated.hex()
+
+
+def _notify_filter_contains(bits, name):
+    """Return false only when the immutable filter proves non-membership."""
+    digest = hashlib.sha256(
+        (_NOTIFY_BASELINE_SCHEMA + "\0").encode("ascii")
+        + os.fsencode(name)).digest()
+    bit = int.from_bytes(digest, "big") % _NOTIFY_FILTER_BITS
+    byte_index, bit_index = divmod(bit, 8)
+    return bool(bytes.fromhex(bits)[byte_index] & (1 << bit_index))
+
+
+def _notify_baseline_from_scan(scan):
+    """Bind a clean first generation with one-sided overflow membership."""
+    if scan["truncated"]:
+        return {
+            "schema": _NOTIFY_BASELINE_SCHEMA,
+            "kind": "filter",
+            "bits": scan["baseline_bits"],
+        }
+    return {
+        "schema": _NOTIFY_BASELINE_SCHEMA,
+        "kind": "exact",
+        "names": sorted(
+            (source["name"] for source in scan["sources"]),
+            key=os.fsencode),
+    }
+
+
+def _notify_baseline_refusal_event(baseline):
+    return _source_entry_refusal_event(
+        "notify", f"notification baseline {baseline['cause']}")
+
+
+def _legacy_notify_cursor_valid(cursors):
+    """Validate the bounded legacy fields before replacing their authority."""
+    for key in ("notify.last", "notify.cycle_max"):
+        if key in cursors and cursors[key] != "" \
+                and not _notification_name_valid(cursors[key]):
+            return False
+    for key in ("notify.pending", "notify.seen"):
+        if key not in cursors:
+            continue
+        names = cursors[key]
+        if not isinstance(names, list) \
+                or len(names) > MAX_SOURCE_SCAN_ENTRIES \
+                or any(not _notification_name_valid(name)
+                       for name in names) \
+                or len(set(names)) != len(names):
+            return False
+    for key in ("notify.pending_complete", "notify.paginated",
+                "notify.baselining"):
+        if key in cursors and not isinstance(cursors[key], bool):
+            return False
+    return True
+
+
+def _notify_scan_page_authority(cursors):
+    """Validate a paired in-progress directory page and scan candidate."""
+    page_present = "source.notify.page" in cursors
+    scan_present = "notify.scan" in cursors
+    if page_present != scan_present:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    if not page_present:
+        return False
+    try:
+        scan = _notify_scan_candidate(cursors["notify.scan"])
+        page = _validated_source_page_state(cursors["source.notify.page"])
+        page_generation = _source_tree_directory_generation(page)
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError(
+            "notification replay cursor authority is ambiguous") from None
+    if page.get("cookie", 0) <= 0 \
+            or scan["generation"] != page_generation:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    return True
+
+
+def _notify_replay_authority(cursors, *, allow_opaque=False):
+    """Name the persisted authority that can justify notification replay.
+
+    A source replay marker predates cursor publication.  Only an immutable
+    membership baseline from the current runtime, or the unique legacy state
+    proving an empty prior directory, can distinguish a newly observed name
+    from a pre-upgrade baseline row.
+    """
+    if not isinstance(allow_opaque, bool) or not isinstance(cursors, dict):
+        raise ValueError("notification replay cursor image is invalid")
+    legacy_keys = {
+        key for key in _NOTIFY_LEGACY_CURSOR_KEYS if key in cursors}
+    current_keys = {
+        "notify.baseline", "notify.generation", "notify.scan_mode",
+        "notify.scan_tainted", "notify.scan", "source.notify.page",
+    }
+    if legacy_keys:
+        if legacy_keys == {"notify.last"} \
+                and cursors["notify.last"] == "" \
+                and not current_keys.intersection(cursors):
+            return "legacy-empty"
+        raise ValueError("notification replay cursor authority is ambiguous")
+    try:
+        baseline = _notify_baseline(cursors.get("notify.baseline"))
+        generation = _notify_generation(cursors.get("notify.generation"))
+    except ValueError:
+        raise ValueError(
+            "notification replay cursor authority is ambiguous") from None
+    mode_present = "notify.scan_mode" in cursors
+    mode = cursors.get("notify.scan_mode")
+    taint_present = "notify.scan_tainted" in cursors
+    tainted = cursors.get("notify.scan_tainted", False)
+    if mode_present and mode not in _NOTIFY_SCAN_MODES \
+            or not isinstance(tainted, bool) \
+            or tainted and mode is None:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    page_present = _notify_scan_page_authority(cursors)
+    if mode is None and (taint_present or page_present):
+        raise ValueError("notification replay cursor authority is ambiguous")
+    if baseline is not None and baseline["kind"] in {"exact", "filter"} \
+            and generation is not None:
+        if mode not in {None, "replay"} \
+                or not allow_opaque and mode is not None:
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "baseline"
+    if baseline is not None and baseline["kind"] == "exact" \
+            and not baseline["names"] and generation is None \
+            and "notify.generation" not in cursors \
+            and cursors.get("notify.scan_mode") == "empty-replay":
+        tainted = cursors.get("notify.scan_tainted", False)
+        if not isinstance(tainted, bool):
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "legacy-empty-continuation"
+    if allow_opaque and baseline is not None \
+            and baseline["kind"] == "opaque":
+        if mode not in {None, "replay"} \
+                or generation is None and mode != "replay":
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "opaque-diagnostic"
+    if allow_opaque and baseline is None and generation is None \
+            and mode == "baseline" and page_present:
+        return "baseline-continuation"
+    raise ValueError("notification replay cursor authority is ambiguous")
+
+
+def _notify_cursor_checkpoint_safe(cursors):
+    """Whether a durable cursor makes an interrupted baseline unambiguous."""
+    try:
+        _notify_replay_authority(cursors, allow_opaque=True)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _notify_recover_interrupted_baseline(cursors):
+    """Turn a pre-cursor crash at first baseline into permanent opacity."""
+    if not isinstance(cursors, dict):
+        raise ValueError("notification baseline recovery cursor is invalid")
+    recovered = copy.deepcopy(cursors)
+    if _notify_cursor_checkpoint_safe(recovered):
+        return recovered
+    notification_keys = set(_NOTIFY_LEGACY_CURSOR_KEYS) | {
+        "notify.baseline", "notify.generation", "notify.scan_mode",
+        "notify.scan_tainted", "notify.scan", "source.notify.page",
+    }
+    if notification_keys.intersection(recovered):
+        raise ValueError("notification baseline recovery cursor is ambiguous")
+    recovered["notify.baseline"] = _notify_opaque_baseline(
+        "baseline-unstable")
+    recovered["notify.scan_mode"] = "replay"
+    return recovered
+
+
 def _notification_source_order(source):
     """Newest stable notification captures win a bounded generation."""
     return (
         source["mtime_ns"], source["ctime_ns"],
-        source["name"].encode("utf-8", errors="backslashreplace"))
+        os.fsencode(source["name"]))
 
 
-def sense_notify(cursors):
+def sense_notify(cursors, *, before_initial_baseline=None):
     """Rescan a changed notification-directory generation from its root.
 
     A completed generation is a cheap unchanged-directory gate.  A changed
     directory is paged from the beginning, and a between-page mutation makes
-    the generic directory cursor restart that scan.  Replays deliberately use
-    source-stable occurrence identities; durable event admission, not a
-    lossy lexical high-water mark, decides which observations are already in
-    the corpus.
+    the generic directory cursor restart that scan.  A complete first
+    generation binds an immutable exact name baseline, or a fixed one-sided
+    membership filter when the source window overflows.  Replays emit only
+    names proved outside it and keep source-stable occurrence identities for
+    durable admission.  Legacy, membership-free, or unstable first scans
+    stay explicitly opaque instead of guessing.
     """
+    if before_initial_baseline is not None \
+            and not callable(before_initial_baseline):
+        raise TypeError("notification baseline callback is not callable")
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/notifications/history")
     page_key = "source.notify.page"
@@ -1897,12 +2228,17 @@ def sense_notify(cursors):
     generation_key = "notify.generation"
     taint_key = "notify.scan_tainted"
     scan_key = "notify.scan"
+    baseline_key = "notify.baseline"
+    baseline_refusal_emitted = False
+
+    if generation_key in cursors and cursors[generation_key] is None:
+        raise ValueError("notification directory generation is invalid")
+    if baseline_key in cursors and cursors[baseline_key] is None:
+        raise ValueError("notification baseline cursor is invalid")
 
     legacy = any(key in cursors for key in _NOTIFY_LEGACY_CURSOR_KEYS)
-    for key in _NOTIFY_LEGACY_CURSOR_KEYS:
-        cursors.pop(key, None)
-
     completed_generation = _notify_generation(cursors.get(generation_key))
+    baseline = _notify_baseline(cursors.get(baseline_key))
     mode = cursors.get(mode_key)
     if mode is not None and mode not in _NOTIFY_SCAN_MODES:
         raise ValueError("notification directory scan mode is invalid")
@@ -1912,20 +2248,101 @@ def sense_notify(cursors):
         raise ValueError("notification directory scan taint is invalid")
 
     if legacy:
-        # A lexical cursor cannot prove which lower-sorting names it missed.
-        # Restart from the root and let durable occurrence admission suppress
-        # observations that were already published before this upgrade.
+        if baseline is not None or not _legacy_notify_cursor_valid(cursors):
+            raise ValueError("notification legacy cursor is invalid")
+        legacy_keys = {
+            key for key in _NOTIFY_LEGACY_CURSOR_KEYS if key in cursors}
+        empty_high_water = legacy_keys == {"notify.last"} \
+            and cursors["notify.last"] == ""
+        # The producer's lone empty high-water value proves that its prior
+        # generation had no names.  Every other lexical cursor can confuse an
+        # old baseline name with a later lower-sorting name and stays opaque.
+        baseline = ({"schema": _NOTIFY_BASELINE_SCHEMA,
+                     "kind": "exact", "names": []}
+                    if empty_high_water else
+                    _notify_opaque_baseline("legacy-ambiguous"))
+        cursors[baseline_key] = baseline
+        for key in _NOTIFY_LEGACY_CURSOR_KEYS:
+            cursors.pop(key, None)
         cursors.pop(page_key, None)
         cursors.pop(scan_key, None)
-        mode = "replay"
+        cursors.pop(taint_key, None)
+        mode = "empty-replay" if empty_high_water else "replay"
+        scan_tainted = False
+    elif baseline is None and completed_generation is not None:
+        # v2 recorded only a directory generation.  Even an unchanged rescan
+        # cannot recover baseline names that were subsequently deleted, so
+        # this uncertainty must remain opaque across future reappearance.
+        baseline = _notify_opaque_baseline("v2-migration")
+        cursors[baseline_key] = baseline
+        if page_key in cursors or mode is not None:
+            cursors.pop(page_key, None)
+            cursors.pop(scan_key, None)
+            cursors.pop(taint_key, None)
+            mode = "replay"
+            scan_tainted = False
+    elif baseline is None and completed_generation is None \
+            and mode == "replay":
+        # An interrupted legacy migration may already have removed its old
+        # fields.  The replay marker proves uncertainty, not membership.
+        baseline = _notify_opaque_baseline("legacy-ambiguous")
+        cursors[baseline_key] = baseline
+        cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
+        cursors.pop(taint_key, None)
+        scan_tainted = False
+
+    if mode == "baseline" and (
+            baseline is not None or completed_generation is not None):
+        raise ValueError("notification baseline cursor is incomplete")
+    if baseline is not None and baseline["kind"] in {"exact", "filter"} \
+            and completed_generation is None and not (
+                mode == "empty-replay"
+                and baseline["kind"] == "exact"
+                and not baseline["names"]):
+        raise ValueError("notification baseline cursor is incomplete")
+    if baseline is not None and baseline["kind"] == "opaque" \
+            and completed_generation is None and mode != "replay":
+        raise ValueError("notification baseline cursor is incomplete")
+    if mode == "empty-replay" and (
+            completed_generation is not None
+            or baseline is None or baseline["kind"] != "exact"
+            or baseline["names"]):
+        raise ValueError("notification baseline cursor is incomplete")
 
     page_present = page_key in cursors
+    raw_scan = cursors.get(scan_key)
+    old_scan = isinstance(raw_scan, dict) \
+        and raw_scan.get("schema") in _NOTIFY_SCAN_LEGACY_SCHEMAS
+
+    def make_initial_scan_opaque():
+        """Absorb uncertainty from an interrupted/unstable first scan."""
+        nonlocal baseline, mode, scan_tainted, baseline_refusal_emitted
+        baseline = _notify_opaque_baseline("baseline-unstable")
+        cursors[baseline_key] = baseline
+        cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
+        cursors.pop(taint_key, None)
+        mode = "replay"
+        cursors[mode_key] = mode
+        scan_tainted = False
+        if not baseline_refusal_emitted:
+            evs.append(_notify_baseline_refusal_event(baseline))
+            baseline_refusal_emitted = True
+
+    if mode == "baseline" and (
+            not page_present or scan_tainted
+            or raw_scan is None or old_scan):
+        # A discarded prefix could contain a preexisting name that later
+        # reappears.  No compact rescan can recover that membership fact.
+        make_initial_scan_opaque()
+        page_present = False
+        raw_scan = None
     if not page_present:
         cursors.pop(scan_key, None)
     if page_present and mode is None:
         raise ValueError("notification directory scan state is incomplete")
 
-    raw_scan = cursors.get(scan_key)
     if not page_present:
         # A candidate without its directory cookie cannot establish which
         # portion of a generation it represents and is never an authority.
@@ -1933,22 +2350,48 @@ def sense_notify(cursors):
         # EOF.  This call is a fresh root-to-EOF attempt over the same
         # generation, so only refusals observed again may taint it.
         scan_tainted = False
+        initial_observation = (
+            mode is None and baseline is None
+            and completed_generation is None)
+        initial_fence_set = False
+        if initial_observation and before_initial_baseline is not None:
+            # Absence is itself an exact empty membership observation. Fence
+            # it before even the path stat so a crash cannot later reinterpret
+            # the first appearing name as an old baseline member.
+            before_initial_baseline()
+            initial_fence_set = True
         try:
             current_generation = _source_tree_path_generation(d)
         except FileNotFoundError:
-            if mode is not None:
+            if initial_observation:
+                baseline = {
+                    "schema": _NOTIFY_BASELINE_SCHEMA,
+                    "kind": "exact", "names": [],
+                }
+                cursors[baseline_key] = baseline
+                mode = "empty-replay"
                 cursors[mode_key] = mode
+                cursors.pop(taint_key, None)
+            elif mode is not None:
+                cursors[mode_key] = mode
+            if baseline is not None and baseline["kind"] == "opaque":
+                evs.append(_notify_baseline_refusal_event(baseline))
             return evs
         if mode is None:
             if completed_generation == current_generation:
+                if baseline is not None and baseline["kind"] == "opaque":
+                    evs.append(_notify_baseline_refusal_event(baseline))
                 return evs
             mode = ("baseline" if completed_generation is None
                     else "replay")
+        if mode == "baseline" and before_initial_baseline is not None \
+                and not initial_fence_set:
+            before_initial_baseline()
         page_before = None
         scan = _notify_scan_candidate(None)
     else:
         page_before = cursors[page_key]
-        if raw_scan is None:
+        if raw_scan is None or old_scan:
             # Migrate an old page-only cursor by replaying its generation
             # from the root; its already-returned prefix is not candidate
             # state that can justify publication after this upgrade.
@@ -1968,16 +2411,36 @@ def sense_notify(cursors):
         entries, complete, _inspected, next_page = \
             _bounded_source_entries(d, page_before)
     except FileNotFoundError:
-        # Preserve the scan mode but discard a cookie into a vanished
-        # generation.  Reappearance begins at the directory root.
-        cursors.pop(page_key, None)
-        cursors.pop(scan_key, None)
+        if mode == "baseline":
+            make_initial_scan_opaque()
+        else:
+            # Preserve the scan mode but discard a cookie into a vanished
+            # generation.  Reappearance begins at the directory root.
+            cursors.pop(page_key, None)
+            cursors.pop(scan_key, None)
+        return evs
+    except RuntimeError:
+        if mode != "baseline":
+            raise
+        # The generic scanner detected a within-page generation change.
+        # The lost prefix makes an exact/filter first baseline impossible.
+        make_initial_scan_opaque()
         return evs
     cursors[page_key] = next_page
     generation = _source_tree_directory_generation(next_page)
     if next_page.get("reset"):
         scan_tainted = False
         scan = _notify_scan_candidate(None)
+        if mode == "baseline":
+            # The page belongs to the restarted generation, but a name from
+            # the discarded first-generation prefix may later reappear.
+            baseline = _notify_opaque_baseline("baseline-unstable")
+            cursors[baseline_key] = baseline
+            mode = "replay"
+            cursors[mode_key] = mode
+            if not baseline_refusal_emitted:
+                evs.append(_notify_baseline_refusal_event(baseline))
+                baseline_refusal_emitted = True
     scan["generation"] = generation
 
     def read_notification(source):
@@ -2006,6 +2469,9 @@ def sense_notify(cursors):
 
     for entry in entries:
         if not stat.S_ISREG(entry["mode"]):
+            scan_tainted = True
+            evs.append(_source_entry_refusal_event(
+                "notify", f"notification record {entry['name']}"))
             continue
         source = _agent_source_capture(entry)
         if read_notification(source) is None:
@@ -2018,6 +2484,9 @@ def sense_notify(cursors):
                 "notify", f"duplicate notification record "
                 f"{source['name']}"))
             continue
+        if mode == "baseline":
+            scan["baseline_bits"] = _notify_filter_add(
+                scan["baseline_bits"], source["name"])
         scan["sources"].append(source)
         scan["sources"].sort(
             key=_notification_source_order, reverse=True)
@@ -2040,6 +2509,13 @@ def sense_notify(cursors):
                 continue
             admitted.append((source["name"], *record))
     if scan_tainted:
+        if mode == "baseline":
+            # Refusal during a first scan means unseen/deleted names cannot
+            # be reconstructed later.  Make that uncertainty permanent, but
+            # retain replay debt: repairing a file in place need not change
+            # the parent directory generation.
+            make_initial_scan_opaque()
+            return evs
         # Keep the mode and the last completed generation. Repairing a file
         # in place need not mutate the parent directory, so the next call
         # must rescan even if its generation gate is unchanged. No candidate
@@ -2054,14 +2530,29 @@ def sense_notify(cursors):
             "only the newest stable records were admitted",
             {"organs/notify"}, {"source-truncated", "refusal"},
             occurrence="source-truncated:notify:notification-history"))
-    if mode == "replay":
+    if mode == "baseline":
+        baseline = _notify_baseline_from_scan(scan)
+        cursors[baseline_key] = baseline
+    if baseline is None:
+        raise ValueError("notification baseline cursor is incomplete")
+    if mode in {"replay", "empty-replay"} \
+            and baseline["kind"] in {"exact", "filter"}:
+        baseline_names = (set(baseline["names"])
+                          if baseline["kind"] == "exact" else None)
         for name, app, summary in admitted:
+            if baseline_names is not None and name in baseline_names:
+                continue
+            if baseline["kind"] == "filter" and _notify_filter_contains(
+                    baseline["bits"], name):
+                continue
             token = _source_entity_token(name, "notification")
             evs.append(Event(
                 "notify", utcnow(), "notification",
                 f"{app}" + (f": {summary}" if summary else ""),
                 {"organs/notify"}, {"notification"},
                 occurrence=f"notification:{token}"))
+    elif baseline["kind"] == "opaque" and not baseline_refusal_emitted:
+        evs.append(_notify_baseline_refusal_event(baseline))
     cursors[generation_key] = generation
     cursors.pop(mode_key, None)
     cursors.pop(taint_key, None)
@@ -2087,7 +2578,10 @@ def _agent_source_capture_valid(value, *, suffix=".json"):
             or set(value) != {"name", *_AGENT_SOURCE_FIELDS} \
             or not isinstance(value.get("name"), str):
         return False
-    name_bytes = os.fsencode(value["name"])
+    try:
+        name_bytes = os.fsencode(value["name"])
+    except UnicodeError:
+        return False
     return bool(name_bytes) and name_bytes not in {b".", b".."} \
         and b"/" not in name_bytes and b"\0" not in name_bytes \
         and len(name_bytes) <= MAX_CORPUS_COMPONENT_BYTES \
@@ -2136,11 +2630,7 @@ def _agent_usage_row_valid(value):
             or value["generation"] < 0:
         return False
     return all(
-        isinstance(label_id, str)
-        and re.fullmatch(
-            r"[a-z0-9_][a-z0-9._-]*", label_id) is not None
-        and len(label_id) <= MAX_SOURCE_NAME_CHARS
-        and len(label_id.encode("utf-8")) <= MAX_CORPUS_LEAF_BYTES
+        _source_entity_token_is_canonical(label_id, "agent-limit")
         and not isinstance(percent, bool)
         and isinstance(percent, int)
         and 0 <= percent <= 100
@@ -2173,6 +2663,33 @@ def _normalized_agent_usage_row(value):
         limits[label_id] = percent
     return {
         "tokens": value["tokens"], "limits": limits, "generation": 0}
+
+
+def _normalized_legacy_agent_key(source_key, value, tagged):
+    """Classify a persisted agent key using its producer's row schema."""
+    legacy = isinstance(value, dict) \
+        and set(value) == {"tokens", "limits"}
+    modern = _agent_usage_row_valid(value)
+    if legacy:
+        if not tagged:
+            return _source_entity_token(source_key, "agent"), 0
+        if not isinstance(source_key, str):
+            raise ValueError("legacy agent identity is invalid")
+        broad = re.fullmatch(
+            r"[a-z0-9_][a-z0-9._-]*", source_key) is not None \
+            and len(source_key) <= MAX_SOURCE_NAME_CHARS \
+            and len(source_key.encode("utf-8")) <= MAX_CORPUS_LEAF_BYTES
+        if not broad:
+            raise ValueError("legacy agent identity is invalid")
+        if not _source_entity_token_is_canonical(source_key, "agent"):
+            return _source_entity_token(source_key, "agent"), 0
+        if _source_entity_token(source_key, "agent") != source_key:
+            raise ValueError("legacy agent identity is ambiguous")
+        return source_key, 0
+    if not modern \
+            or not _source_entity_token_is_canonical(source_key, "agent"):
+        raise ValueError("agent usage identity is invalid")
+    return source_key, 1
 
 
 def _agent_scan_candidate(value):
@@ -2305,7 +2822,8 @@ def sense_agents(cursors):
     state, state_truncated = _bounded_source_state(
         cursors, "agents.state", "agent",
         value_validator=_agent_usage_row_valid,
-        value_normalizer=_normalized_agent_usage_row)
+        value_normalizer=_normalized_agent_usage_row,
+        legacy_key_normalizer=_normalized_legacy_agent_key)
     if state_truncated:
         evs.append(_source_truncation_event("agents", "agent usage cursor"))
     page_key = "source.agents.page"
@@ -2566,6 +3084,10 @@ def _skill_description_from_head(head):
     return redact(clip(value, 220), "skills") if value else ""
 
 
+_SKILL_MANIFEST_ABSENCE_ERRNOS = frozenset({
+    _errno.ENOENT, _errno.ENOTDIR, _errno.ELOOP})
+
+
 def _read_skill_manifest(root, name):
     """Capture one stable directly-contained SKILL.md without symlinks."""
     if not isinstance(name, str) or not name or name in {".", ".."} \
@@ -2579,7 +3101,14 @@ def _read_skill_manifest(root, name):
     manifest_fd = -1
     try:
         root_before = os.fstat(root_fd)
-        skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
+        try:
+            skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
+        except OSError as exc:
+            if exc.errno in _SKILL_MANIFEST_ABSENCE_ERRNOS:
+                raise FileNotFoundError(
+                    _errno.ENOENT, "skill directory is absent") from exc
+            raise RuntimeError("skill directory could not be inspected") \
+                from exc
         skill_before = os.fstat(skill_fd)
 
         def containers_stable():
@@ -2602,7 +3131,8 @@ def _read_skill_manifest(root, name):
         try:
             manifest_fd = os.open(
                 "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         except OSError as exc:
             try:
                 stable_absence = containers_stable()
@@ -2611,10 +3141,15 @@ def _read_skill_manifest(root, name):
             if not stable_absence:
                 raise RuntimeError(
                     "skill manifest path changed while inspected") from exc
-            raise
+            if exc.errno in _SKILL_MANIFEST_ABSENCE_ERRNOS:
+                raise FileNotFoundError(
+                    _errno.ENOENT, "skill manifest is absent") from exc
+            raise RuntimeError(
+                "skill manifest could not be inspected") from exc
         before = os.fstat(manifest_fd)
         if not stat.S_ISREG(before.st_mode):
-            raise OSError("skill manifest is not a regular file")
+            raise FileNotFoundError(
+                _errno.ENOENT, "skill manifest is not a regular file")
         captured = bytearray()
         while len(captured) <= MAX_SKILL_MANIFEST_HEAD_BYTES:
             request = MAX_SKILL_MANIFEST_HEAD_BYTES + 1 - len(captured)
@@ -2627,7 +3162,8 @@ def _read_skill_manifest(root, name):
         try:
             current_manifest_fd = os.open(
                 "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         except OSError as exc:
             raise RuntimeError(
                 "skill manifest path changed while captured") from exc
@@ -2738,14 +3274,16 @@ def _skill_manifest_capture_matches(root, name, capture):
         skill_before = os.fstat(skill_fd)
         manifest_fd = os.open(
             "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         manifest_before = os.fstat(manifest_fd)
         current_root = _source_path_identity(root, directory_flags)
         current_skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
         current_skill = os.fstat(current_skill_fd)
         current_manifest_fd = os.open(
             "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         current_manifest = os.fstat(current_manifest_fd)
         manifest_after = os.fstat(manifest_fd)
         skill_after = os.fstat(skill_fd)
@@ -3310,11 +3848,14 @@ def sense_skills(cursors):
         for name in entries:
             try:
                 capture = _read_skill_manifest(root, name)
+            except FileNotFoundError:
+                continue
             except RuntimeError:
                 manifest_unstable = True
                 break
             except OSError:
-                continue
+                manifest_unstable = True
+                break
             page_rows.append((name, capture))
         try:
             root_stable = _skill_root_generation_matches(root, next_page)
@@ -3469,14 +4010,17 @@ def sense_skills(cursors):
                 expected = expected_rows.get((root_id, entry["name_id"]))
                 try:
                     capture = _read_skill_manifest(root, entry["name"])
-                except RuntimeError:
-                    root_current = False
-                    break
-                except OSError:
+                except FileNotFoundError:
                     if expected is not None:
                         root_current = False
                         break
                     continue
+                except RuntimeError:
+                    root_current = False
+                    break
+                except OSError:
+                    root_current = False
+                    break
                 current = {
                     "description": capture["description"],
                     "manifest": capture["manifest"],
@@ -3586,11 +4130,15 @@ def _custom_match_literals(value, *, field="match"):
 def sense_custom(cursors, include_sources=False, *, entry_index=None,
                  seen_names=None):
     """User-defined evidence streams from config custom_senses: tail a
-    log (lines or jsonl), match a pattern, emit events into the user's
-    own organ. This is how anyone points SIA at THEIR programs."""
+    log (lines or jsonl), match a pattern, and emit events through the user's
+    own source adapter. This is how anyone points SIA at their programs."""
     evs, successful = [], []
+    disable_policy = _configured_disabled_sense_policy()
     config_errors = (copy.deepcopy(CONFIG_ERRORS)
                      if entry_index in (None, 0) else [])
+    if not isinstance(CONFIG, dict):
+        result = ([], config_errors)
+        return (*result, successful) if include_sources else result
     configured = CONFIG.get("custom_senses", [])
     if not isinstance(configured, list):
         config_errors.append({"config": "custom_senses",
@@ -3620,6 +4168,8 @@ def sense_custom(cursors, include_sources=False, *, entry_index=None,
         try:
             normalized = _validated_custom_sense_entry(cs)
             if normalized is None:
+                continue
+            if _custom_sense_disabled(normalized, disable_policy):
                 continue
             description = normalized["description"]
             name = normalized["name"]

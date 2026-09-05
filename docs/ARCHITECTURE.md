@@ -10,16 +10,18 @@ source and release checks rather than a second hand-maintained map here.
 ## What is already split
 
 The runtime is not one file. These lanes were extracted in earlier releases
-and are the pattern to follow:
+or are implemented in the current tree, and are the pattern to follow:
 
 | Module | Lane |
 |---|---|
 | `bin/siasenses.py` | sensing subsystem (extracted in v1.3.7) |
+| `bin/siagraph.py` | graph/domain projection (extracted in v1.6.0) |
+| `bin/siathought.py` | durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
 | `bin/siabench.py` | signed-ledger QA benchmark |
-| `bin/siamind.py` | activation, bonding, PPR rerank, stability |
+| `bin/siamind.py` | usage salience, co-return reinforcement, PPR rerank, stability |
 | `bin/siaqueue.py` | agent note queue |
 | `bin/siarestoreadmit.py` | restore admission |
 | `bin/siarelease.py` | release checks and runtime-receipt authority |
@@ -32,6 +34,37 @@ here because every extraction changes them. Inspect the current file with
 policy are executable in `tests/test_release.py` as
 `test_marketplace_scanned_source_files_fit_the_static_limit` and
 `test_marketplace_scanned_sources_keep_headroom_under_the_limit`.
+
+## Release process ownership
+
+`bin/sialifetime.py` is a self-contained release-source helper, not an
+installed runtime member or a new runtime rung. Direct install/uninstall
+and first-light setup enter the same owner. It snapshots the admitted
+helper and Bash script into sealed descriptors. It also admits one source-root
+directory descriptor, opens the helper and entry descriptor-relative to that
+root, and passes the root directory descriptor to the worker. Release-tree
+reads therefore remain on the admitted inode even if the checkout pathname is
+rebound; retiring or replacing the source directory cannot replace code or
+later snapshot inputs during cleanup. An inherited private,
+credential-checked control channel admits the worker; environment flags alone
+do not establish ownership.
+
+Before mutation, the worker transfers actual lease descriptors to the
+owner. The shared bounded-command runner drains detached descendants
+before returning a result. The outer owner separately drains before Bash
+cleanup or a deliberate lease handoff. Linux subreaper adoption, stopped
+worker observation and pinned process identities let it follow descendants
+that leave the original process group without treating one live process
+tree snapshot as complete. Repeated cancellation follows the same drainage
+path. If termination or observation cannot complete, ownership remains
+held instead of reporting successful cleanup.
+
+This is cooperative same-user release coordination, not a hostile-worker
+sandbox. The guarantee requires the owner to remain alive: killing that
+owner with SIGKILL or OOM is outside the boundary. A malformed control
+protocol drains descendants but can bypass Bash rollback; retained stages
+and recovery debt must not be described as successful rollback. Missing
+required kernel features refuse before launching the mutation worker.
 
 ## Why an extraction is a designed change, not a mechanical move
 
@@ -73,7 +106,7 @@ were run in parallel before cutting anything; the exports lane scored
 decisively cleanest (one contiguous ~1,000-line block, 26 functions reachable
 from four entry points, only 8 names referenced from 14 parent functions, no
 import-time execution beyond constants, one exception class that stays
-parent-owned), so it led rather than the originally-guessed thought-recovery
+parent-owned), so it led rather than the originally guessed generated-entry recovery
 cluster. The move used the exact `siasenses` bind/invoke façade, added a
 `sia-runtime-v5` member set to the then-four digest routines (now consolidated
 in `siarelease.py`) and the installer/test file lists, and required no change
@@ -105,7 +138,8 @@ uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
 proves the held authority remains usable and is then closed.
 
-**v1.6.1 — thought pages + recovery/legacy replay are fully child-owned.**
+**Implemented (unreleased) — generated-entry/epoch materialization and recovery are
+child-owned.**
 The initial extraction left its context managers and a duplicate directory
 ABI in `sialib`; the completed boundary removes both exceptions. `siathought`
 declares its context exports explicitly, and `invoke()` returns a one-shot
@@ -118,7 +152,7 @@ proxy returns the wrapped `__exit__` result unchanged, preserving exception
 suppression.
 
 The legacy directory reader now consumes the existing generic `_SOURCE_LIBC`
-ABI through `bind()`; no thought-specific ctypes class, handle, or patch seam
+ABI through `bind()`; no generated-entry-specific ctypes class, handle, or patch seam
 remains in `sialib`. Existing callers retain the same
 `sialib._thought_legacy_catalog()` and
 `sialib._thought_mind_replay_catalog()` spellings because the ordinary
@@ -126,14 +160,28 @@ delegate publication loop exports them from the child. Release tests pin the
 context set, ownership, import surface, per-phase rebinding, suppression, and
 single ABI source; `tests/test_thought_recovery.py` remains the behavior gate.
 
-**Then: v1.6.2 — the cursors lane** last, because it is the substrate the
+The epoch lifecycle shares this durable memory-page owner: completeness
+manifests, bounded consolidation scan/claims, rendering, and the originating
+recovery marker move together. Event-day admission, occurrence indexing,
+generic corpus publication and scheduled-maintenance orchestration remain core services
+(`DREAM` is the compatibility ledger/action name).
+Bounds, regular expressions and consolidation exception classes remain
+parent-owned, so calls through each dynamically loaded core preserve its
+patched dependencies and catch the same exception identity. The ordinary
+export loop publishes the moved helpers; no context export or runtime member
+changes. `tests/test_epoch_module_ownership.py` checks ownership and real
+cross-alias calls, while the existing epoch and scheduled-maintenance behavior tests remain
+unchanged. The release export tuple adds the moved functions so the same
+exact-set and binding guards cover the expanded child.
+
+**Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
 extracting it adds a second delegate hop in the pulse hot path, so it moves
-only after two façade extractions have proven under real upgrade/rollback.
+only under a dedicated performance and upgrade/rollback plan.
 
 Each extraction ships as its own release with nothing else in it, gated by the
-full suite and the real-gbrain contract lane. Target: `sialib.py` < 400 KB by
-v1.6.2.
+full suite and the real-gbrain contract lane. The longer-term sizing target is
+`sialib.py` < 400 KB; no release is assigned to that target.
 
 ## The boundary that actually bit
 

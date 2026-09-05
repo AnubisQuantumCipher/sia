@@ -1,7 +1,9 @@
 // SIA COCKPIT — full-screen mission control for the Omarchy Brain.
+// “Brain” is a product metaphor for auditable local machine memory; it is not a
+// biological brain and does not establish cognition or neuroscience.
 // Overlay kind: summoned from the bar widget or SUPER+SHIFT+B, dismissed
 // with Esc / ✕ / click on the header brand. Pixels only — renders the
-// brainstem's snapshots; the brain is gbrain + the signed corpus.
+// brainstem service snapshots; authoritative state is gbrain + the signed corpus.
 
 import QtQuick
 import QtQuick.Controls as Controls
@@ -32,6 +34,9 @@ Item {
   property bool installCompletionResolved: false
   property var graph: null
   property var thoughts: []
+  property bool thoughtsResolved: false
+  property bool thoughtsLoadValid: false
+  property bool thoughtsEverAdmitted: false
   property bool stale: true
   property real nowMs: Date.now()
   property string hoverId: ""
@@ -48,6 +53,7 @@ Item {
   property bool readyOk: false
   property string readyDetail: ""
   property var continuity: null
+  property bool continuityReceiptAuthenticated: false
   property string continuityBoundary: ""
   property var continuitySchedule: null
   property string continuityScheduleBoundary: ""
@@ -84,6 +90,8 @@ Item {
   property bool installCompletionPublicationChanged: false
   readonly property int continuityInputMaxLength: 4096
   readonly property int continuityResponseMaxLength: 65536
+  readonly property int continuityAuthorityPollInterval: 60000
+  readonly property int verificationResponseMaxLength: 65536
 
   readonly property string effId: hoverId !== "" ? hoverId : selectedId
   readonly property string statePath:
@@ -91,6 +99,13 @@ Item {
   readonly property string continuityPath:
     (Quickshell.env("HOME") || "")
       + "/.local/state/sia-continuity/status.json"
+  readonly property string continuityReceiptPath:
+    root.continuity && root.continuity.latest
+      && root.continuity.latest.verified === true
+      ? (Quickshell.env("HOME") || "")
+        + "/.local/state/sia-continuity/verifications/"
+        + root.continuity.latest.snapshot_id + ".json"
+      : ""
   readonly property string installCompletionPath:
     (Quickshell.env("HOME") || "")
       + "/.local/state/sia/managed-install/first-light.json"
@@ -145,8 +160,12 @@ Item {
   readonly property string eventsToday:
     root.statusLoadValid && root.status
       ? String(root.status.events_today) : "—"
+  // Keep rejected last-good bytes available to the boundary text, but never
+  // let a card or action consume them as the current resident publication.
+  readonly property var currentStatus: root.currentStatusSnapshot()
+  readonly property var currentGraph: root.currentGraphSnapshot()
   readonly property var snap:
-    graph && graph.snapshot ? graph.snapshot : null
+    currentGraph && currentGraph.snapshot ? currentGraph.snapshot : null
   readonly property real staleAfterSec: configuredStaleAfterSec()
   readonly property string pluginId:
     root.manifest && typeof root.manifest.id === "string"
@@ -164,6 +183,7 @@ Item {
                           Model.continuityStaleAfterSec())
   readonly property var currentContinuity:
     !root.continuityStale && root.continuityBoundary === ""
+      && root.continuityReceiptAuthenticated
       ? root.continuity : null
   readonly property string continuityState:
     root.currentContinuity ? root.currentContinuity.state : "unknown"
@@ -181,6 +201,17 @@ Item {
   function isNonNegativeCount(value) {
     return typeof value === "number" && isFinite(value)
       && Math.floor(value) === value && value >= 0
+      && value <= 9007199254740991
+  }
+
+  function currentStatusSnapshot() {
+    return root.statusLoadValid ? root.status : null
+  }
+
+  function currentGraphSnapshot() {
+    return root.graphBoundary === ""
+      && Model.snapshotGenerationsMatch(root.currentStatus, root.graph)
+      ? root.graph : null
   }
 
   function isPlainRecord(value) {
@@ -188,13 +219,7 @@ Item {
   }
 
   function validLedgerSummary(ledger) {
-    // `head` may legitimately be empty: sialib publishes seq 0 with an empty
-    // head when it cannot read the chain, and that is a real answer the
-    // cockpit is supposed to show.  Its being a string is what matters, so
-    // the vitals row cannot concatenate `undefined` into a chain claim.
-    return root.isPlainRecord(ledger)
-      && root.isNonNegativeCount(ledger.seq)
-      && typeof ledger.head === "string"
+    return Model.residentLedgerSummaryShape(ledger)
   }
 
   function validStatusSnapshot(snapshot) {
@@ -212,15 +237,32 @@ Item {
       .indexOf(value) !== -1
   }
 
+  function validGraphString(value, limit, nonempty) {
+    var length = Model.strictStringLength(value)
+    if (length < 0 || length > limit) return false
+    return nonempty !== true || (length > 0 && value.trim() !== "")
+  }
+
+  function validGraphSlug(value) {
+    return Model.canonicalCorpusSlug(value)
+  }
+
   function validGraphSnapshot(candidate, nowMs) {
-    if (!root.isPlainRecord(candidate) || candidate.v !== 2
+    if (!Model.recordHasExactly(candidate, [
+          "v", "ts", "publication_id", "nodes", "edges", "pages_total",
+          "pages_total_complete", "snapshot"
+        ]) || candidate.v !== 2
         || !Model.timestampObservedBy(candidate.ts, nowMs)
-        || typeof candidate.publication_id !== "string"
-        || candidate.publication_id === ""
+        || !/^[0-9a-f]{32}$/.test(candidate.publication_id)
         || !root.isNonNegativeCount(candidate.pages_total)
         || typeof candidate.pages_total_complete !== "boolean"
-        || !Array.isArray(candidate.nodes) || !Array.isArray(candidate.edges)
-        || !root.isPlainRecord(candidate.snapshot)) return false
+        || !Array.isArray(candidate.nodes) || candidate.nodes.length > 260
+        || !Array.isArray(candidate.edges) || candidate.edges.length > 4096
+        || !Model.recordHasExactly(candidate.snapshot, [
+          "complete", "truncated", "omitted_nodes", "omitted_edges",
+          "omissions_imply_absence", "aged_out", "counts_by_kind",
+          "failed_ops", "window_days"
+        ])) return false
     var snapshot = candidate.snapshot
     if (typeof snapshot.complete !== "boolean"
         || !root.isNonNegativeCount(snapshot.truncated)
@@ -228,46 +270,98 @@ Item {
         || !root.isNonNegativeCount(snapshot.omitted_edges)
         || typeof snapshot.omissions_imply_absence !== "boolean"
         || !root.isNonNegativeCount(snapshot.aged_out)
-        || !root.isNonNegativeCount(snapshot.window_days)
+        || snapshot.window_days !== 14
         || !root.isPlainRecord(snapshot.counts_by_kind)
-        || !Array.isArray(snapshot.failed_ops)) return false
+        || !Array.isArray(snapshot.failed_ops)
+        || snapshot.failed_ops.length > 1024) return false
+    if (snapshot.complete !== (snapshot.failed_ops.length === 0)
+        || (snapshot.complete && !candidate.pages_total_complete)
+        || snapshot.omissions_imply_absence !== false
+        || snapshot.omitted_nodes !== snapshot.truncated
+        || (snapshot.omitted_edges > 0
+            && candidate.edges.length !== 4096)) return false
     for (var failureIndex = 0;
          failureIndex < snapshot.failed_ops.length; failureIndex++)
-      if (typeof snapshot.failed_ops[failureIndex] !== "string"
-          || snapshot.failed_ops[failureIndex] === "") return false
+      if (!Model.inertStatusString(
+            snapshot.failed_ops[failureIndex], 2000, true)
+          || snapshot.failed_ops.indexOf(snapshot.failed_ops[failureIndex])
+             !== failureIndex) return false
     var ids = ({})
     var observedKinds = ({})
+    var expectedIn = ({})
+    var expectedOut = ({})
+    var edgeKeys = ({})
     for (var nodeIndex = 0; nodeIndex < candidate.nodes.length; nodeIndex++) {
       var node = candidate.nodes[nodeIndex]
-      if (!root.isPlainRecord(node)
-          || typeof node.id !== "string" || node.id === ""
-          || typeof node.t !== "string" || node.t === ""
-          || typeof node.title !== "string"
+      if (!Model.recordHasExactly(
+            node, ["id", "t", "title", "ts", "origin",
+                   "deg", "din", "dout"])
+          || !root.validGraphSlug(node.id)
+          || !root.validGraphString(node.t, 200, true)
+          || !/^[a-z0-9][a-z0-9._-]*$/.test(node.t)
+          || !Model.inertStatusString(node.title, 200, true)
           || !Model.timestampObservedBy(node.ts, nowMs)
           || !root.validOriginLabel(node.origin)
           || !root.isNonNegativeCount(node.deg)
           || !root.isNonNegativeCount(node.din)
-          || !root.isNonNegativeCount(node.dout)
-          || ids[node.id]) return false
-      ids[node.id] = true
-      observedKinds[node.t] = (observedKinds[node.t] || 0) + 1
+          || !root.isNonNegativeCount(node.dout)) return false
+      var nodeKey = "$" + node.id
+      if (ids[nodeKey] === true) return false
+      ids[nodeKey] = true
+      expectedIn[nodeKey] = 0
+      expectedOut[nodeKey] = 0
+      var kindKey = "$" + node.t
+      observedKinds[kindKey] = (observedKinds[kindKey] || 0) + 1
     }
     for (var edgeIndex = 0; edgeIndex < candidate.edges.length; edgeIndex++) {
       var edge = candidate.edges[edgeIndex]
-      if (!root.isPlainRecord(edge)
-          || typeof edge.s !== "string" || !ids[edge.s]
-          || typeof edge.d !== "string" || !ids[edge.d]
-          || typeof edge.t !== "string" || edge.t === ""
-          || typeof edge.why !== "string") return false
+      if (!Model.recordHasExactly(edge, ["s", "d", "t", "why"])
+          || typeof edge.s !== "string"
+          || typeof edge.d !== "string"
+          || !root.validGraphString(edge.t, 200, true)
+          || !/^[a-z0-9][a-z0-9._-]*$/.test(edge.t)
+          || !Model.inertStatusString(edge.why, 90, false)) return false
+      var sourceKey = "$" + edge.s
+      var destinationKey = "$" + edge.d
+      var edgeKey = "$" + JSON.stringify([edge.s, edge.d, edge.t])
+      if (ids[sourceKey] !== true || ids[destinationKey] !== true
+          || edgeKeys[edgeKey] === true) return false
+      edgeKeys[edgeKey] = true
+      expectedOut[sourceKey] += 1
+      expectedIn[destinationKey] += 1
     }
-    for (var kind in snapshot.counts_by_kind)
-      if (!root.isNonNegativeCount(snapshot.counts_by_kind[kind])
-          || snapshot.counts_by_kind[kind] !== (observedKinds[kind] || 0))
+    for (nodeIndex = 0; nodeIndex < candidate.nodes.length; nodeIndex++) {
+      node = candidate.nodes[nodeIndex]
+      nodeKey = "$" + node.id
+      if (node.din !== expectedIn[nodeKey]
+          || node.dout !== expectedOut[nodeKey]
+          || node.deg !== expectedIn[nodeKey] + expectedOut[nodeKey])
         return false
-    for (var observedKind in observedKinds)
-      if (snapshot.counts_by_kind[observedKind] !== observedKinds[observedKind])
+    }
+    var countKinds = Object.keys(snapshot.counts_by_kind)
+    var observedKindNames = Object.keys(observedKinds)
+    if (countKinds.length !== observedKindNames.length) return false
+    for (var countKindIndex = 0;
+         countKindIndex < countKinds.length; countKindIndex++) {
+      var countKind = countKinds[countKindIndex]
+      if (!root.validGraphString(countKind, 200, true)
+          || !/^[a-z0-9][a-z0-9._-]*$/.test(countKind)
+          || !root.isNonNegativeCount(snapshot.counts_by_kind[countKind])
+          || snapshot.counts_by_kind[countKind]
+             !== (observedKinds["$" + countKind] || 0))
         return false
-    return candidate.pages_total >= candidate.nodes.length
+    }
+    for (var observedKindIndex = 0;
+         observedKindIndex < observedKindNames.length; observedKindIndex++) {
+      var observedKind = observedKindNames[observedKindIndex]
+      if (snapshot.counts_by_kind[observedKind.substring(1)]
+          !== observedKinds[observedKind])
+        return false
+    }
+    return snapshot.aged_out <= candidate.pages_total
+      && snapshot.truncated <= candidate.pages_total - snapshot.aged_out
+      && candidate.nodes.length === candidate.pages_total
+         - snapshot.aged_out - snapshot.truncated
   }
 
   function graphHasNode(id) {
@@ -275,8 +369,8 @@ Item {
   }
 
   function projectionDebtKeys() {
-    var debt = root.status && root.status.projection_debt
-      ? root.status.projection_debt : null
+    var debt = root.currentStatus && root.currentStatus.projection_debt
+      ? root.currentStatus.projection_debt : null
     if (!debt || typeof debt !== "object") return []
     var keys = []
     for (var key in debt) {
@@ -289,7 +383,7 @@ Item {
   }
 
   function projectionDebtKnown() {
-    return root.projectionDebtKnownFor(root.status)
+    return root.projectionDebtKnownFor(root.currentStatus)
   }
 
   function projectionDebtKnownFor(snapshot) {
@@ -315,17 +409,41 @@ Item {
   }
 
   function snapshotBasis() {
-    if (!Model.snapshotGenerationsMatch(root.status, root.graph)
-        || !root.status || !root.status.ledger) return ""
-    return root.status.publication_id + "/" + root.graph.publication_id
-      + "/" + String(root.status.ledger.seq) + "/"
-      + String(root.status.ledger.head)
+    var status = root.currentStatus
+    var graph = root.currentGraph
+    if (!graph
+        || !status || !status.ledger
+        || !Model.publicationId(status.publication_id, false)
+        || !Model.publicationId(graph.publication_id, false)
+        || !root.validLedgerSummary(status.ledger)
+        || status.ledger.seq <= 0
+        || !/^[0-9a-f]{12}$/.test(status.ledger.head)) return ""
+    // Property insertion order matches the CLI's sorted canonical receipt.
+    return JSON.stringify({
+      graph_publication_id: graph.publication_id,
+      ledger_head: status.ledger.head,
+      ledger_seq: status.ledger.seq,
+      status_publication_id: status.publication_id
+    })
   }
 
   function clearVerification() {
     root.verifyMsg = ""
     root.verifyOk = false
     verifyProc.cancel()
+  }
+
+  // Quickshell 0.3 FileView.reload() does not queue another read when one for
+  // the same path is already in flight.  A watched change must therefore
+  // survive until the current callback has returned (FileView still owns the
+  // live reader while emitting loaded/loadFailed), then request one more read.
+  function settleWatchedFileRefresh(view) {
+    if (!view || view.refreshPending !== true) return false
+    view.refreshPending = false
+    Qt.callLater(function() {
+      if (view) view.reload()
+    })
+    return true
   }
 
   function startVerification() {
@@ -341,7 +459,7 @@ Item {
   function projectionDebtDetail() {
     var keys = root.projectionDebtKeys()
     if (!keys.length) return ""
-    var debt = root.status.projection_debt
+    var debt = root.currentStatus.projection_debt
     var parts = []
     for (var i = 0; i < keys.length; i++)
       parts.push(keys[i] + ": " + String(debt[keys[i]]))
@@ -351,46 +469,159 @@ Item {
   function graphSnapshotText() {
     if (root.graphBoundary !== "") return root.graphBoundary
     if (!root.graph || !root.graph.ts) return "no graph snapshot"
-    if (!Model.snapshotGenerationsMatch(root.status, root.graph))
+    if (!root.currentStatus)
+      return "last good graph; resident status unavailable"
+    if (!Model.snapshotGenerationsMatch(root.currentStatus, root.graph))
       return "mixed status/graph generations; no combined snapshot claim"
     var complete = root.snap && root.snap.complete === true
-    return "graph published " + Model.timeAgo(root.graph.ts, root.nowMs)
+    return "graph published "
+      + Model.timeAgo(root.currentGraph.ts, root.nowMs)
       + " · " + (complete ? "complete" : "partial")
   }
 
   function ledgerTransitionText() {
-    var transition = root.status && root.status.ledger_transition
-      ? root.status.ledger_transition : null
+    var transition = root.currentStatus
+      && root.currentStatus.ledger_transition
+      ? root.currentStatus.ledger_transition : null
     if (!transition || !transition.state) return "ledger transition unknown"
     return "ledger " + transition.state
   }
 
+  function ledgerSummaryText(ledger) {
+    if (!ledger || ledger.seq === 0 || ledger.head === "")
+      return "signed ledger head unavailable"
+    return Model.chainGlyph() + " ledger seq " + ledger.seq
+      + " · " + ledger.head + "…"
+  }
+
+  function dreamSummaryText(dream, nowMs) {
+    if (!dream || typeof dream !== "object" || Array.isArray(dream)
+        || Object.keys(dream).length === 0) return ""
+    if (typeof dream.attempt === "string") {
+      var attemptAge = Model.timeAgo(dream.attempt, nowMs)
+      var attemptWhen = attemptAge !== "" ? attemptAge
+        : (dream.attempt !== "" ? dream.attempt : "time unavailable")
+      var failure = Model.dreamGlyph() + " maintenance attempt " + attemptWhen
+        + " · " + dream.status
+      if (dream.summary !== "") failure += " · " + dream.summary
+      if (dream.last !== "") {
+        var priorAge = Model.timeAgo(dream.last, nowMs)
+        var priorWhen = priorAge !== "" ? priorAge : dream.last
+        failure += " · prior success " + priorWhen
+      }
+      return failure
+    }
+    if (typeof dream.last !== "string" || dream.last === "") return ""
+    var age = Model.timeAgo(dream.last, nowMs)
+    var when = age !== "" ? age : dream.last
+    var result = Model.dreamGlyph() + " maintenance finished " + when
+      + " · " + dream.status
+    if (dream.summary !== "") result += " · " + dream.summary
+    return result
+  }
+
+  function takeSummaryAvailable(takes) {
+    return root.isPlainRecord(takes) && Object.keys(takes).length > 0
+  }
+
+  function takeSummaryText(takes) {
+    if (!root.takeSummaryAvailable(takes))
+      return "prediction summary unavailable"
+    var result = takes.open + " open prediction"
+      + (takes.open === 1 ? "" : "s")
+    if (takes.due > 0) result += " · " + takes.due + " DUE"
+    result += " · " + takes.resolved + " resolved"
+    if (takes.unresolvable > 0)
+      result += " · " + takes.unresolvable + " unresolvable (excluded)"
+    if (takes.invalid_resolved > 0)
+      result += " · " + takes.invalid_resolved + " invalid resolved row"
+        + (takes.invalid_resolved === 1 ? "" : "s") + " excluded"
+    if (takes.invalid_records > 0)
+      result += " · " + takes.invalid_records
+        + " malformed/unknown-status row"
+        + (takes.invalid_records === 1 ? "" : "s") + " excluded"
+    return result
+  }
+
+  function beliefCardVisibleFor(status) {
+    if (!root.isPlainRecord(status)) return false
+    var takes = status.takes
+    var hasTakeRows = root.takeSummaryAvailable(takes)
+      && (takes.open > 0 || takes.resolved > 0
+          || takes.unresolvable > 0 || takes.invalid_resolved > 0
+          || takes.invalid_records > 0)
+    return hasTakeRows
+      || (Array.isArray(status.bench_trend)
+          && status.bench_trend.length > 0)
+  }
+
+  function statusErrorRows(errors) {
+    if (!root.isPlainRecord(errors)) return []
+    var result = []
+    var names = Object.keys(errors).sort()
+    for (var nameIndex = 0; nameIndex < names.length; nameIndex++) {
+      var name = names[nameIndex]
+      var detail = errors[name]
+      if (typeof detail === "string") {
+        result.push("✗ " + name + ": " + detail)
+        continue
+      }
+      if (!Array.isArray(detail) || detail.length === 0) {
+        result.push("✗ " + name + ": no detail recorded")
+        continue
+      }
+      for (var detailIndex = 0;
+           detailIndex < detail.length; detailIndex++) {
+        var row = detail[detailIndex]
+        var field = row.file !== undefined ? "file" : "config"
+        result.push("✗ " + name + " · " + field + " " + row[field]
+          + ": " + row.error)
+      }
+    }
+    return result
+  }
+
   function continuityStateText() {
     if (root.continuityBoundary !== "") return "STATUS UNAVAILABLE"
+    if (!root.continuity) return "STATUS UNAVAILABLE"
     if (root.continuityStale) return "STATUS STALE"
     if (root.restoreCorrelationLost) return "NEEDS ATTENTION"
     if (root.restoreVerificationPending) return "RESTORE VERIFYING"
-    if (!root.continuity) return "STATUS UNAVAILABLE"
-    return Model.continuityStateLabel(root.continuity.state)
+    if (!root.currentContinuity) return "STATUS UNAVAILABLE"
+    return Model.continuityStateLabel(root.currentContinuity.state)
   }
 
   function continuityRepositoryText() {
+    if (root.continuityBoundary !== "")
+      return "Repository status unavailable; last good value withheld."
+    if (!root.continuity)
+      return "No continuity status has been published."
     if (root.continuityStale)
       return "The last continuity publication is stale."
-    if (!root.continuity) return "No continuity status has been published."
-    var display = String(root.continuity.repository_display || "").trim()
+    if (!root.currentContinuity)
+      return "No continuity status has been published."
+    var display = String(
+      root.currentContinuity.repository_display || "").trim()
     if (display !== "") return display
-    return root.continuity.state === "unconfigured"
+    return root.currentContinuity.state === "unconfigured"
       ? "Choose a recovery repository to begin."
       : "Repository identity is not available."
   }
 
   function continuityLatestText() {
-    var latest = root.continuity ? root.continuity.latest : null
+    if (root.continuityBoundary !== "")
+      return "Recovery-copy status unavailable; last good value withheld."
+    if (!root.continuity)
+      return "No recovery copy has been recorded."
+    if (root.continuityStale)
+      return "The last recovery-copy publication is stale."
+    var latest = root.currentContinuity
+      ? root.currentContinuity.latest : null
     if (!latest) return "No recovery copy has been recorded."
     var age = Model.timeAgo(latest.created_at, root.nowMs)
     var when = age !== "" ? age : latest.created_at
-    var classification = Model.continuityLatestReady(latest)
+    var classification = Model.continuityLatestReady(
+      latest, root.continuityReceiptAuthenticated)
       ? "Recovery-ready copy · "
       : latest.verified
         ? "Verified recovery material · "
@@ -401,10 +632,13 @@ Item {
 
   function continuityDetailText() {
     if (root.continuityBoundary !== "") return root.continuityBoundary
+    if (!root.continuity)
+      return "The continuity worker is not reporting."
     if (root.continuityStale)
       return "Last good continuity status is stale; no recovery state is current."
-    if (!root.continuity) return "The continuity worker is not reporting."
-    var detail = String(root.continuity.detail || "").trim()
+    if (!root.currentContinuity)
+      return "The continuity worker is not reporting."
+    var detail = String(root.currentContinuity.detail || "").trim()
     return detail !== "" ? detail : root.continuityLatestText()
   }
 
@@ -533,7 +767,9 @@ Item {
     var prepared = root.preparedRestore()
     if (root.restoreVerificationPending || root.restoreCorrelationLost
         || !prepared
-        || !Model.continuityCanApply(root.currentContinuity)) return false
+        || !Model.continuityCanApply(
+          root.currentContinuity,
+          root.continuityReceiptAuthenticated)) return false
     return root.restorePhraseInput === "RESTORE"
       && root.restorePreparedSnapshotInput === prepared.snapshot_id
       && root.restoreLedgerHeadInput === prepared.ledger_head
@@ -549,16 +785,24 @@ Item {
       else if (root.continuityPage === "connect")
         connectRepositoryField.forceActiveFocus()
       else if (root.continuityPage === "restore") {
-        if (Model.continuityCanApply(root.currentContinuity))
+        if (Model.continuityCanApply(
+              root.currentContinuity,
+              root.continuityReceiptAuthenticated))
           restorePhraseField.forceActiveFocus()
         else if (root.continuityState === "restoring")
           continuityCloseButton.forceActiveFocus()
         else restoreSnapshotField.forceActiveFocus()
       }
-      else if (Model.continuityCanBackUp(root.currentContinuity))
+      else if (Model.continuityCanBackUp(
+                 root.currentContinuity,
+                 root.continuityReceiptAuthenticated))
         continuityCloseButton.forceActiveFocus()
-      else if (Model.continuityCanPrepare(root.currentContinuity)
-               || Model.continuityCanApply(root.currentContinuity))
+      else if (Model.continuityCanPrepare(
+                 root.currentContinuity,
+                 root.continuityReceiptAuthenticated)
+               || Model.continuityCanApply(
+                 root.currentContinuity,
+                 root.continuityReceiptAuthenticated))
         overviewRestoreButton.forceActiveFocus()
       else if (!root.continuity
                || root.continuityState === "unconfigured")
@@ -658,7 +902,9 @@ Item {
         "A restore is already waiting for readiness and SIA signed-ledger verification.")
       return
     }
-    if (!prepared || !Model.continuityCanApply(root.currentContinuity)) {
+    if (!prepared || !Model.continuityCanApply(
+          root.currentContinuity,
+          root.continuityReceiptAuthenticated)) {
       root.continuityRefusal(
         "Restore is not prepared. Prepare and verify the snapshot first.")
       return
@@ -728,10 +974,16 @@ Item {
 
   function validRestoreAcceptance(value, preparedId) {
     return root.isPlainRecord(value)
+      && Model.recordHasExactly(value, [
+        "schema_version", "accepted", "request_id", "operation",
+        "prepared_id"
+      ])
       && value.schema_version === 1
       && value.accepted === true
-      && typeof value.request_id === "string" && value.request_id !== ""
+      && Model.validContinuityCorrelationId(value.request_id)
       && value.operation === "restore-apply"
+      && Model.validContinuityCorrelationId(preparedId)
+      && Model.validContinuityCorrelationId(value.prepared_id)
       && value.prepared_id === preparedId
   }
 
@@ -847,10 +1099,10 @@ Item {
                   text: root.continuityPage === "setup"
                     ? "Create a verified recovery repository"
                     : root.continuityPage === "connect"
-                      ? "Reconnect this brain to an existing repository"
+                      ? "Reconnect this local memory to an existing repository"
                       : root.continuityPage === "restore"
                         ? "Inspect, prepare, then deliberately restore"
-                        : "Keep the brain recoverable beyond this computer"
+                        : "Keep local memory recoverable beyond this computer"
                   color: Qt.alpha(root.fg, 0.52)
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -906,7 +1158,9 @@ Item {
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   renderType: Text.NativeRendering
-                  text: Model.continuityBarMark(root.continuity)
+                  text: Model.continuityBarMark(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                   color: root.continuityColor
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
@@ -1081,9 +1335,11 @@ Item {
                 }
                 Ui.Button {
                   id: overviewBackupButton
-                  visible: !!root.continuity
+                  visible: !!root.currentContinuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanBackUp(root.currentContinuity)
+                  enabled: Model.continuityCanBackUp(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                     && !continuityProc.working
                   text: continuityProc.working
                     ? "Requesting…" : "Make extra copy now"
@@ -1098,9 +1354,11 @@ Item {
                 }
                 Ui.Button {
                   id: overviewCheckButton
-                  visible: !!root.continuity
+                  visible: !!root.currentContinuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanCheck(root.currentContinuity)
+                  enabled: Model.continuityCanCheck(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                     && !continuityProc.working
                   text: "Check backup"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1114,10 +1372,14 @@ Item {
                 }
                 Ui.Button {
                   id: overviewRestoreButton
-                  visible: !!root.continuity
+                  visible: !!root.currentContinuity
                     && root.continuityState !== "unconfigured"
-                  enabled: (Model.continuityCanPrepare(root.currentContinuity)
-                            || Model.continuityCanApply(root.currentContinuity))
+                  enabled: (Model.continuityCanPrepare(
+                              root.currentContinuity,
+                              root.continuityReceiptAuthenticated)
+                            || Model.continuityCanApply(
+                              root.currentContinuity,
+                              root.continuityReceiptAuthenticated))
                     && !continuityProc.working
                   text: "Restore…"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1409,7 +1671,9 @@ Item {
                 Ui.Button {
                   text: continuityProc.working
                     ? "Requesting…" : "Prepare restore"
-                  enabled: Model.continuityCanPrepare(root.currentContinuity)
+                  enabled: Model.continuityCanPrepare(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                     && !continuityProc.working
                     && root.restoreSnapshotInput.trim() !== ""
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -1425,7 +1689,9 @@ Item {
 
               Column {
                 visible: root.continuityState === "prepared"
-                  && Model.continuityCanApply(root.currentContinuity)
+                  && Model.continuityCanApply(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                 width: parent.width
                 spacing: Style.spacing.md
 
@@ -1443,7 +1709,7 @@ Item {
                   width: parent.width
                   textFormat: Text.PlainText
                   renderType: Text.NativeRendering
-                  text: "Preparation is non-destructive. Applying it replaces live SIA brain state. Every value below is checked again by the backend under the exclusive lifecycle lease."
+                  text: "Preparation is non-destructive. Applying it replaces live SIA memory state. Every value below is checked again by the backend under the exclusive lifecycle lease."
                   wrapMode: Text.WordWrap
                   color: Qt.alpha(root.fg, 0.68)
                   font.family: root.fontFamily
@@ -1641,7 +1907,9 @@ Item {
               wrapMode: Text.WordWrap
               color: continuityProc.working || root.restoreVerificationPending
                 ? Qt.alpha(root.fg, 0.65)
-                : root.continuityActionOk ? root.accent : root.urgent
+                : root.continuityStale || root.continuityBoundary !== ""
+                  ? root.urgent
+                  : root.continuityActionOk ? root.accent : root.urgent
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
@@ -1655,7 +1923,7 @@ Item {
           opened: root.restoreConfirmOpen
           z: 30
           selectedIndex: 0
-          message: "Begin the live restore and re-adopt its corpus receipt on this machine? This replaces live brain state. Cancel applies nothing and resets the ceremony. Success remains withheld until SIA is ready and its signed ledger verifies."
+          message: "Begin the live restore and re-adopt its corpus receipt on this machine? This replaces live memory state. Cancel applies nothing and resets the ceremony. Success remains withheld until SIA is ready and its signed ledger verifies."
           cancelText: "Cancel"
           confirmText: "Restore SIA"
           background: Color.background
@@ -1794,7 +2062,7 @@ Item {
     if (root.releaseLifecycle === "checking")
       return "INSTALLATION CHECK · READING LOCAL STATE"
     if (root.releaseLifecycle === "setup")
-      return "FIRST LIGHT · LOCAL BRAIN NOT YET INSTALLED"
+      return "FIRST LIGHT · LOCAL MEMORY NOT YET INSTALLED"
     if (root.releaseLifecycle === "installing")
       return root.installerProgressUnobserved
         ? "FIRST LIGHT · NO INSTALLER PROGRESS OBSERVED"
@@ -1823,14 +2091,15 @@ Item {
     if (root.releaseLifecycle === "checking")
       return "SIA is reading the resident status and the separate first-light completion record. No installer has been started."
     if (root.releaseLifecycle === "setup")
-      return "The Marketplace installed SIA's cockpit. The resident brain is not complete; first light remains a deliberate local action."
+      return "The Marketplace installed SIA's cockpit. The resident memory service is not complete; first light remains a deliberate local action."
     if (root.releaseLifecycle === "installing")
       return root.installerProgressUnobserved
         ? "A matching installer recorded work in progress, and SIA has watched that record sit unchanged for longer than a first light takes. That is not evidence the installer failed, and SIA is not claiming it did: this cockpit cannot see whether that terminal is still running, and the install lock it holds is per-boot and unreadable from here. Check for the installer terminal. If it is gone, retry here; the installer verifies ownership and refuses unsafe replacement. Nothing is installed and nothing is ready until the matching runtime publishes status."
         : "A matching installer recorded work in progress. Keep its terminal open, or retry here only if that terminal has ended."
     if (root.releaseLifecycle === "update") {
-      var installed = root.status && typeof root.status.version === "string"
-        ? root.status.version : "a legacy runtime"
+      var installed = root.currentStatus
+        && typeof root.currentStatus.version === "string"
+        ? root.currentStatus.version : "a legacy runtime"
       return "The cockpit is " + root.pluginVersion
         + ", while the resident status is " + installed
         + ". The installer verifies ownership and retains the corpus and signing identity while advancing the runtime."
@@ -1867,9 +2136,10 @@ Item {
   }
 
   function nodeById(id) {
-    if (!root.graph || id === "") return null
-    for (var i = 0; i < root.graph.nodes.length; i++)
-      if (root.graph.nodes[i].id === id) return root.graph.nodes[i]
+    if (!root.currentGraph || id === "") return null
+    for (var i = 0; i < root.currentGraph.nodes.length; i++)
+      if (root.currentGraph.nodes[i].id === id)
+        return root.currentGraph.nodes[i]
     return null
   }
 
@@ -1888,12 +2158,13 @@ Item {
   }
 
   function toggleGraphReplay() {
-    if (!root.graph) return
+    if (!root.currentGraph) return
     if (root.playing) {
       root.playing = false
       root.revealT = 1.0
     } else {
-      Model.replayLayout(root.graph, graphCanvas.width, graphCanvas.height)
+      Model.replayLayout(
+        root.currentGraph, graphCanvas.width, graphCanvas.height)
       root.revealT = 0.0
       root.playing = true
     }
@@ -1947,8 +2218,9 @@ Item {
     graphFile.reload(); thoughtsFile.reload()
     continuityFile.reload()
     continuityScheduleRefresh.restart()
-    if (root.graph && graphCanvas.width > 0)
-      Model.syncGraph(root.graph, graphCanvas.width, graphCanvas.height)
+    if (root.currentGraph && graphCanvas.width > 0)
+      Model.syncGraph(
+        root.currentGraph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
       if (payload.mode === "continuity") root.openContinuity("overview")
       else if (root.cockpitVisible && root.setupActionAllowed)
@@ -1997,6 +2269,19 @@ Item {
     })
   }
 
+  onCurrentGraphChanged: {
+    if (root.currentGraph && graphCanvas.width > 0)
+      Model.syncGraph(
+        root.currentGraph, graphCanvas.width, graphCanvas.height)
+    if (!root.currentGraph) {
+      root.hoverId = ""
+      root.selectedId = ""
+      root.playing = false
+      root.revealT = 1.0
+    }
+    graphCanvas.requestPaint()
+  }
+
   onReleaseLifecycleChanged: {
     // Ahead of the visibility guard on purpose.  The horizon has to keep
     // running while the cockpit is closed, which is where an installer
@@ -2012,8 +2297,10 @@ Item {
 
   function applyStatus(text) {
     root.clearVerification()
+    readyProc.cancel()
+    root.clearReadyCheck()
     try {
-      const parsed = JSON.parse(text)
+      const parsed = Model.strictStatusJsonParse(text)
       const valid = root.validStatusSnapshot(parsed)
       root.runtimeEvidence = Model.runtimeLifecycleEvidence(
         parsed, valid, root.runtimeEvidence, root.pluginVersion)
@@ -2026,8 +2313,6 @@ Item {
       root.status = parsed
       root.statusLoadValid = true
       root.statusBoundary = ""
-      readyProc.cancel()
-      root.clearReadyCheck()
       root.stale = Model.timestampStale(
         parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
@@ -2041,10 +2326,13 @@ Item {
 
   function applyGraph(text) {
     root.clearVerification()
+    readyProc.cancel()
+    root.clearReadyCheck()
     try {
-      const g = JSON.parse(text)
+      const g = Model.strictGraphJsonParse(text)
       if (!root.validGraphSnapshot(g, Date.now())) {
         root.graphBoundary = root.graph
+          || root.graphBoundary.indexOf("last good graph;") === 0
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
         return
       }
@@ -2052,8 +2340,6 @@ Item {
         Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       root.graph = g
       root.graphBoundary = ""
-      readyProc.cancel()
-      root.clearReadyCheck()
       if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
         root.selectedId = ""
       if (root.hoverId !== "" && !root.graphHasNode(root.hoverId))
@@ -2061,11 +2347,12 @@ Item {
       graphCanvas.requestPaint()
     } catch (e) {
       root.graphBoundary = root.graph
+        || root.graphBoundary.indexOf("last good graph;") === 0
         ? "last good graph; latest graph rejected" : "no valid graph snapshot"
     }
   }
 
-  // The thought stream is the plane that carries model-origin prose, so it
+  // The generated-entry stream is the plane that carries model-origin prose, so it
   // is the one plane whose shape must never be assumed.  `kind` and `origin`
   // are painted into the row as the honesty labels themselves; a record
   // missing either rendered the literal word "undefined" beside prose, which
@@ -2076,43 +2363,167 @@ Item {
   // them into a classification, and the delegate renders those as
   // legacy-unlabeled.  Requiring it here would reject the very rows that
   // boundary exists to expose.
+  function validThoughtKind(value) {
+    if (!root.validGraphString(value, 2000, true)) return false
+    var canonical = value.toLowerCase().trim()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[.-]+|[.-]+$/g, "")
+    return value === (canonical === "" ? "unknown" : canonical)
+  }
+
+  function validThoughtRecoveryReceipt(receipt) {
+    return Model.recordHasExactly(
+        receipt, ["claim_id", "payload_sha256"])
+      && /^[0-9a-f]{32}$/.test(receipt.claim_id)
+      && /^[0-9a-f]{64}$/.test(receipt.payload_sha256)
+  }
+
+  function thoughtCodePointIsControl(code) {
+    return Model.codePointIsControlOrFormat(code)
+  }
+
+  function thoughtTextIsCanonical(value) {
+    if (!root.validGraphString(value, 2000, true)) return false
+    // inert_summary removes control/format/surrogate code points, collapses
+    // all whitespace to single ASCII spaces, and substitutes active Markdown
+    // punctuation before the producer publishes the row.
+    for (var index = 0; index < value.length; index++) {
+      var code = value.codePointAt(index)
+      if (root.thoughtCodePointIsControl(code)) return false
+      if (code > 0xffff) index += 1
+    }
+    if (/[^\S ]/.test(value)
+        || value.indexOf("  ") !== -1
+        || value.trim() !== value
+        || /[<>\[\]|*]/.test(value)
+        || value.indexOf(String.fromCharCode(96)) !== -1) return false
+    return true
+  }
+
+  function validThoughtSlugFor(thought) {
+    if (!root.validGraphSlug(thought.slug)) return false
+    return thought.queue_id === undefined
+      || thought.slug === "thoughts/queue-" + thought.queue_id
+  }
+
+  function thoughtUrgencyState(thought) {
+    if (!thought || typeof thought.urgent !== "boolean")
+      return "unrecorded"
+    return thought.urgent ? "urgent" : "ordinary"
+  }
+
+  function thoughtRowMetadata(thought, nowMs) {
+    var origin = thought && typeof thought.origin === "string"
+      ? thought.origin : "legacy-unlabeled"
+    var parts = [thought.kind, "origin:" + origin]
+    if (root.thoughtUrgencyState(thought) === "unrecorded")
+      parts.push("urgency unrecorded")
+    var age = thought && typeof thought.ts === "string"
+      ? Model.timeAgo(thought.ts, nowMs) : ""
+    parts.push(age !== "" ? age : "time unrecorded")
+    return parts.join(" · ")
+  }
+
+  function thoughtStreamCountText() {
+    return root.thoughtsLoadValid ? String(root.thoughts.length) : "—"
+  }
+
   function validThought(thought, nowMs) {
     if (!root.isPlainRecord(thought)) return false
-    if (typeof thought.ts !== "string" || thought.ts === "") return false
-    var now = Number(nowMs)
-    if (!(now > 0) || !Model.timestampObservedBy(thought.ts, now))
+    // The loader preserves an unlabeled {kind,text} legacy row and adds only
+    // origin:model to the closed set of known model-backed legacy kinds.
+    // Projected legacy rows carry the base fields; later rows may add origin,
+    // a durable queue binding, or both. These are the only admitted envelopes.
+    var minimal = Model.recordHasExactly(thought, ["kind", "text"])
+    var normalizedLegacyModel = Model.recordHasExactly(
+      thought, ["kind", "text", "origin"])
+      && thought.origin === "model"
+      && Model.legacyModelThoughtKind(thought.kind)
+    var baseFields = ["ts", "kind", "text", "links", "urgent", "slug"]
+    var legacy = Model.recordHasExactly(thought, baseFields)
+    var modernFields = baseFields.concat(["origin"])
+    var modern = Model.recordHasExactly(thought, modernFields)
+    var legacyQueued = Model.recordHasExactly(
+      thought, baseFields.concat(["queue_id"]))
+    var modernQueued = Model.recordHasExactly(
+      thought, modernFields.concat(["queue_id"]))
+    if (!minimal && !normalizedLegacyModel && !legacy && !modern
+        && !legacyQueued && !modernQueued)
       return false
-    if (typeof thought.kind !== "string" || thought.kind === "") return false
-    if (typeof thought.text !== "string" || thought.text === "") return false
-    if (thought.origin !== undefined
-        && !root.validOriginLabel(thought.origin)) return false
-    if (thought.urgent !== undefined && typeof thought.urgent !== "boolean")
-      return false
+    if (!root.validThoughtKind(thought.kind)
+        || !root.thoughtTextIsCanonical(thought.text)) return false
+    if (minimal || normalizedLegacyModel) return true
+    if (!Model.validUtcSecondTimestamp(thought.ts)) return false
+    if (modern || modernQueued) {
+      if (["evidence", "derived", "model"].indexOf(thought.origin) === -1)
+        return false
+    }
+    if ((legacyQueued || modernQueued)
+        && (typeof thought.queue_id !== "string"
+            || !/^[0-9a-f]{32}$/.test(thought.queue_id))) return false
+    if (!root.validThoughtSlugFor(thought)
+        || typeof thought.urgent !== "boolean") return false
+    if (!Array.isArray(thought.links) || thought.links.length === 0
+        || thought.links.length > 200) return false
+    for (var linkIndex = 0; linkIndex < thought.links.length; linkIndex++) {
+      if (!root.validGraphSlug(thought.links[linkIndex])) return false
+      if (linkIndex > 0
+          && thought.links[linkIndex - 1] >= thought.links[linkIndex])
+        return false
+    }
     return true
   }
 
   function validThoughtStream(stream, nowMs) {
     if (!root.isPlainRecord(stream)) return false
-    if (stream.v !== 1 || !Array.isArray(stream.thoughts)) return false
-    for (var i = 0; i < stream.thoughts.length; i++)
-      if (!root.validThought(stream.thoughts[i], nowMs)) return false
+    var topFields = ["v", "thoughts"]
+    if (stream.thought_recovery !== undefined)
+      topFields.push("thought_recovery")
+    if (!Model.recordHasExactly(stream, topFields)
+        || stream.v !== 1 || !Array.isArray(stream.thoughts)
+        || stream.thoughts.length > 200
+        || (stream.thought_recovery !== undefined
+            && !root.validThoughtRecoveryReceipt(
+              stream.thought_recovery))) return false
+    var slugs = ({}), queueIds = ({})
+    for (var i = 0; i < stream.thoughts.length; i++) {
+      var thought = stream.thoughts[i]
+      if (!root.validThought(thought, nowMs)) return false
+      if (thought.slug !== undefined) {
+        var slugKey = "$" + thought.slug
+        if (slugs[slugKey] === true) return false
+        slugs[slugKey] = true
+      }
+      if (thought.queue_id !== undefined) {
+        var queueKey = "$" + thought.queue_id
+        if (queueIds[queueKey] === true) return false
+        queueIds[queueKey] = true
+      }
+    }
     return true
   }
 
   function thoughtsRejected() {
-    root.thoughtsBoundary = root.thoughts.length
-      ? "last good thought stream; latest thought stream rejected"
-      : "no valid thought stream"
+    root.thoughtsResolved = true
+    root.thoughtsLoadValid = false
+    root.thoughtsBoundary = root.thoughtsEverAdmitted
+      || root.thoughtsBoundary.indexOf("last good generated-entry stream;") === 0
+      ? "last good generated-entry stream; latest generated-entry stream rejected"
+      : "no valid generated-entry stream"
   }
 
   function applyThoughts(text) {
     try {
-      const t = JSON.parse(text)
+      const t = Model.strictThoughtStreamJsonParse(text)
       if (!root.validThoughtStream(t, Date.now())) {
         root.thoughtsRejected()
         return
       }
       root.thoughts = t.thoughts.slice(-40).reverse()
+      root.thoughtsResolved = true
+      root.thoughtsLoadValid = true
+      root.thoughtsEverAdmitted = true
       root.thoughtsBoundary = ""
     } catch (e) {
       // A silent catch here meant a truncated or mid-replace read quietly
@@ -2121,13 +2532,42 @@ Item {
     }
   }
 
-  function applyContinuity(text) {
+  function rejectContinuityStatus(lastGoodMessage, unavailableMessage) {
+    root.continuityReceiptAuthenticated = false
+    root.continuityBoundary = root.continuity
+      ? lastGoodMessage : unavailableMessage
+    var hadActionClaim = root.continuityActionOk
+      || root.continuityActionMsg !== ""
+      || root.restoreVerificationPending
+    var hadRestoreCorrelation = root.restoreRequestId !== ""
+      || root.restoreExpectedPreparedId !== ""
+    root.continuityActionOk = false
+    root.restoreVerificationPending = false
+    if (hadRestoreCorrelation) root.restoreCorrelationLost = true
+    if (hadActionClaim || hadRestoreCorrelation)
+      root.continuityActionMsg = "Continuity status is unavailable; prior action results are not current."
+  }
+
+  function refreshContinuityActionFreshness() {
+    var stale = Model.continuityStale(
+      root.continuity, root.nowMs, Model.continuityStaleAfterSec())
+    if (!stale || (!root.continuityActionOk
+                   && !root.restoreVerificationPending)) return
+    root.continuityActionOk = false
+    root.restoreVerificationPending = false
+    if (root.restoreRequestId !== ""
+        || root.restoreExpectedPreparedId !== "")
+      root.restoreCorrelationLost = true
+    root.continuityActionMsg = "Continuity status is stale; prior action results are not current."
+  }
+
+  function applyContinuity(text, receiptAuthenticated) {
     try {
-      const parsed = JSON.parse(text)
-      if (!Model.validContinuityStatus(parsed)) {
-        root.continuityBoundary = root.continuity
-          ? "last good continuity status; latest update rejected"
-          : "no valid continuity status"
+      const parsed = Model.strictContinuityJsonParse(text)
+      if (!Model.validContinuityStatus(parsed, receiptAuthenticated)) {
+        root.rejectContinuityStatus(
+          "last good continuity status; latest update rejected",
+          "no valid continuity status")
         return
       }
       var previousPrepared = root.preparedRestore()
@@ -2136,16 +2576,27 @@ Item {
       var nextPreparedId = parsed.prepared
         ? parsed.prepared.prepared_id : ""
       root.continuity = parsed
+      root.continuityReceiptAuthenticated =
+        receiptAuthenticated === true
       root.continuityBoundary = ""
       if (previousPreparedId !== nextPreparedId) {
         root.restoreConfirmOpen = false
         root.clearRestoreCeremony()
       }
+      var currentPublicationStale = Model.continuityStale(
+        parsed, Date.now(), Model.continuityStaleAfterSec())
+      if (!root.restoreVerificationPending
+          && root.restoreCorrelationLost
+          && parsed.state === "prepared"
+          && nextPreparedId !== ""
+          && !currentPublicationStale) {
+        root.restoreRequestId = ""
+        root.restoreExpectedPreparedId = ""
+        root.restoreCorrelationLost = false
+      }
       if (root.restoreVerificationPending) {
         var operation = root.matchingRestoreOperation(parsed)
-        var publicationStale = Model.continuityStale(
-          parsed, Date.now(), Model.continuityStaleAfterSec())
-        if (publicationStale) {
+        if (currentPublicationStale) {
           root.restoreVerificationPending = false
           root.restoreCorrelationLost = true
           root.continuityActionOk = false
@@ -2158,15 +2609,24 @@ Item {
                    && operation.ready
                    && operation.sia_ledger_verified) {
           root.restoreVerificationPending = false
+          root.restoreCorrelationLost = false
+          root.restoreRequestId = ""
+          root.restoreExpectedPreparedId = ""
           root.continuityActionOk = true
           root.continuityActionMsg = "Restore verified: SIA is ready and its signed ledger passes."
         } else if (operation && operation.phase === "verified") {
           root.restoreVerificationPending = false
+          root.restoreCorrelationLost = false
+          root.restoreRequestId = ""
+          root.restoreExpectedPreparedId = ""
           root.continuityActionOk = false
           root.continuityActionMsg = "Restore terminal record did not prove both readiness and SIA signed-ledger verification."
         } else if (operation && (operation.phase === "failed"
                                  || operation.phase === "blocked")) {
           root.restoreVerificationPending = false
+          root.restoreCorrelationLost = false
+          root.restoreRequestId = ""
+          root.restoreExpectedPreparedId = ""
           root.continuityActionOk = false
           root.continuityActionMsg = "The exact restore request did not reach verified readiness. Review continuity details before retrying."
         } else if (!operation) {
@@ -2185,15 +2645,15 @@ Item {
       }
       if (root.opened) continuityScheduleRefresh.restart()
     } catch (e) {
-      root.continuityBoundary = root.continuity
-        ? "last good continuity status; latest update rejected"
-        : "no valid continuity status"
+      root.rejectContinuityStatus(
+        "last good continuity status; latest update rejected",
+        "no valid continuity status")
     }
   }
 
   function applyContinuitySchedule(text) {
     try {
-      const parsed = JSON.parse(text)
+      const parsed = Model.strictContinuityJsonParse(text)
       if (!Model.validContinuitySchedule(parsed))
         throw new Error("invalid continuity schedule")
       root.continuitySchedule = parsed
@@ -2207,9 +2667,10 @@ Item {
 
   function applySetupPresence(text) {
     try {
-      const parsed = JSON.parse(text)
+      const parsed = Model.strictSetupMarkerJsonParse(text)
       if (!Model.setupTerminalPresented(parsed, root.setupRequestedAtSec,
-                                        root.setupAttemptId))
+                                        root.setupAttemptId,
+                                        Math.floor(Date.now() / 1000)))
         return
       root.setupTerminalPresented = true
       root.setupTerminalMissing = false
@@ -2255,7 +2716,7 @@ Item {
 
   function applyInstallCompletion(text, publicationChanged) {
     try {
-      const parsed = JSON.parse(text)
+      const parsed = Model.strictInstallCompletionJsonParse(text)
       root.installCompletion = parsed
     } catch (e) { root.installCompletion = null }
     root.noteInstallingObservation(publicationChanged)
@@ -2263,14 +2724,20 @@ Item {
 
   FileView {
     id: statusFile
+    property bool refreshPending: false
     path: root.statePath + "/status.json"
     watchChanges: true
     printErrors: false
     onLoaded: {
+      if (root.settleWatchedFileRefresh(statusFile)) return
       root.applyStatus(text())
       root.statusResolved = true
     }
     onLoadFailed: {
+      if (root.settleWatchedFileRefresh(statusFile)) return
+      root.clearVerification()
+      readyProc.cancel()
+      root.clearReadyCheck()
       root.runtimeEvidence = Model.runtimeLifecycleEvidence(
         null, false, root.runtimeEvidence, root.pluginVersion)
       root.statusLoadValid = false
@@ -2280,8 +2747,17 @@ Item {
         : "resident status unavailable"
     }
     onFileChanged: {
-      // Atomic publication is a refresh, not evidence that the resident
-      // generation became unsafe. Commit the new result in the load callbacks.
+      // The watched name now denotes an unvalidated generation.  Keep the
+      // prior bytes only as diagnostic context until the settled reread.
+      root.clearVerification()
+      readyProc.cancel()
+      root.clearReadyCheck()
+      root.statusLoadValid = false
+      root.statusResolved = false
+      root.statusBoundary = root.status
+        ? "last good status; newer resident status pending validation"
+        : "resident status pending validation"
+      statusFile.refreshPending = true
       statusApply.restart()
     }
   }
@@ -2290,80 +2766,200 @@ Item {
 
   FileView {
     id: graphFile
+    property bool refreshPending: false
     path: root.statePath + "/graph.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyGraph(text())
+    onLoaded: {
+      if (root.settleWatchedFileRefresh(graphFile)) return
+      root.applyGraph(text())
+    }
     onLoadFailed: {
+      if (root.settleWatchedFileRefresh(graphFile)) return
       // statusFile has always resolved a failed load into a boundary; these
       // three planes did not, so a snapshot deleted or made unreadable after
       // a good load left its last-good pixels on screen with an EMPTY
       // boundary string — the display reading as freshly confirmed at the
       // exact moment its source stopped existing.
-      root.graphBoundary = root.graph
+      root.clearVerification()
+      readyProc.cancel()
+      root.clearReadyCheck()
+      var hadLastGood = !!root.graph
+        || root.graphBoundary.indexOf("last good graph;") === 0
+      root.graph = null
+      root.selectedId = ""
+      root.hoverId = ""
+      graphCanvas.requestPaint()
+      root.graphBoundary = hadLastGood
         ? "last good graph; resident graph snapshot unavailable"
         : "resident graph snapshot unavailable"
     }
-    onFileChanged: graphApply.restart()
+    onFileChanged: {
+      root.clearVerification()
+      readyProc.cancel()
+      root.clearReadyCheck()
+      root.graphBoundary = root.graph
+        ? "last good graph; newer graph snapshot pending validation"
+        : "resident graph snapshot pending validation"
+      root.graph = null
+      root.selectedId = ""
+      root.hoverId = ""
+      graphCanvas.requestPaint()
+      graphFile.refreshPending = true
+      graphApply.restart()
+    }
   }
   Timer { id: graphApply; interval: 200; repeat: false
-          onTriggered: { graphFile.reload(); root.applyGraph(graphFile.text()) } }
+          onTriggered: graphFile.reload() }
 
   FileView {
     id: thoughtsFile
+    property bool refreshPending: false
     path: root.statePath + "/thoughts.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyThoughts(text())
-    onLoadFailed: {
-      root.thoughtsBoundary = root.thoughts.length
-        ? "last good thought stream; resident thought stream unavailable"
-        : "resident thought stream unavailable"
+    onLoaded: {
+      if (root.settleWatchedFileRefresh(thoughtsFile)) return
+      root.applyThoughts(text())
     }
-    onFileChanged: thoughtsApply.restart()
+    onLoadFailed: {
+      if (root.settleWatchedFileRefresh(thoughtsFile)) return
+      var hadLastGood = root.thoughtsEverAdmitted
+        || root.thoughtsBoundary.indexOf(
+          "last good generated-entry stream;") === 0
+      root.thoughtsResolved = true
+      root.thoughtsLoadValid = false
+      root.thoughts = []
+      root.thoughtsBoundary = hadLastGood
+        ? "last good generated-entry stream; resident generated-entry stream unavailable"
+        : "resident generated-entry stream unavailable"
+    }
+    onFileChanged: {
+      root.thoughtsResolved = false
+      root.thoughtsLoadValid = false
+      root.thoughtsBoundary = root.thoughtsEverAdmitted
+        ? "last good generated-entry stream; newer stream pending validation"
+        : "resident generated-entry stream pending validation"
+      root.thoughts = []
+      thoughtsFile.refreshPending = true
+      thoughtsApply.restart()
+    }
   }
   Timer { id: thoughtsApply; interval: 200; repeat: false
-          onTriggered: { thoughtsFile.reload(); root.applyThoughts(thoughtsFile.text()) } }
+          onTriggered: thoughtsFile.reload() }
 
   FileView {
     id: continuityFile
+    property bool refreshPending: false
     path: root.continuityPath
     watchChanges: true
     printErrors: false
-    onLoaded: root.applyContinuity(text())
-    onLoadFailed: {
-      root.continuityBoundary = root.continuity
-        ? "last good continuity status; resident continuity status unavailable"
-        : "resident continuity status unavailable"
+    onLoaded: {
+      if (root.settleWatchedFileRefresh(continuityFile)) return
+      continuityStatusProc.refresh()
     }
-    onFileChanged: continuityApply.restart()
+    onLoadFailed: {
+      if (root.settleWatchedFileRefresh(continuityFile)) return
+      root.rejectContinuityStatus(
+        "last good continuity status; resident continuity status unavailable",
+        "resident continuity status unavailable")
+      continuityStatusProc.refresh()
+    }
+    onFileChanged: {
+      root.continuityReceiptAuthenticated = false
+      continuityStatusProc.invalidate()
+      root.continuityBoundary = root.continuity
+        ? "last good continuity status; newer update pending validation"
+        : "continuity status pending validation"
+      var hadActionContext = root.continuityActionOk
+        || root.continuityActionMsg !== ""
+        || root.restoreVerificationPending
+        || root.restoreRequestId !== ""
+        || root.restoreExpectedPreparedId !== ""
+      root.continuityActionOk = false
+      if (hadActionContext)
+        root.continuityActionMsg = "Continuity status changed; waiting to validate the new publication."
+      continuityFile.refreshPending = true
+      continuityApply.restart()
+    }
   }
   Timer { id: continuityApply; interval: 150; repeat: false
-          onTriggered: {
-            continuityFile.reload()
-            root.applyContinuity(continuityFile.text())
-          } }
+          onTriggered: continuityFile.reload() }
+
+  // Receipt replacement or deletion is an authority change even when the
+  // display envelope does not move.  Never parse this file in QML; its only
+  // role here is to invalidate provenance and trigger backend revalidation.
+  FileView {
+    id: continuityReceiptFile
+    property bool refreshPending: false
+    path: root.continuityReceiptPath
+    preload: path !== ""
+    watchChanges: path !== ""
+    printErrors: false
+    onLoaded: {
+      if (root.settleWatchedFileRefresh(continuityReceiptFile)) return
+      if (path !== "") continuityStatusProc.refresh()
+    }
+    onLoadFailed: {
+      if (root.settleWatchedFileRefresh(continuityReceiptFile)) return
+      if (path === "") return
+      root.rejectContinuityStatus(
+        "last good continuity status; verification receipt unavailable",
+        "continuity verification receipt unavailable")
+      continuityStatusProc.refresh()
+    }
+    onFileChanged: {
+      root.rejectContinuityStatus(
+        "last good continuity status; verification receipt changed",
+        "continuity verification receipt changed")
+      continuityStatusProc.invalidate()
+      continuityReceiptFile.refreshPending = true
+      continuityReceiptApply.restart()
+    }
+  }
+  Timer { id: continuityReceiptApply; interval: 150; repeat: false
+          onTriggered: continuityReceiptFile.reload() }
+
   Timer { id: continuityScheduleRefresh; interval: 150; repeat: false
           onTriggered: continuityScheduleProc.refresh() }
   Timer {
-    interval: 60000
+    // The exact receipt watcher above withdraws that claim immediately.
+    // Rebind the remaining config, key, identity, and optional environment
+    // authorities on this explicit bounded polling horizon.
+    interval: root.continuityAuthorityPollInterval
     running: root.opened
     repeat: true
-    onTriggered: continuityScheduleProc.refresh()
+    onTriggered: {
+      root.continuityReceiptAuthenticated = false
+      root.continuityBoundary = root.continuity
+        ? "last good continuity status; authority revalidation pending"
+        : "continuity authority revalidation pending"
+      if (root.continuityActionOk) {
+        root.continuityActionOk = false
+        root.continuityActionMsg =
+          "Continuity authority is being revalidated; prior action results are not current."
+      }
+      continuityStatusProc.invalidate()
+      continuityStatusProc.refresh()
+      continuityScheduleProc.refresh()
+    }
   }
 
   FileView {
     id: installCompletionFile
+    property bool refreshPending: false
     path: root.installCompletionPath
     watchChanges: true
     printErrors: false
     onLoaded: {
+      if (root.settleWatchedFileRefresh(installCompletionFile)) return
       var publicationChanged = root.installCompletionPublicationChanged
       root.installCompletionPublicationChanged = false
       root.applyInstallCompletion(text(), publicationChanged)
       root.installCompletionResolved = true
     }
     onLoadFailed: {
+      if (root.settleWatchedFileRefresh(installCompletionFile)) return
       root.installCompletionPublicationChanged = false
       root.installCompletion = null
       root.installCompletionResolved = true
@@ -2374,6 +2970,7 @@ Item {
       // refresh.  Withdraw validated pixels until the changed record settles.
       root.installCompletionPublicationChanged = true
       root.installCompletionResolved = false
+      installCompletionFile.refreshPending = true
       installCompletionApply.restart()
     }
   }
@@ -2382,19 +2979,26 @@ Item {
 
   FileView {
     id: setupPresenceFile
+    property bool refreshPending: false
     path: root.setupPresencePath
     watchChanges: true
     printErrors: false
     // Reading this owner-only marker is the whole new capability: it observes
     // that the installer shell started in a terminal.  It is not readiness,
     // it starts nothing, and an absent or unreadable marker is fail-closed.
-    onLoaded: root.applySetupPresence(text())
-    onLoadFailed: { }
+    onLoaded: {
+      if (root.settleWatchedFileRefresh(setupPresenceFile)) return
+      root.applySetupPresence(text())
+    }
+    onLoadFailed: {
+      if (root.settleWatchedFileRefresh(setupPresenceFile)) return
+    }
     onFileChanged: {
       // A change is worth exactly one reload.  Only launchSetup() starts the
       // repeating poll, and only under the deadline that is guaranteed to
       // stop it, so an unrequested marker change can never leave a timer
       // running for the life of the shell.
+      setupPresenceFile.refreshPending = true
       if (setupPresenceDeadline.running) setupPresenceApply.restart()
       else setupPresenceFile.reload()
     }
@@ -2420,6 +3024,7 @@ Item {
     interval: 1000; running: root.opened; repeat: true
     onTriggered: {
       root.nowMs = Date.now()
+      root.refreshContinuityActionFreshness()
       if (root.status) {
         root.stale = Model.timestampStale(
           root.status.ts, root.nowMs, root.staleAfterSec)
@@ -2490,18 +3095,35 @@ Item {
       }
     }
 
-    function finish(attempt, code) {
+    function receiptMatches(attempt) {
+      if (attempt.outOverflow) return false
+      var lines = attempt.outText.replace(/\r\n/g, "\n").split("\n")
+      while (lines.length && lines[lines.length - 1] === "") lines.pop()
+      return lines.length > 0
+        && lines[lines.length - 1] === "SIA-VERIFIED-BASIS " + attempt.basis
+    }
+
+    function settle(attempt) {
+      if (!attempt.exited || !attempt.outDone) return
       var accepted = root.opened
         && root.processAttemptIsCurrent(activeAttempt, attempt)
         && attempt.basis !== ""
         && verifyProc.basis === attempt.basis
         && attempt.basis === root.snapshotBasis()
+      var verified = accepted && attempt.exitCode === 0
+        && receiptMatches(attempt)
       retire(attempt)
       if (!accepted) return
-      root.verifyOk = code === 0
-      root.verifyMsg = code === 0
+      root.verifyOk = verified
+      root.verifyMsg = verified
         ? "SIA signed ledger re-verified ✓"
         : "CHAIN VERIFICATION INCOMPLETE"
+    }
+
+    function finish(attempt, code) {
+      attempt.exitCode = code
+      attempt.exited = true
+      settle(attempt)
     }
   }
 
@@ -2514,8 +3136,26 @@ Item {
       property string basis: ""
       property bool launchPending: true
       property bool startedForAttempt: false
-      command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia", "verify"]
-      stdout: StdioCollector { waitForEnd: true }
+      property string outText: ""
+      property bool outDone: false
+      property bool outOverflow: false
+      property bool exited: false
+      property int exitCode: 0
+      command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia",
+                "verify", "--expect-basis", verifyAttempt.basis]
+      stdout: StdioCollector {
+        waitForEnd: true
+        onStreamFinished: {
+          var output = String(text || "")
+          verifyAttempt.outOverflow = output.length
+            > root.verificationResponseMaxLength
+          verifyAttempt.outText = output.slice(
+            0, root.verificationResponseMaxLength)
+          output = ""
+          verifyAttempt.outDone = true
+          verifyProc.settle(verifyAttempt)
+        }
+      }
       onStarted: {
         verifyAttempt.startedForAttempt = true
         verifyAttempt.launchPending = false
@@ -2528,6 +3168,118 @@ Item {
       onExited: function(code) {
         verifyProc.finish(verifyAttempt, code)
       }
+    }
+  }
+
+  // The status JSON is a display envelope, not proof that a verification
+  // receipt still exists.  Read it through the backend boundary that rebinds
+  // every verified latest row to its current receipt before exposing it.
+  Process {
+    id: continuityStatusProc
+    property string outText: ""
+    property string errText: ""
+    property int exitCode: 0
+    property bool exited: false
+    property bool outDone: false
+    property bool errDone: false
+    property bool outOverflow: false
+    property bool errOverflow: false
+    property bool launchPending: false
+    property bool startedForAttempt: false
+    property bool checking: false
+    property bool rereadPending: false
+    command: [(Quickshell.env("HOME") || "") + "/.local/bin/sia",
+              "backup", "status"]
+
+    function invalidate() {
+      root.continuityReceiptAuthenticated = false
+      if (checking || running) rereadPending = true
+    }
+
+    function refresh() {
+      if (checking || running) {
+        rereadPending = true
+        return
+      }
+      outText = ""
+      errText = ""
+      exitCode = 0
+      exited = false
+      outDone = false
+      errDone = false
+      outOverflow = false
+      errOverflow = false
+      launchPending = true
+      startedForAttempt = false
+      checking = true
+      running = true
+    }
+
+    function fail() {
+      checking = false
+      launchPending = false
+      rereadPending = false
+      root.rejectContinuityStatus(
+        "last good continuity status; receipt authority unavailable",
+        "continuity receipt authority unavailable")
+    }
+
+    function settle() {
+      if (!checking || !exited || !outDone || !errDone) return
+      checking = false
+      launchPending = false
+      if (rereadPending) {
+        rereadPending = false
+        Qt.callLater(function() { continuityStatusProc.refresh() })
+        return
+      }
+      if (exitCode === 0 && !outOverflow && !errOverflow) {
+        root.applyContinuity(
+          outText.replace(/^\s+|\s+$/g, ""), true)
+      } else {
+        fail()
+      }
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityStatusProc.outOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityStatusProc.outText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityStatusProc.outDone = true
+        continuityStatusProc.settle()
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = String(text || "")
+        continuityStatusProc.errOverflow = output.length
+          > root.continuityResponseMaxLength
+        continuityStatusProc.errText = output.slice(
+          0, root.continuityResponseMaxLength)
+        output = ""
+        continuityStatusProc.errDone = true
+        continuityStatusProc.settle()
+      }
+    }
+    onStarted: {
+      continuityStatusProc.startedForAttempt = true
+      continuityStatusProc.launchPending = false
+    }
+    onRunningChanged: {
+      if (!running && continuityStatusProc.launchPending
+          && !continuityStatusProc.startedForAttempt)
+        continuityStatusProc.fail()
+    }
+    onExited: function(code) {
+      continuityStatusProc.exitCode = code
+      continuityStatusProc.exited = true
+      continuityStatusProc.settle()
     }
   }
 
@@ -2858,7 +3610,8 @@ Item {
         var acceptance = null
         try {
           acceptance = outOverflow ? null
-            : JSON.parse(outText.replace(/^\s+|\s+$/g, ""))
+            : Model.strictContinuityAcceptanceJsonParse(
+                outText.replace(/^\s+|\s+$/g, ""))
         }
         catch (e) { acceptance = null }
         if (root.validRestoreAcceptance(acceptance, restorePreparedId)) {
@@ -3007,7 +3760,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: Style.space(16)
-        height: Style.space(52)
+        height: Style.space(52) + brainBoundaryText.implicitHeight
 
         Row {
           anchors.left: parent.left
@@ -3021,6 +3774,17 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
+            Text {
+              id: brainBoundaryText
+              anchors.left: parent.left
+              anchors.top: parent.bottom
+              width: header.width
+              text: "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience."
+              wrapMode: Text.WordWrap
+              color: Qt.alpha(root.fg, 0.55)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
           Rectangle {
             anchors.verticalCenter: parent.verticalCenter
@@ -3035,7 +3799,8 @@ Item {
               renderType: Text.NativeRendering
               id: stateText
               anchors.centerIn: parent
-              text: root.brainState.toUpperCase()
+              text: root.brainState === "thinking"
+                ? "PROCESSING" : root.brainState.toUpperCase()
               color: root.stateColor()
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -3046,10 +3811,10 @@ Item {
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             anchors.verticalCenter: parent.verticalCenter
-            text: root.status
-              ? "pulse " + root.status.pulse_seq + " · "
-                + Model.timeAgo(root.status.ts, root.nowMs)
-              : "no status"
+            text: root.currentStatus
+              ? "pulse " + root.currentStatus.pulse_seq + " · "
+                + Model.timeAgo(root.currentStatus.ts, root.nowMs)
+              : "no current status"
             color: Qt.alpha(root.fg, 0.55)
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -3217,11 +3982,11 @@ Item {
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             text: root.ledgerTransitionText().toUpperCase()
-            color: root.status && root.status.ledger_transition
-              && root.status.ledger_transition.state === "pending"
+            color: root.currentStatus && root.currentStatus.ledger_transition
+              && root.currentStatus.ledger_transition.state === "pending"
               ? root.urgent
-              : root.status && root.status.ledger_transition
-                && root.status.ledger_transition.state === "signed"
+              : root.currentStatus && root.currentStatus.ledger_transition
+                && root.currentStatus.ledger_transition.state === "signed"
                 ? Qt.alpha(root.accent, 0.8) : Qt.alpha(root.fg, 0.5)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -3356,7 +4121,8 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           elide: Text.ElideRight
           text: {
-            var th = root.status && root.status.thought ? root.status.thought : null
+            var th = root.currentStatus && root.currentStatus.thought
+              ? root.currentStatus.thought : null
             return th && th.text
               ? Model.thoughtMark(th.kind) + "  [origin:"
                 + (th.origin || "legacy-unlabeled") + "] " + th.text : ""
@@ -3383,7 +4149,7 @@ Item {
         readonly property real leftW: Style.space(230)
         readonly property real rightW: Style.space(300)
 
-        // ================================================= LEFT: vitals
+        // ================================================= LEFT: status counts
         Flickable {
           id: leftScroll
           width: body.leftW
@@ -3404,7 +4170,7 @@ Item {
           spacing: body.gap
 
           // Continuity is a separate operational truth plane: it stays above
-          // ordinary brain vitals and remains legible while restore quiesces
+          // ordinary memory-service status and remains legible while restore quiesces
           // the brainstem.  The colored lifeline is the one deliberate visual
           // signature; every state is also named in text.
           Rectangle {
@@ -3582,9 +4348,11 @@ Item {
                 }
                 Ui.Button {
                   id: cardBackupButton
-                  visible: !!root.continuity
+                  visible: !!root.currentContinuity
                     && root.continuityState !== "unconfigured"
-                  enabled: Model.continuityCanBackUp(root.currentContinuity)
+                  enabled: Model.continuityCanBackUp(
+                    root.currentContinuity,
+                    root.continuityReceiptAuthenticated)
                     && !continuityProc.working
                   text: continuityProc.working ? "Requesting…" : "Extra copy"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -3601,10 +4369,14 @@ Item {
                 }
                 Ui.Button {
                   id: cardRestoreButton
-                  visible: !!root.continuity
+                  visible: !!root.currentContinuity
                     && root.continuityState !== "unconfigured"
-                  enabled: (Model.continuityCanPrepare(root.currentContinuity)
-                            || Model.continuityCanApply(root.currentContinuity))
+                  enabled: (Model.continuityCanPrepare(
+                              root.currentContinuity,
+                              root.continuityReceiptAuthenticated)
+                            || Model.continuityCanApply(
+                              root.currentContinuity,
+                              root.continuityReceiptAuthenticated))
                     && !continuityProc.working
                   text: "Restore…"
                   foreground: enabled ? root.fg : Qt.alpha(root.fg, 0.35)
@@ -3631,7 +4403,9 @@ Item {
                 color: continuityProc.working
                     || root.restoreVerificationPending
                   ? Qt.alpha(root.fg, 0.65)
-                  : root.continuityActionOk ? root.accent : root.urgent
+                  : root.continuityStale || root.continuityBoundary !== ""
+                    ? root.urgent
+                    : root.continuityActionOk ? root.accent : root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -3655,7 +4429,7 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "VITALS"
+                text: "STATUS COUNTS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -3667,12 +4441,12 @@ Item {
                 rowSpacing: Style.space(2)
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status ? String(root.status.pages) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status ? String(root.status.graph_edges) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
@@ -3680,22 +4454,22 @@ Item {
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
                        color: root.accent; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "thoughts kept"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "entries kept"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.thoughts.length)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.thoughtStreamCountText()
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "mind traces"; color: Qt.alpha(root.fg, 0.55)
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "usage-tracked pages"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.status && root.status.mind
-                         ? root.status.mind.nodes + " · " + root.status.mind.edges + " bonds"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentStatus.mind
+                         ? root.currentStatus.mind.nodes + " · " + root.currentStatus.mind.edges + " co-return edges"
                          : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
               }
 
               Text {
-                visible: !!(root.status && root.status.mind)
+                visible: !!(root.currentStatus && root.currentStatus.mind)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: "MEMORY LENS"
@@ -3707,16 +4481,17 @@ Item {
               }
               Grid {
                 id: memoryLens
-                visible: !!(root.status && root.status.mind)
+                visible: !!(root.currentStatus && root.currentStatus.mind)
                 width: vitalsCol.width
                 columns: 2
                 columnSpacing: Style.space(14)
                 rowSpacing: Style.space(2)
                 readonly property var mind:
-                  root.status && root.status.mind ? root.status.mind : ({})
+                  root.currentStatus && root.currentStatus.mind
+                    ? root.currentStatus.mind : ({})
                 readonly property real labelWidth: Math.max(
                   stabilityLabel.implicitWidth, reviewLabel.implicitWidth,
-                  pinsLabel.implicitWidth)
+                  pinsLabel.implicitWidth, familiarityLabel.implicitWidth)
                 readonly property real valueWidth: Math.max(0,
                   memoryLens.width - memoryLens.labelWidth
                     - memoryLens.columnSpacing)
@@ -3739,9 +4514,15 @@ Item {
                 Text { width: memoryLens.valueWidth; wrapMode: Text.WordWrap
                        textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(memoryLens.mind.pinned || 0)
                        color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { id: familiarityLabel; width: memoryLens.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "familiarity"; color: Qt.alpha(root.fg, 0.55)
+                       font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                Text { id: familiarityValue; width: memoryLens.valueWidth; wrapMode: Text.WordWrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: Model.familiarityStatusText(memoryLens.mind)
+                       color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
               }
               Text {
-                visible: !!(root.status && root.status.mind)
+                visible: !!(root.currentStatus && root.currentStatus.mind)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: vitalsCol.width
@@ -3753,7 +4534,7 @@ Item {
               }
 
               Text {
-                visible: !!(root.status && root.status.agent_queue)
+                visible: !!(root.currentStatus && root.currentStatus.agent_queue)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: "AGENT RELAY — last published pulse"
@@ -3764,10 +4545,10 @@ Item {
                 font.bold: true
               }
               Text {
-                visible: !!(root.status && root.status.agent_queue)
+                visible: !!(root.currentStatus && root.currentStatus.agent_queue)
                 readonly property var relay:
-                  root.status && root.status.agent_queue
-                    ? root.status.agent_queue : ({})
+                  root.currentStatus && root.currentStatus.agent_queue
+                    ? root.currentStatus.agent_queue : ({})
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: vitalsCol.width
@@ -3781,7 +4562,7 @@ Item {
                 font.pixelSize: Style.font.caption
               }
               Text {
-                visible: !!(root.status && root.status.agent_queue)
+                visible: !!(root.currentStatus && root.currentStatus.agent_queue)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: vitalsCol.width
@@ -3811,8 +4592,8 @@ Item {
                 onPaint: {
                   var ctx = getContext("2d")
                   ctx.reset(); ctx.clearRect(0, 0, width, height)
-                  var hist = root.status && root.status.history
-                    ? root.status.history : []
+                  var hist = root.currentStatus && root.currentStatus.history
+                    ? root.currentStatus.history : []
                   if (!hist.length) return
                   var n = Math.min(hist.length, 90)
                   var bw = width / 90
@@ -3839,14 +4620,13 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: {
-                  var hist = root.status && root.status.history
-                    ? root.status.history : []
+                  var hist = root.currentStatus && root.currentStatus.history
+                    ? root.currentStatus.history : []
                   if (!hist.length) return "no pulses yet"
-                  var tot = 0
-                  for (var i = Math.max(0, hist.length - 90); i < hist.length; i++)
-                    tot += hist[i][1]
+                  var total = Model.historyEventTotal(hist, 90)
+                  if (total === null) return "pulse history unavailable"
                   return "last " + Math.min(hist.length, 90) + " pulses · "
-                    + tot + " events"
+                    + total + " events"
                 }
                 color: Qt.alpha(root.fg, 0.4)
                 font.family: root.fontFamily
@@ -3855,11 +4635,11 @@ Item {
             }
           }
 
-          // Global Workspace (Baars/Dehaene): the brain's 7±2 conscious
-          // slots — ignition-thresholded, laterally inhibited, hysteretic
+          // Bounded attention window: score threshold, per-source cap,
+          // and a small incumbent boost.
           Rectangle {
-            visible: !!(root.status && root.status.workspace
-                        && root.status.workspace.length)
+            visible: !!(root.currentStatus && root.currentStatus.workspace
+                        && root.currentStatus.workspace.length)
             width: parent.width
             height: wsCol.implicitHeight + Style.space(20)
             radius: Style.cornerRadius
@@ -3876,17 +4656,17 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "WORKSPACE — "
-                  + (root.status && root.status.workspace
-                     ? root.status.workspace.length : 0) + " OF 7 SLOTS"
+                text: "ATTENTION WINDOW — "
+                  + (root.currentStatus && root.currentStatus.workspace
+                     ? root.currentStatus.workspace.length : 0) + " OF 7"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
               }
               Repeater {
-                model: root.status && root.status.workspace
-                  ? root.status.workspace : []
+                model: root.currentStatus && root.currentStatus.workspace
+                  ? root.currentStatus.workspace : []
                 delegate: Item {
                   id: wsRow
                   required property var modelData
@@ -3937,7 +4717,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: wsCol.width
-                text: "off-map entries remain retained in mind; the graph is a bounded display window"
+                text: "off-map entries remain in compatibility policy state; the graph is a bounded display window"
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.35)
                 font.family: root.fontFamily
@@ -3963,7 +4743,7 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "ORGANS"
+                text: "SOURCES"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -3972,11 +4752,11 @@ Item {
               }
               Repeater {
                 model: {
-                  if (!root.status || !root.status.organs) return []
-                  var ks = Object.keys(root.status.organs)
+                  if (!root.currentStatus || !root.currentStatus.organs) return []
+                  var ks = Object.keys(root.currentStatus.organs)
                   ks.sort(function(a, b) {
-                    return (root.status.organs[b].today || 0)
-                         - (root.status.organs[a].today || 0)
+                    return (root.currentStatus.organs[b].today || 0)
+                         - (root.currentStatus.organs[a].today || 0)
                   })
                   return ks
                 }
@@ -3984,8 +4764,8 @@ Item {
                   id: organRow
                   required property var modelData
                   readonly property var o:
-                    (root.status && root.status.organs
-                     && root.status.organs[organRow.modelData]) || {}
+                    (root.currentStatus && root.currentStatus.organs
+                     && root.currentStatus.organs[organRow.modelData]) || {}
                   width: organCol.width
                   height: organName.implicitHeight + Style.space(2)
                   Text {
@@ -4050,16 +4830,22 @@ Item {
                 font.bold: true
               }
               Repeater {
-                model: root.status && root.status.integrity
-                       && root.status.integrity.chains
-                  ? Object.keys(root.status.integrity.chains).sort() : []
+                model: root.currentStatus && root.currentStatus.integrity
+                       && root.currentStatus.integrity.chains
+                  ? Object.keys(root.currentStatus.integrity.chains).sort() : []
                 delegate: Item {
                   id: chainRow
                   required property var modelData
                   readonly property string v:
-                    ((root.status && root.status.integrity
-                      && root.status.integrity.chains) || {})[chainRow.modelData]
+                    ((root.currentStatus && root.currentStatus.integrity
+                      && root.currentStatus.integrity.chains) || {})[
+                        chainRow.modelData]
                     || "absent"
+                  readonly property string observedAge: {
+                    var age = Model.timeAgo(
+                      root.currentStatus.integrity.checked_at, root.nowMs)
+                    return age === "" ? "time unobserved" : age
+                  }
                   width: chainCol.width
                   height: chainName.implicitHeight + Style.space(2)
                   Text {
@@ -4076,7 +4862,8 @@ Item {
                     textFormat: Text.PlainText
                     renderType: Text.NativeRendering
                     anchors.right: parent.right
-                    text: chainRow.v === "pass" ? "verified ✓"
+                    text: chainRow.v === "pass"
+                        ? "passed · observed " + chainRow.observedAge + " ✓"
                         : chainRow.v === "absent" ? "absent –" : "FAILED ✗"
                     color: chainRow.v === "pass" ? root.accent
                          : chainRow.v === "absent" ? Qt.alpha(root.fg, 0.35)
@@ -4092,11 +4879,8 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: chainCol.width
-                text: Model.chainGlyph() + " ledger seq "
-                  + (root.status && root.status.ledger
-                     ? root.status.ledger.seq : "?")
-                  + " · " + (root.status && root.status.ledger
-                             ? root.status.ledger.head : "") + "…"
+                text: root.ledgerSummaryText(
+                  root.currentStatus ? root.currentStatus.ledger : null)
                 elide: Text.ElideRight
                 color: Qt.alpha(root.fg, 0.55)
                 font.family: root.fontFamily
@@ -4105,14 +4889,10 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.dream
-                            && root.status.dream.last)
-                text: Model.dreamGlyph() + " dreamed "
-                  + (root.status && root.status.dream
-                     ? Model.timeAgo(root.status.dream.last, root.nowMs) : "")
-                  + (root.status && root.status.dream
-                     && root.status.dream.status
-                     ? " · " + root.status.dream.status : "")
+                visible: root.dreamSummaryText(root.currentStatus
+                  ? root.currentStatus.dream : null, root.nowMs) !== ""
+                text: root.dreamSummaryText(root.currentStatus
+                  ? root.currentStatus.dream : null, root.nowMs)
                 color: Qt.alpha(root.fg, 0.55)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -4178,15 +4958,10 @@ Item {
             }
           }
 
-          // Outcome learning plus the separate heuristic retrieval-drift
+          // Prediction calibration plus the separate heuristic retrieval-drift
           // instrument. The latter stays visible even before any takes exist.
           Rectangle {
-            visible: !!(root.status
-                        && ((root.status.takes
-                             && (root.status.takes.open
-                                 || root.status.takes.resolved))
-                            || (root.status.bench_trend
-                                && root.status.bench_trend.length)))
+            visible: root.beliefCardVisibleFor(root.currentStatus)
             width: parent.width
             height: beliefCol.implicitHeight + Style.space(20)
             radius: Style.cornerRadius
@@ -4203,7 +4978,7 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "BELIEFS"
+                text: "PREDICTIONS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -4213,16 +4988,13 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 readonly property var tk:
-                  root.status && root.status.takes ? root.status.takes : ({})
+                  root.currentStatus && root.currentStatus.takes
+                    ? root.currentStatus.takes : ({})
                 width: beliefCol.width
-                text: (tk.open || 0) + " open prediction"
-                  + ((tk.open || 0) === 1 ? "" : "s")
-                  + ((tk.due || 0) > 0 ? " · " + tk.due + " DUE" : "")
-                  + " · " + (tk.resolved || 0) + " resolved"
-                  + ((tk.unresolvable || 0) > 0
-                     ? " · " + tk.unresolvable + " unresolvable" : "")
+                text: root.takeSummaryText(tk)
                 wrapMode: Text.WordWrap
-                color: (tk.due || 0) > 0 ? root.accent
+                color: root.takeSummaryAvailable(tk) && tk.due > 0
+                  ? root.accent
                                          : Qt.alpha(root.fg, 0.7)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -4230,16 +5002,18 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.takes
-                            && root.status.takes.brier !== null
-                            && root.status.takes.brier !== undefined)
+                visible: !!(root.currentStatus
+                            && root.takeSummaryAvailable(
+                              root.currentStatus.takes)
+                            && root.currentStatus.takes.brier !== null
+                            && root.currentStatus.takes.brier !== undefined)
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
                 text: "mean Brier "
-                  + (root.status && root.status.takes
-                     ? root.status.takes.brier : "")
-                  + " · " + (root.status && root.status.takes
-                     ? (root.status.takes.calibration_status || "descriptive")
+                  + (root.currentStatus && root.currentStatus.takes
+                     ? root.currentStatus.takes.brier : "")
+                  + " · " + (root.currentStatus && root.currentStatus.takes
+                     ? (root.currentStatus.takes.calibration_status || "descriptive")
                      : "descriptive")
                 color: Qt.alpha(root.fg, 0.55)
                 font.family: root.fontFamily
@@ -4258,8 +5032,8 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.bench_trend
-                            && root.status.bench_trend.length)
+                visible: !!(root.currentStatus && root.currentStatus.bench_trend
+                            && root.currentStatus.bench_trend.length)
                 topPadding: Style.space(4)
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
@@ -4271,15 +5045,15 @@ Item {
               }
               Canvas {
                 id: benchSpark
-                visible: !!(root.status && root.status.bench_trend
-                            && root.status.bench_trend.length)
+                visible: !!(root.currentStatus && root.currentStatus.bench_trend
+                            && root.currentStatus.bench_trend.length)
                 width: beliefCol.width
                 height: Style.space(22)
                 onPaint: {
                   var ctx = getContext("2d")
                   ctx.reset(); ctx.clearRect(0, 0, width, height)
-                  var tr = root.status && root.status.bench_trend
-                    ? root.status.bench_trend : []
+                  var tr = root.currentStatus && root.currentStatus.bench_trend
+                    ? root.currentStatus.bench_trend : []
                   if (!tr.length) return
                   var n = Math.min(tr.length, 30)
                   var step = width / 30
@@ -4310,7 +5084,9 @@ Item {
                 }
                 Connections {
                   target: root
-                  function onStatusChanged() { benchSpark.requestPaint() }
+                  function onCurrentStatusChanged() {
+                    benchSpark.requestPaint()
+                  }
                 }
               }
               Text {
@@ -4318,8 +5094,8 @@ Item {
                 renderType: Text.NativeRendering
                 visible: benchSpark.visible
                 readonly property var bt:
-                  root.status && root.status.bench_trend
-                    ? root.status.bench_trend : []
+                  root.currentStatus && root.currentStatus.bench_trend
+                    ? root.currentStatus.bench_trend : []
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
                 text: bt.length
@@ -4348,8 +5124,9 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.bench_trend_boundary
-                            && root.status.bench_trend_boundary.legacy_truncated)
+                visible: !!(root.currentStatus
+                            && root.currentStatus.bench_trend_boundary
+                            && root.currentStatus.bench_trend_boundary.legacy_truncated)
                 width: beliefCol.width
                 wrapMode: Text.WordWrap
                 text: "legacy SLUG DRIFT display history was tail-compacted; "
@@ -4362,8 +5139,8 @@ Item {
           }
 
           Rectangle {
-            visible: !!(root.status && root.status.intents
-                        && root.status.intents.length)
+            visible: !!(root.currentStatus && root.currentStatus.intents
+                        && root.currentStatus.intents.length)
             width: parent.width
             height: intentCol.implicitHeight + Style.space(20)
             radius: Style.cornerRadius
@@ -4380,15 +5157,15 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "INTENTS — prospective memory"
+                text: "INTENTS — DATED COMMITMENTS"
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
               }
               Repeater {
-                model: root.status && root.status.intents
-                  ? root.status.intents : []
+                model: root.currentStatus && root.currentStatus.intents
+                  ? root.currentStatus.intents : []
                 delegate: Text {
                   required property var modelData
                   textFormat: Text.PlainText
@@ -4439,6 +5216,8 @@ Item {
                 renderType: Text.NativeRendering
                 width: healthCol.width
                 text: {
+                  if (!root.currentStatus)
+                    return "last good graph snapshot · resident status unavailable"
                   if (!root.snap) return "no snapshot contract"
                   if (root.snap.complete !== true)
                     return "snapshot PARTIAL — publication boundary incomplete"
@@ -4457,7 +5236,9 @@ Item {
                   return s
                 }
                 wrapMode: Text.WordWrap
-                color: root.snap && (root.snap.complete !== true
+                color: !root.currentStatus
+                  ? root.urgent
+                  : root.snap && (root.snap.complete !== true
                         || (root.snap.failed_ops
                             && root.snap.failed_ops.length))
                   ? root.urgent : Qt.alpha(root.fg, 0.6)
@@ -4467,15 +5248,18 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.ledger_transition)
+                visible: !!(root.currentStatus
+                            && root.currentStatus.ledger_transition)
                 width: healthCol.width
                 text: "publication ledger · " + root.ledgerTransitionText()
                 wrapMode: Text.WordWrap
-                color: root.status && root.status.ledger_transition
-                  && root.status.ledger_transition.state === "signed"
+                color: root.currentStatus
+                  && root.currentStatus.ledger_transition
+                  && root.currentStatus.ledger_transition.state === "signed"
                   ? Qt.alpha(root.accent, 0.75)
-                  : root.status && root.status.ledger_transition
-                    && root.status.ledger_transition.state === "pending"
+                  : root.currentStatus
+                    && root.currentStatus.ledger_transition
+                    && root.currentStatus.ledger_transition.state === "pending"
                     ? root.urgent : Qt.alpha(root.fg, 0.55)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -4496,7 +5280,7 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!root.status && !root.projectionDebtKnown()
+                visible: !!root.currentStatus && !root.projectionDebtKnown()
                 width: healthCol.width
                 text: "PUBLISHED SNAPSHOT DEBT — unknown; use the live check before memory reads"
                 wrapMode: Text.WordWrap
@@ -4522,7 +5306,7 @@ Item {
                 visible: !!(root.snap && root.snap.aged_out)
                 width: healthCol.width
                 text: (root.snap ? root.snap.aged_out : 0)
-                  + " older memories beyond the display window (still in the brain)"
+                  + " older pages beyond the display window (still in local memory)"
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
@@ -4558,17 +5342,15 @@ Item {
                 }
               }
               Repeater {
-                model: root.statusLoadValid && root.status
-                  && root.isPlainRecord(root.status.errors)
-                  ? Object.keys(root.status.errors).sort() : []
+                model: root.statusErrorRows(
+                  root.currentStatus ? root.currentStatus.errors : null)
                 delegate: Text {
                   id: errRow
                   required property var modelData
                   width: healthCol.width
                   textFormat: Text.PlainText
                   renderType: Text.NativeRendering
-                  text: "✗ " + errRow.modelData + ": "
-                    + root.status.errors[errRow.modelData]
+                  text: errRow.modelData
                   wrapMode: Text.WordWrap
                   color: root.urgent
                   font.family: root.fontFamily
@@ -4578,9 +5360,10 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.sync_note)
+                visible: !!(root.currentStatus && root.currentStatus.sync_note)
                 width: healthCol.width
-                text: "✗ sync: " + (root.status ? root.status.sync_note : "")
+                text: "✗ sync: " + (root.currentStatus
+                  ? root.currentStatus.sync_note : "")
                 wrapMode: Text.WordWrap
                 color: root.urgent
                 font.family: root.fontFamily
@@ -4589,12 +5372,13 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !!(root.status && root.status.redactions
-                            && Object.keys(root.status.redactions).length)
+                visible: !!(root.currentStatus && root.currentStatus.redactions
+                            && Object.keys(root.currentStatus.redactions).length)
                 width: healthCol.width
                 text: {
-                  var redactions = root.status && root.status.redactions
-                    ? root.status.redactions : ({})
+                  var redactions = root.currentStatus
+                    && root.currentStatus.redactions
+                    ? root.currentStatus.redactions : ({})
                   var parts = []
                   var names = Object.keys(redactions).sort()
                   for (var i = 0; i < names.length; i++)
@@ -4609,16 +5393,16 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                visible: !root.stale && root.statusLoadValid && root.status
-                  && root.isPlainRecord(root.status.errors)
-                  && Object.keys(root.status.errors).length === 0
-                  && !(root.status && root.status.sync_note)
+                visible: !root.stale && !!root.currentStatus
+                  && root.isPlainRecord(root.currentStatus.errors)
+                  && Object.keys(root.currentStatus.errors).length === 0
+                  && !root.currentStatus.sync_note
                   && root.snap && root.snap.complete === true
                   && (!root.snap.failed_ops
                       || root.snap.failed_ops.length === 0)
                   && root.projectionDebtKnown()
                   && root.projectionDebtKeys().length === 0
-                  && root.graphBoundary === "" && root.statusBoundary === ""
+                  && root.statusBoundary === "" && root.currentGraph
                 text: "published snapshot sensors reporting ✓ · use live check for memory reads"
                 color: Qt.alpha(root.accent, 0.7)
                 font.family: root.fontFamily
@@ -4650,22 +5434,22 @@ Item {
             anchors.margins: 2
             renderStrategy: Canvas.Cooperative
 
-            onWidthChanged: if (root.graph && width > 0)
-              Model.syncGraph(root.graph, width, height)
-            onHeightChanged: if (root.graph && width > 0)
-              Model.syncGraph(root.graph, width, height)
+            onWidthChanged: if (root.currentGraph && width > 0)
+              Model.syncGraph(root.currentGraph, width, height)
+            onHeightChanged: if (root.currentGraph && width > 0)
+              Model.syncGraph(root.currentGraph, width, height)
 
             Timer {
               interval: 40
-              running: root.opened && root.graph !== null
+              running: root.opened && root.currentGraph !== null
               repeat: true
               onTriggered: {
                 if (root.playing) {
                   root.revealT = Math.min(1, root.revealT + 40 / 12000)
                   if (root.revealT >= 1) root.playing = false
                 }
-                Model.step(root.graph, graphCanvas.width, graphCanvas.height,
-                           root.revealT)
+                Model.step(root.currentGraph,
+                           graphCanvas.width, graphCanvas.height, root.revealT)
                 graphCanvas.requestPaint()
               }
             }
@@ -4674,16 +5458,18 @@ Item {
               var ctx = getContext("2d")
               ctx.reset()
               ctx.clearRect(0, 0, width, height)
-              if (!root.graph || !root.graph.nodes) return
+              var graph = root.currentGraph
+              if (!graph || !graph.nodes) return
               var now = root.nowMs > 0 ? root.nowMs : Date.now()
-              var nodes = root.graph.nodes, edges = root.graph.edges
+              var nodes = graph.nodes, edges = graph.edges
               var i, p, q, n
               var eff = root.effId
               var nbrs = eff !== "" ? Model.neighbors(eff) : null
 
               var vis = {}
               for (i = 0; i < nodes.length; i++)
-                vis[nodes[i].id] = root.nodeVisible(nodes[i])
+                vis[Model.graphMapKey(nodes[i].id)] =
+                  root.nodeVisible(nodes[i])
 
               var rings = Model.rings()
               var cx = width / 2, cy = height / 2
@@ -4702,7 +5488,8 @@ Item {
               }
 
               for (i = 0; i < edges.length; i++) {
-                if (!vis[edges[i].s] || !vis[edges[i].d]) continue
+                if (!vis[Model.graphMapKey(edges[i].s)]
+                    || !vis[Model.graphMapKey(edges[i].d)]) continue
                 p = Model.posOf(edges[i].s); q = Model.posOf(edges[i].d)
                 if (!p || !q) continue
                 var touching = eff !== "" &&
@@ -4723,11 +5510,11 @@ Item {
               var nodeObstacles = []
               for (i = 0; i < nodes.length; i++) {
                 n = nodes[i]
-                if (!vis[n.id]) continue
+                if (!vis[Model.graphMapKey(n.id)]) continue
                 p = Model.posOf(n.id)
                 if (!p) continue
                 var dimmed = eff !== "" && n.id !== eff &&
-                  !(nbrs && nbrs[n.id])
+                  !Model.hasNeighbor(nbrs, n.id)
                 var r = Model.nodeRadius(n)
                 nodeObstacles.push({
                   id: n.id, left: p.x - r - 3, right: p.x + r + 3,
@@ -4766,9 +5553,9 @@ Item {
               var labelNodes = []
               for (i = 0; i < nodes.length; i++) {
                 n = nodes[i]
-                if (!vis[n.id]) continue
+                if (!vis[Model.graphMapKey(n.id)]) continue
                 var isEff = n.id === eff
-                var isNbr = nbrs && nbrs[n.id]
+                var isNbr = Model.hasNeighbor(nbrs, n.id)
                 var anchorLbl = n.t === "organ" || n.id === "sia/cortex"
                 if (!anchorLbl && !isEff && !isNbr) continue
                 p = Model.posOf(n.id)
@@ -4858,10 +5645,10 @@ Item {
               anchors.fill: parent
               hoverEnabled: true
               function nearest(mx, my) {
-                if (!root.graph) return ""
+                if (!root.currentGraph) return ""
                 var best = "", bd = 500
-                for (var i = 0; i < root.graph.nodes.length; i++) {
-                  var n = root.graph.nodes[i]
+                for (var i = 0; i < root.currentGraph.nodes.length; i++) {
+                  var n = root.currentGraph.nodes[i]
                   if (!root.nodeVisible(n)) continue
                   var p = Model.posOf(n.id)
                   if (!p) continue
@@ -4952,10 +5739,10 @@ Item {
             spacing: Style.space(12)
             Repeater {
               model: [
-                { label: "cortex",  role: "cortex" },
-                { label: "organ",   role: "organ" },
+                { label: "root",    role: "cortex" },
+                { label: "source",  role: "organ" },
                 { label: "memory",  role: "day" },
-                { label: "thought", role: "thought" },
+                { label: "generated", role: "thought" },
                 { label: "record",  role: "record" },
                 { label: "skill",   role: "skill" }
               ]
@@ -5032,11 +5819,12 @@ Item {
             anchors.rightMargin: Style.space(10)
             // one line above the legend chips — six kinds now reach this far
             anchors.bottomMargin: Style.space(28)
-            text: root.graph
-              ? root.graph.nodes.length + " of " + root.graph.pages_total
-                + " memories · " + root.graph.edges.length + " links · "
+            text: root.currentGraph
+              ? root.currentGraph.nodes.length
+                + " of " + root.currentGraph.pages_total
+                + " memories · " + root.currentGraph.edges.length + " links · "
                 + (root.snap && root.snap.complete ? "complete" : "partial")
-              : "no graph snapshot yet"
+              : "current graph unavailable"
             color: Qt.alpha(root.fg, 0.45)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -5078,7 +5866,8 @@ Item {
                 id: inspectorCol
                 width: parent.width
                 spacing: Style.space(4)
-                readonly property var n: root.nodeById(root.effId)
+                readonly property var n: root.currentGraph
+                  ? root.nodeById(root.effId) : null
 
                 Text {
 
@@ -5170,7 +5959,8 @@ Item {
                   font.bold: true
                 }
                 Repeater {
-                  model: root.effId !== "" ? Model.nodeEdges(root.effId) : []
+                  model: root.currentGraph && inspectorCol.n
+                    ? Model.nodeEdges(root.effId) : []
                   delegate: Column {
                     id: edgeRow
                     required property var modelData
@@ -5225,7 +6015,7 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "THOUGHT STREAM — " + root.thoughts.length
+                text: "GENERATED ENTRIES — " + root.thoughtStreamCountText()
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -5272,14 +6062,18 @@ Item {
                   delegate: Row {
                     id: thoughtRow
                     required property var modelData
+                    readonly property string urgencyState:
+                      root.thoughtUrgencyState(thoughtRow.modelData)
                     width: thoughtCol.width
                     spacing: Style.space(8)
                     Text {
                       textFormat: Text.PlainText
                       renderType: Text.NativeRendering
                       text: Model.thoughtMark(thoughtRow.modelData.kind)
-                      color: thoughtRow.modelData.urgent
-                        ? root.urgent : root.accent
+                      color: thoughtRow.urgencyState === "unrecorded"
+                        ? Qt.alpha(root.fg, 0.45)
+                        : thoughtRow.urgencyState === "urgent"
+                          ? root.urgent : root.accent
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
                       width: Style.space(12)
@@ -5293,18 +6087,18 @@ Item {
                         width: parent.width
                         text: thoughtRow.modelData.text
                         wrapMode: Text.WordWrap
-                        color: thoughtRow.modelData.urgent
-                          ? root.urgent : Qt.alpha(root.fg, 0.85)
+                        color: thoughtRow.urgencyState === "unrecorded"
+                          ? Qt.alpha(root.fg, 0.6)
+                          : thoughtRow.urgencyState === "urgent"
+                            ? root.urgent : Qt.alpha(root.fg, 0.85)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
                       }
                       Text {
                         textFormat: Text.PlainText
                         renderType: Text.NativeRendering
-                        text: thoughtRow.modelData.kind + " · origin:"
-                          + (thoughtRow.modelData.origin
-                             || "legacy-unlabeled") + " · "
-                          + Model.timeAgo(thoughtRow.modelData.ts, root.nowMs)
+                        text: root.thoughtRowMetadata(
+                          thoughtRow.modelData, root.nowMs)
                         color: Qt.alpha(root.fg, 0.35)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -5397,7 +6191,7 @@ Item {
                 anchors.margins: Style.space(8)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "LOCAL BOUNDARY · SIA the Omarchy Brain is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
+              text: "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience. LOCAL BOUNDARY · SIA is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.65)
                 font.family: root.fontFamily
@@ -5426,7 +6220,7 @@ Item {
               width: parent.width
               textFormat: Text.PlainText
               renderType: Text.NativeRendering
-              text: "YOUR CLICK MAY · download pinned restic, Bun, gbrain, and Ollama artifacts; build gbrain; pull the pinned local embedding model; create a signing identity and empty corpus only when no owned brain exists; and install or restart user services. YOUR CLICK WILL NOT · change how any other tool behaves. The agent skill that gives Claude Code instructions about SIA, the SUPER+SHIFT+B keybinding, and MCP registration are each declined unless you opt into them by name on the command line; the installer prints how."
+              text: "YOUR CLICK MAY · download pinned restic, Bun, gbrain, and Ollama artifacts; build gbrain; pull the pinned local embedding model; create a signing identity and empty corpus only when no owned memory store exists; and install or restart user services. YOUR CLICK WILL NOT · change how any other tool behaves. The agent skill that gives Claude Code instructions about SIA, the SUPER+SHIFT+B keybinding, and MCP registration are each declined unless you opt into them by name on the command line; the installer prints how."
               wrapMode: Text.WordWrap
               color: Qt.alpha(root.fg, 0.72)
               font.family: root.fontFamily

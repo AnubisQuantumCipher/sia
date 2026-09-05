@@ -7,11 +7,11 @@
     "model": ""
   },
   "senses": {
-    "_comment": "Optional integrations (jackal/sekhmet/custos/aegis/worldline/guardian) auto-activate when their data exists; list names here to force-disable any sense.",
+    "_comment": "Optional integrations (jackal/sekhmet/custos/aegis/worldline/guardian/codex/obsidian) auto-activate when their data exists. `organ` is the compatibility configuration name for a source adapter. The skills source is the exception: any non-empty validated skill root roster activates it even when every listed root is currently absent, so missing roots remain visible rather than silently disabling the source. Disable keys are canonicalized and match a built-in source, custom source name, or custom `organ`; either custom match disables that source. A malformed disable policy fails closed by disabling all sensing until corrected.",
     "disable": []
   },
   "skills": {
-    "_comment": "Skill roots are checked in this precedence order. Entries must be relative and remain beneath HOME after lexical normalization; absolute and escaping paths are refused. Each admitted skill must be a real direct child directory containing a real directly contained regular SKILL.md. Symlinked children/manifests are skipped; unreadable or unstable roots are partial. Restart sia-brainstem.service after changing config.",
+    "_comment": "Omitting skills or roots uses this default roster; an explicit empty roots array disables the source. A non-empty valid roster remains active even while every root is absent so durable removal state can reconcile. Skill roots are checked in this precedence order. Entries must be relative and remain beneath HOME after lexical normalization; absolute and escaping paths are refused. Each admitted skill must be a real direct child directory containing a real directly contained regular SKILL.md. Symlinked children/manifests are skipped; unreadable or unstable roots are partial. Restart sia-brainstem.service after changing config.",
     "roots": [
       ".claude/skills",
       ".agents/skills",
@@ -22,7 +22,7 @@
   },
   "custom_senses": [
     {
-      "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom senses read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' includes and 'exclude' omits bounded literal alternatives separated by | (neither accepts regex); for jsonl, 'field' selects the message field.",
+      "_comment": "Point SIA only at non-secret evidence records from YOUR programs; custom sources read the configured file/JSONL field. Never target message bodies, clipboards, password stores, or keys. type: lines | jsonl; 'match' includes and 'exclude' omits bounded literal alternatives separated by | (neither accepts regex); for jsonl, 'field' selects the message field.",
       "name": "example-app",
       "organ": "example-app",
       "description": "my application's error log",
@@ -38,7 +38,7 @@
   ],
   "chains": [
     {
-      "_comment": "Extra signed evidence chains to re-verify each sweep. The verifier must be the exact executed program, or the immediate script operand of SIA's current Python interpreter; the ledger must also appear as an exact argv element.",
+      "_comment": "Extra signed evidence chains to re-verify each sweep. Verifier code is trusted: a fresh empty cwd, allow-listed environment, private input copies, and PID-descendant containment are launch hygiene, not a filesystem, network, same-user, or resource sandbox. The verifier must be the exact executed program, or the immediate script operand of SIA's current Python interpreter. Of verifier code and its dependencies, this binds only the top-level bytes; the verifier-code binding does not cover a shebang interpreter, ELF loader/libraries, Python imports, subprocess dependencies, or internally opened data. Descriptor-backed execution changes __file__, sys.path[0], shell $0, and ELF $ORIGIN semantics, which the verifier must tolerate. The ledger must appear as an exact argv element. Omitted inputs means zero auxiliary file inputs. Each declared-input file must be named by one exact zero-based argv_index/path/prefix manifest entry; prefix is empty/omitted or a lowercase long-option prefix. Its pinned bytes and the ledger are copied from pinned originals to private launch files. The child gets the bound verifier/script descriptor and only private-copy data descriptors; original ledger/input descriptors remain parent-only for generation rechecks. Relative, missing, mismatched, or duplicated manifest entries refuse. Residual argv elements must fit a closed slashless flag/subcommand/literal grammar; SIA cannot know whether trusted verifier code treats an accepted slashless literal as a filename. Verifier output is drained and counted, not accumulated or returned.",
       "enabled": false,
       "name": "mychain",
       "ledger": "~/.local/share/mychain/ledger.tsv",
@@ -46,12 +46,20 @@
       "verify": [
         "~/.local/bin/mychain-verify",
         "~/.local/share/mychain/ledger.tsv",
+        "--policy=~/.local/share/mychain/policy.json",
         "--quiet"
+      ],
+      "inputs": [
+        {
+          "argv_index": 2,
+          "path": "~/.local/share/mychain/policy.json",
+          "prefix": "--policy="
+        }
       ]
     }
   ],
   "retrieval": {
-    "_comment": "Off by measurement: on the extended 22-probe tripwire set (2026-09-02) the graph-influenced blend scored uniformly below plain dense retrieval, so `sia ask` uses origin-weighted dense ordering unless you enable this deliberately. The nightly tripwire keeps measuring the blend lane either way.",
+    "_comment": "Off by measurement: on the extended 22-probe tripwire set (2026-09-02) the graph-influenced blend scored uniformly below the unmodified hybrid query, so `sia ask` uses origin-weighted hybrid-query ordering unless you enable this deliberately. The nightly tripwire keeps measuring the blend lane either way.",
     "associative_rerank": false
   }
 }

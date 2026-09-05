@@ -20,12 +20,13 @@ def _graph_projection_state_path():
 
 
 def _fresh_graph_projection_state():
-    cutoff = iso(utcnow() - datetime.timedelta(days=14))
+    started = utcnow()
+    cutoff = iso(started - datetime.timedelta(days=14))
     return {
         "schema": GRAPH_PROJECTION_SCHEMA,
         "generation": uuid.uuid4().hex,
         "phase": "scan",
-        "started_at": iso(),
+        "started_at": iso(started),
         "cutoff": cutoff,
         "queue": [{"relative": "", "levels": MAX_GRAPH_TREE_LEVELS,
                    "page": {}}],
@@ -38,7 +39,7 @@ def _fresh_graph_projection_state():
 
 def _append_graph_failure(failures, failure):
     """Retain bounded unique refusals plus one stable overflow marker."""
-    failure = str(failure)[:MAX_CONFIG_TEXT_CHARS]
+    failure = inert_summary(str(failure))[:MAX_CONFIG_TEXT_CHARS]
     if not failure or failure in failures \
             or "graph_failure_capacity" in failures:
         return
@@ -54,6 +55,10 @@ def _record_graph_failure(state, failure):
 
 def _canonical_graph_projection_state(value):
     if not isinstance(value, dict) \
+            or set(value) != {
+                "schema", "generation", "phase", "started_at", "cutoff",
+                "queue", "candidates", "pages_seen", "eligible_seen",
+                "failed_ops"} \
             or value.get("schema") != GRAPH_PROJECTION_SCHEMA \
             or value.get("phase") not in {"scan", "ready"} \
             or not isinstance(value.get("generation"), str) \
@@ -67,18 +72,31 @@ def _canonical_graph_projection_state(value):
             or isinstance(value.get("pages_seen"), bool) \
             or not isinstance(value.get("pages_seen"), int) \
             or value["pages_seen"] < 0 \
+            or value["pages_seen"] > MAX_JSON_SAFE_INTEGER \
             or isinstance(value.get("eligible_seen"), bool) \
             or not isinstance(value.get("eligible_seen"), int) \
             or value["eligible_seen"] < 0 \
+            or value["eligible_seen"] > value["pages_seen"] \
+            or len(value["candidates"]) > value["eligible_seen"] \
             or not isinstance(value.get("failed_ops"), list) \
             or len(value["failed_ops"]) > MAX_GRAPH_SCAN_ENTRIES:
         raise RuntimeError("graph projection state is invalid")
+    observed_at = iso()
     try:
         _canonical_utc_timestamp(value["started_at"])
         _canonical_utc_timestamp(value["cutoff"])
-    except ValueError as exc:
+        started_at = datetime.datetime.strptime(
+            value["started_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=datetime.timezone.utc)
+        expected_cutoff = iso(
+            started_at - datetime.timedelta(days=14))
+    except (ValueError, OverflowError) as exc:
         raise RuntimeError("graph projection state is invalid") from exc
+    if value["started_at"] > observed_at \
+            or value["cutoff"] != expected_cutoff:
+        raise RuntimeError("graph projection state is invalid")
     queue = []
+    queued_relatives = set()
     for frame in value["queue"]:
         if not isinstance(frame, dict) or set(frame) != {
                 "relative", "levels", "page"}:
@@ -89,13 +107,26 @@ def _canonical_graph_projection_state(value):
         if not isinstance(relative, str) or os.path.isabs(relative) \
                 or any(part in {"", ".", ".."} for part in parts) \
                 or (os.altsep and os.altsep in relative) \
+                or relative in queued_relatives \
                 or isinstance(frame["levels"], bool) \
                 or not isinstance(frame["levels"], int) \
-                or frame["levels"] < 0 \
-                or frame["levels"] > MAX_GRAPH_TREE_LEVELS:
+                or frame["levels"] \
+                    != MAX_GRAPH_TREE_LEVELS - len(parts):
             raise RuntimeError("graph projection cursor is invalid")
+        page = _validated_source_page_state(frame["page"])
+        page_fields = {
+            "device", "inode", "cookie", "size", "mtime_ns", "ctime_ns",
+            "reset"}
+        if page and (
+                set(page) != page_fields or page["reset"] is not False
+                or any(isinstance(page[name], bool)
+                       or not isinstance(page[name], int)
+                       or page[name] < 0
+                       for name in page_fields - {"reset"})):
+            raise RuntimeError("graph projection cursor is invalid")
+        queued_relatives.add(relative)
         queue.append({"relative": relative, "levels": frame["levels"],
-                      "page": _validated_source_page_state(frame["page"])})
+                      "page": page})
     candidates = []
     seen = set()
     for record in value["candidates"]:
@@ -112,6 +143,10 @@ def _canonical_graph_projection_state(value):
                 or re.fullmatch(
                     r"[a-z0-9][a-z0-9._-]*", record["type"]) is None \
                 or len(record["title"]) > MAX_SOURCE_NAME_CHARS \
+                or not record["title"] \
+                or clip(record["title"], MAX_SOURCE_NAME_CHARS) \
+                    != record["title"] \
+                or record["updated_at"] > observed_at \
                 or record["origin"] not in (
                     THOUGHT_ORIGINS | {"legacy-unlabeled"}) \
                 or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None \
@@ -128,12 +163,14 @@ def _canonical_graph_projection_state(value):
     failed_ops = []
     for failure in value["failed_ops"]:
         if not isinstance(failure, str) or not failure \
-                or len(failure) > MAX_CONFIG_TEXT_CHARS:
+                or len(failure) > MAX_CONFIG_TEXT_CHARS \
+                or inert_summary(failure) != failure:
             raise RuntimeError("graph projection failure is invalid")
-        if failure not in failed_ops:
-            failed_ops.append(failure)
-    if value["phase"] == "ready" and queue:
-        raise RuntimeError("completed graph projection retains a cursor")
+        if failure in failed_ops:
+            raise RuntimeError("graph projection failure is duplicated")
+        failed_ops.append(failure)
+    if (value["phase"] == "ready") != (not queue):
+        raise RuntimeError("graph projection state phase/cursor is invalid")
     return dict(value, queue=queue, candidates=candidates,
                 failed_ops=failed_ops)
 
@@ -180,12 +217,16 @@ def _read_graph_corpus_page(slug):
     slug = _canonical_corpus_slug(slug)
     path = corpus_path(slug)
     fd = _open_source_nofollow(path, os.O_RDONLY)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            fd, label="graph source", error_type=RuntimeError) as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_size > MAX_EVENT_PAGE_BYTES:
             raise RuntimeError(
-                f"graph source is not a bounded regular page: {slug}")
+                "graph source is not a bounded owned single-link "
+                f"regular page: {slug}")
         raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
         after = os.fstat(stream.fileno())
         try:
@@ -197,9 +238,11 @@ def _read_graph_corpus_page(slug):
                 before.st_mtime_ns, before.st_ctime_ns)
     finished = (after.st_dev, after.st_ino, after.st_size,
                 after.st_mtime_ns, after.st_ctime_ns)
+    current = (target.st_dev, target.st_ino, target.st_size,
+               target.st_mtime_ns, target.st_ctime_ns)
     if observed != finished or len(raw) > MAX_EVENT_PAGE_BYTES \
-            or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                  after.st_ino):
+            or current != finished or not stat.S_ISREG(target.st_mode) \
+            or target.st_uid != os.geteuid() or target.st_nlink != 1:
         raise RuntimeError(f"graph source changed while reading: {slug}")
     try:
         text = raw.decode("utf-8", errors="strict")
@@ -247,6 +290,8 @@ def _read_graph_corpus_page(slug):
     updated_at = datetime.datetime.fromtimestamp(
         before.st_mtime, tz=datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
+    if updated_at > iso():
+        raise RuntimeError(f"graph source has a future timestamp: {slug}")
     return {
         "slug": slug,
         "type": page_type,
@@ -308,6 +353,19 @@ def _advance_graph_projection(state, limit):
             queue.appendleft(frame)
         for entry in entries:
             relative = os.path.join(frame["relative"], entry["name"])
+            reserved_directory = not frame["relative"] \
+                and entry["name"] in {".git", "event-index"}
+            if reserved_directory and not stat.S_ISDIR(entry["mode"]):
+                failure = "graph_reserved_directory_refused:" + relative
+                _record_graph_failure(state, failure)
+                continue
+            if not stat.S_ISDIR(entry["mode"]) \
+                    and not stat.S_ISREG(entry["mode"]):
+                failure = ("graph_nonregular_page:" if
+                           entry["name"].endswith(".md") else
+                           "graph_nonregular_entry:") + relative
+                _record_graph_failure(state, failure)
+                continue
             if stat.S_ISDIR(entry["mode"]):
                 if not frame["relative"] and (
                         entry["name"].startswith(".")
@@ -331,10 +389,6 @@ def _advance_graph_projection(state, limit):
                 # The installer-created corpus genesis document describes the
                 # repository; it is not a typed memory page and deliberately
                 # has no frontmatter or canonical lowercase page slug.
-                continue
-            if not stat.S_ISREG(entry["mode"]):
-                failure = "graph_nonregular_page:" + relative
-                _record_graph_failure(state, failure)
                 continue
             slug = relative[:-3].replace(os.sep, "/")
             try:
@@ -376,8 +430,159 @@ def _graph_projection_debt():
     return ""
 
 
-# gbrain's NER gazetteer deliberately covers its built-in entity types.  SIA
-# also has machine-domain entity types (organ/unit/package/project/skill), and
+def _recoverable_graph_snapshot(graph):
+    """Return exact generation counts for one canonical graph snapshot."""
+    graph_keys = {
+        "v", "ts", "publication_id", "nodes", "edges", "pages_total",
+        "pages_total_complete", "snapshot",
+    }
+    snapshot_keys = {
+        "complete", "truncated", "omitted_nodes", "omitted_edges",
+        "omissions_imply_absence", "aged_out", "counts_by_kind",
+        "failed_ops", "window_days",
+    }
+    node_keys = {"id", "t", "title", "ts", "origin",
+                 "deg", "din", "dout"}
+    edge_keys = {"s", "d", "t", "why"}
+    observed_by = iso()
+
+    def inert_text(value, limit, *, nonempty=False):
+        return _strict_config_string(
+            value, nonempty=nonempty, limit=limit) \
+            and inert_summary(value) == value
+
+    def observed_timestamp(value):
+        try:
+            return _canonical_utc_timestamp(value) == value \
+                and value <= observed_by
+        except (TypeError, ValueError):
+            return False
+
+    if not isinstance(graph, dict) or set(graph) != graph_keys \
+            or type(graph.get("v")) is not int or graph.get("v") != 2 \
+            or not _status_publication_id(graph.get("publication_id")) \
+            or not isinstance(graph.get("nodes"), list) \
+            or len(graph["nodes"]) > MAX_GRAPH_NODES \
+            or not isinstance(graph.get("edges"), list) \
+            or len(graph["edges"]) > MAX_GRAPH_EDGES \
+            or not _nonnegative_status_integer(graph.get("pages_total")) \
+            or not isinstance(graph.get("pages_total_complete"), bool):
+        return None
+    if not observed_timestamp(graph.get("ts")):
+        return None
+    snapshot = graph.get("snapshot")
+    if not isinstance(snapshot, dict) or set(snapshot) != snapshot_keys \
+            or not isinstance(snapshot.get("complete"), bool) \
+            or any(not _nonnegative_status_integer(snapshot.get(key))
+                   for key in ("truncated", "omitted_nodes",
+                               "omitted_edges", "aged_out")) \
+            or not isinstance(snapshot.get("omissions_imply_absence"), bool) \
+            or type(snapshot.get("window_days")) is not int \
+            or snapshot.get("window_days") != 14 \
+            or not isinstance(snapshot.get("counts_by_kind"), dict) \
+            or len(snapshot["counts_by_kind"]) > MAX_GRAPH_NODES \
+            or not isinstance(snapshot.get("failed_ops"), list) \
+            or len(snapshot["failed_ops"]) > MAX_GRAPH_SCAN_ENTRIES:
+        return None
+    if snapshot["complete"] != (not snapshot["failed_ops"]) \
+            or snapshot["complete"] and not graph["pages_total_complete"] \
+            or snapshot["omissions_imply_absence"] \
+            or snapshot["omitted_nodes"] != snapshot["truncated"] \
+            or (snapshot["omitted_edges"] != 0
+                and len(graph["edges"]) != MAX_GRAPH_EDGES):
+        return None
+    failures = set()
+    for failure in snapshot["failed_ops"]:
+        if not inert_text(
+                failure, MAX_CONFIG_TEXT_CHARS, nonempty=True) \
+                or failure in failures:
+            return None
+        failures.add(failure)
+
+    nodes = {}
+    observed_counts = {}
+    expected_in = {}
+    expected_out = {}
+    for node in graph["nodes"]:
+        if not isinstance(node, dict) or set(node) != node_keys \
+                or not _strict_config_string(
+                    node.get("t"), nonempty=True,
+                    limit=MAX_SOURCE_NAME_CHARS) \
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]*", node["t"]) is None \
+                or not inert_text(
+                    node.get("title"), MAX_SOURCE_NAME_CHARS,
+                    nonempty=True) \
+                or not observed_timestamp(node.get("ts")) \
+                or node.get("origin") not in _STATUS_THOUGHT_ORIGINS \
+                or any(not _nonnegative_status_integer(node.get(key))
+                       for key in ("deg", "din", "dout")):
+            return None
+        try:
+            if _canonical_corpus_slug(node["id"]) != node["id"]:
+                return None
+        except (KeyError, TypeError, ValueError):
+            return None
+        if node["id"] in nodes:
+            return None
+        nodes[node["id"]] = node
+        expected_in[node["id"]] = 0
+        expected_out[node["id"]] = 0
+        observed_counts[node["t"]] = observed_counts.get(node["t"], 0) + 1
+
+    seen_edges = set()
+    for edge in graph["edges"]:
+        if not isinstance(edge, dict) or set(edge) != edge_keys \
+                or not isinstance(edge.get("s"), str) \
+                or not isinstance(edge.get("d"), str) \
+                or edge.get("s") not in nodes or edge.get("d") not in nodes \
+                or not inert_text(
+                    edge.get("t"), MAX_SOURCE_NAME_CHARS, nonempty=True) \
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]*", edge["t"]) is None \
+                or not inert_text(edge.get("why"), 90):
+            return None
+        identity = (edge["s"], edge["d"], edge["t"])
+        if identity in seen_edges:
+            return None
+        seen_edges.add(identity)
+        expected_out[edge["s"]] += 1
+        expected_in[edge["d"]] += 1
+    for identity, node in nodes.items():
+        if node["din"] != expected_in[identity] \
+                or node["dout"] != expected_out[identity] \
+                or node["deg"] != (
+                    expected_in[identity] + expected_out[identity]):
+            return None
+
+    counts = snapshot["counts_by_kind"]
+    if set(counts) != set(observed_counts):
+        return None
+    for kind, count in counts.items():
+        if not _strict_config_string(
+                kind, nonempty=True, limit=MAX_SOURCE_NAME_CHARS) \
+                or re.fullmatch(r"[a-z0-9][a-z0-9._-]*", kind) is None \
+                or not _nonnegative_status_integer(count) \
+                or count != observed_counts[kind]:
+            return None
+    pages_total = graph["pages_total"]
+    aged_out = snapshot["aged_out"]
+    truncated = snapshot["truncated"]
+    if aged_out > pages_total \
+            or truncated > pages_total - aged_out \
+            or len(graph["nodes"]) != pages_total - aged_out - truncated:
+        return None
+    return {
+        "publication_id": graph["publication_id"],
+        "nodes": len(graph["nodes"]),
+        "edges": len(graph["edges"]),
+        "pages": pages_total,
+    }
+
+
+# gbrain's NER gazetteer deliberately covers its built-in entity types. SIA
+# also has machine-domain entity types (the compatibility ``organ`` type plus
+# unit/package/project/skill), and
 # those are usually referenced explicitly with wikilinks.  The cockpit graph
 # is derived from those corpus links rather than from gbrain traversal, so it
 # needs to apply the active SIA pack's declared inference regexes itself.
@@ -425,16 +630,18 @@ def _read_owned_stable_lines(path, *, max_bytes, max_lines,
                              max_line_bytes, label):
     """Read one owned regular text file without following or streaming it."""
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label=label) as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_mode & 0o022 \
                 or before.st_size > max_bytes:
             raise ValueError(
-                f"{label} is not an owned bounded regular file")
+                f"{label} is not an owned bounded regular file with a "
+                "single-link requirement")
         raw = stream.read(max_bytes + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -445,6 +652,7 @@ def _read_owned_stable_lines(path, *, max_bytes, max_lines,
         rebound = os.lstat(path)
         if not stat.S_ISREG(rebound.st_mode) \
                 or rebound.st_uid != os.geteuid() \
+                or rebound.st_nlink != 1 \
                 or rebound.st_mode & 0o022:
             raise ValueError(f"{label} changed while read")
         current = (rebound.st_dev, rebound.st_ino, rebound.st_size,
@@ -548,6 +756,10 @@ def load_domain_edge_spec(pack_path=None):
             continue
         if indent == 2 and stripped.startswith("- name:"):
             current_name = _yaml_scalar(stripped.split(":", 1)[1])
+            if len(current_name) > MAX_SOURCE_NAME_CHARS \
+                    or re.fullmatch(
+                        r"[a-z0-9][a-z0-9._-]*", current_name) is None:
+                raise ValueError("schema-pack name is not canonical")
             continue
         if not current_name:
             continue
@@ -587,7 +799,8 @@ def _relation_context(body, link_match, inherit_link_only=False):
     """Return the Markdown record governing one explicit wikilink.
 
     Generated event records are one line, so a leading verb still governs the
-    last member of a long package list.  Thought pages put their evidence links
+    last member of a long package list. Generated-entry pages (the ``thought``
+    compatibility type) put their evidence links
     on a link-only line; for those, inherit the nearest preceding prose line.
     Headings never supply a relation.
     """
@@ -684,8 +897,7 @@ def _iter_corpus_link_edges(canonical_slugs, rules, source_digests,
             if target_slugs is not None and target not in target_slugs:
                 continue
             lo = max(0, lm.start() - 45)
-            why = re.sub(r"\s+", " ",
-                         body[lo:lm.end() + 45]).strip()[:90]
+            why = clip(body[lo:lm.end() + 45], 90)
             link_type = _infer_domain_link_type(
                 _relation_context(body, lm, inherit_link_only), page_rules)
             yield {"from_slug": slug, "to_slug": target,
@@ -874,8 +1086,18 @@ def export_graph(require_complete=True):
             paths, omitted_edges = edge_projection, 0
         if isinstance(omitted_edges, bool) \
                 or not isinstance(omitted_edges, int) \
-                or omitted_edges < 0:
+                or omitted_edges < 0 \
+                or omitted_edges > MAX_JSON_SAFE_INTEGER:
             raise ValueError("graph edge omission count is invalid")
+        if not isinstance(paths, list) or len(paths) > MAX_GRAPH_EDGES:
+            raise ValueError("graph edge projection window is invalid")
+        valid_paths = []
+        for edge in paths:
+            if not isinstance(edge, dict):
+                _append_graph_failure(failed_ops, "corpus_edge_shape")
+                continue
+            valid_paths.append(edge)
+        paths = valid_paths
         paths = _suppress_shadowed_mentions(paths)
     except Exception:
         _append_graph_failure(failed_ops, "corpus_edges")
@@ -885,13 +1107,23 @@ def export_graph(require_complete=True):
     for e in paths:
         s, d = e.get("from_slug"), e.get("to_slug")
         relation = e.get("link_type", "mentions")
+        if not isinstance(s, str) or not isinstance(d, str) \
+                or not isinstance(relation, str) \
+                or len(relation) > MAX_SOURCE_NAME_CHARS \
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]*", relation) is None:
+            _append_graph_failure(failed_ops, "corpus_edge_shape")
+            continue
         if s in keep and d in keep and (s, d, relation) not in eseen:
             eseen.add((s, d, relation))
-            why = re.sub(r"\s+", " ", str(e.get("context") or "")).strip()[:90]
+            why = clip(str(e.get("context") or ""), 90)
             edges.append({"s": s, "d": d,
                           "t": relation, "why": why})
             keep[s]["deg"] += 1; keep[s]["dout"] += 1
             keep[d]["deg"] += 1; keep[d]["din"] += 1
+    if omitted_edges and len(edges) != MAX_GRAPH_EDGES:
+        _append_graph_failure(failed_ops, "corpus_edges")
+        omitted_edges = 0
     counts = {}
     for v in keep.values():
         counts[v["t"]] = counts.get(v["t"], 0) + 1
@@ -904,11 +1136,10 @@ def export_graph(require_complete=True):
                 page.get("slug") for page in pages
                 if isinstance(page, dict)}:
             pages_total = projection["pages_seen"]
-            aged_out = max(
-                aged_out,
-                projection["pages_seen"] - projection["eligible_seen"])
-            truncated = max(
-                truncated,
+            aged_out = (
+                projection["pages_seen"] - projection["eligible_seen"]
+                + len(projection["candidates"]) - len(keep))
+            truncated = (
                 projection["eligible_seen"]
                 - len(projection["candidates"]))
             for failure in projection["failed_ops"]:

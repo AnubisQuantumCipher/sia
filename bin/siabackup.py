@@ -1,6 +1,6 @@
 """Replaceable recovery-repository adapter for SIA portable capsules.
 
-The brain-native boundary lives in :mod:`siacapsule`.  This module never
+The local-memory boundary lives in :mod:`siacapsule`. This module never
 walks SIA's live roots and never teaches restic where those roots live.  It
 persists only capsules returned by ``siacapsule.freeze`` and restores only to
 an off-path tree which ``siacapsule.verify`` authenticates.
@@ -49,6 +49,7 @@ RESTIC_PATH = os.path.join(sialib.TOOLCHAIN, "restic", "bin", "restic")
 STABLE_CLI_PATH = os.path.join(sialib.HOME, ".local", "bin", "sia")
 
 RESTIC_TIMEOUT_SECONDS = 86400
+MAX_RESTIC_EXECUTABLE_BYTES = 134_217_728
 LATEST_SNAPSHOT_COUNT = "1"
 # bound for the operator-facing list, not a claim about repository size.
 LIST_SNAPSHOT_COUNT = "64"
@@ -61,6 +62,10 @@ MAX_SPOOL_BYTES = 68_719_476_736
 MAX_LEDGER_BYTES = 67_108_864
 
 _SAFE_ID = re.compile(r"[0-9a-f]+")
+_SNAPSHOT_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.([0-9]{1,9}))?(Z|[+-][0-9]{2}:[0-9]{2})")
 _REMOTE_REPOSITORY_PREFIXES = (
     "rest:", "sftp:", "s3:", "b2:", "azure:", "gs:", "rclone:",
     "swift:",
@@ -109,6 +114,60 @@ _STATUS_STATES = frozenset({
 _OPERATION_PHASES = frozenset({
     "accepted", "running", "verified", "failed", "blocked",
 })
+_OPERATION_KINDS = frozenset(_ACTION_KIND.values()) | {"restore-recover"}
+_STATUS_READINESS = frozenset({"ready", "recovery-only", "unknown"})
+_PREPARED_READINESS = frozenset({"ready", "recovery-only"})
+_STATUS_FIELDS = frozenset({
+    "schema_version", "state", "detail", "repository_display", "latest",
+    "prepared", "operation", "updated_at",
+})
+_LATEST_STATUS_FIELDS = frozenset({
+    "snapshot_id", "created_at", "verified", "readiness", "profile",
+    "identity_matches",
+})
+_PREPARED_STATUS_FIELDS = frozenset({
+    "prepared_id", "snapshot_id", "created_at", "readiness", "profile",
+    "ledger_head", "identity_matches",
+})
+_OPERATION_STATUS_FIELDS = frozenset({
+    "request_id", "kind", "prepared_id", "phase", "ready",
+    "sia_ledger_verified",
+})
+_SCHEDULE_STATUS_FIELDS = frozenset({
+    "schema_version", "configured", "automatic", "observed_at", "upload",
+    "verification",
+})
+_SCHEDULE_TIMER_FIELDS = frozenset({
+    "cadence", "enabled", "active", "persistent", "wake_system",
+    "last_trigger_at", "next_trigger_at",
+})
+_REQUEST_ARGUMENT_FIELDS = {
+    "setup": frozenset({
+        "repository", "recovery_key_out", "identity_key_out",
+        "environment_file",
+    }),
+    "connect": frozenset({
+        "repository", "recovery_key_file", "environment_file",
+    }),
+    "upload": frozenset({"scheduled"}),
+    "check": frozenset({"scheduled"}),
+    "prepare": frozenset({"snapshot_id"}),
+    "apply": frozenset({
+        "prepared_id", "snapshot_id", "capsule_id", "manifest_sha256",
+        "confirmation", "identity_key_file", "repository",
+        "environment_file", "repository_id", "configured_at",
+        "target_public_key", "restored_public_key", "adoption",
+    }),
+}
+_SUPERVISOR_REQUEST_BINDING_FIELDS = (
+    "prepared_id", "snapshot_id", "capsule_id", "manifest_sha256",
+    "identity_key_file", "repository", "environment_file", "repository_id",
+    "configured_at", "target_public_key", "restored_public_key",
+    "accepted_ledger_head", "confirmation_sha256", "adoption_order",
+    "adoption_record_id", "target",
+)
+STATUS_TEXT_MAX_CHARS = sialib.MAX_CONFIG_TEXT_CHARS
+STATUS_IDENTIFIER_MAX_CHARS = 64
 
 
 class BlockedError(RuntimeError):
@@ -426,7 +485,8 @@ def _ensure_layout():
 
 
 def _read_regular(path, label, *, private=False,
-                  maximum=sialib.MAX_STATE_JSON_BYTES):
+                  maximum=sialib.MAX_STATE_JSON_BYTES,
+                  with_generation=False):
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
              | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_NONBLOCK", 0))
@@ -450,11 +510,16 @@ def _read_regular(path, label, *, private=False,
             remaining -= len(block)
         raw = b"".join(chunks)
         after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
+        try:
+            current = os.stat(path, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError(f"{label} changed while read") from exc
         if len(raw) > maximum or len(raw) != before.st_size \
                 or _generation(before) != _generation(after) \
                 or _generation(after) != _generation(current):
             raise ValueError(f"{label} changed while read")
+        if with_generation:
+            return raw, _generation(after)
         return raw
     finally:
         os.close(descriptor)
@@ -553,7 +618,7 @@ def _write_external_exclusive(path, raw, mode=0o600):
     return path
 
 
-def _atomic_json(path, value):
+def _atomic_json(path, value, *, require_absent=False):
     raw = _canonical_bytes(value)
     if len(raw) > sialib.MAX_STATE_JSON_BYTES:
         raise ValueError("continuity state exceeds its byte boundary")
@@ -565,7 +630,21 @@ def _atomic_json(path, value):
             raise ValueError("continuity publication target is unsafe")
     stage = os.path.join(parent, ".status-stage-" + uuid.uuid4().hex)
     _write_exclusive(stage, raw, 0o600)
-    os.replace(stage, path)
+    try:
+        if require_absent:
+            os.link(stage, path, follow_symlinks=False)
+        else:
+            os.replace(stage, path)
+    except FileExistsError as exc:
+        if require_absent:
+            raise ValueError(
+                "continuity publication target appeared during bootstrap") \
+                from exc
+        raise
+    finally:
+        if os.path.lexists(stage):
+            os.unlink(stage)
+            _fsync_dir(parent)
     _fsync_dir(parent)
     return value
 
@@ -619,15 +698,12 @@ def _exclusive_lock_nonblocking(path):
             os.close(descriptor)
 
 
-def _default_status():
-    configured = os.path.isfile(CONFIG_PATH) and os.path.isfile(KEY_PATH)
+def _unconfigured_status():
     return {
         "schema_version": STATUS_SCHEMA_VERSION,
-        "state": "recovery-only" if configured else "unconfigured",
-        "detail": ("Repository configured; no verified copy recorded."
-                   if configured else "Continuity is not configured."),
-        "repository_display": ("External recovery repository"
-                               if configured else ""),
+        "state": "unconfigured",
+        "detail": "Continuity is not configured.",
+        "repository_display": "",
         "latest": None,
         "prepared": None,
         "operation": None,
@@ -635,90 +711,447 @@ def _default_status():
     }
 
 
-def _latest_is_protecting(latest):
+def _default_status():
+    config_exists = os.path.lexists(CONFIG_PATH)
+    key_exists = os.path.lexists(KEY_PATH)
+    if config_exists != key_exists:
+        raise BlockedError(
+            "Continuity configuration and repository key are incomplete.")
+    configured = config_exists
+    if not configured:
+        return _unconfigured_status()
+    load_config()
+    status = _unconfigured_status()
+    status.update({
+        "state": "recovery-only",
+        "detail": "Repository configured; no verified copy recorded.",
+        "repository_display": "External recovery repository",
+    })
+    return status
+
+
+def _valid_status_text(value, *, nonempty=False):
+    return isinstance(value, str) \
+        and (bool(value) or not nonempty) \
+        and len(value) <= STATUS_TEXT_MAX_CHARS \
+        and all(" " <= character <= "~" for character in value)
+
+
+def _valid_status_identifier(value, *, allow_empty=False):
+    if value == "" and allow_empty:
+        return True
+    return isinstance(value, str) \
+        and len(value) <= STATUS_IDENTIFIER_MAX_CHARS \
+        and _SAFE_ID.fullmatch(value) is not None
+
+
+def _valid_status_correlation(value, *, allow_empty=False):
+    return (allow_empty and value == "") \
+        or (isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{32}", value) is not None)
+
+
+def _valid_digest(value):
+    return isinstance(value, str) \
+        and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _valid_status_timestamp(value):
+    try:
+        return sialib._canonical_utc_timestamp(value) == value
+    except (TypeError, ValueError):
+        return False
+
+
+def _valid_snapshot_status_timestamp(value):
+    if not isinstance(value, str) \
+            or len(value) > STATUS_TEXT_MAX_CHARS:
+        return False
+    match = _SNAPSHOT_TIMESTAMP.fullmatch(value)
+    if match is None:
+        return False
+    fraction, zone = match.groups()
+    if fraction is not None and fraction.endswith("0"):
+        return False
+    if zone in {"+00:00", "-00:00"}:
+        return False
+    source = value[:-1] + "+00:00" if zone == "Z" else value
+    try:
+        parsed = datetime.datetime.fromisoformat(source)
+    except ValueError:
+        return False
+    return parsed.utcoffset() is not None
+
+
+def _valid_latest_status(latest):
     return isinstance(latest, dict) \
-        and isinstance(latest.get("snapshot_id"), str) \
-        and bool(latest["snapshot_id"]) \
-        and isinstance(latest.get("created_at"), str) \
-        and bool(latest["created_at"]) \
-        and isinstance(latest.get("profile"), str) \
-        and bool(latest["profile"]) \
+        and set(latest) == _LATEST_STATUS_FIELDS \
+        and _valid_status_identifier(latest.get("snapshot_id")) \
+        and _valid_snapshot_status_timestamp(latest.get("created_at")) \
+        and type(latest.get("verified")) is bool \
+        and latest.get("readiness") in _STATUS_READINESS \
+        and latest.get("profile") == PROFILE \
+        and type(latest.get("identity_matches")) is bool \
+        and (latest["readiness"] != "unknown" or not latest["verified"])
+
+
+def _valid_prepared_status(prepared):
+    return isinstance(prepared, dict) \
+        and set(prepared) == _PREPARED_STATUS_FIELDS \
+        and _valid_status_correlation(prepared.get("prepared_id")) \
+        and _valid_status_identifier(prepared.get("snapshot_id")) \
+        and _valid_status_timestamp(prepared.get("created_at")) \
+        and prepared.get("readiness") in _PREPARED_READINESS \
+        and prepared.get("profile") == PROFILE \
+        and isinstance(prepared.get("ledger_head"), str) \
+        and re.fullmatch(r"[0-9a-f]{64}", prepared["ledger_head"]) is not None \
+        and type(prepared.get("identity_matches")) is bool
+
+
+def _valid_operation_status(operation):
+    if not isinstance(operation, dict) \
+            or set(operation) != _OPERATION_STATUS_FIELDS \
+            or not _valid_status_correlation(operation.get("request_id")) \
+            or operation.get("kind") not in _OPERATION_KINDS \
+            or not _valid_status_correlation(
+                operation.get("prepared_id"), allow_empty=True) \
+            or operation.get("phase") not in _OPERATION_PHASES \
+            or type(operation.get("ready")) is not bool \
+            or type(operation.get("sia_ledger_verified")) is not bool:
+        return False
+    kind = operation["kind"]
+    prepared_id = operation["prepared_id"]
+    phase = operation["phase"]
+    if kind == "restore-apply":
+        if not prepared_id:
+            return False
+    elif kind == "restore-prepare":
+        if bool(prepared_id) != (phase == "verified"):
+            return False
+    elif prepared_id:
+        return False
+    if kind not in {"restore-apply", "restore-recover"} \
+            and (operation["ready"] or operation["sia_ledger_verified"]):
+        return False
+    if phase in {"accepted", "failed"} \
+            and (operation["ready"] or operation["sia_ledger_verified"]):
+        return False
+    if kind in {"restore-apply", "restore-recover"}:
+        if phase == "running" \
+                and operation["ready"] != operation["sia_ledger_verified"]:
+            return False
+        if phase == "verified" \
+                and not (operation["ready"]
+                         and operation["sia_ledger_verified"]):
+            return False
+    return True
+
+
+def _latest_is_protecting(latest):
+    return _valid_latest_status(latest) \
         and latest.get("verified") is True \
         and latest.get("readiness") == "ready" \
         and latest.get("identity_matches") is True
 
 
-def read_status():
-    try:
-        value = _read_json(STATUS_PATH, "continuity status")
-    except FileNotFoundError:
-        return _default_status()
-    required = {"schema_version", "state", "detail", "repository_display",
-                "latest", "prepared", "operation", "updated_at"}
-    if set(value) != required \
+def _latest_with_receipt_authority(latest, *, config=None,
+                                   ensure_durable=False,
+                                   require_config_binding=True):
+    """Rebind every verified latest-row claim to its receipt authority."""
+    if latest is None:
+        return None
+    if not _valid_latest_status(latest):
+        raise ValueError("continuity latest-copy status is invalid")
+    if not latest["verified"]:
+        return latest
+    config = (load_config() if config is None else
+              _validate_config(
+                  config, require_binding=require_config_binding))
+    verification = _load_verification(
+        latest["snapshot_id"], config=config,
+        ensure_durable=ensure_durable,
+        require_config_binding=require_config_binding)
+    if verification is None \
+            or verification["classification"] != latest["readiness"]:
+        return None
+    identity_matches = secrets.compare_digest(
+        verification["public_key"], config["brain_public_key"])
+    if identity_matches is not latest["identity_matches"]:
+        return None
+    return latest
+
+
+def _latest_for_configured_identity(latest, *, config=None,
+                                    ensure_durable=False):
+    """Rebind a retained copy claim to durable verification authority."""
+    if latest is None:
+        return None
+    if not _valid_latest_status(latest):
+        raise ValueError("continuity latest-copy status is invalid")
+    config = (load_config() if config is None else
+              _validate_config(config))
+    verification = _load_verification(
+        latest["snapshot_id"], config=config,
+        ensure_durable=ensure_durable)
+    if verification is None \
+            or verification["classification"] != "ready" \
+            or not secrets.compare_digest(
+                verification["public_key"], config["brain_public_key"]):
+        return None
+    return {
+        **latest,
+        "verified": True,
+        "readiness": "ready",
+        "identity_matches": True,
+    }
+
+
+def _valid_status_operation_pair(value):
+    state = value["state"]
+    operation = value.get("operation")
+    if operation is None:
+        return state in {"unconfigured", "verified", "recovery-only"}
+    kind = operation["kind"]
+    phase = operation["phase"]
+    if state == "queued":
+        return (phase == "accepted"
+                and kind in set(_ACTION_KIND.values()) - {"restore-apply"}) \
+            or (phase == "running"
+                and kind in {"backup-setup", "backup-connect"})
+    if state in {"capturing", "uploading"}:
+        return kind == "backup-upload" and phase == "running"
+    if state == "checking":
+        return kind == "backup-check" and phase == "running"
+    if state == "preparing":
+        return kind == "restore-prepare" and phase == "running"
+    if state == "prepared":
+        prepared = value.get("prepared")
+        return isinstance(prepared, dict) \
+            and kind == "restore-prepare" \
+            and phase == "verified" \
+            and operation["prepared_id"] == prepared.get("prepared_id")
+    if state == "restoring":
+        return (kind == "restore-apply"
+                and phase in {"accepted", "running"}) \
+            or (kind == "restore-recover" and phase == "running")
+    if state in {"verified", "recovery-only"}:
+        return phase == "verified" and kind != "restore-prepare"
+    if state == "failed":
+        return phase == "failed"
+    if state == "blocked":
+        return phase == "blocked"
+    return False
+
+
+def _validate_status(value):
+    if not isinstance(value, dict) \
+            or set(value) != _STATUS_FIELDS \
+            or type(value.get("schema_version")) is not int \
             or value.get("schema_version") != STATUS_SCHEMA_VERSION \
             or value.get("state") not in _STATUS_STATES \
-            or not isinstance(value.get("detail"), str) \
-            or not isinstance(value.get("repository_display"), str) \
-            or not isinstance(value.get("updated_at"), str):
+            or not _valid_status_text(value.get("detail"), nonempty=True) \
+            or not _valid_status_text(value.get("repository_display")) \
+            or value.get("repository_display") not in {
+                "", "External recovery repository"} \
+            or not _valid_status_timestamp(value.get("updated_at")):
         raise ValueError("continuity status schema is invalid")
     latest = value.get("latest")
-    if latest is not None and (
-            not isinstance(latest, dict)
-            or set(latest) != {"snapshot_id", "created_at", "verified",
-                              "readiness", "profile", "identity_matches"}
-            or not isinstance(latest.get("snapshot_id"), str)
-            or not isinstance(latest.get("created_at"), str)
-            or not isinstance(latest.get("verified"), bool)
-            or not isinstance(latest.get("readiness"), str)
-            or not isinstance(latest.get("profile"), str)
-            or not isinstance(latest.get("identity_matches"), bool)):
+    if latest is not None and not _valid_latest_status(latest):
         raise ValueError("continuity latest-copy status is invalid")
+    prepared = value.get("prepared")
+    if prepared is not None and not _valid_prepared_status(prepared):
+        raise ValueError("continuity prepared status is invalid")
+    unconfigured = value["state"] == "unconfigured"
+    if unconfigured != (value["repository_display"] == "") \
+            or (unconfigured
+                and (latest is not None or prepared is not None)):
+        raise ValueError("continuity status schema is invalid")
     if value.get("state") == "verified" \
             and not _latest_is_protecting(latest):
         raise ValueError(
             "verified continuity status lacks a ready identity-bound copy")
-    prepared = value.get("prepared")
-    if prepared is not None and (
-            not isinstance(prepared, dict)
-            or not isinstance(prepared.get("prepared_id"), str)
-            or not isinstance(prepared.get("snapshot_id"), str)
-            or not isinstance(prepared.get("created_at"), str)
-            or not isinstance(prepared.get("readiness"), str)
-            or not isinstance(prepared.get("profile"), str)
-            or not isinstance(prepared.get("ledger_head"), str)
-            or not isinstance(prepared.get("identity_matches"), bool)):
-        raise ValueError("continuity prepared status is invalid")
     operation = value.get("operation")
-    if operation is not None and (
-            not isinstance(operation, dict)
-            or set(operation) != {"request_id", "kind", "prepared_id",
-                                  "phase", "ready", "sia_ledger_verified"}
-            or not isinstance(operation.get("request_id"), str)
-            or not operation["request_id"]
-            or not isinstance(operation.get("kind"), str)
-            or not operation["kind"]
-            or not isinstance(operation.get("prepared_id"), str)
-            or operation.get("phase") not in _OPERATION_PHASES
-            or not isinstance(operation.get("ready"), bool)
-            or not isinstance(operation.get("sia_ledger_verified"), bool)):
+    if operation is not None and not _valid_operation_status(operation):
+        raise ValueError("continuity operation status is invalid")
+    if not _valid_status_operation_pair(value):
         raise ValueError("continuity operation status is invalid")
     return value
 
 
-def _publish_status(**changes):
+def _retire_linked_status_stage(stage):
+    """Complete a bootstrap link before retiring its second private name."""
+    authority = os.path.abspath(ROOT)
+    stage = os.path.abspath(stage)
+    target = os.path.abspath(STATUS_PATH)
+    if os.path.dirname(stage) != authority \
+            or os.path.dirname(target) != authority \
+            or re.fullmatch(r"\.status-stage-[0-9a-f]{32}",
+                            os.path.basename(stage)) is None:
+        raise BlockedError(
+            "Continuity linked publication stage needs review.")
+    directory_flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                       | getattr(os, "O_CLOEXEC", 0)
+                       | getattr(os, "O_NOFOLLOW", 0))
+    file_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                  | getattr(os, "O_NOFOLLOW", 0)
+                  | getattr(os, "O_NONBLOCK", 0))
+    directory_fd = os.open(authority, directory_flags)
+    stage_fd = None
+    target_fd = None
     try:
-        value = read_status()
-    except (OSError, ValueError):
-        value = _default_status()
+        parent = os.fstat(directory_fd)
+        if not stat.S_ISDIR(parent.st_mode) \
+                or parent.st_uid != os.geteuid():
+            raise BlockedError(
+                "Continuity linked publication authority is unsafe.")
+        stage_name = os.path.basename(stage)
+        target_name = os.path.basename(target)
+        stage_fd = os.open(stage_name, file_flags, dir_fd=directory_fd)
+        target_fd = os.open(target_name, file_flags, dir_fd=directory_fd)
+        staged = os.fstat(stage_fd)
+        published = os.fstat(target_fd)
+        staged_link = os.stat(
+            stage_name, dir_fd=directory_fd, follow_symlinks=False)
+        published_link = os.stat(
+            target_name, dir_fd=directory_fd, follow_symlinks=False)
+        same_inode = (staged.st_dev, staged.st_ino) == (
+            published.st_dev, published.st_ino)
+        stable = (_generation(staged) == _generation(staged_link)
+                  and _generation(published) ==
+                  _generation(published_link))
+        if not same_inode or not stable or staged.st_nlink != 2 \
+                or not stat.S_ISREG(staged.st_mode) \
+                or staged.st_uid != os.geteuid() \
+                or stat.S_IMODE(staged.st_mode) != 0o600 \
+                or staged.st_size > sialib.MAX_STATE_JSON_BYTES:
+            raise BlockedError(
+                "Continuity linked publication stage needs review.")
+        staged_raw = os.read(stage_fd, staged.st_size + 1)
+        published_raw = os.read(target_fd, published.st_size + 1)
+        if len(staged_raw) != staged.st_size \
+                or not secrets.compare_digest(staged_raw, published_raw):
+            raise BlockedError(
+                "Continuity linked publication stage needs review.")
+        os.fsync(target_fd)
+        os.fsync(directory_fd)
+        if _generation(os.stat(
+                stage_name, dir_fd=directory_fd,
+                follow_symlinks=False)) != _generation(staged) \
+                or _generation(os.stat(
+                    target_name, dir_fd=directory_fd,
+                    follow_symlinks=False)) != _generation(published):
+            raise BlockedError(
+                "Continuity linked publication changed during recovery.")
+        os.unlink(stage_name, dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    finally:
+        if target_fd is not None:
+            os.close(target_fd)
+        if stage_fd is not None:
+            os.close(stage_fd)
+        os.close(directory_fd)
+
+
+def _reconcile_atomic_publication_stages(*, linked_only=False):
+    stage_authorities = (ROOT, os.path.dirname(CONFIG_PATH))
+    visited = set()
+    for authority in stage_authorities:
+        authority = os.path.abspath(authority)
+        if authority in visited or not os.path.lexists(authority):
+            continue
+        visited.add(authority)
+        for name in _bounded_private_names(
+                authority, "continuity atomic publication spool"):
+            if not name.startswith(".status-stage-"):
+                continue
+            if re.fullmatch(r"\.status-stage-[0-9a-f]{32}", name) is None:
+                if linked_only:
+                    continue
+                raise BlockedError(
+                    "Continuity atomic publication spool needs review.")
+            stage = os.path.join(authority, name)
+            info = os.lstat(stage)
+            if info.st_nlink == 2:
+                if authority != os.path.abspath(ROOT):
+                    raise BlockedError(
+                        "Continuity linked publication stage needs review.")
+                _retire_linked_status_stage(stage)
+            elif not linked_only:
+                if info.st_nlink != 1:
+                    raise BlockedError(
+                        "Continuity atomic publication spool needs review.")
+                _retire_private_file(stage, authority)
+
+
+def read_status():
+    _reconcile_atomic_publication_stages(linked_only=True)
+    try:
+        value = _read_json(STATUS_PATH, "continuity status")
+    except FileNotFoundError:
+        return _validate_status(_default_status())
+    value = _validate_status(value)
+    latest = value.get("latest")
+    if isinstance(latest, dict) and latest.get("verified") is True:
+        try:
+            rebound = _latest_with_receipt_authority(latest)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                "verified latest-copy status lacks receipt authority") \
+                from exc
+        if rebound != latest:
+            raise ValueError(
+                "verified latest-copy status lacks receipt authority")
+    return value
+
+
+def _publish_status(**changes):
+    _reconcile_atomic_publication_stages(linked_only=True)
+    try:
+        value = _validate_status(
+            _read_json(STATUS_PATH, "continuity status"))
+        status_missing = False
+    except FileNotFoundError:
+        value = _validate_status(_default_status())
+        status_missing = True
+    existing_latest = value.get("latest")
+    if isinstance(existing_latest, dict) \
+            and existing_latest.get("verified") is True:
+        try:
+            rebound = _latest_with_receipt_authority(existing_latest)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                "existing verified latest-copy status lacks receipt "
+                "authority") from exc
+        if rebound != existing_latest:
+            raise ValueError(
+                "existing verified latest-copy status lacks receipt "
+                "authority")
     value.update(changes)
     value["schema_version"] = STATUS_SCHEMA_VERSION
     value["updated_at"] = _now()
-    if value.get("state") == "verified" \
-            and not _latest_is_protecting(value.get("latest")):
-        raise ValueError(
-            "verified continuity publication lacks a concrete ready copy")
-    return _atomic_json(STATUS_PATH, value)
+    try:
+        _validate_status(value)
+    except ValueError as exc:
+        if value.get("state") == "verified" \
+                and not _latest_is_protecting(value.get("latest")):
+            raise ValueError(
+                "verified continuity publication lacks a concrete ready copy") \
+                from exc
+        raise
+    latest = value.get("latest")
+    if isinstance(latest, dict) and latest.get("verified") is True:
+        try:
+            rebound = _latest_with_receipt_authority(
+                latest, ensure_durable=True)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                "verified latest-copy publication lacks receipt authority") \
+                from exc
+        if rebound != latest:
+            raise ValueError(
+                "verified latest-copy publication lacks receipt authority")
+    return _atomic_json(
+        STATUS_PATH, value, require_absent=status_missing)
 
 
 def _operation(request_id, kind, phase, *, prepared_id="", ready=False,
@@ -761,18 +1194,19 @@ def _validate_config(value, *, require_binding=True):
         _validate_environment_file(environment_file)
     repository_id = value.get("repository_id")
     if not isinstance(repository_id, str) \
-            or (repository_id and _SAFE_ID.fullmatch(repository_id) is None) \
+            or (repository_id and not _valid_digest(repository_id)) \
             or (require_binding and not repository_id):
         raise ValueError("continuity repository identity is invalid")
     brain_public_key = _validate_text(
         value.get("brain_public_key"), "configured SIA public identity")
-    if _SAFE_ID.fullmatch(brain_public_key) is None:
+    if not _valid_digest(brain_public_key):
         raise ValueError("configured SIA public identity is malformed")
     if require_binding and not secrets.compare_digest(
             brain_public_key, _live_brain_public_key()):
         raise BlockedError(
             "Continuity configuration belongs to another SIA identity.")
-    _validate_text(value.get("created_at"), "configuration timestamp")
+    if not _valid_status_timestamp(value.get("created_at")):
+        raise ValueError("configuration timestamp is invalid")
     return value
 
 
@@ -786,12 +1220,7 @@ def load_config():
     return value
 
 
-def _parse_environment(path):
-    if path is None:
-        return {}
-    _validate_text(path, "environment file", absolute=True)
-    raw = _read_regular(path, "repository environment file", private=True,
-                        maximum=sialib.MAX_CONFIG_BYTES)
+def _parse_environment_bytes(raw):
     try:
         text = raw.decode("utf-8", "strict")
     except UnicodeError as exc:
@@ -810,6 +1239,15 @@ def _parse_environment(path):
             _validate_backend_secret_path(value, key)
         result[key] = value
     return result
+
+
+def _parse_environment(path):
+    if path is None:
+        return {}
+    _validate_text(path, "environment file", absolute=True)
+    raw = _read_regular(path, "repository environment file", private=True,
+                        maximum=sialib.MAX_CONFIG_BYTES)
+    return _parse_environment_bytes(raw)
 
 
 def _portable_authority_roots():
@@ -855,29 +1293,229 @@ def _validate_environment_file(path):
     return path
 
 
-def _restic_environment(config, key_path=KEY_PATH):
-    environment_file = config.get("environment_file")
-    backend = _parse_environment(environment_file)
+def _restic_environment(config, key_path=KEY_PATH, *, backend=None,
+                        repository=None):
+    if backend is None:
+        backend = _parse_environment(config.get("environment_file"))
     environment = {}
     for name in ("HOME", "PATH", "LANG", "LC_ALL", "TMPDIR",
                  "XDG_RUNTIME_DIR"):
         if name in os.environ:
             environment[name] = os.environ[name]
     environment.update(backend)
-    environment["RESTIC_REPOSITORY"] = config["repository"]
+    environment["RESTIC_REPOSITORY"] = (
+        config["repository"] if repository is None else repository)
     environment["RESTIC_PASSWORD_FILE"] = key_path
     return environment
 
 
-def _execute_restic(arguments, *, config, key_path, cwd, restic_path):
+def _authority_source(path, label, *, maximum=sialib.MAX_CONFIG_BYTES,
+                      private=True):
+    path = os.path.abspath(path)
+    raw, generation = _read_regular(
+        path, label, private=private, maximum=maximum,
+        with_generation=True)
+    return {
+        "path": path,
+        "label": label,
+        "raw": raw,
+        "generation": generation,
+        "maximum": maximum,
+        "private": private,
+    }
+
+
+def _assert_authority_sources_unchanged(sources):
+    for source in sources:
+        try:
+            current_raw, current_generation = _read_regular(
+                source["path"], source["label"],
+                private=source["private"], maximum=source["maximum"],
+                with_generation=True)
+        except (OSError, ValueError) as exc:
+            raise BlockedError(
+                "Continuity repository authority changed during operation.") \
+                from exc
+        if current_generation != source["generation"] \
+                or not secrets.compare_digest(current_raw, source["raw"]):
+            raise BlockedError(
+                "Continuity repository authority changed during operation.")
+
+
+def _stage_restic_executable(restic_path, stage):
+    source = _authority_source(
+        restic_path, "private restic executable",
+        maximum=MAX_RESTIC_EXECUTABLE_BYTES, private=False)
+    mode = source["generation"][2]
+    if not source["raw"] or not mode & stat.S_IXUSR \
+            or mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise ValueError("private restic executable is unavailable")
+    staged = os.path.join(stage, "restic")
+    _write_exclusive(staged, source["raw"], 0o500)
+    staged_source = _authority_source(
+        staged, "staged restic executable",
+        maximum=MAX_RESTIC_EXECUTABLE_BYTES)
+    if not secrets.compare_digest(
+            staged_source["raw"], source["raw"]):
+        raise RuntimeError("staged restic executable changed during copy")
+    staged_source["raw"] = source["raw"]
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(staged, flags)
+    try:
+        opened = os.fstat(descriptor)
+        linked = os.stat(staged, follow_symlinks=False)
+        if _generation(opened) != staged_source["generation"] \
+                or _generation(linked) != staged_source["generation"]:
+            raise RuntimeError(
+                "staged restic executable changed before pinning")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return staged, descriptor, source, staged_source
+
+
+def _open_local_repository(repository):
+    flags = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+             | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(repository, flags)
+    opened = os.fstat(descriptor)
+    try:
+        linked = os.stat(repository, follow_symlinks=False)
+    except OSError:
+        os.close(descriptor)
+        raise
+    identity = lambda value: (
+        value.st_dev, value.st_ino, value.st_mode, value.st_uid)
+    if not stat.S_ISDIR(opened.st_mode) \
+            or opened.st_uid != os.geteuid() \
+            or identity(opened) != identity(linked):
+        os.close(descriptor)
+        raise ValueError("local repository authority is unsafe")
+    return {
+        "path": os.path.abspath(repository),
+        "descriptor": descriptor,
+        "identity": identity(opened),
+    }
+
+
+def _assert_local_repository_unchanged(source):
+    if source is None:
+        return
+    identity = lambda value: (
+        value.st_dev, value.st_ino, value.st_mode, value.st_uid)
+    try:
+        opened = os.fstat(source["descriptor"])
+        linked = os.stat(source["path"], follow_symlinks=False)
+    except OSError as exc:
+        raise BlockedError(
+            "Continuity repository authority changed during operation.") \
+            from exc
+    if not stat.S_ISDIR(opened.st_mode) \
+            or identity(opened) != source["identity"] \
+            or identity(linked) != source["identity"]:
+        raise BlockedError(
+            "Continuity repository authority changed during operation.")
+
+
+@contextlib.contextmanager
+def _admitted_restic_authority(config, key_path, restic_path):
+    """Freeze one local repository-authority generation per operation."""
+    _ensure_private_dir(CHECKS_DIR)
+    stage = os.path.join(
+        CHECKS_DIR, ".check-restic-authority-" + uuid.uuid4().hex)
+    os.mkdir(stage, 0o700)
+    sources = []
+    staged_sources = []
+    local_repository = None
+    staged_restic_descriptor = None
+    try:
+        backend = {}
+        environment_file = config.get("environment_file")
+        if environment_file is not None:
+            source = _authority_source(
+                environment_file, "repository environment file")
+            sources.append(source)
+            backend = _parse_environment_bytes(source["raw"])
+        for index, key in enumerate(sorted(
+                set(backend).intersection(_PATH_ENVIRONMENT))):
+            original = _validate_backend_secret_path(backend[key], key)
+            source = _authority_source(original, key)
+            sources.append(source)
+            staged = os.path.join(stage, f"backend-secret-{index}")
+            _write_exclusive(staged, source["raw"], 0o400)
+            staged_sources.append(_authority_source(
+                staged, "staged repository backend secret"))
+            backend[key] = staged
+        key_source = _authority_source(key_path, "repository key")
+        sources.append(key_source)
+        staged_key = os.path.join(stage, "repository.key")
+        _write_exclusive(staged_key, key_source["raw"], 0o400)
+        staged_sources.append(_authority_source(
+            staged_key, "staged repository key"))
+        staged_restic, staged_restic_descriptor, restic_source, \
+            staged_restic_source = \
+            _stage_restic_executable(restic_path, stage)
+        sources.append(restic_source)
+        staged_sources.append(staged_restic_source)
+        repository = config["repository"]
+        pass_fds = (staged_restic_descriptor,)
+        if os.path.isabs(repository) \
+                and (config.get("repository_id")
+                     or os.path.lexists(repository)):
+            try:
+                local_repository = _open_local_repository(repository)
+            except (OSError, ValueError) as exc:
+                if config.get("repository_id"):
+                    raise BlockedError(
+                        "Continuity repository authority is unavailable.") \
+                        from exc
+                raise
+            repository = "/proc/self/fd/" + str(
+                local_repository["descriptor"])
+            pass_fds += (local_repository["descriptor"],)
+        environment = _restic_environment(
+            config, staged_key, backend=backend, repository=repository)
+
+        def assert_current():
+            _assert_authority_sources_unchanged(sources)
+            _assert_authority_sources_unchanged(staged_sources)
+            _assert_local_repository_unchanged(local_repository)
+
+        assert_current()
+        yield (environment, staged_restic, staged_restic_descriptor,
+               pass_fds, assert_current)
+        assert_current()
+    finally:
+        try:
+            if local_repository is not None:
+                os.close(local_repository["descriptor"])
+        finally:
+            try:
+                if staged_restic_descriptor is not None:
+                    os.close(staged_restic_descriptor)
+            finally:
+                if os.path.lexists(stage):
+                    _retire_private_tree(stage, CHECKS_DIR)
+
+
+def _execute_restic(arguments, *, config, key_path, cwd, restic_path,
+                    environment=None, pass_fds=(), executable_fd=None):
     restic_path = restic_path or RESTIC_PATH
     info = os.lstat(restic_path)
     if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
-            or not os.access(restic_path, os.X_OK):
+            or info.st_nlink != 1 or not info.st_mode & stat.S_IXUSR \
+            or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         raise ValueError("private restic executable is unavailable")
+    if environment is None:
+        environment = _restic_environment(config, key_path)
+    executable = (restic_path if executable_fd is None else
+                  "/proc/self/fd/" + str(executable_fd))
     result = sialib._run_bounded_text_process(
-        [restic_path, *arguments], env=_restic_environment(config, key_path),
-        timeout=RESTIC_TIMEOUT_SECONDS, cwd=cwd, label="restic adapter",
+        [executable, *arguments], env=dict(environment),
+        timeout=RESTIC_TIMEOUT_SECONDS, cwd=cwd, pass_fds=pass_fds,
+        label="restic adapter",
         output_limit=sialib.MAX_STATE_JSON_BYTES)
     if result.returncode != 0:
         raise RuntimeError("restic operation was refused")
@@ -888,8 +1526,7 @@ def _repository_identity(raw):
     value = _decode_json(raw.encode("utf-8", "strict"),
                          "restic repository configuration")
     repository_id = value.get("id") if isinstance(value, dict) else None
-    if not isinstance(repository_id, str) or not repository_id \
-            or _SAFE_ID.fullmatch(repository_id) is None:
+    if not _valid_digest(repository_id):
         raise ValueError("restic repository identity is malformed")
     return repository_id
 
@@ -898,20 +1535,33 @@ def _run_restic(arguments, *, config=None, key_path=KEY_PATH, cwd=None,
                 restic_path=None):
     config = (load_config() if config is None else
               _validate_config(config, require_binding=False))
-    repository_id = config.get("repository_id")
-    if repository_id:
-        raw_config = _execute_restic(
-            ["cat", "config"], config=config, key_path=key_path, cwd=None,
-            restic_path=restic_path)
-        if not secrets.compare_digest(
-                _repository_identity(raw_config), repository_id):
-            raise BlockedError(
-                "Recovery repository identity changed after configuration.")
-        if arguments == ["cat", "config"]:
-            return raw_config
-    return _execute_restic(
-        arguments, config=config, key_path=key_path, cwd=cwd,
-        restic_path=restic_path)
+    restic_path = restic_path or RESTIC_PATH
+    with _admitted_restic_authority(
+            config, key_path, restic_path) as (
+                environment, admitted_restic, admitted_restic_fd, pass_fds,
+                authority_current):
+        repository_id = config.get("repository_id")
+        if repository_id:
+            raw_config = _execute_restic(
+                ["cat", "config"], config=config, key_path=key_path,
+                cwd=None, restic_path=admitted_restic,
+                environment=environment, pass_fds=pass_fds,
+                executable_fd=admitted_restic_fd)
+            authority_current()
+            if not secrets.compare_digest(
+                    _repository_identity(raw_config), repository_id):
+                raise BlockedError(
+                    "Recovery repository identity changed after "
+                    "configuration.")
+            if arguments == ["cat", "config"]:
+                return raw_config
+        else:
+            authority_current()
+        output = _execute_restic(
+            arguments, config=config, key_path=key_path, cwd=cwd,
+            restic_path=admitted_restic, environment=environment,
+            pass_fds=pass_fds, executable_fd=admitted_restic_fd)
+    return output
 
 
 def _validate_repository(repository):
@@ -992,8 +1642,9 @@ def _commit_staged_key(stage):
 def _managed_unit_binding(name, kind):
     target = os.path.join(SYSTEMD_USER_DIR, name)
     receipt = os.path.join(MANAGED_INSTALL_DIR, name)
-    raw = _read_regular(
-        target, "managed continuity unit", maximum=sialib.MAX_CONFIG_BYTES)
+    raw, target_generation = _read_regular(
+        target, "managed continuity unit", maximum=sialib.MAX_CONFIG_BYTES,
+        with_generation=True)
     digest = hashlib.sha256(raw).hexdigest()
     expected = (
         "managed-by=khephri.sia\n"
@@ -1001,20 +1652,37 @@ def _managed_unit_binding(name, kind):
         f"path={target}\n"
         f"sha256={digest}\n"
     ).encode("utf-8")
-    if not secrets.compare_digest(
-            _read_regular(receipt, "managed continuity unit receipt",
-                          private=True, maximum=sialib.MAX_CONFIG_BYTES),
-            expected):
+    receipt_raw, receipt_generation = _read_regular(
+        receipt, "managed continuity unit receipt", private=True,
+        maximum=sialib.MAX_CONFIG_BYTES, with_generation=True)
+    if not secrets.compare_digest(receipt_raw, expected):
         raise BlockedError(
             "A continuity systemd unit lacks its exact managed receipt.")
-    return target, _generation(os.lstat(target)), \
-        receipt, _generation(os.lstat(receipt))
+    binding = (target, target_generation, receipt, receipt_generation)
+    _recheck_managed_unit_bindings((binding,))
+    return binding
+
+
+def _recheck_managed_unit_bindings(bindings):
+    try:
+        changed = any(
+            _generation(os.lstat(target)) != target_generation
+            or _generation(os.lstat(receipt)) != receipt_generation
+            for target, target_generation, receipt, receipt_generation
+            in bindings)
+    except OSError as exc:
+        raise BlockedError(
+            "Continuity systemd authority changed during attestation.") \
+            from exc
+    if changed:
+        raise BlockedError(
+            "Continuity systemd authority changed during attestation.")
 
 
 def _systemd_unit_fields(name, *, timer):
     properties = [
-        "LoadState", "FragmentPath", "DropInPaths", "ActiveState",
-        "UnitFileState", "Job",
+        "LoadState", "FragmentPath", "DropInPaths", "NeedDaemonReload",
+        "ActiveState", "UnitFileState", "Job",
     ]
     if timer:
         properties.append("Unit")
@@ -1042,8 +1710,9 @@ def _systemd_unit_fields(name, *, timer):
 
 def _systemd_schedule_fields(name):
     properties = [
-        "LoadState", "FragmentPath", "DropInPaths", "ActiveState",
-        "UnitFileState", "Job", "Unit", "Persistent", "WakeSystem",
+        "LoadState", "FragmentPath", "DropInPaths", "NeedDaemonReload",
+        "ActiveState", "UnitFileState", "Job", "Unit", "Persistent",
+        "WakeSystem",
         "LastTriggerUSec", "NextElapseUSecRealtime",
     ]
     command = [
@@ -1073,7 +1742,7 @@ def _systemd_schedule_fields(name):
 def _schedule_timestamp(value, label):
     if value == "":
         return None
-    match = re.fullmatch(r"@([0-9]{1,20})", value)
+    match = re.fullmatch(r"@(0|[1-9][0-9]{0,19})", value)
     if match is None:
         raise ValueError(f"{label} is not a systemd Unix timestamp")
     try:
@@ -1086,12 +1755,13 @@ def _schedule_timestamp(value, label):
 
 
 def _timer_schedule_observation(name, cadence, timer_target, receipt_kind):
-    target, target_generation, receipt, receipt_generation = \
-        _managed_unit_binding(name, receipt_kind)
+    binding = _managed_unit_binding(name, receipt_kind)
+    target, _target_generation, _receipt, _receipt_generation = binding
     fields = _systemd_schedule_fields(name)
     if fields["LoadState"] != "loaded" \
             or os.path.abspath(fields["FragmentPath"]) != target \
             or fields["DropInPaths"] \
+            or fields["NeedDaemonReload"] != "no" \
             or fields["Unit"] != timer_target:
         raise BlockedError(
             "Effective continuity schedule authority is not exact.")
@@ -1109,11 +1779,48 @@ def _timer_schedule_observation(name, cadence, timer_target, receipt_kind):
         "next_trigger_at": _schedule_timestamp(
             fields["NextElapseUSecRealtime"], "next continuity trigger"),
     }
-    if _generation(os.lstat(target)) != target_generation \
-            or _generation(os.lstat(receipt)) != receipt_generation:
+    try:
+        _recheck_managed_unit_bindings((binding,))
+    except BlockedError as exc:
         raise BlockedError(
-            "Continuity schedule authority changed during observation.")
+            "Continuity schedule authority changed during observation.") \
+            from exc
     return observation
+
+
+def _valid_schedule_timer(value, cadence):
+    return isinstance(value, dict) \
+        and set(value) == _SCHEDULE_TIMER_FIELDS \
+        and value.get("cadence") == cadence \
+        and type(value.get("enabled")) is bool \
+        and type(value.get("active")) is bool \
+        and type(value.get("persistent")) is bool \
+        and type(value.get("wake_system")) is bool \
+        and (value.get("last_trigger_at") is None
+             or _valid_status_timestamp(value.get("last_trigger_at"))) \
+        and (value.get("next_trigger_at") is None
+             or _valid_status_timestamp(value.get("next_trigger_at")))
+
+
+def _validate_schedule_status(value):
+    if not isinstance(value, dict) \
+            or set(value) != _SCHEDULE_STATUS_FIELDS \
+            or type(value.get("schema_version")) is not int \
+            or value.get("schema_version") != SCHEDULE_SCHEMA_VERSION \
+            or type(value.get("configured")) is not bool \
+            or type(value.get("automatic")) is not bool \
+            or not _valid_status_timestamp(value.get("observed_at")) \
+            or not _valid_schedule_timer(value.get("upload"), "hourly") \
+            or not _valid_schedule_timer(
+                value.get("verification"), "weekly"):
+        raise ValueError("continuity schedule schema is invalid")
+    automatic = value["configured"] \
+        and value["upload"]["enabled"] and value["upload"]["active"] \
+        and value["verification"]["enabled"] \
+        and value["verification"]["active"]
+    if value["automatic"] != automatic:
+        raise ValueError("continuity schedule state is inconsistent")
+    return value
 
 
 def schedule_status():
@@ -1131,7 +1838,7 @@ def schedule_status():
     # A genuine timer is not enough: its named target must still be the exact
     # managed service.  Reuse the four-unit authority boundary before exposing
     # any automatic-backup claim.
-    _attest_continuity_units()
+    unit_bindings = _attest_continuity_units()
     upload = _timer_schedule_observation(
         "sia-backup.timer", "hourly", "sia-backup.service",
         "backup-timer")
@@ -1144,29 +1851,34 @@ def schedule_status():
             or _generation(os.lstat(KEY_PATH)) != key_generation):
         raise BlockedError(
             "Continuity configuration changed during schedule observation.")
+    if isinstance(unit_bindings, tuple):
+        _recheck_managed_unit_bindings(unit_bindings)
     automatic = configured \
         and upload["enabled"] and upload["active"] \
         and verification["enabled"] and verification["active"]
-    return {
+    return _validate_schedule_status({
         "schema_version": SCHEDULE_SCHEMA_VERSION,
         "configured": configured,
         "automatic": automatic,
         "observed_at": _now(),
         "upload": upload,
         "verification": verification,
-    }
+    })
 
 
 def _attest_continuity_units(*, timers_enabled=False,
                              timers_active=False):
+    bindings = []
     for name, kind, unit_type, timer_target in _CONTINUITY_UNITS:
-        target, target_generation, receipt, receipt_generation = \
-            _managed_unit_binding(name, kind)
+        binding = _managed_unit_binding(name, kind)
+        bindings.append(binding)
+        target, _target_generation, _receipt, _receipt_generation = binding
         timer = unit_type == "timer"
         fields = _systemd_unit_fields(name, timer=timer)
         if fields["LoadState"] != "loaded" \
                 or os.path.abspath(fields["FragmentPath"]) != target \
                 or fields["DropInPaths"] \
+                or fields["NeedDaemonReload"] != "no" \
                 or fields["Job"]:
             raise BlockedError(
                 "Effective continuity systemd authority is not exact.")
@@ -1178,11 +1890,9 @@ def _attest_continuity_units(*, timers_enabled=False,
             raise BlockedError("Continuity timer is not enabled exactly.")
         if timer and timers_active and fields["ActiveState"] != "active":
             raise BlockedError("Continuity timer is not active exactly.")
-        if _generation(os.lstat(target)) != target_generation \
-                or _generation(os.lstat(receipt)) != receipt_generation:
-            raise BlockedError(
-                "Continuity systemd authority changed during attestation.")
-    return True
+        _recheck_managed_unit_bindings((binding,))
+    _recheck_managed_unit_bindings(bindings)
+    return tuple(bindings)
 
 
 def _enable_schedules():
@@ -1231,14 +1941,54 @@ def resume_schedule(*, restic_path=None, enable_schedules=None):
 
 
 def _request_path(request_id):
-    if not isinstance(request_id, str) or _SAFE_ID.fullmatch(request_id) is None:
+    if not _valid_status_correlation(request_id):
         raise ValueError("continuity request identifier is invalid")
     return os.path.join(REQUESTS_DIR, request_id + ".json")
 
 
+def _validate_request_args(action, args):
+    expected = _REQUEST_ARGUMENT_FIELDS.get(action)
+    if expected is None or not isinstance(args, dict) or set(args) != expected:
+        raise ValueError("continuity request argument schema is invalid")
+    if action in {"upload", "check"}:
+        if type(args["scheduled"]) is not bool:
+            raise ValueError("continuity request argument schema is invalid")
+        return args
+    if action == "prepare":
+        snapshot_id = args["snapshot_id"]
+        if snapshot_id != "latest" \
+                and not _valid_status_identifier(snapshot_id):
+            raise ValueError("continuity request argument schema is invalid")
+        return args
+    if action == "apply":
+        _restore_request_binding(args)
+        return args
+
+    _validate_text(args["repository"], "request repository")
+    environment_file = args["environment_file"]
+    if environment_file is not None:
+        _validate_text(
+            environment_file, "request environment file", absolute=True)
+    if action == "setup":
+        recovery = _validate_text(
+            args["recovery_key_out"], "request recovery-key output",
+            absolute=True)
+        identity = _validate_text(
+            args["identity_key_out"], "request identity-key output",
+            absolute=True)
+        if os.path.abspath(recovery) == os.path.abspath(identity):
+            raise ValueError("continuity request argument schema is invalid")
+    else:
+        _validate_text(
+            args["recovery_key_file"], "request recovery-key file",
+            absolute=True)
+    return args
+
+
 def _create_request(action, args, *, request_id=None):
-    if action not in _ACTIONS or not isinstance(args, dict):
+    if action not in _ACTIONS:
         raise ValueError("continuity request is invalid")
+    _validate_request_args(action, args)
     request_id = request_id or uuid.uuid4().hex
     request = {
         "schema": REQUEST_SCHEMA,
@@ -1261,11 +2011,10 @@ def _load_request(path):
             or set(value) != {"schema", "id", "created_at", "action", "args"} \
             or value.get("schema") != REQUEST_SCHEMA \
             or value.get("action") not in _ACTIONS \
-            or not isinstance(value.get("args"), dict) \
+            or not _valid_status_timestamp(value.get("created_at")) \
             or path != os.path.abspath(_request_path(value.get("id"))):
         raise ValueError("continuity request schema is invalid")
-    if value["action"] == "apply":
-        _restore_request_binding(value["args"])
+    _validate_request_args(value["action"], value.get("args"))
     return value
 
 
@@ -1273,12 +2022,17 @@ def _validate_confirmation(value):
     required = {"schema_version", "phrase", "snapshot_id", "ledger_head",
                 "corpus_receipt_re_adopt"}
     if not isinstance(value, dict) or set(value) != required \
+            or type(value.get("schema_version")) is not int \
             or value.get("schema_version") != CONFIRMATION_SCHEMA_VERSION \
             or value.get("phrase") != "RESTORE" \
             or value.get("corpus_receipt_re_adopt") is not True:
         raise ValueError("restore confirmation schema is invalid")
-    _validate_text(value.get("snapshot_id"), "confirmed snapshot")
-    _validate_text(value.get("ledger_head"), "confirmed ledger head")
+    if not _valid_status_identifier(value.get("snapshot_id")):
+        raise ValueError("confirmed snapshot is malformed")
+    ledger_head = _validate_text(
+        value.get("ledger_head"), "confirmed ledger head")
+    if re.fullmatch(r"[0-9a-f]{64}", ledger_head) is None:
+        raise ValueError("confirmed ledger head is malformed")
     return value
 
 
@@ -1288,19 +2042,25 @@ def _restore_request_binding(args):
         "prepared_id", "snapshot_id", "capsule_id", "manifest_sha256",
         "confirmation", "identity_key_file", "repository",
         "environment_file", "repository_id", "configured_at",
-        "target_public_key", "restored_public_key",
+        "target_public_key", "restored_public_key", "adoption",
     }
     if not isinstance(args, dict) or set(args) != required:
         raise ValueError("restore request argument schema is invalid")
-    for key in ("prepared_id", "snapshot_id", "capsule_id",
-                "manifest_sha256", "repository_id", "target_public_key",
-                "restored_public_key"):
-        value = _validate_text(args.get(key), "restore request " + key)
-        if _SAFE_ID.fullmatch(value) is None:
-            raise ValueError("restore request binding is malformed")
+    identifiers = {
+        "prepared_id": _valid_status_correlation,
+        "snapshot_id": _valid_status_identifier,
+        "capsule_id": _valid_status_correlation,
+        "manifest_sha256": _valid_digest,
+        "repository_id": _valid_digest,
+        "target_public_key": _valid_digest,
+        "restored_public_key": _valid_digest,
+    }
+    if any(not validator(args.get(key))
+           for key, validator in identifiers.items()):
+        raise ValueError("restore request binding is malformed")
     _validate_text(args.get("repository"), "restore request repository")
-    _validate_text(args.get("configured_at"),
-                   "restore request configuration timestamp")
+    if not _valid_status_timestamp(args.get("configured_at")):
+        raise ValueError("restore request configuration timestamp is invalid")
     environment_file = args.get("environment_file")
     if not isinstance(environment_file, str) \
             or (environment_file and not os.path.isabs(environment_file)):
@@ -1311,13 +2071,28 @@ def _restore_request_binding(args):
                  or not identity_key_file
                  or not os.path.isabs(identity_key_file)):
         raise ValueError("restore request identity path is malformed")
-    _validate_confirmation(args.get("confirmation"))
+    confirmation = _validate_confirmation(args.get("confirmation"))
+    transition = siacapsule._adoption_transition(
+        args, confirmation, args.get("adoption"))
+    confirmation_sha256 = hashlib.sha256(
+        _canonical_bytes(confirmation)).hexdigest()
     return {
-        key: args[key] for key in (
-            "prepared_id", "snapshot_id", "capsule_id",
-            "manifest_sha256", "repository", "environment_file",
-            "repository_id", "configured_at", "target_public_key",
-            "restored_public_key")
+        "prepared_id": args["prepared_id"],
+        "snapshot_id": args["snapshot_id"],
+        "capsule_id": args["capsule_id"],
+        "manifest_sha256": args["manifest_sha256"],
+        "identity_key_file": identity_key_file or "",
+        "repository": args["repository"],
+        "environment_file": environment_file,
+        "repository_id": args["repository_id"],
+        "configured_at": args["configured_at"],
+        "target_public_key": args["target_public_key"],
+        "restored_public_key": args["restored_public_key"],
+        "accepted_ledger_head": confirmation["ledger_head"],
+        "confirmation_sha256": confirmation_sha256,
+        "adoption_order": str(transition["order"]),
+        "adoption_record_id": transition["record_id"],
+        "target": args["adoption"]["target"],
     }
 
 
@@ -1333,8 +2108,7 @@ def _request_unit_active(operation, expected_kind):
             or operation.get("phase") not in {"accepted", "running"}:
         return False
     request_id = operation.get("request_id")
-    if not isinstance(request_id, str) \
-            or _SAFE_ID.fullmatch(request_id) is None:
+    if not _valid_status_correlation(request_id):
         return False
     try:
         request = _load_request(_request_path(request_id))
@@ -1346,8 +2120,7 @@ def _request_unit_active(operation, expected_kind):
 
 
 def _request_id_active(request_id):
-    if not isinstance(request_id, str) \
-            or _SAFE_ID.fullmatch(request_id) is None:
+    if not _valid_status_correlation(request_id):
         return False
     result = sialib._run_bounded_text_process(
         ["systemctl", "--user", "show",
@@ -1421,9 +2194,12 @@ def load_supervisor_debt():
         "schema", "kind", "request_path", "request_id", "prepared_id",
         "snapshot_id", "capsule_id", "manifest_sha256", "phase",
         "child_code", "restart_pid", "runtime_path", "runtime_device",
-        "runtime_inode", "repository", "environment_file",
+        "runtime_inode", "request_device", "request_inode",
+        "repository", "environment_file", "identity_key_file",
         "repository_id", "configured_at", "target_public_key",
-        "restored_public_key",
+        "restored_public_key", "accepted_ledger_head",
+        "confirmation_sha256", "adoption_order", "adoption_record_id",
+        "target",
     }
     if not isinstance(value, dict) or set(value) != required \
             or value.get("schema") != SUPERVISOR_SCHEMA \
@@ -1436,15 +2212,21 @@ def load_supervisor_debt():
         if key in {"request_path", "prepared_id", "snapshot_id",
                    "capsule_id", "manifest_sha256", "repository",
                    "environment_file", "repository_id", "configured_at",
-                   "target_public_key", "restored_public_key"} \
+                   "target_public_key", "restored_public_key",
+                   "request_device", "request_inode", "identity_key_file",
+                   "accepted_ledger_head", "confirmation_sha256",
+                   "adoption_order", "adoption_record_id", "target"} \
                 and value.get("kind") == "restore-recover":
             if value.get(key) != "":
                 raise ValueError("restore recovery debt has unsafe binding")
-        elif key == "environment_file" and value.get(key) == "":
+        elif key in {"environment_file", "identity_key_file"} \
+                and value.get(key) == "":
+            continue
+        elif key == "target" and value.get("kind") == "restore-apply":
             continue
         else:
             _validate_text(value.get(key), "restore supervisor " + key)
-    if _SAFE_ID.fullmatch(value["request_id"]) is None \
+    if not _valid_status_correlation(value["request_id"]) \
             or not os.path.isabs(value["runtime_path"]) \
             or not value["runtime_device"].isascii() \
             or not value["runtime_device"].isdigit() \
@@ -1462,20 +2244,61 @@ def load_supervisor_debt():
                  or value["restart_pid"] == "0"):
         raise ValueError("restore supervisor PID state is invalid")
     if value["kind"] == "restore-apply" \
-            and (_SAFE_ID.fullmatch(value["prepared_id"]) is None
-                 or _SAFE_ID.fullmatch(value["capsule_id"]) is None
-                 or _SAFE_ID.fullmatch(value["manifest_sha256"]) is None
-                 or _SAFE_ID.fullmatch(value["repository_id"]) is None
-                 or _SAFE_ID.fullmatch(value["target_public_key"]) is None
-                 or _SAFE_ID.fullmatch(value["restored_public_key"]) is None
+            and (not _valid_status_correlation(value["prepared_id"])
+                 or not _valid_status_identifier(value["snapshot_id"])
+                 or not _valid_status_correlation(value["capsule_id"])
+                 or not _valid_digest(value["manifest_sha256"])
+                 or not _valid_digest(value["repository_id"])
+                 or not _valid_digest(value["target_public_key"])
+                 or not _valid_digest(value["restored_public_key"])
+                 or re.fullmatch(
+                    r"[0-9a-f]{64}", value["accepted_ledger_head"]) is None
+                 or re.fullmatch(
+                    r"[0-9a-f]{64}", value["confirmation_sha256"]) is None
+                 or re.fullmatch(
+                    r"[0-9a-f]{64}", value["adoption_record_id"]) is None
+                 or re.fullmatch(
+                    r"0|[1-9][0-9]*", value["adoption_order"]) is None
+                 or not value["request_device"].isascii()
+                 or not value["request_device"].isdigit()
+                 or not value["request_inode"].isascii()
+                 or not value["request_inode"].isdigit()
                  or os.path.abspath(value["request_path"]) !=
                     os.path.abspath(_request_path(value["request_id"]))):
         raise ValueError("restore supervisor apply binding is invalid")
     if value["kind"] == "restore-apply":
+        if not _valid_status_timestamp(value.get("configured_at")):
+            raise ValueError(
+                "restore supervisor configured timestamp is invalid")
         _validate_repository(value["repository"])
         if value["environment_file"]:
             _validate_environment_file(value["environment_file"])
+        if value["identity_key_file"] \
+                and os.path.abspath(value["identity_key_file"]) != \
+                    value["identity_key_file"]:
+            raise ValueError("restore supervisor identity path is invalid")
+        try:
+            siacapsule._validate_target_record(value["target"])
+        except ValueError as exc:
+            raise ValueError(
+                "restore supervisor target binding is invalid") from exc
     return value
+
+
+def _request_matches_supervisor_debt(request, debt):
+    if not isinstance(request, dict) or request.get("action") != "apply" \
+            or request.get("id") != debt.get("request_id"):
+        return False
+    try:
+        binding = _restore_request_binding(request.get("args"))
+        info = os.lstat(debt["request_path"])
+    except (OSError, TypeError, ValueError):
+        return False
+    return all(
+        binding[key] == debt.get(key)
+        for key in _SUPERVISOR_REQUEST_BINDING_FIELDS) \
+        and str(info.st_dev) == debt.get("request_device") \
+        and str(info.st_ino) == debt.get("request_inode")
 
 
 def _create_supervisor_intent(request, prepared_id):
@@ -1484,6 +2307,7 @@ def _create_supervisor_intent(request, prepared_id):
         raise ValueError("restore supervisor prepared binding changed")
     prepared = load_prepared(prepared_id)
     config = load_config()
+    args = request["args"]
     expected_binding = {
         "prepared_id": prepared_id,
         "snapshot_id": prepared["snapshot_id"],
@@ -1495,9 +2319,23 @@ def _create_supervisor_intent(request, prepared_id):
         "configured_at": config["created_at"],
         "target_public_key": config["brain_public_key"],
         "restored_public_key": prepared["public_key"],
+        "identity_key_file": args["identity_key_file"] or "",
+        "accepted_ledger_head": args["confirmation"]["ledger_head"],
+        "confirmation_sha256": hashlib.sha256(
+            _canonical_bytes(args["confirmation"])).hexdigest(),
+        "adoption_order": str(args["adoption"]["order"]),
+        "adoption_record_id": args["adoption"]["record_id"],
+        "target": siacapsule.target_identity(),
     }
     if binding != expected_binding:
         raise BlockedError("restore supervisor repository binding changed")
+    request_path = _request_path(request["id"])
+    request_before = os.lstat(request_path)
+    if _load_request(request_path) != request:
+        raise BlockedError("restore request changed before supervision")
+    request_after = os.lstat(request_path)
+    if _generation(request_before) != _generation(request_after):
+        raise BlockedError("restore request changed before supervision")
     main = sys.modules.get("__main__")
     runtime_path = os.path.abspath(str(getattr(main, "__file__", "")))
     info = os.lstat(runtime_path)
@@ -1506,7 +2344,7 @@ def _create_supervisor_intent(request, prepared_id):
     debt = {
         "schema": SUPERVISOR_SCHEMA,
         "kind": "restore-apply",
-        "request_path": _request_path(request["id"]),
+        "request_path": request_path,
         "request_id": request["id"],
         "prepared_id": prepared_id,
         "snapshot_id": prepared["snapshot_id"],
@@ -1518,12 +2356,9 @@ def _create_supervisor_intent(request, prepared_id):
         "runtime_path": runtime_path,
         "runtime_device": str(info.st_dev),
         "runtime_inode": str(info.st_ino),
-        "repository": binding["repository"],
-        "environment_file": binding["environment_file"],
-        "repository_id": binding["repository_id"],
-        "configured_at": binding["configured_at"],
-        "target_public_key": binding["target_public_key"],
-        "restored_public_key": binding["restored_public_key"],
+        "request_device": str(request_after.st_dev),
+        "request_inode": str(request_after.st_ino),
+        **binding,
     }
     _write_exclusive(SUPERVISOR_PATH, _canonical_bytes(debt), 0o600)
     return debt
@@ -1534,6 +2369,19 @@ def _retire_supervisor_debt(debt):
     if current != debt:
         raise ValueError("restore supervisor debt changed")
     _retire_private_file(SUPERVISOR_PATH, ROOT)
+
+
+def _close_configuration_durability(expected):
+    raw = _close_private_file_durability(
+        CONFIG_PATH, "continuity configuration",
+        maximum=sialib.MAX_CONFIG_BYTES)
+    durable = _validate_config(
+        _decode_json(raw, "continuity configuration"),
+        require_binding=True)
+    if durable != expected:
+        raise BlockedError(
+            "Continuity configuration changed during durability replay.")
+    return durable
 
 
 def _reconcile_configured_request(request):
@@ -1624,6 +2472,7 @@ def _reconcile_configured_request(request):
             or config["environment_file"] != expected_environment:
         raise BlockedError(
             "Configured repository changed after its durable request.")
+    config = _close_configuration_durability(config)
     # resume_schedule performs a fresh repository probe, then enables and
     # starts both persistent timers. Any failure leaves this one request in
     # place so the next admission retries the idempotent sequence.
@@ -1651,6 +2500,7 @@ def _reconcile_inactive_spools():
     """Bound crash debris while refusing to race any live worker unit."""
     _ensure_layout()
     with _exclusive_lock_nonblocking(WORKER_LOCK):
+        _reconcile_atomic_publication_stages()
         for name in _bounded_private_names(
                 REQUESTS_DIR, "continuity request spool"):
             if not name.endswith(".json"):
@@ -1662,14 +2512,38 @@ def _reconcile_inactive_spools():
             if request["action"] in {"setup", "connect"}:
                 _reconcile_configured_request(request)
                 continue
+            status = read_status()
+            operation = status.get("operation")
             if request["action"] == "apply":
-                status = read_status()
-                operation = status.get("operation")
                 debt = load_supervisor_debt()
                 if debt is not None \
                         and debt.get("request_id") == request_id:
-                    raise BlockedError(
-                        "Restore supervisor finalization is still pending.")
+                    if debt.get("phase") != "accepted":
+                        raise BlockedError(
+                            "Restore supervisor finalization is still "
+                            "pending.")
+                    if not _request_matches_supervisor_debt(request, debt) \
+                            or not isinstance(operation, dict) \
+                            or operation.get("request_id") != request_id \
+                            or operation.get("kind") != "restore-apply" \
+                            or operation.get("prepared_id") != \
+                               debt["prepared_id"] \
+                            or operation.get("phase") not in {
+                                "accepted", "blocked"}:
+                        raise BlockedError(
+                            "Accepted restore authority changed before "
+                            "reconciliation.")
+                    _publish_status(
+                        state="blocked",
+                        detail="Restore supervisor intent was retained, but "
+                               "no worker launched; no live mutation "
+                               "occurred.",
+                        operation=_operation(
+                            request_id, "restore-apply", "blocked",
+                            prepared_id=debt["prepared_id"]))
+                    _retire_request(request)
+                    _retire_supervisor_debt(debt)
+                    continue
                 if isinstance(operation, dict) \
                         and operation.get("request_id") == request_id \
                         and operation.get("kind") == "restore-apply" \
@@ -1693,6 +2567,18 @@ def _reconcile_inactive_spools():
                         operation=_operation(
                             request_id, "restore-apply", "blocked",
                             prepared_id=operation.get("prepared_id", "")))
+            elif isinstance(operation, dict) \
+                    and operation.get("request_id") == request_id \
+                    and operation.get("kind") == \
+                        _ACTION_KIND[request["action"]] \
+                    and operation.get("phase") in {"accepted", "running"}:
+                _publish_status(
+                    state="blocked",
+                    detail="Continuity request ended without a terminal "
+                           "worker result; no operation result is claimed.",
+                    operation=_operation(
+                        request_id, _ACTION_KIND[request["action"]],
+                        "blocked"))
             _retire_request_artifacts(request, include_apply=True)
 
         for name in _bounded_private_names(
@@ -1727,7 +2613,6 @@ def _reconcile_inactive_spools():
         for name in _bounded_private_names(ROOT, "continuity state root"):
             if name.startswith(".repository-key-stage-"):
                 _retire_private_file(os.path.join(ROOT, name), ROOT)
-
 
 def launch_request(request, *, runner=None):
     request_path = _request_path(request["id"])
@@ -1769,7 +2654,22 @@ def _queue(action, args, *, request_id=None, runner=None,
             operation=_operation(request["id"], kind, "accepted",
                                  prepared_id=prepared_id))
     except Exception:
-        _retire_request_artifacts(request, include_apply=True)
+        # Atomic replacement can become visible before the directory fsync
+        # reports failure. Preserve exact request authority whenever that
+        # accepted publication is visible, or its visibility cannot be
+        # established; inactive-spool reconciliation will make it terminal.
+        preserve_request = True
+        try:
+            status = read_status()
+            preserve_request = (
+                status.get("state") == state
+                and status.get("operation") == _operation(
+                    request["id"], kind, "accepted",
+                    prepared_id=prepared_id))
+        except (OSError, ValueError):
+            pass
+        if not preserve_request:
+            _retire_request_artifacts(request, include_apply=True)
         raise
     if action == "apply":
         try:
@@ -1904,8 +2804,7 @@ def queue_prepare(snapshot_id, *, runner=None):
 
 
 def _prepared_path(prepared_id):
-    if not isinstance(prepared_id, str) \
-            or _SAFE_ID.fullmatch(prepared_id) is None:
+    if not _valid_status_correlation(prepared_id):
         raise ValueError("prepared identifier is invalid")
     return os.path.join(PREPARED_DIR, prepared_id, "prepared.json")
 
@@ -1917,9 +2816,15 @@ def _retire_current_prepared():
         return
     prepared_id = prepared.get("prepared_id")
     path = os.path.dirname(_prepared_path(prepared_id))
+    latest = status.get("latest")
+    protecting = _latest_is_protecting(latest)
+    _publish_status(
+        state="verified" if protecting else "recovery-only",
+        detail="Prepared restore authorization was withdrawn.",
+        repository_display="External recovery repository",
+        prepared=None, operation=None)
     if os.path.lexists(path):
         _retire_private_tree(path, PREPARED_DIR)
-    _publish_status(prepared=None)
 
 
 def load_prepared(prepared_id):
@@ -1935,9 +2840,23 @@ def load_prepared(prepared_id):
             or value.get("prepared_id") != prepared_id \
             or not isinstance(value.get("identity_matches"), bool):
         raise ValueError("prepared restore schema is invalid")
+    if not _valid_status_timestamp(value.get("created_at")):
+        raise ValueError("prepared restore created timestamp is invalid")
     for key in required - {"identity_matches"}:
         if not isinstance(value.get(key), str) or not value[key]:
             raise ValueError("prepared restore field is invalid")
+    if not _valid_status_identifier(value["snapshot_id"]) \
+            or not _valid_status_correlation(value["capsule_id"]) \
+            or not _valid_digest(value["manifest_sha256"]) \
+            or re.fullmatch(
+                r"(?:[0-9a-f]{40}|[0-9a-f]{64})",
+                value["corpus_head"]) is None \
+            or not _valid_digest(value["target_ledger_head"]) \
+            or re.fullmatch(
+                r"(?:[0-9a-f]{40}|[0-9a-f]{64})",
+                value["ledger_head"]) is None \
+            or not _valid_digest(value["public_key"]):
+        raise ValueError("prepared restore identifier is invalid")
     expected_root = os.path.abspath(os.path.join(PREPARED_DIR, prepared_id))
     capsule_path = os.path.abspath(value["capsule_path"])
     if os.path.commonpath((expected_root, capsule_path)) != expected_root:
@@ -2016,6 +2935,8 @@ def queue_apply(prepared_id, confirmation, identity_key_file=None,
     elif identity_key_file is not None:
         _protected_output(identity_key_file, "identity recovery file")
     config = load_config()
+    adoption = siacapsule.adoption_binding(
+        prepared, confirmation, siacapsule.target_identity())
     args = {
         "prepared_id": prepared_id,
         "snapshot_id": prepared["snapshot_id"],
@@ -2029,6 +2950,7 @@ def queue_apply(prepared_id, confirmation, identity_key_file=None,
         "configured_at": config["created_at"],
         "target_public_key": config["brain_public_key"],
         "restored_public_key": prepared["public_key"],
+        "adoption": adoption,
     }
     _restore_request_binding(args)
     with _exclusive_lock(REQUEST_LOCK):
@@ -2047,19 +2969,12 @@ def _json_documents(text, label):
 
 
 def _verification_path(snapshot_id):
-    if not isinstance(snapshot_id, str) \
-            or _SAFE_ID.fullmatch(snapshot_id) is None:
+    if not _valid_status_identifier(snapshot_id):
         raise ValueError("snapshot identifier is invalid")
     return os.path.join(VERIFICATIONS_DIR, snapshot_id + ".json")
 
 
-def _load_verification(snapshot_id, *, config=None):
-    config = load_config() if config is None else _validate_config(config)
-    try:
-        value = _read_json(
-            _verification_path(snapshot_id), "snapshot verification")
-    except FileNotFoundError:
-        return None
+def _validate_verification(value, snapshot_id, config):
     required = {
         "schema", "snapshot_id", "capsule_id", "manifest_sha256",
         "classification", "profile", "public_key", "repository_id",
@@ -2068,13 +2983,64 @@ def _load_verification(snapshot_id, *, config=None):
     if not isinstance(value, dict) or set(value) != required \
             or value.get("schema") != VERIFICATION_SCHEMA \
             or value.get("snapshot_id") != snapshot_id \
+            or not _valid_status_correlation(value.get("capsule_id")) \
+            or not _valid_digest(value.get("manifest_sha256")) \
             or value.get("classification") not in {"ready", "recovery-only"} \
             or value.get("profile") != PROFILE \
+            or not _valid_digest(value.get("public_key")) \
+            or not _valid_digest(value.get("repository_id")) \
             or value.get("repository_id") != config["repository_id"]:
         raise ValueError("snapshot verification receipt is malformed")
-    for key in {"snapshot_id", "capsule_id", "manifest_sha256",
-                "public_key", "repository_id", "verified_at"}:
-        _validate_text(value.get(key), "snapshot verification " + key)
+    if not _valid_status_timestamp(value.get("verified_at")):
+        raise ValueError("snapshot verification timestamp is invalid")
+    return value
+
+
+def _close_private_file_durability(path, label, *, maximum):
+    raw, generation = _read_regular(
+        path, label, private=True, maximum=maximum, with_generation=True)
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(path, flags)
+    try:
+        if _generation(os.fstat(descriptor)) != generation:
+            raise ValueError(f"{label} changed before durability")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    _fsync_dir(os.path.dirname(path))
+    checked, current_generation = _read_regular(
+        path, label, private=True, maximum=maximum, with_generation=True)
+    if current_generation != generation \
+            or not secrets.compare_digest(checked, raw):
+        raise ValueError(f"{label} changed during durability")
+    return checked
+
+
+def _close_verification_durability(path):
+    return _close_private_file_durability(
+        path, "snapshot verification receipt",
+        maximum=sialib.MAX_CONFIG_BYTES)
+
+
+def _load_verification(snapshot_id, *, config=None, ensure_durable=False,
+                       require_config_binding=True):
+    config = (load_config() if config is None else
+              _validate_config(
+                  config, require_binding=require_config_binding))
+    path = _verification_path(snapshot_id)
+    try:
+        value = _read_json(path, "snapshot verification")
+    except FileNotFoundError:
+        return None
+    value = _validate_verification(value, snapshot_id, config)
+    if ensure_durable:
+        durable = _decode_json(
+            _close_verification_durability(path),
+            "snapshot verification")
+        if _validate_verification(durable, snapshot_id, config) != value:
+            raise ValueError(
+                "snapshot verification receipt changed during durability")
     return value
 
 
@@ -2104,9 +3070,18 @@ def _record_verification(snapshot_id, verified, *, config=None):
         if any(existing[key] != document[key] for key in comparable):
             raise ValueError(
                 "snapshot verification conflicts with its durable receipt")
-        return existing
+        return _load_verification(
+            snapshot_id, config=config, ensure_durable=True)
     _write_exclusive(path, _canonical_bytes(document), 0o600)
-    return document
+    return _load_verification(
+        snapshot_id, config=config, ensure_durable=True)
+
+
+def _snapshot_status_timestamp(value):
+    """Admit the canonical RFC3339 form emitted by repository snapshots."""
+    if not _valid_snapshot_status_timestamp(value):
+        raise ValueError("snapshot creation timestamp is malformed")
+    return value
 
 
 def _snapshot_rows(*, restic_path=None, latest=False, snapshot_id=None,
@@ -2138,15 +3113,19 @@ def _snapshot_rows(*, restic_path=None, latest=False, snapshot_id=None,
     result = []
     for row in rows:
         if not isinstance(row, dict):
-            continue
+            raise ValueError("restic snapshot row is malformed")
         tags = row.get("tags", [])
         snapshot_id = row.get("id")
         created = row.get("time")
         if not isinstance(tags, list) or "sia-capsule" not in tags \
+                or any(not isinstance(tag, str) for tag in tags) \
                 or not isinstance(snapshot_id, str) \
                 or _SAFE_ID.fullmatch(snapshot_id) is None \
                 or not isinstance(created, str):
-            continue
+            raise ValueError("restic snapshot row is malformed")
+        if not _valid_status_identifier(snapshot_id):
+            raise ValueError("snapshot identity exceeds status policy")
+        created = _snapshot_status_timestamp(created)
         brain_tags = [tag.split("=", 1)[1] for tag in tags
                       if isinstance(tag, str)
                       and tag.startswith("sia-brain=")]
@@ -2160,10 +3139,14 @@ def _snapshot_rows(*, restic_path=None, latest=False, snapshot_id=None,
         if matching_identity and not identity_matches:
             raise ValueError("restic identity filter returned a foreign snapshot")
         verification = _load_verification(snapshot_id, config=config)
-        readiness = next((tag.split("=", 1)[1] for tag in tags
+        readiness_tags = [tag.split("=", 1)[1] for tag in tags
                           if isinstance(tag, str)
-                          and tag.startswith("sia-readiness=")),
-                         "unknown")
+                          and tag.startswith("sia-readiness=")]
+        if len(readiness_tags) > 1:
+            raise ValueError("snapshot repeats its readiness tag")
+        readiness = readiness_tags[0] if readiness_tags else "unknown"
+        if readiness not in _STATUS_READINESS:
+            raise ValueError("snapshot readiness tag is malformed")
         if verification is not None \
                 and (verification["classification"] != readiness
                      or (brain_public_key
@@ -2310,7 +3293,7 @@ def _perform_upload(args, request_id, *, restic_path=None):
                     and row.get("message_type") == "summary" \
                     and isinstance(row.get("snapshot_id"), str):
                 snapshot_id = row["snapshot_id"]
-        if snapshot_id is None or _SAFE_ID.fullmatch(snapshot_id) is None:
+        if not _valid_status_identifier(snapshot_id):
             raise ValueError("restic did not return a snapshot identity")
         scheduled = args["scheduled"]
         if not scheduled:
@@ -2577,7 +3560,11 @@ def _perform_prepare(args, request_id, *, restic_path=None):
             capsule, prepared_id=prepared_id, snapshot_id=snapshot_id)
         final = os.path.join(PREPARED_DIR, prepared_id)
         final_capsule = os.path.join(final, os.path.relpath(capsule, stage))
-        _sequence, target_head = sialib.ledger_head()
+        sequence, target_head = sialib.ledger_head()
+        if sequence <= 0 \
+                or re.fullmatch(r"[0-9a-f]{64}", target_head) is None:
+            raise BlockedError(
+                "Restore preparation requires a nonempty SIA ledger head.")
         document = {
             **binding,
             "created_at": _now(),
@@ -2652,6 +3639,55 @@ def _rebind_after_identity_adoption(config, restored_public_key):
                     config["brain_public_key"], restored_public_key}:
             raise BlockedError(
                 "Continuity configuration changed during identity adoption.")
+    identity_changed = not secrets.compare_digest(
+        config["brain_public_key"], restored_public_key)
+    if identity_changed:
+        try:
+            status = _validate_status(
+                _read_json(STATUS_PATH, "continuity status"))
+            status_missing = False
+        except FileNotFoundError:
+            # This transition has already admitted the old configuration,
+            # the adopted live identity, and the candidate replacement. It
+            # needs a non-claiming base while CONFIG_PATH is intentionally
+            # absent; ordinary status reads still refuse partial state.
+            status = _validate_status(_unconfigured_status())
+            status_missing = True
+        old_latest = status.get("latest")
+        if isinstance(old_latest, dict) \
+                and old_latest.get("verified") is True:
+            old_authority = _latest_with_receipt_authority(
+                old_latest, config=config,
+                require_config_binding=False)
+            if old_authority != old_latest:
+                raise ValueError(
+                    "pre-adoption latest-copy status lacks receipt authority")
+        latest = _latest_for_configured_identity(
+            status.get("latest"), config=rebound)
+        changes = {"latest": latest}
+        if status["state"] == "verified" \
+                and not _latest_is_protecting(latest):
+            changes.update({
+                "state": "recovery-only",
+                "detail": "Adopted identity requires a newly verified "
+                          "repository copy.",
+            })
+        candidate = {
+            **status,
+            **changes,
+            "schema_version": STATUS_SCHEMA_VERSION,
+            "updated_at": _now(),
+        }
+        _validate_status(candidate)
+        if isinstance(latest, dict) and latest.get("verified") is True:
+            rebound_authority = _latest_with_receipt_authority(
+                latest, config=rebound, ensure_durable=True)
+            if rebound_authority != latest:
+                raise ValueError(
+                    "post-adoption latest-copy status lacks receipt "
+                    "authority")
+        _atomic_json(
+            STATUS_PATH, candidate, require_absent=status_missing)
     _atomic_json(CONFIG_PATH, rebound)
     load_config()
     return rebound
@@ -2692,12 +3728,22 @@ def _perform_apply(args, *, capability):
         "configured_at": config["created_at"],
         "target_public_key": config["brain_public_key"],
         "restored_public_key": prepared["public_key"],
+        "identity_key_file": identity_path or "",
+        "accepted_ledger_head": confirmation["ledger_head"],
+        "confirmation_sha256": hashlib.sha256(
+            _canonical_bytes(confirmation)).hexdigest(),
+        "adoption_order": str(args["adoption"]["order"]),
+        "adoption_record_id": args["adoption"]["record_id"],
+        "target": args["adoption"]["target"],
     }
     if binding != expected_binding:
         raise BlockedError("restore repository binding changed before thaw")
+    if siacapsule.target_identity() != binding["target"]:
+        raise BlockedError("restore adoption target changed before thaw")
     result = siacapsule.thaw(
         prepared, confirmation, capability=capability,
-        identity_key_file=identity_path, rollback_root=ROLLBACK_DIR)
+        identity_key_file=identity_path, rollback_root=ROLLBACK_DIR,
+        adoption=args["adoption"])
     _rebind_after_identity_adoption(config, prepared["public_key"])
     return result
 
@@ -2746,10 +3792,16 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
         except BlockedError:
             _publish_status(
                 state="blocked",
-                detail="Continuity operation was safely blocked; no live "
-                       "brain mutation was committed.",
+                detail=(
+                    "Configuration progress was safely blocked; its durable "
+                    "request was retained for exact reconciliation."
+                    if action in {"setup", "connect"} else
+                    "Continuity operation was safely blocked; no live memory-state "
+                    "mutation was committed."),
                 operation=_operation(request["id"], kind, "blocked",
                                      prepared_id=prepared_id))
+            if action in {"setup", "connect"}:
+                return 3
             try:
                 _retire_request_artifacts(request)
             except Exception:
@@ -2757,11 +3809,21 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
             return 3
         except Exception:
             _publish_status(
-                state="failed",
-                detail="Continuity operation failed without reporting "
-                       "repository credentials.",
-                operation=_operation(request["id"], kind, "failed",
+                state=("blocked" if action in {"setup", "connect"}
+                       else "failed"),
+                detail=(
+                    "Configuration publication outcome is ambiguous; its "
+                    "durable request was retained for exact reconciliation."
+                    if action in {"setup", "connect"} else
+                    "Continuity operation failed without reporting "
+                    "repository credentials."),
+                operation=_operation(
+                    request["id"], kind,
+                    "blocked" if action in {"setup", "connect"}
+                    else "failed",
                                      prepared_id=prepared_id))
+            if action in {"setup", "connect"}:
+                return 1
             try:
                 _retire_request_artifacts(request)
             except Exception:
@@ -2805,25 +3867,14 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
                     latest=prior_latest, prepared=prior_prepared,
                     operation=_operation(
                         request["id"], kind, "blocked",
-                        prepared_id=prepared_id, ready=ready,
-                        sia_ledger_verified=sia_ledger_verified))
+                    prepared_id=prepared_id, ready=ready,
+                    sia_ledger_verified=sia_ledger_verified))
                 return 3
             prepared_root = os.path.dirname(_prepared_path(prepared_id))
-            if os.path.lexists(prepared_root):
-                try:
-                    _retire_private_tree(prepared_root, PREPARED_DIR)
-                except Exception:
-                    _publish_status(
-                        state="blocked",
-                        detail="Restore verified, but prepared-stage "
-                               "retirement was safely blocked.",
-                        repository_display="External recovery repository",
-                        latest=prior_latest, prepared=prior_prepared,
-                        operation=_operation(
-                            request["id"], kind, "blocked",
-                            prepared_id=prepared_id, ready=True,
-                            sia_ledger_verified=True))
-                    return 3
+            # Withdraw the actionable prepared reference durably before any
+            # bytes it protects can be retired. A failed publication leaves
+            # the complete tree available; a later deletion failure leaves
+            # only non-authoritative spool debt for reconciliation.
             _publish_status(
                 state="restoring",
                 detail="Restore data and SIA ledger verified; awaiting "
@@ -2834,6 +3885,22 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
                     request["id"], kind, "running",
                     prepared_id=prepared_id, ready=ready,
                     sia_ledger_verified=sia_ledger_verified))
+            if os.path.lexists(prepared_root):
+                try:
+                    _retire_private_tree(prepared_root, PREPARED_DIR)
+                except Exception:
+                    _publish_status(
+                        state="blocked",
+                        detail="Restore verified; non-authoritative "
+                               "prepared-stage retirement was safely "
+                               "blocked.",
+                        repository_display="External recovery repository",
+                        latest=prior_latest, prepared=None,
+                        operation=_operation(
+                            request["id"], kind, "blocked",
+                            prepared_id=prepared_id, ready=True,
+                            sia_ledger_verified=True))
+                    return 3
         else:
             terminal_code = 0
             try:
@@ -2914,6 +3981,14 @@ def run_restore_request(request_path, *, lifecycle_fd):
     if os.path.lexists(siacapsule.RESTORE_BARRIER):
         raise BlockedError(
             "An interrupted restore barrier requires recovery before apply.")
+    debt = load_supervisor_debt()
+    if debt is None or debt.get("kind") != "restore-apply" \
+            or debt.get("phase") != "child-running" \
+            or os.path.abspath(request_path) != \
+               os.path.abspath(debt["request_path"]) \
+            or not _request_matches_supervisor_debt(request, debt):
+        raise BlockedError(
+            "Restore request generation changed before worker admission.")
     prepared_id = request["args"].get("prepared_id", "")
     try:
         with sialib.brainstem_owner() as brainstem_fd, \
@@ -2945,14 +4020,88 @@ def run_restore_request(request_path, *, lifecycle_fd):
         return 1
 
 
-def _live_restore_observation(debt=None):
-    """Observe health and, for apply debt, its signed adoption transition.
+def _ledger_entry_hash(fields):
+    if len(fields) != 9:
+        raise ValueError("SIA ledger row shape is malformed")
+    sequence, stamp, action, arg1, arg2, content_sha256, size, predecessor = \
+        fields[:8]
+    if re.fullmatch(r"0|[1-9][0-9]*", sequence) is None \
+            or re.fullmatch(r"0|[1-9][0-9]*", size) is None \
+            or re.fullmatch(r"[0-9a-f]{64}", content_sha256) is None \
+            or re.fullmatch(r"[0-9a-f]{64}", predecessor) is None:
+        raise ValueError("SIA ledger row binding is malformed")
 
-    The SIA ledger verifier authenticates the bounded ledger before the exact
-    action/argument tuple is inspected.  No content hash is guessed: the
-    occurrence-bound content is intentionally unavailable after the capsule
-    journal is retired.
-    """
+    def u64(value):
+        return int(value).to_bytes(8, "big")
+
+    def text(value):
+        encoded = value.encode("utf-8", "strict")
+        return u64(len(encoded)) + encoded
+
+    encoded = bytearray(b"attest-entry-v1")
+    encoded += u64(sequence)
+    for value in (stamp, action, arg1, arg2):
+        encoded += text(value)
+    encoded += bytes.fromhex(content_sha256)
+    encoded += u64(size)
+    encoded += bytes.fromhex(predecessor)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _expected_adoption_ledger_binding(debt):
+    required = {
+        "prepared_id", "snapshot_id", "capsule_id", "manifest_sha256",
+        "accepted_ledger_head", "confirmation_sha256", "adoption_order",
+        "adoption_record_id", "target",
+    }
+    if not isinstance(debt, dict) or any(key not in debt for key in required) \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", debt.get("accepted_ledger_head", "")) \
+                is None \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", debt.get("confirmation_sha256", "")) \
+                is None \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", debt.get("adoption_record_id", "")) \
+                is None \
+            or re.fullmatch(
+                r"0|[1-9][0-9]*", debt.get("adoption_order", "")) is None:
+        raise ValueError("restore adoption evidence binding is malformed")
+    try:
+        siacapsule._validate_target_record(debt["target"])
+    except ValueError as exc:
+        raise ValueError(
+            "restore adoption evidence binding is malformed") from exc
+    content = json.dumps({
+        "accepted_ledger_head": debt["accepted_ledger_head"],
+        "confirmation_sha256": debt["confirmation_sha256"],
+        "snapshot_id": debt["snapshot_id"],
+        "manifest_sha256": debt["manifest_sha256"],
+        "target": debt["target"],
+        "receipt_re_adopted": True,
+    }, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    basis = {
+        "order": int(debt["adoption_order"]),
+        "action": "RESTORE:adopt",
+        "arg1": debt["prepared_id"],
+        "arg2": debt["capsule_id"],
+        "content": content,
+    }
+    record_id = hashlib.sha256(json.dumps(
+        basis, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(record_id, debt["adoption_record_id"]):
+        raise ValueError("restore adoption evidence identity changed")
+    bound_content = json.dumps({
+        "schema": "sia-ledger-occurrence-v1",
+        "record_id": record_id,
+        "content": content,
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(bound_content).hexdigest(), str(len(bound_content))
+
+
+def _live_restore_observation(debt=None):
+    """Observe health and the exact accepted signed adoption transition."""
     before_sequence, before_head = sialib.ledger_head()
     if before_sequence <= 0 or not before_head:
         raise ValueError("SIA ledger has no nonempty generation head")
@@ -2962,6 +4111,8 @@ def _live_restore_observation(debt=None):
     committed = None
     if ledger_verified and debt is not None \
             and debt.get("kind") == "restore-apply":
+        expected_digest, expected_size = \
+            _expected_adoption_ledger_binding(debt)
         # Observed from bin/sia-ledger's published storage boundary.
         raw = _read_regular(
             os.path.join(sialib.SHARE, "ledger.tsv"), "SIA ledger",
@@ -2973,14 +4124,29 @@ def _live_restore_observation(debt=None):
         if text and not text.endswith("\n"):
             raise ValueError("SIA ledger has a torn final row")
         matches = 0
-        for line in (text[:-1].split("\n") if text else []):
+        accepted_predecessor_seen = False
+        rows = text[:-1].split("\n") if text else []
+        calculated_head = ""
+        for line in rows:
             fields = line.split("\t")
-            if len(fields) != 9:
-                raise ValueError("SIA ledger row shape is malformed")
+            calculated_head = _ledger_entry_hash(fields)
             if fields[2] == "RESTORE:adopt" \
                     and fields[3] == debt["prepared_id"] \
-                    and fields[4] == debt["capsule_id"]:
+                    and fields[4] == debt["capsule_id"] \
+                    and fields[5] == expected_digest \
+                    and fields[6] == expected_size:
+                if not accepted_predecessor_seen \
+                        and fields[7] != debt["accepted_ledger_head"]:
+                    raise ValueError(
+                        "SIA restore accepted predecessor is absent")
                 matches += 1
+            if calculated_head == debt["accepted_ledger_head"]:
+                accepted_predecessor_seen = True
+        if len(rows) != before_sequence or calculated_head != before_head:
+            raise BlockedError(
+                "SIA ledger generation changed during restore attestation.")
+        if not accepted_predecessor_seen:
+            raise ValueError("SIA restore accepted predecessor is absent")
         if matches > 1:
             raise ValueError("SIA restore adoption transition is ambiguous")
         committed = matches == 1
@@ -3097,7 +4263,7 @@ def run_restore_recovery(request_id, *, lifecycle_fd):
                 prepared_id=debt["prepared_id"], ready=ready,
                 sia_ledger_verified=True))
         # This is a proven non-commit, not a recovery failure.  The stable
-        # supervisor may restart the coherent brain and retire the request.
+        # supervisor may restart the coherent memory service and retire the request.
         return 0
     if sia_ledger_verified and apply_debt \
             and observed.get("committed") is True:
@@ -3141,27 +4307,28 @@ def run_restore_recovery(request_id, *, lifecycle_fd):
 def mark_brainstem_restart_failed(request_path):
     """Withhold restore success if the resident daemon could not restart."""
     try:
-        request = _load_request(request_path)
         debt = load_supervisor_debt()
-        if debt is None or debt.get("phase") != "restart-failed" \
-                or debt.get("request_id") != request["id"] \
-                or debt.get("prepared_id") != \
-                   request["args"].get("prepared_id") \
-                or debt.get("snapshot_id") != \
-                   request["args"].get("snapshot_id") \
-                or debt.get("capsule_id") != \
-                   request["args"].get("capsule_id") \
-                or debt.get("manifest_sha256") != \
-                   request["args"].get("manifest_sha256"):
+        if debt is None or debt.get("kind") != "restore-apply" \
+                or debt.get("phase") != "restart-failed" \
+                or request_path != debt.get("request_path"):
+            return False
+        try:
+            request = _load_request(request_path)
+        except FileNotFoundError:
+            if os.path.lexists(request_path):
+                return False
+            request = None
+        if request is not None \
+                and not _request_matches_supervisor_debt(request, debt):
             return False
         operation = read_status().get("operation")
         if not isinstance(operation, dict) \
-                or operation.get("request_id") != request["id"] \
+                or operation.get("request_id") != debt["request_id"] \
                 or operation.get("kind") != "restore-apply" \
                 or operation.get("prepared_id") != debt["prepared_id"]:
             return False
-        prepared_id = request["args"].get("prepared_id", "")
-        request_id = request["id"]
+        prepared_id = debt["prepared_id"]
+        request_id = debt["request_id"]
     except (OSError, TypeError, ValueError):
         return False
     _publish_status(
@@ -3239,6 +4406,25 @@ def _post_restart_observation(debt):
     return observed
 
 
+def _publish_terminal_after_authority_retirement(terminal):
+    """Leave a visible non-green record if terminal durability is unknown."""
+    try:
+        _publish_status(**terminal)
+    except (OSError, RuntimeError, ValueError):
+        operation = dict(terminal["operation"])
+        operation["phase"] = "blocked"
+        fallback = {
+            "state": "blocked",
+            "detail": "Terminal readiness publication durability is "
+                      "uncertain; restore recovery remains required.",
+            "operation": operation,
+        }
+        if "latest" in terminal:
+            fallback["latest"] = terminal["latest"]
+        _publish_status(**fallback)
+        raise
+
+
 def _finalize_restore_request_under_corpus(request_path):
     debt = load_supervisor_debt()
     if debt is None or debt.get("kind") != "restore-apply" \
@@ -3252,16 +4438,7 @@ def _finalize_restore_request_under_corpus(request_path):
     except FileNotFoundError:
         pass
     if request is not None \
-            and (request["action"] != "apply"
-                 or debt.get("request_id") != request["id"]
-                 or debt.get("prepared_id") !=
-                    request["args"].get("prepared_id")
-                 or debt.get("snapshot_id") !=
-                    request["args"].get("snapshot_id")
-                 or debt.get("capsule_id") !=
-                    request["args"].get("capsule_id")
-                 or debt.get("manifest_sha256") !=
-                    request["args"].get("manifest_sha256")):
+            and not _request_matches_supervisor_debt(request, debt):
         raise ValueError("restore request binding changed")
     status = read_status()
     operation = status.get("operation")
@@ -3282,6 +4459,10 @@ def _finalize_restore_request_under_corpus(request_path):
     if observed.get("committed") is True \
             and observed.get("ready") is True:
         latest = status.get("latest")
+        if not secrets.compare_digest(
+                debt["target_public_key"],
+                debt["restored_public_key"]):
+            latest = _latest_for_configured_identity(latest)
         protecting = _latest_is_protecting(latest)
         terminal = {
             "state": "verified" if protecting else "recovery-only",
@@ -3295,6 +4476,7 @@ def _finalize_restore_request_under_corpus(request_path):
                 debt["request_id"], "restore-apply", "verified",
                 prepared_id=debt["prepared_id"], ready=True,
                 sia_ledger_verified=True),
+            "latest": latest,
         }
     else:
         terminal = {
@@ -3311,10 +4493,24 @@ def _finalize_restore_request_under_corpus(request_path):
                 ready=(observed.get("ready") is True),
                 sia_ledger_verified=True),
         }
+    promotes_green = terminal["state"] in {"verified", "recovery-only"}
+    if promotes_green:
+        _publish_status(
+            state="blocked",
+            detail="Restore proof is complete; supervisor authority must "
+                   "retire before readiness can be published.",
+            latest=terminal.get("latest", status.get("latest")),
+            operation=_operation(
+                debt["request_id"], "restore-apply", "blocked",
+                prepared_id=debt["prepared_id"], ready=True,
+                sia_ledger_verified=True))
+    else:
+        _publish_status(**terminal)
     if request is not None:
         _retire_request(request)
     _retire_supervisor_debt(debt)
-    _publish_status(**terminal)
+    if promotes_green:
+        _publish_terminal_after_authority_retirement(terminal)
     return True
 
 
@@ -3365,8 +4561,20 @@ def _finalize_restore_recovery_under_corpus():
                 operation["request_id"], "restore-recover", "blocked",
                 ready=False, sia_ledger_verified=True),
         }
+    promotes_green = terminal["state"] in {"verified", "recovery-only"}
+    if promotes_green:
+        _publish_status(
+            state="blocked",
+            detail="Recovery proof is complete; supervisor authority must "
+                   "retire before readiness can be published.",
+            operation=_operation(
+                operation["request_id"], "restore-recover", "blocked",
+                ready=True, sia_ledger_verified=True))
+    else:
+        _publish_status(**terminal)
     _retire_supervisor_debt(debt)
-    _publish_status(**terminal)
+    if promotes_green:
+        _publish_terminal_after_authority_retirement(terminal)
     return True
 
 
@@ -3407,6 +4615,35 @@ def reconcile_supervisor_spools():
     with _exclusive_lock(REQUEST_LOCK):
         debt = load_supervisor_debt()
         if debt is None:
+            return True
+        if debt.get("phase") == "accepted" \
+                and debt.get("kind") == "restore-apply":
+            request = _load_request(debt["request_path"])
+            if not _request_matches_supervisor_debt(request, debt):
+                raise BlockedError(
+                    "Accepted restore supervisor binding changed.")
+            if _request_id_active(debt["request_id"]):
+                raise BlockedError(
+                    "Accepted restore worker may still be active.")
+            status = read_status()
+            operation = status.get("operation")
+            if not isinstance(operation, dict) \
+                    or operation.get("request_id") != debt["request_id"] \
+                    or operation.get("kind") != "restore-apply" \
+                    or operation.get("prepared_id") != debt["prepared_id"] \
+                    or operation.get("phase") not in {"accepted", "blocked"}:
+                raise BlockedError(
+                    "Accepted restore status correlation changed.")
+            _publish_status(
+                state="blocked",
+                detail="Restore supervisor intent was retained, but no "
+                       "worker launched; no live mutation occurred.",
+                operation=_operation(
+                    debt["request_id"], "restore-apply", "blocked",
+                    prepared_id=debt["prepared_id"]))
+            _retire_request(request)
+            _retire_supervisor_debt(debt)
+            _reconcile_inactive_spools()
             return True
         if debt.get("phase") != "restart-attested":
             raise BlockedError("Restore supervisor restart is not attested.")

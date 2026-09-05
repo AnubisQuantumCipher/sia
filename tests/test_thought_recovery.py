@@ -589,6 +589,17 @@ class ThoughtRecovery(unittest.TestCase):
         self._write_exact_page_without_intent(older)
         self._schedule_reset_after_page_mutation()
 
+        def assert_shared_usage_is_retrievable(mind, as_of):
+            node = mind["nodes"]["mind/a"]
+            stamps = [entry[0] for entry in node["rt"]]
+            self.assertEqual(stamps, sorted(stamps))
+            self.assertLessEqual(node["t0"], stamps[0])
+            self.assertEqual(
+                self.sialib.siamind.usage_activation_snapshot(
+                    node, as_of)["status"],
+                "available")
+            self.sialib.siamind.rebuild_workspace(mind, {}, now=as_of)
+
         claim_path = self.sialib._thought_recovery_claim_path()
         original_unlink = self.sialib.os.unlink
         interrupted = {"value": False}
@@ -611,6 +622,9 @@ class ThoughtRecovery(unittest.TestCase):
                     self.sialib._recover_pending_thought_projection(
                         {"sync_needed": False}, store)
         mind_after_commit = self.sialib.siamind.load_mind()
+        assert_shared_usage_is_retrievable(
+            mind_after_commit,
+            self.sialib._thought_reinforcement_ts(newer))
         older_projection = {
             "a": json.loads(json.dumps(mind_after_commit["nodes"]["mind/a"])),
             "c": json.loads(json.dumps(mind_after_commit["nodes"]["mind/c"])),
@@ -630,6 +644,9 @@ class ThoughtRecovery(unittest.TestCase):
                 self.sialib._recover_pending_thought_projection(
                     {"sync_needed": False}, store)
         settled_mind = self.sialib.siamind.load_mind()
+        assert_shared_usage_is_retrievable(
+            settled_mind,
+            self.sialib._thought_reinforcement_ts(tail))
         self.assertEqual(settled_mind["nodes"]["mind/a"],
                          older_projection["a"])
         self.assertEqual(settled_mind["nodes"]["mind/c"],
@@ -667,6 +684,77 @@ class ThoughtRecovery(unittest.TestCase):
         self.assertEqual(store["thoughts"][0]["slug"], record["slug"])
         self.assertEqual(
             self.sialib._load_thought_legacy_scan()["phase"], "complete")
+
+    def test_replay_catalogs_refuse_hardlinked_authority(self):
+        catalogs = (
+            (self.sialib._thought_legacy_catalog,
+             self.sialib._thought_legacy_catalog_path),
+            (self.sialib._thought_mind_replay_catalog,
+             self.sialib._thought_mind_replay_path),
+        )
+        for open_catalog, catalog_path in catalogs:
+            with self.subTest(path=catalog_path()):
+                with open_catalog():
+                    pass
+                alias = catalog_path() + ".alias"
+                os.link(catalog_path(), alias)
+                try:
+                    with self.assertRaisesRegex(
+                            ValueError, "owned single-link file"):
+                        with open_catalog():
+                            pass
+                finally:
+                    os.unlink(alias)
+
+    def test_recovery_json_files_refuse_hardlinked_authority(self):
+        self._complete_legacy_scan()
+        page = self._page_record(
+            "thoughts/private-alias", "2026-01-02T03:04:05Z",
+            "private replay authority")
+        record_id = self.sialib._queue_thought_recovery(page)
+        record_path = os.path.join(
+            self.sialib._thought_recovery_dir(), record_id + ".json")
+        record_alias = record_path + ".alias"
+        os.link(record_path, record_alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "single-link"):
+                self.sialib._read_thought_recovery_record(record_path)
+        finally:
+            os.unlink(record_alias)
+
+        with self.sialib.corpus_owner():
+            self.sialib._prepare_thought_recovery_claim()
+        claim_path = self.sialib._thought_recovery_claim_path()
+        claim_alias = claim_path + ".alias"
+        os.link(claim_path, claim_alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "single-link"):
+                self.sialib._read_thought_recovery_claim()
+        finally:
+            os.unlink(claim_alias)
+
+        frontmatter, body = self.sialib._thought_page_parts(page)
+        page_text = "---\n" + "\n".join(frontmatter) + "\n---\n" + body
+        entry = self.sialib._thought_legacy_index_entry(
+            "private-alias.md", page, page_text)
+        index_path = self.sialib._write_thought_legacy_index(entry)
+        index_alias = index_path + ".alias"
+        os.link(index_path, index_alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "single-link"):
+                self.sialib._read_thought_legacy_index_entry(index_path)
+        finally:
+            os.unlink(index_alias)
+
+        self._write_exact_page_without_intent(page)
+        page_path = self.sialib.corpus_path(page["slug"])
+        page_alias = page_path + ".alias"
+        os.link(page_path, page_alias)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "single-link"):
+                self.sialib._read_thought_page_text(page["slug"])
+        finally:
+            os.unlink(page_alias)
 
     def test_reset_archives_partial_index_and_catalog_before_restart(self):
         first = self._page_record(

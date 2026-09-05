@@ -99,7 +99,7 @@ class GbrainContract(unittest.TestCase):
         cls.sialib = _load("sialib_gbrain_contract", os.path.join(BIN, "sialib.py"))
 
         # Isolation guard: the runtime must already be rehomed under the test fixture before
-        # anything is executed, or the lane would touch the operator's real brain.
+        # anything is executed, or the lane would touch the operator's resident memory.
         if not cls.sialib.SHARE.startswith(sia_test_home.ISOLATED_HOME):
             raise AssertionError(
                 f"sialib.SHARE escaped the isolated home: {cls.sialib.SHARE}")
@@ -261,7 +261,7 @@ class GbrainContract(unittest.TestCase):
                       f"dream status outside the accepted set: {report.get('status')}")
 
     def test_11_query_returns_a_json_list_on_stdout(self):
-        # The dense-retrieval shape, unprobed until the argv gate below caught
+        # The hybrid-query result shape, unprobed until the argv gate below caught
         # it. Both readers (siabench._engine, siatakes._recall) parse it as
         # `stdout.index("[")` then a list of dicts carrying "slug" — and on a
         # brain without embeddings gbrain writes "vector search unavailable"
@@ -293,7 +293,7 @@ class GbrainContract(unittest.TestCase):
 # tests/test_gbrain_contract.py in the same commit" was a standing gate held by
 # discipline alone: nothing failed when a shape shipped unprobed, which is the
 # exact category the v1.7.5 audit converted to tests everywhere else. It had
-# already been broken twice — `query`, the dense-retrieval lane both siabench
+# already been broken twice — `query`, the hybrid-retrieval lane both siabench
 # and grading depend on, and `schema validate`, which the restore lane refuses
 # on. The scan below reads argv out of the runtime's own AST instead of a
 # hand-written list, so a shape cannot be added to bin/ without either a probe

@@ -1,4 +1,8 @@
-"""Thought pages, thought recovery, and legacy replay for SIA.
+"""Durable generated-entry and epoch pages, recovery, and legacy replay for SIA.
+
+``thought``, ``mind``, and ``DREAM`` are persisted/API compatibility names for
+generated records, retrieval-policy state, and scheduled maintenance. They do
+not assert cognition or biological processes.
 
 This is the third bounded child of ``sialib`` and it follows the same
 bind/invoke façade as ``siasenses`` and ``siagraph``: it imports no SIA
@@ -6,12 +10,17 @@ module, so one runtime state survives the dynamic aliases the test suite
 loads sialib under, and explicit test patches of these helpers are mirrored
 back into intra-module calls.  See ``docs/ARCHITECTURE.md``.
 
+Epoch materialization owns its completeness manifests, bounded consolidation
+claims and recovery markers here. Event-day admission and occurrence indexes
+remain core services; the same binding supplies their helpers, constants and
+exception classes without introducing a second runtime state.
+
 The façade also carries this lane's context managers safely across the child
 boundary.  ``invoke()`` returns a bound proxy for the explicitly named
 context exports; that proxy rebinds the owning ``sialib`` globals under the
 shared lock for both ``__enter__`` and ``__exit__`` without holding the lock
 across caller code.  The legacy directory reader similarly reuses the core's
-single generic ``_SOURCE_LIBC`` handle through ``bind()``.  No thought-only
+single generic ``_SOURCE_LIBC`` handle through ``bind()``. No generated-entry-only
 ABI state remains in the core.
 """
 
@@ -19,7 +28,7 @@ import contextlib as _contextlib
 import threading as _threading
 
 def _canonical_thought_page_record(thought):
-    """Project a thought into the exact self-describing page record."""
+    """Project a compatibility-named generated entry into its page record."""
     if not isinstance(thought, dict):
         raise ValueError("thought record must be an object")
     timestamp = _canonical_utc_timestamp(thought.get("ts"))
@@ -44,7 +53,12 @@ def _canonical_thought_page_record(thought):
     if queue_id:
         record["queue_id"] = queue_id
     if "slug" in thought:
-        record["slug"] = _canonical_corpus_slug(thought["slug"])
+        slug = _canonical_corpus_slug(thought["slug"])
+        if re.fullmatch(r"thoughts/[a-z0-9_][a-z0-9._-]*", slug) is None:
+            raise ValueError("thought page must be a flat thoughts entry")
+        if queue_id and slug != _queued_thought_slug(queue_id):
+            raise ValueError("queued thought page has a noncanonical identity")
+        record["slug"] = slug
     return record
 
 
@@ -66,7 +80,7 @@ def _thought_page_parts(record):
 
 
 def _queued_thought_slug(queue_id):
-    """Name queue-owned thoughts solely from their durable identity."""
+    """Name queue-owned generated entries solely from durable identity."""
     if not isinstance(queue_id, str) \
             or re.fullmatch(r"[0-9a-f]{32}", queue_id) is None:
         raise ValueError("invalid thought queue identity")
@@ -85,16 +99,20 @@ def _thought_queue_binding(record):
 
 
 def _read_thought_page_text(slug):
-    """Read one stable, bounded, no-follow thought page."""
+    """Read one stable, bounded, no-follow generated-entry page."""
     path = corpus_path(_canonical_corpus_slug(slug))
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            fd, label="thought page", error_type=RuntimeError) as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_size > MAX_THOUGHT_INBOX_BYTES:
-            raise RuntimeError("thought page is not a bounded regular file")
+            raise RuntimeError(
+                "thought page is not a bounded owned single-link regular file")
         raw = stream.read(MAX_THOUGHT_INBOX_BYTES + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -104,13 +122,24 @@ def _read_thought_page_text(slug):
     if observed != finished or len(raw) > MAX_THOUGHT_INBOX_BYTES:
         raise RuntimeError("thought page changed while read")
     try:
-        return raw.decode("utf-8")
+        decoded = raw.decode("utf-8")
     except UnicodeError as exc:
         raise RuntimeError("thought page is not UTF-8") from exc
+    try:
+        current = os.lstat(path)
+    except OSError as exc:
+        raise RuntimeError("thought page changed while read") from exc
+    current_identity = (
+        current.st_dev, current.st_ino, current.st_size,
+        current.st_mtime_ns, current.st_ctime_ns)
+    if current_identity != finished or not stat.S_ISREG(current.st_mode) \
+            or current.st_uid != os.geteuid() or current.st_nlink != 1:
+        raise RuntimeError("thought page changed while read")
+    return decoded
 
 
 def _decode_exact_thought_page(slug, text_value):
-    """Recover and byte-verify one self-described thought page."""
+    """Recover and byte-verify one self-described generated-entry page."""
     metadata = re.findall(r"^sia_thought: (.*)$", text_value, re.M)
     if not metadata:
         raise RuntimeError("thought page has no recovery metadata")
@@ -125,11 +154,11 @@ def _decode_exact_thought_page(slug, text_value):
     if not isinstance(encoded_record, dict) \
             or set(encoded_record) - allowed:
         raise RuntimeError("thought recovery metadata is invalid")
+    if encoded_record.get("slug") != slug:
+        raise RuntimeError("thought recovery metadata binds another page")
     record = _canonical_thought_page_record(encoded_record)
     if record != encoded_record:
         raise RuntimeError("thought recovery metadata is noncanonical")
-    if record.get("slug") != slug:
-        raise RuntimeError("thought recovery metadata binds another page")
     if record.get("queue_id") \
             and slug != _queued_thought_slug(record["queue_id"]):
         raise RuntimeError("queued thought page has a noncanonical identity")
@@ -176,8 +205,10 @@ def _thought_legacy_catalog():
     existed = os.path.lexists(path)
     if existed:
         info = os.lstat(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-            raise ValueError("legacy thought catalog is not an owned file")
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1:
+            raise ValueError(
+                "legacy thought catalog is not an owned single-link file")
     connection = sqlite3.connect(path, timeout=2.0)
     try:
         if hasattr(connection, "setlimit"):
@@ -206,8 +237,10 @@ def _thought_legacy_catalog():
             raise ValueError("legacy thought catalog columns are invalid")
         connection.commit()
         info = os.lstat(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-            raise ValueError("legacy thought catalog changed while opened")
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1:
+            raise ValueError(
+                "legacy thought catalog is not an owned single-link file")
         os.chmod(path, 0o600)
         if not existed:
             _sync_directory(STATE)
@@ -218,14 +251,16 @@ def _thought_legacy_catalog():
 
 @_contextlib.contextmanager
 def _thought_mind_replay_catalog():
-    """Open exact, bounded-query replay journals for every thought source."""
+    """Open bounded-query replay journals for every generated-entry source."""
     ensure_durable_directory(STATE, mode=0o700)
     path = _thought_mind_replay_path()
     existed = os.path.lexists(path)
     if existed:
         info = os.lstat(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-            raise ValueError("thought mind replay journal is not an owned file")
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1:
+            raise ValueError(
+                "thought mind replay journal is not an owned single-link file")
     connection = sqlite3.connect(path, timeout=2.0)
     try:
         if hasattr(connection, "setlimit"):
@@ -272,8 +307,10 @@ def _thought_mind_replay_catalog():
                 "thought mind replay journal columns are invalid")
         connection.commit()
         info = os.lstat(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-            raise ValueError("thought mind replay journal changed while opened")
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1:
+            raise ValueError(
+                "thought mind replay journal is not an owned single-link file")
         os.chmod(path, 0o600)
         if not existed:
             _sync_directory(STATE)
@@ -328,16 +365,19 @@ def _thought_recovery_record_bytes(record):
 
 def _read_thought_recovery_record(path):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            descriptor, label="thought recovery record") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_mode & 0o077 \
                 or before.st_size > MAX_THOUGHT_RECOVERY_RECORD_BYTES:
             raise ValueError(
-                "thought recovery record is not a bounded private file")
+                "thought recovery record is not a bounded private "
+                "single-link file")
         raw = stream.read(MAX_THOUGHT_RECOVERY_RECORD_BYTES + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -353,6 +393,16 @@ def _read_thought_recovery_record(path):
     if raw != _thought_recovery_record_bytes(record) \
             or os.path.basename(path) != record["record_id"] + ".json":
         raise ValueError("thought recovery record path binding is invalid")
+    try:
+        current = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("thought recovery record changed while read") from exc
+    current_identity = (
+        current.st_dev, current.st_ino, current.st_size,
+        current.st_mtime_ns, current.st_ctime_ns)
+    if current_identity != finished or not stat.S_ISREG(current.st_mode) \
+            or current.st_uid != os.geteuid() or current.st_nlink != 1:
+        raise ValueError("thought recovery record changed while read")
     return record, observed
 
 
@@ -541,19 +591,22 @@ def _thought_recovery_claim_bytes(claim):
 def _read_thought_recovery_claim():
     path = _thought_recovery_claim_path()
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
     except FileNotFoundError:
         return None
-    with os.fdopen(descriptor, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            descriptor, label="thought recovery claim") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_mode & 0o077 \
                 or before.st_size > MAX_THOUGHT_RECOVERY_BYTES:
             raise ValueError(
-                "thought recovery claim is not a bounded private file")
+                "thought recovery claim is not a bounded private "
+                "single-link file")
         raw = stream.read(MAX_THOUGHT_RECOVERY_BYTES + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -568,6 +621,16 @@ def _read_thought_recovery_claim():
         raise ValueError("thought recovery claim is malformed") from exc
     if raw != _thought_recovery_claim_bytes(claim):
         raise ValueError("thought recovery claim is noncanonical")
+    try:
+        current = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("thought recovery claim changed while read") from exc
+    current_identity = (
+        current.st_dev, current.st_ino, current.st_size,
+        current.st_mtime_ns, current.st_ctime_ns)
+    if current_identity != finished or not stat.S_ISREG(current.st_mode) \
+            or current.st_uid != os.geteuid() or current.st_nlink != 1:
+        raise ValueError("thought recovery claim changed while read")
     return claim
 
 
@@ -822,16 +885,19 @@ def _thought_legacy_index_bytes(entry):
 
 def _read_thought_legacy_index_entry(path):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     descriptor = os.open(path, flags)
-    with os.fdopen(descriptor, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            descriptor, label="legacy thought index") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1 \
                 or before.st_mode & 0o077 \
                 or before.st_size > MAX_THOUGHT_RECOVERY_RECORD_BYTES:
             raise ValueError(
-                "legacy thought index is not a bounded private file")
+                "legacy thought index is not a bounded private "
+                "single-link file")
         raw = stream.read(MAX_THOUGHT_RECOVERY_RECORD_BYTES + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -847,6 +913,16 @@ def _read_thought_legacy_index_entry(path):
     if raw != _thought_legacy_index_bytes(entry) \
             or os.path.basename(path) != entry["index_name"]:
         raise ValueError("legacy thought index path binding is invalid")
+    try:
+        current = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("legacy thought index changed while read") from exc
+    current_identity = (
+        current.st_dev, current.st_ino, current.st_size,
+        current.st_mtime_ns, current.st_ctime_ns)
+    if current_identity != finished or not stat.S_ISREG(current.st_mode) \
+            or current.st_uid != os.geteuid() or current.st_nlink != 1:
+        raise ValueError("legacy thought index changed while read")
     return entry
 
 
@@ -878,7 +954,7 @@ def _thought_mind_replay_records(claim):
 
 
 def _thought_mind_replay_intent(claim):
-    """Durably stage exact page IDs before changing their mind projection."""
+    """Durably stage exact page IDs before changing their policy projection."""
     records = _thought_mind_replay_records(claim)
     if not records:
         return set()
@@ -956,7 +1032,7 @@ def _thought_mind_replay_intent(claim):
 
 
 def _mark_thought_mind_replay_applied_locked(claim):
-    """Commit staged page IDs only after mind and store are both durable."""
+    """Commit staged page IDs only after policy state and store are durable."""
     records = _thought_mind_replay_records(claim)
     if not records:
         return
@@ -1719,7 +1795,7 @@ def _acknowledge_thought_recovery_claim(claim):
                     raise ValueError(
                         "legacy thought index changed before acknowledgment")
             # Retain canonical JSON/catalog diagnostics through completion.
-            # A reset archives these rebuildable derivatives; the exact mind
+            # A reset archives these rebuildable derivatives; the exact policy
             # replay journal below, rather than a timestamp maximum or stale
             # page path, decides which earlier records already had effects.
         # Both native and baseline pages require an exact per-record receipt.
@@ -1754,7 +1830,7 @@ def _thought_recovery_debt():
 
 
 def _persist_thought(thought):
-    """Persist a thought and return the page's exact canonical record."""
+    """Persist a generated entry and return its exact canonical record."""
     record = _canonical_thought_page_record(thought)
     timestamp = record["ts"]
     kind = record["kind"]
@@ -1842,7 +1918,7 @@ def _persist_thought(thought):
 
 
 def write_thought(thought):
-    """Persist one validated, origin-labeled thought corpus page."""
+    """Persist one validated, origin-labeled generated-entry page."""
     return _persist_thought(thought)["slug"]
 
 
@@ -1867,9 +1943,1321 @@ def reconcile_thought_pages(store, mind=None):
     return (recovered, reinforced) if mind is not None else recovered
 
 
+# Epoch pages and their durable consolidation lifecycle share this memory
+# materialization owner. Generic corpus publication remains in the core.
+def _epoch_exemplars(bullets, *, limit=None):
+    """Pick action-prefix coverage before spending an epoch summary's spare positions.
+
+    Positional sampling — the first two and the last — was the original rule,
+    and it silently dropped whole classes of event.  Measured: on 2026-08-24
+    SEKHMET's four ``OUTCOME:restart_wireplumber  ok`` rows all sat in the
+    middle of a nineteen-line log, so the epoch recorded that a heal had been
+    *intended* and never that it *succeeded*.  The aggregate counts still said
+    ``outcome: 4`` while no exemplar showed one, which is the worst shape a
+    summary can take: it asserts that something happened and keeps no instance of
+    it, so a rigorous reader must abstain on a fact the machine really did
+    observe.
+
+    Every explicit action class gets a position before duplicate anchors.
+    The same rule applies to the merged weekly summary, including retained older
+    exemplars. If the bound cannot cover the classes, retain the source pages
+    rather than publish a partial summary. Unstructured prose has no recoverable
+    action class here; anchors do not make semantic coverage claims for it.
+    Order stays chronological and compacted originals remain in git.
+    """
+    if limit is None:
+        limit = MAX_EPOCH_EXEMPLARS
+    if type(limit) is not int or limit <= 0:
+        raise ValueError("epoch exemplar bound is invalid")
+    if not bullets:
+        return []
+    representatives = {}
+    for index, bullet in enumerate(bullets):
+        match = _EPOCH_EXEMPLAR_KIND_RE.match(bullet)
+        if match:
+            representatives.setdefault(match.group(1), index)
+            if len(representatives) > limit:
+                raise ConsolidationCapacityError(
+                    "epoch action coverage exceeds its exemplar bound")
+    keep = set(representatives.values())
+    for index in list(range(min(2, len(bullets)))) + [len(bullets) - 1]:
+        if len(keep) < limit:
+            keep.add(index)
+    return [bullets[index] for index in sorted(keep)]
+
+
+def _pending_consolidation_marker(memo):
+    marker = memo.get("consolidation_pending", False)
+    if marker is False or marker is None:
+        return None
+    if marker is True:  # pre-structured crash marker; upgraded on recovery
+        return True
+    if not isinstance(marker, dict) or set(marker) not in ({
+            "v", "id", "started_at"}, {
+            "v", "id", "started_at", "ledger"}, {
+            "v", "id", "started_at", "ledger", "applied_at"}) \
+            or not _exact_int(marker.get("v"), 1) \
+            or not isinstance(marker.get("id"), str) \
+            or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
+            or not isinstance(marker.get("started_at"), str):
+        raise RuntimeError("consolidation recovery marker is invalid")
+    try:
+        if _canonical_utc_timestamp(marker["started_at"]) \
+                != marker["started_at"]:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError("consolidation recovery marker is invalid") \
+            from None
+    if "ledger" in marker:
+        ledger = marker["ledger"]
+        if not isinstance(ledger, dict) or set(ledger) != {
+                "order", "action", "arg1", "arg2", "content",
+                "record_id"}:
+            raise RuntimeError("consolidation ledger binding is invalid")
+        try:
+            basis = _pending_basis(
+                ledger["order"], ledger["action"], ledger["arg1"],
+                ledger["arg2"], ledger["content"])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("consolidation ledger binding is invalid") \
+                from exc
+        expected = {**basis, "record_id": _pending_identity(basis)}
+        if ledger != expected or basis["action"] not in {
+                "DREAM:consolidate", "RECOVER:consolidate"}:
+            raise RuntimeError("consolidation ledger binding is invalid")
+    if "applied_at" in marker:
+        if "ledger" not in marker \
+                or not isinstance(marker["applied_at"], str):
+            raise RuntimeError("consolidation applied marker is invalid")
+        try:
+            if _canonical_utc_timestamp(marker["applied_at"]) \
+                    != marker["applied_at"]:
+                raise ValueError
+        except ValueError:
+            raise RuntimeError(
+                "consolidation applied marker is invalid") from None
+    return marker
+
+
+def _mark_consolidation_pending(memo):
+    marker = _pending_consolidation_marker(memo)
+    if marker is not None:
+        return marker
+    marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
+    updated = dict(memo, consolidation_pending=marker)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return marker
+
+
+def _ensure_structured_consolidation_marker(memo):
+    marker = _pending_consolidation_marker(memo)
+    if marker is not True:
+        return marker
+    marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
+    updated = dict(memo, consolidation_pending=marker)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return marker
+
+
+def _bind_consolidation_ledger(memo, action, arg1, arg2, content=""):
+    marker = _ensure_structured_consolidation_marker(memo)
+    if not isinstance(marker, dict):
+        raise RuntimeError("consolidation has no recovery identity")
+    if "ledger" in marker:
+        return marker["ledger"]
+    basis = _pending_basis(time.time_ns(), action, arg1, arg2, content)
+    ledger = {**basis, "record_id": _pending_identity(basis)}
+    probe = {"schema": LEDGER_PENDING_SCHEMA,
+             "record_id": ledger["record_id"], "queued_at": iso(), **basis}
+    if len((json.dumps(
+            probe, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False) + "\n").encode("utf-8")) \
+            > MAX_LEDGER_PENDING_RECORD_BYTES:
+        raise ValueError("consolidation ledger binding exceeds record bound")
+    rebound = dict(marker, ledger=ledger)
+    updated = dict(memo, consolidation_pending=rebound)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return ledger
+
+
+def _settle_consolidation_ledger(memo):
+    marker = _pending_consolidation_marker(memo)
+    if not isinstance(marker, dict) or "ledger" not in marker:
+        raise RuntimeError("consolidation ledger binding is absent")
+    ledger = marker["ledger"]
+    path = queue_ledger_transition(
+        ledger["order"], ledger["action"], ledger["arg1"],
+        ledger["arg2"], ledger["content"])
+    _settle_ledger_transition(path)
+    return ledger
+
+
+def _mark_consolidation_applied(memo):
+    marker = _pending_consolidation_marker(memo)
+    if not isinstance(marker, dict) or "ledger" not in marker:
+        raise RuntimeError("consolidation ledger must bind before apply")
+    if "applied_at" in marker:
+        return marker
+    rebound = dict(marker, applied_at=iso())
+    updated = dict(memo, consolidation_pending=rebound)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return rebound
+
+
+def _clear_consolidation_marker(memo):
+    updated = dict(memo)
+    updated.pop("consolidation_pending", None)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+
+
+def _recover_pending_consolidation(memo):
+    """Replay an interrupted lineage-bound consolidation before reads."""
+    marker = _ensure_structured_consolidation_marker(memo)
+    if marker is None:
+        return None
+    if "ledger" not in marker:
+        _bind_consolidation_ledger(
+            memo, "RECOVER:consolidate", f"id={marker['id']}",
+            "completed")
+        marker = _pending_consolidation_marker(memo)
+    result = None
+    if "applied_at" not in marker:
+        result = consolidate_corpus()
+        # The named scheduled-maintenance transaction owns the cutoff-pinned generation,
+        # not merely one directory page or claim batch.  Keep its exact ledger
+        # binding pending while later pulses resume bounded consolidation
+        # units, including the conservative scan after admitted source unlink.
+        if _consolidation_scan_debt():
+            return result
+        _mark_consolidation_applied(memo)
+    _settle_consolidation_ledger(memo)
+    _clear_consolidation_marker(memo)
+    return result
+
+
+def _epoch_slug_for_day(organ, date):
+    year, week, _weekday = datetime.date.fromisoformat(date).isocalendar()
+    return f"epochs/{organ}/{year}-w{week:02d}"
+
+
+def _epoch_json_field(frontmatter, key, label, default):
+    values = re.findall(rf"^{re.escape(key)}: (.*)$", frontmatter, re.M)
+    if not values:
+        return copy.deepcopy(default)
+    if len(values) != 1:
+        raise RuntimeError(f"{label} has duplicate {key}")
+    try:
+        return _strict_json_loads(values[0])
+    except (TypeError, UnicodeError, ValueError, RecursionError) as exc:
+        raise RuntimeError(f"{label} {key} is malformed") from exc
+
+
+def _canonical_epoch_source_manifest(records, epoch_slug, prior_sources):
+    if not isinstance(records, list):
+        raise RuntimeError(f"epoch source manifest is invalid: {epoch_slug}")
+    if len(records) > MAX_EPOCH_SOURCE_RECORDS:
+        raise ConsolidationCapacityError(
+            f"epoch source manifest is at capacity: {epoch_slug}")
+    canonical = []
+    day_parts = collections.defaultdict(list)
+    seen_rel, seen_sha = set(), set()
+    for record in records:
+        if not isinstance(record, dict) or set(record) != {"rel", "sha256"} \
+                or not isinstance(record.get("rel"), str) \
+                or not isinstance(record.get("sha256"), str) \
+                or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None:
+            raise RuntimeError(
+                f"epoch source manifest is invalid: {epoch_slug}")
+        organ, date, part = _event_source_parts(record["rel"])
+        if _epoch_slug_for_day(organ, date) != epoch_slug \
+                or record["rel"] in seen_rel \
+                or record["sha256"] in seen_sha \
+                or record["sha256"] not in prior_sources:
+            raise RuntimeError(
+                f"epoch source manifest is invalid: {epoch_slug}")
+        seen_rel.add(record["rel"])
+        seen_sha.add(record["sha256"])
+        day_parts[(organ, date)].append(part)
+        canonical.append({"rel": record["rel"],
+                          "sha256": record["sha256"]})
+    for parts in day_parts.values():
+        parts.sort()
+        if parts != list(range(1, parts[-1] + 1)):
+            raise RuntimeError(
+                f"epoch source manifest has incomplete day lineage: "
+                f"{epoch_slug}")
+    canonical.sort(key=lambda record: record["rel"])
+    if records != canonical:
+        raise RuntimeError(f"epoch source manifest is invalid: {epoch_slug}")
+    encoded = json.dumps(canonical, separators=(",", ":"), ensure_ascii=False)
+    if len(encoded.encode("utf-8")) \
+            > MAX_EPOCH_SOURCE_MANIFEST_BYTES:
+        raise ConsolidationCapacityError(
+            f"epoch source manifest exceeds its bound: {epoch_slug}")
+    return canonical
+
+
+def _canonical_epoch_event_ids(event_ids, epoch_slug):
+    if not isinstance(event_ids, list):
+        raise RuntimeError(
+            f"epoch event-index completeness is invalid: {epoch_slug}")
+    if len(event_ids) > MAX_EPOCH_EVENT_IDS:
+        raise ConsolidationCapacityError(
+            f"epoch event-index completeness is at capacity: {epoch_slug}")
+    canonical = sorted(set(event_ids))
+    if event_ids != canonical \
+            or any(not isinstance(event_id, str)
+                   or re.fullmatch(r"[0-9a-f]{64}", event_id) is None
+                   for event_id in event_ids):
+        raise RuntimeError(
+            f"epoch event-index completeness is invalid: {epoch_slug}")
+    return list(event_ids)
+
+
+def _read_epoch_state(slug, *, expected_generation=None):
+    """Read and validate one bounded epoch plus optional exact shard lineage."""
+    try:
+        text = _read_event_page(slug, expected_generation=expected_generation)
+    except FileNotFoundError:
+        return {"slug": slug, "text": "", "sources": [], "dates": [],
+                "ndays": 0, "source_manifest": [], "event_ids": [],
+                "source_manifest_declared": False,
+                "event_ids_declared": False}
+    match = FM_RE.match(text)
+    if match is None:
+        raise RuntimeError(f"existing epoch lacks frontmatter: {slug}")
+    frontmatter = match.group(1)
+    types = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
+    if types != ["epoch"]:
+        raise RuntimeError(f"existing epoch identity is invalid: {slug}")
+    prior_sources = _epoch_json_field(
+        frontmatter, "sia_sources", f"epoch lineage {slug}", [])
+    if not isinstance(prior_sources, list) \
+            or len(prior_sources) != len(set(prior_sources)) \
+            or any(not isinstance(value, str)
+                   or re.fullmatch(r"[0-9a-f]{64}", value) is None
+                   for value in prior_sources):
+        raise RuntimeError(f"epoch lineage is invalid: {slug}")
+    prior_dates = _epoch_json_field(
+        frontmatter, "sia_dates", f"epoch date lineage {slug}", [])
+    if not isinstance(prior_dates, list) \
+            or prior_dates != sorted(set(prior_dates)) \
+            or any(not isinstance(value, str)
+                   or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None
+                   for value in prior_dates):
+        raise RuntimeError(f"epoch date lineage is invalid: {slug}")
+    source_manifest_declared = bool(re.findall(
+        r"^sia_source_manifest: ", frontmatter, re.M))
+    manifest = _epoch_json_field(
+        frontmatter, "sia_source_manifest",
+        f"epoch source manifest {slug}", [])
+    manifest = _canonical_epoch_source_manifest(
+        manifest, slug, set(prior_sources))
+    if any(_event_source_parts(record["rel"])[1] not in prior_dates
+           for record in manifest):
+        raise RuntimeError(f"epoch source manifest lacks date lineage: {slug}")
+    event_ids_declared = bool(re.findall(
+        r"^sia_event_ids: ", frontmatter, re.M))
+    event_ids = _epoch_json_field(
+        frontmatter, "sia_event_ids",
+        f"epoch event-index completeness {slug}", [])
+    event_ids = _canonical_epoch_event_ids(event_ids, slug)
+    if event_ids_declared and (
+            not source_manifest_declared
+            or {record["sha256"] for record in manifest} != set(prior_sources)):
+        raise RuntimeError(
+            f"epoch event-index completeness lacks source lineage: {slug}")
+    day_matches = re.findall(r"Consolidated from (\d+) day-memories", text)
+    if len(day_matches) != 1:
+        raise RuntimeError(f"existing epoch lacks exact day count: {slug}")
+    ndays = int(day_matches[0])
+    manifest_dates = {_event_source_parts(record["rel"])[1]
+                      for record in manifest}
+    if event_ids_declared and (
+            ndays != len(prior_dates) or manifest_dates != set(prior_dates)):
+        raise RuntimeError(
+            f"epoch event-index completeness lacks source lineage: {slug}")
+    return {"slug": slug, "text": text, "sources": prior_sources,
+            "dates": prior_dates, "ndays": ndays,
+            "source_manifest": manifest, "event_ids": event_ids,
+            "source_manifest_declared": source_manifest_declared,
+            "event_ids_declared": event_ids_declared}
+
+
+def _merge_epoch_source_manifest(existing, items, epoch_slug, source_ids):
+    by_rel = {record["rel"]: record for record in existing}
+    by_sha = {record["sha256"]: record for record in existing}
+    for _date, _path, _text, _tags, source_id, relative, _part in items:
+        record = {"rel": relative, "sha256": source_id}
+        prior_rel = by_rel.get(relative)
+        prior_sha = by_sha.get(source_id)
+        if (prior_rel is not None and prior_rel != record) \
+                or (prior_sha is not None and prior_sha != record):
+            raise RuntimeError(
+                f"epoch source manifest conflicts with live shard: {relative}")
+        if prior_rel is None and len(by_rel) >= MAX_EPOCH_SOURCE_RECORDS:
+            raise ConsolidationCapacityError(
+                f"epoch source manifest is at capacity: {epoch_slug}")
+        by_rel[relative] = record
+        by_sha[source_id] = record
+    merged = sorted(by_rel.values(), key=lambda record: record["rel"])
+    return _canonical_epoch_source_manifest(
+        merged, epoch_slug, set(source_ids))
+
+
+def _merge_epoch_event_ids(state, items, entries):
+    live_records = {
+        (relative, source_id)
+        for _date, _path, _text, _tags, source_id, relative, _part
+        in items
+    }
+    live_source_ids = {source_id for _relative, source_id in live_records}
+    if state["text"] and not state["event_ids_declared"]:
+        retained_prior_dates = {
+            _event_source_parts(relative)[1]
+            for relative, source_id in live_records
+            if source_id in state["sources"]}
+        if state["ndays"] != len(retained_prior_dates) \
+                or (state["dates"]
+                    and retained_prior_dates != set(state["dates"])) \
+                or any(source_id not in live_source_ids
+                       for source_id in state["sources"]):
+            raise ConsolidationCompletenessError(
+                "pre-index epoch event completeness cannot be "
+                f"reconstructed: {state['slug']}")
+    if state["source_manifest_declared"] \
+            and not state["event_ids_declared"]:
+        missing_sources = [
+            record for record in state["source_manifest"]
+            if (record["rel"], record["sha256"]) not in live_records
+        ]
+        if missing_sources:
+            raise ConsolidationCompletenessError(
+                "epoch event-index completeness cannot be reconstructed: "
+                f"{state['slug']}")
+    event_ids = sorted(
+        set(state["event_ids"])
+        | {entry["event_id"] for entry in entries})
+    return _canonical_epoch_event_ids(event_ids, state["slug"])
+
+
+def _event_index_entries_for_sources(items, epoch_slug):
+    entries = {}
+    for _date, _path, text, _tags, source_id, relative, _part in items:
+        source_organ, _source_date, _source_part = _event_source_parts(relative)
+        match = FM_RE.match(text)
+        if match is None:
+            raise RuntimeError(
+                f"consolidation source lacks frontmatter: {relative}")
+        log_part = text[match.end():].split("## Timeline", 1)[0]
+        if "## Log" in log_part:
+            log_part = log_part.split("## Log", 1)[1]
+        for line in (value for value in log_part.splitlines()
+                     if value.startswith("- ")):
+            marker = EVENT_MARKER_RE.fullmatch(line)
+            if marker is None:
+                if "sia-event:" in line:
+                    raise RuntimeError(
+                        f"consolidation source has malformed event identity: "
+                        f"{relative}")
+                continue
+            event_id = marker.group("id")
+            if event_id in entries:
+                raise RuntimeError(
+                    "event identity is duplicated across consolidation sources")
+            if len(entries) >= MAX_EVENT_INDEX_RECORDS:
+                raise ConsolidationCapacityError(
+                    "consolidated event index batch is at capacity")
+            entries[event_id] = {
+                "schema": EVENT_INDEX_SCHEMA,
+                "organ": source_organ,
+                "event_id": event_id,
+                "semantic_id": marker.group("semantic"),
+                "payload_sha256": _event_payload_digest(
+                    marker.group("payload")),
+                "source_rel": relative,
+                "source_sha256": source_id,
+                "epoch_slug": epoch_slug,
+            }
+    result = [entries[event_id] for event_id in sorted(entries)]
+    if len(result) > MAX_EVENT_INDEX_RECORDS:
+        raise RuntimeError("consolidated event index batch exceeds its bound")
+    for entry in result:
+        _event_index_encoded(entry)
+    return result
+
+
+def _render_epoch_source_manifest(state, records, dates, event_ids):
+    """Prepare a legacy/recovery epoch update without mutating the corpus."""
+    if not isinstance(dates, list) or dates != sorted(set(dates)) \
+            or any(not isinstance(value, str)
+                   or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None
+                   for value in dates):
+        raise RuntimeError(
+            f"epoch date lineage is invalid: {state['slug']}")
+    if records == state["source_manifest"] \
+            and dates == state["dates"] \
+            and event_ids == state["event_ids"] \
+            and state["source_manifest_declared"] \
+            and state["event_ids_declared"]:
+        return None
+    text = state["text"]
+    match = FM_RE.match(text)
+    if match is None:
+        raise RuntimeError(
+            f"existing epoch lacks frontmatter: {state['slug']}")
+    lines = match.group(1).splitlines()
+    fields = {
+        "sia_source_manifest": json.dumps(
+            records, separators=(",", ":"), ensure_ascii=False),
+        "sia_event_ids": json.dumps(
+            event_ids, separators=(",", ":"), ensure_ascii=False),
+        "sia_dates": json.dumps(
+            dates, separators=(",", ":"), ensure_ascii=False),
+    }
+    for key, value in fields.items():
+        field = f"{key}: {value}"
+        positions = [index for index, line in enumerate(lines)
+                     if line.startswith(f"{key}: ")]
+        if len(positions) > 1:
+            raise RuntimeError(
+                f"epoch recovery metadata is invalid: {state['slug']}")
+        if positions:
+            lines[positions[0]] = field
+            continue
+        source_positions = [index for index, line in enumerate(lines)
+                            if line.startswith("sia_sources: ")]
+        position = source_positions[0] + 1 if len(source_positions) == 1 \
+            else len(lines)
+        lines.insert(position, field)
+    body = text[match.end():]
+    encoded = ("---\n" + "\n".join(lines) + "\n---\n" + body).encode(
+        "utf-8")
+    if len(encoded) > MAX_EPOCH_PAGE_BYTES:
+        raise ConsolidationCapacityError(
+            f"epoch page exceeds its lineage bound: {state['slug']}")
+    return lines, body
+
+
+def _write_epoch_source_manifest(state, rendered):
+    if rendered is not None:
+        frontmatter, body = rendered
+        write_page(state["slug"], frontmatter, body)
+
+
+def _render_bounded_epoch(slug, frontmatter, body):
+    """Prepare a complete epoch page and classify capacity before publish."""
+    encoded = ("---\n" + "\n".join(frontmatter) + "\n---\n" + body).encode(
+        "utf-8")
+    if len(encoded) > MAX_EPOCH_PAGE_BYTES:
+        raise ConsolidationCapacityError(
+            f"epoch page exceeds its lineage bound: {slug}")
+    return frontmatter, body
+
+
+def _write_bounded_epoch(slug, rendered):
+    frontmatter, body = rendered
+    write_page(slug, frontmatter, body)
+
+
+def _consolidation_scan_path():
+    """Return production state, or a corpus-scoped sibling for test roots."""
+    production_corpus = os.path.abspath(os.path.join(SHARE, "corpus"))
+    if os.path.abspath(CORPUS) == production_corpus:
+        return os.path.join(STATE, "consolidation-scan.json")
+    token = hashlib.sha256(os.path.abspath(CORPUS).encode("utf-8")).hexdigest()
+    return os.path.join(
+        os.path.dirname(os.path.abspath(CORPUS)),
+        ".sia-consolidation-" + token,
+        "scan.json")
+
+
+def _fresh_consolidation_scan(cutoff):
+    if not isinstance(cutoff, str) \
+            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", cutoff) is None:
+        raise ValueError("consolidation cutoff is invalid")
+    return {
+        "schema": CONSOLIDATION_SCAN_SCHEMA,
+        "generation": uuid.uuid4().hex,
+        "phase": "scan",
+        "cutoff": cutoff,
+        "queue": [{"relative": "", "levels":
+                   MAX_CONSOLIDATION_TREE_LEVELS, "page": {}}],
+        "pending_days": [],
+        "claims": [],
+    }
+
+
+def _canonical_consolidation_day(value):
+    if not isinstance(value, dict) or set(value) != {"organ", "date"} \
+            or not isinstance(value.get("organ"), str) \
+            or re.fullmatch(
+                r"[a-z0-9][a-z0-9._-]{0,199}", value["organ"]) is None \
+            or not isinstance(value.get("date"), str):
+        raise RuntimeError("consolidation candidate day is invalid")
+    try:
+        if datetime.date.fromisoformat(value["date"]).isoformat() \
+                != value["date"]:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError("consolidation candidate day is invalid") \
+            from None
+    return dict(value)
+
+
+def _canonical_consolidation_scan(value):
+    if not isinstance(value, dict) \
+            or set(value) != {
+                "schema", "generation", "phase", "cutoff", "queue",
+                "pending_days", "claims"} \
+            or value.get("schema") != CONSOLIDATION_SCAN_SCHEMA \
+            or value.get("phase") not in {"scan", "complete"} \
+            or not isinstance(value.get("generation"), str) \
+            or re.fullmatch(r"[0-9a-f]{32}", value["generation"]) is None \
+            or not isinstance(value.get("cutoff"), str) \
+            or re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value["cutoff"]) is None \
+            or not isinstance(value.get("queue"), list) \
+            or len(value["queue"]) > MAX_CONSOLIDATION_DIRECTORY_QUEUE \
+            or not isinstance(value.get("pending_days"), list) \
+            or len(value["pending_days"]) > MAX_SOURCE_SCAN_ENTRIES \
+            or not isinstance(value.get("claims"), list) \
+            or len(value["claims"]) > MAX_CONSOLIDATION_DAYS_PER_RUN:
+        raise RuntimeError("consolidation scan state is invalid")
+    queue = []
+    queued_relatives = set()
+    page_fields = {
+        "device", "inode", "cookie", "size", "mtime_ns", "ctime_ns",
+        "reset"}
+    for frame in value["queue"]:
+        if not isinstance(frame, dict) or set(frame) != {
+                "relative", "levels", "page"}:
+            raise RuntimeError("consolidation scan cursor is invalid")
+        relative = frame["relative"]
+        parts = relative.split("/") if isinstance(relative, str) \
+            and relative else []
+        if not isinstance(relative, str) or os.path.isabs(relative) \
+                or relative in {".", ".."} \
+                or any(part in {"", ".", ".."} for part in parts) \
+                or (os.altsep and os.altsep in relative) \
+                or relative in queued_relatives \
+                or isinstance(frame["levels"], bool) \
+                or not isinstance(frame["levels"], int) \
+                or frame["levels"] \
+                    != MAX_CONSOLIDATION_TREE_LEVELS - len(parts):
+            raise RuntimeError("consolidation scan cursor is invalid")
+        raw_page = frame["page"]
+        if not isinstance(raw_page, dict) \
+                or raw_page and (
+                    set(raw_page) != page_fields
+                    or raw_page["reset"] is not False
+                    or any(isinstance(raw_page[name], bool)
+                           or not isinstance(raw_page[name], int)
+                           or raw_page[name] < 0
+                           for name in page_fields - {"reset"})):
+            raise RuntimeError("consolidation scan cursor is invalid")
+        queued_relatives.add(relative)
+        queue.append({"relative": relative, "levels": frame["levels"],
+                      "page": _validated_source_page_state(raw_page)})
+    pending = [_canonical_consolidation_day(day)
+               for day in value["pending_days"]]
+    if len({(day["organ"], day["date"]) for day in pending}) != len(pending):
+        raise RuntimeError("consolidation candidate day is duplicated")
+    claims = []
+    for claim in value["claims"]:
+        if not isinstance(claim, dict) or set(claim) != {
+                "organ", "date", "cutoff", "directory", "sources"}:
+            raise RuntimeError("consolidation day claim is invalid")
+        day = _canonical_consolidation_day(
+            {"organ": claim.get("organ"), "date": claim.get("date")})
+        raw_directory = claim.get("directory")
+        if not isinstance(raw_directory, dict) \
+                or set(raw_directory) != page_fields:
+            raise RuntimeError("consolidation day claim is invalid")
+        directory = _validated_source_page_state(raw_directory)
+        sources = claim.get("sources")
+        if not isinstance(sources, list) \
+                or len(sources) > MAX_EVENT_SHARDS or not sources:
+            raise RuntimeError("consolidation day claim is invalid")
+        canonical_sources = []
+        for record in sources:
+            if not isinstance(record, dict) or set(record) != {
+                    "rel", "sha256"} \
+                    or not isinstance(record.get("rel"), str) \
+                    or not isinstance(record.get("sha256"), str) \
+                    or re.fullmatch(
+                        r"[0-9a-f]{64}", record["sha256"]) is None:
+                raise RuntimeError("consolidation day claim is invalid")
+            organ, date, _part = _event_source_parts(record["rel"])
+            if organ != day["organ"] or date != day["date"]:
+                raise RuntimeError("consolidation day claim is invalid")
+            canonical_sources.append(dict(record))
+        canonical_sources.sort(key=lambda record: record["rel"])
+        if sources != canonical_sources \
+                or len({record["rel"] for record in sources}) != len(sources):
+            raise RuntimeError("consolidation day claim is invalid")
+        if claim["cutoff"] != value["cutoff"]:
+            raise RuntimeError("consolidation claim cutoff conflicts")
+        claims.append({**day, "cutoff": claim["cutoff"],
+                       "directory": directory,
+                       "sources": canonical_sources})
+    if (value["phase"] == "complete") != (not queue):
+        raise RuntimeError("consolidation scan phase/cursor is invalid")
+    return dict(value, queue=queue, pending_days=pending, claims=claims)
+
+
+def _load_consolidation_scan(cutoff):
+    """Load one cutoff-pinned generation, rolling only after convergence."""
+    path = _consolidation_scan_path()
+    value = read_state_json(path, {}, "consolidation scan")
+    if not value:
+        return _fresh_consolidation_scan(cutoff)
+    value = _canonical_consolidation_scan(value)
+    if value["cutoff"] != cutoff \
+            and value["phase"] == "complete" \
+            and not value["queue"] \
+            and not value["pending_days"] \
+            and not value["claims"]:
+        # A later UTC day widens eligibility only after the prior generation
+        # has no cursor or admitted work left. Restarting an incomplete scan
+        # here would repeatedly discard its suffix on a large corpus.
+        return _fresh_consolidation_scan(cutoff)
+    return value
+
+
+def _save_consolidation_scan(value):
+    value = _canonical_consolidation_scan(value)
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > MAX_STATE_JSON_BYTES:
+        raise RuntimeError("consolidation scan state exceeds its byte bound")
+    path = _consolidation_scan_path()
+    ensure_durable_directory(os.path.dirname(path))
+    atomic_write(path, encoded)
+    return value
+
+
+def _advance_consolidation_scan(value):
+    """Inspect one global directory-page budget without deletion inference."""
+    value = _canonical_consolidation_scan(value)
+    if value["claims"] or value["pending_days"]:
+        return value
+    if value["phase"] == "complete":
+        return value
+    root = os.path.join(CORPUS, "events")
+    queue = collections.deque(value["queue"])
+    remaining = MAX_SOURCE_SCAN_ENTRIES
+    discovered = []
+    while queue and remaining:
+        frame = queue.popleft()
+        directory = os.path.join(root, frame["relative"])
+        try:
+            entries, complete, inspected, next_page = \
+                _bounded_source_entries(
+                    directory, frame["page"], remaining,
+                    cleanup_legacy_atomic=True)
+        except FileNotFoundError:
+            if not frame["relative"]:
+                queue.clear()
+                break
+            continue
+        if next_page.get("reset"):
+            return _save_consolidation_scan(
+                _fresh_consolidation_scan(value["cutoff"]))
+        remaining -= inspected
+        if not complete:
+            frame["page"] = next_page
+            queue.appendleft(frame)
+        for entry in entries:
+            relative = os.path.join(frame["relative"], entry["name"])
+            if frame["levels"] \
+                    and not stat.S_ISDIR(entry["mode"]) \
+                    and not stat.S_ISREG(entry["mode"]):
+                raise RuntimeError(
+                    "consolidation organ path is not a regular file or "
+                    "directory")
+            if frame["levels"] and stat.S_ISDIR(entry["mode"]):
+                if len(queue) >= MAX_CONSOLIDATION_DIRECTORY_QUEUE:
+                    raise RuntimeError(
+                        "consolidation directory queue exceeds its bound")
+                queue.append({"relative": relative,
+                              "levels": frame["levels"] - 1,
+                              "page": {}})
+                continue
+            if frame["levels"] or not entry["name"].endswith(".md"):
+                continue
+            rel = os.path.join("events", relative).replace(os.sep, "/")
+            try:
+                organ, date, _part = _event_source_parts(rel)
+            except ValueError:
+                continue
+            if date < value["cutoff"]:
+                discovered.append({"organ": organ, "date": date})
+    deduped = {(day["organ"], day["date"]): day for day in discovered}
+    value["pending_days"] = [deduped[key] for key in sorted(deduped)]
+    value["queue"] = list(queue)
+    if not queue:
+        value["phase"] = "complete"
+    return _save_consolidation_scan(value)
+
+
+def _bounded_event_directory_entries(organ):
+    """Read one complete source directory only within the existing page cap."""
+    root = os.path.join(CORPUS, "events", organ)
+    page = {}
+    remaining = MAX_EVENT_LOOKUP_PAGES
+    gathered = []
+    while remaining:
+        limit = min(remaining, MAX_SOURCE_SCAN_ENTRIES)
+        try:
+            entries, complete, inspected, next_page = \
+                _bounded_source_entries(
+                    root, page, limit, cleanup_legacy_atomic=True)
+        except FileNotFoundError:
+            return [], {}
+        if next_page.get("reset"):
+            raise RuntimeError(
+                "event directory changed during bounded consolidation scan")
+        gathered.extend(entries)
+        remaining -= inspected
+        if complete:
+            return gathered, next_page
+        if inspected <= 0:
+            raise RuntimeError("event directory scan made no progress")
+        page = next_page
+    raise RuntimeError("event directory exceeds its consolidation page bound")
+
+
+def _prepare_consolidation_claims(value):
+    if value["claims"]:
+        return value
+    selected = value["pending_days"][:MAX_CONSOLIDATION_DAYS_PER_RUN]
+    if not selected:
+        return value
+    by_organ = collections.defaultdict(list)
+    for day in selected:
+        by_organ[day["organ"]].append(day["date"])
+    claims = []
+    for organ in sorted(by_organ):
+        entries, directory = _bounded_event_directory_entries(organ)
+        wanted = set(by_organ[organ])
+        sources = collections.defaultdict(list)
+        for entry in entries:
+            if not entry["name"].endswith(".md"):
+                continue
+            if not stat.S_ISREG(entry["mode"]):
+                raise RuntimeError(
+                    "consolidation event source is not a regular file")
+            rel = f"events/{organ}/{entry['name']}"
+            try:
+                source_organ, date, _part = _event_source_parts(rel)
+            except ValueError:
+                continue
+            if source_organ != organ or date not in wanted:
+                continue
+            slug = rel[:-3]
+            text = _read_event_page(slug)
+            raw = text.encode("utf-8")
+            sources[date].append({
+                "rel": rel,
+                "sha256": hashlib.sha256(
+                    rel.encode("utf-8") + b"\0" + raw).hexdigest(),
+            })
+        for date in sorted(wanted):
+            records = sorted(sources.get(date, []),
+                             key=lambda record: record["rel"])
+            if not records:
+                # A candidate may have disappeared before its immutable claim.
+                # It makes no absence claim and will be reconsidered later.
+                continue
+            claims.append({"organ": organ, "date": date,
+                           "cutoff": value["cutoff"],
+                           "directory": directory,
+                           "sources": records})
+    claimed_keys = {(claim["organ"], claim["date"]) for claim in claims}
+    selected_keys = {(day["organ"], day["date"]) for day in selected}
+    value["pending_days"] = [
+        day for day in value["pending_days"]
+        if (day["organ"], day["date"]) not in selected_keys
+        or (day["organ"], day["date"]) in claimed_keys]
+    value["claims"] = claims
+    return _save_consolidation_scan(value)
+
+
+def _claimed_consolidation_paths(value):
+    """Revalidate exact claim bytes; missing sources require epoch lineage."""
+    if not value["claims"]:
+        return []
+    by_organ = collections.defaultdict(list)
+    for claim in value["claims"]:
+        by_organ[claim["organ"]].append(claim)
+    paths = []
+    for organ, claims in by_organ.items():
+        entries, _generation = _bounded_event_directory_entries(organ)
+        live = {}
+        selected_dates = {claim["date"] for claim in claims}
+        for entry in entries:
+            if not entry["name"].endswith(".md"):
+                continue
+            rel = f"events/{organ}/{entry['name']}"
+            try:
+                _source_organ, date, _part = _event_source_parts(rel)
+            except ValueError:
+                continue
+            if date in selected_dates:
+                live[rel] = os.path.join(CORPUS, rel)
+        for claim in claims:
+            records = {record["rel"]: record for record in claim["sources"]}
+            extra = {rel for rel in live
+                     if _event_source_parts(rel)[1] == claim["date"]} \
+                - set(records)
+            if extra:
+                raise RuntimeError(
+                    "live event shards conflict with consolidation claim")
+            epoch = None
+            for rel, record in records.items():
+                path = live.get(rel)
+                if path is not None:
+                    text = _read_event_page(rel[:-3])
+                    digest = hashlib.sha256(
+                        rel.encode("utf-8") + b"\0"
+                        + text.encode("utf-8")).hexdigest()
+                    if digest != record["sha256"]:
+                        raise RuntimeError(
+                            "live event shard conflicts with epoch source "
+                            "lineage and consolidation "
+                            f"claim: {rel}")
+                    paths.append(path)
+                    continue
+                if epoch is None:
+                    epoch = _read_epoch_state(
+                        _epoch_slug_for_day(organ, claim["date"]))
+                if record not in epoch["source_manifest"]:
+                    raise RuntimeError(
+                        "missing event shard lacks exact epoch source lineage")
+    return sorted(paths)
+
+
+def _acknowledge_consolidation_claims(value):
+    claimed_days = {(claim["organ"], claim["date"])
+                    for claim in value["claims"]}
+    mutated = False
+    for claim in value["claims"]:
+        for record in claim["sources"]:
+            if not page_exists(record["rel"][:-3]):
+                mutated = True
+                break
+    value["pending_days"] = [
+        day for day in value["pending_days"]
+        if (day["organ"], day["date"]) not in claimed_days]
+    value["claims"] = []
+    if mutated:
+        replacement = _fresh_consolidation_scan(value["cutoff"])
+        return _save_consolidation_scan(replacement)
+    return _save_consolidation_scan(value)
+
+
+def _consolidation_scan_debt():
+    path = _consolidation_scan_path()
+    try:
+        value = read_state_json(path, {}, "consolidation scan")
+    except RuntimeError as exc:
+        return f"consolidation scan refused: {exc}"
+    if not value:
+        return ""
+    value = _canonical_consolidation_scan(value)
+    if value["claims"]:
+        return "a bounded consolidation day claim is pending"
+    if value["pending_days"] or value["phase"] != "complete":
+        return "bounded corpus consolidation scan is pending"
+    return ""
+
+
+def consolidate_corpus():
+    """Compact old day pages into weekly epoch pages.
+
+    Day pages older than the configured event-day window are summarized;
+    declared safety-class days stay verbatim. Originals remain in corpus git
+    history.
+    """
+    # never consolidate over an unhealthy repo: the unlink below is only
+    # honest if the verbatim file is provably in git history first
+    if corpus_commit("pre-consolidation") == "error":
+        raise RuntimeError("pre-consolidation corpus git commit failed")
+    mind_state = siamind.load_mind()
+    # A completed `sia memory --pin` is protection immediately, even though
+    # the single-writer brainstem materializes it on the next pulse.  The
+    # producer and scheduled maintenance share the corpus lease; the queue snapshot itself is
+    # additionally bounded and flocked inside siamind.
+    scheduled_pages = siamind.pending_user_pin_slugs() | {
+        slug for slug, record in mind_state.get("nodes", {}).items()
+        if isinstance(record, dict)
+        and siamind.is_important(record)
+    }
+    cutoff = (utcnow() - datetime.timedelta(
+        days=siamind.EPISODIC_DAYS)).strftime("%Y-%m-%d")
+    scan_state = _load_consolidation_scan(cutoff)
+    scan_state = _advance_consolidation_scan(scan_state)
+    scan_state = _prepare_consolidation_claims(scan_state)
+    if not scan_state["claims"]:
+        return 0, 0, 0
+    claimed_paths = _claimed_consolidation_paths(scan_state)
+    claimed_source_ids = {
+        record["rel"]: record["sha256"]
+        for claim in scan_state["claims"] for record in claim["sources"]
+    }
+    groups, kept_days = {}, set()
+    epoch_states = {}
+
+    def epoch_state_for_day(organ, date):
+        slug = _epoch_slug_for_day(organ, date)
+        if slug not in epoch_states:
+            epoch_states[slug] = _read_epoch_state(slug)
+        return epoch_states[slug]
+
+    day_paths = collections.defaultdict(list)
+    for path in claimed_paths:
+        rel = os.path.relpath(path, CORPUS)
+        try:
+            organ, date, part = _event_source_parts(rel)
+        except ValueError:
+            continue
+        if date >= cutoff:
+            continue
+        page_slug = rel[:-3]
+        day_paths[(organ, date)].append((path, rel, page_slug, part))
+
+    for (organ, date), paths in day_paths.items():
+        paths.sort(key=lambda item: item[3])
+        observed_parts = [item[3] for item in paths]
+        observed_parts.sort()
+        if len(observed_parts) != len(set(observed_parts)):
+            raise RuntimeError("event day shard identity is duplicated")
+
+        try:
+            epoch_state = epoch_state_for_day(organ, date)
+        except ConsolidationCapacityError:
+            kept_days.add((organ, date))
+            continue
+        day_manifest = []
+        for record in epoch_state["source_manifest"]:
+            source_organ, source_date, _source_part = _event_source_parts(
+                record["rel"])
+            if source_organ == organ and source_date == date:
+                day_manifest.append(record)
+        recovery_lineage = bool(day_manifest)
+        manifest_by_rel = {record["rel"]: record
+                           for record in day_manifest}
+        if recovery_lineage:
+            if date not in epoch_state["dates"] \
+                    or any(rel not in manifest_by_rel
+                           for _path, rel, _page_slug, _part in paths):
+                raise RuntimeError(
+                    "live event shards conflict with epoch source lineage")
+        elif observed_parts != list(range(1, observed_parts[-1] + 1)):
+            raise RuntimeError("event day shards are not contiguous")
+
+        durable = True
+        for _path, rel, _page_slug, _part in paths:
+            try:
+                tracked = _run_bounded_text_process(
+                    ["git", "ls-files", "--error-unmatch", "--", rel],
+                    env=None, timeout=30, cwd=CORPUS,
+                    label="git tracked-source check").returncode == 0
+                clean_status = _run_bounded_text_process(
+                    ["git", "status", "--porcelain", "--", rel],
+                    env=None, timeout=30, cwd=CORPUS,
+                    label="git source status")
+                clean = clean_status.returncode == 0 \
+                    and clean_status.stdout.strip() == ""
+            except Exception:
+                tracked = clean = False
+            durable = durable and tracked and clean
+        if not durable:
+            continue               # retain the entire day; try next dream
+
+        day_items = []
+        protected = any(page_slug in scheduled_pages
+                        for _path, _rel, page_slug, _part in paths)
+        for path, rel, _page_slug, part in paths:
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+                | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            try:
+                fd = os.open(path, flags)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"consolidation source cannot be opened safely: {rel}") \
+                    from exc
+            with siaqueue.regular_file_stream(
+                    fd, label="consolidation source", error_type=RuntimeError) as stream:
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode) \
+                        or before.st_size > MAX_EVENT_PAGE_BYTES:
+                    raise RuntimeError(
+                        f"consolidation source is not a bounded regular file: "
+                        f"{rel}")
+                raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+                after = os.fstat(stream.fileno())
+            before_token = (before.st_dev, before.st_ino, before.st_size,
+                            before.st_mtime_ns, before.st_ctime_ns)
+            after_token = (after.st_dev, after.st_ino, after.st_size,
+                           after.st_mtime_ns, after.st_ctime_ns)
+            if before_token != after_token \
+                    or len(raw) > MAX_EVENT_PAGE_BYTES:
+                raise RuntimeError(
+                    f"consolidation source changed while read: {rel}")
+            try:
+                text = raw.decode("utf-8", errors="strict")
+            except UnicodeError as exc:
+                raise RuntimeError(
+                    f"consolidation source is not valid UTF-8: {rel}") \
+                    from exc
+            source_id = hashlib.sha256(
+                rel.encode("utf-8") + b"\0" + raw).hexdigest()
+            if claimed_source_ids.get(rel) != source_id:
+                raise RuntimeError(
+                    f"consolidation source changed after its claim: {rel}")
+            lineage_record = manifest_by_rel.get(rel)
+            if recovery_lineage and (lineage_record is None
+                                     or lineage_record["sha256"]
+                                     != source_id):
+                raise RuntimeError(
+                    f"live event shard conflicts with epoch source lineage: "
+                    f"{rel}")
+            tm = re.search(r"^tags: \[(.*)\]$", text, re.M)
+            tags = {tag.strip()
+                    for tag in (tm.group(1).split(",") if tm else [])}
+            protected = protected or bool(tags & siamind.SAFETY_TAGS)
+            day_items.append(
+                (date, path, text, tags, source_id, rel, part))
+        if protected and not recovery_lineage:
+            # Safety-detail preservation is a day-level invariant. Keeping only a
+            # protected shard would orphan its siblings' numbering.
+            kept_days.add((organ, date))
+            continue
+        y, w, _ = datetime.date.fromisoformat(date).isocalendar()
+        groups.setdefault((organ, y, w), []).extend(day_items)
+    consolidated_days = set()
+    written_epochs = 0
+    for (organ, y, w), items in groups.items():
+        items.sort(key=lambda item: (item[0], item[6], item[5]))
+        slug = f"epochs/{organ}/{y}-w{w:02d}"
+        state = epoch_states.get(slug)
+        if state is None:
+            state = _read_epoch_state(slug)
+            epoch_states[slug] = state
+        et = state["text"]
+        prior_sources = state["sources"]
+        prior_dates = state["dates"]
+        prior_ndays = state["ndays"]
+        prior_source_set = set(prior_sources)
+        pending_items = [item for item in items
+                         if item[4] not in prior_source_set]
+        source_ids = prior_sources + [item[4] for item in pending_items]
+        try:
+            merged_manifest = _merge_epoch_source_manifest(
+                state["source_manifest"], items, slug, source_ids)
+            event_entries = _event_index_entries_for_sources(items, slug)
+            event_ids = _merge_epoch_event_ids(
+                state, items, event_entries)
+            _preflight_event_index_entries(event_entries)
+        except (ConsolidationCapacityError,
+                ConsolidationCompletenessError):
+            # Unrepresentable capacity or unavailable completeness retains
+            # the verbatim sources. Nothing in this weekly group has been
+            # mutated yet, so scheduled maintenance can reconsider it later.
+            kept_days |= {(organ, item[0]) for item in items}
+            continue
+
+        for item in pending_items:
+            if item[0] in prior_dates \
+                    and not any(record["rel"] == item[5]
+                                for record in state["source_manifest"]):
+                raise RuntimeError(
+                    "event source conflicts with legacy epoch date lineage")
+
+        def unlink_admitted(item):
+            """Delete only the exact source bytes admitted to this epoch."""
+            _date, path, _text, _tags, expected_id, rel, _part = item
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+                | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(path, flags)
+            with siaqueue.regular_file_stream(
+                    fd, label="consolidation source", error_type=RuntimeError) as stream:
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode) \
+                        or before.st_size > MAX_EVENT_PAGE_BYTES:
+                    raise RuntimeError(
+                        f"consolidation cleanup target is not bounded: {rel}")
+                current = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+                after = os.fstat(stream.fileno())
+            observed = (before.st_dev, before.st_ino, before.st_size,
+                        before.st_mtime_ns, before.st_ctime_ns)
+            finished = (after.st_dev, after.st_ino, after.st_size,
+                        after.st_mtime_ns, after.st_ctime_ns)
+            target = os.lstat(path)
+            if observed != finished or len(current) > MAX_EVENT_PAGE_BYTES \
+                    or (target.st_dev, target.st_ino) != (after.st_dev,
+                                                          after.st_ino):
+                raise RuntimeError(
+                    f"consolidation source changed before cleanup: {rel}")
+            current_id = hashlib.sha256(
+                rel.encode("utf-8") + b"\0" + current).hexdigest()
+            if current_id != expected_id:
+                raise RuntimeError(
+                    f"consolidation source changed before cleanup: {rel}")
+            _before_corpus_mutation()
+            os.unlink(path)
+            dfd = os.open(os.path.dirname(path),
+                          os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+
+        # A crash can leave sources whose lineage is already in the durable
+        # epoch page. Cleanup is replayable and must not merge their counts a
+        # second time.
+        if not pending_items:
+            recovery_dates = sorted(
+                set(prior_dates) | {item[0] for item in items})
+            try:
+                recovery_epoch = _render_epoch_source_manifest(
+                    state, merged_manifest, recovery_dates, event_ids)
+            except ConsolidationCapacityError:
+                kept_days |= {(organ, item[0]) for item in items}
+                continue
+            _write_epoch_source_manifest(state, recovery_epoch)
+            _publish_event_index_entries(event_entries)
+            for item in items:
+                unlink_admitted(item)
+            continue
+
+        name = ORGANS.get(organ, (organ, ""))[0]
+        pending_exemplars = {}
+        try:
+            for item in pending_items:
+                log_part = item[2].split("## Timeline")[0].split("## Log")[-1]
+                pending_exemplars[item[5]] = _epoch_exemplars([
+                    line for line in log_part.splitlines()
+                    if line.startswith("- ")])
+        except ConsolidationCapacityError:
+            kept_days |= {(organ, item[0]) for item in items}
+            continue
+        counts, all_tags, bullets, links = {}, {organ}, [], set()
+        for date, path, text, tags, _source_id, _rel, _part in pending_items:
+            cm = re.search(r"^sia_counts: (.*)$", text, re.M)
+            if not cm:
+                raise RuntimeError(
+                    f"consolidation source lacks sia_counts: "
+                    f"{os.path.relpath(path, CORPUS)}")
+            source_counts = _parse_sia_counts(
+                cm.group(1), os.path.relpath(path, CORPUS))
+            for k, v in source_counts.items():
+                counts[k] = counts.get(k, 0) + v
+            all_tags |= tags
+            for b in pending_exemplars[_rel]:
+                bullets.append(f"- {date} ·" + b[1:])
+            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", text):
+                links.add(wl)
+        # merge with an existing epoch page — a later consolidation run for
+        # the same week must extend it, never atomically erase it
+        from_date = pending_items[0][0]
+        to_date = pending_items[-1][0]
+        pending_dates = {item[0] for item in pending_items}
+        all_dates = sorted(set(prior_dates) | pending_dates)
+        ndays = prior_ndays + len(pending_dates - set(prior_dates))
+        if et:
+            pm = re.search(r"^sia_counts: (.*)$", et, re.M)
+            if not pm:
+                raise RuntimeError(f"existing epoch lacks sia_counts: {slug}")
+            epoch_counts = _parse_sia_counts(pm.group(1), slug)
+            for k, v in epoch_counts.items():
+                counts[k] = counts.get(k, 0) + v
+            ptm = re.search(r"^tags: \[(.*)\]$", et, re.M)
+            if ptm:
+                all_tags |= {t.strip() for t in ptm.group(1).split(",")
+                             if t.strip()}
+            pdm = re.search(r"^date: (.*)$", et, re.M)
+            if pdm and pdm.group(1).strip() < from_date:
+                from_date = pdm.group(1).strip()
+            etm = re.search(
+                r"Consolidated from \d+ day-memories "
+                r"\(\d{4}-\d{2}-\d{2} … (\d{4}-\d{2}-\d{2})\)", et)
+            if etm and etm.group(1) > to_date:
+                to_date = etm.group(1)
+            if "## Exemplars" in et:
+                ex = et.split("## Exemplars", 1)[1].split("\n## ")[0]
+                prev_b = [l for l in ex.splitlines() if l.startswith("- ")]
+                bullets = prev_b + bullets
+            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", et):
+                links.add(wl)
+        try:
+            bullets = _epoch_exemplars(
+                bullets, limit=MAX_WEEKLY_EPOCH_EXEMPLARS)
+        except ConsolidationCapacityError:
+            kept_days |= {(organ, item[0]) for item in items}
+            continue
+        total = sum(counts.values())
+        agg = ", ".join(f"{v}× {k}" for k, v in
+                        sorted(counts.items(), key=lambda kv: -kv[1])[:8])
+        linkline = " ".join(f"[[{l}]]" for l in sorted(links)
+                            if not l.startswith("events/"))[:800]
+        epoch_frontmatter = [
+            "type: epoch", fm_title(f"{name} — {y} week {w}"),
+            f"tags: [{', '.join(sorted(all_tags))}]",
+            f"date: {from_date}",
+            f"sia_sources: {json.dumps(source_ids, separators=(',', ':'))}",
+            "sia_source_manifest: " + json.dumps(
+                merged_manifest, separators=(",", ":"),
+                ensure_ascii=False),
+            "sia_event_ids: " + json.dumps(
+                event_ids, separators=(",", ":"), ensure_ascii=False),
+            f"sia_dates: {json.dumps(all_dates, separators=(',', ':'))}",
+            f"sia_counts: {json.dumps(counts, sort_keys=True)}",
+        ]
+        if organ == "jackal":
+            epoch_frontmatter.insert(1, "origin: derived")
+        epoch_body = (
+            f"# {name} — {y} week {w}\n\n"
+            f"Consolidated from {ndays} day-memories "
+            f"({from_date} … {to_date}); originals verbatim in "
+            f"corpus git history. Source: [[organs/{organ}]] for "
+            f"[[sia/cortex]].\n\n"
+            f"## Exemplars\n" + "\n".join(bullets) + "\n\n"
+            f"{linkline}\n\n"
+            f"## Timeline\n- **{to_date}** — {total} events that "
+            f"week: {agg}\n")
+        try:
+            rendered_epoch = _render_bounded_epoch(
+                slug, epoch_frontmatter, epoch_body)
+        except ConsolidationCapacityError:
+            kept_days |= {(organ, item[0]) for item in items}
+            continue
+        _write_bounded_epoch(slug, rendered_epoch)
+        _publish_event_index_entries(event_entries)
+        consolidated_days |= {(organ, item[0]) for item in pending_items}
+        written_epochs += 1
+        for item in items:
+            unlink_admitted(item)
+    result = (len(consolidated_days), written_epochs, len(kept_days))
+    _acknowledge_consolidation_claims(scan_state)
+    return result
+
+
 # Exports are captured before bind() exists, so the owner can wrap every
-# thought-page, recovery and legacy-replay function while leaving intra-module
-# calls direct and stable.
+# generated-entry/epoch-page, recovery, and legacy-replay function while
+# leaving intra-module calls direct and stable.
 _EXPORTED_FUNCTIONS = tuple(
     name for name, value in globals().items()
     if getattr(value, "__module__", None) == __name__)

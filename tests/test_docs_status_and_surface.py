@@ -107,14 +107,136 @@ class ShippedStatusIsStatedHonestly(unittest.TestCase):
         self.assertIn("default-off", _flat(whitepaper))
         self.assertIn("default-off", limits)
 
-    def test_abstract_does_not_list_hipporag_unqualified(self):
+    def test_abstract_describes_graph_propagation_as_default_off(self):
         abstract = _flat(_section(_read("docs/WHITEPAPER.md"),
                                   "## Abstract"))
-        self.assertIn("HippoRAG", abstract)
-        # Listing it bare among implemented layers overstates the ship.
-        self.assertNotIn("retrieval (HippoRAG), dopaminergic", abstract)
-        head = abstract.split("HippoRAG", 1)[1][:220]
+        self.assertIn("graph propagation", abstract)
+        head = abstract.split("graph propagation", 1)[1][:220]
         self.assertIn("default-off", head)
+
+    def test_public_query_terms_match_the_upstream_hybrid_contract(self):
+        surfaces = {
+            relative: _flat(_read(relative)).lower()
+            for relative in (
+                "README.md", "ROADMAP.md", "docs/MANUAL.md",
+                "docs/WHITEPAPER.md", "bin/sia", "bin/sialib.py",
+            )
+        }
+        for relative, text in surfaces.items():
+            with self.subTest(surface=relative):
+                self.assertNotIn("plain dense retrieval", text)
+                self.assertNotIn("origin-weighted dense", text)
+                self.assertNotIn("matched dense retrieval", text)
+        self.assertIn("origin-weighted hybrid", surfaces["bin/sia"])
+        self.assertIn("hybrid-query", surfaces["docs/MANUAL.md"])
+
+    def test_support_prose_does_not_relabel_hybrid_rows_as_dense(self):
+        stale_by_file = {
+            "tests/test_retrieval_policy.py": ("plain dense retrieval",),
+            "tests/test_sia.py": (
+                "dense order is the primary signal",
+                "strongest dense seed",
+                "pure dense order preserved",
+            ),
+            "tests/test_reinforcement_status_contract.py": (
+                "DENSE_HIT", "one dense hit",
+            ),
+            "tests/test_gbrain_contract.py": ("dense-retrieval",),
+            "tests/test_cognitive_claim_gate.py": (
+                "SharedDensePopulationObservation", "dense alpha",
+                "fixture-dense-v1", "dense-enter", "def _dense(",
+            ),
+        }
+        for relative, stale_terms in stale_by_file.items():
+            text = _read(relative)
+            for stale in stale_terms:
+                with self.subTest(surface=relative, stale=stale):
+                    self.assertNotIn(stale, text)
+
+
+class CustomVerifierLaunchContractIsStatedHonestly(unittest.TestCase):
+    """The verifier launch controls are hygiene around trusted code."""
+
+    @staticmethod
+    def _surfaces():
+        config = json.loads(_read("config.example.json"))
+        chain_comment = config["chains"][0]["_comment"]
+        return {
+            "manual": _flat(_section(_read("docs/MANUAL.md"),
+                                    "## 3. The CLI")),
+            "whitepaper": _flat(_section(_read("docs/WHITEPAPER.md"),
+                                        "## 9. Verification")),
+            "security": _flat(_read("SECURITY.md")),
+            "example-config": _flat(chain_comment),
+        }
+
+    def test_private_launch_copies_are_not_described_as_a_sandbox(self):
+        for surface, text in self._surfaces().items():
+            with self.subTest(surface=surface):
+                self.assertIn("ledger", text)
+                self.assertIn("declared-input", text)
+                self.assertIn("pinned original", text)
+                self.assertIn("private launch", text)
+                self.assertIn("bound verifier/script descriptor", text)
+                self.assertIn("private-copy", text)
+                self.assertIn(
+                    "original ledger/input descriptors", text.lower())
+                self.assertIn("parent-only", text)
+                self.assertIn("generation rechecks", text)
+                self.assertIn("fresh empty", text)
+                self.assertIn("allow-listed environment", text)
+                self.assertIn("PID-descendant containment", text)
+                self.assertIn(
+                    "not a filesystem, network, same-user, or resource sandbox",
+                    text,
+                )
+                self.assertIn("trusted", text.lower())
+                self.assertNotIn("provides a filesystem sandbox", text)
+                self.assertNotIn("is a resource sandbox", text)
+
+    def test_dependency_and_descriptor_path_nonclaims_are_documented(self):
+        surfaces = self._surfaces()
+        for surface, text in surfaces.items():
+            with self.subTest(surface=surface):
+                self.assertIn("top-level", text)
+                self.assertIn("shebang", text)
+                self.assertIn("ELF", text)
+                self.assertIn("Python imports", text)
+                self.assertIn("subprocess", text)
+                self.assertRegex(
+                    text,
+                    r"verifier-code binding (?:does not cover|is not)",
+                )
+                self.assertRegex(
+                    text,
+                    r"Descriptor-backed execution (?:also )?changes",
+                )
+                for changed_semantic in (
+                    "__file__", "sys.path[0]", "$0", "$ORIGIN"
+                ):
+                    self.assertIn(changed_semantic, text)
+
+    def test_output_and_residual_literal_boundaries_are_documented(self):
+        for surface, text in self._surfaces().items():
+            with self.subTest(surface=surface):
+                self.assertIn("drained", text)
+                self.assertIn("counted", text)
+                self.assertIn("accumulated", text)
+                self.assertIn("returned", text)
+                self.assertRegex(
+                    text,
+                    r"drained and counted.*not accumulated or returned",
+                )
+                self.assertIn(
+                    "Residual argv elements must fit a closed slashless",
+                    text,
+                )
+                self.assertIn("lowercase long-option", text)
+                self.assertRegex(
+                    text,
+                    r"cannot (?:determine|know).*slashless literal.*filename",
+                )
+                self.assertNotIn("unmanifested path operands refuse", text)
 
 
 class DocumentsAreVersionStamped(unittest.TestCase):
@@ -174,7 +296,7 @@ class ManualCoversTheWholeCliSurface(unittest.TestCase):
         # The audit rationale is the reason it exists.
         self.assertIn("audit", flat.lower())
 
-    def test_ask_docs_name_dense_default_and_optional_rerank(self):
+    def test_ask_docs_name_hybrid_default_and_optional_rerank(self):
         section = _flat(
             _section(_read("docs/MANUAL.md"), "## 3. The CLI")).lower()
         tree = ast.parse(_read("bin/sia"), filename="bin/sia")
@@ -186,7 +308,7 @@ class ManualCoversTheWholeCliSurface(unittest.TestCase):
 
         for surface, text in (("manual", section), ("cli", docstring)):
             with self.subTest(surface=surface):
-                self.assertIn("origin-weighted dense", text)
+                self.assertIn("origin-weighted hybrid", text)
                 self.assertIn("measured default", text)
                 self.assertIn("retrieval.associative_rerank", text)
                 self.assertIn("optional", text)

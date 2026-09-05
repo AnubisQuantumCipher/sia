@@ -154,6 +154,82 @@ class CapsuleBoundaryTests(unittest.TestCase):
                     ValueError, "^capsule fixture is not strict JSON$"):
                 siacapsule._strict_json(raw, "capsule fixture")
 
+    def test_first_light_quarantines_source_replay_before_memo_mutation(self):
+        marker = {"marker": True}
+        memo = {"pulse_seq": 7, "sync_needed": True,
+                "source_replay_pending": marker}
+        with mock.patch.object(sialib, "load_memo",
+                               return_value=dict(memo)), \
+                mock.patch.object(
+                    sialib, "_pending_source_replay_marker",
+                    return_value=marker), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(
+                    sialib, "_authorize_pending_source_replay",
+                    side_effect=sialib.SourceReplayQuarantine(
+                        "source replay quarantine")), \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaises(sialib.SourceReplayQuarantine):
+                siacapsule._native_first_light()
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_refuses_malformed_pulse_before_memo_mutation(self):
+        memo = {
+            "pulse_seq": 7, "sync_needed": True,
+            "pulse_publication": {"bad": True},
+        }
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    RuntimeError, "pulse publication recovery marker"):
+                siacapsule._native_first_light()
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_admits_retained_status_before_memo_mutation(self):
+        memo = {"pulse_seq": 7, "sync_needed": True}
+        refusal = ValueError("resident status cannot be admitted")
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(
+                    sialib, "_require_status_sequence_not_ahead",
+                    side_effect=refusal) as admit, \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    ValueError, "resident status cannot be admitted"):
+                siacapsule._native_first_light()
+        admit.assert_called_once_with(memo["pulse_seq"])
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_withdraws_ready_for_invalid_status_memo(self):
+        memo = {
+            "pulse_seq": 7, "redactions": "oops",
+            "ready": {
+                "v": 1, "completed_at": "2026-08-30T12:00:00Z",
+                "kind": "recovery", "identity": "0" * 32,
+            },
+        }
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors") as cursors, \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    RuntimeError, "status memo fields are invalid"):
+                siacapsule._native_first_light()
+        cursors.assert_not_called()
+        write.assert_called_once()
+        self.assertNotIn("ready", write.call_args.args[0])
+        pulse.assert_not_called()
+
     def tearDown(self):
         for patcher in reversed(self.patches):
             patcher.stop()
@@ -451,6 +527,46 @@ class CapsuleBoundaryTests(unittest.TestCase):
             before)
         self.assertFalse(os.path.lexists(siacapsule.RESTORE_BARRIER))
         self.assertEqual(os.listdir(rollback_root), [])
+
+    def test_restore_confirmation_schema_version_is_exact_integer(self):
+        prepared = {"snapshot_id": "snapshot-confirmation-version"}
+        confirmation = {
+            "schema_version": 1,
+            "phrase": "RESTORE",
+            "snapshot_id": prepared["snapshot_id"],
+            "ledger_head": self.ledger_head,
+            "corpus_receipt_re_adopt": True,
+        }
+        siacapsule._validate_confirmation(
+            confirmation, prepared, self.ledger_head)
+        for ambiguous_version in (True, 1.0):
+            with self.subTest(schema_version=ambiguous_version), \
+                    self.assertRaisesRegex(ValueError, "confirmation"):
+                siacapsule._validate_confirmation(
+                    dict(confirmation, schema_version=ambiguous_version),
+                    prepared, self.ledger_head)
+
+    def test_projection_probe_schema_version_is_exact_integer(self):
+        expected = os.path.join(self.home, "projection-probe")
+        os.mkdir(expected, 0o700)
+        report = {
+            "schema_version": 1,
+            "effective_engine": "pglite",
+            "config_file_engine": "pglite",
+            "database_path": expected,
+            "thin_client": False,
+            "probe": {"ok": True},
+        }
+        for ambiguous_version in (True, 1.0):
+            mutated = dict(report, schema_version=ambiguous_version)
+            result = subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(mutated), stderr="")
+            with self.subTest(schema_version=ambiguous_version), \
+                    mock.patch.object(
+                        siacapsule, "_run_gbrain", return_value=result), \
+                    self.assertRaisesRegex(RuntimeError, "quiescent"):
+                siacapsule._probe_projection(
+                    self.home, expected, "test projection probe")
 
     def test_native_lock_cleanup_preserves_racing_replacement_holder(self):
         token = "a" * 32
@@ -839,6 +955,24 @@ class CapsuleBoundaryTests(unittest.TestCase):
                     first_light=lambda **_kwargs: None)
         self.assertTrue(os.path.isfile(siacapsule.RESTORE_BARRIER))
 
+        with open(siacapsule.RESTORE_BARRIER, encoding="utf-8") as stream:
+            barrier = json.load(stream)
+        journal_path = barrier["journal"]
+        with open(journal_path, encoding="utf-8") as stream:
+            journal = json.load(stream)
+        siacapsule._atomic_json(
+            siacapsule.RESTORE_BARRIER,
+            {**barrier, "created": "not-a-timestamp"})
+        with self.assertRaisesRegex(ValueError, "barrier schema"):
+            siacapsule._barrier_journal_path()
+        siacapsule._atomic_json(siacapsule.RESTORE_BARRIER, barrier)
+
+        siacapsule._atomic_json(
+            journal_path, {**journal, "created": "not-a-timestamp"})
+        with self.assertRaisesRegex(ValueError, "not recoverable"):
+            siacapsule._load_thaw_journal(journal_path, rollback_root)
+        siacapsule._atomic_json(journal_path, journal)
+
         with mock.patch.object(siacapsule,
                                "validate_restore_capability",
                                return_value=True), \
@@ -1112,7 +1246,7 @@ class CapsuleBoundaryTests(unittest.TestCase):
             "schema": siacapsule.JOURNAL_SCHEMA,
             "journal": os.path.join(active, "journal.json"),
             "prepared_id": "a" * 32,
-            "created": "active",
+            "created": "2026-09-04T12:00:00Z",
         }
         self._write(siacapsule.RESTORE_BARRIER, json.dumps(
             barrier, sort_keys=True, separators=(",", ":")) + "\n", 0o600)

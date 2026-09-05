@@ -12,6 +12,8 @@ never inferred from missing output.
 
 The older corpus-conditioned probes remain available for the small nightly
 drift tripwire; they are not described as a LongMemEval-style QA population.
+The cognitive subcommand is refusal-only until an admitted raw-vector baseline
+exists.  No dormant benchmark implementation sits behind that refusal.
 """
 
 import argparse
@@ -25,7 +27,6 @@ import os
 import re
 import stat
 import statistics
-import subprocess
 import sys
 import time
 import unicodedata
@@ -40,7 +41,7 @@ CORPUS = sialib.CORPUS
 ABSTAIN = "ABSTAIN"
 DATASET_SCHEMA = "sia-signed-ledger-qa-v2"
 PRIVATE_MANIFEST_SCHEMA = "sia-signed-ledger-qa-private-manifest-v2"
-GENERATOR_VERSION = "6"
+GENERATOR_VERSION = "9"
 ANSWER_WITNESS_SCHEMA = "sia-retrieval-answer-witness-v1"
 PUBLIC_MANIFEST_BASE_FIELDS = (
     "schema", "generator_version", "dataset_id", "question_count",
@@ -67,6 +68,7 @@ MCP_EVALUATION_LIMIT = 10
 MAX_BENCH_FILE_BYTES = sialib.MAX_STATE_JSON_BYTES
 MAX_BENCH_LEDGER_BYTES = sialib.MAX_STATE_JSON_BYTES
 MAX_BENCH_VERIFIER_BYTES = 4_194_304
+MAX_BENCH_CHAIN_INPUT_BYTES = MAX_BENCH_VERIFIER_BYTES
 MAX_BENCH_SOURCE_PAGE_BYTES = sialib.MAX_EVENT_PAGE_BYTES
 MAX_BENCH_AGGREGATE_BYTES = sialib.MAX_LEDGER_PENDING_BYTES
 MAX_BENCH_SOURCE_BYTES = sialib.MAX_STATE_JSON_BYTES
@@ -81,6 +83,20 @@ LEGACY_TRIPWIRE_NON_CLAIMS = [
     "synthetic negative prompts do not prove the corpus contains no relevant evidence",
     "threshold crossings are drift signals, not scored abstention decisions",
 ]
+
+_COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON = json.dumps({
+    "schema": "sia-cognitive-baseline-refusal-v1",
+    "status": "refused",
+    "reason": "admitted-raw-vector-baseline-unavailable",
+    "consequence_ceiling": "informational",
+    "non_claims": [
+        "gbrain query is a hybrid retrieval path, not a dense-only baseline",
+        "gbrain exports BrainEngine.searchVector, but SIA has no "
+        "descriptor-bound model/index/config-bound runner that admits its "
+        "ranked rows for this gate",
+        "hybrid diagnostic performance cannot earn cognitive ancestry",
+    ],
+}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 class BenchmarkRefusal(RuntimeError):
@@ -322,7 +338,7 @@ def rehearsal_efficacy_partition(probe_results, review_reps):
 
 
 def rehearsal_efficacy():
-    """Run the dense-lane probes and partition by SM-2 rehearsal state."""
+    """Run hybrid-query probes and partition by SM-2 rehearsal state."""
     present, _ = build_questions()
     if not present:
         return None
@@ -360,7 +376,11 @@ def run_quick(max_q=8, day=None):
     # date-seeded stable sample: rank questions by SHA-256(day || question)
     keyed = sorted(present, key=lambda qa: hashlib.sha256(
         (day + qa[0]).encode()).hexdigest())[:max_q]
-    graph = sialib.read_json(sialib.GRAPH_PATH, None)
+    try:
+        graph = sialib._require_recoverable_graph_snapshot(
+            sialib.read_json(sialib.GRAPH_PATH, None))
+    except RuntimeError as exc:
+        raise BenchmarkRefusal(str(exc)) from exc
     mind = siamind.load_mind()
     out = {
         "schema": LEGACY_TRIPWIRE_SCHEMA,
@@ -395,9 +415,13 @@ def run_legacy():
 
 def _run_legacy_owned():
     present, absent = build_questions()
-    graph = sialib.read_json(sialib.GRAPH_PATH, None)
+    try:
+        graph = sialib._require_recoverable_graph_snapshot(
+            sialib.read_json(sialib.GRAPH_PATH, None))
+    except RuntimeError as exc:
+        raise BenchmarkRefusal(str(exc)) from exc
     mind = siamind.load_mind()
-    systems = ["keyword", "dense", "blend"]
+    systems = ["keyword", "hybrid_query", "blend"]
     per = {s: {"ranks": [], "negative_top": [], "negative_crossings": 0,
                "conditioned_top": []} for s in systems}
 
@@ -407,7 +431,7 @@ def _run_legacy_owned():
         bl = siamind.ppr_rerank(graph, [(s, sc) for s, sc, _ in dn],
                                 mind=mind) if dn else []
         for name, res in (("keyword", [(s, sc) for s, sc, _ in kw]),
-                          ("dense", [(s, sc) for s, sc, _ in dn]),
+                          ("hybrid_query", [(s, sc) for s, sc, _ in dn]),
                           ("blend", bl)):
             slugs = [s for s, _ in res]
             per[name]["ranks"].append(slug_family_rank(slugs, accepts))
@@ -424,7 +448,7 @@ def _run_legacy_owned():
         bl = siamind.ppr_rerank(graph, [(s, sc) for s, sc, _ in dn],
                                 mind=mind) if dn else []
         for name, res in (("keyword", [(s, sc) for s, sc, _ in kw]),
-                          ("dense", [(s, sc) for s, sc, _ in dn]),
+                          ("hybrid_query", [(s, sc) for s, sc, _ in dn]),
                           ("blend", bl)):
             per[name]["negative_top"].append(res[0][1] if res else 0.0)
 
@@ -625,7 +649,7 @@ def _read_nofollow_regular(
     separately opened post-verification observation by ``_snapshot_chains``.
     """
     if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) \
-            or max_bytes <= 0 or max_bytes > MAX_BENCH_AGGREGATE_BYTES:
+            or max_bytes <= 0 or max_bytes > MAX_BENCH_FILE_BYTES:
         raise ValueError("benchmark file byte ceiling is invalid")
     absolute = os.path.abspath(path)
     parts = [part for part in absolute.split(os.sep) if part]
@@ -641,11 +665,10 @@ def _read_nofollow_regular(
             next_fd = os.open(part, directory_flags, dir_fd=directory_fd)
             os.close(directory_fd)
             directory_fd = next_fd
-        fd = os.open(parts[-1], os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        fd = os.open(parts[-1], os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+                     | os.O_NONBLOCK,
                      dir_fd=directory_fd)
-        stream = os.fdopen(fd, "rb")
-        fd = None
-        before = os.fstat(stream.fileno())
+        before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode):
             raise OSError("not a regular file")
         if before.st_size > max_bytes:
@@ -653,6 +676,8 @@ def _read_nofollow_regular(
         if private and (before.st_uid != os.geteuid()
                         or stat.S_IMODE(before.st_mode) & 0o077):
             raise OSError("private benchmark artifact is not owner-private")
+        stream = os.fdopen(fd, "rb")
+        fd = None
         data = stream.read(max_bytes + 1)
         after = os.fstat(stream.fileno())
         if len(data) > max_bytes:
@@ -673,19 +698,53 @@ def _read_nofollow_regular(
         os.close(directory_fd)
 
 
+def _read_bound_chain_input(record, max_bytes=MAX_BENCH_CHAIN_INPUT_BYTES):
+    """Read one declared auxiliary input from its already-pinned handle."""
+    if not isinstance(record, dict) or record.get("directory") is not False \
+            or isinstance(max_bytes, bool) or not isinstance(max_bytes, int) \
+            or max_bytes <= 0 or max_bytes > MAX_BENCH_FILE_BYTES:
+        raise ValueError("benchmark chain-input byte ceiling is invalid")
+    descriptor = os.open(
+        sialib._chain_descriptor_path(record["fd"]),
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0))
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or (before.st_dev, before.st_ino) \
+                != tuple(record.get("generation", ()))[:2] \
+                or before.st_size > max_bytes:
+            raise OSError(
+                "declared chain input is not a bounded pinned generation")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            data = stream.read(max_bytes + 1)
+            after = os.fstat(stream.fileno())
+        if len(data) > max_bytes or _file_token(after) != _file_token(before):
+            raise OSError("declared chain input changed while read")
+        return data, hashlib.sha256(data).hexdigest()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _snapshot_chains(chain_registry=None, names=None, timeout=60):
     """Verify and observe stable signed-ledger snapshots.
 
-    Each chain is checked with its registered keeper. Ledger and verifier
-    files are opened without following symlinks, then their bytes, inode, and
-    mutation-sensitive metadata are compared across verification. This closes
-    ordinary replacement races; the manifest retains the precise same-user
-    in-place ABA non-claim. A refusal/failure is never parsed as weaker input.
+    Each chain is checked with its registered keeper. Declared files and the
+    executable are launched through inherited descriptors; state-directory
+    forms receive a private sidecar view copied from those descriptors. Their
+    bytes, inode, ancestry, and mutation-sensitive metadata are compared both
+    across verification and after the complete chain batch. The manifest
+    retains the precise same-user in-place ABA non-claim. A refusal/failure is
+    never parsed as weaker input.
     """
     registry = chain_registry if chain_registry is not None \
         else sialib._chain_cmds()
     wanted = set(registry) if names is None else set(names)
     snapshots, diagnostics = [], []
+    verified_generations = {}
     aggregate_bytes = 0
     aggregate_rows = 0
     for name in sorted(wanted - set(registry)):
@@ -696,11 +755,13 @@ def _snapshot_chains(chain_registry=None, names=None, timeout=60):
             continue
         diag = {"chain": name, "status": "refused"}
         binding = registry[name]
-        if not isinstance(binding, (list, tuple)) or len(binding) != 3:
+        try:
+            ledger, tool, command, inputs = \
+                sialib._normalize_chain_binding(binding)
+        except ValueError:
             diag["reason"] = "invalid-chain-binding"
             diagnostics.append(diag)
             continue
-        ledger, tool, command = binding
         if isinstance(command, (list, tuple)) and command \
                 and command[0] == sialib.INVALID_CHAIN_SENTINEL:
             diag["reason"] = "invalid-chain-config"
@@ -733,13 +794,53 @@ def _snapshot_chains(chain_registry=None, names=None, timeout=60):
             diagnostics.append(diag)
             continue
         try:
-            # Keeper output is not part of the verification product.  A
-            # configured verifier may legitimately be verbose, so never let
-            # its stdout or stderr accumulate in parent-owned pipes.
-            proc = sialib._run_bounded_text_process(
-                command, env=None, timeout=timeout, cwd=None,
-                label="benchmark chain verifier",
-                output_limit=sialib.MAX_CONFIG_BYTES)
+            launch_contract = sialib._chain_launch_provenance(
+                name, ledger, tool, command, inputs)
+            with sialib._bound_chain_verification(
+                    name, ledger, tool, command, inputs) as launch:
+                bound_ledger = next(
+                    record for record in launch["records"]
+                    if record["path"] == ledger
+                    and not record["directory"])
+                bound_verifier = next(
+                    record for record in launch["records"]
+                    if record["path"] == tool
+                    and not record["directory"])
+                if bound_ledger["generation"] != before_token \
+                        or bound_verifier["generation"] \
+                        != verifier_before_token:
+                    raise OSError(
+                        "chain inputs changed before descriptor binding")
+                input_provenance = []
+                input_bytes = 0
+                for declared in launch["inputs"]:
+                    matches = [
+                        record for record in launch["records"]
+                        if record["path"] == declared["path"]
+                        and not record["directory"]]
+                    if len(matches) != 1:
+                        raise OSError(
+                            "declared chain input binding is ambiguous")
+                    payload, digest = _read_bound_chain_input(matches[0])
+                    input_bytes += len(payload)
+                    input_provenance.append({
+                        "argv_index": declared["argv_index"],
+                        "prefix": declared["prefix"],
+                        "bytes": len(payload),
+                        "sha256": digest,
+                    })
+                # Keeper output is not part of the verification product. A
+                # configured verifier may legitimately be verbose, so never
+                # let its stdout or stderr accumulate in parent-owned pipes.
+                proc = sialib._run_bounded_text_process(
+                    launch["command"], env=launch["env"], timeout=timeout,
+                    cwd=launch["cwd"], pass_fds=launch["pass_fds"],
+                    label="benchmark chain verifier",
+                    output_limit=sialib.MAX_CONFIG_BYTES,
+                    isolate_process_tree=True, retain_output=False)
+                unstable_records = [
+                    record for record in launch["records"]
+                    if not sialib._chain_generation_matches(record)]
         except Exception as exc:
             diag["reason"] = "verification-error"
             diag["detail"] = str(exc)[:160]
@@ -772,6 +873,18 @@ def _snapshot_chains(chain_registry=None, names=None, timeout=60):
             diag["reason"] = "keeper-verifier-changed-during-verification"
             diagnostics.append(diag)
             continue
+        if unstable_records:
+            if any(record["path"] == ledger
+                   for record in unstable_records):
+                diag["reason"] = "ledger-changed-during-verification"
+            elif any(record["path"] == tool
+                     for record in unstable_records):
+                diag["reason"] = \
+                    "keeper-verifier-changed-during-verification"
+            else:
+                diag["reason"] = "chain-input-changed-during-verification"
+            diagnostics.append(diag)
+            continue
         if proc.returncode != 0:
             diag["reason"] = "keeper-rejected"
             diag["detail"] = (
@@ -779,7 +892,7 @@ def _snapshot_chains(chain_registry=None, names=None, timeout=60):
             diagnostics.append(diag)
             continue
         del before, _verifier_before
-        candidate_bytes = len(after) + len(_verifier_after)
+        candidate_bytes = len(after) + len(_verifier_after) + input_bytes
         if aggregate_bytes + candidate_bytes > MAX_BENCH_AGGREGATE_BYTES:
             diag["reason"] = "aggregate-snapshot-capacity"
             diagnostics.append(diag)
@@ -820,13 +933,34 @@ def _snapshot_chains(chain_registry=None, names=None, timeout=60):
             "row_count": len(raw_rows),
             "verifier": os.path.basename(tool),
             "verifier_sha256": verifier_after_digest,
+            "launch_contract_sha256": _sha_text(
+                _canonical(launch_contract)),
+            "inputs": input_provenance,
         }
         snapshots.append(snap)
+        verified_generations[name] = [
+            {key: record[key] for key in (
+                "path", "label", "directory", "generation")}
+            for record in launch["records"] if record["aggregate"]]
         diagnostics.append({"chain": name, "status": "verified",
                             "chain_format": chain_format,
                             "rows": len(raw_rows), "head": head,
                             "ledger_sha256": after_digest,
                             "verifier_sha256": verifier_after_digest})
+    for name, records in verified_generations.items():
+        if all(sialib._chain_generation_still_named(record)
+               for record in records):
+            continue
+        snapshots = [snapshot for snapshot in snapshots
+                     if snapshot["chain"] != name]
+        for index, diagnostic in enumerate(diagnostics):
+            if diagnostic.get("chain") == name \
+                    and diagnostic.get("status") == "verified":
+                diagnostics[index] = {
+                    "chain": name, "status": "refused",
+                    "reason": "chain-generation-changed-before-batch-complete",
+                }
+                break
     return snapshots, diagnostics
 
 
@@ -1447,8 +1581,9 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
     unsafe_seen = set()
     for candidate in projected:
         chain = candidate["chain"]
+        event = candidate["event"]
         try:
-            witness, reason = resolver.resolve(candidate["event"])
+            witness, reason = resolver.resolve(event)
         except _WitnessOpenRefusal as exc:
             key = (chain, exc.reason, exc.relative)
             if key not in unsafe_seen:
@@ -1463,7 +1598,6 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
         if reason is not None:
             exclude(chain, reason)
             continue
-        event = candidate["event"]
         page = witness["page"]
         value = candidate["value"]
         projected_event_retained = witness["projected_event_retained"]
@@ -1550,6 +1684,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
         if value and rec["value_answer_retained"] \
                 and value.casefold() not in rec["label"].casefold():
             prov = {"chain": rec["chain"],
+                    "action": rec["action"],
                     "chain_format": rec["snapshot"]["chain_format"],
                     "seq": rec["row"][0],
                     "entry_hash": rec["entry_hash"],
@@ -1585,6 +1720,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
                     _signed_result_question(chain, action, label),
                     value, source_slugs,
                     {"chain": chain,
+                     "action": action,
                      "chain_format": rows[0]["snapshot"]["chain_format"],
                      "ledger_head": rows[0]["snapshot"]["head"],
                      "entry_hashes": [r["entry_hash"] for r in rows],
@@ -1611,6 +1747,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
         if not latest["projected_event_retained"]:
             continue
         prov = {"chain": chain,
+                "action": action,
                 "chain_format": latest["snapshot"]["chain_format"],
                 "seq": latest["row"][0],
                 "entry_hash": latest["entry_hash"],
@@ -1651,6 +1788,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
             # retrieval window is structurally unanswerable by that scorer.
             continue
         prov = {"chain": chain,
+                "action": action,
                 "chain_format": snap["chain_format"],
                 "ledger_head": snap["head"],
                 "entry_hashes": [r["entry_hash"] for r in rows],
@@ -1693,6 +1831,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
         for _digest, action, label in heapq.nsmallest(
                 MAX_PER_CATEGORY, negative_candidates()):
             prov = {"chain": chain,
+                    "action": action,
                     "chain_format": snap["chain_format"],
                     "ledger_head": snap["head"],
                     "ledger_sha256": snap["ledger_sha256"],
@@ -1707,8 +1846,8 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
     questions = _cap_questions(questions)
     chain_provenance = [{k: snap[k] for k in
                          ("chain", "chain_format", "ledger_sha256", "head",
-                          "row_count",
-                          "verifier", "verifier_sha256")}
+                          "row_count", "verifier", "verifier_sha256",
+                          "launch_contract_sha256", "inputs")}
                         for snap in snapshots]
     source_pages = sorted(
         {page["slug"]: page for page in
@@ -1725,6 +1864,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
         "kind": "complete-snapshot-refusal-v1",
         "ledger_bytes_per_chain": MAX_BENCH_LEDGER_BYTES,
         "verifier_bytes_per_chain": MAX_BENCH_VERIFIER_BYTES,
+        "declared_input_bytes_each": MAX_BENCH_CHAIN_INPUT_BYTES,
         "snapshot_aggregate_bytes": MAX_BENCH_AGGREGATE_BYTES,
         "ledger_rows_aggregate": MAX_BENCH_ROWS,
         "source_page_bytes": MAX_BENCH_SOURCE_PAGE_BYTES,
@@ -1769,8 +1909,13 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
             "absence is scoped to the keeper-accepted observed ledger snapshot",
             "before/after byte, inode, metadata, and verifier-digest checks "
             "do not exclude a same-user in-place ABA completed between observations",
+            "private state views preserve captured bytes and mode bits, not "
+            "other inode metadata, pathname identity, or lock leases seen "
+            "by the verifier",
             "the verifier digest binds the registered executable or script, "
             "not every library, interpreter, kernel, or hardware dependency it loads",
+            "generation binding covers registered chain inputs, not undeclared "
+            "data paths opened internally by verifier code",
             "strict format parsing checks row spelling and linkage after keeper "
             "success; it does not independently re-run signature verification",
             "Custos ledger intake does not re-open or re-hash files named by "
@@ -2101,15 +2246,20 @@ def _full_results(results):
 
 def _query_systems(question, graph, mind):
     keyword = _full_results(_engine(["search", question]))
-    dense = _full_results(_engine(["query", question]))
-    meta = {row["slug"]: row for row in dense}
+    hybrid_query = _full_results(_engine(["query", question]))
+    meta = {row["slug"]: row for row in hybrid_query}
     blend_ranked = siamind.ppr_rerank(
-        graph, [(row["slug"], row["score"]) for row in dense], mind=mind) \
-        if dense else []
+        graph,
+        [(row["slug"], row["score"]) for row in hybrid_query], mind=mind) \
+        if hybrid_query else []
     blend = [{"slug": slug, "score": score,
               "chunk_text": meta.get(slug, {}).get("chunk_text", "")}
              for slug, score in blend_ranked]
-    return {"keyword": keyword, "dense": dense, "blend": blend}
+    return {
+        "keyword": keyword,
+        "hybrid_query": hybrid_query,
+        "blend": blend,
+    }
 
 
 def choose_abstention_threshold(samples):
@@ -2329,7 +2479,11 @@ def evaluate_retrieval(bundle, query_fn=None, corpus=None):
     """
     _verify_source_pages(bundle, corpus=corpus)
     if query_fn is None:
-        graph = sialib.read_json(sialib.GRAPH_PATH, None)
+        try:
+            graph = sialib._require_recoverable_graph_snapshot(
+                sialib.read_json(sialib.GRAPH_PATH, None))
+        except RuntimeError as exc:
+            raise BenchmarkRefusal(str(exc)) from exc
         mind = siamind.load_mind()
         query_fn = lambda q: _query_systems(q, graph, mind)
     observed = {}
@@ -2477,6 +2631,11 @@ def run(chain_names=None):
     return report
 
 
+def run_cognitive(out_dir, *, repo=None):
+    """Report the structured refusal until a raw-vector baseline is admitted."""
+    raise BenchmarkRefusal(_COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON)
+
+
 def _print_score(score):
     print(json.dumps(score, indent=2, sort_keys=True))
 
@@ -2493,6 +2652,9 @@ def main(argv=None):
     score_p = sub.add_parser("score", help="normalized-score JSONL {id, answer} predictions")
     score_p.add_argument("--dataset", required=True)
     score_p.add_argument("--answers", required=True)
+    cognitive_p = sub.add_parser(
+        "cognitive", help="report the fail-closed raw-vector refusal")
+    cognitive_p.add_argument("--out")
     sub.add_parser(
         "legacy", help="run the heuristic slug-retrieval drift tripwire")
     args = parser.parse_args(argv)
@@ -2516,6 +2678,10 @@ def main(argv=None):
             return 0
         if args.command == "score":
             _print_score(score_answer_file(args.dataset, args.answers))
+            return 0
+        if args.command == "cognitive":
+            print(json.dumps(run_cognitive(args.out), indent=2,
+                             sort_keys=True))
             return 0
         if args.command == "legacy":
             run_legacy()

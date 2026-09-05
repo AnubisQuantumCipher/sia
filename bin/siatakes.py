@@ -1,4 +1,7 @@
-"""siatakes — outcome learning for SIA, the Omarchy Brain.
+"""siatakes — prediction outcomes and calibration for SIA, the Omarchy Brain.
+
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
 
 A *take* is a falsifiable prediction: claim, holder, confidence p∈(0,1),
 deadline, domain. When due, the take is graded against recalled evidence —
@@ -44,6 +47,28 @@ MAX_HISTORY_CURSOR_DIGITS = 256
 MAX_HISTORY_BASELINE_SCAN = 64
 MAX_TRANSACTION_RECOVERY_BATCH = 64
 MAX_CONFIG_BYTES = 65_536
+MAX_CONFIG_TEXT_CHARS = 2000
+GRADE_TRANSACTION_REQUIRED_KEYS = frozenset({
+    "schema", "take_id", "status", "path", "source_sha256",
+    "target_sha256", "target_size", "target_text",
+})
+GRADE_TRANSACTION_OPTIONAL_KEYS = frozenset({"history_event"})
+TAKE_MIGRATION_REQUIRED_KEYS = frozenset({
+    "schema", "take_id", "migration_kind", "path", "source_sha256",
+    "target_sha256", "target_size", "target_text",
+})
+TAKE_MIGRATION_OPTIONAL_KEYS = frozenset({
+    "grade_observed", "history_event",
+})
+HISTORY_TRANSACTION_KEYS = frozenset({
+    "schema", "kind", "event", "source_sha256", "target_sha256",
+    "target_size", "target_text", "retire",
+})
+CONFIG_TOP_LEVEL_KEYS = frozenset({
+    "_comment", "_egress_trust_boundary", "judge", "senses", "skills",
+    "custom_senses", "chains", "retrieval",
+})
+JUDGE_CONFIG_KEYS = frozenset({"_comment", "backend", "model"})
 # are deliberately much larger than the admitted grading excerpts while still
 # placing a hard memory boundary around an optional external model process.
 MAX_JUDGE_INPUT_BYTES = 65_536
@@ -123,12 +148,15 @@ def _judge_config():
     """
     path = os.path.join(HOME, ".config/sia/config.json")
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
         fd = os.open(path, flags)
-        with os.fdopen(fd, "rb") as stream:
+        with siaqueue.regular_file_stream(
+                fd, label="judge config", error_type=OSError) as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) \
+                    or before.st_uid != os.geteuid() \
+                    or before.st_nlink != 1 \
                     or before.st_size > MAX_CONFIG_BYTES:
                 return "none", ""
             raw = stream.read(MAX_CONFIG_BYTES + 1)
@@ -137,14 +165,36 @@ def _judge_config():
                     before.st_mtime_ns, before.st_ctime_ns)
         finished = (after.st_dev, after.st_ino, after.st_size,
                     after.st_mtime_ns, after.st_ctime_ns)
-        if observed != finished or len(raw) > MAX_CONFIG_BYTES:
+        if observed != finished or len(raw) > MAX_CONFIG_BYTES \
+                or after.st_uid != os.geteuid() or after.st_nlink != 1:
             return "none", ""
         root = siaqueue.strict_json_loads(raw.decode("utf-8"))
+        target = os.lstat(path)
+        current = (target.st_dev, target.st_ino, target.st_size,
+                   target.st_mtime_ns, target.st_ctime_ns)
+        if not stat.S_ISREG(target.st_mode) \
+                or target.st_uid != os.geteuid() \
+                or target.st_nlink != 1 or current != finished:
+            return "none", ""
     except Exception:
         return "none", ""
-    if not isinstance(root, dict) or not isinstance(root.get("judge"), dict):
+    if not isinstance(root, dict) \
+            or set(root) - CONFIG_TOP_LEVEL_KEYS \
+            or not isinstance(root.get("judge"), dict):
         return "none", ""
     cfg = root["judge"]
+    if set(cfg) - JUDGE_CONFIG_KEYS:
+        return "none", ""
+    for value in (
+            root.get("_comment", ""),
+            root.get("_egress_trust_boundary", ""),
+            cfg.get("_comment", "")):
+        if not isinstance(value, str) or len(value) > MAX_CONFIG_TEXT_CHARS:
+            return "none", ""
+        try:
+            value.encode("utf-8", errors="strict")
+        except UnicodeError:
+            return "none", ""
     backend = cfg.get("backend")
     model = cfg.get("model", "")
     if not isinstance(backend, str) or not isinstance(model, str):
@@ -428,19 +478,33 @@ def take_id(claim, created):
     return hashlib.sha256(f"{claim}|{created}".encode()).hexdigest()[:20]
 
 
-def _atomic_text(path, text, mode=0o644, exclusive=False):
+def _atomic_text(path, text, mode=0o644, exclusive=False, authority_roots=(),
+                 observe_directory=False):
     """Durably publish text; optionally refuse an existing destination."""
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, exist_ok=True)
     if not isinstance(text, str):
         raise TypeError("atomic text payload must be text")
-    siaqueue.fixed_atomic_publish(
-        path, text.encode("utf-8", errors="strict"), mode=mode,
-        exclusive=exclusive,
-        staging_dir=siaqueue.staging_dir_for(
+    options = {
+        "mode": mode, "exclusive": exclusive,
+        "staging_dir": siaqueue.staging_dir_for(
             path, authority_roots=(
                 CORPUS, TAKES_DIR, INTENTS_DIR, GRADE_TX_DIR,
-                TAKE_MIGRATION_TX_DIR, NATURAL_HISTORY_DIR)))
+                TAKE_MIGRATION_TX_DIR, NATURAL_HISTORY_DIR)
+            + tuple(authority_roots)),
+    }
+    if observe_directory:
+        options["observe_destination"] = True
+    return siaqueue.fixed_atomic_publish(
+        path, text.encode("utf-8", errors="strict"), **options)
+
+
+def _durably_admit_existing_history_target(path, text):
+    """Revalidate a visible page and close its parent-directory sync window."""
+    result = _atomic_text(path, text, exclusive=True)
+    if result != "existing":
+        raise RuntimeError(
+            "natural-history target changed during durability admission")
 
 
 def _ensure_private_durable_directory(path, label):
@@ -457,7 +521,8 @@ def _ensure_private_durable_directory(path, label):
         info = os.fstat(fd)
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
             raise ValueError(f"{label} store is not an owned real directory")
-        os.fchmod(fd, 0o700)
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            os.fchmod(fd, 0o700)
         os.fsync(fd)
     finally:
         os.close(fd)
@@ -470,6 +535,30 @@ def _ensure_private_durable_directory(path, label):
         os.fsync(parent_fd)
     finally:
         os.close(parent_fd)
+
+
+def _ensure_private_durable_directory_path(path, label):
+    """Prepare a private directory and any missing parent components."""
+    path = os.path.abspath(path)
+    missing = []
+    cursor = path
+    while True:
+        try:
+            info = os.lstat(cursor)
+        except FileNotFoundError:
+            missing.append(cursor)
+            parent = os.path.dirname(cursor)
+            if parent == cursor:
+                raise ValueError(f"{label} has no existing directory ancestor")
+            cursor = parent
+            continue
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f"{label} parent is not a real directory")
+        break
+    for directory in reversed(missing):
+        _ensure_private_durable_directory(directory, label)
+    if not missing:
+        _ensure_private_durable_directory(path, label)
 
 
 def _validated_take_metadata(value):
@@ -704,6 +793,7 @@ def create_take(claim, confidence=0.7, deadline=None, domain="general",
         f"recalled evidence and Brier-scored; the grade updates this page.\n\n"
         f"{linkline} [[sia/cortex]]\n")
     path = os.path.join(TAKES_DIR, f"{created[:10]}-{tid}.md")
+    _ensure_private_durable_directory(TAKES_DIR, "take page")
     if natural_history_debt("take") \
             or _transaction_pending(
                 _grade_transaction_dir(), "grade transaction") \
@@ -716,7 +806,6 @@ def create_take(claim, confidence=0.7, deadline=None, domain="general",
     event = _history_event(
         "take", "create", path, body, after=projected,
         signed_grade=False, catalog_new=True)
-    _ensure_private_durable_directory(TAKES_DIR, "take page")
     _commit_history_tx(
         "take", event, body, before_publish=before_publish)
     meta["slug"] = slug
@@ -786,7 +875,7 @@ def heal_hold_rate(action, corpus=None, hold_days=HEAL_HOLD_DAYS):
     of `action`, the fraction NOT followed by another heal of the same
     action within hold_days. Thin history (fewer than 3 full windows)
     falls back to the prior. History is read from sekhmet DAY pages, so
-    its horizon is the episodic window plus any verbatim (flashbulb)
+    its horizon is the event-day window plus any protected verbatim
     days — stated, not hidden. Returns (confidence, judged, held)."""
     days = _heal_history(action, corpus)
     # judge each heal day except ones too recent to have had a full window
@@ -870,24 +959,45 @@ MAX_PROPOSAL_QUEUE_BYTES = 16_777_216
 def _load_proposal_queue(path):
     """Bounded, no-follow read of the pending proposal queue."""
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
         return []
-    with os.fdopen(fd, "rb") as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode):
-            raise ValueError("proposal queue is not a regular file")
-        if info.st_size > MAX_PROPOSAL_QUEUE_BYTES:
+    with siaqueue.regular_file_stream(fd, label="proposal queue") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1:
+            raise ValueError(
+                "proposal queue is not an owned single-link regular file")
+        if before.st_size > MAX_PROPOSAL_QUEUE_BYTES:
             raise ValueError("proposal queue byte quota exceeded")
         raw = stream.read(MAX_PROPOSAL_QUEUE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    observed = (before.st_dev, before.st_ino, before.st_size,
+                before.st_mtime_ns, before.st_ctime_ns)
+    finished = (after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns)
+    if observed != finished or after.st_uid != os.geteuid() \
+            or after.st_nlink != 1:
+        raise ValueError("proposal queue changed while read")
     if len(raw) > MAX_PROPOSAL_QUEUE_BYTES:
         raise ValueError("proposal queue byte quota exceeded")
     try:
         value = siaqueue.strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError):
         raise ValueError("proposal queue is invalid JSON") from None
+    try:
+        target = os.lstat(path)
+    except OSError as exc:
+        raise ValueError("proposal queue changed while read") from exc
+    current = (target.st_dev, target.st_ino, target.st_size,
+               target.st_mtime_ns, target.st_ctime_ns)
+    if not stat.S_ISREG(target.st_mode) \
+            or target.st_uid != os.geteuid() or target.st_nlink != 1 \
+            or current != finished:
+        raise ValueError("proposal queue changed while read")
     if not isinstance(value, list):
         raise ValueError("proposal queue must be a list")
     if len(value) > MAX_PENDING_PROPOSALS:
@@ -1017,7 +1127,8 @@ def _admitted_evidence_slug(slug):
             # a symlinked model, take, or unverified JACKAL subtree.
             return False
         info = os.lstat(path)
-        return stat.S_ISREG(info.st_mode)
+        return stat.S_ISREG(info.st_mode) \
+            and info.st_uid == os.geteuid() and info.st_nlink == 1
     except (OSError, ValueError):
         return False
 
@@ -1134,10 +1245,11 @@ def _evidence_excerpt(text, claim, chars):
     return body[start:start + chars]
 
 def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
-    """Deterministic evidence lane: when a claim names an organ, its most
+    """Deterministic evidence lane: when a claim names a source, its most
     recent day/epoch records go to the judge whether or not semantic
     recall surfaced them — negative claims especially need the actual
-    record, not just topically-similar prose."""
+    record, not just topically-similar prose. The function name is retained
+    for compatibility."""
     cl = claim.lower()
     lines, citations = [], set()
     for o in ORGAN_NAMES:
@@ -1152,11 +1264,11 @@ def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
                         _bounded_history_entries(directory)
                 except (OSError, RuntimeError, ValueError) as exc:
                     raise GradingEvidenceUnavailable(
-                        "organ evidence directory could not be admitted: "
+                        "source evidence directory could not be admitted: "
                         f"{lane}/{o}") from exc
                 if not complete:
                     raise GradingEvidenceUnavailable(
-                        "organ evidence exceeds its complete bounded "
+                        "source evidence exceeds its complete bounded "
                         f"snapshot: {lane}/{o}")
                 generations.append((directory, generation, lane))
                 for entry in entries:
@@ -1169,7 +1281,7 @@ def _organ_evidence(claim, max_pages=3, chars=420, with_citations=False):
             # recent first, so a lane can never be starved by a lexical
             # accident. Sorting the combined set by path and slicing the tail
             # put every "epochs/" page ahead of every "events/" page — the
-            # string "epochs" sorts before "events" — so an organ with three
+            # string "epochs" sorts before "events" — so a source with three
             # or more day pages never showed the judge its epoch at all. That
             # is exactly where consolidated history lives, which defeated the
             # docstring above: the epoch record was never among "its most
@@ -1224,7 +1336,7 @@ def _best_excerpt(candidates, normalized, claim):
     on the claim.
 
     Both retrieval lanes can cite the same page, and each brings its own
-    excerpt: the semantic lane a short positional chunk, the organ lane a
+    excerpt: the hybrid-query lane a short positional chunk, the organ lane a
     window centred on the claim.  Taking whichever arrived first meant the
     recall lane's head silently won.  Measured: the SEKHMET week-35 epoch was
     delivered as its own title and boilerplate in 220 characters while the
@@ -1397,8 +1509,9 @@ ADMITTED EVENT/EPOCH SNAPSHOTS ([slug] page digest + exact excerpt):
 {evidence or '(none)'}
 </untrusted_evidence>
 
-Model/agent notes, syntheses, takes, intents, entity descriptions, and thought
-pages are intentionally excluded: they are not grading witnesses.
+Model/agent notes, syntheses, takes, intents, entity descriptions, and
+generated-entry pages (the `thought` compatibility type) are intentionally
+excluded: they are not grading witnesses.
 
 Answer in EXACTLY this format:
 VERDICT: TRUE|FALSE|UNRESOLVABLE
@@ -1437,15 +1550,18 @@ cannot decide — never guess.>"""
 
 def _read_bounded_regular_text(path, limit, label, *, private=False):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label=label) as stream:
         before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode):
-            raise ValueError(f"{label} is not a regular file")
-        if private and (before.st_uid != os.geteuid()
-                        or stat.S_IMODE(before.st_mode) & 0o077):
-            raise ValueError(f"{label} is not an owner-private file")
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1:
+            raise ValueError(
+                f"{label} is not an owned single-link regular file")
+        if private and stat.S_IMODE(before.st_mode) & 0o077:
+            raise ValueError(
+                f"{label} is not an owner-private single-link file")
         if before.st_size > limit:
             raise ValueError(f"{label} exceeds its bounded size")
         raw = stream.read(limit + 1)
@@ -1460,8 +1576,13 @@ def _read_bounded_regular_text(path, limit, label, *, private=False):
                 after.st_mtime_ns, after.st_ctime_ns)
     current = (target.st_dev, target.st_ino, target.st_size,
                target.st_mtime_ns, target.st_ctime_ns)
-    if observed != finished or finished != current:
+    if observed != finished or finished != current \
+            or after.st_uid != os.geteuid() or after.st_nlink != 1 \
+            or target.st_uid != os.geteuid() or target.st_nlink != 1:
         raise RuntimeError(f"{label} changed while reading")
+    if private and stat.S_IMODE(target.st_mode) & 0o077:
+        raise ValueError(
+            f"{label} is not an owner-private single-link file")
     if len(raw) > limit:
         raise ValueError(f"{label} exceeds its bounded size")
     try:
@@ -1483,6 +1604,15 @@ def _read_transaction_json(path):
         return siaqueue.strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("transaction journal is malformed") from exc
+
+
+def _bounded_transaction_journal_text(value):
+    text = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if len(text.encode("utf-8")) > MAX_TRANSACTION_JOURNAL_BYTES:
+        raise ValueError(
+            "enriched transaction journal exceeds its bounded size")
+    return text
 
 
 def _legacy_atomic_temp_name(name):
@@ -1782,6 +1912,120 @@ def _empty_history_stats():
     }
 
 
+def _history_stats_decimal(value):
+    if not isinstance(value, str) or re.fullmatch(
+                r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value) is None:
+        raise ValueError("natural-history aggregate is invalid")
+    try:
+        result = Decimal(value)
+    except InvalidOperation:
+        raise ValueError("natural-history aggregate is invalid") from None
+    if not result.is_finite() or result < 0:
+        raise ValueError("natural-history aggregate is invalid")
+    return result
+
+
+def _validate_history_stats(stats):
+    counter_names = {
+        "open", "resolved", "unresolvable", "invalid_resolved",
+        "invalid_records", "true", "false", "hits",
+    }
+    decimal_names = {"sum_p", "sum_o", "sum_brier"}
+    if not isinstance(stats, dict) \
+            or set(stats) != counter_names | decimal_names | {"bins"}:
+        raise ValueError("natural-history aggregate is invalid")
+    if any(isinstance(stats[name], bool)
+           or not isinstance(stats[name], int) or stats[name] < 0
+           for name in counter_names):
+        raise ValueError("natural-history aggregate is invalid")
+    decimals = {name: _history_stats_decimal(stats[name])
+                for name in decimal_names}
+    bins = stats["bins"]
+    if not isinstance(bins, list) or len(bins) != len(CALIBRATION_BINS):
+        raise ValueError("natural-history aggregate is invalid")
+    bin_count = 0
+    bin_sum_p = Decimal(0)
+    bin_sum_o = Decimal(0)
+    for current, (label, lo, hi) in zip(bins, CALIBRATION_BINS):
+        if not isinstance(current, dict) \
+                or set(current) != {"range", "n", "sum_p", "sum_o"} \
+                or current.get("range") != label:
+            raise ValueError("natural-history aggregate is invalid")
+        count = current.get("n")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("natural-history aggregate is invalid")
+        sum_p = _history_stats_decimal(current.get("sum_p"))
+        sum_o = _history_stats_decimal(current.get("sum_o"))
+        if sum_o != sum_o.to_integral_value() \
+                or sum_o > count or sum_p > count \
+                or (count == 0 and (sum_p or sum_o)) \
+                or (count and sum_p < lo * count) \
+                or (count and hi <= Decimal(1)
+                    and sum_p >= hi * count):
+            raise ValueError("natural-history aggregate is inconsistent")
+        bin_count += count
+        bin_sum_p += sum_p
+        bin_sum_o += sum_o
+    resolved = stats["resolved"]
+    if resolved != stats["true"] + stats["false"] \
+            or stats["hits"] > resolved \
+            or decimals["sum_o"] != stats["true"] \
+            or decimals["sum_p"] > resolved \
+            or decimals["sum_brier"] > resolved \
+            or bin_count != resolved \
+            or bin_sum_p != decimals["sum_p"] \
+            or bin_sum_o != decimals["sum_o"]:
+        raise ValueError("natural-history aggregate is inconsistent")
+    return stats
+
+
+def _validate_history_open_projection(value, key, kind):
+    identity_names = {"device", "inode", "size", "mtime_ns", "ctime_ns"}
+    expected = {"key", "due", "path", "page_sha256"} | identity_names
+    key_pattern = _TAKE_ID_RE if kind == "take" else re.compile(r"[0-9a-f]{10}")
+    if not isinstance(value, dict) or set(value) != expected \
+            or not isinstance(key, str) \
+            or key_pattern.fullmatch(key) is None \
+            or value.get("key") != key \
+            or not isinstance(value.get("due"), str) \
+            or not isinstance(value.get("path"), str) \
+            or not isinstance(value.get("page_sha256"), str) \
+            or re.fullmatch(r"[0-9a-f]{64}", value["page_sha256"]) is None \
+            or any(isinstance(value.get(name), bool)
+                   or not isinstance(value.get(name), int)
+                   or value[name] < 0 for name in identity_names):
+        raise ValueError("natural-history open projection is invalid")
+    try:
+        if datetime.date.fromisoformat(value["due"]).isoformat() \
+                != value["due"]:
+            raise ValueError
+    except ValueError:
+        raise ValueError("natural-history open projection is invalid") \
+            from None
+    return value
+
+
+def _validate_history_legacy(value):
+    allowed = {"complete", "cursor", "pass_added", "external_debt", "error"}
+    if not isinstance(value, dict) or set(value) - allowed \
+            or not isinstance(value.get("complete"), bool) \
+            or not isinstance(value.get("external_debt"), bool) \
+            or isinstance(value.get("pass_added"), bool) \
+            or not isinstance(value.get("pass_added"), int) \
+            or value["pass_added"] < 0:
+        raise ValueError("natural-history legacy state is invalid")
+    try:
+        _history_generation_fields(value.get("cursor"), cursor=True)
+    except ValueError:
+        raise ValueError("natural-history legacy state is invalid") from None
+    error = value.get("error")
+    if error is not None and (not isinstance(error, str) or len(error) > 160):
+        raise ValueError("natural-history legacy state is invalid")
+    if value["complete"] and (value["cursor"] or value["pass_added"]):
+        raise ValueError("natural-history legacy state is invalid")
+    return value
+
+
 def _history_directory_identity(directory):
     """Return the bounded identity used to bind an authority checkpoint."""
     try:
@@ -1803,12 +2047,28 @@ def _history_generation_fields(value, *, cursor):
     allowed = {"device", "inode", "size", "mtime_ns", "ctime_ns"}
     if cursor:
         allowed.add("cookie")
-    if set(value) - allowed:
+    if set(value) - allowed \
+            or (not cursor and value and set(value) != allowed):
         raise ValueError("natural-history authority generation is invalid")
     for name, field in value.items():
         if isinstance(field, bool) or not isinstance(field, int) or field < 0:
             raise ValueError(
                 "natural-history authority generation is invalid")
+    return value
+
+
+def _history_transition(value):
+    if not isinstance(value, dict) \
+            or set(value) != {"sequence", "event_id", "authority_basis"} \
+            or isinstance(value.get("sequence"), bool) \
+            or not isinstance(value.get("sequence"), int) \
+            or value["sequence"] < 0 \
+            or not isinstance(value.get("event_id"), str) \
+            or re.fullmatch(r"[0-9a-f]{64}", value["event_id"]) is None:
+        raise ValueError("natural-history reserved transition is invalid")
+    basis = value.get("authority_basis")
+    if basis is not None:
+        _history_generation_fields(basis, cursor=False)
     return value
 
 
@@ -1831,7 +2091,8 @@ def _history_authority(value):
         raise ValueError("natural-history authority state is invalid")
     allowed = {"complete", "phase", "generation", "cursor",
                "catalog_cursor", "catalog_limit", "audit_cursor",
-               "audit_limit", "audit_cycle", "checkpoint", "error"}
+               "audit_limit", "audit_cycle", "checkpoint", "transition",
+               "error"}
     if set(value) - allowed:
         raise ValueError("natural-history authority state is invalid")
     generation = value.get("generation")
@@ -1863,6 +2124,9 @@ def _history_authority(value):
             not isinstance(audit_cycle, str)
             or re.fullmatch(r"[0-9a-f]{32}", audit_cycle) is None):
         raise ValueError("natural-history authority audit cycle is invalid")
+    transition = value.get("transition")
+    if transition is not None:
+        _history_transition(transition)
     if value["complete"] != (value["phase"] == "ready"):
         raise ValueError("natural-history authority phase is inconsistent")
     phase = value["phase"]
@@ -1887,6 +2151,7 @@ def _history_begin_authority(state):
     authority["audit_limit"] = 0
     authority["checkpoint"] = {}
     authority.pop("audit_cycle", None)
+    authority.pop("transition", None)
     authority.pop("error", None)
     return authority
 
@@ -1930,9 +2195,14 @@ def _validate_history_state(value, kind):
             or len(value["open"]) > MAX_HISTORY_OPEN_RECORDS:
         raise ValueError("natural-history open-set bound is invalid")
     if not isinstance(value.get("overall"), dict) \
-            or not isinstance(value.get("legacy"), dict) \
-            or not isinstance(value["legacy"].get("complete"), bool):
+            or not isinstance(value.get("legacy"), dict):
         raise ValueError("natural-history state body is invalid")
+    _validate_history_stats(value["overall"])
+    _validate_history_legacy(value["legacy"])
+    for key, projected in value["open"].items():
+        _validate_history_open_projection(projected, key, kind)
+    if value["overall"]["open"] != len(value["open"]):
+        raise ValueError("natural-history state is inconsistent")
     if "authority" not in value:
         # Existing v1 projections upgrade fail-closed. Their catalog remains
         # useful, but no aggregate is authoritative until a bounded scan and
@@ -1974,13 +2244,20 @@ def _validate_history_state(value, kind):
     return value
 
 
-def _load_history_state(kind, *, create=False):
+def _load_history_state(kind, *, create=False, require_existing=False):
+    if create and require_existing:
+        raise ValueError("natural-history state load mode is invalid")
     paths = _history_paths(kind)
     try:
         raw = _read_bounded_regular_text(
             paths["state"], MAX_TRANSACTION_JOURNAL_BYTES,
             "natural-history state", private=True)
     except FileNotFoundError:
+        if require_existing:
+            raise
+        if create:
+            _ensure_private_durable_directory_path(
+                _history_store(kind), f"{kind} page")
         state = _history_initial_state(kind)
         if create:
             _ensure_history_layout(kind)
@@ -2055,6 +2332,14 @@ def _history_direct(kind, key):
             or not isinstance(authority_generation, int)
             or authority_generation < 0):
         raise ValueError("natural-history direct generation is invalid")
+    authority_checkpoint = value.get("authority_checkpoint")
+    if authority_checkpoint is not None:
+        try:
+            _history_generation_fields(authority_checkpoint, cursor=False)
+        except ValueError:
+            raise ValueError(
+                "natural-history direct authority checkpoint is invalid") \
+                from None
     return value
 
 
@@ -2065,6 +2350,53 @@ def _history_catalog_path(kind, index, *, domain=False):
     paths = _history_paths(kind)
     return os.path.join(
         paths["domain_catalog" if domain else "catalog"], name)
+
+
+def _validate_history_catalog(value, kind, index, *, domain=False,
+                              label="natural-history catalog entry"):
+    expected = ({"schema", "kind", "index", "domain"} if domain else
+                {"schema", "kind", "index", "key"})
+    if not isinstance(value, dict) or set(value) != expected \
+            or value.get("schema") != HISTORY_SCHEMA \
+            or value.get("kind") != kind \
+            or isinstance(value.get("index"), bool) \
+            or not isinstance(value.get("index"), int) \
+            or value["index"] != index:
+        raise ValueError(f"{label} is invalid")
+    if domain:
+        if not isinstance(value.get("domain"), str) \
+                or _DOMAIN_RE.fullmatch(value["domain"]) is None:
+            raise ValueError(f"{label} is invalid")
+    else:
+        native_key = (r"(?:[0-9a-f]{10}|[0-9a-f]{20})"
+                      if kind == "take" else r"[0-9a-f]{10}")
+        key_pattern = rf"(?:{native_key}|invalid-[0-9a-f]{{64}})"
+        if not isinstance(value.get("key"), str) \
+                or re.fullmatch(key_pattern, value["key"]) is None:
+            raise ValueError(f"{label} is invalid")
+    return value
+
+
+def _validate_history_domain_record(value, kind, domain, catalog_index,
+                                    *, max_event=None):
+    expected = {"schema", "kind", "domain", "catalog_index",
+                "last_event", "stats"}
+    if not isinstance(value, dict) or set(value) != expected \
+            or value.get("schema") != HISTORY_SCHEMA \
+            or value.get("kind") != kind \
+            or value.get("domain") != domain \
+            or isinstance(value.get("catalog_index"), bool) \
+            or not isinstance(value.get("catalog_index"), int) \
+            or value["catalog_index"] < 0 \
+            or value["catalog_index"] != catalog_index \
+            or isinstance(value.get("last_event"), bool) \
+            or not isinstance(value.get("last_event"), int) \
+            or value["last_event"] < -1:
+        raise ValueError("natural-history domain record is invalid")
+    if max_event is not None and value["last_event"] > max_event:
+        raise ValueError("natural-history domain record is inconsistent")
+    _validate_history_stats(value.get("stats"))
+    return value
 
 
 def _history_domain_path(kind, domain):
@@ -2125,15 +2457,18 @@ def _history_contribution(meta, signed_grade):
 
 
 def _history_apply_contribution(stats, contribution, direction):
+    _validate_history_stats(stats)
+    _validate_history_stats(contribution)
+    if direction not in (-1, 1):
+        raise ValueError("natural-history aggregate direction is invalid")
     for name in ("open", "resolved", "unresolvable", "invalid_resolved",
                  "invalid_records", "true", "false", "hits"):
-        stats[name] = int(stats.get(name, 0)) \
-            + direction * int(contribution.get(name, 0))
+        stats[name] = stats[name] + direction * contribution[name]
         if stats[name] < 0:
             raise ValueError("natural-history aggregate would become negative")
     for name in ("sum_p", "sum_o", "sum_brier"):
-        value = _history_decimal(stats.get(name, "0")) \
-            + direction * _history_decimal(contribution.get(name, "0"))
+        value = _history_stats_decimal(stats[name]) \
+            + direction * _history_stats_decimal(contribution[name])
         stats[name] = format(value, "f")
     bins = stats.get("bins")
     contribution_bins = contribution.get("bins")
@@ -2142,14 +2477,14 @@ def _history_apply_contribution(stats, contribution, direction):
             or len(contribution_bins) != len(CALIBRATION_BINS):
         raise ValueError("natural-history calibration bins are invalid")
     for current, delta in zip(bins, contribution_bins):
-        current["n"] = int(current.get("n", 0)) \
-            + direction * int(delta.get("n", 0))
+        current["n"] = current["n"] + direction * delta["n"]
         if current["n"] < 0:
             raise ValueError("natural-history bin would become negative")
         for name in ("sum_p", "sum_o"):
-            value = _history_decimal(current.get(name, "0")) \
-                + direction * _history_decimal(delta.get(name, "0"))
+            value = _history_stats_decimal(current[name]) \
+                + direction * _history_stats_decimal(delta[name])
             current[name] = format(value, "f")
+    _validate_history_stats(stats)
 
 
 def _history_apply_stats_transition(stats, before, after):
@@ -2192,17 +2527,33 @@ def _history_apply_domain(kind, domain, event, state):
             _atomic_text(catalog_path, json.dumps(
                 catalog, sort_keys=True, separators=(",", ":")),
                 mode=0o600, exclusive=True)
-        elif existing_catalog != catalog:
+        else:
+            _validate_history_catalog(
+                existing_catalog, kind, catalog_index, domain=True,
+                label="natural-history domain catalog entry")
+            if existing_catalog != catalog:
+                raise ValueError(
+                    "natural-history domain catalog entry conflicts")
+    else:
+        _validate_history_domain_record(
+            current, kind, domain, current.get("catalog_index"),
+            max_event=event["sequence"])
+        domain_catalog = _read_history_json(
+            _history_catalog_path(
+                kind, current["catalog_index"], domain=True),
+            "natural-history domain catalog entry")
+        if domain_catalog is None:
+            raise ValueError(
+                "natural-history domain catalog entry is missing")
+        _validate_history_catalog(
+            domain_catalog, kind, current["catalog_index"], domain=True,
+            label="natural-history domain catalog entry")
+        if domain_catalog["domain"] != domain:
             raise ValueError(
                 "natural-history domain catalog entry conflicts")
-    else:
-        if current.get("schema") != HISTORY_SCHEMA \
-                or current.get("kind") != kind \
-                or current.get("domain") != domain:
-            raise ValueError("natural-history domain record is invalid")
         state["next_domain"] = max(
-            state["next_domain"], int(current["catalog_index"]) + 1)
-    if int(current.get("last_event", -1)) >= event["sequence"]:
+            state["next_domain"], current["catalog_index"] + 1)
+    if current["last_event"] >= event["sequence"]:
         return
     before = event.get("before") \
         if _history_metadata_domain(event.get("before")) == domain else None
@@ -2238,31 +2589,33 @@ def _history_page_metadata(kind, path, text):
 def _history_event(kind, operation, path, target_text, *, before=None,
                    after=None, signed_grade=False, catalog_new=False,
                    record_key=None):
+    """Describe an event without reserving state ahead of its durable WAL."""
     state = _load_history_state(kind, create=True)
     pending = _history_paths(kind)["pending"]
     if os.path.lexists(pending):
         raise ValueError(f"unfinished {kind} natural-history transaction exists")
     reconciliation = operation.startswith("authority-")
     authority_restore = False
+    authority_basis = None
+    authority_generation = state["authority"]["generation"]
     if not reconciliation:
         authority_restore = state["authority"]["complete"] \
             and _directory_generation_is_current(
                 _history_store(kind),
                 state["authority"].get("checkpoint", {}))
-        _history_begin_authority(state)
+        if authority_restore:
+            authority_basis = dict(state["authority"].get("checkpoint", {}))
+        authority_generation += 1
     sequence = state["next_event"]
-    state["next_event"] += 1
     catalog_index = None
     if catalog_new:
         catalog_index = state["next_catalog"]
-        state["next_catalog"] += 1
     before_meta = (before or {}).get("metadata", before or {})
     if after is not None and after.get("status") == "open" \
             and before_meta.get("status") != "open" \
             and after.get("id") not in state["open"] \
             and len(state["open"]) >= MAX_HISTORY_OPEN_RECORDS:
         raise ValueError(f"{kind} open-set admission limit reached")
-    _save_history_state(kind, state)
     target_digest = hashlib.sha256(target_text.encode()).hexdigest()
     after_side = None if after is None else {
         "metadata": after, "signed_grade": bool(signed_grade)}
@@ -2276,8 +2629,9 @@ def _history_event(kind, operation, path, target_text, *, before=None,
              "catalog_index": catalog_index, "path": path,
              "page_sha256": target_digest, "before": before_side,
              "after": after_side, "record_key": record_key,
-             "authority_generation": state["authority"]["generation"],
-             "authority_restore": authority_restore}
+             "authority_generation": authority_generation,
+             "authority_restore": authority_restore,
+             "authority_basis": authority_basis}
     basis["event_id"] = hashlib.sha256(json.dumps(
         basis, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False).encode()).hexdigest()
@@ -2285,7 +2639,7 @@ def _history_event(kind, operation, path, target_text, *, before=None,
 
 
 def _history_retire_event(kind, direct):
-    """Allocate one durable event that removes a non-authoritative row."""
+    """Describe one event that removes a non-authoritative row."""
     if direct.get("kind") != kind or direct.get("tombstone", False):
         raise ValueError("natural-history retirement source is invalid")
     state = _load_history_state(kind, create=True)
@@ -2293,8 +2647,6 @@ def _history_retire_event(kind, direct):
     if os.path.lexists(pending):
         raise ValueError(f"unfinished {kind} natural-history transaction exists")
     sequence = state["next_event"]
-    state["next_event"] += 1
-    _save_history_state(kind, state)
     basis = {
         "schema": HISTORY_EVENT_SCHEMA, "kind": kind,
         "operation": "authority-retire", "sequence": sequence,
@@ -2307,6 +2659,7 @@ def _history_retire_event(kind, direct):
         "after": None, "record_key": direct["key"],
         "authority_generation": state["authority"]["generation"],
         "authority_restore": False,
+        "authority_basis": None,
     }
     basis["event_id"] = hashlib.sha256(json.dumps(
         basis, sort_keys=True, separators=(",", ":"),
@@ -2314,11 +2667,359 @@ def _history_retire_event(kind, direct):
     return basis
 
 
+def _validate_history_event_envelope(event):
+    if not isinstance(event, dict):
+        raise ValueError("natural-history event is invalid")
+    current_keys = {
+        "schema", "kind", "operation", "sequence", "catalog_index",
+        "path", "page_sha256", "before", "after", "record_key",
+        "authority_generation", "authority_restore", "authority_basis",
+        "event_id",
+    }
+    if set(event) not in (current_keys, current_keys - {"authority_basis"}):
+        raise ValueError("natural-history event is invalid")
+    kind = event.get("kind")
+    operation = event.get("operation")
+    sequence = event.get("sequence")
+    claimed_event_id = event.get("event_id")
+    if event.get("schema") != HISTORY_EVENT_SCHEMA \
+            or kind not in ("take", "intent") \
+            or operation not in {
+                "create", "close", "grade", "legacy-migration",
+                "legacy-baseline", "legacy-invalid", "authority-update",
+                "authority-retire"} \
+            or isinstance(sequence, bool) \
+            or not isinstance(sequence, int) or sequence < 0 \
+            or not isinstance(claimed_event_id, str) \
+            or re.fullmatch(r"[0-9a-f]{64}", claimed_event_id) is None:
+        raise ValueError("natural-history event is invalid")
+    event_basis = dict(event)
+    event_basis.pop("event_id")
+    expected_event_id = hashlib.sha256(json.dumps(
+        event_basis, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False).encode()).hexdigest()
+    if claimed_event_id != expected_event_id:
+        raise ValueError("natural-history event identity is invalid")
+    authority_generation = event.get("authority_generation")
+    if isinstance(authority_generation, bool) \
+            or not isinstance(authority_generation, int) \
+            or authority_generation < 0:
+        raise ValueError("natural-history event generation is invalid")
+    if "authority_restore" in event \
+            and not isinstance(event["authority_restore"], bool):
+        raise ValueError("natural-history event authority mode is invalid")
+    authority_restore = event.get("authority_restore", False)
+    authority_basis = event.get("authority_basis")
+    if authority_basis is not None:
+        try:
+            _history_generation_fields(authority_basis, cursor=False)
+        except ValueError:
+            raise ValueError(
+                "natural-history event authority basis is invalid") from None
+    legacy_restore = authority_restore and "authority_basis" not in event
+    if not legacy_restore and authority_restore != (authority_basis is not None):
+        raise ValueError("natural-history event authority basis is invalid")
+    if operation.startswith("authority-") and event.get("authority_restore", False):
+        raise ValueError("natural-history reconciliation cannot restore authority")
+    return kind
+
+
+def _invalidate_applied_legacy_restore(kind, event, state):
+    """Withdraw old Boolean-only readiness before cleaning its applied WAL."""
+    authority = _history_authority(state["authority"])
+    marker = ("legacy restoration event " + event["event_id"]
+              + " requires authority reconciliation")
+    if authority.get("error") == marker:
+        if authority["complete"] or authority["phase"] != "scan" \
+                or authority.get("transition") is not None:
+            raise ValueError(
+                "legacy restoration invalidation state is inconsistent")
+        return state
+    if not authority["complete"]:
+        return state
+    _history_begin_authority(state)
+    state["authority"]["error"] = marker
+    _save_history_state(kind, state)
+    return state
+
+
+def _reserve_history_event(event, *, journal_path, journal_value):
+    """Durably reserve an event only after its containing WAL is durable."""
+    kind = _validate_history_event_envelope(event)
+    durable_journal = _read_transaction_json(journal_path)
+    if durable_journal != journal_value:
+        raise ValueError(
+            "transaction journal changed before reservation")
+    _admit_history_predecessor(event)
+    sequence = event["sequence"]
+    catalog_index = event.get("catalog_index")
+    if catalog_index is not None and (
+            isinstance(catalog_index, bool)
+            or not isinstance(catalog_index, int) or catalog_index < 0):
+        raise ValueError("natural-history event catalog index is invalid")
+    operation = event.get("operation")
+    if not isinstance(operation, str):
+        raise ValueError("natural-history event operation is invalid")
+    transition = {
+        "sequence": sequence,
+        "event_id": event["event_id"],
+        "authority_basis": None,
+    }
+
+    state = _load_history_state(kind, create=True)
+    next_event = state["next_event"]
+    if next_event == sequence + 1:
+        if state["applied_event"] > sequence \
+                or (catalog_index is not None
+                    and state["next_catalog"] != catalog_index + 1):
+            raise ValueError("natural-history event reservation is inconsistent")
+        if state["applied_event"] == sequence \
+                and event.get("authority_restore") is True \
+                and "authority_basis" not in event:
+            return _invalidate_applied_legacy_restore(kind, event, state)
+        authority_generation = event.get("authority_generation")
+        if authority_generation is not None \
+                and state["authority"]["generation"] != authority_generation:
+            raise ValueError("natural-history event reservation is inconsistent")
+        if state["applied_event"] < sequence:
+            reserved = state["authority"].get("transition")
+            if reserved is None:
+                if "authority_basis" in event:
+                    raise ValueError(
+                        "natural-history reserved transition is missing")
+            else:
+                _history_transition(reserved)
+                if reserved["sequence"] != sequence \
+                        or reserved["event_id"] != event["event_id"] \
+                        or (reserved["authority_basis"] is not None
+                            and reserved["authority_basis"]
+                            != event.get("authority_basis")):
+                    raise ValueError("natural-history reserved event changed")
+        return state
+    if next_event != sequence or state["applied_event"] >= sequence:
+        raise ValueError("natural-history event reservation is inconsistent")
+    if catalog_index is not None and catalog_index != state["next_catalog"]:
+        raise ValueError("natural-history event reservation is inconsistent")
+
+    reconciliation = operation.startswith("authority-")
+    if not reconciliation:
+        basis = event.get("authority_basis")
+        if basis is not None:
+            authority = _history_authority(state["authority"])
+            if not authority["complete"] \
+                    or authority.get("checkpoint", {}) != basis:
+                raise ValueError(
+                    "natural-history authority restoration is not admitted")
+            if _directory_generation_is_current(_history_store(kind), basis):
+                transition["authority_basis"] = dict(basis)
+        authority = _history_begin_authority(state)
+        authority["transition"] = transition
+    else:
+        state["authority"]["transition"] = transition
+    authority_generation = event.get("authority_generation")
+    if authority_generation is not None \
+            and state["authority"]["generation"] != authority_generation:
+        raise ValueError("natural-history event reservation is inconsistent")
+    before = event.get("before")
+    after = event.get("after")
+    before_meta = before.get("metadata", {}) \
+        if isinstance(before, dict) else {}
+    after_meta = after.get("metadata", {}) \
+        if isinstance(after, dict) else {}
+    if after_meta.get("status") == "open" \
+            and before_meta.get("status") != "open" \
+            and after_meta.get("id") not in state["open"] \
+            and len(state["open"]) >= MAX_HISTORY_OPEN_RECORDS:
+        raise ValueError(f"{kind} open-set admission limit reached")
+    state["next_event"] += 1
+    if catalog_index is not None:
+        state["next_catalog"] += 1
+    _save_history_state(kind, state)
+    return state
+
+
+def _history_prepublication_authority_basis(
+        event, *, current_digest, source_digest):
+    """Return a freshly rechecked basis, never a replayed Boolean."""
+    kind = _validate_history_event_envelope(event)
+    state = _load_history_state(kind, create=True)
+    transition = state["authority"].get("transition")
+    if state["applied_event"] >= event["sequence"]:
+        return None
+    if transition is None:
+        return None
+    _history_transition(transition)
+    if transition["sequence"] != event["sequence"] \
+            or transition["event_id"] != event["event_id"]:
+        raise ValueError("natural-history reserved event changed")
+    basis = transition["authority_basis"]
+    if basis is None:
+        return None
+    if basis != event.get("authority_basis"):
+        raise ValueError("natural-history reserved authority changed")
+    if source_digest is None:
+        target_is_unpublished = current_digest is None
+    else:
+        target_is_unpublished = current_digest == source_digest
+    if not target_is_unpublished \
+            or not _directory_generation_is_current(
+                _history_store(kind), basis):
+        return None
+    return dict(basis)
+
+
+def _history_publication_authority_checkpoint(kind, basis, publication):
+    """Admit only the atomic publisher's stable, basis-bound observation."""
+    if basis is None:
+        return None
+    if not isinstance(publication, dict) \
+            or set(publication) != {"status", "before", "after", "stable"} \
+            or publication.get("status") != "published" \
+            or publication.get("stable") is not True:
+        return None
+    before = publication.get("before")
+    after = publication.get("after")
+    try:
+        _history_generation_fields(before, cursor=False)
+        _history_generation_fields(after, cursor=False)
+    except ValueError:
+        return None
+    if before != basis or not _directory_generation_is_current(
+            _history_store(kind), after):
+        return None
+    return dict(after)
+
+
+def _history_partial_authority_checkpoint(event):
+    """Recover a post-publication checkpoint from this exact partial event."""
+    state = _load_history_state(event["kind"], create=True)
+    transition = state["authority"].get("transition")
+    if transition is None:
+        return None
+    _history_transition(transition)
+    if transition["sequence"] != event["sequence"] \
+            or transition["event_id"] != event["event_id"]:
+        raise ValueError("natural-history reserved event changed")
+    if transition["authority_basis"] is None \
+            or transition["authority_basis"] != event.get("authority_basis"):
+        return None
+    after = event.get("after") or {}
+    metadata = after.get("metadata") or {}
+    key = metadata.get("id") or event.get("record_key")
+    direct = _history_direct(event["kind"], key)
+    if direct is None or direct.get("event_id") != event["event_id"] \
+            or direct.get("event_sequence") != event["sequence"] \
+            or direct.get("tombstone", False):
+        return None
+    checkpoint = direct.get("authority_checkpoint")
+    if checkpoint is None or not _directory_generation_is_current(
+            _history_store(event["kind"]), checkpoint):
+        return None
+    return dict(checkpoint)
+
+
+def _history_projection_state(event, authority_checkpoint):
+    """Admit an in-memory restoration proof before projection side effects."""
+    state = _load_history_state(event["kind"], create=True)
+    if state["applied_event"] >= event["sequence"]:
+        return state, None
+    transition = state["authority"].get("transition")
+    if transition is None:
+        if authority_checkpoint is not None:
+            raise ValueError(
+                "natural-history projection authority is not admitted")
+        return state, None
+    _history_transition(transition)
+    if transition["sequence"] != event["sequence"] \
+            or transition["event_id"] != event["event_id"]:
+        raise ValueError("natural-history reserved event changed")
+    if event["operation"].startswith("authority-"):
+        if authority_checkpoint is not None:
+            raise ValueError(
+                "natural-history reconciliation cannot restore authority")
+        return state, None
+    if authority_checkpoint is None:
+        return state, None
+    try:
+        _history_generation_fields(authority_checkpoint, cursor=False)
+    except ValueError:
+        raise ValueError(
+            "natural-history projection authority is not admitted") from None
+    if transition["authority_basis"] is None \
+            or transition["authority_basis"] != event.get("authority_basis"):
+        raise ValueError(
+            "natural-history projection authority is not admitted")
+    if not _directory_generation_is_current(
+            _history_store(event["kind"]), authority_checkpoint):
+        return state, None
+    return state, dict(authority_checkpoint)
+
+
+def _admit_history_predecessor(event):
+    """Bind a transition to its predecessor or its exact partial projection."""
+    kind = _validate_history_event_envelope(event)
+    retirement = event.get("operation") == "authority-retire"
+    before, after = event.get("before"), event.get("after")
+    for side in (before, after):
+        if side is not None and (
+                not isinstance(side, dict)
+                or set(side) != {"metadata", "signed_grade"}
+                or not isinstance(side.get("metadata"), dict)
+                or type(side.get("signed_grade")) is not bool):
+            raise ValueError("natural-history transition side is invalid")
+    if retirement:
+        if before is None or after is not None \
+                or event.get("catalog_index") is not None \
+                or event.get("path") != before["metadata"].get("path"):
+            raise ValueError("natural-history retirement event is invalid")
+        key = event.get("record_key")
+    else:
+        if after is None:
+            raise ValueError("natural-history transition target is invalid")
+        key = after["metadata"].get("id") or event.get("record_key")
+    current = _history_direct(kind, key)
+    if current is not None and current.get("event_id") == event["event_id"]:
+        expected = before if retirement else after
+        if current.get("event_sequence") != event["sequence"] \
+                or current.get("metadata") != expected["metadata"] \
+                or current.get("signed_grade", False) != expected["signed_grade"] \
+                or current.get("page_sha256") != event.get("page_sha256") \
+                or current.get("tombstone", False) is not retirement \
+                or current.get("authority_generation") != event.get("authority_generation") \
+                or (not retirement and current.get("catalog_index")
+                    != event.get("catalog_index")):
+            raise ValueError("natural-history partial projection is inconsistent")
+        return current
+    if current is not None and current.get("event_sequence", -1) >= event["sequence"]:
+        raise ValueError("natural-history transition would rewind direct state")
+    predecessor = None if current is None or current.get("tombstone", False) else {
+        "metadata": current["metadata"],
+        "signed_grade": current.get("signed_grade", False)}
+    if before != predecessor:
+        raise ValueError("natural-history transition predecessor changed")
+    if retirement:
+        if predecessor is None or current["page_sha256"] != event.get("page_sha256"):
+            raise ValueError("natural-history retirement source changed")
+        try:
+            target = os.stat(event["path"], follow_symlinks=False)
+        except FileNotFoundError:
+            target = None
+        text = (_read_regular_text(event["path"])
+                if target is not None and stat.S_ISREG(target.st_mode) else None)
+        if text is not None and hashlib.sha256(text.encode()).hexdigest() == event["page_sha256"]:
+            raise ValueError("natural-history retirement target is still authoritative")
+    elif (current is None) != (event.get("catalog_index") is not None):
+        raise ValueError("natural-history transition catalog allocation is inconsistent")
+    return current
+
+
 def _history_project_retirement(event):
+    _admit_history_predecessor(event)
     if event.get("operation") != "authority-retire" \
             or event.get("after") is not None \
             or not isinstance(event.get("before"), dict):
         raise ValueError("natural-history retirement event is invalid")
+    state, _restore_checkpoint = _history_projection_state(event, None)
     key = event.get("record_key")
     current = _history_direct(event["kind"], key)
     if current is None:
@@ -2355,13 +3056,13 @@ def _history_project_retirement(event):
             "event_sequence": event["sequence"],
             "catalog_index": current.get("catalog_index"),
             "authority_generation": event.get("authority_generation"),
+            "authority_checkpoint": None,
             "tombstone": True,
         }
         direct_path = _history_record_path(event["kind"], key)
         _atomic_text(direct_path, json.dumps(
             tombstone, sort_keys=True, separators=(",", ":")), mode=0o600)
         current = tombstone
-    state = _load_history_state(event["kind"], create=True)
     for domain in sorted(filter(None, {
             _history_metadata_domain(event.get("before"))})):
         _history_apply_domain(event["kind"], domain, event, state)
@@ -2375,35 +3076,13 @@ def _history_project_retirement(event):
         state["applied_event"] = event["sequence"]
         state["next_event"] = max(
             state["next_event"], event["sequence"] + 1)
+        state["authority"].pop("transition", None)
         _save_history_state(event["kind"], state)
     return current
 
 
-def _history_project_event(event):
-    kind = event.get("kind")
-    if event.get("schema") != HISTORY_EVENT_SCHEMA \
-            or kind not in ("take", "intent") \
-            or not isinstance(event.get("sequence"), int) \
-            or event["sequence"] < 0 \
-            or not re.fullmatch(r"[0-9a-f]{64}",
-                                str(event.get("event_id", ""))):
-        raise ValueError("natural-history event is invalid")
-    event_basis = dict(event)
-    claimed_event_id = event_basis.pop("event_id")
-    expected_event_id = hashlib.sha256(json.dumps(
-        event_basis, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False).encode()).hexdigest()
-    if claimed_event_id != expected_event_id:
-        raise ValueError("natural-history event identity is invalid")
-    authority_generation = event.get("authority_generation")
-    if authority_generation is not None and (
-            isinstance(authority_generation, bool)
-            or not isinstance(authority_generation, int)
-            or authority_generation < 0):
-        raise ValueError("natural-history event generation is invalid")
-    if "authority_restore" in event \
-            and not isinstance(event["authority_restore"], bool):
-        raise ValueError("natural-history event authority mode is invalid")
+def _history_project_event(event, *, authority_checkpoint=None):
+    kind = _validate_history_event_envelope(event)
     path = event.get("path")
     store = _history_store(kind)
     retirement = event.get("operation") == "authority-retire"
@@ -2432,17 +3111,12 @@ def _history_project_event(event):
     digest = hashlib.sha256(text.encode()).hexdigest()
     if digest != event.get("page_sha256"):
         raise ValueError("natural-history page digest does not match event")
-    after = event.get("after")
-    expected_meta = (after or {}).get("metadata")
-    if isinstance(expected_meta, dict) \
-            and expected_meta.get("status") == "invalid-record":
-        observed = dict(expected_meta)
-        key = event.get("record_key")
-    else:
-        observed = _history_page_metadata(kind, path, text)
-        key = observed["id"]
-    if after is None or observed != expected_meta:
-        raise ValueError("natural-history page metadata does not match event")
+    key, observed = _admit_history_target(event, text)
+    _admit_history_predecessor(event)
+    _admit_history_grade_authority(event, text)
+    state, restore_checkpoint = _history_projection_state(
+        event, authority_checkpoint)
+    after = event["after"]
     direct_path = _history_record_path(kind, key)
     direct = {"schema": HISTORY_EVENT_SCHEMA, "kind": kind, "key": key,
               "metadata": observed, "page_sha256": digest,
@@ -2451,7 +3125,9 @@ def _history_project_event(event):
               "event_sequence": event["sequence"],
               "catalog_index": event.get("catalog_index"),
               "authority_generation": event.get(
-                  "authority_generation"), "tombstone": False}
+                  "authority_generation"),
+              "authority_checkpoint": restore_checkpoint,
+              "tombstone": False}
     existing = _history_direct(kind, key)
     if existing is not None and existing.get("event_sequence", -1) \
             > event["sequence"]:
@@ -2474,9 +3150,11 @@ def _history_project_event(event):
             _atomic_text(catalog_path, json.dumps(
                 catalog, sort_keys=True, separators=(",", ":")), mode=0o600,
                 exclusive=True)
-        elif current_catalog != catalog:
-            raise ValueError("natural-history catalog entry conflicts")
-    state = _load_history_state(kind, create=True)
+        else:
+            _validate_history_catalog(
+                current_catalog, kind, catalog_index)
+            if current_catalog != catalog:
+                raise ValueError("natural-history catalog entry conflicts")
     for domain in sorted(filter(None, {
             _history_metadata_domain(event.get("before")),
             _history_metadata_domain(event.get("after"))})):
@@ -2508,12 +3186,17 @@ def _history_project_event(event):
         if catalog_index is not None:
             state["next_catalog"] = max(
                 state["next_catalog"], catalog_index + 1)
-        if event.get("authority_restore"):
+        state["authority"].pop("transition", None)
+        if restore_checkpoint is not None \
+                and not _directory_generation_is_current(
+                    store, restore_checkpoint):
+            restore_checkpoint = None
+        if restore_checkpoint is not None:
             state["authority"].update({
                 "complete": True, "phase": "ready", "cursor": {},
                 "catalog_cursor": 0, "catalog_limit": 0,
                 "audit_cursor": 0, "audit_limit": 0,
-                "checkpoint": _history_directory_identity(store),
+                "checkpoint": restore_checkpoint,
             })
             state["authority"].pop("error", None)
         _save_history_state(kind, state)
@@ -2572,11 +3255,8 @@ def _history_page(kind, limit=DEFAULT_HISTORY_PAGE_LIMIT, cursor=None):
         index += 1
         inspected += 1
         if catalog is None:
-            continue
-        if catalog.get("schema") != HISTORY_SCHEMA \
-                or catalog.get("kind") != kind \
-                or catalog.get("index") != index - 1:
-            raise ValueError("natural-history catalog entry is invalid")
+            raise ValueError("natural-history catalog entry is missing")
+        _validate_history_catalog(catalog, kind, index - 1)
         direct = _history_direct(kind, catalog.get("key"))
         if direct is None:
             raise ValueError("natural-history catalog target is missing")
@@ -2606,9 +3286,10 @@ def _history_page(kind, limit=DEFAULT_HISTORY_PAGE_LIMIT, cursor=None):
 
 
 def _history_stats_report(stats):
-    n = int(stats.get("resolved", 0))
-    true_n = int(stats.get("true", 0))
-    false_n = int(stats.get("false", 0))
+    _validate_history_stats(stats)
+    n = stats["resolved"]
+    true_n = stats["true"]
+    false_n = stats["false"]
     population_status, eligible, reason = \
         _calibration_population_status(n, true_n, false_n)
     brier = accuracy = mean_confidence = outcome_rate = None
@@ -2617,14 +3298,14 @@ def _history_stats_report(stats):
         brier = _decimal_number(
             _history_decimal(stats.get("sum_brier", "0")) / denominator, 3)
         accuracy = _decimal_number(
-            Decimal(int(stats.get("hits", 0))) / denominator, 3)
+            Decimal(stats["hits"]) / denominator, 3)
         mean_confidence = _decimal_number(
             _history_decimal(stats.get("sum_p", "0")) / denominator, 3)
         outcome_rate = _decimal_number(
             _history_decimal(stats.get("sum_o", "0")) / denominator, 3)
     bins = []
     for current in stats.get("bins", []):
-        count = int(current.get("n", 0))
+        count = current["n"]
         item = {"range": current.get("range"), "n": count,
                 "status": "sparse"}
         if count >= CALIBRATION_MIN_BIN:
@@ -2639,10 +3320,10 @@ def _history_stats_report(stats):
                          "calibration_gap": _decimal_number(
                              abs(mean_p - observed), 3)})
         bins.append(item)
-    return {"open": int(stats.get("open", 0)), "resolved": n,
-            "unresolvable": int(stats.get("unresolvable", 0)),
-            "invalid_resolved": int(stats.get("invalid_resolved", 0)),
-            "invalid_records": int(stats.get("invalid_records", 0)),
+    return {"open": stats["open"], "resolved": n,
+            "unresolvable": stats["unresolvable"],
+            "invalid_resolved": stats["invalid_resolved"],
+            "invalid_records": stats["invalid_records"],
             "outcomes": {"true": true_n, "false": false_n},
             "brier": brier, "accuracy": accuracy,
             "mean_confidence": mean_confidence,
@@ -2677,7 +3358,8 @@ def _history_retire_tx_payload(kind, event):
 
 
 def _validate_history_tx(value, kind):
-    if not isinstance(value, dict) or value.get("schema") != HISTORY_TX_SCHEMA \
+    if not isinstance(value, dict) or set(value) != HISTORY_TRANSACTION_KEYS \
+            or value.get("schema") != HISTORY_TX_SCHEMA \
             or value.get("kind") != kind \
             or not isinstance(value.get("event"), dict):
         raise ValueError("natural-history transaction is invalid")
@@ -2691,6 +3373,7 @@ def _validate_history_tx(value, kind):
                 or event.get("after") is not None \
                 or value.get("target_text") is not None \
                 or value.get("target_sha256") is not None \
+                or type(value.get("target_size")) is not int \
                 or value.get("target_size") != 0 \
                 or value.get("source_sha256") != event.get("page_sha256"):
             raise ValueError(
@@ -2703,6 +3386,7 @@ def _validate_history_tx(value, kind):
         raise ValueError("natural-history transaction target is missing")
     encoded = target.encode()
     if len(encoded) > MAX_TAKE_PAGE_BYTES \
+            or type(value.get("target_size")) is not int \
             or value.get("target_size") != len(encoded) \
             or value.get("target_sha256") \
             != hashlib.sha256(encoded).hexdigest() \
@@ -2715,8 +3399,60 @@ def _validate_history_tx(value, kind):
     return value
 
 
+def _admit_history_target(event, target_text):
+    """Bind a recovery target to its store and metadata before publication."""
+    kind = _validate_history_event_envelope(event)
+    path = event.get("path")
+    store = os.path.abspath(_history_store(kind))
+    retirement = event.get("operation") == "authority-retire"
+    if not isinstance(path, str) or path != os.path.abspath(path) \
+            or os.path.dirname(path) != store \
+            or not os.path.basename(path).endswith(".md") \
+            or (not retirement and os.path.dirname(os.path.realpath(path))
+                != os.path.realpath(store)):
+        raise ValueError("natural-history page is outside its corpus store")
+    if retirement:
+        if target_text is not None:
+            raise ValueError("natural-history retirement target is invalid")
+        return None
+    if not isinstance(target_text, str) \
+            or len(target_text.encode()) > MAX_TAKE_PAGE_BYTES \
+            or hashlib.sha256(target_text.encode()).hexdigest() \
+            != event.get("page_sha256"):
+        raise ValueError("natural-history page digest does not match event")
+    after = event.get("after")
+    if not isinstance(after, dict) or not isinstance(after.get("metadata"), dict):
+        raise ValueError("natural-history page metadata does not match event")
+    expected = after["metadata"]
+    if expected.get("status") == "invalid-record":
+        key, observed = _history_authoritative_metadata(kind, path, target_text)
+        if event.get("operation") not in {"authority-update", "legacy-invalid"} \
+                or observed.get("status") != "invalid-record" \
+                or event.get("record_key") != key \
+                or set(expected) != set(observed) \
+                or any(expected.get(name) != observed.get(name) for name in (
+                    "status", "domain", "slug", "path")) \
+                or not isinstance(expected.get("invalid_reason"), str) \
+                or not expected["invalid_reason"] \
+                or len(expected["invalid_reason"]) > 160:
+            raise ValueError("natural-history invalid-record target is inconsistent")
+        # Legacy imports retain their original diagnostic wording. Exact
+        # page bytes, store, key and invalid-record status still have to bind.
+        return key, dict(expected)
+    observed = _history_page_metadata(kind, path, target_text)
+    if observed != expected:
+        raise ValueError("natural-history page metadata does not match event")
+    return observed["id"], observed
+
+
 def _finish_history_tx(kind, path, value, before_publish=None):
     value = _validate_history_tx(value, kind)
+    if value["event"].get("operation") in {"grade", "legacy-migration"}:
+        raise ValueError("specialized take transition has the wrong journal kind")
+    _admit_history_target(value["event"], value.get("target_text"))
+    _admit_history_grade_authority(value["event"], value.get("target_text"))
+    _reserve_history_event(
+        value["event"], journal_path=path, journal_value=value)
     if value.get("retire", False):
         if before_publish is not None:
             before_publish()
@@ -2744,9 +3480,37 @@ def _finish_history_tx(kind, path, value, before_publish=None):
         # Replays also retain publication debt until the page and projection
         # have both reached durable state.
         before_publish()
+    try:
+        current = _read_regular_text(page_path)
+    except FileNotFoundError:
+        current = None
+    current_digest = None if current is None else hashlib.sha256(
+        current.encode()).hexdigest()
+    if source_digest is None:
+        if current_digest not in (None, target_digest):
+            raise ValueError("natural-history create target already exists")
+    elif current_digest not in {source_digest, target_digest}:
+        raise ValueError("natural-history target changed outside transaction")
+    if current_digest == target_digest and source_digest != target_digest:
+        _durably_admit_existing_history_target(page_path, target)
+    authority_basis = _history_prepublication_authority_basis(
+        value["event"], current_digest=current_digest,
+        source_digest=source_digest)
+    publication = None
     if current_digest != target_digest:
-        _atomic_text(page_path, target, exclusive=current is None)
-    _history_project_event(value["event"])
+        publication = _atomic_text(
+            page_path, target, exclusive=current is None,
+            observe_directory=authority_basis is not None)
+    if authority_basis is not None:
+        authority_checkpoint = _history_publication_authority_checkpoint(
+            kind, authority_basis, publication)
+    elif current_digest == target_digest:
+        authority_checkpoint = _history_partial_authority_checkpoint(
+            value["event"])
+    else:
+        authority_checkpoint = None
+    _history_project_event(
+        value["event"], authority_checkpoint=authority_checkpoint)
     _unlink_durable(path)
     metadata = value["event"]["after"]["metadata"]
     return metadata.get("id") or value["event"].get("record_key")
@@ -2841,12 +3605,39 @@ def _history_authoritative_metadata(kind, path, text):
 
 
 def _history_authoritative_signed_grade(kind, metadata, text):
-    if kind != "take" or metadata.get("status") not in (
-            "resolved-true", "resolved-false"):
+    if kind != "take" or metadata.get("status") == "invalid-record":
         return False
     import sialib
-    return bool(sialib.ledger_contains(
-        "GRADE:take", metadata["id"], metadata["status"], text))
+    if metadata.get("status") in {"resolved-true", "resolved-false"} and sialib.ledger_contains(
+            "GRADE:take", metadata["id"], metadata["status"], text):
+        return True
+    provenance = (_read_take_provenance(metadata["path"], text)
+                  if os.path.lexists(_take_provenance_root()) else None)
+    if provenance is not None:
+        return provenance[0]["grade_observed"]
+    if re.search(r"^sia_take_provenance\s*:", text, re.M):
+        raise ValueError("take declares unavailable migration provenance")
+    previous = _history_direct("take", metadata["id"])
+    if previous is not None and previous.get("signed_grade", False) \
+            and previous.get("page_sha256") == hashlib.sha256(text.encode()).hexdigest():
+        raise ValueError("previously witnessed take grade is no longer observable")
+    return False
+
+
+def _admit_history_grade_authority(event, target):
+    """A retained projection flag is a claim to re-prove, never a signature."""
+    after = event.get("after")
+    if after is None:
+        return
+    metadata = after["metadata"]
+    if event.get("operation") == "grade":
+        import sialib
+        observed = bool(sialib.ledger_contains(
+            "GRADE:take", metadata["id"], metadata["status"], target))
+    else:
+        observed = _history_authoritative_signed_grade(event["kind"], metadata, target)
+    if after.get("signed_grade") is not observed:
+        raise ValueError("natural-history signed-grade claim is not observable")
 
 
 def _history_mark_direct_generation(kind, direct, generation):
@@ -3095,11 +3886,12 @@ def audit_natural_history_authority(
             catalog = _read_history_json(
                 _history_catalog_path(kind, index),
                 "natural-history catalog entry")
-            if catalog is None or catalog.get("schema") != HISTORY_SCHEMA \
-                    or catalog.get("kind") != kind \
-                    or catalog.get("index") != index:
+            if catalog is None:
                 raise ValueError(
                     "natural-history authority audit catalog is invalid")
+            _validate_history_catalog(
+                catalog, kind, index,
+                label="natural-history authority audit catalog")
             direct = _history_direct(kind, catalog.get("key"))
             if direct is None:
                 raise ValueError(
@@ -3110,6 +3902,12 @@ def audit_natural_history_authority(
                 continue
             try:
                 _history_validate_direct(direct)
+                if kind == "take" and direct["metadata"].get("status") != "invalid-record":
+                    text = _read_regular_text(direct["metadata"]["path"])
+                    signed = _history_authoritative_signed_grade(
+                        kind, direct["metadata"], text)
+                    if signed != direct.get("signed_grade", False):
+                        raise ValueError("take grade authority changed during audit")
             except Exception:
                 current = _load_history_state(kind, create=True)
                 if current["authority"]["generation"] == generation \
@@ -3272,12 +4070,12 @@ def advance_natural_history_authority(
                 catalog = _read_history_json(
                     _history_catalog_path(kind, index),
                     "natural-history catalog entry")
-                if catalog is None \
-                        or catalog.get("schema") != HISTORY_SCHEMA \
-                        or catalog.get("kind") != kind \
-                        or catalog.get("index") != index:
+                if catalog is None:
                     raise ValueError(
                         "natural-history authority catalog is invalid")
+                _validate_history_catalog(
+                    catalog, kind, index,
+                    label="natural-history authority catalog")
                 direct = _history_direct(kind, catalog.get("key"))
                 if direct is None:
                     raise ValueError(
@@ -3447,13 +4245,20 @@ def list_calibration_domains_page(limit=DEFAULT_HISTORY_PAGE_LIMIT,
         index += 1
         inspected += 1
         if catalog is None:
-            continue
+            raise ValueError(
+                "natural-history domain catalog entry is missing")
+        _validate_history_catalog(
+            catalog, "take", index - 1, domain=True,
+            label="natural-history domain catalog entry")
         domain = catalog.get("domain")
         current = _read_history_json(
             _history_domain_path("take", domain),
             "natural-history domain record")
-        if current is None or current.get("domain") != domain:
+        if current is None:
             raise ValueError("natural-history domain target is missing")
+        _validate_history_domain_record(
+            current, "take", domain, index - 1,
+            max_event=state["applied_event"])
         items.append({"domain": domain,
                       "calibration": _history_stats_report(current["stats"])})
     return {"items": items,
@@ -3552,7 +4357,12 @@ def _grade_tx_payload(t, path, source_text, target_text):
 
 
 def _validate_grade_tx(value, journal_path):
-    if not isinstance(value, dict) or value.get("schema") != 1:
+    if not isinstance(value, dict) \
+            or not GRADE_TRANSACTION_REQUIRED_KEYS.issubset(value) \
+            or set(value) - GRADE_TRANSACTION_REQUIRED_KEYS \
+            - GRADE_TRANSACTION_OPTIONAL_KEYS \
+            or type(value.get("schema")) is not int \
+            or value.get("schema") != 1:
         raise ValueError("malformed grade transaction journal")
     take_id_value = value.get("take_id")
     if not isinstance(take_id_value, str) \
@@ -3571,12 +4381,16 @@ def _validate_grade_tx(value, journal_path):
         raise ValueError("journal target text is missing")
     encoded = target.encode()
     if len(encoded) > MAX_TAKE_PAGE_BYTES \
+            or type(value.get("target_size")) is not int \
             or value.get("target_size") != len(encoded) \
             or value.get("target_sha256") != hashlib.sha256(encoded).hexdigest():
         raise ValueError("journal target digest mismatch")
     if not re.fullmatch(r"[0-9a-f]{64}",
                         str(value.get("source_sha256", ""))):
         raise ValueError("journal source digest is invalid")
+    if "history_event" in value \
+            and not isinstance(value["history_event"], dict):
+        raise ValueError("grade transaction history event is invalid")
     return value
 
 
@@ -3590,18 +4404,162 @@ def _unlink_durable(path):
         os.close(fd)
 
 
+def _legacy_reserved_take_event(
+        value, operation, signed_grade, after, existing, journal_path):
+    """Bind one pre-reservation-runtime journal to its sole durable slot."""
+    try:
+        state = _load_history_state("take", require_existing=True)
+    except FileNotFoundError:
+        raise ValueError(
+            "missing history event has no durable history state") from None
+    authority = _history_authority(state["authority"])
+    if state["next_event"] == state["applied_event"] + 1:
+        if authority.get("transition") is not None:
+            raise ValueError(
+                "missing history event has an unexplained transition")
+        return None
+    markerless_scan = (
+        state["next_event"] == state["applied_event"] + 2
+        and authority["complete"] is False
+        and authority["phase"] == "scan"
+        and authority["generation"] > 0
+        and authority["cursor"] == {}
+        and authority["catalog_cursor"] == 0
+        and authority["catalog_limit"] == 0
+        and authority["audit_cursor"] == 0
+        and authority["audit_limit"] == 0
+        and authority["checkpoint"] == {}
+        and "transition" not in authority
+        and "audit_cycle" not in authority
+        and "error" not in authority)
+    if not markerless_scan:
+        raise ValueError(
+            "missing history event has no unique legacy reservation")
+    journals = []
+    for directory, label in (
+            (_grade_transaction_dir(), "grade transaction"),
+            (_take_migration_transaction_dir(), "take migration")):
+        journals.extend(os.path.abspath(os.path.join(directory, name))
+                        for name in _transaction_journal_names(directory, label))
+    if journals != [os.path.abspath(journal_path)]:
+        raise ValueError(
+            "missing history event has ambiguous legacy reservation")
+    catalog_new = existing is None
+    if catalog_new:
+        if state["next_catalog"] <= 0:
+            raise ValueError(
+                "missing history event has no reserved catalog slot")
+        catalog_index = state["next_catalog"] - 1
+        if _read_history_json(
+                _history_catalog_path("take", catalog_index),
+                "natural-history catalog entry") is not None:
+            raise ValueError(
+                "missing history event catalog reservation is occupied")
+    else:
+        catalog_index = None
+        if state["next_catalog"]:
+            tail_index = state["next_catalog"] - 1
+            tail = _read_history_json(
+                _history_catalog_path("take", tail_index),
+                "natural-history catalog entry")
+            if tail is None:
+                raise ValueError(
+                    "missing history event catalog reservation is ambiguous")
+            _validate_history_catalog(tail, "take", tail_index)
+    event = _history_event(
+        "take", operation, value["path"], value["target_text"],
+        before=None if existing is None or existing.get("tombstone", False)
+        else existing,
+        after=after, signed_grade=signed_grade, catalog_new=catalog_new)
+    event.update({
+        "sequence": state["next_event"] - 1,
+        "catalog_index": catalog_index,
+        "authority_generation": authority["generation"],
+        "authority_restore": False,
+    })
+    event.pop("authority_basis", None)
+    event.pop("event_id", None)
+    event["event_id"] = hashlib.sha256(json.dumps(
+        event, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False).encode()).hexdigest()
+    _validate_history_event_envelope(event)
+    return event
+
+
+def _admit_take_transaction_target(
+        value, operation, signed_grade, journal_path):
+    """Cross-bind retained publication fields before requesting a signature."""
+    path, target = value["path"], value["target_text"]
+    if path != os.path.abspath(path) \
+            or os.path.dirname(path) != os.path.abspath(TAKES_DIR) \
+            or not os.path.basename(path).endswith(".md"):
+        raise ValueError("take transaction target is outside its flat store")
+    after = _history_page_metadata("take", path, target)
+    if after["id"] != value["take_id"] \
+            or (operation == "grade" and after["status"] != value["status"]):
+        raise ValueError("take transaction identity does not bind its target")
+    event = value.get("history_event")
+    if event is None:
+        existing = _history_direct("take", value["take_id"])
+        event = _legacy_reserved_take_event(
+            value, operation, signed_grade, after, existing, journal_path)
+        if event is None:
+            event = _history_event(
+                "take", operation, path, target,
+                before=None if existing is None
+                or existing.get("tombstone", False) else existing,
+                after=after, signed_grade=signed_grade,
+                catalog_new=existing is None)
+    if event.get("kind") != "take" or event.get("operation") != operation \
+            or event.get("path") != path \
+            or event.get("page_sha256") != value["target_sha256"] \
+            or event.get("record_key") is not None \
+            or event.get("after") != {"metadata": after, "signed_grade": signed_grade}:
+        raise ValueError("take transaction history does not bind its target")
+    _admit_history_target(event, target)
+    _admit_history_predecessor(event)
+    return after, event
+
+
 def _finish_grade_tx(journal_path, value, before_publish=None):
     """Reconcile one durable intent against the signed ledger and page."""
     import sialib
     value = _validate_grade_tx(value, journal_path)
+    if _read_transaction_json(journal_path) != value:
+        raise ValueError("grade transaction journal changed before admission")
     current = _read_regular_text(value["path"])
     current_digest = hashlib.sha256(current.encode()).hexdigest()
     allowed = {value["source_sha256"], value["target_sha256"]}
     if current_digest not in allowed:
         raise ValueError("grade target changed outside its transaction")
     target = value["target_text"]
+    after, history_event = _admit_take_transaction_target(
+        value, "grade", True, journal_path)
+    if re.findall(r"^origin\s*:\s*(.*?)\s*$", target.split("\n---\n", 1)[0], re.M) != ["model"]:
+        raise ValueError("grade target does not retain model origin")
+    if current_digest == value["source_sha256"]:
+        source_meta = _history_page_metadata("take", value["path"], current)
+        mutable = {"status", "outcome", "brier", "graded", "judge_model"}
+        if source_meta.get("status") != "open" \
+                or {key: item for key, item in source_meta.items() if key not in mutable} \
+                != {key: item for key, item in after.items() if key not in mutable}:
+            raise ValueError("grade target changes its open prediction")
+        predecessor = _history_direct("take", value["take_id"])
+        if predecessor is not None and (
+                predecessor.get("page_sha256") != value["source_sha256"]
+                or predecessor.get("metadata") != source_meta):
+            raise ValueError("grade source does not bind its history predecessor")
     present = sialib.ledger_contains(
         "GRADE:take", value["take_id"], value["status"], target)
+    if current_digest == value["target_sha256"] and not present:
+        raise ValueError("published grade lacks its exact signed target")
+    if value.get("history_event") is None:
+        value = dict(value)
+        value["history_event"] = history_event
+        _atomic_text(journal_path, _bounded_transaction_journal_text(value),
+                     mode=0o600)
+    _reserve_history_event(
+        history_event, journal_path=journal_path, journal_value=value)
     if not present:
         sialib.ledger_append(
             "GRADE:take", value["take_id"], value["status"], target,
@@ -3609,25 +4567,36 @@ def _finish_grade_tx(journal_path, value, before_publish=None):
         if not sialib.ledger_contains(
                 "GRADE:take", value["take_id"], value["status"], target):
             raise RuntimeError("signed grade append was not observable")
-    history_event = value.get("history_event")
-    if history_event is None:
-        after = _history_page_metadata("take", value["path"], target)
-        existing = _history_direct("take", value["take_id"])
-        history_event = _history_event(
-            "take", "grade", value["path"], target, before=existing,
-            after=after, signed_grade=True, catalog_new=existing is None)
-        value = dict(value)
-        value["history_event"] = history_event
-        _atomic_text(journal_path, json.dumps(value, sort_keys=True),
-                     mode=0o600)
     if before_publish is not None:
         # The journal may be recovering after the page replacement but before
         # its unlink. Keep readiness blocked until that already-visible target
         # is also committed, indexed, and exported.
         before_publish()
+    current = _read_regular_text(value["path"])
+    current_digest = hashlib.sha256(current.encode()).hexdigest()
+    if current_digest not in allowed:
+        raise ValueError("grade target changed outside its transaction")
+    if current_digest == value["target_sha256"] \
+            and value["source_sha256"] != value["target_sha256"]:
+        _durably_admit_existing_history_target(value["path"], target)
+    authority_basis = _history_prepublication_authority_basis(
+        history_event, current_digest=current_digest,
+        source_digest=value["source_sha256"])
+    publication = None
     if current_digest == value["source_sha256"]:
-        _atomic_text(value["path"], target)
-    _history_project_event(history_event)
+        publication = _atomic_text(
+            value["path"], target,
+            observe_directory=authority_basis is not None)
+    if authority_basis is not None:
+        authority_checkpoint = _history_publication_authority_checkpoint(
+            "take", authority_basis, publication)
+    elif current_digest == value["target_sha256"]:
+        authority_checkpoint = _history_partial_authority_checkpoint(
+            history_event)
+    else:
+        authority_checkpoint = None
+    _history_project_event(
+        history_event, authority_checkpoint=authority_checkpoint)
     _unlink_durable(journal_path)
     return value["take_id"]
 
@@ -3664,10 +4633,153 @@ def grade_recovery_required():
 TAKE_MIGRATION_SCHEMA = "sia-take-origin-migration-v1"
 TAKE_MIGRATION_KINDS = frozenset(
     ("model-inert-v1", "legacy-v1-normalize"))
+TAKE_PROVENANCE_SCHEMA = "sia-take-provenance-v1"
 LEGACY_V1_TAKE_KEYS = frozenset((
     "id", "claim", "confidence", "deadline", "domain", "holder",
     "status", "created", "outcome", "brier", "graded",
 ))
+
+
+def _take_provenance_declaration(source, kind):
+    return {"schema": TAKE_PROVENANCE_SCHEMA, "migration_kind": kind,
+            "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+            "source_size": len(source.encode())}
+
+
+def _declare_take_provenance(target, source, kind):
+    declaration = _take_provenance_declaration(source, kind)
+    head, separator, body = target.partition("\n---\n")
+    if not separator or re.search(r"^sia_take_provenance\s*:", head, re.M):
+        raise ValueError("take migration provenance declaration is ambiguous")
+    return (head + "\nsia_take_provenance: " + json.dumps(
+        declaration, sort_keys=True, separators=(",", ":")) + separator + body)
+
+
+def _take_provenance_root():
+    return os.path.join(os.path.dirname(os.path.abspath(TAKES_DIR)),
+                        ".sia-take-provenance")
+
+
+def _take_provenance_path(area, digest, *, take_id=None):
+    if area not in {"sources", "targets"} \
+            or not isinstance(digest, str) \
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("take provenance artifact identity is invalid")
+    root = _take_provenance_root()
+    corpus = os.path.dirname(root)
+    if area == "targets":
+        if not isinstance(take_id, str) or not _TAKE_ID_RE.fullmatch(take_id):
+            raise ValueError("take provenance target identity is invalid")
+        components = (area, take_id[:2], take_id)
+    else:
+        components = (area, digest[:2])
+    if os.path.realpath(corpus) != corpus:
+        raise ValueError("take provenance corpus is not a real directory")
+    directories = [corpus, root]
+    for component in components:
+        directories.append(os.path.join(directories[-1], component))
+    for directory in directories:
+        try:
+            info = os.lstat(directory)
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+                or stat.S_IMODE(info.st_mode) & 0o022:
+            raise ValueError("take provenance directory is unsafe")
+    suffix = ".source" if area == "sources" else ".json"
+    return os.path.join(directories[-1], digest + suffix)
+
+
+def _take_provenance_record(path, source, target, kind, signed_grade):
+    meta = _history_page_metadata("take", path, target)
+    return {**_take_provenance_declaration(source, kind),
+            "take_id": meta["id"], "slug": meta["slug"],
+            "target_sha256": hashlib.sha256(target.encode()).hexdigest(),
+            "target_size": len(target.encode()), "grade_observed": signed_grade}
+
+
+def _take_provenance_git_admission(paths):
+    corpus = os.path.dirname(_take_provenance_root())
+    # Alternate standalone stores may have no git owner yet. If a repository
+    # is present, indispensable provenance must not be excluded by its policy.
+    if not os.path.lexists(os.path.join(corpus, ".git")):
+        return
+    for path in paths:
+        result = subprocess.run(
+            ["git", "check-ignore", "--quiet", "--no-index", "--",
+             os.path.relpath(path, corpus)], cwd=corpus,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        if result.returncode == 0:
+            raise ValueError("take provenance is ignored by corpus git policy")
+        if result.returncode != 1:
+            raise ValueError("take provenance git admission refused")
+
+
+def _read_take_provenance(path, target):
+    digest = hashlib.sha256(target.encode()).hexdigest()
+    meta = _history_page_metadata("take", path, target)
+    witness_path = _take_provenance_path("targets", digest, take_id=meta["id"])
+    try:
+        raw = _read_bounded_regular_text(
+            witness_path, MAX_TAKE_PAGE_BYTES, "take provenance witness", private=True)
+    except FileNotFoundError:
+        entries, complete, _inspected, _cursor = _bounded_history_entries(
+            os.path.dirname(witness_path), limit=min(
+                MAX_TRANSACTION_RECOVERY_BATCH, MAX_HISTORY_BASELINE_SCAN))
+        if entries or not complete:
+            raise ValueError("retained take provenance does not bind the current target")
+        return None
+    witness = siaqueue.strict_json_loads(raw)
+    if not isinstance(witness, dict) or set(witness) != {
+            "schema", "migration_kind", "source_sha256", "source_size",
+            "take_id", "slug", "target_sha256", "target_size", "grade_observed"} \
+            or witness.get("schema") != TAKE_PROVENANCE_SCHEMA \
+            or witness.get("migration_kind") not in TAKE_MIGRATION_KINDS \
+            or type(witness.get("grade_observed")) is not bool \
+            or type(witness.get("source_size")) is not int \
+            or not 0 < witness["source_size"] <= MAX_LEGACY_TAKE_PAGE_BYTES \
+            or type(witness.get("target_size")) is not int:
+        raise ValueError("take provenance witness is invalid")
+    source_path = _take_provenance_path("sources", witness["source_sha256"])
+    source = _read_bounded_regular_text(
+        source_path, MAX_LEGACY_TAKE_PAGE_BYTES, "take provenance source", private=True)
+    expected = _take_provenance_record(
+        path, source, target, witness["migration_kind"], witness["grade_observed"])
+    if witness != expected:
+        raise ValueError("take provenance witness does not bind its source and target")
+    _admit_take_migration_transform(path, source, target, witness["migration_kind"])
+    import sialib
+    if not sialib.ledger_contains(
+            "MIGRATE:take-origin", meta["id"], witness["migration_kind"], target):
+        raise ValueError("take provenance lacks its exact signed migration")
+    observed = meta["status"] in {"resolved-true", "resolved-false"} and bool(
+        sialib.ledger_contains("GRADE:take", meta["id"], meta["status"], source))
+    if observed != witness["grade_observed"]:
+        raise ValueError("take provenance grade witness changed")
+    return witness, source
+
+
+def _publish_take_provenance(witness, source):
+    targets = (
+        (_take_provenance_path("sources", witness["source_sha256"]), source),
+        (_take_provenance_path("targets", witness["target_sha256"],
+                               take_id=witness["take_id"]),
+         json.dumps(witness, sort_keys=True, separators=(",", ":")) + "\n"))
+    for path, text in targets:
+        root = _take_provenance_root()
+        directories = [root]
+        for component in os.path.relpath(os.path.dirname(path), root).split(os.sep):
+            directories.append(os.path.join(directories[-1], component))
+        for directory in directories:
+            _ensure_private_durable_directory(directory, "take provenance")
+        if os.path.lexists(path):
+            existing = _read_bounded_regular_text(
+                path, MAX_LEGACY_TAKE_PAGE_BYTES, "take provenance artifact", private=True)
+            if existing != text:
+                raise ValueError("take provenance artifact already has different bytes")
+        else:
+            _atomic_text(path, text, mode=0o600, exclusive=True,
+                         authority_roots=(os.path.dirname(root),))
 
 
 def _legacy_folded_field(value, limit):
@@ -4019,6 +5131,13 @@ def _take_migration_paths(page_state=None, limit=MAX_HISTORY_BASELINE_SCAN):
 def _take_migration_candidate(slug, path):
     source = _read_bounded_regular_text(
         path, MAX_LEGACY_TAKE_PAGE_BYTES, "legacy take page")
+    return _take_migration_candidate_text(slug, path, source)
+
+
+def _take_migration_candidate_text(slug, path, source, *, declare=True):
+    """Apply the admitted legacy producer rules to already captured bytes."""
+    if not isinstance(source, str) or len(source.encode()) > MAX_LEGACY_TAKE_PAGE_BYTES:
+        raise ValueError("legacy take page exceeds its bounded size")
     metadata_lines = re.findall(r"^sia_take: (.*)$", source, re.M)
     current_error = None
     try:
@@ -4037,6 +5156,10 @@ def _take_migration_candidate(slug, path):
         take["slug"], take["path"] = slug, path
         kind = ("legacy-v1-normalize" if take["status"] == "open"
                 else "model-inert-v1")
+        if target is not None and declare:
+            target = _declare_take_provenance(target, source, kind)
+            if len(target.encode()) > MAX_TAKE_PAGE_BYTES:
+                raise ValueError("migrated take page exceeds the bounded page size")
         return take, source, target, kind
 
     try:
@@ -4044,6 +5167,10 @@ def _take_migration_candidate(slug, path):
         canonical = _canonical_legacy_v1_take(legacy_take, source)
         target = _render_legacy_v1_target(
             canonical, links, justification)
+        if declare:
+            target = _declare_take_provenance(target, source, "legacy-v1-normalize")
+            if len(target.encode()) > MAX_TAKE_PAGE_BYTES:
+                raise ValueError("normalized legacy take exceeds the current page size")
         canonical["slug"], canonical["path"] = slug, path
         return canonical, source, target, "legacy-v1-normalize"
     except Exception as legacy_error:
@@ -4053,6 +5180,18 @@ def _take_migration_candidate(slug, path):
                 f"v1.2 producer shape ({current_error}; {legacy_error})") \
                 from legacy_error
         return None
+
+
+def _admit_take_migration_transform(path, source, target, migration_kind):
+    slug = "takes/" + os.path.basename(path)[:-3]
+    candidate = _take_migration_candidate_text(slug, path, source, declare=False)
+    if candidate is None or candidate[2] is None or candidate[3] != migration_kind:
+        raise ValueError("take migration is not an admitted source transformation")
+    bare = candidate[2]
+    declared = _declare_take_provenance(bare, source, migration_kind)
+    if target not in (bare, declared):
+        raise ValueError("take migration target differs from its source transformation")
+    return candidate[0]
 
 
 def take_migration_required():
@@ -4101,6 +5240,9 @@ def _take_migration_payload(take, source_text, target_text, migration_kind,
 
 def _validate_take_migration(value, journal_path):
     if not isinstance(value, dict) \
+            or not TAKE_MIGRATION_REQUIRED_KEYS.issubset(value) \
+            or set(value) - TAKE_MIGRATION_REQUIRED_KEYS \
+            - TAKE_MIGRATION_OPTIONAL_KEYS \
             or value.get("schema") != TAKE_MIGRATION_SCHEMA:
         raise ValueError("malformed take migration journal")
     take_id = value.get("take_id")
@@ -4119,6 +5261,7 @@ def _validate_take_migration(value, journal_path):
         raise ValueError("take migration target text is missing")
     encoded = target.encode("utf-8")
     if len(encoded) > MAX_TAKE_PAGE_BYTES \
+            or type(value.get("target_size")) is not int \
             or value.get("target_size") != len(encoded) \
             or value.get("target_sha256") != hashlib.sha256(encoded).hexdigest():
         raise ValueError("take migration target digest is invalid")
@@ -4128,6 +5271,9 @@ def _validate_take_migration(value, journal_path):
     if "grade_observed" in value \
             and not isinstance(value["grade_observed"], bool):
         raise ValueError("take migration grade witness is invalid")
+    if "history_event" in value \
+            and not isinstance(value["history_event"], dict):
+        raise ValueError("take migration history event is invalid")
     return value
 
 
@@ -4135,6 +5281,8 @@ def _finish_take_migration(journal_path, value, before_publish=None):
     """Sign and publish one exact legacy-take provenance migration."""
     import sialib
     value = _validate_take_migration(value, journal_path)
+    if _read_transaction_json(journal_path) != value:
+        raise ValueError("take migration journal changed before admission")
     current = _read_bounded_regular_text(
         value["path"], MAX_LEGACY_TAKE_PAGE_BYTES, "legacy take page")
     current_digest = hashlib.sha256(current.encode()).hexdigest()
@@ -4143,6 +5291,38 @@ def _finish_take_migration(journal_path, value, before_publish=None):
     target = value["target_text"]
     action = "MIGRATE:take-origin"
     migration_kind = value["migration_kind"]
+    signed_grade = value.get("grade_observed", False)
+    after, history_event = _admit_take_transaction_target(
+        value, "legacy-migration", signed_grade, journal_path)
+    if current_digest == value["source_sha256"]:
+        source = current
+        _admit_take_migration_transform(value["path"], source, target, migration_kind)
+    else:
+        provenance = _read_take_provenance(value["path"], target)
+        if provenance is None:
+            raise ValueError("published take migration has no retained source witness")
+        witness, source = provenance
+        if witness["source_sha256"] != value["source_sha256"] \
+                or witness["migration_kind"] != migration_kind \
+                or witness["grade_observed"] != signed_grade:
+            raise ValueError("take migration journal disagrees with retained provenance")
+    observed_grade = after["status"] in {"resolved-true", "resolved-false"} and bool(
+        sialib.ledger_contains("GRADE:take", after["id"], after["status"], source))
+    if observed_grade != signed_grade:
+        raise ValueError("take migration grade flag is not a current signed witness")
+    witness = _take_provenance_record(
+        value["path"], source, target, migration_kind, observed_grade)
+    _take_provenance_git_admission((
+        _take_provenance_path("sources", witness["source_sha256"]),
+        _take_provenance_path("targets", witness["target_sha256"],
+                              take_id=witness["take_id"])))
+    if value.get("history_event") is None:
+        value = dict(value)
+        value["history_event"] = history_event
+        _atomic_text(journal_path, _bounded_transaction_journal_text(value),
+                     mode=0o600)
+    _reserve_history_event(
+        history_event, journal_path=journal_path, journal_value=value)
     if not sialib.ledger_contains(
             action, value["take_id"], migration_kind, target):
         sialib.ledger_append(
@@ -4150,26 +5330,37 @@ def _finish_take_migration(journal_path, value, before_publish=None):
         if not sialib.ledger_contains(
                 action, value["take_id"], migration_kind, target):
             raise RuntimeError("signed take migration was not observable")
-    history_event = value.get("history_event")
-    if history_event is None:
-        after = _history_page_metadata("take", value["path"], target)
-        existing = _history_direct("take", value["take_id"])
-        history_event = _history_event(
-            "take", "legacy-migration", value["path"], target,
-            before=existing, after=after,
-            signed_grade=bool(value.get("grade_observed", False)),
-            catalog_new=existing is None)
-        value = dict(value)
-        value["history_event"] = history_event
-        _atomic_text(journal_path, json.dumps(value, sort_keys=True),
-                     mode=0o600)
     if before_publish is not None:
         # A crash may have published the target but left this journal. Mark
         # debt even on that replay so the index and graph cannot lag the page.
         before_publish()
+    _publish_take_provenance(witness, source)
+    current = _read_bounded_regular_text(
+        value["path"], MAX_LEGACY_TAKE_PAGE_BYTES, "legacy take page")
+    current_digest = hashlib.sha256(current.encode()).hexdigest()
+    if current_digest not in {value["source_sha256"], value["target_sha256"]}:
+        raise ValueError("take migration target changed outside its transaction")
+    if current_digest == value["target_sha256"] \
+            and value["source_sha256"] != value["target_sha256"]:
+        _durably_admit_existing_history_target(value["path"], target)
+    authority_basis = _history_prepublication_authority_basis(
+        history_event, current_digest=current_digest,
+        source_digest=value["source_sha256"])
+    publication = None
     if current_digest == value["source_sha256"]:
-        _atomic_text(value["path"], target)
-    _history_project_event(history_event)
+        publication = _atomic_text(
+            value["path"], target,
+            observe_directory=authority_basis is not None)
+    if authority_basis is not None:
+        authority_checkpoint = _history_publication_authority_checkpoint(
+            "take", authority_basis, publication)
+    elif current_digest == value["target_sha256"]:
+        authority_checkpoint = _history_partial_authority_checkpoint(
+            history_event)
+    else:
+        authority_checkpoint = None
+    _history_project_event(
+        history_event, authority_checkpoint=authority_checkpoint)
     _unlink_durable(journal_path)
     return value["take_id"]
 
@@ -4282,8 +5473,9 @@ def migrate_legacy_take_pages(before_publish=None):
                 grade_observed = False
                 if take.get("status") in (
                         "resolved-true", "resolved-false"):
-                    grade_observed = sialib.ledger_contains(
-                        "GRADE:take", take["id"], take["status"], source)
+                    grade_observed = (_history_authoritative_signed_grade(
+                        "take", take, source) if target is None else
+                        sialib.ledger_contains("GRADE:take", take["id"], take["status"], source))
                 if target is None:
                     event = _history_event(
                         "take", "legacy-baseline", path, source,
@@ -4408,8 +5600,9 @@ ADMITTED EVENT/EPOCH SNAPSHOTS ([slug] page digest + exact excerpt):
 {evidence or '(none)'}
 </untrusted_evidence>
 
-Model/agent notes, syntheses, takes, intents, entity descriptions, and thought
-pages are intentionally excluded: they are not grading witnesses.
+Model/agent notes, syntheses, takes, intents, entity descriptions, and
+generated-entry pages (the `thought` compatibility type) are intentionally
+excluded: they are not grading witnesses.
 
 Answer in EXACTLY this format:
 VERDICT: TRUE|FALSE|UNRESOLVABLE
@@ -4431,7 +5624,7 @@ AUDIT_FIXTURES = [
      "evidence present — must resolve TRUE"),
     ("Custos performed zero Downloads sweeps during August 2026", "FALSE",
      "corpus evidence contradicts — must resolve FALSE"),
-    ("SIA will run its consolidation dream on 2026-09-15", "UNRESOLVABLE",
+    ("SIA will run scheduled maintenance on 2026-09-15", "UNRESOLVABLE",
      "future event, deadline not reached — must abstain"),
     ("The nginx service crashed on this machine on 2026-08-27",
      "UNRESOLVABLE",
@@ -4683,12 +5876,11 @@ def summary(takes=None):
             "invalid_records": overall["invalid_records"]}
 
 
-# --------------------------------------------- prospective memory (intents)
-# The one classical faculty a pure historian lacks: remembering TO DO,
-# not just what happened. An intent is a dated commitment that surfaces
+# ----------------------------------------------------- dated intents
+# An intent is a dated commitment that SIA surfaces
 # as its deadline approaches and closes on the operator's word (or with
-# a note pointing at evidence). It is a due-date lane, not a cognitive
-# mechanism — no scores, no model, no auto-close.
+# a note pointing at evidence). It is a due-date lane: no scores, no model,
+# and no automatic close.
 
 INTENTS_DIR = os.path.join(CORPUS, "intents")
 
@@ -4750,10 +5942,11 @@ def create_intent(text, due, holder="user", before_publish=None):
         "---\n"
         f"# intent · {iid}\n\n"
         f"**{text}**\n\n"
-        f"Committed {created[:10]} by {holder} · due {due}. The brain "
+        f"Committed {created[:10]} by {holder} · due {due}. SIA "
         f"surfaces this as the deadline approaches; it closes only on "
         f"the operator's word.\n\n[[sia/cortex]]\n")
     path = os.path.join(INTENTS_DIR, f"{created[:10]}-{iid}.md")
+    _ensure_private_durable_directory(INTENTS_DIR, "intent page")
     slug = f"intents/{created[:10]}-{iid}"
     if natural_history_debt("intent"):
         raise ValueError(
@@ -4763,7 +5956,6 @@ def create_intent(text, due, holder="user", before_publish=None):
     event = _history_event(
         "intent", "create", path, body, after=projected,
         catalog_new=True)
-    _ensure_private_durable_directory(INTENTS_DIR, "intent page")
     _commit_history_tx(
         "intent", event, body, before_publish=before_publish)
     meta["slug"] = slug

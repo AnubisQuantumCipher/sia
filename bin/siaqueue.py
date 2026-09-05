@@ -37,6 +37,22 @@ STAGING_LOCK_NAME = "publish.lock"
 STAGING_PAYLOAD_NAME = "payload"
 
 
+def regular_file_stream(descriptor, *, label="source", error_type=ValueError):
+    """Take ownership of a regular read descriptor, closing on refusal.
+
+    Callers must open potentially special leaves nonblocking. Rejecting their
+    type before fdopen also matters: fdopen rejects directory descriptors
+    without assuming ownership, so a failed conversion would otherwise leak.
+    """
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise error_type(f"{label} is not a regular file")
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def _strict_json_object(pairs):
     value = {}
     for key, item in pairs:
@@ -213,7 +229,11 @@ def _queue_usage(queue_dir):
 
 
 def _validate_record(record, filename=None):
-    if not isinstance(record, dict) or record.get("schema") != SCHEMA:
+    base_keys = {"schema", "request_id", "queued_at", "operation", "payload"}
+    if not isinstance(record, dict) \
+            or frozenset(record) not in {frozenset(base_keys),
+                                   frozenset(base_keys | {"redactions"})} \
+            or record.get("schema") != SCHEMA:
         raise ValueError("unsupported schema")
     request_id = record.get("request_id")
     if (not isinstance(request_id, str)
@@ -238,6 +258,15 @@ def _validate_record(record, filename=None):
             or len(author) > 40 or not isinstance(text, str)
             or not text.strip() or len(text) > 2000):
         raise ValueError("invalid note payload")
+    if "redactions" in record:
+        redactions = record["redactions"]
+        count = redactions.get("agent-note") \
+            if isinstance(redactions, dict) else None
+        if not isinstance(redactions, dict) \
+                or set(redactions) != {"agent-note"} \
+                or isinstance(count, bool) or not isinstance(count, int) \
+                or not 1 <= count <= MAX_REQUEST_BYTES:
+            raise ValueError("invalid note redaction accounting")
     if filename is not None:
         canonical = (queued_at.replace(":", "").replace("-", "") + "-"
                      + request_id + ".json")
@@ -428,8 +457,17 @@ def _read_exact_at(directory_descriptor, name, expected_size, label):
     return b"".join(chunks)
 
 
+def _directory_identity(info):
+    return {
+        "device": info.st_dev, "inode": info.st_ino,
+        "size": info.st_size, "mtime_ns": info.st_mtime_ns,
+        "ctime_ns": info.st_ctime_ns,
+    }
+
+
 def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
-                         staging_dir=None, authority_roots=()):
+                         staging_dir=None, authority_roots=(),
+                         observe_destination=False):
     """Publish bytes through one crash-reusable fixed payload slot.
 
     ``exclusive`` never replaces a destination.  An already-present exact
@@ -440,6 +478,8 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
     """
     if not isinstance(data, bytes):
         raise TypeError("fixed publication payload must be bytes")
+    if type(observe_destination) is not bool:
+        raise TypeError("destination observation mode must be a Boolean")
     target = os.path.abspath(path)
     directory = os.path.dirname(target) or os.curdir
     name = os.path.basename(target)
@@ -484,6 +524,11 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                     # exact destination as already published.
                     os.fsync(destination_descriptor)
                     _publish_boundary("target-directory-fsynced")
+                    if observe_destination:
+                        identity = _directory_identity(
+                            os.fstat(destination_descriptor))
+                        return {"status": "existing", "before": identity,
+                                "after": identity, "stable": True}
                     return "existing"
                 raise FileExistsError(path)
 
@@ -508,6 +553,8 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
             os.fsync(staging_descriptor)
             _publish_boundary("payload-linked")
 
+            directory_before = _directory_identity(
+                os.fstat(destination_descriptor))
             if exclusive:
                 _rename_noreplace(
                     staging_descriptor, STAGING_PAYLOAD_NAME,
@@ -517,12 +564,26 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                     STAGING_PAYLOAD_NAME, name,
                     src_dir_fd=staging_descriptor,
                     dst_dir_fd=destination_descriptor)
+            directory_published = _directory_identity(
+                os.fstat(destination_descriptor))
             _publish_boundary("target-published")
+            directory_after_publish = _directory_identity(
+                os.fstat(destination_descriptor))
             os.fsync(destination_descriptor)
             _publish_boundary("target-directory-fsynced")
+            directory_after_fsync = _directory_identity(
+                os.fstat(destination_descriptor))
 
             os.fsync(staging_descriptor)
             _publish_boundary("staging-clean-fsynced")
+            directory_before_return = _directory_identity(
+                os.fstat(destination_descriptor))
+            if observe_destination:
+                stable = (directory_published == directory_after_publish
+                          == directory_after_fsync
+                          == directory_before_return)
+                return {"status": "published", "before": directory_before,
+                        "after": directory_published, "stable": stable}
             return "published"
     finally:
         os.close(staging_descriptor)
@@ -547,9 +608,9 @@ def _same_identity(info, expected, digest):
 def _read_open_request(path, name):
     linked = os.lstat(path)
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as f:
+    with regular_file_stream(fd, label="request") as f:
         opened = os.fstat(f.fileno())
         if (not stat.S_ISREG(opened.st_mode)
                 or opened.st_size > MAX_REQUEST_BYTES
@@ -593,7 +654,7 @@ def _canonical_spool_name(name):
     return match.group(1) if match else None
 
 
-def enqueue(state_dir, operation, payload):
+def enqueue(state_dir, operation, payload, *, redactions=None):
     """Durably enqueue one immutable request and return its public receipt."""
     if not isinstance(payload, dict):
         raise TypeError("payload must be an object")
@@ -610,6 +671,8 @@ def enqueue(state_dir, operation, payload):
         "operation": operation,
         "payload": payload,
     }
+    if redactions:
+        record["redactions"] = redactions
     _validate_record(record)
     encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True)
                + "\n").encode("utf-8")
@@ -632,9 +695,10 @@ def enqueue(state_dir, operation, payload):
             "operation": operation}
 
 
-def enqueue_note(state_dir, author, text):
+def enqueue_note(state_dir, author, text, *, redactions=None):
     return enqueue(state_dir, "note", {"author": str(author),
-                                        "text": str(text)})
+                                        "text": str(text)},
+                   redactions=redactions)
 
 
 def pending(state_dir):

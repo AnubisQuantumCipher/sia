@@ -2,6 +2,7 @@
 """Multi-writer queue and MCP resource contract tests."""
 
 import concurrent.futures
+import copy
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -354,6 +355,77 @@ class PgliteOwnership(unittest.TestCase):
 
 
 class NoteMaterialization(unittest.TestCase):
+    def test_counted_queue_record_with_secret_bytes_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(state)
+            os.makedirs(corpus)
+            old_state, old_corpus = sialib.STATE, sialib.CORPUS
+            sialib.STATE, sialib.CORPUS = state, corpus
+            memo = {"redactions": {}}
+            try:
+                siaqueue.enqueue_note(
+                    state, "codex", "token=abcdefghijklmnop",
+                    redactions={"agent-note": 1})
+                with mock.patch.object(sialib, "_write_memo") as write, \
+                        self.assertRaisesRegex(
+                            RuntimeError, "still contains secret material"):
+                    sialib.materialize_agent_notes(
+                        {"v": 1, "thoughts": []}, memo)
+                write.assert_not_called()
+                self.assertEqual(memo, {"redactions": {}})
+            finally:
+                sialib.STATE, sialib.CORPUS = old_state, old_corpus
+
+    def test_queue_bound_redactions_are_accounted_once_across_retry(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(state)
+            os.makedirs(corpus)
+            old_state, old_corpus = sialib.STATE, sialib.CORPUS
+            sialib.STATE, sialib.CORPUS = state, corpus
+            memo = {"redactions": {"notify": 1}}
+            store = {"v": 1, "thoughts": []}
+            written = []
+            try:
+                receipt = siaqueue.enqueue_note(
+                    state, "codex", "already ⟦redacted⟧",
+                    redactions={"agent-note": 2})
+                with mock.patch.object(
+                        sialib, "_write_memo",
+                        side_effect=lambda value: written.append(
+                            copy.deepcopy(value))):
+                    paths, _pages, _thoughts, errors = \
+                        sialib.materialize_agent_notes(store, memo)
+                    self.assertEqual(errors, [])
+                    self.assertEqual(memo["redactions"], {
+                        "notify": 1, "agent-note": 2,
+                    })
+                    self.assertEqual(
+                        memo["agent_note_redaction_receipts"],
+                        {receipt["request_id"]: 2})
+                    writes_after_first = len(written)
+                    retry, _pages, repeated, errors = \
+                        sialib.materialize_agent_notes(store, memo)
+                    self.assertEqual(errors, [])
+                    self.assertEqual(retry, paths)
+                    self.assertEqual(repeated, [])
+                    self.assertEqual(len(written), writes_after_first)
+
+                    acknowledged, errors = sialib.acknowledge_agent_notes(
+                        paths, "committed", True,
+                        after_ack=lambda identity:
+                            sialib._forget_agent_note_redaction_receipt(
+                                memo, identity))
+                    self.assertEqual((acknowledged, errors), (1, []))
+                    self.assertNotIn(
+                        "agent_note_redaction_receipts", memo)
+                    self.assertEqual(memo["redactions"]["agent-note"], 2)
+            finally:
+                sialib.STATE, sialib.CORPUS = old_state, old_corpus
+
     def test_agent_markup_cannot_mint_corpus_links_or_terminal_controls(self):
         with tempfile.TemporaryDirectory() as root:
             state = os.path.join(root, "state")

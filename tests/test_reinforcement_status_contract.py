@@ -47,7 +47,7 @@ sia = _load_script("sia_reinforcement_contract_cli", SIA_PATH)
 import siamind  # noqa: E402  (bin/ joins sys.path when the CLI loads)
 
 
-DENSE_HIT = json.dumps([{
+HYBRID_QUERY_HIT = json.dumps([{
     "slug": "organs/memory", "score": 1.0, "type": "organ",
     "title": "memory", "chunk_text": "the page body",
 }])
@@ -55,8 +55,9 @@ DENSE_HIT = json.dumps([{
 
 @contextlib.contextmanager
 def _ask_environment(queued):
-    """Run cmd_ask over one dense hit with the touch queue forced."""
-    engine = types.SimpleNamespace(returncode=0, stdout=DENSE_HIT, stderr="")
+    """Run cmd_ask over one hybrid-query hit with the touch queue forced."""
+    engine = types.SimpleNamespace(
+        returncode=0, stdout=HYBRID_QUERY_HIT, stderr="")
     with mock.patch.object(sia, "_gbrain_query", return_value=engine), \
             mock.patch.object(sia.sialib, "corpus_origin",
                               return_value="evidence"), \
@@ -146,7 +147,7 @@ class ReinforcementStatusContract(unittest.TestCase):
 
     def test_rehearse_still_refuses_when_no_touch_was_queued(self):
         # `recall` returning 0 must not leak into `rehearse`.  Rehearsal
-        # exists to produce the touch the next dream grades as q=5; with
+        # exists to produce the touch the next scheduled run grades as q=5; with
         # no touch queued it accomplished nothing and must fail closed.
         out, err = io.StringIO(), io.StringIO()
         with _recall_environment(False), \

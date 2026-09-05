@@ -299,22 +299,96 @@ class AgentCatalogGeneration(unittest.TestCase):
             "limits": {raw_limit: 80},
         }
         cursors_by_format = (
-            {"agents.state": {raw_agent: copy.deepcopy(legacy_row)}},
-            {"agents.state": self._wrapped({
-                agent_id: copy.deepcopy(legacy_row)})},
+            ({"agents.state": {
+                raw_agent: copy.deepcopy(legacy_row)}}, agent_id),
+            ({"agents.state": self._wrapped({
+                "legacy": copy.deepcopy(legacy_row)})}, "legacy"),
+            ({"agents.state": self._wrapped({
+                "legacy_agent": copy.deepcopy(legacy_row)})},
+             self.sialib._source_entity_token("legacy_agent", "agent")),
         )
         os.rmdir(self.usage)
 
-        for cursors in cursors_by_format:
+        for cursors, expected_agent_id in cursors_by_format:
             with self.subTest(cursors=cursors):
                 self.assertEqual(self.sialib.sense_agents(cursors), [])
                 self.assertEqual(self._state(cursors), {
-                    agent_id: {
+                    expected_agent_id: {
                         "tokens": 5,
                         "limits": {limit_id: 80},
                         "generation": 0,
                     },
                 })
+
+    def test_untagged_token_looking_legacy_ids_are_still_raw(self):
+        os.rmdir(self.usage)
+        cursors = {"agents.state": {
+            "a_2bb": {
+                "tokens": 5,
+                "limits": {"daily_20limit": 80},
+            },
+        }}
+
+        self.assertEqual(self.sialib.sense_agents(cursors), [])
+
+        self.assertEqual(self._state(cursors), {
+            "a_5f2bb": {
+                "tokens": 5,
+                "limits": {"daily_5f20limit": 80},
+                "generation": 0,
+            },
+        })
+
+    def test_ambiguous_tagged_legacy_agent_identity_refuses_atomically(self):
+        legacy_row = {"tokens": 5, "limits": {}}
+        ambiguous = (
+            self.sialib._source_entity_token("Legacy Agent", "agent"),
+            "a_2bb",
+            "_e",
+            "agent_h" + ("a" * 64),
+        )
+        os.rmdir(self.usage)
+        for agent_id in ambiguous:
+            cursors = {"agents.state": self._wrapped({
+                agent_id: copy.deepcopy(legacy_row)})}
+            before = copy.deepcopy(cursors)
+            with self.subTest(agent_id=agent_id), self.assertRaisesRegex(
+                    ValueError, "source cursor agents.state is invalid"):
+                self.sialib.sense_agents(cursors)
+            self.assertEqual(cursors, before)
+
+    def test_modern_agent_row_supersedes_provable_legacy_shadow(self):
+        raw_agent = "legacy_agent"
+        agent_id = self.sialib._source_entity_token(raw_agent, "agent")
+        limit_id = self.sialib._source_entity_token(
+            "Daily Limit", "agent-limit")
+        legacy_row = {
+            "tokens": 5,
+            "limits": {"Daily Limit": 70},
+        }
+        modern_row = {
+            "tokens": 5,
+            "limits": {limit_id: 85},
+            "generation": 0,
+        }
+        self._write(raw_agent, tokens=5, limits=[
+            {"label": "Daily Limit", "percent": 0.9},
+        ])
+        rows = (
+            (raw_agent, legacy_row),
+            (agent_id, modern_row),
+        )
+        for ordered in (rows, tuple(reversed(rows))):
+            cursors = {"agents.state": self._wrapped(dict(ordered))}
+            events = self._finish(cursors)
+            self.assertFalse(any(event.kind == "limit" for event in events))
+            self.assertEqual(self._state(cursors), {
+                agent_id: {
+                    "tokens": 5,
+                    "limits": {limit_id: 90},
+                    "generation": 0,
+                },
+            })
 
     def test_legacy_agent_row_migrates_before_live_source_replacement(self):
         self._write("legacy", tokens=10, limits=[
@@ -337,6 +411,34 @@ class AgentCatalogGeneration(unittest.TestCase):
                     "limits": {limit_id: 90},
                     "generation": 0,
                 })
+
+    def test_legacy_underscore_agent_id_keeps_upgrade_transition(self):
+        raw_agent = "legacy_agent"
+        agent_id = self.sialib._source_entity_token(raw_agent, "agent")
+        limit_id = self.sialib._source_entity_token(
+            "Daily Limit", "agent-limit")
+        self._write(raw_agent, tokens=5, limits=[
+            {"label": "Daily Limit", "percent": 0.9},
+        ])
+        cursors = {"agents.state": {
+            raw_agent: {
+                "tokens": 5,
+                "limits": {"Daily Limit": 80},
+            },
+        }}
+
+        events = self._finish(cursors)
+
+        self.assertNotEqual(agent_id, raw_agent)
+        self.assertEqual(set(self._state(cursors)), {agent_id})
+        self.assertEqual(self._state(cursors)[agent_id], {
+            "tokens": 5,
+            "limits": {limit_id: 90},
+            "generation": 0,
+        })
+        limits = [event for event in events if event.kind == "limit"]
+        self.assertEqual(len(limits), 1)
+        self.assertIn("90% (was 80%)", limits[0].summary)
 
     def test_malformed_legacy_agent_rows_refuse_without_mutation(self):
         malformed = (
@@ -516,6 +618,52 @@ class SkillCatalogContinuation(unittest.TestCase):
         self.assertFalse(any(event.kind == "removed" for event in events))
         self.assertTrue(any(event.kind == "source-refused"
                             for event in events))
+
+    def test_manifest_io_refusal_never_proves_skill_removal(self):
+        self._write("resident")
+        cursors = {}
+        self.sialib.sense_skills(cursors)
+        prior = copy.deepcopy(cursors["skills.snapshot"])
+        original = self.sialib._read_skill_manifest
+
+        def refused(root, name):
+            if name == "resident":
+                raise PermissionError("manifest temporarily unreadable")
+            return original(root, name)
+
+        with mock.patch.object(
+                self.sialib, "_read_skill_manifest",
+                side_effect=refused):
+            events = self.sialib.sense_skills(cursors)
+
+        self.assertEqual(cursors["skills.snapshot"], prior)
+        self.assertTrue(cursors["skills.partial"])
+        self.assertFalse(any(event.kind == "removed" for event in events))
+        self.assertTrue(any(event.kind == "source-refused"
+                            for event in events))
+
+    def test_manifest_descriptors_are_opened_nonblocking(self):
+        self._write("resident")
+        runtime_globals = self.sialib._read_skill_manifest.__globals__
+        real_os = runtime_globals["os"]
+
+        class CheckedOs:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            def open(self, path, flags, *args, **kwargs):
+                if path == "SKILL.md":
+                    self.assert_nonblocking(flags)
+                return real_os.open(path, flags, *args, **kwargs)
+
+            @staticmethod
+            def assert_nonblocking(flags):
+                if not flags & real_os.O_NONBLOCK:
+                    raise AssertionError(
+                        "skill manifest descriptor may block on a special file")
+
+        with mock.patch.dict(runtime_globals, {"os": CheckedOs()}):
+            self.sialib.sense_skills({})
 
     def test_malformed_authoritative_skill_state_refuses_without_mutation(self):
         cases = (

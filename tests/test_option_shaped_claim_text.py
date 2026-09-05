@@ -9,7 +9,7 @@ be registered at all.  `--` is the caller saying "the rest is text": the
 guard keeps refusing typos, and real claims stay filable.
 
 `sia intend` had the mirror-image hole.  Its loop treats an unrecognised
-option as text, so a typo committed itself as prospective memory with the
+option as text, so a typo committed itself as a dated intent with the
 flag embedded.  The same marker makes that boundary explicit there too.
 """
 

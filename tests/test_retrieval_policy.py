@@ -2,7 +2,7 @@
 """The associative rerank ships default-off by measurement (whitepaper §4.3).
 
 On the extended 22-probe tripwire set (2026-09-02) the blend scored uniformly
-below plain dense retrieval (slug match@5 0.86 vs 0.91, reciprocal slug rank
+below the unmodified hybrid query (slug match@5 0.86 vs 0.91, reciprocal slug rank
 0.67 vs 0.71, match@1 0.50 vs 0.59), so `sia ask` applies graph influence only
 when `retrieval.associative_rerank` is explicitly true. The nightly tripwire
 keeps measuring the blend lane regardless of the flag, so the hypothesis stays
@@ -12,9 +12,11 @@ under instrumentation and can earn its default back with a measured win.
 import ast
 import importlib.machinery
 import importlib.util
+import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 try:
@@ -53,14 +55,44 @@ class AssociativeRerankPolicy(unittest.TestCase):
     def test_explicit_true_enables(self):
         self.assertTrue(self.sialib.associative_rerank_enabled(
             config={"retrieval": {"associative_rerank": True}}))
+        self.assertTrue(self.sialib.associative_rerank_enabled(config={
+            "retrieval": {
+                "_comment": "documented opt-in",
+                "associative_rerank": True,
+            },
+        }))
 
     def test_nonbool_and_malformed_never_enable(self):
         for bad in ({"retrieval": {"associative_rerank": "true"}},
                     {"retrieval": {"associative_rerank": 1}},
+                    {"retrieval": {"associative_rerank": True,
+                                   "mystery": 1}},
+                    {"retrieval": {"associative_rerank": True,
+                                   "_comment": ["not", "text"]}},
                     {"retrieval": "on"},
-                    {"retrieval": None}):
+                    {"retrieval": None},
+                    []):
             self.assertFalse(
                 self.sialib.associative_rerank_enabled(config=bad), bad)
+
+    def test_shipped_example_is_accepted_without_config_errors(self):
+        old_path = self.sialib.CONFIG_PATH
+        old_errors = list(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            self.sialib.CONFIG_PATH = os.path.join(root, "config.json")
+            with open(os.path.join(REPO, "config.example.json"),
+                      encoding="utf-8") as source, open(
+                          self.sialib.CONFIG_PATH, "w",
+                          encoding="utf-8") as target:
+                target.write(source.read())
+            try:
+                loaded = self.sialib.load_config()
+                self.assertEqual(self.sialib.CONFIG_ERRORS, [])
+                self.assertFalse(
+                    self.sialib.associative_rerank_enabled(config=loaded))
+            finally:
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG_ERRORS[:] = old_errors
 
     def test_load_config_flags_malformed_retrieval(self):
         # load_config records named errors for malformed retrieval blocks; the
@@ -69,13 +101,12 @@ class AssociativeRerankPolicy(unittest.TestCase):
         original = self.sialib._record_config_error
         self.sialib._record_config_error = recorded.append
         try:
-            import json
             path = self.sialib.CONFIG_PATH
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as stream:
                 json.dump({"retrieval": {"associative_rerank": "yes",
                                          "mystery": 1}}, stream)
-            self.sialib.load_config()
+            loaded = self.sialib.load_config()
         finally:
             self.sialib._record_config_error = original
             try:
@@ -84,6 +115,8 @@ class AssociativeRerankPolicy(unittest.TestCase):
                 pass
         self.assertIn("retrieval-unknown-key", recorded)
         self.assertIn("retrieval-associative-rerank-must-be-bool", recorded)
+        self.assertFalse(
+            self.sialib.associative_rerank_enabled(config=loaded))
 
 
 class RehearsalEfficacyPartition(unittest.TestCase):

@@ -2,6 +2,7 @@
 """Focused contracts for the capsule-only recovery-repository adapter."""
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -82,51 +83,72 @@ class ContinuityTransport(unittest.TestCase):
             "environment_file": None,
             "repository_id": "b" * 64,
             "brain_public_key": self.public_key,
-            "created_at": "test-time",
+            "created_at": "2026-09-04T12:00:00Z",
         }
         siabackup._write_exclusive(
             siabackup.CONFIG_PATH, siabackup._canonical_bytes(config))
         siabackup._write_exclusive(siabackup.KEY_PATH, b"recovery-key\n")
         return config
 
-    def _apply_args(self, *, prepared_id="def456", snapshot_id="abc123",
+    def _apply_args(self, *, prepared_id="d" * 32, snapshot_id="abc123",
                     restored_public_key=None):
-        return {
+        confirmation = {
+            "schema_version": siabackup.CONFIRMATION_SCHEMA_VERSION,
+            "phrase": "RESTORE",
+            "snapshot_id": snapshot_id,
+            "ledger_head": "f" * 64,
+            "corpus_receipt_re_adopt": True,
+        }
+        target = {
+            "corpus_root": {
+                "device": 1, "inode": 2, "mode": 448,
+                "owner": os.geteuid(),
+            },
+            "receipt_sha256": "e" * 64,
+            "receipt_mode": 384,
+        }
+        prepared = {
             "prepared_id": prepared_id,
             "snapshot_id": snapshot_id,
             "capsule_id": "a" * 32,
             "manifest_sha256": "b" * 64,
-            "confirmation": {
-                "schema_version": siabackup.CONFIRMATION_SCHEMA_VERSION,
-                "phrase": "RESTORE",
-                "snapshot_id": snapshot_id,
-                "ledger_head": "target-head",
-                "corpus_receipt_re_adopt": True,
-            },
+        }
+        return {
+            **prepared,
+            "confirmation": confirmation,
             "identity_key_file": None,
             "repository": os.path.join(self.temp.name, "repository"),
             "environment_file": "",
             "repository_id": "b" * 64,
-            "configured_at": "test-time",
+            "configured_at": "2026-09-04T12:00:00Z",
             "target_public_key": self.public_key,
             "restored_public_key": (
                 restored_public_key or self.public_key),
+            "adoption": siabackup.siacapsule.adoption_binding(
+                prepared, confirmation, target, order=7),
         }
 
     def _apply_request_and_debt(self, *, phase="restart-attested",
-                                write_request=True):
+                                write_request=True,
+                                restored_public_key=None):
+        self._ensure_healthy_latest_authority()
         runtime = os.path.join(REPO, "bin", "sia")
         runtime_info = os.lstat(runtime)
+        apply_args = self._apply_args(
+            restored_public_key=restored_public_key)
         request = {
             "schema": siabackup.REQUEST_SCHEMA,
-            "id": "abc123", "created_at": "test-time",
+            "id": "a" * 32, "created_at": "2026-09-04T12:00:00Z",
             "action": "apply",
-            "args": self._apply_args(),
+            "args": apply_args,
         }
         if write_request:
             siabackup._write_exclusive(
                 siabackup._request_path(request["id"]),
                 siabackup._canonical_bytes(request))
+        request_info = (os.lstat(siabackup._request_path(request["id"]))
+                        if write_request else None)
+        binding = siabackup._restore_request_binding(apply_args)
         debt = {
             "schema": siabackup.SUPERVISOR_SCHEMA,
             "kind": "restore-apply",
@@ -143,26 +165,107 @@ class ContinuityTransport(unittest.TestCase):
             "runtime_path": runtime,
             "runtime_device": str(runtime_info.st_dev),
             "runtime_inode": str(runtime_info.st_ino),
-            "repository": os.path.join(self.temp.name, "repository"),
-            "environment_file": "",
-            "repository_id": "b" * 64,
-            "configured_at": "test-time",
-            "target_public_key": self.public_key,
-            "restored_public_key": self.public_key,
+            "request_device": (str(request_info.st_dev)
+                               if request_info is not None else "1"),
+            "request_inode": (str(request_info.st_ino)
+                              if request_info is not None else "1"),
+            **binding,
         }
         siabackup._write_exclusive(
             siabackup.SUPERVISOR_PATH,
             siabackup._canonical_bytes(debt))
         return request, debt
 
+    def _recovery_debt(self, *, phase="restart-attested"):
+        self._ensure_healthy_latest_authority()
+        runtime = os.path.join(REPO, "bin", "sia")
+        runtime_info = os.lstat(runtime)
+        debt = {
+            "schema": siabackup.SUPERVISOR_SCHEMA,
+            "kind": "restore-recover",
+            "request_path": "",
+            "request_id": "e" * 32,
+            "prepared_id": "",
+            "snapshot_id": "",
+            "capsule_id": "",
+            "manifest_sha256": "",
+            "phase": phase,
+            "child_code": "0",
+            "restart_pid": ("123" if phase == "restart-attested"
+                            else "pending"),
+            "runtime_path": runtime,
+            "runtime_device": str(runtime_info.st_dev),
+            "runtime_inode": str(runtime_info.st_ino),
+            "request_device": "",
+            "request_inode": "",
+            "repository": "",
+            "environment_file": "",
+            "identity_key_file": "",
+            "repository_id": "",
+            "configured_at": "",
+            "target_public_key": "",
+            "restored_public_key": "",
+            "accepted_ledger_head": "",
+            "confirmation_sha256": "",
+            "adoption_order": "",
+            "adoption_record_id": "",
+            "target": "",
+        }
+        siabackup._write_exclusive(
+            siabackup.SUPERVISOR_PATH,
+            siabackup._canonical_bytes(debt))
+        return debt
+
     def _healthy_latest(self, snapshot_id="abc123"):
         return {
             "snapshot_id": snapshot_id,
-            "created_at": "test-time",
+            "created_at": "2026-09-04T12:00:00Z",
             "verified": True,
             "readiness": "ready",
             "profile": siabackup.PROFILE,
             "identity_matches": True,
+        }
+
+    def _ensure_healthy_latest_authority(self):
+        try:
+            config = siabackup.load_config()
+        except FileNotFoundError:
+            config = self._configure()
+        latest = self._healthy_latest()
+        if siabackup._load_verification(
+                latest["snapshot_id"], config=config) is None:
+            siabackup._record_verification(latest["snapshot_id"], {
+                "capsule_id": "a" * 32,
+                "manifest_sha256": "b" * 64,
+                "classification": "ready",
+                "public_key": self.public_key,
+            }, config=config)
+        return latest
+
+    def _healthy_prepared(self, prepared_id="d" * 32):
+        return {
+            "prepared_id": prepared_id,
+            "snapshot_id": "abc123",
+            "created_at": "2026-09-04T12:00:00Z",
+            "readiness": "ready",
+            "profile": siabackup.PROFILE,
+            "ledger_head": "f" * 64,
+            "identity_matches": True,
+        }
+
+    def _prepared_status(self, prepared_id="d" * 32):
+        prepared = self._healthy_prepared(prepared_id)
+        return {
+            "schema_version": siabackup.STATUS_SCHEMA_VERSION,
+            "state": "prepared",
+            "detail": "Restore capsule verified off-path.",
+            "repository_display": "External recovery repository",
+            "latest": self._healthy_latest(),
+            "prepared": prepared,
+            "operation": siabackup._operation(
+                "a" * 32, "restore-prepare", "verified",
+                prepared_id=prepared_id),
+            "updated_at": "2026-09-04T12:00:00Z",
         }
 
     @staticmethod
@@ -204,6 +307,7 @@ class ContinuityTransport(unittest.TestCase):
             "LoadState": "loaded",
             "FragmentPath": os.path.join(systemd_dir, name),
             "DropInPaths": drop_in,
+            "NeedDaemonReload": "no",
             "ActiveState": "active" if active else "inactive",
             "UnitFileState": "enabled" if enabled else "disabled",
             "Job": job,
@@ -221,6 +325,369 @@ class ContinuityTransport(unittest.TestCase):
         self.assertEqual(status["state"], "unconfigured")
         self.assertIsNone(status["latest"])
         self.assertNotIn("protected", status["detail"].casefold())
+
+    def test_missing_status_refuses_partial_configuration(self):
+        self._configure()
+        os.unlink(siabackup.KEY_PATH)
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "configuration.*incomplete"):
+            siabackup.read_status()
+        os.unlink(siabackup.CONFIG_PATH)
+        siabackup._write_exclusive(
+            siabackup.KEY_PATH, b"recovery-key\n")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "configuration.*incomplete"):
+            siabackup.read_status()
+
+    def test_missing_status_validates_configuration_before_claiming_it(self):
+        self._configure()
+        os.chmod(siabackup.CONFIG_PATH, 0o644)
+        with self.assertRaisesRegex(ValueError, "owner-private"):
+            siabackup.read_status()
+
+    def test_missing_status_admits_complete_valid_configuration(self):
+        self._configure()
+        status = siabackup.read_status()
+        self.assertEqual(status["state"], "recovery-only")
+        self.assertIsNone(status["latest"])
+
+    def test_status_reader_enforces_the_exact_bounded_nested_contract(self):
+        valid = self._prepared_status()
+        invalid = {
+            "top-level extra": {**valid, "unexpected": True},
+            "invalid publication timestamp": {
+                **valid, "updated_at": "2026-09-04 12:00:00"},
+            "unbounded detail": {
+                **valid,
+                "detail": "x" * (siabackup.STATUS_TEXT_MAX_CHARS + 1)},
+            "detail control": {**valid, "detail": "unsafe\n"},
+            "latest extra": {
+                **valid, "latest": {**valid["latest"], "extra": "x"}},
+            "latest identifier": {
+                **valid,
+                "latest": {**valid["latest"], "snapshot_id": "ABC123"}},
+            "latest identifier control": {
+                **valid,
+                "latest": {
+                    **valid["latest"], "snapshot_id": "abc123\n"}},
+            "latest identifier bound": {
+                **valid,
+                "latest": {
+                    **valid["latest"],
+                    "snapshot_id": (
+                        "a" * siabackup.STATUS_IDENTIFIER_MAX_CHARS + "a")}},
+            "latest timestamp": {
+                **valid,
+                "latest": {**valid["latest"], "created_at": "later"}},
+            "latest noncanonical fraction": {
+                **valid,
+                "latest": {
+                    **valid["latest"],
+                    "created_at": "2026-09-04T12:00:00.120Z"}},
+            "latest noncanonical zero offset": {
+                **valid,
+                "latest": {
+                    **valid["latest"],
+                    "created_at": "2026-09-04T12:00:00+00:00"}},
+            "latest readiness": {
+                **valid,
+                "latest": {**valid["latest"], "readiness": "maybe"}},
+            "latest profile": {
+                **valid,
+                "latest": {**valid["latest"], "profile": "other"}},
+            "prepared extra": {
+                **valid,
+                "prepared": {**valid["prepared"], "extra": "x"}},
+            "prepared identifier": {
+                **valid,
+                "prepared": {**valid["prepared"], "prepared_id": "ABC"}},
+            "prepared identifier width": {
+                **valid,
+                "prepared": {**valid["prepared"], "prepared_id": "abc123"}},
+            "prepared timestamp": {
+                **valid,
+                "prepared": {**valid["prepared"], "created_at": "later"}},
+            "prepared readiness": {
+                **valid,
+                "prepared": {**valid["prepared"], "readiness": "unknown"}},
+            "prepared ledger head": {
+                **valid,
+                "prepared": {**valid["prepared"], "ledger_head": "head"}},
+            "prepared ledger head control": {
+                **valid,
+                "prepared": {
+                    **valid["prepared"], "ledger_head": "f" * 64 + "\n"}},
+            "operation extra": {
+                **valid,
+                "operation": {**valid["operation"], "extra": "x"}},
+            "operation request identifier": {
+                **valid,
+                "operation": {**valid["operation"], "request_id": "REQ"}},
+            "operation request identifier width": {
+                **valid,
+                "operation": {
+                    **valid["operation"], "request_id": "abc123"}},
+            "operation request identifier bound": {
+                **valid,
+                "operation": {
+                    **valid["operation"],
+                    "request_id": (
+                        "a" * siabackup.STATUS_IDENTIFIER_MAX_CHARS + "a")}},
+            "operation kind": {
+                **valid,
+                "operation": {**valid["operation"], "kind": "other"}},
+            "prepared operation mismatch": {
+                **valid,
+                "operation": {**valid["operation"], "prepared_id": "abc999"}},
+        }
+        for label, document in invalid.items():
+            with self.subTest(label=label):
+                siabackup._atomic_json(siabackup.STATUS_PATH, document)
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "continuity (?:.* status|status schema) is invalid"):
+                    siabackup.read_status()
+
+    def test_malformed_status_cannot_erase_a_prepared_reference(self):
+        prepared_id = "d" * 32
+        prepared_root = os.path.join(siabackup.PREPARED_DIR, prepared_id)
+        os.mkdir(prepared_root, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(prepared_root, "preserve"), b"prepared\n")
+        corrupt = self._prepared_status(prepared_id)
+        corrupt["prepared"]["unexpected"] = "discarded by old fallback"
+        raw = siabackup._canonical_bytes(corrupt)
+        siabackup._write_exclusive(siabackup.STATUS_PATH, raw)
+
+        with self.assertRaisesRegex(ValueError, "prepared status is invalid"):
+            siabackup._publish_status(detail="A newer publication.")
+        self.assertEqual(
+            siabackup._read_regular(
+                siabackup.STATUS_PATH, "continuity status", private=True),
+            raw)
+
+        with self.assertRaisesRegex(ValueError, "prepared status is invalid"):
+            siabackup._reconcile_inactive_spools()
+        self.assertTrue(os.path.isdir(prepared_root))
+        self.assertTrue(os.path.isfile(os.path.join(prepared_root, "preserve")))
+
+    def test_status_publication_bootstraps_only_an_absent_safe_target(self):
+        self.assertFalse(os.path.lexists(siabackup.STATUS_PATH))
+        published = siabackup._publish_status()
+        self.assertEqual(siabackup.read_status(), published)
+
+        os.chmod(siabackup.STATUS_PATH, 0o640)
+        before = siabackup._read_regular(
+            siabackup.STATUS_PATH, "unsafe status", private=False)
+        with self.assertRaisesRegex(ValueError, "owner-private"):
+            siabackup._publish_status(detail="Must not replace unsafe state.")
+        self.assertEqual(
+            siabackup._read_regular(
+                siabackup.STATUS_PATH, "unsafe status", private=False),
+            before)
+        self.assertEqual(stat.S_IMODE(os.stat(siabackup.STATUS_PATH).st_mode),
+                         0o640)
+
+    def test_status_disappearing_after_open_is_not_treated_as_absent(self):
+        document = self._prepared_status()
+        siabackup._write_exclusive(
+            siabackup.STATUS_PATH, siabackup._canonical_bytes(document))
+        real_os = siabackup.os
+
+        class OsShim:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            @staticmethod
+            def stat(*_args, **_kwargs):
+                raise FileNotFoundError
+
+        with mock.patch.object(
+                siabackup, "os", OsShim()), \
+                self.assertRaisesRegex(ValueError, "changed while read"):
+            siabackup._publish_status(detail="Must not bootstrap a race.")
+        self.assertEqual(
+            siabackup._read_regular(
+                siabackup.STATUS_PATH, "continuity status", private=True),
+            siabackup._canonical_bytes(document))
+
+    def test_status_bootstrap_refuses_a_concurrent_new_target(self):
+        original = siabackup._atomic_json
+        competing = b'{"competing":"status"}\n'
+
+        def appear(path, value, *, require_absent=False):
+            siabackup._write_exclusive(path, competing)
+            return original(path, value, require_absent=require_absent)
+
+        with mock.patch.object(
+                siabackup, "_atomic_json", side_effect=appear), \
+                self.assertRaisesRegex(ValueError, "appeared during bootstrap"):
+            siabackup._publish_status()
+        self.assertEqual(
+            siabackup._read_regular(
+                siabackup.STATUS_PATH, "competing status", private=True),
+            competing)
+
+    def test_bootstrap_link_cleanup_debt_is_recovered_before_status_read(self):
+        real_os = siabackup.os
+        refused = False
+
+        class OsShim:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            @staticmethod
+            def unlink(path, *args, **kwargs):
+                nonlocal refused
+                name = os.path.basename(path)
+                if not refused and name.startswith(".status-stage-") \
+                        and os.path.isfile(siabackup.STATUS_PATH):
+                    refused = True
+                    raise OSError("stage unlink refused")
+                return real_os.unlink(path, *args, **kwargs)
+
+        with mock.patch.object(siabackup, "os", OsShim()), \
+                self.assertRaisesRegex(OSError, "stage unlink refused"):
+            siabackup._publish_status()
+        stages = [
+            os.path.join(siabackup.ROOT, name)
+            for name in os.listdir(siabackup.ROOT)
+            if name.startswith(".status-stage-")
+        ]
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(os.stat(stages[0]).st_ino,
+                         os.stat(siabackup.STATUS_PATH).st_ino)
+        self.assertEqual(os.stat(stages[0]).st_nlink, 2)
+
+        siabackup._reconcile_inactive_spools()
+        self.assertEqual(siabackup.read_status()["state"], "unconfigured")
+        self.assertFalse(os.path.lexists(stages[0]))
+        self.assertEqual(os.stat(siabackup.STATUS_PATH).st_nlink, 1)
+
+    def test_atomic_json_replace_failure_retires_its_stage(self):
+        class OsShim:
+            def __getattr__(self, name):
+                return getattr(os, name)
+
+        os_shim = OsShim()
+        os_shim.replace = mock.Mock(side_effect=OSError("replace refused"))
+        with mock.patch.object(
+                siabackup, "os", os_shim), \
+                self.assertRaisesRegex(OSError, "replace refused"):
+            siabackup._atomic_json(
+                siabackup.STATUS_PATH, siabackup._default_status())
+        self.assertFalse(any(
+            name.startswith(".status-stage-")
+            for name in os.listdir(siabackup.ROOT)))
+
+    def test_queue_retains_post_rename_status_authority_until_reconciled(self):
+        real_fsync_dir = siabackup._fsync_dir
+
+        def fail_after_status_rename(path):
+            status_visible = os.path.isfile(siabackup.STATUS_PATH)
+            stage_visible = any(
+                name.startswith(".status-stage-")
+                for name in os.listdir(siabackup.ROOT))
+            if os.path.abspath(path) == os.path.abspath(siabackup.ROOT) \
+                    and status_visible and not stage_visible:
+                raise OSError("status directory durability is unknown")
+            return real_fsync_dir(path)
+
+        with mock.patch.object(
+                siabackup, "_fsync_dir",
+                side_effect=fail_after_status_rename), \
+                self.assertRaisesRegex(OSError, "durability is unknown"):
+            siabackup._queue(
+                "upload", {"scheduled": False},
+                request_id="a" * 32, runner=self._runner)
+
+        request_path = siabackup._request_path("a" * 32)
+        self.assertTrue(os.path.isfile(request_path))
+        status = siabackup.read_status()
+        self.assertEqual(status["state"], "queued")
+        self.assertEqual(status["operation"]["phase"], "accepted")
+
+        with mock.patch.object(
+                siabackup, "_request_id_active", return_value=False):
+            siabackup._reconcile_inactive_spools()
+        self.assertFalse(os.path.lexists(request_path))
+        status = siabackup.read_status()
+        self.assertEqual(status["state"], "blocked")
+        self.assertEqual(status["operation"]["phase"], "blocked")
+
+    def test_ambiguous_supervisor_creation_reconciles_unlaunched_apply(self):
+        config = self._configure()
+        prepared_id = "d" * 32
+        args = self._apply_args(prepared_id=prepared_id)
+        prepared = {
+            "prepared_id": prepared_id,
+            "snapshot_id": args["snapshot_id"],
+            "capsule_id": args["capsule_id"],
+            "manifest_sha256": args["manifest_sha256"],
+            "public_key": config["brain_public_key"],
+        }
+        real_fsync_dir = siabackup._fsync_dir
+        failed = False
+
+        def fail_once_after_supervisor_create(path):
+            nonlocal failed
+            if not failed and os.path.isfile(siabackup.SUPERVISOR_PATH):
+                failed = True
+                raise OSError("supervisor durability is unknown")
+            return real_fsync_dir(path)
+
+        launch = mock.Mock(return_value=self._runner([]))
+        main = sys.modules["__main__"]
+        with mock.patch.object(
+                siabackup, "load_prepared", return_value=prepared), \
+                mock.patch.object(
+                    siabackup.siacapsule, "target_identity",
+                    return_value=args["adoption"]["target"]), \
+                mock.patch.object(
+                    main, "__file__", os.path.join(REPO, "bin", "sia")), \
+                mock.patch.object(
+                    siabackup, "_fsync_dir",
+                    side_effect=fail_once_after_supervisor_create), \
+                self.assertRaisesRegex(OSError, "durability is unknown"):
+            siabackup._queue(
+                "apply", args, request_id="a" * 32,
+                runner=launch, prepared_id=prepared_id)
+        launch.assert_not_called()
+        self.assertTrue(os.path.isfile(
+            siabackup._request_path("a" * 32)))
+        debt = siabackup.load_supervisor_debt()
+        self.assertEqual(debt["phase"], "accepted")
+
+        with mock.patch.object(
+                siabackup, "_request_id_active", return_value=False):
+            siabackup._reconcile_inactive_spools()
+        self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
+        self.assertFalse(os.path.lexists(
+            siabackup._request_path("a" * 32)))
+        status = siabackup.read_status()
+        self.assertEqual(status["state"], "blocked")
+        self.assertEqual(status["operation"]["phase"], "blocked")
+
+    def test_reconciliation_retires_exact_legacy_atomic_stages(self):
+        config_parent = os.path.dirname(siabackup.CONFIG_PATH)
+        os.makedirs(config_parent, mode=0o700, exist_ok=True)
+        stages = (
+            os.path.join(siabackup.ROOT, ".status-stage-" + "a" * 32),
+            os.path.join(config_parent, ".status-stage-" + "b" * 32),
+        )
+        for stage in stages:
+            siabackup._write_exclusive(stage, b"legacy stage\n")
+        siabackup._reconcile_inactive_spools()
+        for stage in stages:
+            self.assertFalse(os.path.lexists(stage))
+
+        suspicious = os.path.join(
+            siabackup.ROOT, ".status-stage-not-a-managed-identifier")
+        siabackup._write_exclusive(suspicious, b"do not guess\n")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "publication spool needs review"):
+            siabackup._reconcile_inactive_spools()
+        self.assertTrue(os.path.isfile(suspicious))
 
     def test_offline_outputs_are_refused_inside_live_sia_roots(self):
         with self.assertRaisesRegex(ValueError, "outside SIA"):
@@ -245,6 +712,317 @@ class ContinuityTransport(unittest.TestCase):
                 siabackup.siacapsule, "CONFIG_ROOT", authority), \
                 self.assertRaisesRegex(ValueError, "portable authority"):
             siabackup._validate_environment_file(environment)
+
+    def _restic_authority_case(self, name, mutation, phase):
+        authority = os.path.join(self.temp.name, "restic-authority-" + name)
+        os.mkdir(authority, 0o700)
+        secret = os.path.join(authority, "rclone.conf")
+        secret_replacement = os.path.join(authority, "rclone.next")
+        environment = os.path.join(authority, "repository.env")
+        environment_replacement = os.path.join(
+            authority, "repository.next")
+        key = os.path.join(authority, "repository.key")
+        key_replacement = os.path.join(authority, "repository.next-key")
+        audit = os.path.join(authority, "action.json")
+        fake_restic = os.path.join(authority, "restic")
+        siabackup._write_exclusive(secret, b"secret=A\n")
+        siabackup._write_exclusive(secret_replacement, b"secret=B\n")
+        siabackup._write_exclusive(
+            environment, ("RCLONE_CONFIG=" + secret + "\n").encode())
+        siabackup._write_exclusive(
+            environment_replacement,
+            ("RCLONE_CONFIG=" + secret_replacement + "\n").encode())
+        siabackup._write_exclusive(key, b"key=A\n")
+        siabackup._write_exclusive(key_replacement, b"key=B\n")
+        source = f'''#!{sys.executable}
+import json
+import os
+import sys
+
+mutation = {mutation!r}
+phase = {phase!r}
+environment = {environment!r}
+environment_replacement = {environment_replacement!r}
+secret = {secret!r}
+secret_replacement = {secret_replacement!r}
+key = {key!r}
+key_replacement = {key_replacement!r}
+audit = {audit!r}
+
+def rewrite(path, raw):
+    with open(path, "wb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+def mutate():
+    if mutation == "environment-rebind":
+        os.replace(environment_replacement, environment)
+    elif mutation == "path-secret-in-place":
+        rewrite(secret, b"secret=B\\n")
+    elif mutation == "path-secret-rebind":
+        os.replace(secret_replacement, secret)
+    elif mutation == "key-in-place":
+        rewrite(key, b"key=B\\n")
+    else:
+        raise RuntimeError("unknown mutation")
+
+if sys.argv[1:] == ["cat", "config"]:
+    if phase == "identity":
+        mutate()
+    print(json.dumps({{"id": {("b" * 64)!r}}}))
+    raise SystemExit(0)
+
+if phase == "action":
+    mutate()
+with open(os.environ["RCLONE_CONFIG"], "rb") as stream:
+    backend = stream.read().decode("utf-8")
+with open(os.environ["RESTIC_PASSWORD_FILE"], "rb") as stream:
+    password = stream.read().decode("utf-8")
+with open(audit, "w", encoding="utf-8") as stream:
+    json.dump({{"backend": backend, "password": password}}, stream)
+print("untrusted-action-result")
+'''
+        siabackup._write_exclusive(fake_restic, source.encode(), 0o700)
+        config = {
+            "schema": siabackup.CONFIG_SCHEMA,
+            "repository": "rest:https://example.invalid/repository",
+            "environment_file": environment,
+            "repository_id": "b" * 64,
+            "brain_public_key": self.public_key,
+            "created_at": "2026-09-04T12:00:00Z",
+        }
+        return config, key, fake_restic, audit
+
+    def test_restic_refuses_to_act_after_authority_generation_changes(self):
+        for mutation in ("environment-rebind", "path-secret-in-place"):
+            with self.subTest(mutation=mutation):
+                config, key, fake_restic, audit = \
+                    self._restic_authority_case(
+                        "before-" + mutation, mutation, "identity")
+                with self.assertRaisesRegex(
+                        siabackup.BlockedError,
+                        "repository authority changed"):
+                    siabackup._run_restic(
+                        ["snapshots", "--json"], config=config,
+                        key_path=key, restic_path=fake_restic)
+                self.assertFalse(os.path.lexists(audit))
+                self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_withholds_result_if_authority_changes_during_action(self):
+        for mutation in ("path-secret-rebind", "key-in-place"):
+            with self.subTest(mutation=mutation):
+                config, key, fake_restic, audit = \
+                    self._restic_authority_case(
+                        "during-" + mutation, mutation, "action")
+                with self.assertRaisesRegex(
+                        siabackup.BlockedError,
+                        "repository authority changed"):
+                    siabackup._run_restic(
+                        ["snapshots", "--json"], config=config,
+                        key_path=key, restic_path=fake_restic)
+                with open(audit, encoding="utf-8") as stream:
+                    observed = json.load(stream)
+                self.assertEqual(observed, {
+                    "backend": "secret=A\n", "password": "key=A\n",
+                })
+                self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_allows_unchanged_admitted_authority(self):
+        config, key, fake_restic, audit = self._restic_authority_case(
+            "unchanged", "path-secret-in-place", "never")
+        self.assertEqual(
+            siabackup._run_restic(
+                ["snapshots", "--json"], config=config,
+                key_path=key, restic_path=fake_restic),
+            "untrusted-action-result\n")
+        with open(audit, encoding="utf-8") as stream:
+            observed = json.load(stream)
+        self.assertEqual(observed, {
+            "backend": "secret=A\n", "password": "key=A\n",
+        })
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_allows_unchanged_initialization_authority(self):
+        config, key, fake_restic, audit = self._restic_authority_case(
+            "initialization", "path-secret-in-place", "never")
+        config = {**config, "repository_id": ""}
+        self.assertEqual(
+            siabackup._run_restic(
+                ["init"], config=config, key_path=key,
+                restic_path=fake_restic),
+            "untrusted-action-result\n")
+        with open(audit, encoding="utf-8") as stream:
+            observed = json.load(stream)
+        self.assertEqual(observed, {
+            "backend": "secret=A\n", "password": "key=A\n",
+        })
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_authority_crash_stage_is_reconciled(self):
+        stage = os.path.join(
+            siabackup.CHECKS_DIR,
+            ".check-restic-authority-" + "a" * 32)
+        os.mkdir(stage, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(stage, "repository.key"), b"key=A\n", 0o400)
+        siabackup._reconcile_inactive_spools()
+        self.assertFalse(os.path.lexists(stage))
+
+    def _restic_executable_swap_case(self, name, phase):
+        authority = os.path.join(self.temp.name, "restic-executable-" + name)
+        os.mkdir(authority, 0o700)
+        key = os.path.join(authority, "repository.key")
+        executable = os.path.join(authority, "restic")
+        replacement = os.path.join(authority, "restic.next")
+        audit = os.path.join(authority, "action")
+        siabackup._write_exclusive(key, b"key=A\n")
+
+        def program(label):
+            return f'''#!{sys.executable}
+import json
+import os
+import sys
+
+phase = {phase!r}
+label = {label!r}
+executable = {executable!r}
+replacement = {replacement!r}
+audit = {audit!r}
+
+def swap():
+    os.replace(replacement, executable)
+
+if sys.argv[1:] == ["cat", "config"]:
+    if label == "A" and phase == "identity":
+        swap()
+    print(json.dumps({{"id": {("b" * 64)!r}}}))
+    raise SystemExit(0)
+
+if label == "A" and phase == "action":
+    swap()
+with open(audit, "w", encoding="utf-8") as stream:
+    stream.write(label + "\\n")
+print("action-" + label)
+'''
+
+        siabackup._write_exclusive(
+            replacement, program("B").encode(), 0o700)
+        siabackup._write_exclusive(
+            executable, program("A").encode(), 0o700)
+        config = {
+            "schema": siabackup.CONFIG_SCHEMA,
+            "repository": "rest:https://example.invalid/repository",
+            "environment_file": None,
+            "repository_id": "b" * 64,
+            "brain_public_key": self.public_key,
+            "created_at": "2026-09-04T12:00:00Z",
+        }
+        return config, key, executable, audit
+
+    def test_restic_refuses_executable_swap_after_identity(self):
+        config, key, executable, audit = self._restic_executable_swap_case(
+            "before-action", "identity")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "repository authority changed"):
+            siabackup._run_restic(
+                ["snapshots", "--json"], config=config, key_path=key,
+                restic_path=executable)
+        self.assertFalse(os.path.lexists(audit))
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_withholds_result_after_in_action_executable_swap(self):
+        config, key, executable, audit = self._restic_executable_swap_case(
+            "during-action", "action")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "repository authority changed"):
+            siabackup._run_restic(
+                ["snapshots", "--json"], config=config, key_path=key,
+                restic_path=executable)
+        with open(audit, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), "A\n")
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def _local_repository_swap_case(self, name, phase):
+        authority = os.path.join(self.temp.name, "local-repository-" + name)
+        os.mkdir(authority, 0o700)
+        repository = os.path.join(authority, "repository")
+        replacement = os.path.join(authority, "repository.next")
+        displaced = os.path.join(authority, "repository.old")
+        os.mkdir(repository, 0o700)
+        os.mkdir(replacement, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(repository, "backend"), b"A\n")
+        siabackup._write_exclusive(
+            os.path.join(replacement, "backend"), b"B\n")
+        key = os.path.join(authority, "repository.key")
+        audit = os.path.join(authority, "action")
+        fake_restic = os.path.join(authority, "restic")
+        siabackup._write_exclusive(key, b"key=A\n")
+        source = f'''#!{sys.executable}
+import json
+import os
+import sys
+
+phase = {phase!r}
+repository = {repository!r}
+replacement = {replacement!r}
+displaced = {displaced!r}
+audit = {audit!r}
+
+def swap():
+    os.rename(repository, displaced)
+    os.rename(replacement, repository)
+
+if sys.argv[1:] == ["cat", "config"]:
+    if phase == "identity":
+        swap()
+    print(json.dumps({{"id": {("b" * 64)!r}}}))
+    raise SystemExit(0)
+
+if phase == "action":
+    swap()
+with open(os.path.join(
+        os.environ["RESTIC_REPOSITORY"], "backend"),
+        encoding="utf-8") as stream:
+    backend = stream.read()
+with open(audit, "w", encoding="utf-8") as stream:
+    stream.write(backend)
+print("untrusted-action-result")
+'''
+        siabackup._write_exclusive(fake_restic, source.encode(), 0o700)
+        config = {
+            "schema": siabackup.CONFIG_SCHEMA,
+            "repository": repository,
+            "environment_file": None,
+            "repository_id": "b" * 64,
+            "brain_public_key": self.public_key,
+            "created_at": "2026-09-04T12:00:00Z",
+        }
+        return config, key, fake_restic, audit
+
+    def test_restic_refuses_local_repository_swap_after_identity(self):
+        config, key, fake_restic, audit = self._local_repository_swap_case(
+            "before-action", "identity")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "repository authority changed"):
+            siabackup._run_restic(
+                ["snapshots", "--json"], config=config, key_path=key,
+                restic_path=fake_restic)
+        self.assertFalse(os.path.lexists(audit))
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
+
+    def test_restic_withholds_result_after_in_action_repository_swap(self):
+        config, key, fake_restic, audit = self._local_repository_swap_case(
+            "during-action", "action")
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "repository authority changed"):
+            siabackup._run_restic(
+                ["snapshots", "--json"], config=config, key_path=key,
+                restic_path=fake_restic)
+        with open(audit, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), "A\n")
+        self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
 
     def test_local_repository_cannot_contain_recovery_credentials(self):
         repository = os.path.join(self.temp.name, "repository")
@@ -281,8 +1059,8 @@ class ContinuityTransport(unittest.TestCase):
     def test_restore_child_never_publishes_green_before_restart(self):
         request = {
             "schema": siabackup.REQUEST_SCHEMA,
-            "id": "abc123", "created_at": "test-time",
-            "action": "apply", "args": {"prepared_id": "def456"},
+            "id": "a" * 32, "created_at": "2026-09-04T12:00:00Z",
+            "action": "apply", "args": {"prepared_id": "d" * 32},
         }
         with mock.patch.object(
                 siabackup, "_perform_apply",
@@ -300,6 +1078,7 @@ class ContinuityTransport(unittest.TestCase):
         request, debt = self._apply_request_and_debt()
         siabackup._publish_status(
             state="restoring",
+            repository_display="External recovery repository",
             latest=self._healthy_latest(),
             operation=siabackup._operation(
                 request["id"], "restore-apply", "running",
@@ -323,9 +1102,11 @@ class ContinuityTransport(unittest.TestCase):
     def test_supervisor_finalizer_replays_after_request_retirement(self):
         request, debt = self._apply_request_and_debt(write_request=False)
         siabackup._publish_status(
-            state="restoring", latest=self._healthy_latest(),
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
             operation=siabackup._operation(
-                request["id"], "restore-apply", "verified",
+                request["id"], "restore-apply", "running",
                 prepared_id=debt["prepared_id"], ready=True,
                 sia_ledger_verified=True))
         with mock.patch.object(
@@ -341,6 +1122,7 @@ class ContinuityTransport(unittest.TestCase):
         request, debt = self._apply_request_and_debt()
         siabackup._publish_status(
             state="restoring",
+            repository_display="External recovery repository",
             operation=siabackup._operation(
                 request["id"], "restore-apply", "running",
                 prepared_id=debt["prepared_id"], ready=True,
@@ -455,7 +1237,7 @@ class ContinuityTransport(unittest.TestCase):
             "environment_file": None,
             "repository_id": "b" * 64,
             "brain_public_key": self.public_key,
-            "created_at": "test-time",
+            "created_at": "2026-09-04T12:00:00Z",
         }
         with open(config_path, "w", encoding="utf-8") as stream:
             json.dump(config, stream, sort_keys=True, separators=(",", ":"))
@@ -485,7 +1267,7 @@ import json, os, sys
 sys.path.insert(0, {os.path.join(REPO, "bin")!r})
 import siabackup
 captured = {captured!r}
-expected = {{"capsule_id": "capsule", "manifest_sha256": "digest",
+expected = {{"capsule_id": "a" * 32, "manifest_sha256": "b" * 64,
              "classification": "ready", "public_key": {self.public_key!r}}}
 def freeze(path):
     if not os.path.isfile({request_path!r}):
@@ -502,7 +1284,10 @@ def restic(arguments, **_kwargs):
 siabackup.siacapsule.freeze = freeze
 siabackup.siacapsule.verify = lambda _path: expected
 siabackup._run_restic = restic
-siabackup._verify_snapshot_offpath = lambda *_args, **_kwargs: expected
+def verify_snapshot(snapshot_id, *_args, **_kwargs):
+    siabackup._record_verification(snapshot_id, expected)
+    return expected
+siabackup._verify_snapshot_offpath = verify_snapshot
 raise SystemExit(siabackup.run_request({request_path!r}))
 '''
         worker = subprocess.run(
@@ -528,21 +1313,22 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 side_effect=supervisor), \
                 self.assertRaisesRegex(TimeoutError, "unit submission"):
             siabackup._queue(
-                "apply", {}, request_id="abc123", runner=ambiguous,
-                prepared_id="def456")
+                "apply", self._apply_args(), request_id="a" * 32,
+                runner=ambiguous,
+                prepared_id="d" * 32)
         self.assertTrue(os.path.isfile(
-            siabackup._request_path("abc123")))
+            siabackup._request_path("a" * 32)))
         with open(siabackup.SUPERVISOR_PATH, "rb") as stream:
             self.assertEqual(stream.read(), debt)
         status = siabackup.read_status()
         self.assertEqual(status["state"], "blocked")
-        self.assertEqual(status["operation"]["request_id"], "abc123")
+        self.assertEqual(status["operation"]["request_id"], "a" * 32)
 
     def test_failed_liveness_probe_never_retires_worker_authority(self):
         request = siabackup._create_request(
-            "upload", {"scheduled": True}, request_id="abc123")
+            "upload", {"scheduled": True}, request_id="a" * 32)
         capsule = os.path.join(
-            siabackup.CAPSULES_DIR, ".capsule-abc123")
+            siabackup.CAPSULES_DIR, ".capsule-" + "a" * 32)
         os.mkdir(capsule, 0o700)
         refused = subprocess.CompletedProcess([], 1, stdout="", stderr="")
         with mock.patch.object(
@@ -555,6 +1341,34 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             siabackup._request_path(request["id"])))
         self.assertTrue(os.path.isdir(capsule))
 
+    def test_inactive_running_requests_are_terminalized_before_retirement(self):
+        cases = (
+            ("upload", {"scheduled": True}, "capturing", "backup-upload"),
+            ("check", {"scheduled": True}, "checking", "backup-check"),
+            ("prepare", {"snapshot_id": "abc123"}, "preparing",
+             "restore-prepare"),
+        )
+        for index, (action, args, state, kind) in enumerate(cases):
+            with self.subTest(action=action):
+                request_id = format(index + 1, "x") * 32
+                request = siabackup._create_request(
+                    action, args, request_id=request_id)
+                siabackup._publish_status(
+                    state=state,
+                    detail="Continuity worker is running.",
+                    repository_display="External recovery repository",
+                    operation=siabackup._operation(
+                        request_id, kind, "running"))
+                with mock.patch.object(
+                        siabackup, "_request_id_active",
+                        return_value=False):
+                    siabackup._reconcile_inactive_spools()
+                status = siabackup.read_status()
+                self.assertEqual(status["state"], "blocked")
+                self.assertEqual(status["operation"]["phase"], "blocked")
+                self.assertFalse(os.path.lexists(
+                    siabackup._request_path(request["id"])))
+
     def test_configured_power_cut_probes_enables_and_starts_before_retire(self):
         config = self._configure()
         request = siabackup._create_request(
@@ -565,7 +1379,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                     self.temp.name, "repository.key"),
                 "identity_key_out": os.path.join(
                     self.temp.name, "identity.key"),
-            }, request_id="abc123")
+            }, request_id="a" * 32)
         events = []
 
         def restic(arguments, **_kwargs):
@@ -597,7 +1411,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 "environment_file": None,
                 "recovery_key_file": os.path.join(
                     self.temp.name, "repository.key"),
-            }, request_id="abc123")
+            }, request_id="a" * 32)
         start = mock.Mock(side_effect=[
             RuntimeError("power cut before timer start"), None])
         with mock.patch.object(
@@ -614,6 +1428,75 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         self.assertEqual(start.call_count, 2)
         self.assertFalse(os.path.lexists(
             siabackup._request_path(request["id"])))
+
+    def test_visible_configuration_after_fsync_error_keeps_replay_authority(self):
+        offline = os.path.join(self.temp.name, "offline-config-ambiguity")
+        os.mkdir(offline, 0o700)
+        recovery = os.path.join(offline, "repository.key")
+        identity = os.path.join(offline, "identity.key")
+        request = siabackup._create_request(
+            "setup", {
+                "repository": os.path.join(
+                    self.temp.name, "repository-config-ambiguity"),
+                "environment_file": None,
+                "recovery_key_out": recovery,
+                "identity_key_out": identity,
+            }, request_id="e" * 32)
+        real_fsync_dir = siabackup._fsync_dir
+        refused = False
+
+        def fail_after_config_visibility(path):
+            nonlocal refused
+            if not refused \
+                    and os.path.abspath(path) == os.path.abspath(
+                        os.path.dirname(siabackup.CONFIG_PATH)) \
+                    and os.path.lexists(siabackup.CONFIG_PATH):
+                refused = True
+                raise OSError("configuration durability is unknown")
+            return real_fsync_dir(path)
+
+        def run(arguments, **_kwargs):
+            if arguments == ["cat", "config"]:
+                return self._repository_config_output()
+            return ""
+
+        def export(path):
+            siabackup._write_exclusive(path, b"offline-identity\n")
+
+        with mock.patch.object(siabackup, "_run_restic", side_effect=run), \
+                mock.patch.object(
+                    siabackup.siacapsule, "export_identity_key",
+                    side_effect=export), \
+                mock.patch.object(
+                    siabackup, "_fsync_dir",
+                    side_effect=fail_after_config_visibility):
+            self.assertEqual(siabackup.run_request(
+                siabackup._request_path(request["id"]),
+                enable_schedules=lambda: None), 1)
+        self.assertTrue(refused)
+        self.assertTrue(os.path.isfile(siabackup.CONFIG_PATH))
+        self.assertTrue(os.path.isfile(siabackup.KEY_PATH))
+        self.assertTrue(os.path.isfile(
+            siabackup._request_path(request["id"])))
+        self.assertEqual(siabackup.read_status()["state"], "blocked")
+
+        with mock.patch.object(
+                siabackup, "_request_id_active", return_value=False), \
+                mock.patch.object(
+                    siabackup, "_run_restic", side_effect=run), \
+                mock.patch.object(siabackup, "_enable_schedules"), \
+                mock.patch.object(siabackup, "_start_schedules"), \
+                mock.patch.object(
+                    siabackup, "_fsync_dir",
+                    wraps=real_fsync_dir) as replay_fsync:
+            siabackup._reconcile_inactive_spools()
+        self.assertTrue(any(
+            os.path.abspath(call.args[0]) == os.path.abspath(
+                os.path.dirname(siabackup.CONFIG_PATH))
+            for call in replay_fsync.call_args_list))
+        self.assertFalse(os.path.lexists(
+            siabackup._request_path(request["id"])))
+        self.assertEqual(siabackup.read_status()["state"], "recovery-only")
 
     def test_setup_start_failure_never_publishes_configuration(self):
         offline = os.path.join(self.temp.name, "offline-start-failure")
@@ -665,12 +1548,12 @@ raise SystemExit(siabackup.run_request({request_path!r}))
 
     def test_setup_partial_crash_points_retire_only_hot_local_state(self):
         phases = (
-            ("request-created", "a1"),
-            ("key-staged", "b2"),
-            ("recovery-exported", "c3"),
-            ("identity-exported", "d4"),
-            ("repository-initialized", "e5"),
-            ("key-committed", "f6"),
+            ("request-created", "a" * 32),
+            ("key-staged", "b" * 32),
+            ("recovery-exported", "c" * 32),
+            ("identity-exported", "d" * 32),
+            ("repository-initialized", "e" * 32),
+            ("key-committed", "f" * 32),
         )
         for phase, request_id in phases:
             with self.subTest(phase=phase):
@@ -734,7 +1617,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                     offline, "repository.key"),
                 "identity_key_out": os.path.join(
                     offline, "identity.key"),
-            }, request_id="deadbeef")
+            }, request_id="d" * 32)
         observed = []
 
         def export(path):
@@ -777,13 +1660,94 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 self.assertRaisesRegex(RuntimeError, "intent publication"):
             siabackup._queue(
                 "apply", self._apply_args(),
-                request_id="aabbcc", prepared_id="def456",
+                request_id="a" * 32, prepared_id="d" * 32,
                 runner=self._runner)
         self.assertEqual(observed, [("restoring", "accepted")])
         self.assertEqual(siabackup.read_status()["state"], "blocked")
         self.assertFalse(os.path.lexists(
-            siabackup._request_path("aabbcc")))
+            siabackup._request_path("a" * 32)))
         self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
+
+    def test_prepared_retirement_withdraws_status_before_tree_deletion(self):
+        prepared_id = "d" * 32
+        prepared_root = os.path.join(siabackup.PREPARED_DIR, prepared_id)
+        os.mkdir(prepared_root, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(prepared_root, "prepared.json"), b"preserve\n")
+        status = self._prepared_status(prepared_id)
+        status["latest"] = None
+        siabackup._atomic_json(siabackup.STATUS_PATH, status)
+        observed = []
+
+        def refuse_retirement(_path, _authority):
+            observed.append(siabackup.read_status())
+            raise RuntimeError("tree retirement refused")
+
+        with mock.patch.object(
+                siabackup, "_retire_private_tree",
+                side_effect=refuse_retirement), \
+                self.assertRaisesRegex(RuntimeError, "retirement refused"):
+            siabackup._retire_current_prepared()
+        self.assertIsNone(observed[0]["prepared"])
+        self.assertNotEqual(observed[0]["state"], "prepared")
+        self.assertTrue(os.path.isdir(prepared_root))
+
+        siabackup._reconcile_inactive_spools()
+        self.assertFalse(os.path.lexists(prepared_root))
+        self.assertIsNone(siabackup.read_status()["prepared"])
+
+    def test_prepared_withdrawal_failure_preserves_actionable_tree(self):
+        prepared_id = "d" * 32
+        prepared_root = os.path.join(siabackup.PREPARED_DIR, prepared_id)
+        os.mkdir(prepared_root, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(prepared_root, "prepared.json"), b"preserve\n")
+        original = self._prepared_status(prepared_id)
+        original["latest"] = None
+        siabackup._atomic_json(siabackup.STATUS_PATH, original)
+
+        with mock.patch.object(
+                siabackup, "_publish_status",
+                side_effect=RuntimeError("status withdrawal refused")), \
+                self.assertRaisesRegex(RuntimeError, "withdrawal refused"):
+            siabackup._retire_current_prepared()
+        self.assertTrue(os.path.isdir(prepared_root))
+        self.assertEqual(siabackup.read_status(), original)
+
+    def test_apply_retirement_waits_for_durable_prepared_withdrawal(self):
+        prepared_id = "d" * 32
+        prepared_root = os.path.join(siabackup.PREPARED_DIR, prepared_id)
+        os.mkdir(prepared_root, 0o700)
+        siabackup._write_exclusive(
+            os.path.join(prepared_root, "prepared.json"), b"preserve\n")
+        status = self._prepared_status(prepared_id)
+        status["latest"] = None
+        siabackup._atomic_json(siabackup.STATUS_PATH, status)
+        request = {
+            "schema": siabackup.REQUEST_SCHEMA,
+            "id": "a" * 32, "created_at": "2026-09-04T12:00:00Z",
+            "action": "apply", "args": self._apply_args(),
+        }
+        publish = siabackup._publish_status
+
+        def refuse_withdrawal(**changes):
+            operation = changes.get("operation")
+            if changes.get("prepared", object()) is None \
+                    and isinstance(operation, dict) \
+                    and operation.get("ready") is True:
+                raise RuntimeError("status withdrawal refused")
+            return publish(**changes)
+
+        with mock.patch.object(
+                siabackup, "_perform_apply",
+                return_value={"ready": True,
+                              "sia_ledger_verified": True}), \
+                mock.patch.object(
+                    siabackup, "_publish_status",
+                    side_effect=refuse_withdrawal), \
+                self.assertRaisesRegex(RuntimeError, "withdrawal refused"):
+            siabackup._run_request_locked(request, capability={})
+        self.assertTrue(os.path.isdir(prepared_root))
 
     def test_restore_status_failure_cannot_create_supervisor_debt(self):
         intent = mock.Mock()
@@ -795,22 +1759,23 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 self.assertRaisesRegex(RuntimeError, "status publication"):
             siabackup._queue(
                 "apply", self._apply_args(),
-                request_id="bbccdd", prepared_id="def456",
+                request_id="b" * 32, prepared_id="d" * 32,
                 runner=self._runner)
         intent.assert_not_called()
         self.assertFalse(os.path.lexists(
-            siabackup._request_path("bbccdd")))
+            siabackup._request_path("b" * 32)))
         self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
 
     def test_accepted_restore_without_debt_reconciles_non_green(self):
         request = siabackup._create_request(
             "apply", self._apply_args(),
-            request_id="ccddee")
+            request_id="c" * 32)
         siabackup._publish_status(
             state="restoring", detail="Continuity request accepted.",
+            repository_display="External recovery repository",
             operation=siabackup._operation(
                 request["id"], "restore-apply", "accepted",
-                prepared_id="def456"))
+                prepared_id="d" * 32))
         with mock.patch.object(
                 siabackup, "_request_id_active", return_value=False):
             siabackup._reconcile_inactive_spools()
@@ -821,7 +1786,8 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             siabackup._request_path(request["id"])))
 
     def test_upload_adapter_passes_only_completed_capsule_to_restic(self):
-        capsule = os.path.join(siabackup.CAPSULES_DIR, ".capsule-abc123")
+        capsule = os.path.join(
+            siabackup.CAPSULES_DIR, ".capsule-" + "a" * 32)
         calls = []
 
         def run(arguments, **kwargs):
@@ -840,18 +1806,18 @@ raise SystemExit(siabackup.run_request({request_path!r}))
 
         def freeze(path):
             self.assertTrue(os.path.isfile(
-                siabackup._request_path("abc123")))
+                siabackup._request_path("a" * 32)))
             self.assertEqual(path, capsule)
             os.mkdir(path)
             return frozen
 
         request = {
             "schema": siabackup.REQUEST_SCHEMA,
-            "id": "abc123", "created_at": "test-time",
+            "id": "a" * 32, "created_at": "2026-09-04T12:00:00Z",
             "action": "upload", "args": {"scheduled": False},
         }
         siabackup._write_exclusive(
-            siabackup._request_path("abc123"),
+            siabackup._request_path("a" * 32),
             siabackup._canonical_bytes(request))
         with mock.patch.object(siabackup.siacapsule, "freeze",
                                side_effect=freeze), \
@@ -862,7 +1828,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                     siabackup, "_verify_snapshot_offpath",
                     return_value=verified):
             latest = siabackup._perform_upload(
-                {"scheduled": False}, "abc123")
+                {"scheduled": False}, "a" * 32)
         backup_args, backup_cwd = calls[0]
         self.assertEqual(backup_args[-1], os.path.basename(capsule))
         self.assertEqual(backup_cwd, siabackup.CAPSULES_DIR)
@@ -916,7 +1882,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         def run(arguments, **_kwargs):
             if arguments[0] == "snapshots":
                 return json.dumps([{
-                    "id": "abc123", "time": "test-time",
+                    "id": "abc123", "time": "2026-09-04T12:00:00Z",
                     "tags": [
                         "sia-capsule", "sia-readiness=ready",
                         "sia-brain=" + self.public_key,
@@ -951,10 +1917,10 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             return ""
 
         verified = {
-            "capsule_id": "capsule", "classification": "ready",
-            "corpus_head": "corpus-head", "ledger_head": "source-head",
+            "capsule_id": "a" * 32, "classification": "ready",
+            "corpus_head": "c" * 40, "ledger_head": "e" * 64,
             "public_key": self.public_key,
-            "manifest_sha256": "digest",
+            "manifest_sha256": "b" * 64,
         }
         with mock.patch.object(siabackup, "_resolve_snapshot",
                                return_value="abc123"), \
@@ -964,7 +1930,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 mock.patch.object(siabackup.siacapsule, "identity_matches",
                                   return_value=True), \
                 mock.patch.object(siabackup.sialib, "ledger_head",
-                                  return_value=("sequence", "target-head")):
+                                  return_value=(1, "f" * 64)):
             prepared = siabackup._perform_prepare(
                 {"snapshot_id": "abc123"}, "request")
         self.assertTrue(observed_target)
@@ -973,15 +1939,15 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             siabackup.PREPARED_DIR)
         self.assertTrue(os.path.isfile(
             siabackup._prepared_path(prepared["prepared_id"])))
-        self.assertEqual(prepared["target_ledger_head"], "target-head")
-        self.assertEqual(prepared["ledger_head"], "source-head")
+        self.assertEqual(prepared["target_ledger_head"], "f" * 64)
+        self.assertEqual(prepared["ledger_head"], "e" * 64)
 
     def test_restore_confirmation_is_exact_bounded_one_line(self):
         confirmation = {
             "schema_version": 1,
             "phrase": "RESTORE",
-            "snapshot_id": "snapshot",
-            "ledger_head": "head",
+            "snapshot_id": "abc123",
+            "ledger_head": "f" * 64,
             "corpus_receipt_re_adopt": True,
         }
         raw = json.dumps(confirmation, separators=(",", ":")).encode() + b"\n"
@@ -993,15 +1959,23 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             changed = dict(confirmation, phrase="restore")
             siabackup._read_confirmation(io.BytesIO(
                 json.dumps(changed, separators=(",", ":")).encode() + b"\n"))
+        for ambiguous_version in (True, 1.0):
+            with self.subTest(schema_version=ambiguous_version), \
+                    self.assertRaisesRegex(ValueError, "schema"):
+                changed = dict(
+                    confirmation, schema_version=ambiguous_version)
+                siabackup._read_confirmation(io.BytesIO(
+                    json.dumps(changed, separators=(",", ":")).encode()
+                    + b"\n"))
 
     def test_queue_apply_carries_the_stable_launcher_repository_binding(self):
         config = self._configure()
         prepared = {
-            "prepared_id": "def456",
-            "snapshot_id": "abc123",
+            "prepared_id": "d" * 32,
+            "snapshot_id": "f" * 64,
             "capsule_id": "a" * 32,
             "manifest_sha256": "b" * 64,
-            "target_ledger_head": "target-head",
+            "target_ledger_head": "e" * 64,
             "identity_matches": True,
             "public_key": self.public_key,
             "capsule_path": os.path.join(self.temp.name, "capsule"),
@@ -1014,6 +1988,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             "corpus_receipt_re_adopt": True,
         }
         captured = {}
+        target = self._apply_args()["adoption"]["target"]
 
         def enqueue(action, args, **kwargs):
             captured.update({"action": action, "args": args, **kwargs})
@@ -1022,13 +1997,16 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         with mock.patch.object(siabackup, "load_prepared",
                                return_value=prepared), \
                 mock.patch.object(siabackup.sialib, "ledger_head",
-                                  return_value=("sequence", "target-head")), \
+                                  return_value=("sequence", "e" * 64)), \
                 mock.patch.object(siabackup.siacapsule, "verify",
                                   return_value={
                                       "capsule_id": prepared["capsule_id"],
                                       "manifest_sha256":
                                           prepared["manifest_sha256"],
                                   }), \
+                mock.patch.object(
+                    siabackup.siacapsule, "target_identity",
+                    return_value=target), \
                 mock.patch.object(siabackup, "_reconcile_inactive_spools"), \
                 mock.patch.object(siabackup, "_queue",
                                   side_effect=enqueue):
@@ -1047,6 +2025,14 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             "configured_at": config["created_at"],
             "target_public_key": config["brain_public_key"],
             "restored_public_key": prepared["public_key"],
+            "identity_key_file": "",
+            "accepted_ledger_head": confirmation["ledger_head"],
+            "confirmation_sha256": hashlib.sha256(
+                siabackup._canonical_bytes(confirmation)).hexdigest(),
+            "adoption_order": str(captured["args"]["adoption"]["order"]),
+            "adoption_record_id":
+                captured["args"]["adoption"]["record_id"],
+            "target": target,
         })
 
         from tests.test_release import _generate_stable_launcher, _load
@@ -1058,11 +2044,13 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             self.temp.name, "launcher-state", "sia-continuity")
         launcher_requests = os.path.join(launcher_root, "requests")
         os.makedirs(launcher_requests, mode=0o700)
-        request_path = os.path.join(launcher_requests, "abc123.json")
+        request_id = "a" * 32
+        request_path = os.path.join(
+            launcher_requests, request_id + ".json")
         request = {
             "schema": siabackup.REQUEST_SCHEMA,
-            "id": "abc123",
-            "created_at": "test-time",
+            "id": request_id,
+            "created_at": "2026-09-04T12:00:00Z",
             "action": "apply",
             "args": captured["args"],
         }
@@ -1079,27 +2067,27 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         confirmation = {
             "schema_version": 1,
             "phrase": "RESTORE",
-            "snapshot_id": "snapshot",
-            "ledger_head": "head",
+            "snapshot_id": "abc123",
+            "ledger_head": "f" * 64,
             "corpus_receipt_re_adopt": True,
         }
         stream = io.BytesIO(
             json.dumps(confirmation, separators=(",", ":")).encode() + b"\n")
-        request = {"id": "request"}
+        request = {"id": "a" * 32}
         output = io.StringIO()
         with mock.patch.object(siabackup, "queue_apply",
                                return_value=request), \
                 mock.patch("sys.stdout", output):
             result = siabackup.cli_restore(
-                ["apply", "prepared", "--confirm-stdin"], stream)
+                ["apply", "d" * 32, "--confirm-stdin"], stream)
         self.assertEqual(result, 0)
         acceptance = json.loads(output.getvalue())
         self.assertEqual(acceptance, {
             "schema_version": siabackup.ACCEPTANCE_SCHEMA_VERSION,
             "accepted": True,
-            "request_id": "request",
+            "request_id": "a" * 32,
             "operation": "restore-apply",
-            "prepared_id": "prepared",
+            "prepared_id": "d" * 32,
         })
 
     def test_backend_refuses_green_without_a_concrete_ready_copy(self):
@@ -1111,10 +2099,11 @@ raise SystemExit(siabackup.run_request({request_path!r}))
 
     def test_empty_checked_repository_clears_prior_green(self):
         self._configure()
+        self._ensure_healthy_latest_authority()
         siabackup._publish_status(
             state="verified", latest=self._healthy_latest())
         request = siabackup._create_request(
-            "check", {"scheduled": True}, request_id="abc123")
+            "check", {"scheduled": True}, request_id="a" * 32)
         with mock.patch.object(
                 siabackup, "_perform_check", return_value=None):
             result = siabackup.run_request(
@@ -1129,19 +2118,19 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         self._configure()
         foreign_public = "c" * 64
         siabackup._record_verification("fedcba", {
-            "capsule_id": "foreign-capsule",
+            "capsule_id": "f" * 32,
             "manifest_sha256": "d" * 64,
             "classification": "ready",
             "public_key": foreign_public,
         })
         response = json.dumps([{
-            "id": "fedcba", "time": "later",
+            "id": "fedcba", "time": "2026-09-04T13:00:00Z",
             "tags": [
                 "sia-capsule", "sia-readiness=ready",
                 "sia-brain=" + foreign_public,
             ],
         }, {
-            "id": "abc123", "time": "earlier",
+            "id": "abc123", "time": "2026-09-04T12:00:00Z",
             "tags": [
                 "sia-capsule", "sia-readiness=ready",
                 "sia-brain=" + self.public_key,
@@ -1155,6 +2144,23 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         self.assertTrue(foreign["verified"])
         self.assertFalse(foreign["identity_matches"])
         self.assertFalse(siabackup._latest_is_protecting(foreign))
+
+    def test_malformed_filtered_snapshot_cannot_be_reported_as_absent(self):
+        self._configure()
+        malformed_rows = (
+            "not-a-snapshot-row",
+            {"id": "abc123", "time": "2026-09-04T12:00:00Z",
+             "tags": []},
+            {"id": "abc123", "time": "2026-09-04T12:00:00Z",
+             "tags": ["sia-capsule", None]},
+        )
+        for row in malformed_rows:
+            with self.subTest(row=row), mock.patch.object(
+                    siabackup, "_run_restic",
+                    return_value=json.dumps([row])), \
+                    self.assertRaisesRegex(
+                        ValueError, "snapshot row is malformed"):
+                siabackup._resolve_snapshot("latest")
 
     def test_snapshot_preflight_refuses_bytes_before_restore(self):
         listing = "\n".join((
@@ -1240,6 +2246,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                  command[4]])
             self.assertEqual(kwargs["label"],
                              "continuity schedule observation")
+            self.assertIn("--property=NeedDaemonReload", command)
             name = command[4]
             commands.append(name)
             stdout = "".join(
@@ -1315,13 +2322,420 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             siabackup._schedule_timestamp(
                 "@1700000000", "continuity trigger"),
             "2023-11-14T22:13:20Z")
-        for value in ("1700000000", "@-1", "@1.5", "@1 trailing"):
+        for value in ("1700000000", "@-1", "@1.5", "@1 trailing",
+                      "@00", "@01", "@+1", "@\u0661"):
             with self.subTest(value=value), self.assertRaisesRegex(
                     ValueError, "not a systemd Unix timestamp"):
                 siabackup._schedule_timestamp(value, "continuity trigger")
         with self.assertRaisesRegex(ValueError, "supported time range"):
             siabackup._schedule_timestamp(
                 "@99999999999999999999", "continuity trigger")
+
+    def test_managed_binding_is_tied_to_bytes_actually_read(self):
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+        name = "sia-backup.timer"
+        target = os.path.join(systemd_dir, name)
+        real_read = siabackup._read_regular
+        replaced = False
+
+        def read_then_replace(path, *args, **kwargs):
+            nonlocal replaced
+            result = real_read(path, *args, **kwargs)
+            if path == target and not replaced:
+                raw = result[0] if isinstance(result, tuple) else result
+                stage = target + ".replacement"
+                siabackup._write_exclusive(stage, raw)
+                os.replace(stage, target)
+                replaced = True
+            return result
+
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_read_regular", side_effect=read_then_replace), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "authority changed"):
+            siabackup._managed_unit_binding(name, "backup-timer")
+
+    def test_unit_attestation_rechecks_the_complete_authority_set(self):
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+        first_receipt = os.path.join(
+            managed_dir, siabackup._CONTINUITY_UNITS[0][0])
+
+        def fields(name, *, timer):
+            if name == siabackup._CONTINUITY_UNITS[-1][0]:
+                raw = siabackup._read_regular(
+                    first_receipt, "managed receipt", private=True)
+                stage = first_receipt + ".replacement"
+                siabackup._write_exclusive(stage, raw)
+                os.replace(stage, first_receipt)
+            value = {
+                "LoadState": "loaded",
+                "FragmentPath": os.path.join(systemd_dir, name),
+                "DropInPaths": "",
+                "NeedDaemonReload": "no",
+                "ActiveState": "inactive",
+                "UnitFileState": "disabled",
+                "Job": "",
+            }
+            if timer:
+                value["Unit"] = (
+                    "sia-backup-check.service"
+                    if name == "sia-backup-check.timer"
+                    else "sia-backup.service")
+            return value
+
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_systemd_unit_fields", side_effect=fields), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "authority changed"):
+            siabackup._attest_continuity_units()
+
+    def test_schedule_rechecks_all_units_after_timer_observation(self):
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir):
+            bindings = tuple(
+                siabackup._managed_unit_binding(name, kind)
+                for name, kind, _unit_type, _timer_target
+                in siabackup._CONTINUITY_UNITS)
+        first_unit = os.path.join(
+            systemd_dir, siabackup._CONTINUITY_UNITS[0][0])
+        timer = {
+            "cadence": "hourly", "enabled": False, "active": False,
+            "persistent": True, "wake_system": False,
+            "last_trigger_at": None, "next_trigger_at": None,
+        }
+
+        def observe(_name, cadence, _target, _receipt_kind):
+            if cadence == "weekly":
+                raw = siabackup._read_regular(first_unit, "managed unit")
+                stage = first_unit + ".replacement"
+                siabackup._write_exclusive(stage, raw)
+                os.replace(stage, first_unit)
+            return {**timer, "cadence": cadence}
+
+        with mock.patch.object(siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_attest_continuity_units",
+                    return_value=bindings), \
+                mock.patch.object(
+                    siabackup, "_timer_schedule_observation",
+                    side_effect=observe), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "authority changed"):
+            siabackup.schedule_status()
+
+    def test_request_arguments_are_exact_at_creation_and_load(self):
+        valid = {
+            "setup": {
+                "repository": os.path.join(self.temp.name, "repository"),
+                "recovery_key_out": os.path.join(
+                    self.temp.name, "recovery.key"),
+                "identity_key_out": os.path.join(
+                    self.temp.name, "identity.key"),
+                "environment_file": None,
+            },
+            "connect": {
+                "repository": os.path.join(self.temp.name, "repository"),
+                "recovery_key_file": os.path.join(
+                    self.temp.name, "recovery.key"),
+                "environment_file": None,
+            },
+            "upload": {"scheduled": False},
+            "check": {"scheduled": True},
+            "prepare": {"snapshot_id": "abc123"},
+            "apply": self._apply_args(),
+        }
+        for action, args in valid.items():
+            corrupt = {**args, "unexpected": True}
+            with self.subTest(action=action, boundary="creation"), \
+                    self.assertRaisesRegex(
+                        ValueError, "request argument schema"):
+                siabackup._create_request(
+                    action, corrupt, request_id="a" * 32)
+            path = siabackup._request_path("a" * 32)
+            self.assertFalse(os.path.lexists(path))
+
+            document = {
+                "schema": siabackup.REQUEST_SCHEMA,
+                "id": "a" * 32,
+                "created_at": "2026-09-04T12:00:00Z",
+                "action": action,
+                "args": corrupt,
+            }
+            siabackup._write_exclusive(
+                path, siabackup._canonical_bytes(document))
+            with self.subTest(action=action, boundary="load"), \
+                    self.assertRaisesRegex(
+                        ValueError, "request argument schema"):
+                siabackup._load_request(path)
+            os.unlink(path)
+
+        with self.assertRaisesRegex(ValueError, "request identifier"):
+            siabackup._create_request(
+                "check", {"scheduled": False}, request_id="a")
+
+        apply_args = self._apply_args()
+        identifier_mutations = {
+            "prepared_id": "d",
+            "snapshot_id": "",
+            "capsule_id": "a",
+            "manifest_sha256": "b" * 63,
+            "repository_id": "b" * 63,
+            "target_public_key": "a" * 63,
+            "restored_public_key": "a" * 65,
+        }
+        for key, value in identifier_mutations.items():
+            with self.subTest(apply_identifier=key), \
+                    self.assertRaisesRegex(
+                        ValueError, "restore request binding"):
+                siabackup._restore_request_binding({
+                    **apply_args, key: value,
+                })
+
+    def test_verification_receipt_replay_closes_parent_durability(self):
+        config = self._configure()
+        verified = {
+            "capsule_id": "a" * 32,
+            "manifest_sha256": "b" * 64,
+            "classification": "ready",
+            "public_key": self.public_key,
+        }
+        real_fsync_dir = siabackup._fsync_dir
+        refused = False
+
+        def fail_after_receipt_visibility(path):
+            nonlocal refused
+            receipt = siabackup._verification_path("abc123")
+            if not refused \
+                    and os.path.abspath(path) == os.path.abspath(
+                        siabackup.VERIFICATIONS_DIR) \
+                    and os.path.lexists(receipt):
+                refused = True
+                raise OSError("receipt durability is unknown")
+            return real_fsync_dir(path)
+
+        with mock.patch.object(
+                siabackup, "_fsync_dir",
+                side_effect=fail_after_receipt_visibility), \
+                self.assertRaisesRegex(OSError, "durability is unknown"):
+            siabackup._record_verification(
+                "abc123", verified, config=config)
+        self.assertTrue(refused)
+
+        with mock.patch.object(
+                siabackup, "_fsync_dir", wraps=real_fsync_dir) as fsync_dir:
+            receipt = siabackup._record_verification(
+                "abc123", verified, config=config)
+        self.assertEqual(receipt["snapshot_id"], "abc123")
+        self.assertTrue(any(
+            os.path.abspath(call.args[0]) == os.path.abspath(
+                siabackup.VERIFICATIONS_DIR)
+            for call in fsync_dir.call_args_list))
+
+    def test_every_verified_latest_row_requires_durable_receipt_authority(self):
+        config = self._configure()
+        latest = self._healthy_latest()
+        siabackup._record_verification(latest["snapshot_id"], {
+            "capsule_id": "a" * 32,
+            "manifest_sha256": "b" * 64,
+            "classification": "ready",
+            "public_key": self.public_key,
+        }, config=config)
+        siabackup._publish_status(state="verified", latest=latest)
+        verified_status = siabackup.read_status()
+        verification_path = siabackup._verification_path(
+            latest["snapshot_id"])
+        siabackup._retire_private_file(
+            verification_path, siabackup.VERIFICATIONS_DIR)
+
+        with self.assertRaisesRegex(ValueError, "receipt authority"):
+            siabackup.read_status()
+        with self.assertRaisesRegex(ValueError, "receipt authority"):
+            siabackup._publish_status(
+                detail="A missing receipt cannot preserve a green claim.")
+
+        checking_status = {
+            **verified_status,
+            "state": "checking",
+            "detail": "Repository verification is running.",
+            "operation": siabackup._operation(
+                "c" * 32, "backup-check", "running"),
+        }
+        siabackup._atomic_json(siabackup.STATUS_PATH, checking_status)
+        with self.assertRaisesRegex(ValueError, "receipt authority"):
+            siabackup.read_status()
+        with self.assertRaisesRegex(ValueError, "receipt authority"):
+            siabackup._publish_status(
+                detail="A busy state cannot launder a missing receipt.")
+        with self.assertRaisesRegex(ValueError, "receipt authority"):
+            siabackup._publish_status(
+                state="recovery-only", latest=None, operation=None,
+                detail="A mutation cannot erase unauthenticated history.")
+
+    def test_restore_worker_refuses_same_content_request_replacement(self):
+        request, debt = self._apply_request_and_debt(
+            phase="child-running")
+        request_path = debt["request_path"]
+        raw = siabackup._read_regular(
+            request_path, "restore request", private=True)
+        stage = os.path.join(siabackup.REQUESTS_DIR, ".replacement")
+        siabackup._write_exclusive(stage, raw)
+        os.replace(stage, request_path)
+        siabackup._fsync_dir(siabackup.REQUESTS_DIR)
+
+        with self.assertRaisesRegex(
+                siabackup.BlockedError, "generation changed"):
+            siabackup.run_restore_request(request_path, lifecycle_fd=None)
+
+    def test_request_created_at_is_a_canonical_producer_timestamp(self):
+        path = siabackup._request_path("a" * 32)
+        base = {
+            "schema": siabackup.REQUEST_SCHEMA,
+            "id": "a" * 32,
+            "created_at": "2026-09-04T12:00:00Z",
+            "action": "check",
+            "args": {"scheduled": False},
+        }
+        siabackup._write_exclusive(
+            path, siabackup._canonical_bytes(base))
+        self.assertEqual(siabackup._load_request(path), base)
+
+        for created_at in (
+                {"looks": "timestamp-like"}, "test-time",
+                "2026-09-04T12:00:00.0Z",
+                "2026-09-04T08:00:00-04:00", ""):
+            with self.subTest(created_at=created_at):
+                siabackup._atomic_json(
+                    path, {**base, "created_at": created_at})
+                with self.assertRaisesRegex(
+                        ValueError, "request schema is invalid"):
+                    siabackup._load_request(path)
+
+    def test_durable_continuity_timestamps_are_canonical(self):
+        config = self._configure()
+        canonical = "2026-09-04T12:00:00Z"
+
+        siabackup._atomic_json(
+            siabackup.CONFIG_PATH,
+            {**config, "created_at": "2026-09-04T12:00:00.0Z"})
+        with self.assertRaisesRegex(ValueError, "configuration timestamp"):
+            siabackup.load_config()
+        siabackup._atomic_json(
+            siabackup.CONFIG_PATH, {**config, "created_at": canonical})
+        config = siabackup.load_config()
+
+        with self.assertRaisesRegex(ValueError, "configuration timestamp"):
+            siabackup._restore_request_binding({
+                **self._apply_args(),
+                "configured_at": "2026-09-04T08:00:00-04:00",
+            })
+
+        prepared_id = "d" * 32
+        prepared_root = os.path.join(
+            siabackup.PREPARED_DIR, prepared_id)
+        os.mkdir(prepared_root, 0o700)
+        prepared = {
+            "schema": siabackup.siacapsule.PREPARED_SCHEMA,
+            "prepared_id": prepared_id,
+            "snapshot_id": "abc123",
+            "capsule_id": "a" * 32,
+            "created_at": "not-a-time",
+            "classification": "ready",
+            "profile": siabackup.PROFILE,
+            "corpus_head": "c" * 64,
+            "ledger_head": "e" * 64,
+            "target_ledger_head": "f" * 64,
+            "identity_matches": True,
+            "public_key": self.public_key,
+            "manifest_sha256": "b" * 64,
+            "capsule_path": os.path.join(prepared_root, "capsule"),
+        }
+        siabackup._write_exclusive(
+            os.path.join(prepared_root, "prepared.json"),
+            siabackup._canonical_bytes(prepared))
+        with self.assertRaisesRegex(ValueError, "created timestamp"):
+            siabackup.load_prepared(prepared_id)
+
+        siabackup._record_verification("fedcba", {
+            "capsule_id": "a" * 32,
+            "manifest_sha256": "b" * 64,
+            "classification": "ready",
+            "public_key": self.public_key,
+        }, config=config)
+        verification_path = siabackup._verification_path("fedcba")
+        verification = siabackup._read_json(
+            verification_path, "snapshot verification")
+        siabackup._atomic_json(
+            verification_path,
+            {**verification, "verified_at": {"not": "a timestamp"}})
+        with self.assertRaisesRegex(ValueError, "verification timestamp"):
+            siabackup._load_verification("fedcba", config=config)
+
+        request, debt = self._apply_request_and_debt()
+        siabackup._atomic_json(
+            siabackup.SUPERVISOR_PATH,
+            {**debt, "configured_at": "not-a-time"})
+        with self.assertRaisesRegex(ValueError, "configured timestamp"):
+            siabackup.load_supervisor_debt()
+
+        siabackup._retire_private_file(
+            siabackup.SUPERVISOR_PATH, siabackup.ROOT)
+        recovery = self._recovery_debt()
+        siabackup._atomic_json(
+            siabackup.SUPERVISOR_PATH,
+            {**recovery, "request_id": "a"})
+        with self.assertRaisesRegex(ValueError, "binding is invalid"):
+            siabackup.load_supervisor_debt()
+
+    def test_identity_adoption_rebinds_prior_latest_before_finalization(self):
+        config = self._configure()
+        prior_latest = self._healthy_latest()
+        siabackup._record_verification(prior_latest["snapshot_id"], {
+            "capsule_id": "a" * 32,
+            "manifest_sha256": "b" * 64,
+            "classification": "ready",
+            "public_key": self.public_key,
+        })
+        restored_public = "c" * 64
+        request, debt = self._apply_request_and_debt(
+            restored_public_key=restored_public)
+        siabackup._publish_status(
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=prior_latest,
+            operation=siabackup._operation(
+                request["id"], "restore-apply", "running",
+                prepared_id=debt["prepared_id"], ready=True,
+                sia_ledger_verified=True))
+
+        with mock.patch.object(
+                siabackup, "_live_brain_public_key",
+                return_value=restored_public):
+            siabackup._rebind_after_identity_adoption(
+                config, restored_public)
+            rebound = siabackup.read_status()
+            self.assertIsNone(rebound["latest"])
+            with mock.patch.object(
+                    siabackup, "_post_restart_observation",
+                    return_value={
+                        "ready": True,
+                        "sia_ledger_verified": True,
+                        "committed": True,
+                    }):
+                self.assertTrue(siabackup.finalize_restore_request(
+                    debt["request_path"]))
+        terminal = siabackup.read_status()
+        self.assertEqual(terminal["state"], "recovery-only")
+        self.assertIsNone(terminal["latest"])
 
     def test_schedule_field_reader_refuses_malformed_manager_output(self):
         responses = (
@@ -1432,6 +2846,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 "FragmentPath": os.path.join(systemd_dir, name),
                 "DropInPaths": (
                     "/foreign.conf" if name == "sia-backup.service" else ""),
+                "NeedDaemonReload": "no",
                 "ActiveState": "inactive",
                 "UnitFileState": "disabled",
                 "Job": "",
@@ -1455,6 +2870,38 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                     siabackup.BlockedError, "authority is not exact"):
             siabackup.schedule_status()
         observe.assert_not_called()
+
+    def test_effective_units_refuse_pending_daemon_reload(self):
+        systemd_dir, managed_dir = self._managed_schedule_authority()
+
+        def fields(name, *, timer):
+            value = {
+                "LoadState": "loaded",
+                "FragmentPath": os.path.join(systemd_dir, name),
+                "DropInPaths": "",
+                "NeedDaemonReload": (
+                    "yes" if name == "sia-backup.service" else "no"),
+                "ActiveState": "inactive",
+                "UnitFileState": "disabled",
+                "Job": "",
+            }
+            if timer:
+                value["Unit"] = (
+                    "sia-backup-check.service"
+                    if name == "sia-backup-check.timer"
+                    else "sia-backup.service")
+            return value
+
+        with mock.patch.object(
+                siabackup, "SYSTEMD_USER_DIR", systemd_dir), \
+                mock.patch.object(
+                    siabackup, "MANAGED_INSTALL_DIR", managed_dir), \
+                mock.patch.object(
+                    siabackup, "_systemd_unit_fields",
+                    side_effect=fields), \
+                self.assertRaisesRegex(
+                    siabackup.BlockedError, "authority is not exact"):
+            siabackup._attest_continuity_units()
 
     def test_schedule_cli_emits_machine_readable_status(self):
         payload = {
@@ -1502,6 +2949,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                     "FragmentPath": os.path.join(systemd_dir, name),
                     "DropInPaths": ("/foreign.conf"
                                     if name == "sia-backup.timer" else ""),
+                    "NeedDaemonReload": "no",
                     "ActiveState": "inactive",
                     "UnitFileState": "disabled",
                     "Job": "",
@@ -1540,7 +2988,9 @@ raise SystemExit(siabackup.run_request({request_path!r}))
     def test_supervisor_debt_retirement_failure_cannot_publish_green(self):
         request, debt = self._apply_request_and_debt()
         siabackup._publish_status(
-            state="restoring", latest=self._healthy_latest(),
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
             operation=siabackup._operation(
                 request["id"], "restore-apply", "running",
                 prepared_id=debt["prepared_id"], ready=True,
@@ -1556,8 +3006,135 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 self.assertRaisesRegex(RuntimeError, "debt retirement"):
             siabackup.finalize_restore_request(debt["request_path"])
         status = siabackup.read_status()
-        self.assertEqual(status["state"], "restoring")
+        self.assertEqual(status["state"], "blocked")
         self.assertTrue(os.path.isfile(siabackup.SUPERVISOR_PATH))
+
+    def test_apply_finalizer_withholds_green_until_debt_unlink_is_durable(self):
+        request, debt = self._apply_request_and_debt()
+        siabackup._publish_status(
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
+            operation=siabackup._operation(
+                request["id"], "restore-apply", "running",
+                prepared_id=debt["prepared_id"], ready=True,
+                sia_ledger_verified=True))
+        real_os = siabackup.os
+
+        class OsShim:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            @staticmethod
+            def fsync(descriptor):
+                if not os.path.lexists(siabackup.SUPERVISOR_PATH):
+                    raise OSError("supervisor unlink durability unknown")
+                return real_os.fsync(descriptor)
+
+        with mock.patch.object(
+                siabackup, "_post_restart_observation",
+                return_value={
+                    "ready": True, "sia_ledger_verified": True,
+                    "committed": True,
+                }), mock.patch.object(siabackup, "os", OsShim()), \
+                self.assertRaisesRegex(OSError, "unlink durability unknown"):
+            siabackup.finalize_restore_request(debt["request_path"])
+        self.assertEqual(siabackup.read_status()["state"], "blocked")
+        self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
+        self.assertTrue(siabackup.reconcile_supervisor_spools())
+
+    def test_recovery_finalizer_withholds_green_until_debt_unlink_is_durable(self):
+        debt = self._recovery_debt()
+        siabackup._publish_status(
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
+            operation=siabackup._operation(
+                debt["request_id"], "restore-recover", "running",
+                ready=True, sia_ledger_verified=True))
+        real_os = siabackup.os
+
+        class OsShim:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            @staticmethod
+            def fsync(descriptor):
+                if not os.path.lexists(siabackup.SUPERVISOR_PATH):
+                    raise OSError("supervisor unlink durability unknown")
+                return real_os.fsync(descriptor)
+
+        with mock.patch.object(
+                siabackup, "_post_restart_observation",
+                return_value={
+                    "ready": True, "sia_ledger_verified": True,
+                    "committed": None,
+                }), mock.patch.object(siabackup, "os", OsShim()), \
+                self.assertRaisesRegex(OSError, "unlink durability unknown"):
+            siabackup.finalize_restore_recovery()
+        self.assertEqual(siabackup.read_status()["state"], "blocked")
+        self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
+        self.assertTrue(siabackup.reconcile_supervisor_spools())
+
+    def test_terminal_publication_ambiguity_restores_non_green_fallback(self):
+        request, debt = self._apply_request_and_debt()
+        siabackup._publish_status(
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
+            operation=siabackup._operation(
+                request["id"], "restore-apply", "running",
+                prepared_id=debt["prepared_id"], ready=True,
+                sia_ledger_verified=True))
+        real_fsync_dir = siabackup._fsync_dir
+        failed = False
+
+        def fail_once_after_terminal_rename(path):
+            nonlocal failed
+            if not failed:
+                try:
+                    phase = siabackup.read_status()["operation"]["phase"]
+                except (OSError, TypeError, ValueError):
+                    phase = ""
+                if phase == "verified":
+                    failed = True
+                    raise OSError("terminal durability is unknown")
+            return real_fsync_dir(path)
+
+        observation = {
+            "ready": True, "sia_ledger_verified": True,
+            "committed": True,
+        }
+        with mock.patch.object(
+                siabackup, "_post_restart_observation",
+                return_value=observation), mock.patch.object(
+                    siabackup, "_fsync_dir",
+                    side_effect=fail_once_after_terminal_rename), \
+                self.assertRaisesRegex(OSError, "durability is unknown"):
+            siabackup.finalize_restore_request(debt["request_path"])
+        self.assertFalse(os.path.lexists(siabackup.SUPERVISOR_PATH))
+        self.assertEqual(siabackup.read_status()["state"], "blocked")
+        self.assertTrue(siabackup.reconcile_supervisor_spools())
+
+    def test_restart_failure_downgrades_after_request_retirement(self):
+        request, debt = self._apply_request_and_debt()
+        siabackup._publish_status(
+            state="restoring",
+            repository_display="External recovery repository",
+            latest=self._healthy_latest(),
+            operation=siabackup._operation(
+                request["id"], "restore-apply", "running",
+                prepared_id=debt["prepared_id"], ready=True,
+                sia_ledger_verified=True))
+        debt["phase"] = "restart-failed"
+        siabackup._atomic_json(siabackup.SUPERVISOR_PATH, debt)
+        siabackup._retire_request(request)
+
+        self.assertTrue(
+            siabackup.mark_brainstem_restart_failed(debt["request_path"]))
+        status = siabackup.read_status()
+        self.assertEqual(status["state"], "blocked")
+        self.assertEqual(status["operation"]["phase"], "blocked")
 
     def test_signed_identity_adoption_recreates_bound_configuration(self):
         config = self._configure()
@@ -1578,11 +3155,12 @@ raise SystemExit(siabackup.run_request({request_path!r}))
         requests = os.path.join(
             home, ".local", "state", "sia-continuity", "requests")
         os.makedirs(requests, mode=0o700)
-        request_path = os.path.join(requests, "abc.json")
+        request_id = "a" * 32
+        request_path = os.path.join(requests, request_id + ".json")
         request = {
             "schema": siabackup.REQUEST_SCHEMA,
-            "id": "abc",
-            "created_at": "test-time",
+            "id": request_id,
+            "created_at": "2026-09-04T12:00:00Z",
             "action": "check",
             "args": {"scheduled": False},
         }
@@ -1601,7 +3179,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
             home, ".local", "state", "sia-continuity", "status.json")
         with open(status_path, encoding="utf-8") as stream:
             status = json.load(stream)
-        self.assertEqual(status["operation"]["request_id"], "abc")
+        self.assertEqual(status["operation"]["request_id"], request_id)
         self.assertEqual(status["operation"]["kind"], "backup-check")
         self.assertEqual(status["operation"]["phase"], "failed")
         self.assertEqual(
@@ -1833,6 +3411,7 @@ class RestoreAdoptionCommitment(unittest.TestCase):
         self.share = os.path.join(self.temp.name, "share")
         os.makedirs(self.share, mode=0o700)
         self._ledger("init")
+        _sequence, self.accepted_head = self._head()
         for name, value in (("SHARE", self.share),
                             ("BIN", os.path.join(REPO, "bin"))):
             patcher = mock.patch.object(siabackup.sialib, name, value)
@@ -1854,14 +3433,54 @@ class RestoreAdoptionCommitment(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
-    def _adopt(self, *, prepared_id=None, capsule_id=None):
+    def _head(self):
+        sequence, head = self._ledger("head").strip().split()
+        return int(sequence), head
+
+    def _adopt(self, *, prepared_id=None, capsule_id=None, debt=None,
+               unbound=False):
+        debt = self._debt() if debt is None else debt
+        digest, size = siabackup._expected_adoption_ledger_binding(debt)
+        if unbound:
+            digest, size = self.CONTENT, "0"
         self._ledger("append", "RESTORE:adopt",
                      prepared_id or self.PREPARED_ID,
-                     capsule_id or self.CAPSULE_ID, self.CONTENT, "0")
+                     capsule_id or self.CAPSULE_ID, digest, size)
 
-    def _debt(self):
-        return {"kind": "restore-apply", "prepared_id": self.PREPARED_ID,
-                "capsule_id": self.CAPSULE_ID}
+    def _debt(self, *, accepted_head=None):
+        accepted_head = accepted_head or self.accepted_head
+        prepared = {
+            "prepared_id": self.PREPARED_ID,
+            "snapshot_id": "b" * 64,
+            "capsule_id": self.CAPSULE_ID,
+            "manifest_sha256": "c" * 64,
+        }
+        confirmation = {
+            "schema_version": 1,
+            "phrase": "RESTORE",
+            "snapshot_id": prepared["snapshot_id"],
+            "ledger_head": accepted_head,
+            "corpus_receipt_re_adopt": True,
+        }
+        target = {
+            "corpus_root": {
+                "device": 1, "inode": 2, "mode": 448, "owner": 0,
+            },
+            "receipt_sha256": "e" * 64,
+            "receipt_mode": 384,
+        }
+        adoption = siabackup.siacapsule.adoption_binding(
+            prepared, confirmation, target, order=7)
+        return {
+            "kind": "restore-apply",
+            **prepared,
+            "accepted_ledger_head": accepted_head,
+            "confirmation_sha256": hashlib.sha256(
+                siabackup._canonical_bytes(confirmation)).hexdigest(),
+            "adoption_order": str(adoption["order"]),
+            "adoption_record_id": adoption["record_id"],
+            "target": target,
+        }
 
     def test_adoption_is_uncommitted_without_a_signed_adopt_row(self):
         observed = siabackup._live_restore_observation(self._debt())
@@ -1875,6 +3494,17 @@ class RestoreAdoptionCommitment(unittest.TestCase):
         self.assertTrue(observed["sia_ledger_verified"])
         self.assertIs(observed["committed"], True)
         self.assertEqual(observed["ledger_sequence"], 2)
+
+    def test_adoption_refuses_a_signed_row_with_unbound_content(self):
+        self._adopt(unbound=True)
+        observed = siabackup._live_restore_observation(self._debt())
+        self.assertIs(observed["committed"], False)
+
+    def test_adoption_refuses_a_mismatched_accepted_predecessor(self):
+        debt = self._debt(accepted_head="f" * 64)
+        self._adopt(debt=debt)
+        with self.assertRaisesRegex(ValueError, "accepted predecessor"):
+            siabackup._live_restore_observation(debt)
 
     def test_adoption_ignores_rows_bound_to_another_restore(self):
         self._adopt(prepared_id="e" * 32)

@@ -1,14 +1,20 @@
 """sialib — core of SIA, the Omarchy Brain.
 
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
+
 The brainstem daemon tails enabled base/optional/configured evidence streams
-into a markdown corpus, syncs it into SIA's own gbrain (PGLite) brain, checks
+into a markdown corpus, syncs it into SIA's local gbrain (PGLite) index, checks
 configured signed chains through their keeper verifiers, and derives
-deterministic generator thoughts alongside origin-labeled user/model prose.
+deterministic generated entries alongside origin-labeled user/model prose.
 Everything the widget shows comes from the JSON snapshots exported here.
+The persisted ``organ``, ``cortex``, ``mind``, ``thought``, and ``dream``
+spellings are compatibility namespaces, not biological classifications or
+claims about mental processes.
 
 Honesty rules (house style):
   - Ledger rows elsewhere are recall; each keeper verifier is its evidence path.
-  - Generator thoughts cite sources; user/model prose stays origin-labeled.
+  - Generated entries cite sources; user/model prose stays origin-labeled.
   - Built-in senses do not read private keys, message bodies, or clipboards;
     custom senses read exactly the operator-configured record path/field.
 """
@@ -27,6 +33,20 @@ STATE = os.path.join(HOME, ".local/state/sia")
 CORPUS = os.path.join(SHARE, "corpus")
 BIN = os.path.join(SHARE, "bin")
 TOOLCHAIN = os.path.join(SHARE, "toolchain")
+
+BRAIN_METAPHOR_BOUNDARY = "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience."
+CORTEX_BOUNDARY_REPAIR_SCHEMA = "sia-cortex-boundary-repair-v1"
+CORTEX_BOUNDARY_REPAIR_JOURNAL_SCHEMA = (
+    "sia-cortex-boundary-repair-journal-v1")
+CORTEX_BOUNDARY_REPAIR_JOURNAL = os.path.join(
+    STATE, "cortex-boundary-repair.journal.json")
+CORTEX_BOUNDARY_REPAIR_RECEIPT = os.path.join(
+    STATE, "cortex-boundary-repair.receipt.json")
+CORTEX_BOUNDARY_REPAIR_SUFFIX = (
+    "\n\n## Current product-metaphor boundary\n\n"
+    + BRAIN_METAPHOR_BOUNDARY + "\n\n"
+    "The preceding wording is retained historical product prose. This "
+    "boundary governs the current claim.\n")
 GBRAIN = os.path.join(TOOLCHAIN, "gbrain", "bin", "gbrain")
 GBRAIN_OWNER_LOCK = os.path.join(STATE, "gbrain-owner.lock")
 CORPUS_OWNER_LOCK = os.path.join(STATE, "corpus-owner.lock")
@@ -68,7 +88,14 @@ MAX_CONFIG_PATH_CHARS = 4096
 MAX_CONFIG_TEXT_CHARS = 2000
 MAX_SOURCE_NAME_CHARS = 200
 MAX_CONFIG_TAGS = 8
+MAX_CONFIGURED_CHAINS = MAX_CONFIG_TAGS
 MAX_STATE_JSON_BYTES = 16_777_216
+MAX_LEDGER_PENDING_RECORDS = 1024
+# Arithmetic evidence: status=exact, parsed=2^53-1, exact=9007199254740991.
+# Exact rational arithmetic outside the Lean certificate chain; NOT
+# formal-bounded. This is the largest integer JSON/JavaScript can carry
+# without changing its value.
+MAX_JSON_SAFE_INTEGER = 9_007_199_254_740_991
 DEFAULT_SKILL_ROOTS = [
     ".claude/skills", ".agents/skills", ".omp/skills",
     ".copilot/skills", ".config/agents/skills"]
@@ -104,6 +131,11 @@ _CUSTOM_SENSE_ENTRY_KEYS = frozenset({
     "enabled", "match", "exclude", "field", "kind", "tags",
 })
 
+_CONFIG_TOP_LEVEL_KEYS = frozenset({
+    "_comment", "_egress_trust_boundary", "judge", "senses", "skills",
+    "custom_senses", "chains", "retrieval",
+})
+
 
 def _validated_custom_match_literals(value, *, field="match"):
     """Return the one finite literal grammar shared by every config user."""
@@ -127,7 +159,7 @@ def _validated_custom_match_literals(value, *, field="match"):
 
 
 def _validated_custom_sense_entry(value):
-    """Validate and normalize one custom source for sensing and its organ."""
+    """Validate one custom source and its compatibility ``organ`` label."""
     if not isinstance(value, dict):
         raise ValueError("configuration entry must be an object")
     if any(key not in _CUSTOM_SENSE_ENTRY_KEYS for key in value):
@@ -207,50 +239,104 @@ def _validated_custom_sense_entry(value):
         "tags": tags,
     }
 
+_LAST_LOADED_CONFIG = None
+_LAST_CONFIG_LOAD_VALID = True
+
+
+def _loaded_config(value, valid):
+    """Bind parse provenance to the exact object returned by load_config."""
+    global _LAST_LOADED_CONFIG, _LAST_CONFIG_LOAD_VALID
+    _LAST_LOADED_CONFIG = value
+    _LAST_CONFIG_LOAD_VALID = valid
+    return value
+
+
+def _active_config_load_valid():
+    """Whether active CONFIG came from a complete read or explicit override."""
+    return CONFIG is not _LAST_LOADED_CONFIG or _LAST_CONFIG_LOAD_VALID
+
+
+def _file_generation(info):
+    return (info.st_dev, info.st_ino, info.st_size,
+            info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _exact_int(value, expected):
+    return type(value) is int and value == expected
+
+
 def load_config():
     CONFIG_ERRORS.clear()
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(CONFIG_PATH, flags)
     except FileNotFoundError:
-        return {}
+        return _loaded_config({}, True)
     except OSError:
         _record_config_error("config-open-refused")
-        return {}
+        return _loaded_config({}, False)
     try:
-        with os.fdopen(fd, "rb") as stream:
+        with siaqueue.regular_file_stream(fd, error_type=OSError) as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) \
+                    or before.st_uid != os.geteuid() \
+                    or before.st_nlink != 1 \
                     or before.st_size > MAX_CONFIG_BYTES:
                 _record_config_error("config-file-refused")
-                return {}
+                return _loaded_config({}, False)
             raw = stream.read(MAX_CONFIG_BYTES + 1)
             after = os.fstat(stream.fileno())
-        observed = (before.st_dev, before.st_ino, before.st_size,
-                    before.st_mtime_ns, before.st_ctime_ns)
-        finished = (after.st_dev, after.st_ino, after.st_size,
-                    after.st_mtime_ns, after.st_ctime_ns)
-        if observed != finished or len(raw) > MAX_CONFIG_BYTES:
+        observed = _file_generation(before)
+        finished = _file_generation(after)
+        if observed != finished or len(raw) > MAX_CONFIG_BYTES \
+                or after.st_uid != os.geteuid() or after.st_nlink != 1:
             _record_config_error("config-changed-or-over-bound")
-            return {}
+            return _loaded_config({}, False)
         try:
             text = raw.decode("utf-8", errors="strict")
         except UnicodeError:
             _record_config_error("config-invalid-utf8")
-            return {}
+            return _loaded_config({}, False)
         try:
             value = _strict_json_loads(text)
         except (UnicodeError, ValueError, RecursionError):
             _record_config_error("config-invalid-json")
-            return {}
+            return _loaded_config({}, False)
+        try:
+            target = os.lstat(CONFIG_PATH)
+        except OSError:
+            _record_config_error("config-changed-or-over-bound")
+            return _loaded_config({}, False)
+        current = _file_generation(target)
+        if not stat.S_ISREG(target.st_mode) \
+                or target.st_uid != os.geteuid() \
+                or target.st_nlink != 1 or current != finished:
+            _record_config_error("config-changed-or-over-bound")
+            return _loaded_config({}, False)
         if not isinstance(value, dict):
             _record_config_error("config-must-be-object")
-            return {}
+            return _loaded_config({}, False)
+        if set(value) - _CONFIG_TOP_LEVEL_KEYS:
+            # A misspelled policy key is not an ignorable extension: treating
+            # e.g. ``sense`` as absent would silently restore the default
+            # source roster and invert the operator's disable intent.
+            _record_config_error("config-unknown-key")
+            return _loaded_config({}, False)
+        for comment_key in ("_comment", "_egress_trust_boundary"):
+            if comment_key in value and not _strict_config_string(
+                    value[comment_key], limit=MAX_CONFIG_TEXT_CHARS):
+                _record_config_error("config-comment-must-be-string")
+                return _loaded_config({}, False)
         senses = value.get("senses", {})
         if not isinstance(senses, dict):
             _record_config_error("senses-must-be-object")
         else:
+            if set(senses) - {"_comment", "disable"}:
+                _record_config_error("senses-unknown-key")
+            if "_comment" in senses and not _strict_config_string(
+                    senses["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+                _record_config_error("senses-comment-must-be-string")
             disabled = senses.get("disable", [])
             if not isinstance(disabled, list):
                 _record_config_error("senses-disable-must-be-list")
@@ -259,33 +345,62 @@ def load_config():
                         item, nonempty=True, limit=MAX_SOURCE_NAME_CHARS)
                     for item in disabled):
                 _record_config_error("senses-disable-entry-invalid")
+        skills = value.get("skills", {})
+        if not isinstance(skills, dict):
+            _record_config_error("skills-must-be-object")
+        else:
+            if set(skills) - {"_comment", "roots"}:
+                _record_config_error("skills-unknown-key")
+            if "_comment" in skills and not _strict_config_string(
+                    skills["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+                _record_config_error("skills-comment-must-be-string")
         custom = value.get("custom_senses", [])
         if not isinstance(custom, list):
             _record_config_error("custom-senses-must-be-list")
-        elif len(custom) > MAX_CONFIG_BYTES:
+        elif len(custom) > MAX_LEDGER_PENDING_RECORDS:
             _record_config_error("custom-senses-over-bound")
+        chains = value.get("chains", [])
+        if not isinstance(chains, list):
+            _record_config_error("chains-must-be-list")
+        elif len(chains) > MAX_CONFIGURED_CHAINS:
+            _record_config_error("chains-over-bound")
         retrieval = value.get("retrieval", {})
         if not isinstance(retrieval, dict):
             _record_config_error("retrieval-must-be-object")
         else:
-            if set(retrieval) - {"associative_rerank"}:
+            if set(retrieval) - {"_comment", "associative_rerank"}:
                 _record_config_error("retrieval-unknown-key")
+            if "_comment" in retrieval and not _strict_config_string(
+                    retrieval["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+                _record_config_error("retrieval-comment-must-be-string")
             if "associative_rerank" in retrieval \
                     and not isinstance(retrieval["associative_rerank"], bool):
                 _record_config_error("retrieval-associative-rerank-must-be-bool")
-        return value
+        return _loaded_config(value, True)
     except OSError:
         _record_config_error("config-read-refused")
-        return {}
+        return _loaded_config({}, False)
 
 CONFIG = load_config()
 
 
 def _configured_skill_root_paths():
     """Return the one validated skill-root roster used by activation/scans."""
+    if not _active_config_load_valid():
+        return []
     skills = CONFIG.get("skills", {})
     if not isinstance(skills, dict):
         _record_config_error("skills-must-be-object")
+        return []
+    shape_valid = True
+    if set(skills) - {"_comment", "roots"}:
+        _record_config_error("skills-unknown-key")
+        shape_valid = False
+    if "_comment" in skills and not _strict_config_string(
+            skills["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+        _record_config_error("skills-comment-must-be-string")
+        shape_valid = False
+    if not shape_valid:
         return []
     roots = skills.get("roots", DEFAULT_SKILL_ROOTS)
     if not isinstance(roots, list) or len(roots) > MAX_CONFIG_TAGS \
@@ -313,24 +428,29 @@ def associative_rerank_enabled(config=None):
 
     Default OFF by measurement, per the hypothesis-lane freeze rule: on the
     extended 22-probe tripwire set (2026-09-02) the blend scored uniformly
-    below plain dense retrieval (slug match@5 0.86 vs 0.91, reciprocal rank
-    0.67 vs 0.71, match@1 0.50 vs 0.59), so graph influence must be enabled
+    below the unmodified hybrid query (slug match@5 0.86 vs 0.91, reciprocal
+    rank 0.67 vs 0.71, match@1 0.50 vs 0.59), so graph influence must be enabled
     deliberately (`retrieval.associative_rerank: true`) and earns its default
     back only with a measured win. The nightly tripwire keeps measuring the
     blend lane either way, so the hypothesis stays under instrumentation.
     """
     source = CONFIG if config is None else config
+    if not isinstance(source, dict):
+        return False
     retrieval = source.get("retrieval", {})
     return isinstance(retrieval, dict) \
+        and not set(retrieval) - {"_comment", "associative_rerank"} \
+        and ("_comment" not in retrieval or _strict_config_string(
+            retrieval["_comment"], limit=MAX_CONFIG_TEXT_CHARS)) \
         and retrieval.get("associative_rerank") is True
 
 
 def _configured_obsidian_vault():
-    """Absolute vault root for the optional Obsidian organ.
+    """Absolute vault root for the optional Obsidian source.
 
     An absent environment override selects ``~/Obsidian``.  A present
     override must already be an absolute, bounded UTF-8 path.  Invalid
-    overrides disable the organ instead of silently falling back to a
+    overrides disable the source instead of silently falling back to a
     different vault.
     """
     if "OBSIDIAN_VAULT_PATH" not in os.environ:
@@ -346,7 +466,7 @@ def _configured_obsidian_vault():
 
 OBSIDIAN_VAULT = _configured_obsidian_vault()
 
-# organs every box has
+# Base sources, exposed through the persisted ``organ`` compatibility map.
 BASE_ORGANS = {
     "sia":         ("SIA ledger",  "SIA's signed lifecycle transitions"),
     "pacman":      ("pacman",      "package manager"),
@@ -391,25 +511,65 @@ def sanitize_slugpart(s):
     return s or "unknown"
 
 
-def _configured_disabled_organs():
+def _configured_disabled_sense_policy():
+    """Return (valid, canonical keys) for every native/custom source gate."""
+    if not isinstance(CONFIG, dict):
+        _record_config_error("config-must-be-object")
+        return False, set()
+    if not _active_config_load_valid():
+        # A fatal read/parse failure cannot distinguish an intentional prior
+        # disable from an absent policy. Run no configurable source until a
+        # missing or valid configuration establishes the default roster.
+        return False, set()
     senses = CONFIG.get("senses", {})
     if not isinstance(senses, dict):
-        return set()
+        _record_config_error("senses-must-be-object")
+        return False, set()
+    if set(senses) - {"_comment", "disable"}:
+        _record_config_error("senses-unknown-key")
+        return False, set()
+    if "_comment" in senses and not _strict_config_string(
+            senses["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+        _record_config_error("senses-comment-must-be-string")
+        return False, set()
     disabled = senses.get("disable", [])
-    if not isinstance(disabled, list) \
-            or len(disabled) > MAX_CONFIG_BYTES \
-            or any(not _strict_config_string(
-                       value, nonempty=True, limit=MAX_SOURCE_NAME_CHARS)
-                   for value in disabled):
-        return set()
-    return set(disabled)
+    if not isinstance(disabled, list):
+        _record_config_error("senses-disable-must-be-list")
+        return False, set()
+    if len(disabled) > MAX_CONFIG_BYTES or any(
+            not _strict_config_string(
+                value, nonempty=True, limit=MAX_SOURCE_NAME_CHARS)
+            for value in disabled):
+        _record_config_error("senses-disable-entry-invalid")
+        return False, set()
+    return True, {sanitize_slugpart(value) for value in disabled}
+
+
+def _configured_disabled_organs():
+    """Compatibility view of the native-organ portion of disable policy."""
+    valid, disabled = _configured_disabled_sense_policy()
+    if not valid:
+        return set(BASE_ORGANS) | set(OPTIONAL_ORGANS)
+    return disabled
+
+
+def _sense_disabled(key, policy):
+    valid, disabled = policy
+    return not valid or sanitize_slugpart(key) in disabled
+
+
+def _custom_sense_disabled(normalized, policy):
+    return (_sense_disabled(normalized["name"], policy)
+            or _sense_disabled(normalized["organ"], policy))
 
 
 def _build_organs():
-    organs = dict(BASE_ORGANS)
-    disabled = _configured_disabled_organs()
+    policy = _configured_disabled_sense_policy()
+    organs = {
+        key: value for key, value in BASE_ORGANS.items()
+        if not _sense_disabled(key, policy)}
     for key, (name, desc, probe) in OPTIONAL_ORGANS.items():
-        if key in disabled:
+        if _sense_disabled(key, policy):
             continue
         if key == "obsidian":
             try:
@@ -430,9 +590,10 @@ def _build_organs():
             active = os.path.exists(probe_path)
         if active:
             organs[key] = (name, desc)
-    configured = CONFIG.get("custom_senses", [])
+    configured = (CONFIG.get("custom_senses", [])
+                  if isinstance(CONFIG, dict) else [])
     if not isinstance(configured, list) \
-            or len(configured) > MAX_CONFIG_BYTES:
+            or len(configured) > MAX_LEDGER_PENDING_RECORDS:
         configured = []
     seen_custom_names = set()
     for cs in configured:
@@ -440,17 +601,17 @@ def _build_organs():
             normalized = _validated_custom_sense_entry(cs)
         except ValueError:
             continue
-        if normalized is None or normalized["name"] in seen_custom_names:
+        if normalized is None or _custom_sense_disabled(
+                normalized, policy) \
+                or normalized["name"] in seen_custom_names:
             continue
         seen_custom_names.add(normalized["name"])
         organ = normalized["organ"]
         organs.setdefault(
             organ, (organ, normalized["description"]))
-    for key in disabled:
-        organs.pop(key, None)
     return organs
 
-# Tags that carry emotional weight for salience (mirrored into gbrain config).
+# Tags that carry deterministic safety-priority weight (mirrored into gbrain config).
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
@@ -621,31 +782,40 @@ def ensure_durable_directory(path, mode=0o755):
 
 def read_json(path, default):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(path, flags)
     except Exception:
         return default
     try:
-        with os.fdopen(fd, "rb") as stream:
+        with siaqueue.regular_file_stream(fd, error_type=OSError) as stream:
             before = os.fstat(stream.fileno())
             if not stat.S_ISREG(before.st_mode) \
+                    or before.st_uid != os.geteuid() \
+                    or before.st_nlink != 1 \
                     or before.st_size > MAX_STATE_JSON_BYTES:
                 return default
             raw = stream.read(MAX_STATE_JSON_BYTES + 1)
             after = os.fstat(stream.fileno())
-        observed = (before.st_dev, before.st_ino, before.st_size,
-                    before.st_mtime_ns, before.st_ctime_ns)
-        finished = (after.st_dev, after.st_ino, after.st_size,
-                    after.st_mtime_ns, after.st_ctime_ns)
+        observed = _file_generation(before)
+        finished = _file_generation(after)
         if observed != finished or len(raw) > MAX_STATE_JSON_BYTES:
             return default
-        return _strict_json_loads(raw.decode("utf-8"))
+        value = _strict_json_loads(raw.decode("utf-8"))
+        target = os.lstat(path)
+        current = _file_generation(target)
+        if not stat.S_ISREG(after.st_mode) \
+                or after.st_uid != os.geteuid() or after.st_nlink != 1 \
+                or not stat.S_ISREG(target.st_mode) \
+                or target.st_uid != os.geteuid() \
+                or target.st_nlink != 1 or current != finished:
+            return default
+        return value
     except (OSError, UnicodeError, ValueError, RecursionError):
         return default
 
 
-def read_state_json(path, default, label):
+def read_state_json(path, default, label, *, expected_type=None):
     """Read daemon-owned JSON without following links or hiding damage.
 
     Missing state has a well-defined bootstrap value. Existing state is a
@@ -654,7 +824,7 @@ def read_state_json(path, default, label):
     it and laundering skipped evidence into a fresh snapshot.
     """
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
@@ -664,36 +834,53 @@ def read_state_json(path, default, label):
             from exc
     try:
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode):
-            raise RuntimeError(f"{label} state is not a regular file")
+        if not stat.S_ISREG(info.st_mode) \
+                or info.st_uid != os.geteuid() or info.st_nlink != 1:
+            raise RuntimeError(
+                f"{label} state is not an owned single-link regular file")
         try:
             with os.fdopen(fd, "rb") as stream:
                 fd = -1
                 before = os.fstat(stream.fileno())
                 if not stat.S_ISREG(before.st_mode) \
+                        or before.st_uid != os.geteuid() \
+                        or before.st_nlink != 1 \
                         or before.st_size > MAX_STATE_JSON_BYTES:
                     raise RuntimeError(
-                        f"{label} state is not a bounded regular file")
+                        f"{label} state is not a bounded owned single-link "
+                        "regular file")
                 raw = stream.read(MAX_STATE_JSON_BYTES + 1)
                 after = os.fstat(stream.fileno())
-                observed = (before.st_dev, before.st_ino, before.st_size,
-                            before.st_mtime_ns, before.st_ctime_ns)
-                finished = (after.st_dev, after.st_ino, after.st_size,
-                            after.st_mtime_ns, after.st_ctime_ns)
+                observed = _file_generation(before)
+                finished = _file_generation(after)
                 if observed != finished or len(raw) > MAX_STATE_JSON_BYTES:
                     raise RuntimeError(
                         f"{label} state changed while read or exceeds its bound")
                 value = _strict_json_loads(raw.decode("utf-8"))
+                try:
+                    target = os.lstat(path)
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"{label} state changed while read") from exc
+                current = _file_generation(target)
+                if not stat.S_ISREG(after.st_mode) \
+                        or after.st_uid != os.geteuid() \
+                        or after.st_nlink != 1 \
+                        or not stat.S_ISREG(target.st_mode) \
+                        or target.st_uid != os.geteuid() \
+                        or target.st_nlink != 1 or current != finished:
+                    raise RuntimeError(f"{label} state changed while read")
         except (OSError, UnicodeError, ValueError, RecursionError) as exc:
             raise RuntimeError(
                 f"{label} state is unreadable or malformed") from exc
     finally:
         if fd >= 0:
             os.close(fd)
-    if not isinstance(value, type(default)):
+    expected_type = type(default) if expected_type is None else expected_type
+    if not isinstance(value, expected_type):
         raise RuntimeError(
             f"{label} state has type {type(value).__name__}; "
-            f"expected {type(default).__name__}")
+            f"expected {expected_type.__name__}")
     return value
 
 
@@ -1216,9 +1403,9 @@ def _canonical_thought_inbox_item(item, *, queued):
 
 def _read_thought_inbox(path):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label="thought inbox") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_size > MAX_THOUGHT_INBOX_BYTES:
@@ -1265,7 +1452,7 @@ def _read_thought_inbox(path):
 
 
 def append_thought_inbox(item):
-    """Locked RMW for out-of-band thoughts produced by CLI workflows."""
+    """Locked RMW for out-of-band generated entries from CLI workflows."""
     item = _canonical_thought_inbox_item(item, queued=False)
     item["_queue_id"] = uuid.uuid4().hex
     item["_queued_at"] = iso()
@@ -1305,7 +1492,7 @@ def acknowledge_thought_inbox(claim_path):
 
 
 def drain_thought_inbox(defer_ack=False):
-    """Claim one durable CLI-thought batch; preserve it until acknowledged."""
+    """Claim one durable CLI generated-entry batch until acknowledgment."""
     claim_path = _thought_inbox_claim_path()
     with _owner_lease(THOUGHT_INBOX_LOCK, "thought inbox"):
         if not os.path.lexists(claim_path) \
@@ -1400,11 +1587,16 @@ REDACT_PATTERNS = [
 ]
 REDACTIONS = {}     # organ -> spans dropped this process (pulse exports it)
 
-def redact(text, organ="?"):
+def _redaction_projection(text):
     out, n = strip_controls(text), 0
     for pat in REDACT_PATTERNS:
         out, k = pat.subn("⟦redacted⟧", out)
         n += k
+    return out, n
+
+
+def redact(text, organ="?"):
+    out, n = _redaction_projection(text)
     if n:
         REDACTIONS[organ] = REDACTIONS.get(organ, 0) + n
     return out
@@ -1466,7 +1658,7 @@ class Event:
 
 
 def event_memory_identity(event):
-    """Bind mind replay state to one exact normalized event observation."""
+    """Bind policy replay state to one exact normalized event observation."""
     if not isinstance(event, Event):
         raise TypeError("event replay identity needs an Event")
     if event.occurrence:
@@ -1498,7 +1690,7 @@ def event_semantic_identity(event):
 
 
 def _dedupe_event_batch(events):
-    """Admit one exact meaning for each organ/source occurrence per pulse."""
+    """Admit one exact meaning for each source occurrence per pulse."""
     unique = []
     seen = {}
     for event in events:
@@ -1661,7 +1853,8 @@ def _open_source_nofollow(path, leaf_flags):
             return descriptor
         result = os.open(
             parts[-1], leaf_flags | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0), dir_fd=descriptor)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0), dir_fd=descriptor)
     finally:
         if parts:
             os.close(descriptor)
@@ -1693,7 +1886,7 @@ def _cursor_fingerprints(stream, size, offset, head_bytes):
     )
 
 
-def _stable_tail_chunk(path, cursors, key, max_read):
+def _stable_tail_chunk(path, cursors, key, max_read, *, source_fd=None):
     """Return one bounded complete-line chunk from a stable file generation.
 
     Fixed head and cursor-boundary fingerprints catch rotations, truncations,
@@ -1707,6 +1900,23 @@ def _stable_tail_chunk(path, cursors, key, max_read):
         raise ValueError(f"source read bound {key} is invalid")
     names = _source_cursor_names(key)
     ordinal = cursors.get(key)
+    metadata_present = {
+        name for name in names.values() if name in cursors}
+    version_present = names["version"] in cursors
+    version = cursors.get(names["version"])
+    # A missing cursor is a legitimate first-run baseline, and the historical
+    # ordinal-only shape is replayed once as a conservative migration.  Any
+    # other partial or unknown-version shape is damage: treating it as a fresh
+    # baseline would silently skip the source prefix it may have represented.
+    if ordinal is None:
+        if key in cursors or metadata_present:
+            raise ValueError(f"line cursor metadata {key} is invalid")
+    elif version_present:
+        if isinstance(version, bool) or not isinstance(version, int) \
+                or version != SOURCE_CURSOR_VERSION:
+            raise ValueError(f"line cursor metadata {key} is invalid")
+    elif metadata_present:
+        raise ValueError(f"line cursor metadata {key} is invalid")
     generation = cursors.get(names["generation"], 0)
     if ordinal is not None and (isinstance(ordinal, bool)
                                 or not isinstance(ordinal, int)
@@ -1735,20 +1945,28 @@ def _stable_tail_chunk(path, cursors, key, max_read):
             raise ValueError(f"line cursor digest {key} is invalid")
 
     flags = os.O_RDONLY
-    try:
-        fd = _open_source_nofollow(path, flags)
-    except FileNotFoundError:
-        return generation, ordinal or 0, b""
+    if source_fd is None:
+        try:
+            fd = _open_source_nofollow(path, flags)
+        except FileNotFoundError:
+            return generation, ordinal or 0, b""
+    else:
+        if isinstance(source_fd, bool) or not isinstance(source_fd, int) \
+                or source_fd < 0:
+            raise ValueError(f"line source descriptor {key} is invalid")
+        fd = os.open(
+            _chain_descriptor_path(source_fd),
+            flags | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NONBLOCK", 0))
     updates = {}
     record_refusal = None
     clear_skip = False
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label=f"line source {key}") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode):
             raise ValueError(f"line source {key} is not a regular file")
         size = before.st_size
-        current_schema = cursors.get(names["version"]) == \
-            SOURCE_CURSOR_VERSION
+        current_schema = version_present
         if current_schema:
             values = {
                 field: cursors.get(names[field])
@@ -1906,17 +2124,17 @@ def _stable_tail_chunk(path, cursors, key, max_read):
             if next_skip is not None:
                 updates[names["skip"]] = next_skip
         after = os.fstat(stream.fileno())
-        try:
-            target = _source_path_identity(path, flags)
-        except FileNotFoundError as exc:
-            raise RuntimeError(f"line source {key} changed while cursoring") \
-                from exc
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    if observed != finished or (target.st_dev, target.st_ino) != (
-            after.st_dev, after.st_ino):
+        target = None
+        if source_fd is None:
+            try:
+                target = _source_path_identity(path, flags)
+            except FileNotFoundError as exc:
+                raise RuntimeError(
+                    f"line source {key} changed while cursoring") from exc
+    observed = _file_generation(before)
+    finished = _file_generation(after)
+    if observed != finished or target is not None \
+            and _file_generation(target) != finished:
         raise RuntimeError(f"line source {key} changed while cursoring")
     start_ordinal = updates[key] - data.count(b"\n")
     cursors.update(updates)
@@ -1931,7 +2149,8 @@ def _stable_tail_chunk(path, cursors, key, max_read):
     return generation, start_ordinal, data
 
 
-def tail_line_records(path, cursors, key, refusal_validator=None):
+def tail_line_records(
+        path, cursors, key, refusal_validator=None, *, source_fd=None):
     """Return valid physical rows, stopping after one exactly refused row.
 
     UTF-8 and optional source-native semantic validation happen one physical
@@ -1947,7 +2166,8 @@ def tail_line_records(path, cursors, key, refusal_validator=None):
              for name in affected}
     try:
         generation, ordinal, data = _stable_tail_chunk(
-            path, cursors, key, MAX_SOURCE_TAIL_BYTES)
+            path, cursors, key, MAX_SOURCE_TAIL_BYTES,
+            source_fd=source_fd)
         if data and not data.endswith(b"\n"):
             raise ValueError(
                 f"line source {key} returned an incomplete physical record")
@@ -1988,7 +2208,7 @@ def tail_line_records(path, cursors, key, refusal_validator=None):
                 else:
                     cursors[name] = value
             replay_generation, replay_ordinal, replay = _stable_tail_chunk(
-                path, cursors, key, prefix_bytes)
+                path, cursors, key, prefix_bytes, source_fd=source_fd)
             if replay_generation != generation or replay_ordinal != ordinal \
                     or replay != data[:prefix_bytes]:
                 raise RuntimeError(
@@ -2021,9 +2241,9 @@ def tail_line_records(path, cursors, key, refusal_validator=None):
             for index, line in enumerate(lines)]
 
 
-def tail_lines(path, cursors, key):
+def tail_lines(path, cursors, key, *, source_fd=None):
     return [line for _generation, _ordinal, line in tail_line_records(
-        path, cursors, key)]
+        path, cursors, key, source_fd=source_fd)]
 
 
 def tail_bytes(path, cursors, key, max_read=MAX_SOURCE_TAIL_BYTES):
@@ -2069,9 +2289,55 @@ def _source_entity_token(value, namespace):
     return prefix + "_h" + hashlib.sha256(raw_bytes).hexdigest()
 
 
+def _source_entity_token_is_canonical(value, namespace):
+    """Whether *value* is in the exact image of `_source_entity_token`."""
+    if not isinstance(value, str) or not value \
+            or len(value) > MAX_SOURCE_NAME_CHARS:
+        return False
+    try:
+        if len(value.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
+            return False
+    except UnicodeError:
+        return False
+    if value == "_e":
+        return True
+    hash_prefix = _source_entity_token(namespace, "namespace") + "_h"
+    if value.startswith(hash_prefix) and re.fullmatch(
+            r"[0-9a-f]{64}", value[len(hash_prefix):]) is not None:
+        return True
+
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == "_":
+            encoded = value[index + 1:index + 3]
+            if len(encoded) != 2 \
+                    or re.fullmatch(r"[0-9a-f]{2}", encoded) is None:
+                return False
+            byte = int(encoded, 16)
+            ordinarily_literal = (
+                ord("a") <= byte <= ord("z")
+                or ord("0") <= byte <= ord("9")
+                or byte in (ord("."), ord("-")))
+            if ordinarily_literal \
+                    and not (index == 0 and byte in (
+                        ord("."), ord("-"))):
+                return False
+            index += 3
+            continue
+        if not ("a" <= character <= "z"
+                or "0" <= character <= "9"
+                or character in ".-") \
+                or index == 0 and character in ".-":
+            return False
+        index += 1
+    return True
+
+
 def _bounded_source_state(cursors, key, namespace, *, value_validator=None,
-                          value_normalizer=None):
-    """Load a bounded versioned map whose keys are already canonical tokens."""
+                          value_normalizer=None,
+                          legacy_key_normalizer=None):
+    """Load a bounded map, resolving only a unique higher-priority alias."""
     present = key in cursors
     raw = cursors.get(key)
     tagged = False
@@ -2089,31 +2355,62 @@ def _bounded_source_state(cursors, key, namespace, *, value_validator=None,
         entries = raw
     else:
         raise ValueError(f"source cursor {key} is invalid")
-    state = {}
+    candidates = []
     truncated = len(entries) > MAX_SOURCE_SCAN_ENTRIES
     for source_key, value in entries.items():
-        if len(state) >= MAX_SOURCE_SCAN_ENTRIES:
+        if len(candidates) >= MAX_SOURCE_SCAN_ENTRIES:
             truncated = True
             break
-        canonical_key = isinstance(source_key, str) \
-            and re.fullmatch(
-                r"[a-z0-9_][a-z0-9._-]*", source_key) is not None \
-            and len(source_key) <= MAX_SOURCE_NAME_CHARS \
-            and len(source_key.encode("utf-8")) <= MAX_CORPUS_LEAF_BYTES
-        if tagged and not canonical_key:
+        try:
+            canonical_key = isinstance(source_key, str) \
+                and re.fullmatch(
+                    r"[a-z0-9_][a-z0-9._-]*", source_key) is not None \
+                and len(source_key) <= MAX_SOURCE_NAME_CHARS \
+                and len(source_key.encode("utf-8")) \
+                <= MAX_CORPUS_LEAF_BYTES
+            priority = 0
+            if legacy_key_normalizer is not None:
+                normalized_key = legacy_key_normalizer(
+                    source_key, value, tagged)
+                if not isinstance(normalized_key, tuple) \
+                        or len(normalized_key) != 2 \
+                        or isinstance(normalized_key[1], bool) \
+                        or not isinstance(normalized_key[1], int) \
+                        or normalized_key[1] < 0:
+                    raise ValueError
+                token, priority = normalized_key
+            elif tagged and not canonical_key:
+                raise ValueError
+            elif not canonical_key:
+                token = _source_entity_token(source_key, namespace)
+            else:
+                token = source_key
+            if not isinstance(token, str) \
+                    or re.fullmatch(
+                        r"[a-z0-9_][a-z0-9._-]*", token) is None \
+                    or len(token) > MAX_SOURCE_NAME_CHARS \
+                    or len(token.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
+                raise ValueError
+            normalized_value = value_normalizer(value) \
+                if value_normalizer is not None else value
+            if value_validator is not None \
+                    and not value_validator(normalized_value):
+                raise ValueError
+        except (TypeError, UnicodeError, ValueError):
+            raise ValueError(f"source cursor {key} is invalid") from None
+        candidates.append((token, priority, normalized_value))
+
+    grouped = {}
+    for token, priority, normalized_value in candidates:
+        grouped.setdefault(token, []).append((priority, normalized_value))
+    state = {}
+    for token, rows in grouped.items():
+        highest = max(priority for priority, _value in rows)
+        winners = [value for priority, value in rows
+                   if priority == highest]
+        if len(winners) != 1:
             raise ValueError(f"source cursor {key} is invalid")
-        if not canonical_key:
-            token = _source_entity_token(source_key, namespace)
-        else:
-            token = source_key
-        normalized_value = value_normalizer(value) \
-            if value_normalizer is not None else value
-        if value_validator is not None \
-                and not value_validator(normalized_value):
-            raise ValueError(f"source cursor {key} is invalid")
-        if token in state:
-            raise ValueError(f"source cursor {key} is invalid")
-        state[token] = normalized_value
+        state[token] = winners[0]
     # A tagged list is structurally disjoint from every legacy map, so a pair
     # of unlucky source IDs cannot masquerade as the cursor wrapper itself.
     cursors[key] = ["sia-source-entity-state-v1", state]
@@ -2147,7 +2444,7 @@ def _stable_bounded_source_tail(path, max_bytes=None):
         fd = _open_source_nofollow(path, flags)
     except FileNotFoundError:
         return b"", False
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label="snapshot source") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode):
             raise ValueError("snapshot source is not a regular file")
@@ -2163,13 +2460,9 @@ def _stable_bounded_source_tail(path, max_bytes=None):
         except FileNotFoundError as exc:
             raise RuntimeError("snapshot source changed while reading") \
                 from exc
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    if observed != finished \
-            or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                  after.st_ino):
+    observed = _file_generation(before)
+    finished = _file_generation(after)
+    if observed != finished or _file_generation(target) != finished:
         raise RuntimeError("snapshot source changed while reading")
     if truncated:
         newline = data.find(b"\n")
@@ -2184,7 +2477,7 @@ def _read_bounded_source_json(path, label):
     """Read one stable regular source record within the source byte budget."""
     flags = os.O_RDONLY
     fd = _open_source_nofollow(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label=label) as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_size > MAX_SOURCE_TAIL_BYTES:
@@ -2197,13 +2490,9 @@ def _read_bounded_source_json(path, label):
             target = _source_path_identity(path, flags)
         except FileNotFoundError as exc:
             raise RuntimeError(f"{label} changed while reading") from exc
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    if observed != finished \
-            or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                  after.st_ino):
+    observed = _file_generation(before)
+    finished = _file_generation(after)
+    if observed != finished or _file_generation(target) != finished:
         raise RuntimeError(f"{label} changed while reading")
     try:
         value = _strict_json_loads(raw.decode("utf-8"))
@@ -2355,13 +2644,9 @@ def _bounded_source_entries(directory, page_state=None, limit=None,
         if cleaned:
             os.fsync(descriptor)
         os.close(descriptor)
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    if observed != finished \
-            or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                  after.st_ino):
+    observed = _file_generation(before)
+    finished = _file_generation(after)
+    if observed != finished or _file_generation(target) != finished:
         raise RuntimeError("source directory changed while scanning")
     selected.sort(key=lambda item: item["name"])
     next_state = {
@@ -2389,18 +2674,14 @@ def _nofollow_source_directory(path):
         current = _source_path_identity(path, flags)
     finally:
         os.close(descriptor)
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    if observed != finished \
-            or (current.st_dev, current.st_ino) != (after.st_dev,
-                                                    after.st_ino):
+    observed = _file_generation(before)
+    finished = _file_generation(after)
+    if observed != finished or _file_generation(current) != finished:
         raise RuntimeError("source directory changed while checking")
     return True
 
 
-# Optional organ discovery needs the no-follow directory gate above.  Keep
+# Optional source discovery needs the no-follow directory gate above. Keep
 # construction here so a symlinked vault or ``.git`` never activates merely
 # because ``exists()`` followed it.
 ORGANS = _build_organs()
@@ -2460,6 +2741,10 @@ def _validated_source_tree_state(value, directory_levels):
         raise ValueError("source tree cursor is invalid")
     current_schema = value.get("schema") == SOURCE_TREE_SCHEMA
     if current_schema:
+        if set(value) != {
+                "schema", "generation", "phase", "coverage", "queue",
+                "directories", "validation_cursor"}:
+            raise ValueError("source tree cursor is invalid")
         generation = value.get("generation")
         phase = value.get("phase")
         coverage = value.get("coverage")
@@ -2468,21 +2753,25 @@ def _validated_source_tree_state(value, directory_levels):
                 or not isinstance(coverage, bool):
             raise ValueError("source tree cursor is invalid")
     else:
-        # An old queue may already be mid-generation and did not remember a
+        # An old queue may already be mid-generation and did not retain a
         # prior missing/reset frame. Finish it without deletion authority,
         # then begin a clean v3 generation.
         generation = 0
         phase = "scan"
         coverage = False
     queue = []
+    queued_relatives = set()
     for item in value["queue"]:
         if len(queue) >= MAX_SOURCE_SCAN_ENTRIES:
             raise ValueError("source tree cursor exceeds its queue bound")
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) \
+                or current_schema and set(item) != {
+                    "relative", "levels", "page"}:
             raise ValueError("source tree cursor is invalid")
         relative = item.get("relative")
         levels = item.get("levels")
-        parts = relative.split(os.sep) if relative else []
+        parts = relative.split(os.sep) if isinstance(relative, str) \
+            and relative else []
         if not isinstance(relative, str) or os.path.isabs(relative) \
                 or (relative and any(part in {"", ".", ".."}
                                      for part in parts)) \
@@ -2491,11 +2780,26 @@ def _validated_source_tree_state(value, directory_levels):
                        for part in parts) \
                 or (os.altsep and os.altsep in relative) \
                 or isinstance(levels, bool) or not isinstance(levels, int) \
-                or levels < 0 or levels > directory_levels:
+                or levels < 0 or levels > directory_levels \
+                or current_schema and (
+                    relative in queued_relatives
+                    or levels != directory_levels - len(parts)):
             raise ValueError("source tree cursor is invalid")
+        page = _validated_source_page_state(item.get("page"))
+        page_fields = {
+            "device", "inode", "cookie", "size", "mtime_ns", "ctime_ns",
+            "reset"}
+        if current_schema and page and (
+                set(page) != page_fields
+                or page["reset"] is not False
+                or any(isinstance(page[name], bool)
+                       or not isinstance(page[name], int)
+                       or page[name] < 0
+                       for name in page_fields - {"reset"})):
+            raise ValueError("source tree page cursor is invalid")
+        queued_relatives.add(relative)
         queue.append({"relative": relative, "levels": levels,
-                      "page": _validated_source_page_state(
-                          item.get("page"))})
+                      "page": page})
     if not queue:
         if phase == "scan":
             queue = initial_queue
@@ -2508,7 +2812,9 @@ def _validated_source_tree_state(value, directory_levels):
     directory_names = set()
     for item in raw_directories:
         if len(directories) >= MAX_SOURCE_SCAN_ENTRIES \
-                or not isinstance(item, dict):
+                or not isinstance(item, dict) \
+                or current_schema and set(item) != {
+                    "relative", "generation"}:
             raise ValueError("source tree directory catalog is invalid")
         relative = item.get("relative")
         parts = relative.split(os.sep) if relative else []
@@ -2521,7 +2827,9 @@ def _validated_source_tree_state(value, directory_levels):
                        for part in parts) \
                 or (os.altsep and os.altsep in relative) \
                 or relative in directory_names \
-                or not isinstance(item.get("generation"), dict):
+                or not isinstance(item.get("generation"), dict) \
+                or current_schema and set(item["generation"]) != set(
+                    SOURCE_TREE_GENERATION_FIELDS):
             raise ValueError("source tree directory catalog is invalid")
         directory_names.add(relative)
         directories.append({
@@ -2624,9 +2932,12 @@ def _bounded_source_tree_files(root, cursors, cursor_key,
             queue.append(item)
         if item["levels"]:
             for entry in entries:
-                if not stat.S_ISDIR(entry["mode"]):
-                    continue
                 relative = os.path.join(item["relative"], entry["name"])
+                if not stat.S_ISDIR(entry["mode"]):
+                    if not stat.S_ISREG(entry["mode"]):
+                        coverage = False
+                        refused.append(relative)
+                    continue
                 child = {"relative": relative,
                          "levels": item["levels"] - 1, "page": {}}
                 if len(queue) >= MAX_SOURCE_SCAN_ENTRIES:
@@ -2636,10 +2947,15 @@ def _bounded_source_tree_files(root, cursors, cursor_key,
                     queue.append(child)
         else:
             for entry in entries:
-                if stat.S_ISREG(entry["mode"]) \
-                        and entry["name"].endswith(suffix):
-                    files.append(dict(entry, path=os.path.join(
-                        directory, entry["name"])))
+                if not entry["name"].endswith(suffix):
+                    continue
+                relative = os.path.join(item["relative"], entry["name"])
+                if not stat.S_ISREG(entry["mode"]):
+                    coverage = False
+                    refused.append(relative)
+                    continue
+                files.append(dict(entry, path=os.path.join(
+                    directory, entry["name"])))
     if phase == "scan" and not queue:
         phase = "validate"
         directories.sort(key=lambda item: item["relative"])
@@ -2743,7 +3059,7 @@ PENDING_CURSOR_RENAMES = []
 
 # Journal output is hostile-sized input even though journalctl is asked for a
 # bounded row count: one JSON record can contain an arbitrarily large field.
-# Reuse the source/state bounds already enforced by the rest of the brainstem.
+# Reuse the source/state bounds already enforced by the resident service.
 MAX_JOURNAL_RECORD_BYTES = MAX_SOURCE_TAIL_BYTES
 MAX_JOURNAL_OUTPUT_BYTES = MAX_STATE_JSON_BYTES
 MAX_JOURNAL_STDERR_BYTES = MAX_CONFIG_BYTES
@@ -2802,7 +3118,7 @@ _ALL_SENSES = [sense_sia, sense_jackal, sense_sekhmet, sense_custos, sense_aegis
                sense_claude, sense_codex,
                sense_notify, sense_agents, sense_skills]
 
-# only senses whose organ is active on THIS machine run
+# Only senses whose source is active on this machine run.
 SENSES = [s for s in _ALL_SENSES
           if _SENSE_ORGAN.get(s.__name__, "") in ORGANS] + [sense_custom]
 # ---------------------------------------------------------------- corpus
@@ -2911,7 +3227,7 @@ def unverified_jackal_recall_page(slug, text=None):
         _page, frontmatter, body = _read_graph_corpus_page(slug)
         text = frontmatter + "\n" + body
     except Exception:
-        # A thought that cannot be stably classified must not bypass this
+        # A generated entry that cannot be stably classified must not bypass this
         # legacy-assurance boundary through an old search index entry.
         return True
     return _contains_legacy_jackal_assurance(text)
@@ -2942,6 +3258,373 @@ def fm_title(title):
     # JSON string escaping is valid YAML double-quote style — colons etc. safe
     return "title: " + json.dumps(title, ensure_ascii=False)
 
+
+_CORTEX_CURRENT_TITLE = "SIA root memory"
+_CORTEX_CURRENT_BODY_LINES = (
+    "SIA is the Omarchy Brain, a local machine-memory product.",
+    BRAIN_METAPHOR_BOUNDARY,
+    "Every enabled source below reports what it observes. The persisted",
+    "organ/cortex names are compatibility namespaces. Each configured",
+    "signed chain is checked by its own keeper verifier; Custos also uses",
+    "the SPARK-proved `attest` verifier. Deterministic entry generators",
+    "are evidence-derived; user/model prose is origin-labeled.",
+    "",
+)
+
+
+def _current_cortex_root_bytes():
+    """Return the one exact unwitnessed root emitted for a fresh corpus."""
+    frontmatter = "---\ntype: organ\n" \
+        + fm_title(_CORTEX_CURRENT_TITLE) + "\n---\n"
+    body = "# " + _CORTEX_CURRENT_TITLE + "\n\n" \
+        + "\n".join(_CORTEX_CURRENT_BODY_LINES) + "\n"
+    return (frontmatter + body).encode("utf-8")
+
+
+_CORTEX_REPAIR_RECEIPT_KEYS = frozenset({
+    "schema", "slug", "operation", "source_sha256", "target_sha256",
+    "appended_sha256", "source_bytes", "target_bytes", "boundary",
+    "ledger_order",
+})
+_CORTEX_REPAIR_JOURNAL_KEYS = frozenset({
+    "schema", "slug", "operation", "source_sha256", "target_sha256",
+    "appended_sha256", "source_bytes", "target_bytes", "boundary",
+    "ledger_order", "append_text", "order", "action", "arg1", "arg2",
+    "content",
+})
+
+
+def _read_cortex_root_bytes():
+    """Read the cortex root through one bounded, owner-controlled handle."""
+    path = corpus_path("sia/cortex")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = _open_source_nofollow(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or before.st_mode & (stat.S_IWGRP | stat.S_IWOTH) \
+                or before.st_size > MAX_CONFIG_BYTES:
+            raise RuntimeError(
+                "cortex root is not a bounded owner-controlled "
+                "single-link regular file")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            raw = stream.read(MAX_CONFIG_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        if _file_generation(before) != _file_generation(after) \
+                or len(raw) > MAX_CONFIG_BYTES:
+            raise RuntimeError("cortex root changed while read")
+        try:
+            current = os.lstat(path)
+        except OSError as exc:
+            raise RuntimeError("cortex root changed while read") from exc
+        if not stat.S_ISREG(current.st_mode) \
+                or _file_generation(current) != _file_generation(after):
+            raise RuntimeError("cortex root changed while read")
+        return raw
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _validate_cortex_root(raw):
+    """Admit only the canonical organ/H1 page shape before additive repair."""
+    if not isinstance(raw, bytes) or len(raw) > MAX_CONFIG_BYTES:
+        raise RuntimeError("cortex root bytes exceed their admission bound")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise RuntimeError("cortex root is not UTF-8") from exc
+    match = FM_RE.match(text)
+    if match is None:
+        raise RuntimeError("cortex root frontmatter is malformed")
+    type_rows = re.findall(r"^type:\s*(.*?)\s*$", match.group(1), re.M)
+    if type_rows != ["organ"]:
+        raise RuntimeError("cortex root is not one canonical organ page")
+    body = text[match.end():]
+    first_line = body.split("\n", 1)[0]
+    if re.fullmatch(r"# [^#\r\n].*", first_line) is None:
+        raise RuntimeError("cortex root has no canonical H1")
+    return text
+
+
+def _cortex_repair_receipt(source, target, appended, ledger_order):
+    return {
+        "schema": CORTEX_BOUNDARY_REPAIR_SCHEMA,
+        "slug": "sia/cortex",
+        "operation": "append-only",
+        "source_sha256": hashlib.sha256(source).hexdigest(),
+        "target_sha256": hashlib.sha256(target).hexdigest(),
+        "appended_sha256": hashlib.sha256(appended).hexdigest(),
+        "source_bytes": len(source),
+        "target_bytes": len(target),
+        "boundary": BRAIN_METAPHOR_BOUNDARY,
+        "ledger_order": ledger_order,
+    }
+
+
+def _validate_cortex_repair_receipt(value):
+    if not isinstance(value, dict) \
+            or set(value) != _CORTEX_REPAIR_RECEIPT_KEYS \
+            or value.get("schema") != CORTEX_BOUNDARY_REPAIR_SCHEMA \
+            or value.get("slug") != "sia/cortex" \
+            or value.get("operation") != "append-only" \
+            or value.get("boundary") != BRAIN_METAPHOR_BOUNDARY:
+        raise RuntimeError("cortex boundary repair receipt is invalid")
+    for field in ("source_sha256", "target_sha256", "appended_sha256"):
+        if not isinstance(value.get(field), str) \
+                or re.fullmatch(r"[0-9a-f]{64}", value[field]) is None:
+            raise RuntimeError("cortex boundary repair receipt is invalid")
+    for field in ("source_bytes", "target_bytes"):
+        number = value.get(field)
+        if isinstance(number, bool) or not isinstance(number, int) \
+                or number < 0 or number > MAX_CONFIG_BYTES:
+            raise RuntimeError("cortex boundary repair receipt is invalid")
+    ledger_order = value.get("ledger_order")
+    if isinstance(ledger_order, bool) or not isinstance(ledger_order, int) \
+            or ledger_order < 0:
+        raise RuntimeError("cortex boundary repair receipt is invalid")
+    if value["source_bytes"] >= value["target_bytes"]:
+        raise RuntimeError("cortex boundary repair receipt is invalid")
+    return value
+
+
+def _cortex_receipt_text(receipt):
+    _validate_cortex_repair_receipt(receipt)
+    return json.dumps(
+        receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _load_cortex_repair_receipt():
+    if not os.path.lexists(CORTEX_BOUNDARY_REPAIR_RECEIPT):
+        return None
+    value = read_state_json(
+        CORTEX_BOUNDARY_REPAIR_RECEIPT, {},
+        "cortex boundary repair receipt", expected_type=dict)
+    return _validate_cortex_repair_receipt(value)
+
+
+def _validate_cortex_repair_journal(value):
+    if not isinstance(value, dict) \
+            or set(value) != _CORTEX_REPAIR_JOURNAL_KEYS \
+            or value.get("schema") \
+            != CORTEX_BOUNDARY_REPAIR_JOURNAL_SCHEMA:
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    receipt = {key: value[key] for key in _CORTEX_REPAIR_RECEIPT_KEYS
+               if key != "schema"}
+    receipt["schema"] = CORTEX_BOUNDARY_REPAIR_SCHEMA
+    _validate_cortex_repair_receipt(receipt)
+    append_text = value.get("append_text")
+    if append_text != CORTEX_BOUNDARY_REPAIR_SUFFIX:
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    appended = append_text.encode("utf-8", errors="strict")
+    if hashlib.sha256(appended).hexdigest() != value["appended_sha256"] \
+            or value["source_bytes"] + len(appended) \
+            != value["target_bytes"]:
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    order = value.get("order")
+    if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    if order != receipt["ledger_order"]:
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    expected_action = "MIGRATE:cortex-boundary-repair"
+    expected_arg1 = "sia/cortex"
+    expected_arg2 = "product-metaphor-boundary-additive-v1"
+    if value.get("action") != expected_action \
+            or value.get("arg1") != expected_arg1 \
+            or value.get("arg2") != expected_arg2 \
+            or value.get("content") != _cortex_receipt_text(receipt):
+        raise RuntimeError("cortex boundary repair journal is invalid")
+    return value
+
+
+def _load_cortex_repair_journal():
+    if not os.path.lexists(CORTEX_BOUNDARY_REPAIR_JOURNAL):
+        return None
+    value = read_state_json(
+        CORTEX_BOUNDARY_REPAIR_JOURNAL, {},
+        "cortex boundary repair journal", expected_type=dict)
+    return _validate_cortex_repair_journal(value)
+
+
+def _write_cortex_repair_state(path, value):
+    atomic_write(path, json.dumps(
+        value, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False))
+
+
+def _ensure_cortex_repair_receipt(journal):
+    expected = {key: journal[key] for key in _CORTEX_REPAIR_RECEIPT_KEYS
+                if key != "schema"}
+    expected["schema"] = CORTEX_BOUNDARY_REPAIR_SCHEMA
+    current = _load_cortex_repair_receipt()
+    if current is None:
+        _write_cortex_repair_state(
+            CORTEX_BOUNDARY_REPAIR_RECEIPT, expected)
+        current = _load_cortex_repair_receipt()
+    if current != expected:
+        raise RuntimeError("cortex boundary repair receipt conflicts")
+    return current
+
+
+def _cortex_receipt_matches_target(receipt, target):
+    _validate_cortex_repair_receipt(receipt)
+    if len(target) != receipt["target_bytes"] \
+            or hashlib.sha256(target).hexdigest() \
+            != receipt["target_sha256"]:
+        return False
+    source = target[:receipt["source_bytes"]]
+    appended = target[receipt["source_bytes"]:]
+    return hashlib.sha256(source).hexdigest() \
+        == receipt["source_sha256"] \
+        and hashlib.sha256(appended).hexdigest() \
+        == receipt["appended_sha256"] \
+        and appended.decode("utf-8", errors="strict") \
+        == CORTEX_BOUNDARY_REPAIR_SUFFIX
+
+
+def _retire_cortex_repair_journal(journal):
+    if _load_cortex_repair_journal() != journal:
+        raise RuntimeError("cortex boundary repair journal changed")
+    info = os.lstat(CORTEX_BOUNDARY_REPAIR_JOURNAL)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1:
+        raise RuntimeError("cortex boundary repair journal changed")
+    os.unlink(CORTEX_BOUNDARY_REPAIR_JOURNAL)
+    descriptor = os.open(
+        STATE, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _settle_cortex_boundary_repair(journal):
+    journal = _validate_cortex_repair_journal(journal)
+    _ensure_cortex_repair_receipt(journal)
+    current = _read_cortex_root_bytes()
+    current_digest = hashlib.sha256(current).hexdigest()
+    if len(current) == journal["source_bytes"] \
+            and current_digest == journal["source_sha256"]:
+        _validate_cortex_root(current)
+        target = current + journal["append_text"].encode("utf-8")
+        if len(target) != journal["target_bytes"] \
+                or hashlib.sha256(target).hexdigest() \
+                != journal["target_sha256"]:
+            raise RuntimeError("cortex boundary repair target is invalid")
+        _before_corpus_mutation()
+        if _read_cortex_root_bytes() != current:
+            raise RuntimeError(
+                "cortex root changed before repair publication")
+        atomic_write(corpus_path("sia/cortex"), target.decode("utf-8"))
+        current = _read_cortex_root_bytes()
+    elif len(current) != journal["target_bytes"] \
+            or current_digest != journal["target_sha256"]:
+        raise RuntimeError(
+            "cortex root matches neither repair source nor target")
+    _validate_cortex_root(current)
+    receipt = _load_cortex_repair_receipt()
+    if receipt is None or not _cortex_receipt_matches_target(receipt, current):
+        raise RuntimeError("cortex boundary repair target is not witnessed")
+    durable_ledger_append(
+        journal["action"], journal["arg1"], journal["arg2"],
+        journal["content"], order=journal["order"])
+    if not _cortex_receipt_matches_target(
+            _load_cortex_repair_receipt(), _read_cortex_root_bytes()):
+        raise RuntimeError("cortex boundary repair changed before retirement")
+    _retire_cortex_repair_journal(journal)
+    return True
+
+
+def _cortex_boundary_status(*, require_ledger=True):
+    """Return the read-only repair state used by the readiness boundary."""
+    journal = _load_cortex_repair_journal()
+    if journal is not None:
+        return False, "cortex product-metaphor boundary repair is pending"
+    if not page_exists("sia/cortex"):
+        return False, "cortex product-metaphor boundary root is missing"
+    raw = _read_cortex_root_bytes()
+    _validate_cortex_root(raw)
+    occurrences = raw.count(BRAIN_METAPHOR_BOUNDARY.encode("utf-8"))
+    receipt = _load_cortex_repair_receipt()
+    if raw == _current_cortex_root_bytes():
+        if receipt is not None:
+            return False, "cortex product-metaphor boundary receipt is orphaned"
+        return True, ""
+    if occurrences == 0:
+        return False, "cortex product-metaphor boundary repair is required"
+    if occurrences != 1:
+        return False, "cortex product-metaphor boundary is ambiguous"
+    if not raw.endswith(CORTEX_BOUNDARY_REPAIR_SUFFIX.encode("utf-8")):
+        return False, (
+            "cortex root is neither the current root nor a witnessed repair")
+    if receipt is None or not _cortex_receipt_matches_target(receipt, raw):
+        return False, "cortex product-metaphor boundary receipt is invalid"
+    if require_ledger:
+        action = "MIGRATE:cortex-boundary-repair"
+        arg1 = "sia/cortex"
+        arg2 = "product-metaphor-boundary-additive-v1"
+        content = _cortex_receipt_text(receipt)
+        basis = _pending_basis(
+            receipt["ledger_order"], action, arg1, arg2, content)
+        if not ledger_contains(
+                action, arg1, arg2, content,
+                occurrence_id=_pending_identity(basis)):
+            return False, (
+                "cortex product-metaphor boundary ledger receipt "
+                "is missing")
+    return True, ""
+
+
+def ensure_cortex():
+    """Create the current root or settle one append-only historical repair."""
+    ensure_dirs()
+    journal = _load_cortex_repair_journal()
+    if journal is not None:
+        return _settle_cortex_boundary_repair(journal)
+    if not page_exists("sia/cortex"):
+        if _load_cortex_repair_receipt() is not None:
+            raise RuntimeError("cortex boundary repair receipt is orphaned")
+        return ensure_entity(
+            "sia/cortex", "organ", _CORTEX_CURRENT_TITLE,
+            list(_CORTEX_CURRENT_BODY_LINES))
+    source = _read_cortex_root_bytes()
+    _validate_cortex_root(source)
+    occurrences = source.count(BRAIN_METAPHOR_BOUNDARY.encode("utf-8"))
+    if occurrences == 1:
+        ready, reason = _cortex_boundary_status(require_ledger=False)
+        if not ready:
+            raise RuntimeError(reason)
+        return False
+    if occurrences != 0:
+        raise RuntimeError("cortex product-metaphor boundary is ambiguous")
+    if _load_cortex_repair_receipt() is not None:
+        raise RuntimeError("cortex boundary repair receipt is orphaned")
+    appended = CORTEX_BOUNDARY_REPAIR_SUFFIX.encode("utf-8")
+    target = source + appended
+    if len(target) > MAX_CONFIG_BYTES:
+        raise RuntimeError("cortex boundary repair target exceeds its bound")
+    order = time.time_ns()
+    receipt = _cortex_repair_receipt(source, target, appended, order)
+    journal = {
+        **receipt,
+        "schema": CORTEX_BOUNDARY_REPAIR_JOURNAL_SCHEMA,
+        "append_text": CORTEX_BOUNDARY_REPAIR_SUFFIX,
+        "order": order,
+        "action": "MIGRATE:cortex-boundary-repair",
+        "arg1": "sia/cortex",
+        "arg2": "product-metaphor-boundary-additive-v1",
+        "content": _cortex_receipt_text(receipt),
+    }
+    _validate_cortex_repair_journal(journal)
+    _write_cortex_repair_state(CORTEX_BOUNDARY_REPAIR_JOURNAL, journal)
+    if _load_cortex_repair_journal() != journal:
+        raise RuntimeError("cortex boundary repair journal did not persist")
+    return _settle_cortex_boundary_repair(journal)
+
 def ensure_entity(slug, ptype, title, body_lines):
     if page_exists(slug):
         return False
@@ -2951,17 +3634,12 @@ def ensure_entity(slug, ptype, title, body_lines):
     return True
 
 def ensure_organs():
-    made = ensure_entity("sia/cortex", "organ", "SIA cortex", [
-        "I am SIA, the Omarchy Brain — the associative memory of this machine.",
-        "Every enabled organ below reports what it observes. Each configured",
-        "signed chain is checked by its own keeper verifier; Custos also uses",
-        "the SPARK-proved `attest` verifier. Deterministic thought generators",
-        "are evidence-derived; user/model prose is origin-labeled.", ""])
+    made = ensure_cortex()
     for key, (name, desc) in ORGANS.items():
         organ_slug = _canonical_corpus_slug(f"organs/{key}")
         safe_desc = inert_summary(desc)
         made |= ensure_entity(organ_slug, "organ", name, [
-            f"{safe_desc}. Organ of [[sia/cortex]].", ""])
+            f"{safe_desc}. Source adapter for [[sia/cortex]].", ""])
     return made
 
 
@@ -2979,6 +3657,7 @@ MAX_EVENT_PAGE_BYTES = 1_048_576
 MAX_EVENT_INDEX_BYTES = 65_536
 MAX_EVENT_INDEX_RECORDS = 65_536
 MAX_EPOCH_SOURCE_RECORDS = MAX_EVENT_LOOKUP_PAGES
+MAX_EPOCH_EVENT_IDS = MAX_EVENT_INDEX_RECORDS
 MAX_EPOCH_PAGE_BYTES = MAX_EVENT_PAGE_BYTES
 MAX_EPOCH_SOURCE_MANIFEST_BYTES = MAX_EPOCH_PAGE_BYTES
 CONSOLIDATION_SCAN_SCHEMA = "sia-consolidation-scan-v1"
@@ -2987,6 +3666,8 @@ MAX_CONSOLIDATION_DIRECTORY_QUEUE = MAX_EVENT_LOOKUP_PAGES
 # one directory level below the events root.
 MAX_CONSOLIDATION_TREE_LEVELS = 1
 EVENT_INDEX_SCHEMA = "sia-consolidated-event-v1"
+EPOCH_PAGE_NAME_RE = re.compile(
+    r"^[0-9]{4}-w(?:0[1-9]|[1-4][0-9]|5[0-3])\.md$")
 EVENT_MARKER_RE = re.compile(
     r"^- (?P<stamp>[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (?P<payload>.*) "
     r"<!-- sia-event:(?P<id>[0-9a-f]{64})"
@@ -2999,6 +3680,10 @@ EVENT_SOURCE_RE = re.compile(
 
 class ConsolidationCapacityError(RuntimeError):
     """A bounded epoch cannot admit this group; retain its source days."""
+
+
+class ConsolidationCompletenessError(RuntimeError):
+    """An epoch cannot honestly extend without retained source evidence."""
 
 
 def _parse_sia_counts(raw, label):
@@ -3023,17 +3708,30 @@ def _event_shard_slug(organ, date, part):
     return base if part == 1 else f"{base}-part-{part}"
 
 
-def _read_event_page(slug):
+def _read_event_page(slug, *, expected_generation=None):
     """Read one bounded regular event page without following its leaf."""
     path = corpus_path(slug)
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
-    fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
-        before = os.fstat(stream.fileno())
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = (_open_source_nofollow(path, flags)
+              if expected_generation is not None else os.open(path, flags))
+    except OSError as exc:
+        if expected_generation is not None:
+            raise ValueError(f"event page changed before read: {slug}") from exc
+        raise
+    try:
+        before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_size > MAX_EVENT_PAGE_BYTES:
             raise ValueError(f"event page is not a bounded regular file: {slug}")
+        if expected_generation is not None \
+                and _file_generation(before) != expected_generation:
+            raise ValueError(f"event page changed before read: {slug}")
+    except Exception:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "rb") as stream:
         raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
         after = os.fstat(stream.fileno())
     observed = (before.st_dev, before.st_ino, before.st_size,
@@ -3042,6 +3740,13 @@ def _read_event_page(slug):
                 after.st_mtime_ns, after.st_ctime_ns)
     if observed != finished or len(raw) > MAX_EVENT_PAGE_BYTES:
         raise ValueError(f"event page changed while read: {slug}")
+    if expected_generation is not None:
+        try:
+            target = _source_path_identity(path, flags)
+        except OSError as exc:
+            raise ValueError(f"event page changed after read: {slug}") from exc
+        if _file_generation(target) != expected_generation:
+            raise ValueError(f"event page changed after read: {slug}")
     return raw.decode("utf-8", errors="strict")
 
 
@@ -3090,9 +3795,9 @@ def _bounded_event_directory_snapshot(
     return sorted(entries, key=lambda entry: entry["name"])
 
 
-def _event_page_state(organ, date, part):
+def _event_page_state(organ, date, part, *, expected_generation=None):
     slug = _event_shard_slug(organ, date, part)
-    text = _read_event_page(slug)
+    text = _read_event_page(slug, expected_generation=expected_generation)
     match = FM_RE.match(text)
     if match is None:
         raise ValueError(f"existing event page lacks frontmatter: {slug}")
@@ -3129,32 +3834,37 @@ def _event_day_shards(organ, date):
     base = day_slug(organ, date)
     base_path = corpus_path(base)
     root = os.path.dirname(base_path)
-    candidates = [
-        os.path.join(root, entry["name"])
-        for entry in _bounded_event_directory_snapshot(
-            root, cleanup_legacy_atomic=True)
-        if stat.S_ISREG(entry["mode"])
-        and entry["name"].startswith(os.path.basename(base_path[:-3])
-                                     + "-part-")
-        and entry["name"].endswith(".md")]
+    entries = _bounded_event_directory_snapshot(root, cleanup_legacy_atomic=True)
     part_re = re.compile(
-        rf"^{re.escape(base_path[:-3])}-part-([2-9][0-9]*)\.md$")
-    parts = []
-    for path in candidates:
-        match = part_re.fullmatch(path)
-        if match is None:
+        rf"^{re.escape(os.path.basename(base_path[:-3]))}"
+        r"-part-([2-9][0-9]*)\.md$")
+    parts, generations = [], {}
+    base_present = False
+    for entry in entries:
+        is_base = entry["name"] == os.path.basename(base_path)
+        match = part_re.fullmatch(entry["name"])
+        if not is_base and match is None:
             continue
-        parts.append(int(match.group(1)))
+        if not stat.S_ISREG(entry["mode"]):
+            raise ValueError("event day page is not a regular file")
+        part = 1 if is_base else int(match.group(1))
+        generations[part] = tuple(entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        if is_base:
+            base_present = True
+        else:
+            parts.append(part)
     if len(parts) != len(set(parts)) or len(parts) >= MAX_EVENT_SHARDS \
             or any(part > MAX_EVENT_SHARDS for part in parts):
         raise ValueError("event day shard set is invalid or exceeds its bound")
     parts.sort()
-    if page_exists(base):
+    if base_present:
         if any(part != position for position, part in
                enumerate(parts, start=2)):
             raise ValueError("event day shards are not contiguous")
-        return [_event_page_state(organ, date, 1)] + [
-            _event_page_state(organ, date, part) for part in parts]
+        return [_event_page_state(
+            organ, date, part, expected_generation=generations[part])
+            for part in [1] + parts]
     if parts:
         raise ValueError("event day has shards without its base page")
     return []
@@ -3216,7 +3926,7 @@ def _event_shard_trial(organ, date, shard, ev, line):
 
 
 def _event_source_parts(relative):
-    """Return the canonical organ/day/shard identity of an event source."""
+    """Return the canonical source/day/shard identity of an event source."""
     if not isinstance(relative, str):
         raise ValueError("event source path is invalid")
     match = EVENT_SOURCE_RE.fullmatch(relative)
@@ -3294,12 +4004,13 @@ def _read_event_index_entry(organ, event_id):
     relative = _event_index_relative(organ, event_id)
     path = os.path.join(CORPUS, relative)
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
         return None
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            fd, label="consolidated event index entry") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_size > MAX_EVENT_INDEX_BYTES:
@@ -3328,6 +4039,16 @@ def _read_event_index_entry(organ, event_id):
             or source_record not in epoch["source_manifest"]:
         raise ValueError(
             "consolidated event index lacks exact epoch lineage")
+    if epoch["event_ids_declared"] \
+            and entry["event_id"] not in epoch["event_ids"]:
+        raise ValueError(
+            "consolidated event index lacks epoch completeness lineage")
+    try:
+        target = _source_path_identity(path, flags)
+    except OSError as exc:
+        raise ValueError("consolidated event index changed while validating") from exc
+    if _file_generation(target) != finished:
+        raise ValueError("consolidated event index changed while validating")
     return entry
 
 
@@ -3360,6 +4081,46 @@ def _publish_event_index_entries(entries):
         atomic_write(path, encoded.decode("utf-8"))
 
 
+def _missing_event_index_expectations(organ, wanted):
+    """Resolve missing leaves only from complete, bounded epoch manifests."""
+    if not wanted:
+        return {}
+    if not isinstance(wanted, set) \
+            or len(wanted) > MAX_EVENT_INDEX_RECORDS \
+            or any(not isinstance(event_id, str)
+                   or re.fullmatch(r"[0-9a-f]{64}", event_id) is None
+                   for event_id in wanted):
+        raise ValueError("event completeness lookup identity is invalid")
+    root = os.path.join(CORPUS, "epochs", organ)
+    entries = _bounded_event_directory_snapshot(root)
+    found = {}
+    for directory_entry in entries:
+        name = directory_entry["name"]
+        if EPOCH_PAGE_NAME_RE.fullmatch(name) is None:
+            continue
+        if not stat.S_ISREG(directory_entry["mode"]):
+            raise ValueError(
+                "epoch completeness source is not a regular file")
+        slug = f"epochs/{organ}/{name[:-3]}"
+        expected_generation = tuple(directory_entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        epoch = _read_epoch_state(slug, expected_generation=expected_generation)
+        if not epoch["source_manifest_declared"]:
+            # Epochs predating exact source/index lineage cannot make a
+            # completeness claim. They remain readable legacy summaries.
+            continue
+        if not epoch["event_ids_declared"]:
+            raise ValueError(
+                f"event-index completeness is unavailable: {slug}")
+        for event_id in wanted.intersection(epoch["event_ids"]):
+            prior = found.get(event_id)
+            if prior is not None and prior != slug:
+                raise ValueError(
+                    "consolidated event identity occurs in multiple epochs")
+            found[event_id] = slug
+    return found
+
+
 def _other_event_occurrences(organ, wanted, excluded):
     """Find source-native IDs already admitted on another recent day."""
     if not wanted:
@@ -3367,23 +4128,31 @@ def _other_event_occurrences(organ, wanted, excluded):
     if len(wanted) > MAX_EVENT_INDEX_RECORDS:
         raise ValueError("event occurrence lookup exceeds its identity bound")
     root = os.path.join(CORPUS, "events", organ)
-    paths = [os.path.join(root, entry["name"])
-             for entry in _bounded_event_directory_snapshot(
-                 root, cleanup_legacy_atomic=True)
-             if stat.S_ISREG(entry["mode"])
-             and entry["name"].endswith(".md")]
+    entries = _bounded_event_directory_snapshot(root, cleanup_legacy_atomic=True)
     found = {}
     page_re = re.compile(
         rf"^events/{re.escape(organ)}/[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
         r"(?:-part-[2-9][0-9]*)?$")
-    for path in sorted(paths):
-        slug = os.path.relpath(path, CORPUS)[:-3]
-        if slug in excluded or page_re.fullmatch(slug) is None:
+    for entry in entries:
+        if not entry["name"].endswith(".md"):
             continue
-        text = _read_event_page(slug)
+        slug = f"events/{organ}/{entry['name'][:-3]}"
+        if page_re.fullmatch(slug) is None:
+            continue
+        if not stat.S_ISREG(entry["mode"]):
+            raise ValueError("event occurrence source is not a regular file")
+        if slug in excluded:
+            continue
+        generation = tuple(entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        text = _read_event_page(slug, expected_generation=generation)
         for line in text.splitlines():
             marker = EVENT_MARKER_RE.fullmatch(line)
-            if marker is None or marker.group("id") not in wanted:
+            if marker is None:
+                if "sia-event:" in line:
+                    raise ValueError("event page contains a malformed identity")
+                continue
+            if marker.group("id") not in wanted:
                 continue
             event_id = marker.group("id")
             prior = found.get(event_id)
@@ -3392,9 +4161,11 @@ def _other_event_occurrences(organ, wanted, excluded):
             if prior is not None and prior != value:
                 raise ValueError("event identity occurs with conflicting bytes")
             found[event_id] = value
+    missing = set()
     for event_id in sorted(wanted):
         entry = _read_event_index_entry(organ, event_id)
         if entry is None:
+            missing.add(event_id)
             continue
         if event_id in found:
             raise ValueError(
@@ -3402,6 +4173,11 @@ def _other_event_occurrences(organ, wanted, excluded):
         found[event_id] = (
             entry["epoch_slug"], entry["payload_sha256"],
             entry["semantic_id"])
+    expected = _missing_event_index_expectations(organ, missing)
+    if expected:
+        event_id = sorted(expected)[0]
+        raise ValueError(
+            f"consolidated event index leaf is missing: {event_id}")
     return found
 
 
@@ -3413,7 +4189,7 @@ def _preflight_event_lookup(events):
 
 
 def _preflight_event_path_plan(planned_paths_by_organ):
-    """Bound the union of every day planned for each organ in this pulse."""
+    """Bound the union of every day planned for each source in this pulse."""
     for organ, planned_paths in planned_paths_by_organ.items():
         root = os.path.join(CORPUS, "events", organ)
         live_paths = {
@@ -3562,11 +4338,11 @@ def ensure_event_entities(events):
 
 
 
-# The complete thought-page, recovery and legacy-replay implementation lives
-# in the bounded child module `siathought` (see its docstring and
-# docs/ARCHITECTURE.md).  Its context-aware façade binds generator context
-# managers at both protocol boundaries; its directory reader reuses the
-# generic parent-owned `_SOURCE_LIBC` handle through that same binding seam.
+# Generated-entry/epoch materialization, compaction, recovery, and legacy replay
+# live in `siathought` (see its docstring and docs/ARCHITECTURE.md). Its façade
+# preserves parent-owned state, constants and exception identity. Generator
+# contexts bind at both protocol boundaries, and the legacy directory reader
+# reuses the generic parent-owned `_SOURCE_LIBC` through the same binding seam.
 import siathought as _siathought
 
 
@@ -3601,20 +4377,26 @@ class _FailedRun:
         self.stderr = str(reason)[:240]
 
 
-# Alias the JACKAL-exact state ceiling declared above; stdout and stderr share
+# Alias the exact state ceiling declared above; stdout and stderr share
 # this one aggregate budget rather than receiving independent allowances.
 MAX_EXTERNAL_OUTPUT_BYTES = MAX_STATE_JSON_BYTES
 MAX_GBRAIN_OUTPUT_BYTES = MAX_EXTERNAL_OUTPUT_BYTES
 
 
 def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
-                              label="subprocess", output_limit=None):
-    """Run one external reader with bounded combined output and descendants.
+                              label="subprocess", output_limit=None,
+                              isolate_process_tree=False,
+                              retain_output=True):
+    """Run one external reader with bounded combined output and lifetime.
 
     stdout and stderr are drained concurrently so neither pipe can deadlock the
-    other.  The producer runs in a fresh process group; every exit path removes
-    surviving descendants, including the case where the direct parent exits
-    after handing a pipe to a child.  Text is admitted only as strict UTF-8.
+    other.  Every producer runs in a fresh process group.  Callers accepting an
+    operator-supplied executable can additionally request a private PID
+    namespace: its init process dying removes descendants even if one calls
+    ``setsid()`` and closes the inherited pipes.  Without that namespace, only
+    the original process group is contained. Retained text is admitted as
+    strict UTF-8; discard mode drains and counts bytes without accumulating or
+    decoding them.
     """
     if not isinstance(command, (list, tuple)) or not command \
             or any(not isinstance(part, (str, bytes, os.PathLike))
@@ -3631,19 +4413,33 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
     if isinstance(output_limit, bool) or not isinstance(output_limit, int) \
             or output_limit <= 0 or output_limit > MAX_STATE_JSON_BYTES:
         raise ValueError("bounded subprocess output limit is invalid")
+    if not isinstance(isolate_process_tree, bool):
+        raise ValueError("bounded subprocess isolation mode is invalid")
+    if not isinstance(retain_output, bool):
+        raise ValueError("bounded subprocess output-retention mode is invalid")
+    original_command = list(command)
+    launch_command = original_command
+    if isolate_process_tree:
+        launch_command = [
+            "/usr/bin/unshare", "--user", "--map-root-user", "--pid",
+            "--fork", "--kill-child", "--mount-proc", "--",
+            *original_command]
     process = None
     group_reaped = False
     selector = selectors.DefaultSelector()
     streams = {}
     try:
         process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            launch_command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=env, cwd=cwd,
             pass_fds=tuple(pass_fds), close_fds=True,
             start_new_session=True, text=False)
         if process.stdout is None or process.stderr is None:
             raise RuntimeError("bounded subprocess did not provide output pipes")
-        streams = {process.stdout: bytearray(), process.stderr: bytearray()}
+        streams = {
+            process.stdout: bytearray() if retain_output else None,
+            process.stderr: bytearray() if retain_output else None,
+        }
         for stream in streams:
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ)
@@ -3652,10 +4448,10 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise subprocess.TimeoutExpired(command, timeout)
+                raise subprocess.TimeoutExpired(original_command, timeout)
             ready = selector.select(remaining)
             if not ready:
-                raise subprocess.TimeoutExpired(command, timeout)
+                raise subprocess.TimeoutExpired(original_command, timeout)
             for key, _events in ready:
                 stream = key.fileobj
                 budget = output_limit - captured
@@ -3671,20 +4467,22 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                 if len(block) > budget:
                     raise OverflowError(
                         f"{label} output exceeded its combined byte limit")
-                streams[stream].extend(block)
+                if retain_output:
+                    streams[stream].extend(block)
                 captured += len(block)
-        _await_process_exit_unreaped(process, deadline, command, timeout)
+        _await_process_exit_unreaped(
+            process, deadline, original_command, timeout)
         returncode = _signal_and_reap_process_group(
             process, JOURNAL_TIMEOUT_SECONDS)
         group_reaped = True
         if returncode is None:
-            raise subprocess.TimeoutExpired(command, timeout)
-        stdout = bytes(streams[process.stdout]).decode(
-            "utf-8", errors="strict")
-        stderr = bytes(streams[process.stderr]).decode(
-            "utf-8", errors="strict")
+            raise subprocess.TimeoutExpired(original_command, timeout)
+        stdout = (bytes(streams[process.stdout]).decode(
+            "utf-8", errors="strict") if retain_output else "")
+        stderr = (bytes(streams[process.stderr]).decode(
+            "utf-8", errors="strict") if retain_output else "")
         return subprocess.CompletedProcess(
-            command, returncode, stdout=stdout, stderr=stderr)
+            original_command, returncode, stdout=stdout, stderr=stderr)
     finally:
         selector.close()
         if process is not None and not group_reaped:
@@ -3893,6 +4691,516 @@ def _chain_verifier_binding_error(tool, command):
             "script operand of the current Python interpreter")
 
 
+_CHAIN_INPUT_KEYS = frozenset({"argv_index", "path", "prefix"})
+
+
+def _normalize_chain_binding(binding):
+    """Return one registry binding with an explicit auxiliary-input tuple."""
+    if not isinstance(binding, (list, tuple)) or len(binding) not in (3, 4):
+        raise ValueError("chain binding must contain three or four fields")
+    ledger, tool, command = binding[:3]
+    inputs = () if len(binding) == 3 else binding[3]
+    return ledger, tool, command, inputs
+
+
+def _chain_reserved_argv_indexes(ledger, tool, command):
+    """Classify executable, ledger, and admitted state-root argv positions."""
+    if not isinstance(ledger, str) or not ledger or not os.path.isabs(ledger):
+        raise ValueError("chain ledger must be an absolute path")
+    if _chain_verifier_binding_error(tool, command):
+        raise ValueError(_chain_verifier_binding_error(tool, command))
+    python_script = len(command) > 1 and command[1] == tool
+    executable = {0, 1} if python_script else {0}
+    ledger_indexes = {
+        index for index, part in enumerate(command) if part == ledger}
+    if len(ledger_indexes) > 1:
+        raise ValueError("chain ledger argv occurrence is duplicated")
+    if ledger_indexes & executable:
+        raise ValueError(
+            "chain ledger argv occurrence collides with executable")
+    state_directory = os.path.dirname(os.path.abspath(ledger))
+    state_indexes = {
+        index for index, part in enumerate(command)
+        if part == state_directory}
+    if len(state_indexes) > 1:
+        raise ValueError("chain state argv occurrence is duplicated")
+    return executable | ledger_indexes | state_indexes, state_directory
+
+
+def _validated_chain_inputs(inputs, command, reserved_indexes=()):
+    """Validate and canonicalize exact auxiliary-file argv declarations."""
+    if not isinstance(inputs, (list, tuple)):
+        raise ValueError("inputs must be a list")
+    if len(inputs) > MAX_CONFIG_TAGS:
+        raise ValueError("inputs exceed their configured count bound")
+    indexes = set()
+    paths = set()
+    canonical = []
+    for entry in inputs:
+        if not isinstance(entry, dict):
+            raise ValueError("input entry must be an object")
+        unknown = sorted(set(entry) - _CHAIN_INPUT_KEYS)
+        if unknown:
+            raise ValueError(
+                "input entry has unknown keys: "
+                + ", ".join(str(key) for key in unknown))
+        if "argv_index" not in entry or "path" not in entry:
+            raise ValueError("input entry requires argv_index and path")
+        index = entry["argv_index"]
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ValueError("argv_index must be an integer")
+        if index < 0 or index >= len(command):
+            raise ValueError("argv_index is out of range")
+        if index in indexes:
+            raise ValueError("argv_index is duplicated")
+        if index in reserved_indexes:
+            raise ValueError("input index is reserved")
+        raw_path = entry["path"]
+        prefix = entry.get("prefix", "")
+        if not _strict_config_string(
+                raw_path, nonempty=True, limit=MAX_CONFIG_PATH_CHARS) \
+                or "\x00" in raw_path:
+            raise ValueError("input path must be a bounded string")
+        if not _strict_config_string(
+                prefix, limit=MAX_CONFIG_TEXT_CHARS) or "\x00" in prefix:
+            raise ValueError("input prefix must be a bounded string")
+        if prefix and re.fullmatch(
+                r"--[a-z][a-z0-9-]*=", prefix) is None:
+            raise ValueError(
+                "input prefix must be empty or match --long-option=")
+        path = os.path.expanduser(raw_path)
+        if not os.path.isabs(path):
+            raise ValueError("input path must be absolute")
+        if len(path) > MAX_CONFIG_PATH_CHARS:
+            raise ValueError("input path exceeds its configured bound")
+        if command[index] != prefix + raw_path:
+            raise ValueError("input entry does not match verify argv")
+        normalized = os.path.normpath(path)
+        if normalized != path:
+            raise ValueError("input path must use canonical absolute spelling")
+        if normalized in paths:
+            raise ValueError("input path is duplicated")
+        indexes.add(index)
+        paths.add(normalized)
+        canonical.append({
+            "argv_index": index, "path": path, "prefix": prefix})
+    return tuple(sorted(canonical, key=lambda entry: entry["argv_index"]))
+
+
+def _chain_operand_is_closed_literal(value):
+    """Admit only slashless, unambiguous non-file verifier literals."""
+    return isinstance(value, str) and re.fullmatch(
+        r"(?:--?[A-Za-z0-9][A-Za-z0-9-]*|[A-Za-z0-9][A-Za-z0-9_-]*)",
+        value) is not None
+
+
+def _canonical_chain_launch_contract(name, ledger, tool, command, inputs):
+    """Admit one verifier argv and return its explicit launch roles."""
+    binding_error = _chain_verifier_binding_error(tool, command)
+    if binding_error:
+        raise ValueError(binding_error)
+    original = list(command)
+    reserved, state_directory = _chain_reserved_argv_indexes(
+        ledger, tool, original)
+    manifest = _validated_chain_inputs(inputs, original, reserved)
+    declared = {entry["argv_index"] for entry in manifest}
+    for index, part in enumerate(original):
+        if index in reserved or index in declared:
+            continue
+        if not _chain_operand_is_closed_literal(part):
+            raise ValueError(
+                "verify argv path operand must be declared in inputs")
+    implicit = _is_implicit_sekhmet_chain(name, ledger, tool, original)
+    return original, manifest, reserved, state_directory, implicit
+
+
+def _chain_launch_provenance(name, ledger, tool, command, inputs=()):
+    """Return a path-redacted canonical description of admitted verifier argv."""
+    original, manifest, _reserved, state_directory, implicit = \
+        _canonical_chain_launch_contract(
+            name, ledger, tool, command, inputs)
+    python_script = len(original) > 1 and original[1] == tool
+    declared = {entry["argv_index"]: entry for entry in manifest}
+    argv = []
+    for index, part in enumerate(original):
+        if index == 0:
+            role = ("current-python-interpreter"
+                    if python_script else "verifier")
+            argv.append({"role": role})
+        elif python_script and index == 1:
+            argv.append({"role": "verifier"})
+        elif index in declared:
+            argv.append({
+                "role": "declared-input",
+                "argv_index": index,
+                "prefix": declared[index]["prefix"],
+            })
+        elif part == ledger:
+            argv.append({"role": "ledger"})
+        elif os.path.isabs(part) \
+                and os.path.abspath(part) == state_directory:
+            argv.append({"role": "state-directory"})
+        else:
+            argv.append({"literal": part})
+    return {
+        "schema": "sia-chain-launch-contract-v1",
+        "execution": ("current-python-script" if python_script else "direct"),
+        "implicit_private_state": implicit,
+        "argv": argv,
+    }
+
+
+_CHAIN_GENERATION_STAT_FIELDS = (
+    "st_dev", "st_ino", "st_mode", "st_uid", "st_size", "st_mtime_ns",
+    "st_ctime_ns")
+
+
+def _open_chain_generation(path, label):
+    """Pin one regular chain file and return its mutation-sensitive identity."""
+    flags = getattr(os, "O_PATH", os.O_RDONLY) \
+        | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _open_source_nofollow(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(f"{label} is not a regular file")
+        generation = tuple(
+            getattr(info, field) for field in _CHAIN_GENERATION_STAT_FIELDS)
+        return descriptor, generation
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _open_chain_directory_generation(path, label):
+    """Pin one no-follow directory ancestry used by a chain verifier."""
+    flags = getattr(os, "O_PATH", os.O_RDONLY) \
+        | getattr(os, "O_DIRECTORY", 0) \
+        | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = _open_source_nofollow(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode):
+            raise OSError(f"{label} is not a directory")
+        generation = tuple(
+            getattr(info, field) for field in _CHAIN_GENERATION_STAT_FIELDS)
+        return descriptor, generation
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _chain_descriptor_path(descriptor):
+    """Name an inherited descriptor without returning to its source path."""
+    path = f"/proc/self/fd/{descriptor}"
+    if not os.path.exists(path):
+        raise OSError("descriptor-backed chain execution is unavailable")
+    return path
+
+
+def _chain_generation_matches(record, *, rebind=True):
+    """Check a pinned object and, optionally, its original no-follow name."""
+    current = tuple(
+        getattr(os.fstat(record["fd"]), field)
+        for field in _CHAIN_GENERATION_STAT_FIELDS)
+    if current != record["generation"]:
+        return False
+    if not rebind:
+        return True
+    opener = (_open_chain_directory_generation
+              if record["directory"] else _open_chain_generation)
+    rebound = None
+    try:
+        rebound, generation = opener(record["path"], record["label"])
+        return generation == record["generation"]
+    except Exception:
+        return False
+    finally:
+        if rebound is not None:
+            os.close(rebound)
+
+
+def _chain_generation_still_named(record):
+    """Re-open one retained generation after the complete verifier batch."""
+    opener = (_open_chain_directory_generation
+              if record["directory"] else _open_chain_generation)
+    descriptor = None
+    try:
+        descriptor, generation = opener(record["path"], record["label"])
+        return generation == record["generation"]
+    except Exception:
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _copy_chain_snapshot_file(record, destination, remaining):
+    """Copy exact bytes from a pinned file into one private verifier view."""
+    if isinstance(remaining, bool) or not isinstance(remaining, int) \
+            or remaining < 0:
+        raise ValueError("chain snapshot byte budget is invalid")
+    source = os.open(
+        _chain_descriptor_path(record["fd"]), os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0))
+    target = None
+    total = 0
+    try:
+        before = os.fstat(source)
+        if tuple(getattr(before, field)
+                 for field in _CHAIN_GENERATION_STAT_FIELDS) \
+                != record["generation"] or before.st_size > remaining:
+            raise OSError("chain snapshot source changed or exceeds its bound")
+        if before.st_uid != os.geteuid():
+            raise OSError("chain snapshot source is not owner-controlled")
+        if before.st_nlink != 1:
+            raise OSError("chain snapshot source is not single-link")
+        target = os.open(
+            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0),
+            stat.S_IMODE(before.st_mode))
+        os.fchmod(target, stat.S_IMODE(before.st_mode))
+        while total <= remaining:
+            block = os.read(source, min(MAX_CONFIG_BYTES,
+                                        remaining + 1 - total))
+            if not block:
+                break
+            view = memoryview(block)
+            while view:
+                written = os.write(target, view)
+                if written <= 0:
+                    raise OSError("short write while copying chain snapshot")
+                view = view[written:]
+            total += len(block)
+        if total > remaining:
+            raise OSError("chain snapshot source exceeds its byte bound")
+        os.fsync(target)
+        after = os.fstat(source)
+        if tuple(getattr(after, field)
+                 for field in _CHAIN_GENERATION_STAT_FIELDS) \
+                != record["generation"] or total != before.st_size:
+            raise OSError("chain snapshot source changed while copied")
+        return total
+    finally:
+        os.close(source)
+        if target is not None:
+            os.close(target)
+
+
+def _is_implicit_sekhmet_chain(name, ledger, tool, command):
+    expected_tool = os.path.join(HOME, ".local/bin/sekhmet")
+    expected_ledger = os.path.join(
+        HOME, ".local/share/sekhmet/ledger.tsv")
+    return name == "sekhmet" and tool == expected_tool \
+        and ledger == expected_ledger and list(command[:3]) == [
+            tool, "ledger", "verify"]
+
+
+@contextlib.contextmanager
+def _bound_chain_verification(name, ledger, tool, command, inputs=()):
+    """Bind the verifier launch to the objects observed by its caller.
+
+    Direct executables, current-Python scripts, and explicit file operands are
+    named through inherited pinned descriptors. State-directory operands get
+    a private byte-for-byte view copied from pinned descriptors. The built-in
+    verifier with an implicit HOME-relative state directory receives the same
+    private view, because its successful check rewrites its rollback pin.
+    Directory ancestry, declared files, and every known sidecar generation are
+    held and checked before the result is admitted. This does not remove the
+    documented same-user in-place ABA boundary between observations.
+    """
+    original_command, input_manifest, _reserved_indexes, \
+        state_directory, implicit_sekhmet = \
+        _canonical_chain_launch_contract(
+            name, ledger, tool, command, inputs)
+    if any(part.startswith("/proc/self/fd/")
+           for part in original_command):
+        raise ValueError("chain verifier argv contains an opaque descriptor")
+    command = list(original_command)
+    descriptors = []
+    child_descriptors = []
+    records = []
+    bound_records = {}
+    temporary = None
+
+    def bind(path, label, *, directory=False, aggregate=True,
+             inherit=False):
+        key = (path, directory)
+        if key in bound_records:
+            record = bound_records[key]
+            if inherit and record["fd"] not in child_descriptors:
+                child_descriptors.append(record["fd"])
+            return record
+        opener = (_open_chain_directory_generation
+                  if directory else _open_chain_generation)
+        descriptor, generation = opener(path, label)
+        descriptors.append(descriptor)
+        record = {
+            "path": path, "label": label, "directory": directory,
+            "fd": descriptor, "generation": generation,
+            "aggregate": aggregate,
+        }
+        records.append(record)
+        bound_records[key] = record
+        if inherit:
+            child_descriptors.append(descriptor)
+        return record
+
+    def bind_existing_sidecars(state_directory):
+        for basename in ("pub.hex", "head.pin", "ledger.pending",
+                         "ledger.lock"):
+            path = os.path.join(state_directory, basename)
+            try:
+                bind(path, f"{name} chain {basename}")
+            except FileNotFoundError:
+                continue
+
+    try:
+        temporary = tempfile.TemporaryDirectory(prefix="sia-chain-")
+        private_home = os.path.join(temporary.name, "home")
+        private_tmp = os.path.join(temporary.name, "tmp")
+        private_cwd = os.path.join(temporary.name, "cwd")
+        private_inputs = os.path.join(temporary.name, "inputs")
+        for directory in (
+                private_home, private_tmp, private_cwd, private_inputs):
+            os.makedirs(directory, mode=0o700)
+        private_input_remaining = MAX_LEDGER_PENDING_BYTES
+        environment = {
+            "HOME": private_home,
+            "TMPDIR": private_tmp,
+            "PATH": os.defpath,
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        tool_record = bind(
+            tool, f"{name} chain verifier", inherit=True)
+        ledger_record = bind(
+            ledger, f"{name} chain ledger")
+        tool_fd_path = _chain_descriptor_path(tool_record["fd"])
+        ledger_launch_record = ledger_record
+        if ledger in original_command:
+            private_ledger = os.path.join(private_inputs, "ledger")
+            used = _copy_chain_snapshot_file(
+                ledger_record, private_ledger, private_input_remaining)
+            private_input_remaining -= used
+            ledger_launch_record = bind(
+                private_ledger, f"{name} private ledger",
+                aggregate=False, inherit=True)
+        ledger_fd_path = _chain_descriptor_path(ledger_launch_record["fd"])
+
+        python_script = len(command) > 1 and command[1] == tool
+        if python_script:
+            interpreter_path = os.path.realpath(sys.executable)
+            interpreter_record = bind(
+                interpreter_path, "current Python interpreter", inherit=True)
+            running = os.stat("/proc/self/exe")
+            pinned = os.fstat(interpreter_record["fd"])
+            if (running.st_dev, running.st_ino) != (
+                    pinned.st_dev, pinned.st_ino):
+                raise OSError("current Python interpreter identity changed")
+            command[0] = _chain_descriptor_path(interpreter_record["fd"])
+            command[1] = tool_fd_path
+        else:
+            command[0] = tool_fd_path
+
+        state_arguments = {
+            part for part in original_command
+            if os.path.isabs(part)
+            and os.path.abspath(part) == state_directory
+        }
+        state_argument = bool(state_arguments)
+        snapshot_state = None
+        if state_argument or implicit_sekhmet:
+            state_record = bind(
+                state_directory, f"{name} chain state", directory=True)
+            state_info = os.fstat(state_record["fd"])
+            if state_info.st_uid != os.geteuid():
+                raise OSError("chain state is not owned by this user")
+            bind_existing_sidecars(state_directory)
+            snapshot_home = private_home
+            snapshot_state = (os.path.join(
+                snapshot_home, ".local", "share", "sekhmet")
+                if implicit_sekhmet
+                else os.path.join(temporary.name, "state"))
+            os.makedirs(snapshot_state, mode=0o700)
+            remaining = MAX_LEDGER_PENDING_BYTES
+            for basename in (
+                    "ledger.tsv", "pub.hex", "head.pin",
+                    "ledger.pending", "ledger.lock"):
+                source = bound_records.get(
+                    (os.path.join(state_directory, basename), False))
+                if source is None:
+                    continue
+                destination = os.path.join(snapshot_state, basename)
+                used = _copy_chain_snapshot_file(
+                    source, destination, remaining)
+                remaining -= used
+                # The implicit verifier advances its rollback pin after a
+                # successful replay. Other captured inputs must remain the
+                # exact private generation supplied to the child.
+                if basename != "ledger.lock" \
+                        and not (implicit_sekhmet
+                                 and basename == "head.pin"):
+                    bind(destination, f"{name} private {basename}",
+                         aggregate=False)
+            lock_path = os.path.join(snapshot_state, "ledger.lock")
+            if not os.path.exists(lock_path):
+                lock_fd = os.open(
+                    lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_CLOEXEC", 0), 0o600)
+                os.close(lock_fd)
+            os.chmod(snapshot_state, stat.S_IMODE(state_info.st_mode))
+            if not implicit_sekhmet:
+                bind(snapshot_state, f"{name} private state",
+                     directory=True, aggregate=False)
+                command = [snapshot_state if part in state_arguments else part
+                           for part in command]
+
+        command = [ledger_fd_path if part == ledger else part
+                   for part in command]
+        identities = {
+            (os.fstat(record["fd"]).st_dev, os.fstat(record["fd"]).st_ino)
+            for record in records if not record["directory"]}
+        for declared in input_manifest:
+            operand = bind(
+                declared["path"], f"{name} declared chain input")
+            info = os.fstat(operand["fd"])
+            identity = (info.st_dev, info.st_ino)
+            if info.st_uid != os.geteuid() or info.st_nlink != 1:
+                raise OSError(
+                    "declared chain input is not an owned single-link file")
+            if identity in identities:
+                raise OSError("declared chain input aliases another authority")
+            identities.add(identity)
+            private_operand = os.path.join(
+                private_inputs, f"input-{declared['argv_index']}")
+            used = _copy_chain_snapshot_file(
+                operand, private_operand, private_input_remaining)
+            private_input_remaining -= used
+            launch_operand = bind(
+                private_operand, f"{name} private declared chain input",
+                aggregate=False, inherit=True)
+            command[declared["argv_index"]] = (
+                declared["prefix"]
+                + _chain_descriptor_path(launch_operand["fd"]))
+
+        yield {
+            "command": command,
+            "env": environment,
+            "cwd": private_cwd,
+            "pass_fds": tuple(child_descriptors),
+            "records": records,
+            "inputs": input_manifest,
+        }
+    finally:
+        try:
+            if temporary is not None:
+                temporary.cleanup()
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+
+
 def _chain_cmds():
     """Chain registry: SIA's own signed ledger always; known keeper chains
     auto-detected when present on this machine (each verified by ITS OWN
@@ -3926,12 +5234,29 @@ def _chain_cmds():
         # counterparts must surface as absent/refused, never make a damaged
         # installed chain disappear from verification and benchmarking.
         if any(os.path.lexists(path) for path in (root, ledger, tool)):
-            chains[name] = (ledger, tool, cmd)
+            if name == "custos":
+                chains[name] = (
+                    ledger, tool, cmd,
+                    ({"argv_index": 3,
+                      "path": os.path.join(custos_dir, "pub.hex"),
+                      "prefix": ""},))
+            else:
+                chains[name] = (ledger, tool, cmd)
+    if not _active_config_load_valid():
+        _invalid_chain_binding(
+            chains, {"config": "active-load-invalid"},
+            "active configuration provenance is invalid")
+        return chains
     configured = CONFIG.get("chains", [])
     if not isinstance(configured, list):
         _invalid_chain_binding(
             chains, {"chains_type": type(configured).__name__},
             "chains must be a list")
+        return chains
+    if len(configured) > MAX_CONFIGURED_CHAINS:
+        _invalid_chain_binding(
+            chains, {"chains_count": len(configured)},
+            "chains exceed their configured count bound")
         return chains
     for c in configured:
         if not isinstance(c, dict):
@@ -3939,7 +5264,8 @@ def _chain_cmds():
                                    "chain entry must be an object")
             continue
         allowed = {
-            "_comment", "name", "ledger", "verifier", "verify", "enabled"}
+            "_comment", "name", "ledger", "verifier", "verify", "inputs",
+            "enabled"}
         unknown = sorted(set(c) - allowed)
         if unknown:
             _invalid_chain_binding(
@@ -3959,16 +5285,27 @@ def _chain_cmds():
             chain_name = sanitize_slugpart(raw_name)
             if chain_name.startswith("config-error-"):
                 raise ValueError("name uses the reserved diagnostic prefix")
-            ledger = os.path.expanduser(str(c["ledger"]))
+            raw_ledger = c["ledger"]
+            if not _strict_config_string(
+                    raw_ledger, nonempty=True,
+                    limit=MAX_CONFIG_PATH_CHARS) or "\x00" in raw_ledger:
+                raise ValueError("ledger must be a bounded path string")
+            ledger = os.path.expanduser(raw_ledger)
             raw_cmd = c["verify"]
             if not isinstance(raw_cmd, list) or not raw_cmd \
-                    or any(not isinstance(a, str) or not a for a in raw_cmd):
+                    or len(raw_cmd) > MAX_CONFIG_PATH_CHARS \
+                    or any(not _strict_config_string(
+                        a, nonempty=True, limit=MAX_CONFIG_PATH_CHARS)
+                        or "\x00" in a for a in raw_cmd):
                 raise ValueError("verify must be a non-empty string argv list")
-            cmd = [os.path.expanduser(a) for a in raw_cmd]
+            cmd = [os.path.expanduser(a) if a.startswith("~") else a
+                   for a in raw_cmd]
             if not cmd:
                 raise ValueError("verify argv is empty")
             supplied = c.get("verifier")
-            if not isinstance(supplied, str) or not supplied:
+            if not _strict_config_string(
+                    supplied, nonempty=True,
+                    limit=MAX_CONFIG_PATH_CHARS) or "\x00" in supplied:
                 # Custom command shapes are unbounded (`env`, shell wrappers,
                 # alternate interpreters). Never guess which argv element is
                 # the mutable verifier whose digest must be bound.
@@ -3983,11 +5320,23 @@ def _chain_cmds():
                 raise ValueError(binding_error)
             if ledger not in cmd:
                 raise ValueError("ledger is not an explicit path in verify argv")
+            reserved, _state_directory = _chain_reserved_argv_indexes(
+                ledger, tool, cmd)
+            if "inputs" in c and not isinstance(c["inputs"], list):
+                raise ValueError("inputs must be a list")
+            inputs = _validated_chain_inputs(
+                c.get("inputs", ()), raw_cmd, reserved)
+            for declared in inputs:
+                cmd[declared["argv_index"]] = (
+                    declared["prefix"] + declared["path"])
+            _command, inputs, _reserved, _state, _implicit = \
+                _canonical_chain_launch_contract(
+                    chain_name, ledger, tool, cmd, inputs)
             if not chain_name or chain_name in chains:
                 # Built-ins are reserved and the first valid custom binding
                 # owns its name; ambiguity must never shadow a keeper.
                 raise ValueError("chain name is reserved or duplicated")
-            chains[chain_name] = (ledger, tool, cmd)
+            chains[chain_name] = (ledger, tool, cmd, inputs)
         except Exception as exc:
             _invalid_chain_binding(chains, c, str(exc)[:160])
     return chains
@@ -3996,7 +5345,13 @@ def _chain_cmds():
 def verify_chains():
     """Returns {name: 'pass'|'fail'|'absent'}."""
     out = {}
-    for name, (ledger, tool, cmd) in _chain_cmds().items():
+    passed_generations = {}
+    for name, binding in _chain_cmds().items():
+        try:
+            ledger, tool, cmd, inputs = _normalize_chain_binding(binding)
+        except ValueError:
+            out[name] = "fail"
+            continue
         if cmd and cmd[0] == INVALID_CHAIN_SENTINEL:
             out[name] = "fail"
             continue
@@ -4007,15 +5362,36 @@ def verify_chains():
             out[name] = "absent"
             continue
         try:
-            # Verifier prose is not an evidence product here; only its exit
-            # status is. Never let an operator-supplied verifier accumulate
-            # unbounded stdout/stderr inside the resident brainstem.
-            r = _run_bounded_text_process(
-                cmd, env=None, timeout=60, cwd=None,
-                label=f"{name} chain verifier",
-                output_limit=MAX_CONFIG_BYTES)
-            out[name] = "pass" if r.returncode == 0 else "fail"
+            with _bound_chain_verification(
+                    name, ledger, tool, cmd, inputs) as launch:
+                # Verifier prose is not an evidence product here; only its
+                # exit status is. The private PID namespace gives an
+                # operator-supplied verifier a bounded descendant lifetime.
+                r = _run_bounded_text_process(
+                    launch["command"], env=launch["env"], timeout=60,
+                    cwd=launch["cwd"], pass_fds=launch["pass_fds"],
+                    label=f"{name} chain verifier",
+                    output_limit=MAX_CONFIG_BYTES,
+                    isolate_process_tree=True, retain_output=False)
+                stable = all(_chain_generation_matches(record)
+                             for record in launch["records"])
+                out[name] = (
+                    "pass" if r.returncode == 0 and stable else "fail")
+                if out[name] == "pass":
+                    passed_generations[name] = [
+                        {key: record[key] for key in (
+                            "path", "label", "directory", "generation")}
+                        for record in launch["records"]
+                        if record["aggregate"]]
         except Exception:
+            out[name] = "fail"
+    # A later keeper may run long enough for an earlier chain to advance.
+    # Rebind every successful executable, input, state root, and sidecar once
+    # more before returning the aggregate; otherwise an all-pass result need
+    # never have described one completed verification batch.
+    for name, records in passed_generations.items():
+        if not all(_chain_generation_still_named(record)
+                   for record in records):
             out[name] = "fail"
     return out
 
@@ -4045,6 +5421,25 @@ def _ledger_bound_content(content, occurrence_id=None):
     }, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def _durable_status_log_message(value, limit=400):
+    """Redact one daemon-visible diagnostic and checkpoint its omissions."""
+    detail = clip(redact(value, "status-error"), limit)
+    if not REDACTIONS:
+        return detail
+    try:
+        if _CORPUS_OWNER_DEPTH.get() > 0:
+            _checkpoint_status_error_redactions(load_memo())
+        else:
+            with corpus_owner():
+                _checkpoint_status_error_redactions(load_memo())
+    except Exception:
+        # Never route the original secret-bearing exception around a failed
+        # accounting write. A later safe pulse may still checkpoint the
+        # retained in-process counter.
+        return "diagnostic detail suppressed; redaction accounting refused"
+    return detail
+
+
 def ledger_append(action, arg1, arg2, content="", required=False,
                   occurrence_id=None):
     """Append one signed transition; optionally fail the parent operation."""
@@ -4061,7 +5456,8 @@ def ledger_append(action, arg1, arg2, content="", required=False,
             raise RuntimeError(detail)
         return True
     except Exception as exc:
-        log(f"ledger append failed for {action}: {exc}")
+        log(_durable_status_log_message(
+            f"ledger append failed for {action}: {exc}"))
         if required:
             raise RuntimeError(
                 f"signed ledger refused {action}; transition not published") \
@@ -4103,7 +5499,6 @@ def ledger_settle(action, arg1, arg2, content, occurrence_id=None):
 
 LEDGER_PENDING_SCHEMA_V1 = "sia-ledger-pending-v1"
 LEDGER_PENDING_SCHEMA = "sia-ledger-pending-v2"
-MAX_LEDGER_PENDING_RECORDS = 1024
 # parsed=1024*65536, exact=67108864; parsed=1024*2, exact=2048;
 MAX_LEDGER_PENDING_RECORD_BYTES = 65_536
 MAX_LEDGER_PENDING_BYTES = 67_108_864
@@ -4178,11 +5573,11 @@ def _scan_ledger_pending_names(directory):
 
 
 def _pending_basis(order, action, arg1, arg2, content):
-    basis = {"order": int(order), "action": str(action),
+    if isinstance(order, bool) or not isinstance(order, int) or order < 0:
+        raise ValueError("ledger recovery order is invalid")
+    basis = {"order": order, "action": str(action),
              "arg1": str(arg1), "arg2": str(arg2),
              "content": str(content)}
-    if basis["order"] < 0:
-        raise ValueError("ledger recovery order is invalid")
     if any("\t" in basis[key] or "\n" in basis[key]
            for key in ("action", "arg1", "arg2")):
         raise ValueError("ledger recovery fields contain control separators")
@@ -4199,9 +5594,9 @@ def _pending_identity(basis):
 
 def _read_pending_record(path):
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label="ledger recovery record") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_size > MAX_LEDGER_PENDING_RECORD_BYTES \
@@ -4338,7 +5733,7 @@ class LedgerTransitionError(RuntimeError):
 def durable_ledger_append(action, arg1, arg2, content="", order=None):
     """Journal, keeper-sign, and acknowledge one exact transition."""
     try:
-        order = time.time_ns() if order is None else int(order)
+        order = time.time_ns() if order is None else order
         path = queue_ledger_transition(order, action, arg1, arg2, content)
         _settle_ledger_transition(path)
     except Exception as exc:
@@ -4352,8 +5747,16 @@ def ledger_head():
         r = _run_bounded_text_process(
             [sys.executable, os.path.join(BIN, "sia-ledger"), "head", SHARE],
             env=None, timeout=30, cwd=None, label="signed ledger head")
+        if r.returncode != 0:
+            raise RuntimeError("signed ledger keeper refused its head")
         n, h = r.stdout.split()
-        return int(n), h
+        if re.fullmatch(r"0|[1-9][0-9]*", n) is None \
+                or re.fullmatch(r"[0-9a-f]{64}", h) is None:
+            raise ValueError("signed ledger head is malformed")
+        count = int(n)
+        if count > MAX_JSON_SAFE_INTEGER:
+            raise ValueError("signed ledger count exceeds its status bound")
+        return count, h
     except Exception:
         return 0, ""
 
@@ -4362,31 +5765,97 @@ def ledger_head():
 
 THOUGHTS_PATH = os.path.join(STATE, "thoughts.json")
 
+
+def _thought_store_slug_matches(record):
+    """Whether a queue-owned projection binds its deterministic page name."""
+    slug = record["slug"]
+    queue_id = record.get("queue_id")
+    if queue_id is not None:
+        return slug == _queued_thought_slug(queue_id)
+    # Baseline-recovered pre-metadata pages have canonical but historical
+    # names. Their recovery record proves exact page bytes; only queued rows
+    # have a name derived from an identity that can be checked here.
+    return True
+
+
+def _validated_thought_store_row(value):
+    """Admit only one exact bounded current or known legacy projection."""
+    if not isinstance(value, dict):
+        raise ValueError("thought projection row is not an object")
+    keys = set(value)
+    if keys == {"kind", "text"}:
+        kind = value.get("kind")
+        text = value.get("text")
+        if not _strict_config_string(
+                kind, nonempty=True, limit=MAX_THOUGHT_INBOX_TEXT) \
+                or sanitize_slugpart(kind) != kind \
+                or not _strict_config_string(
+                    text, nonempty=True, limit=MAX_THOUGHT_INBOX_TEXT) \
+                or inert_summary(text) != text:
+            raise ValueError("legacy thought projection row is invalid")
+        result = dict(value)
+        if kind in LEGACY_MODEL_THOUGHT_KINDS:
+            result["origin"] = "model"
+        return result
+
+    required = {"ts", "kind", "text", "links", "urgent", "slug"}
+    optional = {"origin", "queue_id"}
+    if not required.issubset(keys) or keys - required - optional:
+        raise ValueError("thought projection row has an unsupported shape")
+    candidate = dict(value)
+    candidate.setdefault("origin", "derived")
+    canonical = _canonical_thought_page_record(candidate)
+    expected = dict(canonical)
+    if "origin" not in value:
+        expected.pop("origin")
+    if expected != value or not _strict_config_string(
+            value["kind"], nonempty=True, limit=MAX_THOUGHT_INBOX_TEXT) \
+            or not _strict_config_string(
+                value["text"], nonempty=True,
+                limit=MAX_THOUGHT_INBOX_TEXT) \
+            or not _thought_store_slug_matches(canonical):
+        raise ValueError("thought projection row is noncanonical")
+    result = dict(value)
+    if "origin" not in value and value["kind"] in LEGACY_MODEL_THOUGHT_KINDS:
+        result["origin"] = "model"
+    return result
+
+
 def load_thoughts():
     store = read_state_json(
         THOUGHTS_PATH, {"v": 1, "thoughts": []}, "thought store")
-    if store.get("v") != 1 or not isinstance(store.get("thoughts"), list) \
-            or any(not isinstance(item, dict)
-                   for item in store.get("thoughts", [])):
+    if not isinstance(store, dict) \
+            or set(store) not in ({"v", "thoughts"},
+                                  {"v", "thoughts", "thought_recovery"}) \
+            or not _exact_int(store.get("v"), 1) \
+            or not isinstance(store.get("thoughts"), list) \
+            or len(store["thoughts"]) > MAX_THOUGHT_INBOX_ITEMS:
         raise RuntimeError("thought store schema is invalid")
     try:
-        for item in store["thoughts"]:
-            if "origin" in item:
-                item["origin"] = _canonical_thought_origin(item["origin"])
-            elif item.get("kind") in LEGACY_MODEL_THOUGHT_KINDS:
-                # These historical kinds are unambiguously model prose.
-                # Other unlabeled legacy rows remain unlabeled so readers
-                # expose the legacy boundary instead of laundering them as
-                # newly classified derived content.
-                item["origin"] = "model"
+        canonical = []
+        slugs = set()
+        queue_ids = set()
+        for value in store["thoughts"]:
+            item = _validated_thought_store_row(value)
+            slug = item.get("slug")
+            queue_id = item.get("queue_id")
+            if slug is not None and slug in slugs \
+                    or queue_id is not None and queue_id in queue_ids:
+                raise ValueError("thought projection identity is duplicated")
+            if slug is not None:
+                slugs.add(slug)
+            if queue_id is not None:
+                queue_ids.add(queue_id)
+            canonical.append(item)
         _validated_thought_recovery_receipt(store)
-    except ValueError as exc:
-        raise RuntimeError("thought store metadata is invalid") from exc
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("thought store schema is invalid") from exc
+    store["thoughts"] = canonical
     return store
 
 
 def _thought_reinforcement_ts(thought):
-    """Return the epoch projection of a canonical thought-page clock."""
+    """Return the epoch projection of a canonical generated-entry clock."""
     canonical_ts = _canonical_utc_timestamp(thought["ts"])
     return datetime.datetime.strptime(
         canonical_ts, "%Y-%m-%dT%H:%M:%SZ").replace(
@@ -4441,7 +5910,7 @@ def add_thought(store, kind, text, links=(), urgent=False, queue_id=None,
     store["thoughts"].append(t)
     store["thoughts"] = store["thoughts"][-MAX_THOUGHT_INBOX_ITEMS:]
     # The bounded intent journal, rather than a second best-effort queue,
-    # projects this page into daemon-owned mind state at the transaction's
+    # projects this page into daemon-owned compatibility policy state at the transaction's
     # settlement boundary.
     log(f"thought[{kind}] {text}")
     return t
@@ -4449,7 +5918,7 @@ def add_thought(store, kind, text, links=(), urgent=False, queue_id=None,
 
 def thought_queue_identity(scope, kind, text, links=(), urgent=False,
                            day=None, extra=None):
-    """Return a stable queue ID for a deterministic thought projection."""
+    """Return a stable queue ID for a deterministic generated-entry projection."""
     canonical_links = sorted(
         {_canonical_corpus_slug(link) for link in links}) \
         or ["sia/cortex"]
@@ -4463,7 +5932,7 @@ def thought_queue_identity(scope, kind, text, links=(), urgent=False,
 
 
 def think(store, memo, events, chains, salience, anomalies, event_day=None):
-    """Deterministic thought generators. memo persists across pulses."""
+    """Run deterministic entry generators; the API name is compatibility."""
     new = []
     day = today()
     event_day = day if event_day is None else event_day
@@ -4540,7 +6009,7 @@ def think(store, memo, events, chains, salience, anomalies, event_day=None):
                     identity_extra=transition_identity))
         memo["chains"] = dict(chains)
 
-    # 2. per-organ rules (dedup identical thoughts within a pulse)
+    # 2. per-source rules (deduplicate identical generated entries within a pulse)
     pulse_seen = set()
     def once(kind, text):
         if (kind, text) in pulse_seen:
@@ -4566,7 +6035,7 @@ def think(store, memo, events, chains, salience, anomalies, event_day=None):
                 "refusal", refusal_text, refusal_links,
                 identity_day=event_day))
         if ev.organ == "sekhmet" and ev.kind == "outcome":
-            t = f"I watched SEKHMET heal the fabric: {ev.summary}."
+            t = f"SEKHMET reported a completed fabric heal: {ev.summary}."
             if once("healing", t):
                 new.append(generated(
                     "healing", t, sorted(ev.links), identity_day=event_day))
@@ -4603,14 +6072,14 @@ def think(store, memo, events, chains, salience, anomalies, event_day=None):
             identity_day=day))
     memo["anomaly_keys"] = sorted(seen)[-100:]
 
-    # 4. salience shift
+    # 4. retrieval-salience shift
     if salience:
         top = salience[0].get("slug", "")
         if top and top != memo.get("salience_top") and not top.startswith("thoughts/"):
             previous_top = memo.get("salience_top", "")
             memo["salience_top"] = top
             new.append(generated("attention",
-                f"My attention has shifted: the most salient memory is now "
+                f"Retrieval salience shifted: the highest-ranked page is now "
                 f"“{salience[0].get('title', top)}”.", [top],
                 identity_day=day,
                 identity_extra={"previous": previous_top, "observed": top}))
@@ -4686,6 +6155,25 @@ for _sialib_graph_name in _siagraph._EXPORTED_FUNCTIONS:
 del _sialib_graph_name
 
 
+def _require_recoverable_graph_snapshot(value):
+    """Admit graph bytes before ranking or measurement uses."""
+    if _recoverable_graph_snapshot(value) is None:
+        raise RuntimeError("resident graph snapshot is invalid")
+    # A failed bounded scan is still a useful, explicitly partial display
+    # artifact, but it is not authority for ranking or measurement.
+    if value["snapshot"]["complete"] is not True:
+        raise RuntimeError("resident graph snapshot is incomplete")
+    return value
+
+
+def _require_musing_graph_snapshot(value):
+    """Require enough graph authority to make a negative direct-link claim."""
+    value = _require_recoverable_graph_snapshot(value)
+    if value["snapshot"]["omitted_edges"]:
+        raise RuntimeError("resident graph omits edges needed for the seeded walk")
+    return value
+
+
 def export_status(st):
     snapshot = dict(st)
     snapshot["version"] = VERSION
@@ -4709,11 +6197,13 @@ MAX_BENCH_TREND_BYTES = 4_194_304
 MAX_BENCH_TREND_INPUT_LINES = 4_096
 MAX_BENCH_TREND_LINE_BYTES = 65_536
 MAX_BENCH_TREND_ROWS = 30
+MAX_PULSE_HISTORY_ROWS = 120
+MAX_STATUS_INTENTS = 5
 
 
 def load_memo():
     flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
         fd = os.open(MEMO_PATH, flags)
     except FileNotFoundError:
@@ -4721,17 +6211,20 @@ def load_memo():
     except OSError as exc:
         raise RuntimeError(f"brainstem memo cannot be opened safely: {exc}") \
             from exc
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(
+            fd, label="brainstem memo", error_type=RuntimeError) as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
-                or before.st_size > MAX_MEMO_BYTES:
+                or before.st_uid != os.geteuid() \
+                or before.st_nlink != 1:
+            raise RuntimeError(
+                "brainstem memo is not an owned single-link regular file")
+        if before.st_size > MAX_MEMO_BYTES:
             raise RuntimeError("brainstem memo is not a bounded regular file")
         raw = stream.read(MAX_MEMO_BYTES + 1)
         after = os.fstat(stream.fileno())
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
+    observed = _file_generation(before)
+    finished = _file_generation(after)
     if observed != finished or len(raw) > MAX_MEMO_BYTES:
         raise RuntimeError("brainstem memo changed while read")
     try:
@@ -4741,6 +6234,17 @@ def load_memo():
             from exc
     if not isinstance(value, dict):
         raise RuntimeError("brainstem memo must be an object")
+    try:
+        target = os.lstat(MEMO_PATH)
+    except OSError as exc:
+        raise RuntimeError("brainstem memo changed while read") from exc
+    current = _file_generation(target)
+    if not stat.S_ISREG(after.st_mode) \
+            or after.st_uid != os.geteuid() or after.st_nlink != 1 \
+            or not stat.S_ISREG(target.st_mode) \
+            or target.st_uid != os.geteuid() or target.st_nlink != 1 \
+            or current != finished:
+        raise RuntimeError("brainstem memo changed while read")
     return value
 
 
@@ -4762,7 +6266,7 @@ def _ready_receipt(memo):
         return None
     if not isinstance(receipt, dict) or set(receipt) != {
             "v", "completed_at", "kind", "identity"} \
-            or receipt.get("v") != 1 \
+            or not _exact_int(receipt.get("v"), 1) \
             or receipt.get("kind") not in {"pulse", "dream", "recovery"} \
             or not isinstance(receipt.get("identity"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", receipt["identity"]) is None \
@@ -4804,7 +6308,7 @@ def _discard_pending_cursor_renames(start=0):
 
 
 def _commit_sense_cursors(cursors):
-    """Publish evidence offsets only after corresponding mind state saves."""
+    """Publish evidence offsets only after corresponding policy-state saves."""
     rename_errors = []
     for tmp, real in PENDING_CURSOR_RENAMES:
         try:
@@ -4842,12 +6346,31 @@ def _commit_sense_cursors(cursors):
 
 def memory_readiness():
     """Return whether corpus, PGLite, and graph provenance are reconciled."""
+    def blocked(reason):
+        # This reason is printed by ``sia ready`` and rendered verbatim by the
+        # cockpit.  Treat it as the same persistence/display boundary as a
+        # status error: controls and secret-shaped spans may not cross it, and
+        # any omission must join the durable cumulative accounting first.
+        return False, _durable_status_log_message(reason, 400)
+
     try:
         # The migrator holds this same lease from its first marker write
         # through PGLite/graph reconciliation.  Reading both the marker and
         # take store under one lease prevents a false-ready TOCTOU snapshot.
         with corpus_owner():
             memo = load_memo()
+            cortex_ready, cortex_reason = _cortex_boundary_status()
+            if not cortex_ready:
+                return blocked(cortex_reason)
+            if _pending_notify_baseline_attempt(memo) is not None:
+                return False, "notification baseline recovery is pending"
+            source_pending = _pending_source_replay_marker(memo)
+            if source_pending is not None:
+                try:
+                    _authorize_pending_source_replay(
+                        source_pending, load_cursors())
+                except SourceReplayQuarantine as exc:
+                    return blocked(exc)
             sync_needed = memo.get("sync_needed", False)
             if not isinstance(sync_needed, bool):
                 return False, "brainstem sync marker is malformed"
@@ -4862,18 +6385,19 @@ def memory_readiness():
                 return False, "corpus consolidation recovery is pending"
             consolidation_debt = _consolidation_scan_debt()
             if consolidation_debt:
-                return False, consolidation_debt
-            source_pending = _pending_source_replay_marker(memo)
+                return blocked(consolidation_debt)
             if source_pending is not None:
                 return False, "evidence source replay is pending"
+            if _pending_pulse_status_effects(memo) is not None:
+                return False, "pulse status-effects recovery is pending"
             thought_debt = _thought_recovery_debt()
             if thought_debt:
-                return False, thought_debt
+                return blocked(thought_debt)
             if sync_needed:
                 return False, "a corpus publication is still pending"
             graph_debt = _graph_projection_debt()
             if graph_debt:
-                return False, graph_debt
+                return blocked(graph_debt)
             if _ready_receipt(memo) is None:
                 return False, "no successful memory publication is recorded"
             mind_state = siamind.load_mind()
@@ -4881,7 +6405,7 @@ def memory_readiness():
                     or mind_state.get("event_batch_applied") is not None:
                 return False, "evidence cursor replay guard is pending"
             if _pending_dream_unit(mind_state) is not None:
-                return False, "a DREAM mind transition is pending recovery"
+                return False, "a scheduled-maintenance policy transition is pending recovery"
             if siatakes.natural_history_recovery_required():
                 return False, "a take/intent projection transaction is pending recovery"
             if siatakes.grade_recovery_required():
@@ -4890,8 +6414,13 @@ def memory_readiness():
                 return False, "legacy model-grade provenance migration is pending"
             if siatakes.intent_history_required():
                 return False, "legacy intent history projection is pending"
+            try:
+                _require_recoverable_graph_snapshot(
+                    read_json(GRAPH_PATH, {}))
+            except RuntimeError as exc:
+                return blocked(exc)
     except Exception as exc:
-        return False, f"memory readiness check refused: {exc}"
+        return blocked(f"memory readiness check refused: {exc}")
     return True, ""
 
 
@@ -4900,7 +6429,7 @@ def _read_existing_agent_note(slug):
     slug = _canonical_corpus_slug(slug)
     path = corpus_path(slug)
     fd = _open_source_nofollow(path, os.O_RDONLY)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label="agent note") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
@@ -4930,7 +6459,64 @@ def _read_existing_agent_note(slug):
             from exc
 
 
-def materialize_agent_notes(store):
+def _account_agent_note_redactions(memo, requests, queue_errors):
+    """Move queue-bound secret omissions into cumulative memo state once."""
+    if memo is None:
+        if any(request.get("redactions") for _path, request, _identity
+               in requests):
+            raise RuntimeError(
+                "agent-note redaction accounting needs the durable memo")
+        return
+    receipts = _agent_note_redaction_receipts(
+        memo.get("agent_note_redaction_receipts"))
+    active = {request["request_id"] for _path, request, _identity in requests}
+    changed = False
+    if not queue_errors:
+        retained = {request_id: count for request_id, count in receipts.items()
+                    if request_id in active}
+        if retained != receipts:
+            receipts = retained
+            changed = True
+    totals = _canonical_pulse_redactions(memo.get("redactions", {}))
+    for _path, request, _identity in requests:
+        bound = request.get("redactions")
+        count = bound.get("agent-note") if isinstance(bound, dict) else None
+        request_id = request["request_id"]
+        payload = request.get("payload", {})
+        if count is not None and any(
+                _redaction_projection(payload.get(field, ""))[1]
+                for field in ("author", "text")):
+            raise RuntimeError(
+                "counted agent-note request still contains secret material")
+        if count is None:
+            if request_id in receipts:
+                raise RuntimeError(
+                    "agent-note redaction receipt conflicts with its request")
+            continue
+        if request_id in receipts:
+            if receipts[request_id] != count:
+                raise RuntimeError(
+                    "agent-note redaction receipt conflicts with its request")
+            continue
+        current = totals.get("agent-note", 0)
+        if current > MAX_JSON_SAFE_INTEGER - count:
+            raise RuntimeError("pulse publication redactions are invalid")
+        totals["agent-note"] = current + count
+        receipts[request_id] = count
+        changed = True
+    if not changed:
+        return
+    updated = dict(memo, redactions=totals)
+    if receipts:
+        updated["agent_note_redaction_receipts"] = receipts
+    else:
+        updated.pop("agent_note_redaction_receipts", None)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+
+
+def materialize_agent_notes(store, memo=None):
     """Materialize valid agent-note requests without acknowledging them.
 
     The caller acknowledges returned paths only after corpus commit and gbrain
@@ -4938,6 +6524,7 @@ def materialize_agent_notes(store):
     daemon dies after writing but before acknowledgment.
     """
     requests, queue_errors = siaqueue.pending(STATE)
+    _account_agent_note_redactions(memo, requests, queue_errors)
     processed, pages, thoughts, errors = [], [], [], list(queue_errors)
     for path, request, identity in requests:
         try:
@@ -5012,7 +6599,7 @@ def materialize_agent_notes(store):
     return processed, pages, thoughts, errors
 
 
-def acknowledge_agent_notes(paths, commit_status, synced):
+def acknowledge_agent_notes(paths, commit_status, synced, after_ack=None):
     """Acknowledge only requests whose corpus transaction reached gbrain.
 
     Return the successful count and per-request errors so a partial unlink
@@ -5025,18 +6612,33 @@ def acknowledge_agent_notes(paths, commit_status, synced):
     for path, identity in paths:
         try:
             siaqueue.acknowledge(path, identity)
+            if after_ack is not None:
+                after_ack(identity)
             acknowledged += 1
         except Exception as exc:
             errors.append({"file": os.path.basename(path),
                            "error": str(exc)})
     return acknowledged, errors
 
+
+def _forget_agent_note_redaction_receipt(memo, identity):
+    """Retire an accounted request only after its durable queue unlink."""
+    request_id = identity.get("request_id") \
+        if isinstance(identity, dict) else None
+    receipts = memo.get("agent_note_redaction_receipts") \
+        if isinstance(memo, dict) else None
+    if not isinstance(receipts, dict) or request_id not in receipts:
+        return
+    receipts.pop(request_id)
+    if not receipts:
+        memo.pop("agent_note_redaction_receipts", None)
+
 def coincidence_findings(mind, findings, now=None):
-    """Cross-organ coincidence: two or more DISTINCT organs spiking
-    out-of-band in the same detection window is itself an observation
-    worth a thought. Deterministic, and scrupulously causal-free: the
-    thought states the coincidence and the sighting count, never a
-    cause. Pair history accumulates in mind['coincide'] — the ground a
+    """Cross-source coincidence: two or more DISTINCT sources exceeding
+    their bands in the same detection pass is itself an observation
+    worth a generated notice. Deterministic and causal-free: the notice
+    states the coincidence and the occurrence count, never a cause. Pair
+    history accumulates in the ``coincide`` compatibility field — input a
     future (measured) hypothesis lane would build on."""
     spikes = {o: t for o, k, t in findings if k == "spike"}
     spiked = sorted(spikes)
@@ -5046,9 +6648,8 @@ def coincidence_findings(mind, findings, now=None):
     co = mind.setdefault("coincide", {})
 
     def _counts(organ):
-        # pull "produced X events … (previous max Y)" out of the spike
-        # text so the coincidence thought states both counts verbatim
-        m = re.search(r"produced (\d+) events.*previous max (\d+)",
+        # Preserve counts from current intake and historical spike receipts.
+        m = re.search(r"(?:admitted|produced) (\d+) events.*previous max (\d+)",
                       spikes.get(organ, ""))
         return f" ({m.group(1)} vs max {m.group(2)})" if m else ""
 
@@ -5064,27 +6665,29 @@ def coincidence_findings(mind, findings, now=None):
             out.append((
                 f"Coincidence: {spiked[i]}{_counts(spiked[i])} and "
                 f"{spiked[j]}{_counts(spiked[j])} both went "
-                f"out-of-band in the same window — {nth} sighting of "
-                f"this pair. I state the coincidence, not a cause.",
+                f"out-of-band in the same detection pass — {nth} recorded occurrence "
+                f"of this pair. This does not establish simultaneous "
+                f"source activity. "
+                f"Observed coincidence only; no cause is inferred.",
                 [f"organs/{spiked[i]}", f"organs/{spiked[j]}"]))
     return out[:2]                      # cap per pulse; pairs still counted
 
 
 def _event_transition_receipt(value, batch_identity):
-    """Validate the bounded thought/finding projection bound to a mind batch."""
+    """Validate the bounded generated-entry projection bound to a policy batch."""
     if value is None:
         return None
     if not isinstance(value, dict) or set(value) != {
             "id", "novelty_thoughts", "findings", "coincidences"} \
             or value.get("id") != batch_identity:
-        raise RuntimeError("event cognitive transition receipt is invalid")
+        raise RuntimeError("event policy-transition receipt is invalid")
     collections_to_bound = (
         value.get("novelty_thoughts"), value.get("findings"),
         value.get("coincidences"))
     if any(not isinstance(items, list)
            or len(items) > MAX_SOURCE_REPLAY_EVENTS
            for items in collections_to_bound):
-        raise RuntimeError("event cognitive transition receipt is invalid")
+        raise RuntimeError("event policy-transition receipt is invalid")
     for item in value["novelty_thoughts"]:
         if not isinstance(item, list) or len(item) != 4 \
                 or not all(isinstance(field, str)
@@ -5094,12 +6697,12 @@ def _event_transition_receipt(value, batch_identity):
                 or any(_canonical_corpus_slug(link) != link
                        for link in item[2]) \
                 or re.fullmatch(r"[0-9a-f]{32}", item[3]) is None:
-            raise RuntimeError("event cognitive transition receipt is invalid")
+            raise RuntimeError("event policy-transition receipt is invalid")
     for item in value["findings"]:
         if not isinstance(item, list) or len(item) != 3 \
                 or not all(isinstance(field, str) for field in item) \
                 or any(len(field) > MAX_THOUGHT_INBOX_TEXT for field in item):
-            raise RuntimeError("event cognitive transition receipt is invalid")
+            raise RuntimeError("event policy-transition receipt is invalid")
     for item in value["coincidences"]:
         if not isinstance(item, list) or len(item) != 2 \
                 or not isinstance(item[0], str) \
@@ -5107,17 +6710,20 @@ def _event_transition_receipt(value, batch_identity):
                 or not isinstance(item[1], list) \
                 or any(_canonical_corpus_slug(link) != link
                        for link in item[1]):
-            raise RuntimeError("event cognitive transition receipt is invalid")
+            raise RuntimeError("event policy-transition receipt is invalid")
     return value
 
 
 def _event_cognitive_transition(
         mind, admitted_events, now_ts, day, source_batch_identity):
-    """Apply one exact source batch to a private mind candidate.
+    """Apply one exact source batch to a private retrieval-policy candidate.
 
     The caller runs this before source staging and later persists this same
-    admitted candidate. Corpus thoughts are returned as inert specifications;
+    admitted candidate. Corpus generated entries are returned as inert specifications;
     this function itself has no corpus or queue side effects.
+
+    The function name is retained for compatibility; the behavior is the
+    retrieval-policy update described above.
     """
     batch_already_applied = siamind.event_batch_was_applied(
         mind, source_batch_identity)
@@ -5136,7 +6742,7 @@ def _event_cognitive_transition(
         }
     if pending_transition is not None:
         raise RuntimeError(
-            "event cognitive transition receipt has no batch replay guard")
+            "event policy-transition receipt has no batch replay guard")
     ingest = []
     ingest_ids = {}
     for event, day_slug in admitted_events:
@@ -5209,7 +6815,11 @@ def _event_cognitive_transition(
 
 def _select_cognitive_admissions(
         admitted_events, appended_event_ids, pending_replay_ids):
-    """Select and deduplicate the exact observations that may change mind."""
+    """Select exact observations that may change retrieval-policy state.
+
+    The function name is retained for compatibility; the behavior is only the
+    exact admission selection described above.
+    """
     selected = []
     seen = set()
     allowed = set(appended_event_ids) | set(pending_replay_ids)
@@ -5287,9 +6897,9 @@ def _read_bench_trend_tail(path, *, max_bytes=None):
             or max_bytes <= 0 or max_bytes > MAX_BENCH_TREND_BYTES:
         raise ValueError("benchmark trend tail bound is invalid")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with siaqueue.regular_file_stream(fd, label="benchmark trend") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) \
                 or before.st_uid != os.geteuid() \
@@ -5368,8 +6978,7 @@ def _bench_trend_snapshot(path=None, include_metadata=False):
             metric = record.get("slug_match_at_5_blend")
             if metric is None:
                 metric = record.get("hit5_blend")
-            if (not isinstance(date, str)
-                    or re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) is None
+            if (not _status_calendar_date(date)
                     or not isinstance(metric, (int, float))
                     or isinstance(metric, bool) or not 0 <= metric <= 1):
                 legacy_truncated = True
@@ -5389,7 +6998,7 @@ def _bench_trend_snapshot(path=None, include_metadata=False):
 
 
 def pulse(seq, opts=None):
-    """Run one whole heartbeat under the corpus transaction lease."""
+    """Run one whole pulse cycle under the corpus transaction lease."""
     with corpus_owner():
         return _pulse_transaction(seq, opts)
 
@@ -5412,21 +7021,24 @@ def _mark_external_corpus_mutation(memo):
 def _canonical_pulse_effects(day, events_pulse, organs):
     effects = {"day": day, "events_pulse": events_pulse,
                "organs": copy.deepcopy(organs)}
-    if not isinstance(effects["day"], str) \
-            or re.fullmatch(
-                r"[0-9]{4}-[0-9]{2}-[0-9]{2}", effects["day"]) is None \
+    max_organs = MAX_LEDGER_PENDING_RECORDS \
+        + len(BASE_ORGANS) + len(OPTIONAL_ORGANS)
+    if not _status_calendar_date(effects["day"]) \
             or isinstance(effects["events_pulse"], bool) \
             or not isinstance(effects["events_pulse"], int) \
-            or effects["events_pulse"] < 0 \
-            or not isinstance(effects["organs"], dict):
+            or not 0 <= effects["events_pulse"] <= MAX_JSON_SAFE_INTEGER \
+            or not isinstance(effects["organs"], dict) \
+            or len(effects["organs"]) > max_organs:
         raise RuntimeError("pulse publication effects are invalid")
     for organ, state in effects["organs"].items():
-        if not isinstance(organ, str) or sanitize_slugpart(organ) != organ \
+        if not _strict_config_string(
+                organ, nonempty=True, limit=MAX_SOURCE_NAME_CHARS) \
+                or sanitize_slugpart(organ) != organ \
                 or not isinstance(state, dict) or set(state) != {
                     "today", "last_ts"} \
                 or isinstance(state.get("today"), bool) \
                 or not isinstance(state.get("today"), int) \
-                or state["today"] < 0 \
+                or not 0 <= state["today"] <= MAX_JSON_SAFE_INTEGER \
                 or not isinstance(state.get("last_ts"), str):
             raise RuntimeError("pulse publication effects are invalid")
         if state["last_ts"]:
@@ -5438,19 +7050,75 @@ def _canonical_pulse_effects(day, events_pulse, organs):
     return effects
 
 
+def _canonical_pulse_redactions(value):
+    """Return bounded cumulative redaction totals or refuse the projection."""
+    if not _status_redactions_shape(value):
+        raise RuntimeError("pulse publication redactions are invalid")
+    return copy.deepcopy(value)
+
+
+def _agent_note_redaction_receipts(value):
+    """Return the bounded exactly-once queue accounting roster."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict) \
+            or len(value) > siaqueue.MAX_PENDING_REQUESTS \
+            or any(not isinstance(request_id, str)
+                   or re.fullmatch(r"[0-9a-f]{32}", request_id) is None
+                   or isinstance(count, bool) or not isinstance(count, int)
+                   or not 1 <= count <= siaqueue.MAX_REQUEST_BYTES
+                   for request_id, count in value.items()):
+        raise RuntimeError("agent-note redaction receipts are invalid")
+    return copy.deepcopy(value)
+
+
+def _projected_pulse_redactions(memo):
+    """Bind process-local increments to their exact cumulative memo target."""
+    projected = _canonical_pulse_redactions(memo.get("redactions", {}))
+    additions = _canonical_pulse_redactions(REDACTIONS)
+    for organ, count in additions.items():
+        projected[organ] = projected.get(organ, 0) + count
+        if projected[organ] > MAX_JSON_SAFE_INTEGER:
+            raise RuntimeError("pulse publication redactions are invalid")
+    return projected
+
+
+def _pulse_redactions_at_least_memo(memo, value):
+    """Validate a cumulative target that cannot retract durable totals."""
+    current = _canonical_pulse_redactions(memo.get("redactions", {}))
+    candidate = _canonical_pulse_redactions(value)
+    if any(candidate.get(organ, -1) < count
+           for organ, count in current.items()):
+        raise RuntimeError("pulse publication redactions are invalid")
+    return candidate
+
+
+def _recoverable_pulse_redactions(memo, value):
+    """Total redaction-target validator for retained status recovery."""
+    try:
+        return _pulse_redactions_at_least_memo(memo, value)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return None
+
+
 def _pending_pulse_marker(memo):
     """Validate and return a crash-recovery identity for pulse publication."""
     marker = memo.get("pulse_publication")
     if marker is None:
         return None
+    memo_seq = memo.get("pulse_seq")
     required = {"v", "seq", "id", "started_at"}
-    optional = {"ledger", "effects"}
+    optional = {"ledger", "effects", "history", "redactions"}
     if not isinstance(marker, dict) or not required.issubset(marker) \
             or set(marker) - required - optional \
-            or marker.get("v") != 1 \
+            or not _exact_int(marker.get("v"), 1) \
+            or not isinstance(memo_seq, int) \
+            or isinstance(memo_seq, bool) \
+            or not 0 <= memo_seq <= MAX_JSON_SAFE_INTEGER \
             or not isinstance(marker.get("seq"), int) \
             or isinstance(marker.get("seq"), bool) \
-            or marker["seq"] < 0 \
+            or not 0 <= marker["seq"] <= MAX_JSON_SAFE_INTEGER \
+            or marker["seq"] > memo_seq \
             or not isinstance(marker.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
             or not isinstance(marker.get("started_at"), str):
@@ -5492,18 +7160,57 @@ def _pending_pulse_marker(memo):
                 effects["day"], effects["events_pulse"],
                 effects["organs"]) != effects:
             raise RuntimeError("pulse publication effects are invalid")
+    if "history" in marker:
+        if not _status_history_shape([marker["history"]]) \
+                or not _status_history_shape(memo.get("pulse_history")) \
+                or not memo["pulse_history"] \
+                or memo["pulse_history"][-1] != marker["history"] \
+                or "effects" not in marker \
+                or marker["history"][0] != marker["started_at"] \
+                or marker["history"][1] \
+                != marker["effects"]["events_pulse"]:
+            raise RuntimeError("pulse publication history binding is invalid")
+    if "redactions" in marker \
+            and _recoverable_pulse_redactions(
+                memo, marker["redactions"]) is None:
+        raise RuntimeError(
+            "pulse publication redactions binding is invalid")
     return marker
 
 
-def _mark_pulse_publication(memo, seq):
+def _mark_pulse_publication(memo, seq, effects=None, redactions=None):
     """Persist one pulse transaction identity before its first corpus byte."""
+    if effects is not None:
+        if not isinstance(effects, dict) or set(effects) != {
+                "day", "events_pulse", "organs"}:
+            raise RuntimeError("pulse publication effects are invalid")
+        effects = _canonical_pulse_effects(
+            effects["day"], effects["events_pulse"], effects["organs"])
+    if redactions is not None:
+        redactions = _pulse_redactions_at_least_memo(memo, redactions)
     marker = _pending_pulse_marker(memo)
     if marker is not None:
+        if marker["seq"] != seq:
+            raise RuntimeError("pulse publication sequence conflicts")
+        if effects is not None and marker.get("effects") != effects:
+            raise RuntimeError("pulse publication effects conflict")
+        if redactions is not None and marker.get("redactions") != redactions:
+            rebound = dict(marker, redactions=redactions)
+            updated = dict(memo, pulse_publication=rebound)
+            _write_memo(updated)
+            memo.clear()
+            memo.update(updated)
+            return _pending_pulse_marker(memo)
         return marker
-    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+    if not isinstance(seq, int) or isinstance(seq, bool) \
+            or not 0 <= seq <= MAX_JSON_SAFE_INTEGER:
         raise RuntimeError("pulse sequence is invalid")
     marker = {"v": 1, "seq": seq, "id": uuid.uuid4().hex,
               "started_at": iso()}
+    if effects is not None:
+        marker["effects"] = effects
+    if redactions is not None:
+        marker["redactions"] = redactions
     updated = dict(memo, pulse_publication=marker, sync_needed=True)
     _write_memo(updated)
     memo.clear()
@@ -5529,14 +7236,58 @@ def _bind_pending_pulse_effects(memo, day, events_pulse, organs):
     return effects
 
 
+def _pending_pulse_status_effects(memo):
+    """Validate durable counter state awaiting a full status publication."""
+    marker = memo.get("pulse_status_effects_pending")
+    if marker is None:
+        return None
+    if not isinstance(marker, dict) or set(marker) != {
+            "v", "publication_id", "effects", "history"} \
+            or not _exact_int(marker.get("v"), 1) \
+            or not isinstance(marker.get("publication_id"), str) \
+            or re.fullmatch(
+                r"[0-9a-f]{32}", marker["publication_id"]) is None \
+            or not _status_history_shape([marker.get("history")]) \
+            or not _status_history_shape(memo.get("pulse_history")) \
+            or not memo["pulse_history"] \
+            or memo["pulse_history"][-1] != marker["history"]:
+        raise RuntimeError("pulse status-effects handoff is invalid")
+    effects = marker.get("effects")
+    if not isinstance(effects, dict) or set(effects) != {
+            "day", "events_pulse", "organs"}:
+        raise RuntimeError("pulse status-effects handoff is invalid")
+    try:
+        if _canonical_pulse_effects(
+                effects["day"], effects["events_pulse"],
+                effects["organs"]) != effects \
+                or marker["history"][1] != effects["events_pulse"]:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise RuntimeError("pulse status-effects handoff is invalid") \
+            from None
+    return marker
+
+
+def _expected_pulse_publication_history(memo, marker, events_pulse):
+    """Return the one history sequence a named publication can produce."""
+    history = copy.deepcopy(memo.get("pulse_history", []))
+    if not _status_history_shape(history):
+        raise RuntimeError("pulse publication history is invalid")
+    if marker.get("history") is None:
+        history.append([marker["started_at"], events_pulse])
+        history = history[-MAX_PULSE_HISTORY_ROWS:]
+    return history
+
+
 def _canonical_source_cognitive_ids(value):
+    """Validate the compatibility-key IDs selected for policy updates."""
     if not isinstance(value, list) \
             or len(value) > MAX_SOURCE_REPLAY_EVENTS \
             or any(not isinstance(event_id, str)
                    or re.fullmatch(r"[0-9a-f]{64}", event_id) is None
                    for event_id in value) \
             or len(value) != len(set(value)):
-        raise ValueError("source cognitive admission is invalid")
+        raise ValueError("source policy admission is invalid")
     return sorted(value)
 
 
@@ -5548,12 +7299,12 @@ def _pending_source_replay_marker(memo):
     if not isinstance(marker, dict) or set(marker) != {
             "v", "id", "started_at", "started_seq", "sources", "events",
             "effects", "cognitive_ids"} \
-            or marker.get("v") != 1 \
+            or not _exact_int(marker.get("v"), 1) \
             or not isinstance(marker.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
             or isinstance(marker.get("started_seq"), bool) \
             or not isinstance(marker.get("started_seq"), int) \
-            or marker["started_seq"] < 0 \
+            or not 0 <= marker["started_seq"] <= MAX_JSON_SAFE_INTEGER \
             or not isinstance(marker.get("started_at"), str) \
             or not isinstance(marker.get("sources"), list) \
             or len(marker["sources"]) > MAX_SOURCE_REPLAY_SOURCES \
@@ -5595,9 +7346,109 @@ def _pending_source_replay_marker(memo):
                 raise ValueError("event replay identity is duplicated")
             seen[event_id] = event_semantic_identity(event)
         if not set(marker["cognitive_ids"]).issubset(seen):
-            raise ValueError("cognitive admission is not a source event")
+            raise ValueError("policy admission is not a source event")
     except (TypeError, ValueError) as exc:
         raise RuntimeError("source replay marker is invalid") from exc
+    return marker
+
+
+class SourceReplayQuarantine(RuntimeError):
+    """A durable source batch whose historical authority is unknowable."""
+
+
+NOTIFY_BASELINE_ATTEMPT_KEY = "notify_baseline_attempt"
+
+
+def _pending_notify_baseline_attempt(memo):
+    """Validate the write-ahead fence for a first notification baseline."""
+    marker = memo.get(NOTIFY_BASELINE_ATTEMPT_KEY)
+    if marker is None:
+        return None
+    if not isinstance(marker, dict) or set(marker) != {
+            "v", "id", "started_at"} \
+            or not _exact_int(marker.get("v"), 1) \
+            or not isinstance(marker.get("id"), str) \
+            or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
+            or not isinstance(marker.get("started_at"), str):
+        raise RuntimeError(
+            "notification baseline recovery marker is invalid")
+    try:
+        if _canonical_utc_timestamp(marker["started_at"]) \
+                != marker["started_at"]:
+            raise ValueError
+    except ValueError:
+        raise RuntimeError(
+            "notification baseline recovery marker is invalid") from None
+    return marker
+
+
+def _mark_notify_baseline_attempt(memo):
+    marker = _pending_notify_baseline_attempt(memo)
+    if marker is not None:
+        return marker
+    marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
+    updated = dict(memo, **{NOTIFY_BASELINE_ATTEMPT_KEY: marker})
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return marker
+
+
+def _clear_notify_baseline_attempt(memo):
+    if _pending_notify_baseline_attempt(memo) is None:
+        return False
+    updated = dict(memo)
+    updated.pop(NOTIFY_BASELINE_ATTEMPT_KEY, None)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return True
+
+
+def _recover_notify_baseline_attempt(memo, cursors):
+    """Recover a first scan that may have run before cursor publication."""
+    if _pending_notify_baseline_attempt(memo) is None:
+        return cursors
+    try:
+        recovered = _notify_recover_interrupted_baseline(cursors)
+    except (TypeError, ValueError):
+        raise SourceReplayQuarantine(
+            "source replay quarantine: notification baseline recovery "
+            "cursor is ambiguous") from None
+    cursors.clear()
+    cursors.update(recovered)
+    return cursors
+
+
+def _authorize_pending_source_replay(marker, cursors):
+    """Refuse an old notification batch before any recovery can mutate it."""
+    if marker is None:
+        return None
+    events = _source_replay_events(marker)
+    notifications = [
+        event for event in events
+        if event.organ == "notify" and event.kind == "notification"
+        and event.occurrence.startswith("notification:")]
+    if any(not _source_entity_token_is_canonical(
+            event.occurrence.removeprefix("notification:"), "notification")
+            for event in notifications):
+        raise SourceReplayQuarantine(
+            "source replay quarantine: notification event identity is "
+            "invalid")
+    owns_notification_source = "sense_notify" in marker["sources"]
+    if notifications and not owns_notification_source:
+        raise SourceReplayQuarantine(
+            "source replay quarantine: notification event has no "
+            "notification-source ownership")
+    if not owns_notification_source:
+        return marker
+    try:
+        _notify_replay_authority(
+            cursors, allow_opaque=not notifications)
+    except (TypeError, ValueError):
+        raise SourceReplayQuarantine(
+            "source replay quarantine: notification cursor authority is "
+            "ambiguous") from None
     return marker
 
 
@@ -5606,7 +7457,7 @@ def _source_replay_events(marker):
 
 
 def _source_replay_clock(marker):
-    """Return the immutable cognitive timestamp/day bound by a source batch."""
+    """Return the immutable policy timestamp/day bound by a source batch."""
     if not isinstance(marker, dict) \
             or not isinstance(marker.get("started_at"), str):
         raise RuntimeError("source replay clock is invalid")
@@ -5620,7 +7471,8 @@ def _source_replay_clock(marker):
 
 def _source_replay_marker_value(
         memo, seq, sources, events, effects, cognitive_ids=None):
-    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+    if not isinstance(seq, int) or isinstance(seq, bool) \
+            or not 0 <= seq <= MAX_JSON_SAFE_INTEGER:
         raise ValueError("source replay sequence is invalid")
     sources = sorted(set(sources))
     events = list(events)
@@ -5654,7 +7506,7 @@ def _source_replay_marker_value(
     else:
         cognitive_ids = _canonical_source_cognitive_ids(cognitive_ids)
     if not set(cognitive_ids).issubset(records):
-        raise ValueError("source cognitive admission is invalid")
+        raise ValueError("source policy admission is invalid")
     if marker is None:
         marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso(),
                   "started_seq": seq, "sources": sources,
@@ -5664,7 +7516,7 @@ def _source_replay_marker_value(
         if marker["effects"] != effects:
             raise ValueError("source replay effects conflict")
         if marker["cognitive_ids"] != cognitive_ids:
-            raise ValueError("source cognitive admission conflicts")
+            raise ValueError("source policy admission conflicts")
         combined_sources = sorted(set(marker["sources"]) | set(sources))
         if len(combined_sources) > MAX_SOURCE_REPLAY_SOURCES:
             raise ValueError("source replay source batch exceeds its bound")
@@ -5693,16 +7545,18 @@ def _stage_pulse_source_publication(
         dry_run=False):
     """Atomically bind event redo and its exact projected status effects."""
     effects = _canonical_pulse_effects(day, events_pulse, organs)
+    redactions = _projected_pulse_redactions(memo)
     pulse = _pending_pulse_marker(memo)
     if pulse is None:
         pulse = {"v": 1, "seq": seq, "id": uuid.uuid4().hex,
-                 "started_at": iso(), "effects": effects}
+                 "started_at": iso(), "effects": effects,
+                 "redactions": redactions}
     elif pulse["seq"] != seq:
         raise RuntimeError("pulse publication sequence conflicts")
     elif pulse.get("effects") not in (None, effects):
         raise RuntimeError("pulse publication effects conflict")
     else:
-        pulse = dict(pulse, effects=effects)
+        pulse = dict(pulse, effects=effects, redactions=redactions)
     source_memo = memo
     if prepared_source is not None:
         # Revalidate the exact in-memory admission identity through the same
@@ -6010,11 +7864,11 @@ def _pending_dream_marker(memo):
     if marker is None:
         return None
     required = {"v", "id", "started_at"}
-    optional = {"ledger", "cycle"}
+    optional = {"ledger", "cycle", "redactions"}
     if not isinstance(marker, dict) \
             or not required.issubset(marker) \
             or set(marker) - required - optional \
-            or marker.get("v") != 1 \
+            or not _exact_int(marker.get("v"), 1) \
             or not isinstance(marker.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
             or not isinstance(marker.get("started_at"), str):
@@ -6028,6 +7882,11 @@ def _pending_dream_marker(memo):
             "dream publication recovery marker is invalid") from None
     if memo.get("sync_needed") is not True:
         raise RuntimeError("dream publication marker has no publication debt")
+    if "redactions" in marker \
+            and _recoverable_pulse_redactions(
+                memo, marker["redactions"]) is None:
+        raise RuntimeError(
+            "dream publication redactions binding is invalid")
     if "ledger" in marker:
         ledger = marker["ledger"]
         if not isinstance(ledger, dict) or set(ledger) != {
@@ -6072,16 +7931,59 @@ def _pending_dream_marker(memo):
     return marker
 
 
-def _mark_dream_publication(memo):
+def _mark_dream_publication(memo, redactions=None):
+    if redactions is not None:
+        redactions = _pulse_redactions_at_least_memo(memo, redactions)
     marker = _pending_dream_marker(memo)
     if marker is not None:
+        if redactions is not None and marker.get("redactions") != redactions:
+            rebound = dict(marker, redactions=redactions)
+            updated = dict(memo, dream_publication=rebound)
+            _write_memo(updated)
+            memo.clear()
+            memo.update(updated)
+            return _pending_dream_marker(memo)
         return marker
     marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
+    if redactions is not None:
+        marker["redactions"] = redactions
     updated = dict(memo, dream_publication=marker, sync_needed=True)
     _write_memo(updated)
     memo.clear()
     memo.update(updated)
     return marker
+
+
+def _checkpoint_dream_redactions(memo):
+    """Bind diagnostic omissions before any maintenance sink can persist."""
+    marker = _pending_dream_marker(memo)
+    if not REDACTIONS:
+        return marker
+    target = _projected_pulse_redactions(memo)
+    if marker is None:
+        # Independent pre-cycle units have no named publication marker yet.
+        # Make their cumulative omission count durable before their ledger or
+        # generated-entry sink. Once the gbrain cycle starts, the named marker below
+        # provides the stronger crash handoff used by publication recovery.
+        updated = dict(memo, redactions=copy.deepcopy(target))
+        _write_memo(updated)
+        memo.clear()
+        memo.update(updated)
+    else:
+        marker = _mark_dream_publication(memo, target)
+        memo["redactions"] = copy.deepcopy(target)
+        if marker.get("redactions") != memo["redactions"]:
+            raise RuntimeError(
+                "dream publication redactions binding is invalid")
+    REDACTIONS.clear()
+    return marker
+
+
+def _dream_diagnostic(memo, value, limit):
+    """Return inert secret-free detail with a durable cumulative receipt."""
+    detail = clip(redact(value, "status-error"), limit)
+    _checkpoint_dream_redactions(memo)
+    return detail
 
 
 def _bind_pending_dream_ledger(memo, arg1, arg2, content, *, replace=False):
@@ -6124,7 +8026,7 @@ def _settle_pending_dream_ledger(memo):
 
 def _bind_pending_dream_cycle(memo, dream_state, arg1, arg2, content,
                               thought_text, *, urgent=False):
-    """Persist one exact cycle result before status, ledger, or thought."""
+    """Persist one exact cycle result before status, ledger, or generated entry."""
     marker = _pending_dream_marker(memo)
     if marker is None:
         raise RuntimeError("dream cycle has no publication identity")
@@ -6158,7 +8060,7 @@ def _bind_pending_dream_cycle(memo, dream_state, arg1, arg2, content,
 
 
 def _complete_pending_dream_cycle(memo, store):
-    """Idempotently finish a marker-bound cycle row and result thought."""
+    """Idempotently finish a marker-bound cycle row and generated result."""
     marker = _pending_dream_marker(memo)
     if marker is None or "cycle" not in marker:
         return False
@@ -6185,12 +8087,15 @@ def _complete_pending_dream_cycle(memo, store):
 
 
 def _recover_pending_dream_publication(memo):
-    """Sign and clear an interrupted DREAM after projections are current."""
+    """Sign and clear interrupted maintenance after projections are current."""
     marker = _pending_dream_marker(memo)
     if marker is None:
         return False
     if "cycle" in marker:
         raise RuntimeError("dream cycle recovery must complete before publish")
+    if "redactions" in marker:
+        memo["redactions"] = copy.deepcopy(
+            _pulse_redactions_at_least_memo(memo, marker["redactions"]))
     ledger = marker.get("ledger")
     if ledger is not None:
         _settle_pending_dream_ledger(memo)
@@ -6213,181 +8118,10 @@ def _recover_pending_dream_publication(memo):
 
 
 
-_EPOCH_EXEMPLAR_KIND_RE = re.compile(r"^- \S+ ([A-Z][A-Z_]*):")
+_EPOCH_EXEMPLAR_KIND_RE = re.compile(
+    r"^- (?:[0-9]{4}-[0-9]{2}-[0-9]{2} · )?\S+ ([A-Z][A-Z_]*):")
 MAX_EPOCH_EXEMPLARS = 8
-
-
-def _epoch_exemplars(bullets):
-    """Pick the bullets that survive consolidation as a day's exemplars.
-
-    Positional sampling — the first two and the last — was the original rule,
-    and it silently dropped whole classes of event.  Measured: on 2026-08-24
-    SEKHMET's four ``OUTCOME:restart_wireplumber  ok`` rows all sat in the
-    middle of a nineteen-line log, so the epoch recorded that a heal had been
-    *intended* and never that it *succeeded*.  The aggregate counts still said
-    ``outcome: 4`` while no exemplar showed one, which is the worst shape a
-    gist can take: it asserts that something happened and keeps no instance of
-    it, so a rigorous reader must abstain on a fact the machine really did
-    observe.
-
-    Keep the positional anchors, then make sure every distinct event kind the
-    day recorded is represented at least once, bounded so an epoch stays a
-    gist rather than growing back into the day page it replaced.  Order stays
-    chronological.  Compacted originals remain in git either way; this governs
-    what live memory can still answer from.
-    """
-    if not bullets:
-        return []
-    keep, seen = set(), set()
-
-    def take(index):
-        keep.add(index)
-        match = _EPOCH_EXEMPLAR_KIND_RE.match(bullets[index])
-        if match:
-            seen.add(match.group(1))
-
-    for index in list(range(min(2, len(bullets)))) + [len(bullets) - 1]:
-        take(index)
-    for index, bullet in enumerate(bullets):
-        if len(keep) >= MAX_EPOCH_EXEMPLARS:
-            break
-        match = _EPOCH_EXEMPLAR_KIND_RE.match(bullet)
-        if match and match.group(1) not in seen:
-            take(index)
-    return [bullets[index] for index in sorted(keep)]
-
-def _pending_consolidation_marker(memo):
-    marker = memo.get("consolidation_pending", False)
-    if marker is False or marker is None:
-        return None
-    if marker is True:  # pre-structured crash marker; upgraded on recovery
-        return True
-    if not isinstance(marker, dict) or set(marker) not in ({
-            "v", "id", "started_at"}, {
-            "v", "id", "started_at", "ledger"}, {
-            "v", "id", "started_at", "ledger", "applied_at"}) \
-            or marker.get("v") != 1 \
-            or not isinstance(marker.get("id"), str) \
-            or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
-            or not isinstance(marker.get("started_at"), str):
-        raise RuntimeError("consolidation recovery marker is invalid")
-    try:
-        if _canonical_utc_timestamp(marker["started_at"]) \
-                != marker["started_at"]:
-            raise ValueError
-    except ValueError:
-        raise RuntimeError("consolidation recovery marker is invalid") \
-            from None
-    if "ledger" in marker:
-        ledger = marker["ledger"]
-        if not isinstance(ledger, dict) or set(ledger) != {
-                "order", "action", "arg1", "arg2", "content",
-                "record_id"}:
-            raise RuntimeError("consolidation ledger binding is invalid")
-        try:
-            basis = _pending_basis(
-                ledger["order"], ledger["action"], ledger["arg1"],
-                ledger["arg2"], ledger["content"])
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError("consolidation ledger binding is invalid") \
-                from exc
-        expected = {**basis, "record_id": _pending_identity(basis)}
-        if ledger != expected or basis["action"] not in {
-                "DREAM:consolidate", "RECOVER:consolidate"}:
-            raise RuntimeError("consolidation ledger binding is invalid")
-    if "applied_at" in marker:
-        if "ledger" not in marker \
-                or not isinstance(marker["applied_at"], str):
-            raise RuntimeError("consolidation applied marker is invalid")
-        try:
-            if _canonical_utc_timestamp(marker["applied_at"]) \
-                    != marker["applied_at"]:
-                raise ValueError
-        except ValueError:
-            raise RuntimeError(
-                "consolidation applied marker is invalid") from None
-    return marker
-
-
-def _mark_consolidation_pending(memo):
-    marker = _pending_consolidation_marker(memo)
-    if marker is not None:
-        return marker
-    marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
-    updated = dict(memo, consolidation_pending=marker)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
-    return marker
-
-
-def _ensure_structured_consolidation_marker(memo):
-    marker = _pending_consolidation_marker(memo)
-    if marker is not True:
-        return marker
-    marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso()}
-    updated = dict(memo, consolidation_pending=marker)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
-    return marker
-
-
-def _bind_consolidation_ledger(memo, action, arg1, arg2, content=""):
-    marker = _ensure_structured_consolidation_marker(memo)
-    if not isinstance(marker, dict):
-        raise RuntimeError("consolidation has no recovery identity")
-    if "ledger" in marker:
-        return marker["ledger"]
-    basis = _pending_basis(time.time_ns(), action, arg1, arg2, content)
-    ledger = {**basis, "record_id": _pending_identity(basis)}
-    probe = {"schema": LEDGER_PENDING_SCHEMA,
-             "record_id": ledger["record_id"], "queued_at": iso(), **basis}
-    if len((json.dumps(
-            probe, sort_keys=True, separators=(",", ":"),
-            ensure_ascii=False) + "\n").encode("utf-8")) \
-            > MAX_LEDGER_PENDING_RECORD_BYTES:
-        raise ValueError("consolidation ledger binding exceeds record bound")
-    rebound = dict(marker, ledger=ledger)
-    updated = dict(memo, consolidation_pending=rebound)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
-    return ledger
-
-
-def _settle_consolidation_ledger(memo):
-    marker = _pending_consolidation_marker(memo)
-    if not isinstance(marker, dict) or "ledger" not in marker:
-        raise RuntimeError("consolidation ledger binding is absent")
-    ledger = marker["ledger"]
-    path = queue_ledger_transition(
-        ledger["order"], ledger["action"], ledger["arg1"],
-        ledger["arg2"], ledger["content"])
-    _settle_ledger_transition(path)
-    return ledger
-
-
-def _mark_consolidation_applied(memo):
-    marker = _pending_consolidation_marker(memo)
-    if not isinstance(marker, dict) or "ledger" not in marker:
-        raise RuntimeError("consolidation ledger must bind before apply")
-    if "applied_at" in marker:
-        return marker
-    rebound = dict(marker, applied_at=iso())
-    updated = dict(memo, consolidation_pending=rebound)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
-    return rebound
-
-
-def _clear_consolidation_marker(memo):
-    updated = dict(memo)
-    updated.pop("consolidation_pending", None)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
+MAX_WEEKLY_EPOCH_EXEMPLARS = 24
 
 
 @contextlib.contextmanager
@@ -6415,7 +8149,7 @@ def _settle_pending_publication(memo, message, *, clear=True):
         raise RuntimeError("pending corpus git commit failed")
     synced, sync_note = brain_sync()
     if not synced:
-        raise RuntimeError(f"pending brain sync failed: {sync_note}")
+        raise RuntimeError(f"pending index sync failed: {sync_note}")
     try:
         _export_graph_publication()
     except Exception as exc:
@@ -6430,8 +8164,747 @@ def _settle_pending_publication(memo, message, *, clear=True):
         memo.update(updated)
 
 
+_RECOVERABLE_STATUS_KEYS = frozenset({
+    "v", "version", "ts", "state", "pulse_seq", "day",
+    "publication_id", "graph_publication_id", "events_pulse",
+    "events_today", "organs", "errors", "pages", "graph_nodes",
+    "graph_edges", "integrity", "ledger", "ledger_transition", "thought",
+    "dream", "history", "workspace", "mind", "takes", "intents",
+    "bench_trend", "bench_trend_boundary", "projection_debt",
+    "agent_queue", "redactions", "sync_note",
+})
+_EFFECTLESS_STATUS_VERSIONS = frozenset({"1.7.7", "1.7.8"})
+_LEGACY_EFFECTLESS_STATUS_KEYS = (
+    _RECOVERABLE_STATUS_KEYS - {"graph_publication_id"})
+_STATUS_MIND_COUNT_KEYS = frozenset({
+    "nodes", "edges", "decay_active", "decay_demoted",
+    "rehearsal_eligible", "rehearsal_due", "pinned",
+})
+_STATUS_AGENT_QUEUE_KEYS = frozenset({
+    "materialized", "refused", "acknowledged",
+})
+_STATUS_TAKE_KEYS = frozenset({
+    "open", "due", "resolved", "brier", "calibration_status",
+    "monitoring_display_eligible", "unresolvable", "invalid_resolved",
+    "invalid_records",
+})
+_STATUS_TAKE_COUNT_KEYS = _STATUS_TAKE_KEYS - {
+    "brier", "calibration_status", "monitoring_display_eligible",
+}
+_STATUS_CALIBRATION_STATES = frozenset({
+    "no-resolved-outcomes", "single-case", "descriptive-series",
+    "outcome-imbalanced", "monitoring-population",
+})
+_STATUS_THOUGHT_ORIGINS = THOUGHT_ORIGINS | {"legacy-unlabeled"}
+
+
+def _nonnegative_status_integer(value):
+    return not isinstance(value, bool) and isinstance(value, int) \
+        and 0 <= value <= MAX_JSON_SAFE_INTEGER
+
+
+def _status_calendar_date(value):
+    if not isinstance(value, str) \
+            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+        return False
+    try:
+        return datetime.date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
+
+
+def _status_history_shape(value):
+    if not isinstance(value, list) \
+            or len(value) > MAX_PULSE_HISTORY_ROWS:
+        return False
+    for row in value:
+        if not isinstance(row, list) or len(row) != 2 \
+                or not _nonnegative_status_integer(row[1]):
+            return False
+        try:
+            if _canonical_utc_timestamp(row[0]) != row[0]:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _status_chains_shape(value):
+    # Every configured row yields at most one chain or refusal, alongside the
+    # four possible built-in chains.  Reject pre-bound cached rosters too so an
+    # oversized legacy memo cannot keep expanding status and CLI consumers.
+    max_rows = MAX_CONFIGURED_CHAINS + len(
+        {"sia", "custos", "sekhmet", "aegis"})
+    return isinstance(value, dict) and "sia" in value \
+        and len(value) <= max_rows and all(
+        _strict_config_string(
+            name, nonempty=True, limit=MAX_SOURCE_NAME_CHARS)
+        and sanitize_slugpart(name) == name
+        and isinstance(verdict, str)
+        and verdict in {"pass", "fail", "absent"}
+        for name, verdict in value.items())
+
+
+def _cached_chain_sweep(memo):
+    """Return a complete cached sweep and its real observation time."""
+    chains = memo.get("chains") if isinstance(memo, dict) else None
+    checked_at = (
+        memo.get("chains_checked_at") if isinstance(memo, dict) else None)
+    if not _status_chains_shape(chains):
+        return None
+    try:
+        if _canonical_utc_timestamp(checked_at) != checked_at:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return copy.deepcopy(chains), checked_at
+
+
+def _status_publication_id(value, *, empty=False):
+    return isinstance(value, str) and (
+        empty and value == ""
+        or re.fullmatch(r"[0-9a-f]{32}", value) is not None)
+
+
+def _status_ledger_shape(value):
+    if not isinstance(value, dict) or set(value) != {"seq", "head"} \
+            or not _nonnegative_status_integer(value.get("seq")) \
+            or not isinstance(value.get("head"), str):
+        return False
+    return (value["seq"] == 0 and value["head"] == "") \
+        or (value["seq"] > 0
+            and re.fullmatch(r"[0-9a-f]{12}", value["head"]) is not None)
+
+
+def _status_thought_shape(value):
+    if not isinstance(value, dict) \
+            or set(value) != {"ts", "kind", "text", "origin"} \
+            or value.get("origin") not in _STATUS_THOUGHT_ORIGINS:
+        return False
+    if value["ts"] == "":
+        return value["kind"] == "" and value["text"] == "" \
+            and value["origin"] == "legacy-unlabeled"
+    if not _status_display_string(
+            value.get("kind"), nonempty=True,
+            limit=MAX_THOUGHT_INBOX_TEXT) \
+            or sanitize_slugpart(value["kind"]) != value["kind"] \
+            or not _status_display_string(
+                value.get("text"), nonempty=True,
+                limit=MAX_THOUGHT_INBOX_TEXT):
+        return False
+    try:
+        return _canonical_utc_timestamp(value["ts"]) == value["ts"]
+    except (TypeError, ValueError):
+        return False
+
+
+def _status_thought_projection(value):
+    """Project a store row, or expose the exact unlabeled-empty boundary."""
+    value = value if isinstance(value, dict) else {}
+    origin = value.get("origin")
+    if origin not in THOUGHT_ORIGINS:
+        origin = "legacy-unlabeled"
+    projected = {
+        "ts": value.get("ts", ""), "kind": value.get("kind", ""),
+        "text": value.get("text", ""), "origin": origin,
+    }
+    if _status_thought_shape(projected):
+        return projected
+    return {"ts": "", "kind": "", "text": "",
+            "origin": "legacy-unlabeled"}
+
+
+def _status_dream_shape(value):
+    if value == {}:
+        return True
+    if not isinstance(value, dict):
+        return False
+    keys = set(value)
+    if keys == {"last", "status", "summary"}:
+        try:
+            return _canonical_utc_timestamp(value["last"]) == value["last"] \
+                and value.get("status") in {"ok", "clean", "partial"} \
+                and _status_display_string(
+                    value.get("summary"), limit=400)
+        except (TypeError, ValueError):
+            return False
+    if keys != {"last", "attempt", "status", "summary"} \
+            or not _status_display_string(
+                value.get("status"), nonempty=True, limit=80) \
+            or not _status_display_string(
+                value.get("summary"), limit=160):
+        return False
+    try:
+        if value["last"] and _canonical_utc_timestamp(value["last"]) \
+                != value["last"]:
+            return False
+        return _canonical_utc_timestamp(value["attempt"]) == value["attempt"]
+    except (TypeError, ValueError):
+        return False
+
+
+def _status_takes_shape(value):
+    if value == {}:
+        return True
+    if not isinstance(value, dict) or set(value) != _STATUS_TAKE_KEYS \
+            or any(not _nonnegative_status_integer(value.get(key))
+                   for key in _STATUS_TAKE_COUNT_KEYS) \
+            or value["due"] > value["open"] \
+            or value.get("calibration_status") \
+                not in _STATUS_CALIBRATION_STATES \
+            or not isinstance(value.get("monitoring_display_eligible"), bool):
+        return False
+    brier = value.get("brier")
+    if brier is not None and (
+            isinstance(brier, bool) or not isinstance(brier, (int, float))
+            or not math.isfinite(brier) or not 0 <= brier <= 1):
+        return False
+    status = value["calibration_status"]
+    resolved = value["resolved"]
+    if (status == "no-resolved-outcomes") != (resolved == 0) \
+            or (brier is None) != (resolved == 0) \
+            or (status == "single-case") != (resolved == 1) \
+            or value["monitoring_display_eligible"] \
+                != (status == "monitoring-population"):
+        return False
+    if resolved < siatakes.CALIBRATION_MIN_RESOLVED:
+        expected = ("no-resolved-outcomes" if resolved == 0 else
+                    "single-case" if resolved == 1 else
+                    "descriptive-series")
+        if status != expected:
+            return False
+    elif status not in {"outcome-imbalanced", "monitoring-population"}:
+        return False
+    return True
+
+
+def _status_display_string(value, *, nonempty=False, limit):
+    """Recognize a bounded inert string with no omitted secret-shaped span."""
+    return _strict_config_string(
+        value, nonempty=nonempty, limit=limit) \
+        and inert_summary(value) == value \
+        and _redaction_projection(value) == (value, 0)
+
+
+def _status_errors_shape(value):
+    if not isinstance(value, dict) \
+            or len(value) > MAX_LEDGER_PENDING_RECORDS:
+        return False
+    for name, detail in value.items():
+        if not _status_display_string(
+                name, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
+            return False
+        if isinstance(detail, str):
+            if not _status_display_string(detail, limit=160):
+                return False
+            continue
+        if not isinstance(detail, list) \
+                or len(detail) > MAX_LEDGER_PENDING_RECORDS:
+            return False
+        for row in detail:
+            if not isinstance(row, dict) \
+                    or set(row) not in ({"file", "error"},
+                                        {"config", "error"}):
+                return False
+            label = row.get("file", row.get("config"))
+            if not _status_display_string(
+                    label, nonempty=True, limit=MAX_CONFIG_PATH_CHARS) \
+                    or not _status_display_string(
+                        row.get("error"), limit=160):
+                return False
+    return True
+
+
+def _redacted_status_errors(value):
+    """Sanitize the producer's bounded error union before publication."""
+    refused = {"status_projection":
+               "malformed status error detail refused"}
+    if not isinstance(value, dict) \
+            or len(value) > MAX_LEDGER_PENDING_RECORDS:
+        return refused
+    result = {}
+    for name, detail in value.items():
+        if not isinstance(name, str):
+            return refused
+        safe_name = clip(redact(name, "status-error"),
+                         MAX_SOURCE_NAME_CHARS)
+        if not _status_display_string(
+                safe_name, nonempty=True, limit=MAX_SOURCE_NAME_CHARS) \
+                or safe_name in result:
+            return refused
+        if isinstance(detail, str):
+            result[safe_name] = clip(
+                redact(detail, "status-error"), 160)
+            continue
+        if not isinstance(detail, list):
+            return refused
+        if len(detail) > MAX_LEDGER_PENDING_RECORDS:
+            return refused
+        rows = []
+        for row in detail:
+            if not isinstance(row, dict) \
+                    or set(row) not in ({"file", "error"},
+                                        {"config", "error"}):
+                return refused
+            sanitized = {}
+            for field, raw in row.items():
+                if not isinstance(raw, str):
+                    return refused
+                limit = MAX_CONFIG_PATH_CHARS if field != "error" else 160
+                sanitized[field] = clip(
+                    redact(raw, "status-error"), limit)
+            rows.append(sanitized)
+        result[safe_name] = rows
+    return result if _status_errors_shape(result) else refused
+
+
+def _status_redactions_shape(value):
+    return isinstance(value, dict) \
+        and len(value) <= MAX_LEDGER_PENDING_RECORDS \
+        and all(_strict_config_string(
+                    organ, nonempty=True, limit=MAX_SOURCE_NAME_CHARS)
+                and sanitize_slugpart(organ) == organ
+                and _nonnegative_status_integer(count)
+                for organ, count in value.items())
+
+
+def _status_workspace_shape(value):
+    if not isinstance(value, list) or len(value) > siamind.WORKSPACE_K:
+        return False
+    seen = set()
+    for row in value:
+        try:
+            if _canonical_corpus_slug(row) != row or row in seen:
+                return False
+        except (TypeError, ValueError):
+            return False
+        seen.add(row)
+    return True
+
+
+def _status_intents_shape(value):
+    if not isinstance(value, list) or len(value) > MAX_STATUS_INTENTS:
+        return False
+    for row in value:
+        if not isinstance(row, dict) or set(row) != {
+                "id", "text", "due", "days_left"} \
+                or not isinstance(row.get("id"), str) \
+                or re.fullmatch(r"[0-9a-f]{10}", row["id"]) is None \
+                or not _status_display_string(
+                    row.get("text"), nonempty=True, limit=70) \
+                or not _status_calendar_date(row.get("due")) \
+                or isinstance(row.get("days_left"), bool) \
+                or not isinstance(row.get("days_left"), int) \
+                or abs(row["days_left"]) > MAX_JSON_SAFE_INTEGER:
+            return False
+    return True
+
+
+def _status_bench_trend_shape(value):
+    if not isinstance(value, list) or len(value) > MAX_BENCH_TREND_ROWS:
+        return False
+    for row in value:
+        metric = row.get("slug_match_at_5") if isinstance(row, dict) else None
+        if not isinstance(row, dict) or set(row) != {
+                "date", "slug_match_at_5", "kind"} \
+                or not _status_calendar_date(row.get("date")) \
+                or not isinstance(metric, (int, float)) \
+                or isinstance(metric, bool) or not math.isfinite(metric) \
+                or not 0 <= metric <= 1 \
+                or row.get("kind") != \
+                "heuristic-slug-retrieval-drift-tripwire":
+            return False
+    return True
+
+
+def _recoverable_status_integrity_checked(value):
+    """Return a valid retained verdict, else refuse a hybrid status overlay."""
+    if not isinstance(value, dict) \
+            or set(value) != _RECOVERABLE_STATUS_KEYS \
+            or type(value.get("v")) is not int or value["v"] not in {1, 2} \
+            or value.get("version") != VERSION \
+            or not isinstance(value.get("state"), str) \
+            or value.get("state") not in {
+                "failed", "degraded", "thinking", "ok"} \
+            or not _status_calendar_date(value.get("day")) \
+            or any(not _nonnegative_status_integer(value.get(key))
+                   for key in (
+                       "pulse_seq", "events_pulse", "events_today", "pages",
+                       "graph_nodes", "graph_edges")) \
+            or not _status_publication_id(value.get("publication_id")) \
+            or not _status_publication_id(
+                value.get("graph_publication_id"), empty=True) \
+            or value.get("graph_nodes") > MAX_GRAPH_NODES \
+            or value.get("graph_edges") > MAX_GRAPH_EDGES \
+            or value.get("graph_nodes") > value.get("pages") \
+            or value.get("graph_nodes") == 0 \
+            and value.get("graph_edges") != 0 \
+            or value.get("graph_publication_id") == "" and any(
+                value.get(key) != 0
+                for key in ("pages", "graph_nodes", "graph_edges")) \
+            or not isinstance(value.get("organs"), dict) \
+            or not _status_errors_shape(value.get("errors")) \
+            or not _status_display_string(
+                value.get("sync_note"), limit=400):
+        return None
+    try:
+        if _canonical_pulse_effects(
+                value["day"], value["events_pulse"],
+                value["organs"]) != {
+                    "day": value["day"],
+                    "events_pulse": value["events_pulse"],
+                    "organs": value["organs"],
+                } or value["events_today"] != sum(
+                    state["today"] for state in value["organs"].values()):
+            return None
+    except (TypeError, ValueError, RuntimeError):
+        return None
+    try:
+        if _canonical_utc_timestamp(value["ts"]) != value["ts"]:
+            return None
+    except (TypeError, ValueError):
+        return None
+    projection = value.get("projection_debt")
+    mind = value.get("mind")
+    agent_queue = value.get("agent_queue")
+    ledger = value.get("ledger")
+    ledger_transition = value.get("ledger_transition")
+    if not isinstance(projection, dict) \
+            or set(projection) != {"graph", "consolidation"} \
+            or any(not _status_display_string(projection[key], limit=400)
+                   for key in projection) \
+            or not isinstance(mind, dict) \
+            or set(mind) != (_STATUS_MIND_COUNT_KEYS | (
+                {"familiarity_status"} if value["v"] == 2 else set())) \
+            or any(not _nonnegative_status_integer(mind[key])
+                   for key in _STATUS_MIND_COUNT_KEYS) \
+            or value["v"] == 2 and (
+                not isinstance(mind.get("familiarity_status"), str)
+                or mind["familiarity_status"] not in {
+                    "complete", "incomplete", "bootstrap-pending"}) \
+            or mind["decay_active"] + mind["decay_demoted"] \
+                != mind["edges"] \
+            or mind["rehearsal_due"] > mind["rehearsal_eligible"] \
+            or mind["rehearsal_eligible"] > mind["nodes"] \
+            or mind["pinned"] > mind["nodes"] \
+            or not isinstance(agent_queue, dict) \
+            or set(agent_queue) != _STATUS_AGENT_QUEUE_KEYS \
+            or any(not _nonnegative_status_integer(agent_queue[key])
+                   for key in agent_queue) \
+            or agent_queue["materialized"] \
+                > siaqueue.MAX_PENDING_REQUESTS \
+            or agent_queue["acknowledged"] \
+                > agent_queue["materialized"] \
+            or agent_queue["refused"] \
+                > siaqueue.MAX_PENDING_REQUESTS + 1 \
+            or not _status_ledger_shape(ledger) \
+            or not isinstance(ledger_transition, dict) \
+            or set(ledger_transition) != {
+                "state", "recovered", "pending_errors"} \
+            or not isinstance(ledger_transition.get("state"), str) \
+            or ledger_transition.get("state") not in {
+                "not-required", "signed", "pending"} \
+            or not _nonnegative_status_integer(
+                ledger_transition.get("recovered")) \
+            or not _nonnegative_status_integer(
+                ledger_transition.get("pending_errors")) \
+            or ledger_transition["recovered"] \
+                > MAX_LEDGER_PENDING_RECORDS \
+            or ledger_transition["pending_errors"] != 0 \
+            or ledger_transition["state"] == "pending" \
+                and not value["errors"] \
+            or not _status_thought_shape(value.get("thought")) \
+            or not _status_dream_shape(value.get("dream")) \
+            or not _status_history_shape(value.get("history")) \
+            or not _status_workspace_shape(value.get("workspace")) \
+            or not _status_takes_shape(value.get("takes")) \
+            or not _status_intents_shape(value.get("intents")) \
+            or not _status_bench_trend_shape(value.get("bench_trend")) \
+            or not isinstance(value.get("bench_trend_boundary"), dict) \
+            or set(value["bench_trend_boundary"]) != {
+                "legacy_truncated"} \
+            or not isinstance(
+                value["bench_trend_boundary"].get("legacy_truncated"), bool) \
+            or not _status_redactions_shape(value.get("redactions")):
+        return None
+    integrity = value.get("integrity")
+    if not isinstance(integrity, dict) \
+            or set(integrity) != {"chains", "verdict", "checked_at"} \
+            or not _status_chains_shape(integrity.get("chains")):
+        return None
+    try:
+        if _canonical_utc_timestamp(integrity["checked_at"]) \
+                != integrity["checked_at"]:
+            return None
+    except (TypeError, ValueError):
+        return None
+    chain_values = set(integrity["chains"].values())
+    verdict = ("fail" if "fail" in chain_values else
+               "degraded" if "absent" in chain_values else "pass")
+    if integrity.get("verdict") != verdict \
+            or integrity["chains"].get("sia") == "pass" \
+            and ledger["seq"] == 0 \
+            or verdict == "fail" and value["state"] != "failed" \
+            or value["state"] in {"ok", "thinking"} and verdict != "pass" \
+            or value["state"] in {"ok", "thinking"} \
+            and (value["errors"] or value["sync_note"]):
+        return None
+    return verdict
+
+
+def _recoverable_status_integrity(value):
+    """Total retained-status validator for arbitrary strict-JSON values."""
+    try:
+        return _recoverable_status_integrity_checked(value)
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return None
+
+
+def _recoverable_legacy_effectless_status_integrity(value):
+    """Validate only the frozen status roster emitted by effectless markers."""
+    if not isinstance(value, dict) \
+            or set(value) != _LEGACY_EFFECTLESS_STATUS_KEYS \
+            or not isinstance(value.get("version"), str) \
+            or value["version"] not in _EFFECTLESS_STATUS_VERSIONS:
+        return None
+    legacy_ledger = value.get("ledger")
+    recoverable_empty_ledger = (
+        isinstance(legacy_ledger, dict)
+        and set(legacy_ledger) == {"seq", "head"}
+        and _exact_int(legacy_ledger.get("seq"), 0)
+        and legacy_ledger.get("head") == "")
+    # Frozen producers predate graph-generation identities but could still
+    # report nonempty graph counts.  Supply a canonical validation-only
+    # identity so the current empty-ID/zero-count invariant does not erase
+    # that exact historical shape; recovery below still cannot treat those
+    # unbound counts as a published current graph generation.
+    normalized = dict(
+        value, version=VERSION,
+        graph_publication_id=value.get("publication_id"))
+    if recoverable_empty_ledger \
+            and normalized.get("integrity", {}).get("chains", {}).get(
+                "sia") == "pass":
+        # The frozen producer could independently verify the keeper and then
+        # swallow a second head-read failure. Preserve that exact historical
+        # crash image without admitting the mismatch for current publishers.
+        normalized["ledger"] = {"seq": 1, "head": "0" * 12}
+    return _recoverable_status_integrity(normalized)
+
+
+def _expected_legacy_effectless_history(memo, status, events_pulse):
+    """Bind a frozen-runtime status row to its exact durable memo prefix."""
+    history = copy.deepcopy(memo.get("pulse_history", []))
+    status_history = status.get("history")
+    if not _status_history_shape(history) \
+            or not _status_history_shape(status_history) \
+            or not status_history \
+            or status_history[-1][1] != events_pulse:
+        raise RuntimeError(
+            "effectless pulse publication recovery is ambiguous")
+    history.append(copy.deepcopy(status_history[-1]))
+    history = history[-MAX_PULSE_HISTORY_ROWS:]
+    if status_history != history:
+        raise RuntimeError(
+            "effectless pulse publication recovery is ambiguous")
+    return history
+
+
+def _status_release_tuple(value):
+    if not _strict_config_string(
+            value, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
+        return None
+    match = re.fullmatch(
+        r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value)
+    if match is None:
+        return None
+    parts = tuple(int(part) for part in match.groups())
+    return parts if all(part <= MAX_JSON_SAFE_INTEGER for part in parts) \
+        else None
+
+
+def _pending_brainstem_failure_publication(memo):
+    """Validate a current replay or a narrowly retireable older journal."""
+    marker = memo.get("brainstem_failure_pending") \
+        if isinstance(memo, dict) else None
+    if marker is None:
+        return None
+    status = marker.get("status") if isinstance(marker, dict) else None
+    if isinstance(marker, dict) and set(marker) == {"v", "status"} \
+            and _exact_int(marker.get("v"), 1):
+        if _recoverable_status_integrity(status) is None \
+                or status.get("state") != "failed" \
+                or status.get("redactions") != memo.get("redactions", {}):
+            raise RuntimeError(
+                "brainstem failure publication marker is invalid")
+        return marker
+    if not isinstance(marker, dict) \
+            or set(marker) != {"v", "producer_version", "status"} \
+            or not _exact_int(marker.get("v"), 2):
+        raise RuntimeError("brainstem failure publication marker is invalid")
+    producer = marker.get("producer_version")
+    producer_release = _status_release_tuple(producer)
+    current_release = _status_release_tuple(VERSION)
+    if producer_release is None or current_release is None \
+            or not isinstance(status, dict) \
+            or type(status.get("v")) is not int or status["v"] not in {1, 2} \
+            or status.get("version") != producer \
+            or status.get("state") != "failed" \
+            or not _nonnegative_status_integer(status.get("pulse_seq")) \
+            or not _status_publication_id(status.get("publication_id")) \
+            or not _status_redactions_shape(status.get("redactions")) \
+            or status.get("redactions") != memo.get("redactions", {}):
+        raise RuntimeError("brainstem failure publication marker is invalid")
+    try:
+        if _canonical_utc_timestamp(status["ts"]) != status["ts"]:
+            raise RuntimeError(
+                "brainstem failure publication marker is invalid")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "brainstem failure publication marker is invalid") from exc
+    if producer_release > current_release:
+        raise RuntimeError(
+            "brainstem failure publication marker is from a newer runtime")
+    if producer_release == current_release \
+            and _recoverable_status_integrity(status) is None:
+        raise RuntimeError("brainstem failure publication marker is invalid")
+    return marker
+
+
+def _finish_brainstem_failure_publication(memo, marker):
+    """Replay this schema, or retire an older failure before new work."""
+    if marker is None:
+        return False
+    producer = marker.get("producer_version", VERSION)
+    if producer == VERSION:
+        export_status(marker["status"])
+    updated = dict(memo)
+    updated.pop("brainstem_failure_pending", None)
+    # A superseded failure still requires a successful current pulse before
+    # memory readiness can return, even though its incompatible display bytes
+    # cannot safely be republished by this runtime.
+    if producer != VERSION:
+        updated.pop("ready", None)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    if producer != VERSION:
+        log("retired superseded brainstem failure publication from "
+            + producer)
+    return True
+
+
+def _settle_pending_brainstem_failure_publication(memo):
+    marker = _pending_brainstem_failure_publication(memo)
+    return _finish_brainstem_failure_publication(memo, marker)
+
+
+def _checkpoint_status_error_redactions(memo):
+    """Atomically bind late daemon-log omissions to every active journal."""
+    if not REDACTIONS:
+        return False
+    target = _projected_pulse_redactions(memo)
+    updated = dict(memo, redactions=copy.deepcopy(target))
+    pulse_marker = _pending_pulse_marker(memo)
+    if pulse_marker is not None:
+        updated["pulse_publication"] = dict(
+            pulse_marker, redactions=copy.deepcopy(target))
+    dream_marker = _pending_dream_marker(memo)
+    if dream_marker is not None:
+        updated["dream_publication"] = dict(
+            dream_marker, redactions=copy.deepcopy(target))
+    failure_marker = _pending_brainstem_failure_publication(memo)
+    if failure_marker is not None:
+        producer = failure_marker.get("producer_version", VERSION)
+        if producer != VERSION:
+            raise RuntimeError(
+                "cannot rebind a superseded failure publication")
+        status = dict(
+            failure_marker["status"], redactions=copy.deepcopy(target),
+            publication_id=uuid.uuid4().hex, ts=iso())
+        if _recoverable_status_integrity(status) is None:
+            raise RuntimeError(
+                "rebound failure status projection is invalid")
+        updated["brainstem_failure_pending"] = dict(
+            failure_marker, status=status)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    REDACTIONS.clear()
+    return True
+
+
+def _require_status_memo_fields(memo):
+    """Withdraw readiness before refusing memo fields copied into status."""
+    history = memo.get("pulse_history", []) if isinstance(memo, dict) else None
+    dream_state = memo.get("dream", {}) if isinstance(memo, dict) else None
+    redactions = memo.get("redactions", {}) if isinstance(memo, dict) else None
+    note_receipts = memo.get("agent_note_redaction_receipts") \
+        if isinstance(memo, dict) else None
+    valid = (
+        isinstance(memo, dict)
+        and "brainstem_failure_pending" not in memo
+        and _status_history_shape(history)
+        and _status_dream_shape(dream_state)
+        and _status_redactions_shape(redactions))
+    if valid:
+        try:
+            _agent_note_redaction_receipts(note_receipts)
+        except RuntimeError:
+            valid = False
+    if valid:
+        return
+    if isinstance(memo, dict) and "ready" in memo:
+        updated = dict(memo)
+        updated.pop("ready", None)
+        _write_memo(updated)
+        memo.clear()
+        memo.update(updated)
+    raise RuntimeError("brainstem status memo fields are invalid")
+
+
+_STATUS_ADMISSION_REQUIRED = object()
+
+
+def _require_status_sequence_not_ahead(memo_sequence):
+    """Refuse a retained publication that outruns the durable allocator."""
+    if not _nonnegative_status_integer(memo_sequence):
+        raise ValueError("brainstem pulse sequence is invalid")
+    try:
+        status = read_state_json(
+            STATUS_PATH, None, "resident status", expected_type=dict)
+    except RuntimeError as exc:
+        raise ValueError("resident status cannot be admitted") from exc
+    if status is None:
+        return None
+    current = _recoverable_status_integrity(status)
+    legacy = _recoverable_legacy_effectless_status_integrity(status)
+    if current is None and legacy is None:
+        raise ValueError("resident status cannot be admitted")
+    if status["pulse_seq"] > memo_sequence:
+        raise ValueError(
+            "resident status pulse sequence exceeds the durable memo")
+    return status
+
+
+def _require_status_admission_unchanged(admitted_status):
+    if admitted_status is not None \
+            and _recoverable_status_integrity(admitted_status) is None \
+            and _recoverable_legacy_effectless_status_integrity(
+                admitted_status) is None:
+        raise RuntimeError("resident status admission is invalid")
+    try:
+        current = read_state_json(
+            STATUS_PATH, None, "resident status", expected_type=dict)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "resident status changed after admission") from exc
+    if current != admitted_status:
+        raise RuntimeError("resident status changed after admission")
+    return copy.deepcopy(admitted_status) if admitted_status is not None else {}
+
+
 def _recover_pending_thought_projection(memo, store):
-    """Rejoin every page-first thought and its rehearsal before new work."""
+    """Rejoin every page-first generated entry and its review before new work."""
     pending = memo.get("sync_needed", False)
     if not isinstance(pending, bool):
         raise RuntimeError("brainstem memo sync-needed state is invalid")
@@ -6444,14 +8917,14 @@ def _recover_pending_thought_projection(memo, store):
             # the old daemon is stopped. Drain every individually bounded
             # baseline generation there so a large upgrade does not require
             # an unknown number of manual installer reruns. Ordinary daemon
-            # pulses commit one generation and visibly retry next heartbeat.
+            # pulses commit one generation and visibly retry next pulse cycle.
             if os.environ.get("SIA_BACKFILL") != "1":
                 raise
             continue
 
 
 def _settle_thought_page_signals(store, mind=None):
-    """Commit bounded thought claims to both states before acknowledgment."""
+    """Commit bounded generated-entry records to both states before acknowledgment."""
     if _CORPUS_OWNER_DEPTH.get() <= 0:
         with corpus_owner():
             return _settle_thought_page_signals(store, mind=mind)
@@ -6511,6 +8984,7 @@ def _settle_thought_page_signals(store, mind=None):
 
 def _recover_pending_pulse_publication(memo):
     """Sign and clear an interrupted pulse after projections are current."""
+    _pending_pulse_status_effects(memo)
     marker = _pending_pulse_marker(memo)
     if marker is None:
         return False
@@ -6538,39 +9012,110 @@ def _recover_pending_pulse_publication(memo):
     marker = _pending_pulse_marker(memo)
     source_pending = _pending_source_replay_marker(memo) is not None
     effects = marker.get("effects")
+    recovered_redactions = copy.deepcopy(marker.get("redactions"))
+    current = None
+    expected_history = None
+    if effects is None and not source_pending:
+        # Pre-contract runtimes could create a named publication marker
+        # without binding its status effects. Recover those effects only from
+        # a complete status carrying the exact marker identity and sequence;
+        # without that durable binding, clearing the marker would silently
+        # bless unknown counters.
+        current = read_json(STATUS_PATH, {})
+        retained_verdict = _recoverable_status_integrity(current)
+        legacy_effectless = False
+        if retained_verdict is None:
+            retained_verdict = \
+                _recoverable_legacy_effectless_status_integrity(current)
+            legacy_effectless = retained_verdict is not None
+        if retained_verdict is None \
+                or current.get("publication_id") != marker["id"] \
+                or current.get("pulse_seq") != marker["seq"]:
+            raise RuntimeError(
+                "effectless pulse publication recovery is ambiguous")
+        effects = _canonical_pulse_effects(
+            current["day"], current["events_pulse"], current["organs"])
+        if legacy_effectless:
+            expected_history = _expected_legacy_effectless_history(
+                memo, current, effects["events_pulse"])
+            recovered_redactions = _recoverable_pulse_redactions(
+                memo, current.get("redactions"))
+            if recovered_redactions is None:
+                raise RuntimeError(
+                    "effectless pulse publication recovery is ambiguous")
+        else:
+            expected_history = _expected_pulse_publication_history(
+                memo, marker, effects["events_pulse"])
+        if current.get("history") != expected_history:
+            raise RuntimeError(
+                "effectless pulse publication recovery is ambiguous")
+    effects_published = False
+    published_history = None
     # A page-prefix crash still has exact source work to replay. Its planned
     # counters are authoritative only after that batch reaches every page,
-    # mind, and cursor boundary; applying them here would make the isolated
+    # policy-state and cursor boundary; applying them here would make the isolated
     # replay count the missing suffix twice.
     if effects is not None and not source_pending:
-        current = read_json(STATUS_PATH, {})
-        if not isinstance(current, dict):
-            current = {}
-        if current.get("publication_id") != marker["id"]:
-            recovered_graph = read_json(GRAPH_PATH, {})
-            if not isinstance(recovered_graph, dict):
-                recovered_graph = {}
-            recovered_errors = current.get("errors", {})
-            if not isinstance(recovered_errors, dict):
-                recovered_errors = {}
-            recovered_errors = dict(
-                recovered_errors,
-                publication_recovery="recovered interrupted pulse status")
-            organs = copy.deepcopy(effects["organs"])
-            recovered = dict(
-                current, v=1, ts=iso(), state="degraded",
-                pulse_seq=marker["seq"], day=effects["day"],
-                publication_id=marker["id"],
-                graph_publication_id=recovered_graph.get(
-                    "publication_id", ""),
-                events_pulse=effects["events_pulse"],
-                events_today=sum(
-                    state["today"] for state in organs.values()),
-                organs=organs, errors=recovered_errors)
-            export_status(recovered)
+        if expected_history is None:
+            expected_history = _expected_pulse_publication_history(
+                memo, marker, effects["events_pulse"])
+        if current is None:
+            current = read_json(STATUS_PATH, {})
+        graph = read_json(GRAPH_PATH, {})
+        retained_verdict = _recoverable_status_integrity(current)
+        history = current.get("history")
+        status_redactions = (
+            _recoverable_pulse_redactions(memo, current.get("redactions"))
+            if retained_verdict is not None else None)
+        status_effects_bound = (
+            retained_verdict is not None
+            and current.get("publication_id") == marker["id"]
+            and current.get("pulse_seq") == marker["seq"]
+            and current.get("day") == effects["day"]
+            and current.get("events_pulse") == effects["events_pulse"]
+            and current.get("organs") == effects["organs"]
+            and history == expected_history
+            and status_redactions is not None
+            and (marker.get("redactions") is None
+                 or current.get("redactions") == marker["redactions"]))
+        graph_generation = _recoverable_graph_snapshot(graph)
+        effects_published = (
+            status_effects_bound and graph_generation is not None
+            and current.get("graph_publication_id")
+                == graph_generation["publication_id"]
+            and current.get("graph_nodes") == graph_generation["nodes"]
+            and current.get("graph_edges") == graph_generation["edges"]
+            and current.get("pages") == graph_generation["pages"])
+        if effects_published:
+            published_history = copy.deepcopy(expected_history)
+            if recovered_redactions is None:
+                recovered_redactions = status_redactions
     updated = dict(memo)
     updated.pop("pulse_publication", None)
-    if "dream_publication" not in updated and not source_pending:
+    if recovered_redactions is not None:
+        updated["redactions"] = copy.deepcopy(recovered_redactions)
+    if effects is not None and not source_pending:
+        if effects_published:
+            updated.pop("pulse_status_effects_pending", None)
+            updated["pulse_history"] = published_history
+        else:
+            history = copy.deepcopy(expected_history)
+            marker_history = history[-1]
+            updated["pulse_history"] = history
+            updated["pulse_status_effects_pending"] = {
+                "v": 1, "publication_id": marker["id"],
+                "effects": copy.deepcopy(effects),
+                "history": copy.deepcopy(marker_history),
+            }
+            _pending_pulse_status_effects(updated)
+            # Recovery has already reconciled corpus, PGLite, and graph. This
+            # handoff is status-only debt; it blocks readiness itself and the
+            # consuming pulse will install a fresh named sync publication.
+            updated.pop("sync_needed", None)
+            updated.pop("ready", None)
+    handoff_pending = _pending_pulse_status_effects(updated) is not None
+    if "dream_publication" not in updated and not source_pending \
+            and not handoff_pending:
         updated.pop("sync_needed", None)
         updated = _with_ready_receipt(updated, "pulse", marker["id"])
     _write_memo(updated)
@@ -6579,52 +9124,70 @@ def _recover_pending_pulse_publication(memo):
     return True
 
 
-def _recover_pending_consolidation(memo):
-    """Replay an interrupted lineage-bound consolidation before reads."""
-    marker = _ensure_structured_consolidation_marker(memo)
-    if marker is None:
-        return None
-    if "ledger" not in marker:
-        _bind_consolidation_ledger(
-            memo, "RECOVER:consolidate", f"id={marker['id']}",
-            "completed")
-        marker = _pending_consolidation_marker(memo)
-    result = None
-    if "applied_at" not in marker:
-        result = consolidate_corpus()
-        # The named DREAM transaction owns the whole cutoff-pinned generation,
-        # not merely one directory page or claim batch.  Keep its exact ledger
-        # binding pending while later pulses resume bounded consolidation
-        # units, including the conservative scan after admitted source unlink.
-        if _consolidation_scan_debt():
-            return result
-        _mark_consolidation_applied(memo)
-    _settle_consolidation_ledger(memo)
-    _clear_consolidation_marker(memo)
-    return result
-
-
-def _pulse_transaction(seq, opts=None):
-    """Install the write-ahead publication barrier for one heartbeat."""
-    ensure_dirs()
+def _pulse_transaction(
+        seq, opts=None, *, admitted_status=_STATUS_ADMISSION_REQUIRED):
+    """Install the write-ahead publication barrier for one pulse cycle."""
     memo = load_memo()
+    _require_status_memo_fields(memo)
+    if not isinstance(seq, int) or isinstance(seq, bool) \
+            or not 0 <= seq <= MAX_JSON_SAFE_INTEGER \
+            or memo.get("pulse_seq") != seq:
+        raise RuntimeError("pulse sequence reservation is invalid")
+    if admitted_status is _STATUS_ADMISSION_REQUIRED:
+        admitted_status = _require_status_sequence_not_ahead(seq)
+    _pending_pulse_marker(memo)
+    _pending_pulse_status_effects(memo)
+    cursors = load_cursors()
+    _recover_notify_baseline_attempt(memo, cursors)
+    source_marker = _authorize_pending_source_replay(
+        _pending_source_replay_marker(memo), cursors)
+    ensure_dirs()
     if _ready_receipt(memo) is None \
-            and memo.get("sync_needed", False) is False:
+            and memo.get("sync_needed", False) is False \
+            and _pending_pulse_status_effects(memo) is None:
         _mark_sync_needed(memo)
     store = load_thoughts()
     # Prior transactions recover under generic publication debt. Installing
     # the new sequence marker before this phase would misattribute their
     # corpus repairs to the new pulse and allow two keeper rows for one seq.
     with corpus_mutation_barrier(lambda: _mark_sync_needed(memo)):
-        recovery = _recover_before_pulse(memo, store)
-    with corpus_mutation_barrier(
-            lambda: _mark_pulse_publication(memo, seq)):
+        recovery = _recover_before_pulse(
+            memo, store, cursors=cursors, source_marker=source_marker)
+    publication_effects = {}
+
+    def mark_named_pulse_before_mutation():
+        marker = _pending_pulse_marker(memo)
+        if marker is not None and marker.get("effects") is not None:
+            return _mark_pulse_publication(
+                memo, seq, marker["effects"],
+                _projected_pulse_redactions(memo))
+        effects = publication_effects.get("effects")
+        if effects is None:
+            raise RuntimeError(
+                "pulse effects unavailable before corpus mutation")
+        return _mark_pulse_publication(
+            memo, seq, effects, _projected_pulse_redactions(memo))
+
+    with corpus_mutation_barrier(mark_named_pulse_before_mutation):
         return _pulse_transaction_guarded(
-            seq, opts, memo, store, recovery)
+            seq, opts, memo, store, recovery, cursors=cursors,
+            source_marker=source_marker,
+            publication_effects=publication_effects,
+            admitted_status=admitted_status)
 
 
-def _recover_before_pulse(memo, store):
+def _recover_before_pulse(
+        memo, store, *, cursors=None, source_marker=None):
     """Finish older journals before the next named pulse may begin."""
+    cursors = load_cursors() if cursors is None else cursors
+    _recover_notify_baseline_attempt(memo, cursors)
+    current_source_marker = _pending_source_replay_marker(memo)
+    if source_marker is not None and current_source_marker != source_marker:
+        raise SourceReplayQuarantine(
+            "source replay quarantine: marker changed before recovery")
+    source_marker = _authorize_pending_source_replay(
+        current_source_marker, cursors)
+    _pending_pulse_status_effects(memo)
     _recover_pending_thought_projection(memo, store)
     _ledger_recovered, ledger_recovery_errors = recover_ledger_transitions()
     if ledger_recovery_errors:
@@ -6672,8 +9235,9 @@ def _recover_before_pulse(memo, store):
         _settle_pending_publication(
             memo, "publish interrupted dream before recovery", clear=False)
         _recover_pending_dream_publication(memo)
-    _settle_pending_publication(
-        memo, "publish pending corpus migration before pulse")
+    if _pending_pulse_status_effects(memo) is None:
+        _settle_pending_publication(
+            memo, "publish pending corpus migration before pulse")
     return _ledger_recovered, []
 
 
@@ -6705,27 +9269,47 @@ def _reconcile_legacy_memory_authority(memo):
                 "ceiling")
 
 
-def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
-    """One heartbeat. Returns the status dict it exported."""
+def _pulse_transaction_guarded(
+        seq, opts, memo, store=None, recovery=None, *, cursors=None,
+        source_marker=None, publication_effects=None,
+        admitted_status=_STATUS_ADMISSION_REQUIRED):
+    """Run one pulse cycle and return the status dict it exported."""
+    cursors = load_cursors() if cursors is None else cursors
+    _recover_notify_baseline_attempt(memo, cursors)
+    current_source_marker = _pending_source_replay_marker(memo)
+    if source_marker is not None and current_source_marker != source_marker:
+        raise SourceReplayQuarantine(
+            "source replay quarantine: marker changed before replay")
+    source_marker = _authorize_pending_source_replay(
+        current_source_marker, cursors)
+    status_effects = _pending_pulse_status_effects(memo)
     opts = opts or {}
     now_ts = float(opts.get("now", time.time()))
-    cursors = load_cursors()
     store = load_thoughts() if store is None else store
     sync_needed = memo.get("sync_needed", False)
     if not isinstance(sync_needed, bool):
         raise RuntimeError("brainstem memo sync-needed state is invalid")
-    stnow = read_json(STATUS_PATH, {})
-    organs_st = stnow.get("organs", {})
+    if admitted_status is _STATUS_ADMISSION_REQUIRED:
+        admitted_status = _require_status_sequence_not_ahead(seq)
+    stnow = _require_status_admission_unchanged(admitted_status)
+    if _recoverable_status_integrity(stnow) is None \
+            and _recoverable_legacy_effectless_status_integrity(stnow) is None:
+        stnow = {}
     day = today()
-    if stnow.get("day") != day:
-        # keep the organ roster stable across midnight; zero the counters
+    if status_effects is not None:
+        organs_st = copy.deepcopy(status_effects["effects"]["organs"])
+        status_day = status_effects["effects"]["day"]
+    else:
+        organs_st = stnow.get("organs", {})
+        status_day = stnow.get("day")
+    if status_day != day:
+        # Keep the source roster stable across midnight; zero the counters.
         organs_st = {k: {**v, "today": 0} for k, v in organs_st.items()}
 
     # Each sense runs on an isolated cursor copy, merged back only on
     # success — a raising sense never persists cursor advances for events
     # it dropped. Cursors are made durable only AFTER the corpus writes.
     PENDING_CURSOR_RENAMES.clear()
-    source_marker = _pending_source_replay_marker(memo)
     cognitive_now_ts, cognitive_day = now_ts, day
     if source_marker is not None:
         cognitive_now_ts, cognitive_day = _source_replay_clock(source_marker)
@@ -6744,7 +9328,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     replay_record_bytes = _event_replay_batch_bytes(events)
     # A durable exact batch settles in isolation. Mixing newly arrived source
     # rows into recovery can let one later over-bound record head-of-line block
-    # an older valid batch forever; normal sensing resumes next heartbeat.
+    # an older valid batch forever; normal sensing resumes next pulse cycle.
     sense_runs = []
     if source_marker is None:
         for sense in SENSES:
@@ -6781,6 +9365,10 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                 if custom_index is not None:
                     kwargs["entry_index"] = custom_index
                 result = sense(trial, **kwargs)
+            elif sense is sense_notify:
+                result = sense(
+                    trial, before_initial_baseline=lambda:
+                    _mark_notify_baseline_attempt(memo))
             else:
                 result = sense(trial)
         except Exception as e:
@@ -6989,12 +9577,12 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
             if touch_refused:
                 errors["touch_queue_capacity"] = (
                     f"{touch_refused} touch/pin records refused")
-            graph_before_source = read_json(GRAPH_PATH, {})
+            graph_before_source = _require_recoverable_graph_snapshot(
+                read_json(GRAPH_PATH, {}))
             siamind.sync_graph_state(
                 prepared_event_mind, graph_before_source, now=now_ts)
-            if not prepared_event_mind["seen"]:
-                for graph_node in graph_before_source.get("nodes", []):
-                    prepared_event_mind["seen"][graph_node["id"]] = now_ts
+            siamind.baseline_graph_familiarity(
+                prepared_event_mind, graph_before_source, now_ts)
             prepared_event_transition = _event_cognitive_transition(
                 prepared_event_mind, planned_cognitive_events,
                 cognitive_now_ts, cognitive_day,
@@ -7009,7 +9597,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                 siamind.memory_summary_view(
                     prepared_event_mind, now=now_ts)
 
-            # One atomic memo image binds the admitted cognitive transition,
+            # One atomic memo image binds the admitted policy transition,
             # exact source bytes, and projected status before corpus mutation.
             _pulse_marker, source_marker = _stage_pulse_source_publication(
                 memo, seq, event_sources, events, day,
@@ -7017,11 +9605,11 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                 source_effects=source_effects,
                 prepared_source=prepared_source,
                 cognitive_ids=cognitive_ids)
-            # Persist the exact cognitive candidate and its bounded thought /
+            # Persist the exact policy candidate and its bounded generated-entry /
             # finding receipt before any source page can alter GRAPH_PATH.
             # A crash before this save sees the old graph and recomputes; a
             # crash after it reuses the receipt, so publication timing cannot
-            # change first-sighting novelty or derived thoughts.
+            # change first-sighting novelty or derived generated entries.
             siamind.save_mind(prepared_event_mind)
             ensure_organs()
             ensure_event_entities(events)
@@ -7048,10 +9636,10 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                         event_memory_identity(event)
                         for event, _slug in planned_cognitive_events]:
                 raise RuntimeError(
-                    "event cognitive admission changed after dry-run")
+                    "event policy admission changed after dry-run")
     except Exception as e:
         write_ok = False
-        # Cognitive state is all-or-nothing for the exact source batch. A
+        # Retrieval-policy state is all-or-nothing for the exact source batch. A
         # page-prefix failure replays the complete marker on the next pulse.
         admitted_events = []
         prepared_event_mind = None
@@ -7063,19 +9651,46 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     if not write_ok:
         _discard_pending_cursor_renames()
 
+    marker_for_effects = _pending_pulse_marker(memo)
+    if marker_for_effects is not None:
+        bound_effects = marker_for_effects.get("effects")
+        if bound_effects is None:
+            raise RuntimeError("pulse publication has no bound effects")
+    else:
+        bound_effects = _canonical_pulse_effects(
+            day, len(events), organs_st)
+    if publication_effects is not None:
+        publication_effects["effects"] = copy.deepcopy(bound_effects)
+
     # Event pages must be visible through PGLite and the graph before this
     # same pulse asks those surfaces for salience, anomalies, or associative
     # state. Keep the durable marker set: the final publication/signature
-    # phase clears it only after all later thought pages are reconciled too.
+    # phase clears it only after all later generated-entry pages are reconciled too.
     _settle_pending_publication(
         memo, "publish pulse events before memory queries", clear=False)
 
-    # thoughts may add corpus pages too — generate BEFORE commit+sync
+    # generated entries may add corpus pages too — generate BEFORE commit+sync
     every = int(opts.get("integrity_every", 10))
-    chains = memo.get("chains", {})
+    prior_chains = memo.get("chains")
+    if not _status_chains_shape(prior_chains):
+        # ``think`` compares the fresh sweep with the memo roster.  Quarantine
+        # a malformed retained value before that comparison rather than
+        # letting a list/scalar reach its mapping operations.  A valid roster
+        # whose observation timestamp alone is bad remains useful as the
+        # transition baseline, even though it cannot be reused as a sweep.
+        memo["chains"] = {}
+        prior_chains = {}
+    cached_sweep = _cached_chain_sweep(memo)
+    chains = copy.deepcopy(prior_chains) \
+        if cached_sweep is None else cached_sweep[0]
+    chains_checked_at = None if cached_sweep is None else cached_sweep[1]
     salience = anomalies = None
-    if events or seq % every == 0 or not chains:
+    if events or seq % every == 0 or cached_sweep is None:
         chains = verify_chains()
+        if not _status_chains_shape(chains):
+            raise RuntimeError("integrity sweep returned an invalid roster")
+        chains_checked_at = iso()
+        memo["chains_checked_at"] = chains_checked_at
         if seq % every == 0 or events:
             salience = gbrain_call("get_recent_salience", {"days": 7, "limit": 5})
             anomalies = gbrain_call("find_anomalies", {"sigma": 3.0})
@@ -7091,7 +9706,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     # the page is intentionally separate from acknowledging the request: the
     # latter happens only after the corpus commit and PGLite sync below.
     agent_paths, agent_pages, agent_thoughts, agent_queue_errors = \
-        materialize_agent_notes(store)
+        materialize_agent_notes(store, memo)
     new_thoughts.extend(agent_thoughts)
     made_pages.extend(agent_pages)
     agent_activity = bool(agent_paths)
@@ -7125,11 +9740,11 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                 thought_batch_ok = False
                 errors["thought_inbox_item"] = str(exc)[:160]
     _settle_pending_publication(
-        memo, "publish pulse thoughts before associative graph reads",
+        memo, "publish pulse generated entries before graph reads",
         clear=False)
-    # ---- neurocognitive core (siamind): recall touches, Hebbian binding,
-    # novelty gate, surprisal baselines, global workspace. Deterministic;
-    # mind.json is owned by this daemon alone.
+    # ---- deterministic retrieval policy (siamind): use touches, co-return
+    # reinforcement, novelty and intake baselines, bounded attention window.
+    # ``mind.json`` is a compatibility filename owned by this daemon alone.
     mind = (prepared_event_mind
             if write_ok and prepared_event_mind is not None
             else siamind.load_mind())
@@ -7148,13 +9763,10 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
             if touch_refused:
                 errors["touch_queue_capacity"] = (
                     f"{touch_refused} touch/pin records refused")
-            g0 = read_json(GRAPH_PATH, {})
+            g0 = _require_recoverable_graph_snapshot(
+                read_json(GRAPH_PATH, {}))
             siamind.sync_graph_state(mind, g0, now=now_ts)
-            if not mind["seen"]:
-                # first run: everything already in the graph counts as seen —
-                # novelty is for what arrives from now on
-                for n0 in g0.get("nodes", []):
-                    mind["seen"][n0["id"]] = now_ts
+            siamind.baseline_graph_familiarity(mind, g0, now_ts)
         transition = (prepared_event_transition
                       if write_ok and prepared_event_transition is not None
                       else None)
@@ -7226,8 +9838,9 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     except Exception as e:
         errors["auto-propose"] = str(e)[:160]
 
-    # prospective memory: surface open intents as deadlines approach
+    # dated intents: surface open commitments as deadlines approach
     # (once per stage: "soon" inside 48 h, then "overdue" once per day)
+    open_ints = []
     try:
         nag = memo.setdefault("intent_nag", {})
         open_ints = siatakes.open_intents()
@@ -7263,15 +9876,15 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     except Exception as e:
         errors["intents"] = str(e)[:160]
 
-    # outcome learning: remind (once a day) when predictions come due
+    # prediction grading: remind once a day when predictions come due
     takes_sum = {}
     try:
         takes_sum = siatakes.summary()
         if takes_sum.get("due") and memo.get("takes_reminder_day") != day:
             memo["takes_reminder_day"] = day
             reminder_text = (
-                f"{takes_sum['due']} of my predictions are due for "
-                f"grading — tonight's dream judges up to 3, or run "
+                f"{takes_sum['due']} predictions are due for "
+                f"grading — the nightly grade job evaluates up to 3, or run "
                 f"`sia grade` now.")
             new_thoughts.append(add_thought(
                 store, "take", reminder_text, ["sia/cortex"],
@@ -7282,8 +9895,8 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     except Exception as e:
         errors["siatakes"] = str(e)[:160]
 
-    # A thought page is the redo journal for its derived rehearsal signal.
-    # Settle every page into the daemon-owned mind before evidence cursors or
+    # A generated-entry page is the redo journal for its derived review signal.
+    # Settle every page into daemon-owned compatibility policy state before evidence cursors or
     # the named publication marker can become irreversible. This also repairs
     # a bounded queue refusal in the same successful pulse, not merely after a
     # later interrupted-publication recovery.
@@ -7305,7 +9918,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     source_replay_resolved = _pending_source_replay_marker(memo) is None
     if write_ok and mind_ready:
         try:
-            # Persist every in-memory thought gate before making evidence
+            # Persist every in-memory generated-entry gate before making evidence
             # cursors irreversible. The named/source markers remain present
             # in this checkpoint, so a later failure still has a redo path.
             _write_memo(memo)
@@ -7317,8 +9930,17 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                 errors["evidence_cursor_commit"] = cursor_save_error
             cursor_ready = not cursor_commit_errors and not cursor_save_error
             if cursor_ready:
+                if _pending_notify_baseline_attempt(memo) is not None:
+                    if not _notify_cursor_checkpoint_safe(cursors):
+                        raise RuntimeError(
+                            "notification baseline cursor checkpoint is "
+                            "ambiguous")
+                    # Clear only after the cursor image itself is durable. A
+                    # crash before this write recovers it conservatively; a
+                    # crash after it already has the exact safe checkpoint.
+                    _clear_notify_baseline_attempt(memo)
                 # Cursor publication and exact replay have both completed.
-                # Clear the batch first; only then may its cognitive replay
+                # Clear the batch first; only then may its policy replay
                 # guards be discarded. A failed clear leaves both redo paths.
                 _clear_source_replay_pending(memo)
                 source_replay_resolved = \
@@ -7344,7 +9966,8 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     if dirty is None:
         errors["corpus_status"] = "git status failed; mutation not committed"
     publication_activity = bool(
-        events or new_thoughts or agent_activity or organ_activity or dirty)
+        events or new_thoughts or agent_activity or organ_activity or dirty
+        or status_effects is not None or REDACTIONS)
     sync_needed = memo.get("sync_needed", False)
     # Keep the post-publication acknowledgment predicate total even when a
     # valid but empty inbox claim reaches an otherwise idle pulse.
@@ -7354,7 +9977,11 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
         # dies after any page/commit but before its signed result, recovery
         # publishes the projections and signs that exact interrupted pulse
         # before either marker may clear.
-        _mark_pulse_publication(memo, seq)
+        _mark_pulse_publication(
+            memo, seq, bound_effects, _projected_pulse_redactions(memo))
+        # Every named pulse carries the exact status effects it will publish,
+        # including event-free agent/generated-entry/source-only work. Recovery may
+        # never clear an effectless marker into a stale status/graph pair.
         sync_needed = True
     if sync_needed:
         commit = corpus_commit(f"pulse {seq}: {len(events)} events, "
@@ -7404,29 +10031,34 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
             errors["ledger_transition"] = str(exc)[:160]
         if published and ledger_transition == "signed" \
                 and thought_reinforcement_ready:
-            # These removals stay in memory until the final status/thought
-            # snapshots succeed. The last memo write is the readiness point.
+            # Retain the durable marker/debt until every late diagnostic has
+            # been redacted and rebound to it.  The marker and debt are
+            # removed only in the in-memory final memo immediately before
+            # status export; the last memo write remains the readiness point.
             completed_pulse = _pending_pulse_marker(memo)
-            memo.pop("pulse_publication", None)
-            memo.pop("sync_needed", None)
-            memo.update(_with_ready_receipt(
-                memo, "pulse", completed_pulse["id"]))
             sync_needed = False
         if agent_activity and published and ledger_transition == "signed" \
                 and thought_reinforcement_ready:
             agent_acknowledged, ack_errors = acknowledge_agent_notes(
-                agent_paths, commit, synced)
+                agent_paths, commit, synced,
+                after_ack=lambda identity:
+                    _forget_agent_note_redaction_receipt(memo, identity))
             if ack_errors:
                 errors["agent_ack"] = ack_errors
 
     hist = memo.get("pulse_history", [])
-    hist.append([iso(), len(events)])
-    memo["pulse_history"] = hist[-120:]
-    if REDACTIONS:
-        red = memo.setdefault("redactions", {})
-        for organ, n in REDACTIONS.items():
-            red[organ] = red.get(organ, 0) + n
-        REDACTIONS.clear()
+    history_marker = completed_pulse or _pending_pulse_marker(memo)
+    history_row = [
+        history_marker["started_at"] if history_marker is not None else iso(),
+        len(events),
+    ]
+    hist.append(history_row)
+    memo["pulse_history"] = hist[-MAX_PULSE_HISTORY_ROWS:]
+    pending_marker = _pending_pulse_marker(memo)
+    if pending_marker is not None:
+        memo["pulse_publication"] = dict(
+            pending_marker, history=copy.deepcopy(history_row))
+        _pending_pulse_marker(memo)
     export_thoughts(store)
     inbox_publication_ok = (not inbox or (
         commit != "error" and synced and not graph_publication_failed
@@ -7438,10 +10070,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
         except Exception as exc:
             errors["thought_inbox_ack"] = str(exc)[:160]
 
-    try:
-        intents_open = siatakes.open_intents()
-    except Exception:
-        intents_open = []
+    intents_open = open_ints
     try:
         bench_trend, bench_trend_boundary = _bench_trend_snapshot(
             include_metadata=True)
@@ -7449,10 +10078,41 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
         bench_trend = []
         bench_trend_boundary = {"legacy_truncated": False}
         errors["bench_trend"] = str(exc)[:160]
+    if graph_publication_failed:
+        errors["graph_snapshot"] = (
+            "graph publication failed; current graph claims withdrawn")
+        graph_generation = {
+            "publication_id": "", "nodes": 0, "edges": 0, "pages": 0}
+    else:
+        prev_graph = read_json(GRAPH_PATH, {})
+        graph_generation = _recoverable_graph_snapshot(prev_graph)
+        if graph_generation is None:
+            errors["graph_snapshot"] = "resident graph snapshot is invalid"
+            graph_generation = {
+                "publication_id": "", "nodes": 0, "edges": 0,
+                "pages": 0}
+    errors = _redacted_status_errors(errors)
+    sync_note = clip(redact(sync_note, "status-error"), 400)
     projection_debt = {
-        "graph": _graph_projection_debt(),
-        "consolidation": _consolidation_scan_debt(),
+        "graph": clip(redact(
+            _graph_projection_debt(), "status-error"), 400),
+        "consolidation": clip(redact(
+            _consolidation_scan_debt(), "status-error"), 400),
     }
+    if REDACTIONS:
+        target_redactions = _projected_pulse_redactions(memo)
+        if _pending_pulse_marker(memo) is not None:
+            _mark_pulse_publication(
+                memo, seq, bound_effects, target_redactions)
+        red = memo.setdefault("redactions", {})
+        for organ, n in REDACTIONS.items():
+            red[organ] = red.get(organ, 0) + n
+        redaction_marker = _pending_pulse_marker(memo)
+        if redaction_marker is not None \
+                and redaction_marker.get("redactions") != red:
+            raise RuntimeError(
+                "pulse publication redactions binding is invalid")
+        REDACTIONS.clear()
 
     lseq, lhead = ledger_head()
     chain_status = chain_verdict(chains)
@@ -7462,41 +10122,46 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                             or chain_status != "pass") else
              "thinking" if (events or new_thoughts or agent_activity)
              else "ok")
-    last_thought = (store["thoughts"] or [{}])[-1]
-    last_thought_origin = last_thought.get("origin")
-    if last_thought_origin not in THOUGHT_ORIGINS:
-        last_thought_origin = "legacy-unlabeled"
-    prev_graph = read_json(GRAPH_PATH, {})
+    last_thought = _status_thought_projection(
+        (store["thoughts"] or [{}])[-1])
+    if completed_pulse is not None:
+        completed_pulse = _pending_pulse_marker(memo)
+        memo.pop("pulse_publication", None)
+        memo.pop("sync_needed", None)
+        memo.update(_with_ready_receipt(
+            memo, "pulse", completed_pulse["id"]))
     status_marker = completed_pulse or _pending_pulse_marker(memo)
-    st = {"v": 1, "version": VERSION, "ts": iso(), "state": state,
+    status_publication_id = status_marker["id"] \
+        if status_marker is not None else uuid.uuid4().hex
+    st = {"v": 2, "version": VERSION, "ts": iso(), "state": state,
           "pulse_seq": seq, "day": day,
-          "publication_id": (status_marker or {}).get("id", ""),
-          "graph_publication_id": prev_graph.get("publication_id", ""),
+          "publication_id": status_publication_id,
+          "graph_publication_id": graph_generation["publication_id"],
           "events_pulse": len(events),
           "events_today": sum(o.get("today", 0) for o in organs_st.values()),
           "organs": organs_st, "errors": errors,
-          "pages": pages_total if pages_total is not None
-                   else prev_graph.get("pages_total", 0),
-          "graph_nodes": nodes if nodes is not None
-                         else len(prev_graph.get("nodes", [])),
-          "graph_edges": edges if edges is not None
-                         else len(prev_graph.get("edges", [])),
+          "pages": graph_generation["pages"],
+          "graph_nodes": graph_generation["nodes"],
+          "graph_edges": graph_generation["edges"],
           "integrity": {"chains": chains,
                         "verdict": chain_status,
-                        "checked_at": iso()},
+                        "checked_at": chains_checked_at},
           "ledger": {"seq": lseq, "head": lhead[:12]},
           "ledger_transition": {
               "state": ledger_transition,
               "recovered": len(ledger_recovered),
               "pending_errors": len(ledger_recovery_errors)},
-          "thought": {"ts": last_thought.get("ts", ""),
-                      "kind": last_thought.get("kind", ""),
-                      "text": last_thought.get("text", ""),
-                      "origin": last_thought_origin},
+          "thought": last_thought,
           "dream": memo.get("dream", {}),
           "history": memo.get("pulse_history", []),
           "workspace": ws,
           "mind": {"nodes": len(mind.get("nodes", {})),
+                   "familiarity_status": memory_state.get(
+                       "familiarity_status", "bootstrap-pending"
+                       if mind.get("familiarity_bootstrap_pending", False)
+                       else "complete"
+                       if mind.get("familiarity_complete", False)
+                       else "incomplete"),
                    "edges": len(mind.get("edges", {})),
                    "decay_active": memory_state.get("active_edges", 0),
                    "decay_demoted": memory_state.get("demoted_edges", 0),
@@ -7508,7 +10173,7 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                        "text": clip(it.get("text", ""), 70),
                        "due": it.get("due", ""),
                        "days_left": it.get("days_left", 0)}
-                      for it in intents_open[:5]
+                      for it in intents_open[:MAX_STATUS_INTENTS]
                       if it.get("id") and it.get("text")],
           "bench_trend": bench_trend,
           "bench_trend_boundary": bench_trend_boundary,
@@ -7518,7 +10183,34 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
                           "acknowledged": agent_acknowledged},
           "redactions": memo.get("redactions", {}),
           "sync_note": sync_note}
+    if _recoverable_status_integrity(st) is None:
+        # Never publish a current-version image that this same runtime would
+        # refuse on recovery, and never leave a readiness receipt beside that
+        # refusal. If corpus publication already completed, restore its named
+        # marker so a later repaired pulse can publish the missing status.
+        updated = dict(memo)
+        updated.pop("ready", None)
+        if status_marker is not None:
+            updated.pop("pulse_status_effects_pending", None)
+        if completed_pulse is not None:
+            recovery_marker = copy.deepcopy(completed_pulse)
+            if _status_history_shape(updated.get("pulse_history")) \
+                    and updated["pulse_history"] \
+                    and updated["pulse_history"][-1] == history_row:
+                recovery_marker["history"] = copy.deepcopy(history_row)
+            updated["pulse_publication"] = recovery_marker
+            updated["sync_needed"] = True
+        _write_memo(updated)
+        memo.clear()
+        memo.update(updated)
+        raise RuntimeError("pulse status projection is invalid")
+    if status_marker is None:
+        # An idle pulse has no named corpus publication marker. Persist its
+        # history and other memo-only state first so a crash after the atomic
+        # status replacement cannot make the next status retract that row.
+        _write_memo(memo)
     export_status(st)
+    memo.pop("pulse_status_effects_pending", None)
     # The on-disk debt marker clears last, after every caller-visible derived
     # snapshot. If thoughts/status publication fails, readiness remains
     # blocked even though git, PGLite, and graph may already be current.
@@ -7536,979 +10228,13 @@ def _pulse_transaction_guarded(seq, opts, memo, store=None, recovery=None):
     return st
 
 
-def _epoch_slug_for_day(organ, date):
-    year, week, _weekday = datetime.date.fromisoformat(date).isocalendar()
-    return f"epochs/{organ}/{year}-w{week:02d}"
-
-
-def _epoch_json_field(frontmatter, key, label, default):
-    values = re.findall(rf"^{re.escape(key)}: (.*)$", frontmatter, re.M)
-    if not values:
-        return copy.deepcopy(default)
-    if len(values) != 1:
-        raise RuntimeError(f"{label} has duplicate {key}")
-    try:
-        return _strict_json_loads(values[0])
-    except (TypeError, UnicodeError, ValueError, RecursionError) as exc:
-        raise RuntimeError(f"{label} {key} is malformed") from exc
-
-
-def _canonical_epoch_source_manifest(records, epoch_slug, prior_sources):
-    if not isinstance(records, list):
-        raise RuntimeError(f"epoch source manifest is invalid: {epoch_slug}")
-    if len(records) > MAX_EPOCH_SOURCE_RECORDS:
-        raise ConsolidationCapacityError(
-            f"epoch source manifest is at capacity: {epoch_slug}")
-    canonical = []
-    day_parts = collections.defaultdict(list)
-    seen_rel, seen_sha = set(), set()
-    for record in records:
-        if not isinstance(record, dict) or set(record) != {"rel", "sha256"} \
-                or not isinstance(record.get("rel"), str) \
-                or not isinstance(record.get("sha256"), str) \
-                or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None:
-            raise RuntimeError(
-                f"epoch source manifest is invalid: {epoch_slug}")
-        organ, date, part = _event_source_parts(record["rel"])
-        if _epoch_slug_for_day(organ, date) != epoch_slug \
-                or record["rel"] in seen_rel \
-                or record["sha256"] in seen_sha \
-                or record["sha256"] not in prior_sources:
-            raise RuntimeError(
-                f"epoch source manifest is invalid: {epoch_slug}")
-        seen_rel.add(record["rel"])
-        seen_sha.add(record["sha256"])
-        day_parts[(organ, date)].append(part)
-        canonical.append({"rel": record["rel"],
-                          "sha256": record["sha256"]})
-    for parts in day_parts.values():
-        parts.sort()
-        if parts != list(range(1, parts[-1] + 1)):
-            raise RuntimeError(
-                f"epoch source manifest has incomplete day lineage: "
-                f"{epoch_slug}")
-    canonical.sort(key=lambda record: record["rel"])
-    if records != canonical:
-        raise RuntimeError(f"epoch source manifest is invalid: {epoch_slug}")
-    encoded = json.dumps(canonical, separators=(",", ":"), ensure_ascii=False)
-    if len(encoded.encode("utf-8")) \
-            > MAX_EPOCH_SOURCE_MANIFEST_BYTES:
-        raise ConsolidationCapacityError(
-            f"epoch source manifest exceeds its bound: {epoch_slug}")
-    return canonical
-
-
-def _read_epoch_state(slug):
-    """Read and validate one bounded epoch plus optional exact shard lineage."""
-    if not page_exists(slug):
-        return {"slug": slug, "text": "", "sources": [], "dates": [],
-                "ndays": 0, "source_manifest": []}
-    text = _read_event_page(slug)
-    match = FM_RE.match(text)
-    if match is None:
-        raise RuntimeError(f"existing epoch lacks frontmatter: {slug}")
-    frontmatter = match.group(1)
-    types = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
-    if types != ["epoch"]:
-        raise RuntimeError(f"existing epoch identity is invalid: {slug}")
-    prior_sources = _epoch_json_field(
-        frontmatter, "sia_sources", f"epoch lineage {slug}", [])
-    if not isinstance(prior_sources, list) \
-            or len(prior_sources) != len(set(prior_sources)) \
-            or any(not isinstance(value, str)
-                   or re.fullmatch(r"[0-9a-f]{64}", value) is None
-                   for value in prior_sources):
-        raise RuntimeError(f"epoch lineage is invalid: {slug}")
-    prior_dates = _epoch_json_field(
-        frontmatter, "sia_dates", f"epoch date lineage {slug}", [])
-    if not isinstance(prior_dates, list) \
-            or prior_dates != sorted(set(prior_dates)) \
-            or any(not isinstance(value, str)
-                   or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None
-                   for value in prior_dates):
-        raise RuntimeError(f"epoch date lineage is invalid: {slug}")
-    manifest = _epoch_json_field(
-        frontmatter, "sia_source_manifest",
-        f"epoch source manifest {slug}", [])
-    manifest = _canonical_epoch_source_manifest(
-        manifest, slug, set(prior_sources))
-    if any(_event_source_parts(record["rel"])[1] not in prior_dates
-           for record in manifest):
-        raise RuntimeError(f"epoch source manifest lacks date lineage: {slug}")
-    day_matches = re.findall(r"Consolidated from (\d+) day-memories", text)
-    if len(day_matches) != 1:
-        raise RuntimeError(f"existing epoch lacks exact day count: {slug}")
-    return {"slug": slug, "text": text, "sources": prior_sources,
-            "dates": prior_dates, "ndays": int(day_matches[0]),
-            "source_manifest": manifest}
-
-
-def _merge_epoch_source_manifest(existing, items, epoch_slug, source_ids):
-    by_rel = {record["rel"]: record for record in existing}
-    by_sha = {record["sha256"]: record for record in existing}
-    for _date, _path, _text, _tags, source_id, relative, _part in items:
-        record = {"rel": relative, "sha256": source_id}
-        prior_rel = by_rel.get(relative)
-        prior_sha = by_sha.get(source_id)
-        if (prior_rel is not None and prior_rel != record) \
-                or (prior_sha is not None and prior_sha != record):
-            raise RuntimeError(
-                f"epoch source manifest conflicts with live shard: {relative}")
-        if prior_rel is None and len(by_rel) >= MAX_EPOCH_SOURCE_RECORDS:
-            raise ConsolidationCapacityError(
-                f"epoch source manifest is at capacity: {epoch_slug}")
-        by_rel[relative] = record
-        by_sha[source_id] = record
-    merged = sorted(by_rel.values(), key=lambda record: record["rel"])
-    return _canonical_epoch_source_manifest(
-        merged, epoch_slug, set(source_ids))
-
-
-def _event_index_entries_for_sources(items, epoch_slug):
-    entries = {}
-    for _date, _path, text, _tags, source_id, relative, _part in items:
-        source_organ, _source_date, _source_part = _event_source_parts(relative)
-        match = FM_RE.match(text)
-        if match is None:
-            raise RuntimeError(
-                f"consolidation source lacks frontmatter: {relative}")
-        log_part = text[match.end():].split("## Timeline", 1)[0]
-        if "## Log" in log_part:
-            log_part = log_part.split("## Log", 1)[1]
-        for line in (value for value in log_part.splitlines()
-                     if value.startswith("- ")):
-            marker = EVENT_MARKER_RE.fullmatch(line)
-            if marker is None:
-                if "sia-event:" in line:
-                    raise RuntimeError(
-                        f"consolidation source has malformed event identity: "
-                        f"{relative}")
-                continue
-            event_id = marker.group("id")
-            if event_id in entries:
-                raise RuntimeError(
-                    "event identity is duplicated across consolidation sources")
-            if len(entries) >= MAX_EVENT_INDEX_RECORDS:
-                raise ConsolidationCapacityError(
-                    "consolidated event index batch is at capacity")
-            entries[event_id] = {
-                "schema": EVENT_INDEX_SCHEMA,
-                "organ": source_organ,
-                "event_id": event_id,
-                "semantic_id": marker.group("semantic"),
-                "payload_sha256": _event_payload_digest(
-                    marker.group("payload")),
-                "source_rel": relative,
-                "source_sha256": source_id,
-                "epoch_slug": epoch_slug,
-            }
-    result = [entries[event_id] for event_id in sorted(entries)]
-    if len(result) > MAX_EVENT_INDEX_RECORDS:
-        raise RuntimeError("consolidated event index batch exceeds its bound")
-    for entry in result:
-        _event_index_encoded(entry)
-    return result
-
-
-def _render_epoch_source_manifest(state, records, dates):
-    """Prepare a legacy/recovery epoch update without mutating the corpus."""
-    if not isinstance(dates, list) or dates != sorted(set(dates)) \
-            or any(not isinstance(value, str)
-                   or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None
-                   for value in dates):
-        raise RuntimeError(
-            f"epoch date lineage is invalid: {state['slug']}")
-    if records == state["source_manifest"] and dates == state["dates"]:
-        return None
-    text = state["text"]
-    match = FM_RE.match(text)
-    if match is None:
-        raise RuntimeError(
-            f"existing epoch lacks frontmatter: {state['slug']}")
-    lines = match.group(1).splitlines()
-    fields = {
-        "sia_source_manifest": json.dumps(
-            records, separators=(",", ":"), ensure_ascii=False),
-        "sia_dates": json.dumps(
-            dates, separators=(",", ":"), ensure_ascii=False),
-    }
-    for key, value in fields.items():
-        field = f"{key}: {value}"
-        positions = [index for index, line in enumerate(lines)
-                     if line.startswith(f"{key}: ")]
-        if len(positions) > 1:
-            raise RuntimeError(
-                f"epoch recovery metadata is invalid: {state['slug']}")
-        if positions:
-            lines[positions[0]] = field
-            continue
-        source_positions = [index for index, line in enumerate(lines)
-                            if line.startswith("sia_sources: ")]
-        position = source_positions[0] + 1 if len(source_positions) == 1 \
-            else len(lines)
-        lines.insert(position, field)
-    body = text[match.end():]
-    encoded = ("---\n" + "\n".join(lines) + "\n---\n" + body).encode(
-        "utf-8")
-    if len(encoded) > MAX_EPOCH_PAGE_BYTES:
-        raise ConsolidationCapacityError(
-            f"epoch page exceeds its lineage bound: {state['slug']}")
-    return lines, body
-
-
-def _write_epoch_source_manifest(state, rendered):
-    if rendered is not None:
-        frontmatter, body = rendered
-        write_page(state["slug"], frontmatter, body)
-
-
-def _render_bounded_epoch(slug, frontmatter, body):
-    """Prepare a complete epoch page and classify capacity before publish."""
-    encoded = ("---\n" + "\n".join(frontmatter) + "\n---\n" + body).encode(
-        "utf-8")
-    if len(encoded) > MAX_EPOCH_PAGE_BYTES:
-        raise ConsolidationCapacityError(
-            f"epoch page exceeds its lineage bound: {slug}")
-    return frontmatter, body
-
-
-def _write_bounded_epoch(slug, rendered):
-    frontmatter, body = rendered
-    write_page(slug, frontmatter, body)
-
-
-def _consolidation_scan_path():
-    """Return production state, or a corpus-scoped sibling for test roots."""
-    production_corpus = os.path.abspath(os.path.join(SHARE, "corpus"))
-    if os.path.abspath(CORPUS) == production_corpus:
-        return os.path.join(STATE, "consolidation-scan.json")
-    token = hashlib.sha256(os.path.abspath(CORPUS).encode("utf-8")).hexdigest()
-    return os.path.join(
-        os.path.dirname(os.path.abspath(CORPUS)),
-        ".sia-consolidation-" + token,
-        "scan.json")
-
-
-def _fresh_consolidation_scan(cutoff):
-    if not isinstance(cutoff, str) \
-            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", cutoff) is None:
-        raise ValueError("consolidation cutoff is invalid")
-    return {
-        "schema": CONSOLIDATION_SCAN_SCHEMA,
-        "generation": uuid.uuid4().hex,
-        "phase": "scan",
-        "cutoff": cutoff,
-        "queue": [{"relative": "", "levels":
-                   MAX_CONSOLIDATION_TREE_LEVELS, "page": {}}],
-        "pending_days": [],
-        "claims": [],
-    }
-
-
-def _canonical_consolidation_day(value):
-    if not isinstance(value, dict) or set(value) != {"organ", "date"} \
-            or not isinstance(value.get("organ"), str) \
-            or re.fullmatch(
-                r"[a-z0-9][a-z0-9._-]{0,199}", value["organ"]) is None \
-            or not isinstance(value.get("date"), str):
-        raise RuntimeError("consolidation candidate day is invalid")
-    try:
-        if datetime.date.fromisoformat(value["date"]).isoformat() \
-                != value["date"]:
-            raise ValueError
-    except ValueError:
-        raise RuntimeError("consolidation candidate day is invalid") \
-            from None
-    return dict(value)
-
-
-def _canonical_consolidation_scan(value):
-    if not isinstance(value, dict) \
-            or value.get("schema") != CONSOLIDATION_SCAN_SCHEMA \
-            or value.get("phase") not in {"scan", "complete"} \
-            or not isinstance(value.get("generation"), str) \
-            or re.fullmatch(r"[0-9a-f]{32}", value["generation"]) is None \
-            or not isinstance(value.get("cutoff"), str) \
-            or re.fullmatch(
-                r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value["cutoff"]) is None \
-            or not isinstance(value.get("queue"), list) \
-            or len(value["queue"]) > MAX_CONSOLIDATION_DIRECTORY_QUEUE \
-            or not isinstance(value.get("pending_days"), list) \
-            or len(value["pending_days"]) > MAX_SOURCE_SCAN_ENTRIES \
-            or not isinstance(value.get("claims"), list) \
-            or len(value["claims"]) > MAX_CONSOLIDATION_DAYS_PER_RUN:
-        raise RuntimeError("consolidation scan state is invalid")
-    queue = []
-    for frame in value["queue"]:
-        if not isinstance(frame, dict) or set(frame) != {
-                "relative", "levels", "page"}:
-            raise RuntimeError("consolidation scan cursor is invalid")
-        relative = frame["relative"]
-        if not isinstance(relative, str) or os.path.isabs(relative) \
-                or relative in {".", ".."} \
-                or any(part in {"", ".", ".."}
-                       for part in relative.split("/") if relative) \
-                or isinstance(frame["levels"], bool) \
-                or not isinstance(frame["levels"], int) \
-                or frame["levels"] < 0 \
-                or frame["levels"] > MAX_CONSOLIDATION_TREE_LEVELS:
-            raise RuntimeError("consolidation scan cursor is invalid")
-        queue.append({"relative": relative, "levels": frame["levels"],
-                      "page": _validated_source_page_state(frame["page"])})
-    pending = [_canonical_consolidation_day(day)
-               for day in value["pending_days"]]
-    if len({(day["organ"], day["date"]) for day in pending}) != len(pending):
-        raise RuntimeError("consolidation candidate day is duplicated")
-    claims = []
-    for claim in value["claims"]:
-        if not isinstance(claim, dict) or set(claim) != {
-                "organ", "date", "cutoff", "directory", "sources"}:
-            raise RuntimeError("consolidation day claim is invalid")
-        day = _canonical_consolidation_day(
-            {"organ": claim.get("organ"), "date": claim.get("date")})
-        directory = _validated_source_page_state(claim.get("directory"))
-        sources = claim.get("sources")
-        if not isinstance(sources, list) \
-                or len(sources) > MAX_EVENT_SHARDS or not sources:
-            raise RuntimeError("consolidation day claim is invalid")
-        canonical_sources = []
-        for record in sources:
-            if not isinstance(record, dict) or set(record) != {
-                    "rel", "sha256"} \
-                    or not isinstance(record.get("rel"), str) \
-                    or not isinstance(record.get("sha256"), str) \
-                    or re.fullmatch(
-                        r"[0-9a-f]{64}", record["sha256"]) is None:
-                raise RuntimeError("consolidation day claim is invalid")
-            organ, date, _part = _event_source_parts(record["rel"])
-            if organ != day["organ"] or date != day["date"]:
-                raise RuntimeError("consolidation day claim is invalid")
-            canonical_sources.append(dict(record))
-        canonical_sources.sort(key=lambda record: record["rel"])
-        if sources != canonical_sources \
-                or len({record["rel"] for record in sources}) != len(sources):
-            raise RuntimeError("consolidation day claim is invalid")
-        if claim["cutoff"] != value["cutoff"]:
-            raise RuntimeError("consolidation claim cutoff conflicts")
-        claims.append({**day, "cutoff": claim["cutoff"],
-                       "directory": directory,
-                       "sources": canonical_sources})
-    if value["phase"] == "complete" and queue:
-        raise RuntimeError("completed consolidation scan retains a cursor")
-    return dict(value, queue=queue, pending_days=pending, claims=claims)
-
-
-def _load_consolidation_scan(cutoff):
-    """Load one cutoff-pinned generation, rolling only after convergence."""
-    path = _consolidation_scan_path()
-    value = read_state_json(path, {}, "consolidation scan")
-    if not value:
-        return _fresh_consolidation_scan(cutoff)
-    value = _canonical_consolidation_scan(value)
-    if value["cutoff"] != cutoff \
-            and value["phase"] == "complete" \
-            and not value["queue"] \
-            and not value["pending_days"] \
-            and not value["claims"]:
-        # A later UTC day widens eligibility only after the prior generation
-        # has no cursor or admitted work left. Restarting an incomplete scan
-        # here would repeatedly discard its suffix on a large corpus.
-        return _fresh_consolidation_scan(cutoff)
-    return value
-
-
-def _save_consolidation_scan(value):
-    value = _canonical_consolidation_scan(value)
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=False)
-    if len(encoded.encode("utf-8")) > MAX_STATE_JSON_BYTES:
-        raise RuntimeError("consolidation scan state exceeds its byte bound")
-    path = _consolidation_scan_path()
-    ensure_durable_directory(os.path.dirname(path))
-    atomic_write(path, encoded)
-    return value
-
-
-def _advance_consolidation_scan(value):
-    """Inspect one global directory-page budget without deletion inference."""
-    value = _canonical_consolidation_scan(value)
-    if value["claims"] or value["pending_days"]:
-        return value
-    if value["phase"] == "complete":
-        return value
-    root = os.path.join(CORPUS, "events")
-    queue = collections.deque(value["queue"])
-    remaining = MAX_SOURCE_SCAN_ENTRIES
-    discovered = []
-    while queue and remaining:
-        frame = queue.popleft()
-        directory = os.path.join(root, frame["relative"])
-        try:
-            entries, complete, inspected, next_page = \
-                _bounded_source_entries(
-                    directory, frame["page"], remaining,
-                    cleanup_legacy_atomic=True)
-        except FileNotFoundError:
-            if not frame["relative"]:
-                queue.clear()
-                break
-            continue
-        if next_page.get("reset"):
-            return _save_consolidation_scan(
-                _fresh_consolidation_scan(value["cutoff"]))
-        remaining -= inspected
-        if not complete:
-            frame["page"] = next_page
-            queue.appendleft(frame)
-        for entry in entries:
-            relative = os.path.join(frame["relative"], entry["name"])
-            if frame["levels"] and stat.S_ISDIR(entry["mode"]):
-                if len(queue) >= MAX_CONSOLIDATION_DIRECTORY_QUEUE:
-                    raise RuntimeError(
-                        "consolidation directory queue exceeds its bound")
-                queue.append({"relative": relative,
-                              "levels": frame["levels"] - 1,
-                              "page": {}})
-                continue
-            if frame["levels"] or not entry["name"].endswith(".md"):
-                continue
-            rel = os.path.join("events", relative).replace(os.sep, "/")
-            try:
-                organ, date, _part = _event_source_parts(rel)
-            except ValueError:
-                continue
-            if date < value["cutoff"]:
-                discovered.append({"organ": organ, "date": date})
-    deduped = {(day["organ"], day["date"]): day for day in discovered}
-    value["pending_days"] = [deduped[key] for key in sorted(deduped)]
-    value["queue"] = list(queue)
-    if not queue:
-        value["phase"] = "complete"
-    return _save_consolidation_scan(value)
-
-
-def _bounded_event_directory_entries(organ):
-    """Read one complete organ directory only within the existing page cap."""
-    root = os.path.join(CORPUS, "events", organ)
-    page = {}
-    remaining = MAX_EVENT_LOOKUP_PAGES
-    gathered = []
-    while remaining:
-        limit = min(remaining, MAX_SOURCE_SCAN_ENTRIES)
-        try:
-            entries, complete, inspected, next_page = \
-                _bounded_source_entries(
-                    root, page, limit, cleanup_legacy_atomic=True)
-        except FileNotFoundError:
-            return [], {}
-        if next_page.get("reset"):
-            raise RuntimeError(
-                "event directory changed during bounded consolidation scan")
-        gathered.extend(entries)
-        remaining -= inspected
-        if complete:
-            return gathered, next_page
-        if inspected <= 0:
-            raise RuntimeError("event directory scan made no progress")
-        page = next_page
-    raise RuntimeError("event directory exceeds its consolidation page bound")
-
-
-def _prepare_consolidation_claims(value):
-    if value["claims"]:
-        return value
-    selected = value["pending_days"][:MAX_CONSOLIDATION_DAYS_PER_RUN]
-    if not selected:
-        return value
-    by_organ = collections.defaultdict(list)
-    for day in selected:
-        by_organ[day["organ"]].append(day["date"])
-    claims = []
-    for organ in sorted(by_organ):
-        entries, directory = _bounded_event_directory_entries(organ)
-        wanted = set(by_organ[organ])
-        sources = collections.defaultdict(list)
-        for entry in entries:
-            if not entry["name"].endswith(".md"):
-                continue
-            if not stat.S_ISREG(entry["mode"]):
-                raise RuntimeError(
-                    "consolidation event source is not a regular file")
-            rel = f"events/{organ}/{entry['name']}"
-            try:
-                source_organ, date, _part = _event_source_parts(rel)
-            except ValueError:
-                continue
-            if source_organ != organ or date not in wanted:
-                continue
-            slug = rel[:-3]
-            text = _read_event_page(slug)
-            raw = text.encode("utf-8")
-            sources[date].append({
-                "rel": rel,
-                "sha256": hashlib.sha256(
-                    rel.encode("utf-8") + b"\0" + raw).hexdigest(),
-            })
-        for date in sorted(wanted):
-            records = sorted(sources.get(date, []),
-                             key=lambda record: record["rel"])
-            if not records:
-                # A candidate may have disappeared before its immutable claim.
-                # It makes no absence claim and will be reconsidered later.
-                continue
-            claims.append({"organ": organ, "date": date,
-                           "cutoff": value["cutoff"],
-                           "directory": directory,
-                           "sources": records})
-    claimed_keys = {(claim["organ"], claim["date"]) for claim in claims}
-    selected_keys = {(day["organ"], day["date"]) for day in selected}
-    value["pending_days"] = [
-        day for day in value["pending_days"]
-        if (day["organ"], day["date"]) not in selected_keys
-        or (day["organ"], day["date"]) in claimed_keys]
-    value["claims"] = claims
-    return _save_consolidation_scan(value)
-
-
-def _claimed_consolidation_paths(value):
-    """Revalidate exact claim bytes; missing sources require epoch lineage."""
-    if not value["claims"]:
-        return []
-    by_organ = collections.defaultdict(list)
-    for claim in value["claims"]:
-        by_organ[claim["organ"]].append(claim)
-    paths = []
-    for organ, claims in by_organ.items():
-        entries, _generation = _bounded_event_directory_entries(organ)
-        live = {}
-        selected_dates = {claim["date"] for claim in claims}
-        for entry in entries:
-            if not entry["name"].endswith(".md"):
-                continue
-            rel = f"events/{organ}/{entry['name']}"
-            try:
-                _source_organ, date, _part = _event_source_parts(rel)
-            except ValueError:
-                continue
-            if date in selected_dates:
-                live[rel] = os.path.join(CORPUS, rel)
-        for claim in claims:
-            records = {record["rel"]: record for record in claim["sources"]}
-            extra = {rel for rel in live
-                     if _event_source_parts(rel)[1] == claim["date"]} \
-                - set(records)
-            if extra:
-                raise RuntimeError(
-                    "live event shards conflict with consolidation claim")
-            epoch = None
-            for rel, record in records.items():
-                path = live.get(rel)
-                if path is not None:
-                    text = _read_event_page(rel[:-3])
-                    digest = hashlib.sha256(
-                        rel.encode("utf-8") + b"\0"
-                        + text.encode("utf-8")).hexdigest()
-                    if digest != record["sha256"]:
-                        raise RuntimeError(
-                            "live event shard conflicts with epoch source "
-                            "lineage and consolidation "
-                            f"claim: {rel}")
-                    paths.append(path)
-                    continue
-                if epoch is None:
-                    epoch = _read_epoch_state(
-                        _epoch_slug_for_day(organ, claim["date"]))
-                if record not in epoch["source_manifest"]:
-                    raise RuntimeError(
-                        "missing event shard lacks exact epoch source lineage")
-    return sorted(paths)
-
-
-def _acknowledge_consolidation_claims(value):
-    claimed_days = {(claim["organ"], claim["date"])
-                    for claim in value["claims"]}
-    mutated = False
-    for claim in value["claims"]:
-        for record in claim["sources"]:
-            if not page_exists(record["rel"][:-3]):
-                mutated = True
-                break
-    value["pending_days"] = [
-        day for day in value["pending_days"]
-        if (day["organ"], day["date"]) not in claimed_days]
-    value["claims"] = []
-    if mutated:
-        replacement = _fresh_consolidation_scan(value["cutoff"])
-        return _save_consolidation_scan(replacement)
-    return _save_consolidation_scan(value)
-
-
-def _consolidation_scan_debt():
-    path = _consolidation_scan_path()
-    try:
-        value = read_state_json(path, {}, "consolidation scan")
-    except RuntimeError as exc:
-        return f"consolidation scan refused: {exc}"
-    if not value:
-        return ""
-    value = _canonical_consolidation_scan(value)
-    if value["claims"]:
-        return "a bounded consolidation day claim is pending"
-    if value["pending_days"] or value["phase"] != "complete":
-        return "bounded corpus consolidation scan is pending"
-    return ""
-
-
-def consolidate_corpus():
-    """Systems consolidation (hippocampus→neocortex): day pages older than
-    the episodic window compact into weekly epoch pages. McGaugh preserve
-    rule: declared safety-class days stay verbatim. Originals remain in
-    corpus git history."""
-    # never consolidate over an unhealthy repo: the unlink below is only
-    # honest if the verbatim file is provably in git history first
-    if corpus_commit("pre-consolidation") == "error":
-        raise RuntimeError("pre-consolidation corpus git commit failed")
-    mind_state = siamind.load_mind()
-    # A completed `sia memory --pin` is protection immediately, even though
-    # the single-writer brainstem materializes it on the next pulse.  The
-    # producer and DREAM share the corpus lease; the queue snapshot itself is
-    # additionally bounded and flocked inside siamind.
-    scheduled_pages = siamind.pending_user_pin_slugs() | {
-        slug for slug, record in mind_state.get("nodes", {}).items()
-        if isinstance(record, dict)
-        and siamind.is_important(record)
-    }
-    cutoff = (utcnow() - datetime.timedelta(
-        days=siamind.EPISODIC_DAYS)).strftime("%Y-%m-%d")
-    scan_state = _load_consolidation_scan(cutoff)
-    scan_state = _advance_consolidation_scan(scan_state)
-    scan_state = _prepare_consolidation_claims(scan_state)
-    if not scan_state["claims"]:
-        return 0, 0, 0
-    claimed_paths = _claimed_consolidation_paths(scan_state)
-    groups, kept_days = {}, set()
-    epoch_states = {}
-
-    def epoch_state_for_day(organ, date):
-        slug = _epoch_slug_for_day(organ, date)
-        if slug not in epoch_states:
-            epoch_states[slug] = _read_epoch_state(slug)
-        return epoch_states[slug]
-
-    day_paths = collections.defaultdict(list)
-    for path in claimed_paths:
-        rel = os.path.relpath(path, CORPUS)
-        try:
-            organ, date, part = _event_source_parts(rel)
-        except ValueError:
-            continue
-        if date >= cutoff:
-            continue
-        page_slug = rel[:-3]
-        day_paths[(organ, date)].append((path, rel, page_slug, part))
-
-    for (organ, date), paths in day_paths.items():
-        paths.sort(key=lambda item: item[3])
-        observed_parts = [item[3] for item in paths]
-        observed_parts.sort()
-        if len(observed_parts) != len(set(observed_parts)):
-            raise RuntimeError("event day shard identity is duplicated")
-
-        try:
-            epoch_state = epoch_state_for_day(organ, date)
-        except ConsolidationCapacityError:
-            kept_days.add((organ, date))
-            continue
-        day_manifest = []
-        for record in epoch_state["source_manifest"]:
-            source_organ, source_date, _source_part = _event_source_parts(
-                record["rel"])
-            if source_organ == organ and source_date == date:
-                day_manifest.append(record)
-        recovery_lineage = bool(day_manifest)
-        manifest_by_rel = {record["rel"]: record
-                           for record in day_manifest}
-        if recovery_lineage:
-            if date not in epoch_state["dates"] \
-                    or any(rel not in manifest_by_rel
-                           for _path, rel, _page_slug, _part in paths):
-                raise RuntimeError(
-                    "live event shards conflict with epoch source lineage")
-        elif observed_parts != list(range(1, observed_parts[-1] + 1)):
-            raise RuntimeError("event day shards are not contiguous")
-
-        durable = True
-        for _path, rel, _page_slug, _part in paths:
-            try:
-                tracked = _run_bounded_text_process(
-                    ["git", "ls-files", "--error-unmatch", "--", rel],
-                    env=None, timeout=30, cwd=CORPUS,
-                    label="git tracked-source check").returncode == 0
-                clean_status = _run_bounded_text_process(
-                    ["git", "status", "--porcelain", "--", rel],
-                    env=None, timeout=30, cwd=CORPUS,
-                    label="git source status")
-                clean = clean_status.returncode == 0 \
-                    and clean_status.stdout.strip() == ""
-            except Exception:
-                tracked = clean = False
-            durable = durable and tracked and clean
-        if not durable:
-            continue               # retain the entire day; try next dream
-
-        day_items = []
-        protected = any(page_slug in scheduled_pages
-                        for _path, _rel, page_slug, _part in paths)
-        for path, rel, _page_slug, part in paths:
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-                | getattr(os, "O_NOFOLLOW", 0)
-            try:
-                fd = os.open(path, flags)
-            except OSError as exc:
-                raise RuntimeError(
-                    f"consolidation source cannot be opened safely: {rel}") \
-                    from exc
-            with os.fdopen(fd, "rb") as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode) \
-                        or before.st_size > MAX_EVENT_PAGE_BYTES:
-                    raise RuntimeError(
-                        f"consolidation source is not a bounded regular file: "
-                        f"{rel}")
-                raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
-                after = os.fstat(stream.fileno())
-            before_token = (before.st_dev, before.st_ino, before.st_size,
-                            before.st_mtime_ns, before.st_ctime_ns)
-            after_token = (after.st_dev, after.st_ino, after.st_size,
-                           after.st_mtime_ns, after.st_ctime_ns)
-            if before_token != after_token \
-                    or len(raw) > MAX_EVENT_PAGE_BYTES:
-                raise RuntimeError(
-                    f"consolidation source changed while read: {rel}")
-            try:
-                text = raw.decode("utf-8", errors="strict")
-            except UnicodeError as exc:
-                raise RuntimeError(
-                    f"consolidation source is not valid UTF-8: {rel}") \
-                    from exc
-            source_id = hashlib.sha256(
-                rel.encode("utf-8") + b"\0" + raw).hexdigest()
-            lineage_record = manifest_by_rel.get(rel)
-            if recovery_lineage and (lineage_record is None
-                                     or lineage_record["sha256"]
-                                     != source_id):
-                raise RuntimeError(
-                    f"live event shard conflicts with epoch source lineage: "
-                    f"{rel}")
-            tm = re.search(r"^tags: \[(.*)\]$", text, re.M)
-            tags = {tag.strip()
-                    for tag in (tm.group(1).split(",") if tm else [])}
-            protected = protected or bool(tags & siamind.SAFETY_TAGS)
-            day_items.append(
-                (date, path, text, tags, source_id, rel, part))
-        if protected and not recovery_lineage:
-            # McGaugh preservation is a day-level invariant. Keeping only a
-            # protected shard would orphan its siblings' numbering.
-            kept_days.add((organ, date))
-            continue
-        y, w, _ = datetime.date.fromisoformat(date).isocalendar()
-        groups.setdefault((organ, y, w), []).extend(day_items)
-    consolidated_days = set()
-    written_epochs = 0
-    for (organ, y, w), items in groups.items():
-        items.sort(key=lambda item: (item[0], item[6], item[5]))
-        slug = f"epochs/{organ}/{y}-w{w:02d}"
-        state = epoch_states.get(slug)
-        if state is None:
-            state = _read_epoch_state(slug)
-            epoch_states[slug] = state
-        et = state["text"]
-        prior_sources = state["sources"]
-        prior_dates = state["dates"]
-        prior_ndays = state["ndays"]
-        prior_source_set = set(prior_sources)
-        pending_items = [item for item in items
-                         if item[4] not in prior_source_set]
-        source_ids = prior_sources + [item[4] for item in pending_items]
-        try:
-            merged_manifest = _merge_epoch_source_manifest(
-                state["source_manifest"], items, slug, source_ids)
-            event_entries = _event_index_entries_for_sources(items, slug)
-            _preflight_event_index_entries(event_entries)
-        except ConsolidationCapacityError:
-            # Capacity is retention policy, not a failed transaction. Nothing
-            # in this weekly group has been mutated yet, so DREAM can settle
-            # its publication marker and reconsider the verbatim days later.
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-
-        for item in pending_items:
-            if item[0] in prior_dates \
-                    and not any(record["rel"] == item[5]
-                                for record in state["source_manifest"]):
-                raise RuntimeError(
-                    "event source conflicts with legacy epoch date lineage")
-
-        def unlink_admitted(item):
-            """Delete only the exact source bytes admitted to this epoch."""
-            _date, path, _text, _tags, expected_id, rel, _part = item
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-                | getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(path, flags)
-            with os.fdopen(fd, "rb") as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode) \
-                        or before.st_size > MAX_EVENT_PAGE_BYTES:
-                    raise RuntimeError(
-                        f"consolidation cleanup target is not bounded: {rel}")
-                current = stream.read(MAX_EVENT_PAGE_BYTES + 1)
-                after = os.fstat(stream.fileno())
-            observed = (before.st_dev, before.st_ino, before.st_size,
-                        before.st_mtime_ns, before.st_ctime_ns)
-            finished = (after.st_dev, after.st_ino, after.st_size,
-                        after.st_mtime_ns, after.st_ctime_ns)
-            target = os.lstat(path)
-            if observed != finished or len(current) > MAX_EVENT_PAGE_BYTES \
-                    or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                          after.st_ino):
-                raise RuntimeError(
-                    f"consolidation source changed before cleanup: {rel}")
-            current_id = hashlib.sha256(
-                rel.encode("utf-8") + b"\0" + current).hexdigest()
-            if current_id != expected_id:
-                raise RuntimeError(
-                    f"consolidation source changed before cleanup: {rel}")
-            _before_corpus_mutation()
-            os.unlink(path)
-            dfd = os.open(os.path.dirname(path),
-                          os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
-
-        # A crash can leave sources whose lineage is already in the durable
-        # epoch page. Cleanup is replayable and must not merge their counts a
-        # second time.
-        if not pending_items:
-            recovery_dates = sorted(
-                set(prior_dates) | {item[0] for item in items})
-            try:
-                recovery_epoch = _render_epoch_source_manifest(
-                    state, merged_manifest, recovery_dates)
-            except ConsolidationCapacityError:
-                kept_days |= {(organ, item[0]) for item in items}
-                continue
-            _write_epoch_source_manifest(state, recovery_epoch)
-            _publish_event_index_entries(event_entries)
-            for item in items:
-                unlink_admitted(item)
-            continue
-
-        name = ORGANS.get(organ, (organ, ""))[0]
-        counts, all_tags, bullets, links = {}, {organ}, [], set()
-        for date, path, text, tags, _source_id, _rel, _part in pending_items:
-            cm = re.search(r"^sia_counts: (.*)$", text, re.M)
-            if not cm:
-                raise RuntimeError(
-                    f"consolidation source lacks sia_counts: "
-                    f"{os.path.relpath(path, CORPUS)}")
-            source_counts = _parse_sia_counts(
-                cm.group(1), os.path.relpath(path, CORPUS))
-            for k, v in source_counts.items():
-                counts[k] = counts.get(k, 0) + v
-            all_tags |= tags
-            log_part = text.split("## Timeline")[0].split("## Log")[-1]
-            blts = [l for l in log_part.splitlines() if l.startswith("- ")]
-            for b in _epoch_exemplars(blts):
-                bullets.append(f"- {date} ·" + b[1:])
-            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", text):
-                links.add(wl)
-        # merge with an existing epoch page — a later consolidation run for
-        # the same week must extend it, never atomically erase it
-        from_date = pending_items[0][0]
-        to_date = pending_items[-1][0]
-        pending_dates = {item[0] for item in pending_items}
-        all_dates = sorted(set(prior_dates) | pending_dates)
-        ndays = prior_ndays + len(pending_dates - set(prior_dates))
-        if et:
-            pm = re.search(r"^sia_counts: (.*)$", et, re.M)
-            if not pm:
-                raise RuntimeError(f"existing epoch lacks sia_counts: {slug}")
-            epoch_counts = _parse_sia_counts(pm.group(1), slug)
-            for k, v in epoch_counts.items():
-                counts[k] = counts.get(k, 0) + v
-            ptm = re.search(r"^tags: \[(.*)\]$", et, re.M)
-            if ptm:
-                all_tags |= {t.strip() for t in ptm.group(1).split(",")
-                             if t.strip()}
-            pdm = re.search(r"^date: (.*)$", et, re.M)
-            if pdm and pdm.group(1).strip() < from_date:
-                from_date = pdm.group(1).strip()
-            etm = re.search(
-                r"Consolidated from \d+ day-memories "
-                r"\(\d{4}-\d{2}-\d{2} … (\d{4}-\d{2}-\d{2})\)", et)
-            if etm and etm.group(1) > to_date:
-                to_date = etm.group(1)
-            if "## Exemplars" in et:
-                ex = et.split("## Exemplars", 1)[1].split("\n## ")[0]
-                prev_b = [l for l in ex.splitlines() if l.startswith("- ")]
-                bullets = prev_b + bullets
-            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", et):
-                links.add(wl)
-        bullets = bullets[:24]
-        total = sum(counts.values())
-        agg = ", ".join(f"{v}× {k}" for k, v in
-                        sorted(counts.items(), key=lambda kv: -kv[1])[:8])
-        linkline = " ".join(f"[[{l}]]" for l in sorted(links)
-                            if not l.startswith("events/"))[:800]
-        epoch_frontmatter = [
-            "type: epoch", fm_title(f"{name} — {y} week {w}"),
-            f"tags: [{', '.join(sorted(all_tags))}]",
-            f"date: {from_date}",
-            f"sia_sources: {json.dumps(source_ids, separators=(',', ':'))}",
-            "sia_source_manifest: " + json.dumps(
-                merged_manifest, separators=(",", ":"),
-                ensure_ascii=False),
-            f"sia_dates: {json.dumps(all_dates, separators=(',', ':'))}",
-            f"sia_counts: {json.dumps(counts, sort_keys=True)}",
-        ]
-        if organ == "jackal":
-            epoch_frontmatter.insert(1, "origin: derived")
-        epoch_body = (
-            f"# {name} — {y} week {w}\n\n"
-            f"Consolidated from {ndays} day-memories "
-            f"({from_date} … {to_date}); originals verbatim in "
-            f"corpus git history. Organ: [[organs/{organ}]] of "
-            f"[[sia/cortex]].\n\n"
-            f"## Exemplars\n" + "\n".join(bullets) + "\n\n"
-            f"{linkline}\n\n"
-            f"## Timeline\n- **{to_date}** — {total} events that "
-            f"week: {agg}\n")
-        try:
-            rendered_epoch = _render_bounded_epoch(
-                slug, epoch_frontmatter, epoch_body)
-        except ConsolidationCapacityError:
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-        _write_bounded_epoch(slug, rendered_epoch)
-        _publish_event_index_entries(event_entries)
-        consolidated_days |= {(organ, item[0]) for item in pending_items}
-        written_epochs += 1
-        for item in items:
-            unlink_admitted(item)
-    result = (len(consolidated_days), written_epochs, len(kept_days))
-    _acknowledge_consolidation_claims(scan_state)
-    return result
-
-
 def _pending_dream_unit(mind):
     receipt = mind.get("dream_unit")
     if receipt is None:
         return None
     required = {"v", "id", "unit", "ledger", "thought", "trend"}
     if not isinstance(receipt, dict) or set(receipt) != required \
-            or receipt.get("v") != 1 \
+            or not _exact_int(receipt.get("v"), 1) \
             or not isinstance(receipt.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", receipt["id"]) is None \
             or receipt.get("unit") not in {"rehearse", "muse", "bench"}:
@@ -8631,7 +10357,7 @@ def _append_bench_trend_once(record, receipt_id):
             return False
         valid_lines.append(line.encode("utf-8"))
     # The cockpit consumes only a recent projection. Rotate that derived
-    # window before it can strand a durable dream-unit receipt at the file's
+    # window before it can strand a durable maintenance-unit receipt at the file's
     # row and byte bounds.
     prior = collections.deque(
         valid_lines,
@@ -8691,14 +10417,16 @@ def _embed_failure_reason(result):
     text = ((getattr(result, "stderr", "") or "").strip()
             or (getattr(result, "stdout", "") or "").strip()
             or f"exit {getattr(result, 'returncode', '?')}")
-    return " ".join(text.split())[:160]
+    return clip(redact(" ".join(text.split()), "status-error"), 160)
 
 
-def rehearse_memories(now=None, stage=None):
-    """Embed due pages and atomically stage their mind/ledger transition."""
+def rehearse_memories(now=None, stage=None, redaction_checkpoint=None):
+    """Embed due pages and atomically stage their policy/ledger transition."""
     now = time.time() if now is None else float(now)
     mind = siamind.load_mind(now=now)
-    siamind.sync_graph_state(mind, read_json(GRAPH_PATH, {}), now=now)
+    graph = _require_recoverable_graph_snapshot(
+        read_json(GRAPH_PATH, {}))
+    siamind.sync_graph_state(mind, graph, now=now)
     due = siamind.plan_rehearsal(mind, now=now)
     planned, next_cursor, deferred = siamind.select_rehearsal_window(
         due, mind.get("rehearsal_cursor", 0))
@@ -8738,6 +10466,8 @@ def rehearse_memories(now=None, stage=None):
     report = {"reviewed": reviewed, "embedded": embedded, "failed": failed,
               "missing": missing, "planned": attempted,
               "deferred": deferred, "decay": decay}
+    if redaction_checkpoint is not None:
+        redaction_checkpoint()
     if stage is not None:
         stage(mind, report)
     siamind.save_mind(mind)
@@ -8751,18 +10481,48 @@ def dream(memo_update=True, now=None):
 
 
 def _dream_transaction(memo_update=True, now=None):
-    """Install the write-ahead publication barrier for one dream cycle."""
-    ensure_dirs()
+    """Install the publication barrier for one scheduled-maintenance cycle."""
     memo = load_memo()
+    _settle_pending_brainstem_failure_publication(memo)
+    _require_status_memo_fields(memo)
+    _pending_pulse_marker(memo)
+    _pending_pulse_status_effects(memo)
+    cursors = load_cursors()
+    _recover_notify_baseline_attempt(memo, cursors)
+    if _pending_notify_baseline_attempt(memo) is not None:
+        raise RuntimeError(
+            "dream refused while notification baseline recovery is pending")
+    source_marker = _authorize_pending_source_replay(
+        _pending_source_replay_marker(memo), cursors)
+    ensure_dirs()
     if _ready_receipt(memo) is None \
             and memo.get("sync_needed", False) is False:
         _mark_sync_needed(memo)
     with corpus_mutation_barrier(lambda: _mark_sync_needed(memo)):
-        return _dream_transaction_guarded(memo_update, now, memo)
+        return _dream_transaction_guarded(
+            memo_update, now, memo, cursors=cursors,
+            source_marker=source_marker)
 
 
-def _dream_transaction_guarded(memo_update, now, memo):
-    """Nightly consolidation: run gbrain's deterministic dream cycle."""
+def _dream_transaction_guarded(
+        memo_update, now, memo, *, cursors=None, source_marker=None):
+    """Run weekly compaction and gbrain's compatibility dream cycle."""
+    _require_status_memo_fields(memo)
+    _pending_pulse_marker(memo)
+    _pending_pulse_status_effects(memo)
+    cursors = load_cursors() if cursors is None else cursors
+    _recover_notify_baseline_attempt(memo, cursors)
+    if _pending_notify_baseline_attempt(memo) is not None:
+        raise RuntimeError(
+            "dream refused while notification baseline recovery is pending")
+    current_source_marker = _pending_source_replay_marker(memo)
+    if source_marker is not None and current_source_marker != source_marker:
+        raise SourceReplayQuarantine(
+            "source replay quarantine: marker changed before dream recovery")
+    _authorize_pending_source_replay(current_source_marker, cursors)
+    if _pending_pulse_status_effects(memo) is not None:
+        raise RuntimeError(
+            "dream refused while pulse status-effects recovery is pending")
     now = time.time() if now is None else float(now)
     if not isinstance(memo.get("sync_needed", False), bool):
         raise RuntimeError("brainstem memo sync-needed state is invalid")
@@ -8803,6 +10563,10 @@ def _dream_transaction_guarded(memo_update, now, memo):
             memo, "publish interrupted pulse before dream recovery",
             clear=False)
         _recover_pending_pulse_publication(memo)
+        if _pending_pulse_status_effects(memo) is not None:
+            raise RuntimeError(
+                "dream deferred until a pulse publishes recovered status "
+                "effects")
     if _pending_dream_marker(memo) is not None:
         _settle_pending_publication(
             memo, "publish interrupted dream before dream recovery",
@@ -8824,16 +10588,17 @@ def _dream_transaction_guarded(memo_update, now, memo):
             if result is not None:
                 ncomp, nepoch, nkept = result
         except Exception as e:
+            detail = _dream_diagnostic(memo, e, 80)
             durable_ledger_append(
-                "DREAM:consolidate", "error", str(e)[:80])
-            log(f"consolidation failed: {e!r}")
+                "DREAM:consolidate", "error", detail)
+            log(f"consolidation failed: {detail}")
             raise RuntimeError(
-                f"dream consolidation requires recovery: {e}") from e
+                f"dream consolidation requires recovery: {detail}") from e
     if ncomp:
         add_thought(store0, "dream",
-            f"I consolidated {ncomp} day-memories into {nepoch} epoch "
-            f"memories; {nkept} protected day-memories stay verbatim. "
-            f"The originals live on in my git history.", ["sia/cortex"])
+            f"Weekly compaction combined {ncomp} day pages into {nepoch} epoch "
+            f"pages; {nkept} protected day pages stay verbatim. "
+            f"Original versions remain in corpus git history.", ["sia/cortex"])
     # Consolidation rewrites corpus topology. Rehearsal must never embed
     # against the pre-consolidation index or graph.
     export_thoughts(store0)
@@ -8864,8 +10629,8 @@ def _dream_transaction_guarded(memo_update, now, memo):
                     f"q{quality}:{count}"
                     for quality, count in sorted(qualities.items()))
                 thought_text = (
-                    f"I rehearsed {len(reviewed)} important memories on "
-                    f"their SM-2 schedule ({quality_text}); "
+                    f"Scheduled re-embedding completed for {len(reviewed)} "
+                    f"priority pages under SM-2 ({quality_text}); "
                     f"{rehearsal['embedded']} pages re-embedded. Decay "
                     f"only changes retrieval salience; it never deletes "
                     f"evidence.{failure_text}{deferred_text}")
@@ -8880,7 +10645,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 detail = f" First reason: {reasons[0]}" if reasons else ""
                 thought = (
                     "dream",
-                    f"I could not rehearse any of the "
+                    f"Scheduled re-embedding did not complete for any of the "
                     f"{len(rehearsal['planned'])} due memories: "
                     f"{rehearsal['failed']} embed failure(s), "
                     f"{rehearsal['missing']} missing page(s). The SM-2 "
@@ -8897,22 +10662,33 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 f"deferred={deferred}",
                 json.dumps(reviewed, sort_keys=True), thought=thought)
 
-        rehearsal = rehearse_memories(now=now, stage=stage_rehearsal)
+        rehearsal = rehearse_memories(
+            now=now, stage=stage_rehearsal,
+            redaction_checkpoint=lambda:
+                _checkpoint_dream_redactions(memo))
         _settle_pending_dream_unit(store0, expected_unit="rehearse")
-    except LedgerTransitionError:
-        raise
+    except LedgerTransitionError as exc:
+        detail = _dream_diagnostic(memo, exc, 160)
+        raise LedgerTransitionError(detail) from exc
     except Exception as e:
-        durable_ledger_append("DREAM:rehearse", "error", str(e)[:80])
-        log(f"rehearsal failed: {e!r}")
+        detail = _dream_diagnostic(memo, e, 80)
+        durable_ledger_append("DREAM:rehearse", "error", detail)
+        log(f"rehearsal failed: {detail}")
     export_thoughts(store0)
     _settle_thought_page_signals(store0)
     _settle_pending_publication(
-        memo, "publish dream rehearsal thoughts before musing")
+        memo, "publish scheduled-review entries before graph walk")
     try:
+        g = _require_musing_graph_snapshot(
+            read_json(GRAPH_PATH, None))
         mind = siamind.load_mind()
         pruned = siamind.hebb_hygiene(mind, now=now)
-        g = read_json(GRAPH_PATH, None)
-        _, lhead = ledger_head()
+        lseq, lhead = ledger_head()
+        if isinstance(lseq, bool) or not isinstance(lseq, int) \
+                or not 0 < lseq <= MAX_JSON_SAFE_INTEGER \
+                or not isinstance(lhead, str) \
+                or re.fullmatch(r"[0-9a-f]{64}", lhead) is None:
+            raise RuntimeError("signed ledger head is unavailable for seeded graph walk")
         dream_day = datetime.datetime.fromtimestamp(
             now, datetime.timezone.utc).strftime("%Y-%m-%d")
         m = siamind.muse(mind, g, dream_day, lhead, now=now)
@@ -8922,12 +10698,14 @@ def _dream_transaction_guarded(memo_update, now, memo):
             f"edges-pruned={pruned}", "", thought=thought)
         siamind.save_mind(mind)
         _settle_pending_dream_unit(store0, expected_unit="muse")
-    except LedgerTransitionError:
-        raise
+    except LedgerTransitionError as exc:
+        detail = _dream_diagnostic(memo, exc, 160)
+        raise LedgerTransitionError(detail) from exc
     except Exception as e:
-        durable_ledger_append("DREAM:muse", "error", str(e)[:80])
-        log(f"musing failed: {e!r}")
-    # outcome learning: grade due predictions (≤3/night; configured judge,
+        detail = _dream_diagnostic(memo, e, 80)
+        durable_ledger_append("DREAM:muse", "error", detail)
+        log(f"seeded graph walk failed: {detail}")
+    # prediction grading: grade due predictions (≤3/night; configured judge,
     # deterministic Brier), then restate calibration
     try:
         completed_grades = 0
@@ -8943,7 +10721,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
             export_thoughts(store0)
             _settle_thought_page_signals(store0)
             _settle_pending_publication(
-                memo, "publish prior dream thoughts before grading")
+                memo, "publish prior maintenance entries before grading")
             gt = siatakes.grade_take(t, persist=persist_grade)
             if not gt:
                 continue
@@ -8954,7 +10732,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
             brier = (f" · Brier {gt['brier']}"
                      if gt["brier"] is not None else "")
             add_thought(store0, "grade",
-                f"Graded my prediction “{clip(gt['claim'], 80)}”: "
+                f"Prediction graded: “{clip(gt['claim'], 80)}”: "
                 f"{mark}{brier}.", [gt["slug"]], origin="model")
         if completed_grades:
             cal = siatakes.summary()
@@ -8977,11 +10755,13 @@ def _dream_transaction_guarded(memo_update, now, memo):
                 f"attempted={attempted_grades} "
                 f"completed={completed_grades} refused={refused_grades}")
         durable_ledger_append("DREAM:grade", grade_state, grade_detail)
-    except LedgerTransitionError:
-        raise
+    except LedgerTransitionError as exc:
+        detail = _dream_diagnostic(memo, exc, 160)
+        raise LedgerTransitionError(detail) from exc
     except Exception as e:
-        durable_ledger_append("DREAM:grade", "error", str(e)[:80])
-        log(f"take grading failed: {e!r}")
+        detail = _dream_diagnostic(memo, e, 80)
+        durable_ledger_append("DREAM:grade", "error", detail)
+        log(f"take grading failed: {detail}")
     # Heuristic drift tripwire: the historian retains a small date-seeded
     # observation of slug-family proximity. It does not run a reader or score
     # answer correctness; the full signed-ledger QA benchmark is separate.
@@ -9021,19 +10801,21 @@ def _dream_transaction_guarded(memo_update, now, memo):
                     f"DREAM benchmark staging remains uncertain: {exc}") \
                     from exc
             _settle_pending_dream_unit(store0, expected_unit="bench")
-    except LedgerTransitionError:
-        raise
+    except LedgerTransitionError as exc:
+        detail = _dream_diagnostic(memo, exc, 160)
+        raise LedgerTransitionError(detail) from exc
     except Exception as e:
-        durable_ledger_append("DREAM:bench", "error", str(e)[:80])
-        log(f"heuristic drift tripwire failed: {e!r}")
+        detail = _dream_diagnostic(memo, e, 80)
+        durable_ledger_append("DREAM:bench", "error", detail)
+        log(f"heuristic drift tripwire failed: {detail}")
     export_thoughts(store0)
     _settle_thought_page_signals(store0)
     _settle_pending_publication(
         memo, "publish dream benchmark before gbrain cycle")
-    # gbrain's dream command mutates its derived PGLite state. Publish a
+    # gbrain's compatibility ``dream`` command mutates derived PGLite state. Publish a
     # recovery identity before launching it, so a kill during any phase keeps
     # readiness closed until corpus sync + graph export are reconciled.
-    _mark_dream_publication(memo)
+    _mark_dream_publication(memo, _projected_pulse_redactions(memo))
     r = gbrain(["dream", "--json"], timeout=900)
     rep = None
     if r.returncode == 0:
@@ -9051,10 +10833,11 @@ def _dream_transaction_guarded(memo_update, now, memo):
                       rep.get("status") in {"ok", "clean", "partial"})
     if cycle_finished:
         tot = rep.get("totals", {})
-        bits = clip(", ".join(
+        bits = _dream_diagnostic(memo, ", ".join(
             f"{v} {k.replace('_', ' ')}" for k, v in tot.items()
-            if isinstance(v, (int, float)) and v), 400)
-        text = (f"I dreamed: consolidation cycle finished with status "
+            if isinstance(k, str) and isinstance(v, (int, float)) and v),
+            400)
+        text = (f"Weekly maintenance finished with status "
                 f"“{rep.get('status')}” in "
                 f"{round(rep.get('duration_ms', 0) / 1000)}s"
                 + (f" — {bits}." if bits else "."))
@@ -9074,26 +10857,28 @@ def _dream_transaction_guarded(memo_update, now, memo):
         _complete_pending_dream_cycle(memo, store)
     elif rep is not None:
         previous = memo.get("dream", {})
-        status = clip(str(rep.get("status") or "invalid-status"), 80)
-        reason = clip(str(rep.get("reason") or "cycle did not finish"), 400)
+        status = _dream_diagnostic(
+            memo, rep.get("status") or "invalid-status", 80)
+        reason = _dream_diagnostic(
+            memo, rep.get("reason") or "cycle did not finish", 400)
         dream_state = {
             "last": previous.get("last", ""), "attempt": iso(),
             "status": status, "summary": reason[-160:]}
         _bind_pending_dream_cycle(
             memo, dream_state, status, reason[:100], "",
-            f"My dream cycle did not finish: {status} ({reason}).",
+            f"Weekly maintenance did not finish: {status} ({reason}).",
             urgent=True)
         _complete_pending_dream_cycle(memo, store)
     else:
         previous = memo.get("dream", {})
-        failure_detail = clip(
-            r.stderr or r.stdout or "no diagnostic output", 400)
+        failure_detail = _dream_diagnostic(
+            memo, r.stderr or r.stdout or "no diagnostic output", 400)
         dream_state = {
             "last": previous.get("last", ""), "attempt": iso(),
             "status": "failed", "summary": failure_detail[-160:]}
         _bind_pending_dream_cycle(
             memo, dream_state, "failed", failure_detail[-100:], "",
-            "My dream cycle failed to run.", urgent=True)
+            "Weekly maintenance failed to run.", urgent=True)
         _complete_pending_dream_cycle(memo, store)
     export_thoughts(store)
     _settle_thought_page_signals(store)
@@ -9107,19 +10892,26 @@ def _dream_transaction_guarded(memo_update, now, memo):
         synced, sync_note = brain_sync()
         nodes, edges, pages_total = _export_graph_publication()
     except Exception as exc:
+        detail = _dream_diagnostic(memo, exc, 120)
         _bind_pending_dream_ledger(
-            memo, "error", str(exc)[:120], "projection exception")
+            memo, "error", detail, "projection exception")
         _settle_pending_dream_ledger(memo)
-        raise RuntimeError(f"dream publication failed: {exc}") from exc
+        raise RuntimeError(
+            f"dream publication failed: {detail}") from exc
+    sync_note = _dream_diagnostic(memo, sync_note, 400)
     _bind_pending_dream_ledger(
         memo, "ok" if synced else "sync-fail",
         f"commit={commit} graph={nodes}/{edges}/{pages_total}",
-        sync_note[:400])
+        sync_note)
     _settle_pending_dream_ledger(memo)
     if not synced:
-        raise RuntimeError(f"dream brain sync failed: {sync_note}")
+        raise RuntimeError(f"scheduled-maintenance index sync failed: {sync_note}")
     cleared_memo = dict(memo)
     completed_dream = _pending_dream_marker(memo)
+    if "redactions" in completed_dream:
+        cleared_memo["redactions"] = copy.deepcopy(
+            _pulse_redactions_at_least_memo(
+                memo, completed_dream["redactions"]))
     cleared_memo.pop("dream_publication", None)
     cleared_memo.pop("sync_needed", None)
     cleared_memo = _with_ready_receipt(
@@ -9127,7 +10919,7 @@ def _dream_transaction_guarded(memo_update, now, memo):
     _write_memo(cleared_memo)
     memo.clear()
     memo.update(cleared_memo)
-    # DREAM's own deterministic state is durable, but an earlier pulse may
+    # Scheduled maintenance state is durable, but an earlier pulse may
     # have left an external producer retryable. Selective finalization keeps
     # every queue-bound row whose exact producer still exists.
     _finalize_native_thought_mind_replay()

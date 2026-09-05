@@ -482,7 +482,7 @@ def _completion_release(payload):
         raise ValueError("first-light completion is malformed") from error
     if not isinstance(record, dict) or set(record) != {
             "v", "version", "state"} \
-            or isinstance(record.get("v"), bool) or record.get("v") != 1 \
+            or type(record.get("v")) is not int or record.get("v") != 1 \
             or record.get("state") not in {"installing", "ready"}:
         raise ValueError("first-light completion has an invalid schema")
     _version_parts(record.get("version"), "first-light completion")

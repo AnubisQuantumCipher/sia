@@ -4,6 +4,31 @@
 # state snapshots, and operator configuration are retained.
 
 set -uo pipefail
+# BEGIN SIA RELEASE LIFETIME
+if [ "${1:-}" = --sia-release-worker ]; then
+  [ "$#" -ge 5 ] || { echo "incomplete release ownership" >&2; exit 2; }
+  shift
+  sia_owner_control="$1" sia_owner_source="$2" sia_owner_script="$3"
+  sia_owner_root="$4"
+  shift 4
+  for sia_owner_descriptor in "$sia_owner_control" "$sia_owner_source" \
+      "$sia_owner_script" "$sia_owner_root"; do
+    case "$sia_owner_descriptor" in
+      ""|*[!0-9]*) echo "invalid release ownership descriptor" >&2; exit 2 ;;
+    esac
+  done
+  sia_owner_admission="$(python3 -I "/proc/self/fd/$sia_owner_source" admit \
+    "$sia_owner_control" "$sia_owner_source" "$sia_owner_script" \
+    "$sia_owner_root" "$$")" || exit 2
+  eval "$sia_owner_admission"
+  unset sia_owner_control sia_owner_source sia_owner_script sia_owner_root
+  unset sia_owner_descriptor sia_owner_admission
+else
+  sia_owner_entry="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")" || exit 2
+  exec python3 -I "${sia_owner_entry%/*}/bin/sialifetime.py" \
+    supervise --caller "$PPID" "$sia_owner_entry" "$@"
+fi
+# END SIA RELEASE LIFETIME
 
 case "${HOME:-}" in
   ""|/) echo "refusing uninstall with an unsafe HOME" >&2; exit 2 ;;
@@ -46,12 +71,7 @@ case "${1:-}" in
   *) echo "usage: ./uninstall.sh [--purge]" >&2; exit 2 ;;
 esac
 
-SIA_UNINSTALL_SOURCE="$(
-  cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd
-)" || {
-  echo "refusing uninstall because its release source is inaccessible" >&2
-  exit 2
-}
+SIA_UNINSTALL_SOURCE="$SIA_LIFETIME_SOURCE_ROOT"
 SIA_RELEASE_AUTHORITY=""
 SIA_RELEASE_AUTHORITY_FD=""
 
@@ -178,17 +198,21 @@ SIA_GBRAIN_LOCK_FD=""
 sia_uninstall_cleanup() {
   local status=$? lock_variable lock_descriptor barrier_state
   trap - EXIT
+  trap '' INT TERM HUP
+  lifetime_quiesce cleanup || exit 2
   set +e
   for lock_variable in SIA_GBRAIN_LOCK_FD SIA_CORPUS_LOCK_FD \
       SIA_BRAINSTEM_LOCK_FD; do
     lock_descriptor="${!lock_variable}"
     if [ -n "$lock_descriptor" ]; then
+      lifetime_release "$lock_variable" || exit 2
       flock -u "$lock_descriptor" >/dev/null 2>&1 || true
       eval "exec ${lock_descriptor}>&-"
       printf -v "$lock_variable" '%s' ""
     fi
   done
   if [ -n "$SIA_UNINSTALL_LOCK_FD" ]; then
+    lifetime_release SIA_UNINSTALL_LOCK_FD || exit 2
     flock -u "$SIA_UNINSTALL_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_UNINSTALL_LOCK_FD}>&-"
     SIA_UNINSTALL_LOCK_FD=""
@@ -218,223 +242,15 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # front door streams a status=exact 1048576-byte ceiling, rejects NUL/non-UTF-8,
 # and kills an overflowing producer before Bash materializes its response.
 bounded_command_capture() {
-  python3 - "$@" 3<&0 <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-MAX_CAPTURE_BYTES = 1_048_576
-MAX_RUNTIME_SECONDS = 120
-LEADER_POLL_SECONDS = 15
-arguments = sys.argv[1:]
-if arguments[:1] == ["--stdin"]:
-    child_stdin = 3
-    arguments = arguments[1:]
-else:
-    child_stdin = subprocess.DEVNULL
-if not arguments:
-    raise SystemExit("missing bounded inspector command")
-try:
-    process = subprocess.Popen(arguments, stdin=child_stdin,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT,
-                               start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded inspector: {error}", file=sys.stderr)
-    raise SystemExit(127)
-chunks = []
-total = 0
-deadline = time.monotonic() + MAX_RUNTIME_SECONDS
-selector = selectors.DefaultSelector()
-os.set_blocking(process.stdout.fileno(), False)
-selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ, "leader")
-
-
-def leader_exited():
-    # A registered pidfd is itself the non-reaping exit notification. Avoid a
-    # second waitid(P_PIDFD) syscall; the selector branch below observes it.
-    if pidfd is not None:
-        return False
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-failure_code = None
-failure_message = None
-leader_done = False
-stdout_open = True
-try:
-    while True:
-        if leader_exited():
-            leader_done = True
-            break
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            failure_code = 124
-            failure_message = "external inspector exceeded its runtime deadline"
-            break
-        wait_time = remaining if pidfd is not None else min(
-            remaining, LEADER_POLL_SECONDS)
-        for key, _ in selector.select(wait_time):
-            if key.data == "leader":
-                leader_done = True
-                continue
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                continue
-            if not chunk:
-                selector.unregister(process.stdout)
-                stdout_open = False
-                continue
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-        if failure_code is not None or leader_done:
-            break
-finally:
-    # Keep the leader unreaped until this signal. Its PID therefore still pins
-    # the process-group identity and cannot be recycled under killpg().
-    kill_group()
-    status = process.wait()
-    if stdout_open and total <= MAX_CAPTURE_BYTES:
-        while True:
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-    selector.close()
-    process.stdout.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if failure_code is not None:
-    print(failure_message, file=sys.stderr)
-    raise SystemExit(failure_code)
-content = b"".join(chunks)
-if b"\0" in content:
-    print("external inspector emitted NUL", file=sys.stderr)
-    raise SystemExit(125)
-try:
-    text = content.decode("utf-8", "strict")
-except UnicodeError:
-    print("external inspector emitted non-UTF-8 output", file=sys.stderr)
-    raise SystemExit(125)
-sys.stdout.write(text)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" capture --caller "$BASHPID" "$@"
 }
 
 # Status=exact deadline constants: parsed=2*60 exact=120,
-# parsed=5*60 exact=300, parsed=30*60 exact=1800, and parsed=15 exact=15.
-# These are operational ceilings, not claims that a command will finish.
+# parsed=5*60 exact=300, and parsed=30*60 exact=1800.
+# The accepted set is 120, 300, and 1800 seconds; capture uses 120. These are
+# operational ceilings, not claims that a command will finish.
 run_with_deadline() {
-  python3 - "$@" <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-ALLOWED_DEADLINES = {120, 300, 1800}
-LEADER_POLL_SECONDS = 15
-try:
-    deadline = int(sys.argv[1], 10)
-except (IndexError, ValueError):
-    raise SystemExit("invalid command deadline")
-if deadline not in ALLOWED_DEADLINES or len(sys.argv) < 3:
-    raise SystemExit("unsupported command deadline")
-try:
-    process = subprocess.Popen(sys.argv[2:], start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded command: {error}", file=sys.stderr)
-    raise SystemExit(127)
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-selector = selectors.DefaultSelector()
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ)
-
-
-def leader_exited():
-    if pidfd is not None:
-        return bool(selector.select(0))
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-timed_out = False
-end = time.monotonic() + deadline
-try:
-    while not leader_exited():
-        remaining = end - time.monotonic()
-        if remaining <= 0:
-            timed_out = True
-            break
-        if pidfd is not None:
-            selector.select(remaining)
-        else:
-            time.sleep(min(remaining, LEADER_POLL_SECONDS))
-finally:
-    # Polling a pidfd never reaps; the fallback WNOWAIT check also preserves
-    # the leader's PID/PGID until every descendant has received SIGKILL.
-    kill_group()
-    status = process.wait()
-    selector.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if timed_out:
-    print(f"command exceeded its {deadline}-second runtime deadline",
-          file=sys.stderr)
-    raise SystemExit(124)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" run --caller "$BASHPID" "$@"
 }
 
 # Byte-exact lifecycle authority verifier.  It keeps receipt/marker bytes out
@@ -2843,6 +2659,7 @@ acquire_owner_lock() {
     failed "$label is busy"
     return 1
   fi
+  lifetime_register "$variable" "$descriptor" || return 1
   printf -v "$variable" '%s' "$descriptor"
 }
 
@@ -2880,6 +2697,7 @@ flock -n "$SIA_UNINSTALL_ADMIN_LOCK_FD" || {
   echo "another SIA install or uninstall is active" >&2
   exit 1
 }
+lifetime_register SIA_UNINSTALL_ADMIN_LOCK_FD "$SIA_UNINSTALL_ADMIN_LOCK_FD" || exit 2
 if [ -e "$RESTORE_BARRIER" ] || [ -L "$RESTORE_BARRIER" ] \
     || [ -e "$RESTORE_MASK_DEBT" ] || [ -L "$RESTORE_MASK_DEBT" ] \
     || [ -e "$RESTORE_SUPERVISOR_DEBT" ] \
@@ -3035,6 +2853,7 @@ acquire_uninstall_lifecycle() {
     echo "waiting within a bounded window for active SIA clients"
     for ((attempt = 1; attempt <= SIA_LIFECYCLE_ACQUIRE_ATTEMPTS; attempt++)); do
       if flock -n "$SIA_UNINSTALL_LOCK_FD"; then
+        lifetime_register SIA_UNINSTALL_LOCK_FD "$SIA_UNINSTALL_LOCK_FD" || return 1
         # Legacy runtimes may not have held this lease; quiesce the exact
         # receipt-bound unit after acquisition as well as between retries.
         if [ "$UNIT_OWNED" -eq 1 ]; then
@@ -3069,6 +2888,7 @@ acquire_uninstall_lifecycle() {
       echo "unsafe or unowned active SIA process prevents uninstall" >&2
       return 1
     }
+    lifetime_register SIA_UNINSTALL_LOCK_FD "$SIA_UNINSTALL_LOCK_FD" || return 1
   fi
 }
 
@@ -4954,12 +4774,15 @@ for lock_variable in SIA_GBRAIN_LOCK_FD SIA_CORPUS_LOCK_FD \
     SIA_BRAINSTEM_LOCK_FD; do
   lock_descriptor="${!lock_variable}"
   if [ -n "$lock_descriptor" ]; then
+    lifetime_release "$lock_variable" || exit 2
     flock -u "$lock_descriptor" || true
     eval "exec ${lock_descriptor}>&-"
+    printf -v "$lock_variable" '%s' ""
   fi
 done
 
 if [ -n "$SIA_UNINSTALL_LOCK_FD" ]; then
+  lifetime_release SIA_UNINSTALL_LOCK_FD || exit 2
   flock -u "$SIA_UNINSTALL_LOCK_FD" || true
   eval "exec ${SIA_UNINSTALL_LOCK_FD}>&-"
   SIA_UNINSTALL_LOCK_FD=""

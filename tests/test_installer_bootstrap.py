@@ -173,7 +173,11 @@ if sys.argv[1:] == ["engine", "status", "--probe", "--json"]:
                   encoding="utf-8") as stream:
             stream.write("probe\n")
     print(json.dumps({
-        "schema_version": 1,
+        "schema_version": (
+            True if os.environ.get("FAKE_GBRAIN_SCHEMA_VERSION") == "bool"
+            else 1.0
+            if os.environ.get("FAKE_GBRAIN_SCHEMA_VERSION") == "float"
+            else 1),
         "effective_engine": "pglite",
         "config_file_engine": "pglite",
         "database_path": database,
@@ -196,6 +200,8 @@ raise SystemExit(21)
         os.makedirs(managed, exist_ok=True)
         fake = self._fake_gbrain(home)
         variables = textwrap.dedent(f'''
+            SIA_LIFETIME_SOURCE={shlex.quote(os.path.join(REPO, "bin", "sialifetime.py"))}
+            readonly SIA_LIFETIME_SOURCE
             SHARE={shlex.quote(share)}
             STATE={shlex.quote(state)}
             MANAGED_DIR={shlex.quote(managed)}
@@ -279,6 +285,19 @@ raise SystemExit(21)
         self.assertGreaterEqual(position, 0)
         end = position + len(needle)
         return self.functions[:end] + "\n  return 1" + self.functions[end:]
+
+    def test_frontdoor_probe_schema_version_is_exact_integer(self):
+        for ambiguous_version in ("bool", "float"):
+            with self.subTest(schema_version=ambiguous_version), \
+                    tempfile.TemporaryDirectory() as home:
+                result = self._run(
+                    home, environment={
+                        "FAKE_GBRAIN_SCHEMA_VERSION": ambiguous_version,
+                    })
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "did not verify the expected PGLite store",
+                    result.stderr)
 
     def test_partial_external_init_is_retried_from_exact_intent(self):
         with tempfile.TemporaryDirectory() as home:

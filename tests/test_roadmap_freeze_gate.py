@@ -70,7 +70,8 @@ def _git(root, *argv):
 
 
 def _fixture(declaration, second_commit=("work.txt",),
-             initial_roadmap=None, second_roadmap=None):
+             initial_roadmap=None, second_roadmap=None,
+             intermediate_work=False):
     """A two-commit repository whose HEAD changed the named files."""
     root = tempfile.mkdtemp(prefix="sia-freeze-")
     _git(root, "init", "-q", "-b", "main")
@@ -82,6 +83,15 @@ def _fixture(declaration, second_commit=("work.txt",),
             stream.write(body)
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "base")
+    push_before = subprocess.run(
+        ("git", "rev-parse", "HEAD"), cwd=root, check=True,
+        capture_output=True, text=True).stdout.strip()
+    if intermediate_work:
+        with open(os.path.join(root, "work.txt"), "a",
+                  encoding="utf-8") as stream:
+            stream.write("intermediate work\n")
+        _git(root, "add", "-A")
+        _git(root, "commit", "-qm", "intermediate work")
     for name in second_commit:
         mode = "w" if name == "ROADMAP.md" and second_roadmap is not None \
             else "a"
@@ -96,14 +106,16 @@ def _fixture(declaration, second_commit=("work.txt",),
     with open(os.path.join(root, "ROADMAP.md"), "w",
               encoding="utf-8") as stream:
         stream.write(declaration.replace("{HEAD}", head))
-    return root, head
+    return root, head, push_before
 
 
 def _run_gate(declaration, head=None, event="push", ref_type="branch",
               ref_name="main", second_commit=("work.txt",),
-              initial_roadmap=None, second_roadmap=None):
-    root, real_head = _fixture(
-        declaration, second_commit, initial_roadmap, second_roadmap)
+              initial_roadmap=None, second_roadmap=None,
+              intermediate_work=False, before=None):
+    root, real_head, real_before = _fixture(
+        declaration, second_commit, initial_roadmap, second_roadmap,
+        intermediate_work)
     script = os.path.join(root, "gate.sh")
     with open(script, "w", encoding="utf-8") as stream:
         stream.write(_freeze_script())
@@ -113,6 +125,7 @@ def _run_gate(declaration, head=None, event="push", ref_type="branch",
         "SIA_FREEZE_REF_TYPE": ref_type,
         "SIA_FREEZE_REF_NAME": ref_name,
         "SIA_FREEZE_HEAD": real_head if head is None else head,
+        "SIA_FREEZE_BEFORE": real_before if before is None else before,
     })
     try:
         return subprocess.run(("bash", script), cwd=root, env=environment,
@@ -135,13 +148,59 @@ class MarketplaceFreezeGate(unittest.TestCase):
         # otherwise print the whole file for a one-line absence.
         workflow = _read(WORKFLOW)
         for fragment in ("marketplace-freeze:", STEP,
-                         # HEAD^ is what separates a rebinding commit from
-                         # landed work; a shallow checkout would make the gate
-                         # refuse every push.
-                         "fetch-depth: 2",
-                         "SIA_FREEZE_HEAD: ${{ github.sha }}"):
+                         # A push's `before` can precede HEAD^ by several
+                         # commits, so the gate needs the full push history.
+                         "fetch-depth: 0",
+                         "SIA_FREEZE_HEAD: ${{ github.sha }}",
+                         "SIA_FREEZE_BEFORE: ${{ github.event.before }}"):
             self.assertIn(fragment, workflow,
                           f"{WORKFLOW} does not carry {fragment!r}")
+
+    def test_multi_commit_push_before_is_unavailable_at_depth_two(self):
+        source, head, before = _fixture(
+            PENDING, intermediate_work=True)
+        checkout_parent = tempfile.mkdtemp(prefix="sia-freeze-checkout-")
+        shallow = os.path.join(checkout_parent, "shallow")
+        complete = os.path.join(checkout_parent, "complete")
+        try:
+            source_url = "file://" + source
+            subprocess.run(
+                ("git", "clone", "-q", "--depth", "2", "--branch",
+                 "main", source_url, shallow), check=True,
+                capture_output=True)
+            subprocess.run(
+                ("git", "clone", "-q", "--branch", "main",
+                 source_url, complete), check=True, capture_output=True)
+            environment = dict(os.environ)
+            environment.update({
+                "SIA_FREEZE_EVENT": "push",
+                "SIA_FREEZE_REF_TYPE": "branch",
+                "SIA_FREEZE_REF_NAME": "main",
+                "SIA_FREEZE_HEAD": head,
+                "SIA_FREEZE_BEFORE": before,
+            })
+            results = []
+            for checkout in (shallow, complete):
+                with open(os.path.join(checkout, "ROADMAP.md"), "w",
+                          encoding="utf-8") as stream:
+                    stream.write(PENDING)
+                script = os.path.join(checkout, "gate.sh")
+                with open(script, "w", encoding="utf-8") as stream:
+                    stream.write(_freeze_script())
+                results.append(subprocess.run(
+                    ("bash", script), cwd=checkout, env=environment,
+                    capture_output=True, text=True))
+            shallow_result, complete_result = results
+            self.assertEqual(shallow_result.returncode, 1)
+            self.assertIn("push provenance", shallow_result.stderr)
+            self.assertEqual(complete_result.returncode, 1)
+            self.assertNotIn("push provenance", complete_result.stderr)
+            self.assertIn(
+                "marketplace verification is pending",
+                complete_result.stderr)
+        finally:
+            shutil.rmtree(source, ignore_errors=True)
+            shutil.rmtree(checkout_parent, ignore_errors=True)
 
     def test_roadmap_carries_one_readable_binding(self):
         roadmap = _read("ROADMAP.md")
@@ -171,6 +230,22 @@ class MarketplaceFreezeGate(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("rebinding commit", result.stdout)
 
+    def test_work_then_tip_only_rebind_in_one_push_is_refused(self):
+        result = _run_gate(
+            PENDING, second_commit=("ROADMAP.md",),
+            initial_roadmap=PREVIOUS_PENDING, second_roadmap=PENDING,
+            intermediate_work=True)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("refusing: marketplace verification is pending",
+                      result.stderr)
+
+    def test_missing_zero_or_unavailable_push_provenance_is_refused(self):
+        for before in ("", "0" * 40, "f" * 40):
+            with self.subTest(before=before):
+                result = _run_gate(PENDING, before=before)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("push provenance", result.stderr)
+
     def test_unrelated_roadmap_prose_is_not_a_rebinding_commit(self):
         result = _run_gate(
             PENDING, second_commit=("ROADMAP.md",),
@@ -189,7 +264,26 @@ class MarketplaceFreezeGate(unittest.TestCase):
 
     def test_closing_the_cycle_lifts_the_gate(self):
         result = _run_gate(
-            "    sia-freeze: state=none branch=main sha=" + BOUND + "\n")
+            "    sia-freeze: state=none branch=main sha=" + BOUND + "\n",
+            second_commit=("ROADMAP.md",), initial_roadmap=PENDING,
+            second_roadmap=(
+                "    sia-freeze: state=none branch=main sha="
+                + BOUND + "\n"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cycle-closing commit", result.stdout)
+
+    def test_closure_bundled_with_work_is_refused(self):
+        closed = "    sia-freeze: state=none branch=main sha=" + BOUND + "\n"
+        result = _run_gate(
+            closed, second_commit=("ROADMAP.md", "work.txt"),
+            initial_roadmap=PENDING, second_roadmap=closed)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("refusing: marketplace verification is pending",
+                      result.stderr)
+
+    def test_work_after_an_already_closed_cycle_passes(self):
+        closed = "    sia-freeze: state=none branch=main sha=" + BOUND + "\n"
+        result = _run_gate(closed, initial_roadmap=closed)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("no marketplace verification is pending", result.stdout)
 
@@ -197,6 +291,33 @@ class MarketplaceFreezeGate(unittest.TestCase):
         result = _run_gate(PENDING, ref_name="fix/audit-30")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("nothing about the binding was checked", result.stdout)
+
+    def test_retargeting_frozen_branch_cannot_smuggle_work(self):
+        retargeted = PENDING.replace("branch=main", "branch=elsewhere")
+        result = _run_gate(
+            retargeted, second_commit=("ROADMAP.md", "work.txt"),
+            initial_roadmap=PENDING, second_roadmap=retargeted)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("refusing: marketplace verification is pending",
+                      result.stderr)
+
+    def test_retargeting_only_the_declaration_is_an_explicit_transition(self):
+        retargeted = PENDING.replace("branch=main", "branch=elsewhere")
+        result = _run_gate(
+            retargeted, second_commit=("ROADMAP.md",),
+            initial_roadmap=PENDING, second_roadmap=retargeted)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("retargeting commit", result.stdout)
+
+    def test_retargeting_after_intermediate_work_cannot_hide_push_history(self):
+        retargeted = PENDING.replace("branch=main", "branch=elsewhere")
+        result = _run_gate(
+            retargeted, second_commit=("ROADMAP.md",),
+            initial_roadmap=PENDING, second_roadmap=retargeted,
+            intermediate_work=True)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("refusing: marketplace verification is pending",
+                      result.stderr)
 
     def test_a_pull_request_is_announced_and_not_checked(self):
         result = _run_gate(PENDING, event="pull_request")
