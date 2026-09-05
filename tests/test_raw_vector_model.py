@@ -270,6 +270,26 @@ class RawVectorModelContract(unittest.TestCase):
             for root in readonly:
                 self.assertLess(argv.index(root), argv.index("--remount-ro"))
 
+    def test_dynamic_loader_is_an_executable_sealed_runtime_leaf(self):
+        python = self._file(self.root / "python", b"\x7fELFpython", 0o700)
+        loader = self._file(self.root / "loader", b"\x7fELFloader", 0o700)
+        runtime = [{"source": str(python), "destination": "/usr/bin/python3",
+                    "sha256": digest(python.read_bytes())},
+                   {"source": str(loader), "destination": "/usr/lib/ld-linux-aarch64.so.1",
+                    "sha256": digest(loader.read_bytes())}]
+        with self._admit() as admitted, self._plan(admitted, shared_runtime=runtime) as plan:
+            arguments = iter(plan.argv)
+            permissions = None
+            mounted = {}
+            for token in arguments:
+                if token == "--perms":
+                    permissions = next(arguments)
+                elif token == "--ro-bind-data":
+                    descriptor = int(next(arguments))
+                    destination = next(arguments)
+                    mounted[destination] = (permissions, os.fstat(descriptor).st_mode & 0o111)
+            self.assertEqual(mounted["/usr/lib/ld-linux-aarch64.so.1"], ("0500", 0o100))
+
     def test_model_service_generation_change_refuses_and_reaps_only_owned_service(self):
         service = mock.Mock(pid=321)
         service.poll.return_value = None

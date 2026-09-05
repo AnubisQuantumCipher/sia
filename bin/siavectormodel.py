@@ -504,10 +504,12 @@ sealed descriptors too. There are no shared host directory mounts.
                            for part in destination.split("/")):
                 raise ModelRefusal("system runtime destination is not an allowed individual leaf")
             destinations.add(destination)
+            runtime_executable = destination in (
+                "/usr/bin/python3", "/usr/lib/ld-linux-aarch64.so.1")
             sealed = stack.enter_context(_sealed_file(item["source"], item["sha256"],
-                system=True, executable=destination == "/usr/bin/python3"))
+                system=True, executable=runtime_executable))
             sealed_inputs.append(sealed)
-            files.append(_mount(sealed, destination, destination == "/usr/bin/python3"))
+            files.append(_mount(sealed, destination, runtime_executable))
             runtime_identity.append({"destination": destination, "sha256": sealed.sha256,
                                      "bytes": sealed.size})
             total += sealed.size
