@@ -111,7 +111,18 @@ class RawVectorModelPreparation(unittest.TestCase):
                     (self.parent / "index").mkdir(mode=0o700)
                     (self.parent / "index" / "partial").write_bytes(b"retain diagnosis")
                     raise self.model.ModelRefusal("fixture failed")
-        self.assertEqual((self.parent / "index" / "partial").read_bytes(), b"retain diagnosis")
+        partial = self.parent / "index" / "partial"
+        self.assertTrue(partial.is_file(), "failed preparation output was deleted")
+        self.assertEqual(partial.read_bytes(), b"retain diagnosis")
+
+    def test_preparation_capacity_does_not_widen_default_metadata_parsing_or_sealing(self):
+        self.assertEqual(self.model.MAX_JSON_BYTES, 1048576)
+        oversized = b"x" * self.model.MAX_JSON_BYTES + b"x"
+        with self.assertRaises(self.model.ModelRefusal):
+            with self.model._sealed_bytes(oversized):
+                self.fail("preparation widened the default metadata sealing ceiling")
+        with self.assertRaises(self.model.ModelRefusal):
+            self.model._json(b'"' + oversized + b'"')
 
     def test_operation_specific_request_limits_precede_runtime_snapshotting(self):
         for operation, amount in (("prepare_index", 8388608), ("capture", 262144)):
@@ -194,6 +205,32 @@ class RawVectorModelPreparation(unittest.TestCase):
         self.assertNotEqual(result["bound_request_sha256"], result["request_sha256"])
         self.assertEqual(result["payload"]["non_claims"], ["preparer boundary"])
         self.assertEqual(request["output"], {"parent_fd": None})
+
+    def test_inner_preparer_named_refusal_retains_partial_index_without_success_envelope(self):
+        request = self._request()
+        config = {"operation": "prepare_index", "request_sha256": fixtures.digest(fixtures.canonical(request)),
+                  "adapter_sha256": "b" * 64, "timeout": 10}
+        original_open = os.open
+
+        def open_parent(path, flags, *args, **kwargs):
+            return original_open(str(self.parent) if path == "/private-index" else path,
+                                 flags, *args, **kwargs)
+
+        def refuse(argv, descriptors, timeout):
+            (self.parent / "index").mkdir(mode=0o700)
+            (self.parent / "index" / "partial").write_bytes(b"retain this refusal")
+            return subprocess.CompletedProcess(argv, 2,
+                b'{"v":1,"status":"refused","operation":"prepare_index","reason":"fixture-embedding-failed",'
+                b'"non_claims":["partial index is not complete"]}\n', b"")
+
+        with mock.patch.object(self.model, "_read_bound_request", return_value=copy.deepcopy(request)), \
+                mock.patch.object(os, "open", side_effect=open_parent), \
+                mock.patch.object(self.model, "_bounded_adapter", side_effect=refuse), \
+                self.assertRaisesRegex(self.model.ModelRefusal, "fixture-embedding-failed"):
+            self.model._invoke_in_namespace(config)
+        partial = self.parent / "index" / "partial"
+        self.assertTrue(partial.is_file(), "refusal output was deleted")
+        self.assertEqual(partial.read_bytes(), b"retain this refusal")
 
 
 if __name__ == "__main__":
