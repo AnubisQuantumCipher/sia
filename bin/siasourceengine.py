@@ -617,7 +617,7 @@ def sync_generation(owner, *, corpus_generation, target_versions):
         _admit_mentions(owner, source, mentions)
 
         status_result = _run(owner, source, boundary, [
-            "status", "--no-migrate", "--section", "sync", "--json",
+            "status", "--section", "sync", "--json",
         ], label="source engine status", timeout=120)
         status = _json_result(
             owner, source, status_result, "source-engine-status")

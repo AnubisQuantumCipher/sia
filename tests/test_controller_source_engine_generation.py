@@ -256,8 +256,7 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                     "extract", "links", "--by-mention", "--ner",
                     "--source", "db", "--source-id", "sia", "--json"):
                 name = "mentions"
-            elif args == (
-                    "status", "--no-migrate", "--section", "sync", "--json"):
+            elif args == ("status", "--section", "sync", "--json"):
                 name = "status"
             elif len(args) == 7 and args[:4] == (
                     "call", "--no-migrate", "--source", "sia") \
