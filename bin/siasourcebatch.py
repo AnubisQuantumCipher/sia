@@ -87,7 +87,8 @@ _REASON = re.compile(r"[a-z][a-z0-9-]*\Z")
 _AUTHORITY_KEYS = frozenset({
     "source_replay_pending", "pulse_publication", "dream_publication",
     "consolidation_pending", "live_loop_pending",
-    "controller_source_pending", "controller_source_committed",
+    "controller_source_pending", "controller_source_live_pending",
+    "controller_source_committed",
 })
 
 

@@ -378,16 +378,28 @@ def _live_authority_memo(memo, durable):
     # Pulse owns new history/counters in the proposed memo. Its live authority
     # may never come from an in-memory receipt ahead of the durable memo.
     for key in ("live_loop_pending", "live_loop_committed",
-                "controller_source_pending"):
+                "controller_source_pending",
+                "controller_source_live_pending"):
         if (key in memo) != (key in durable) or not _live_same(memo.get(key), durable.get(key)):
             _live_refuse("live memo authority differs from durable receipt")
     _live_controller_source_pending(memo)
     _live_controller_source_pending(durable)
+    try:
+        _controller_source_live_binding_marker(memo)
+        _controller_source_live_binding_marker(durable)
+    except (TypeError, ValueError, KeyError, OverflowError,
+            RecursionError):
+        _live_refuse("controller source live binding is invalid")
 
 
 def _live_final_memo(memo, candidate, receipt):
     _live_memo_bytes(memo)
     source_pending = _live_controller_source_pending(memo)
+    try:
+        source_binding = _controller_source_live_binding_marker(memo)
+    except (TypeError, ValueError, KeyError, OverflowError,
+            RecursionError):
+        _live_refuse("controller source live binding is invalid")
     updated = copy.deepcopy(memo)
     marker = _pending_pulse_marker(updated)
     if marker is not None:
@@ -415,6 +427,11 @@ def _live_final_memo(memo, candidate, receipt):
         if not _live_same(updated.get("controller_source_pending"), source_pending):
             _live_refuse("controller source pending receipt changed")
         updated.pop("ready", None)
+    if source_binding is not None \
+            and not _live_same(
+                updated.get("controller_source_live_pending"),
+                source_binding):
+        _live_refuse("controller source live binding changed")
     _live_memo_bytes(updated)
     _memo_text(updated)
     return updated

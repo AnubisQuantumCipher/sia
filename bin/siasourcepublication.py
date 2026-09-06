@@ -1,8 +1,11 @@
-"""Inert fixed-slot source batch retention, owned by the active core.
+"""Fixed-slot source retention and its memo-only live write-ahead binding.
 
-The pending slot is immutable except for an exact byte retry. It is not a
-live generation, source acknowledgment or history archive. No current
-configuration, source collector, page renderer or live producer runs here.
+The pending slot is immutable except for an exact byte retry.  Retention is
+inert.  A later binding operation may replay the pure retained-source live
+producer, but its sole durable effect is a compact memo marker; it does not
+publish a live generation, acknowledge a source, or create a history archive.
+No current configuration, source collector, page renderer or downstream
+publication effect runs here.
 """
 
 import contextlib
@@ -12,6 +15,17 @@ import stat
 RECEIPT_KEYS = frozenset({
     "schema", "epoch_id", "batch_id", "epoch_sha256", "batch_sha256",
     "batch_wire_sha256", "batch_bytes", "parent_batch_sha256",
+})
+LIVE_BINDING_KEYS = frozenset({
+    "schema", "status", "seq", "publication_id", "publication_sha256",
+    "source_pending_receipt", "source_batch_sha256",
+    "source_batch_wire_sha256", "observed_at", "prepare_inputs_sha256",
+    "state_sha256", "transition_sha256", "parent_generation_sha256",
+    "parent_state_sha256", "event_closure_sha256",
+    "admitted_status_sha256", "non_claims", "marker_sha256",
+})
+LIVE_BINDING_IDENTITY_KEYS = LIVE_BINDING_KEYS - frozenset({
+    "schema", "publication_id", "publication_sha256", "marker_sha256",
 })
 
 
@@ -201,3 +215,178 @@ def read_pending(owner, *, memo):
             _refuse(source, "source-publication-final-source-check-changed-view")
         named_current()
         return detached
+
+
+def _live_binding_marker(owner, source, *, memo, batch, receipt,
+                         admitted_status, seq, candidate, transition):
+    import sialiveloop as live
+
+    if not owner["_nonnegative_status_integer"](seq) \
+            or type(seq) is not int \
+            or type(admitted_status) is not dict \
+            or admitted_status.get("pulse_seq") != seq \
+            or not owner["_nonnegative_status_integer"](
+                memo.get("pulse_seq")) \
+            or type(memo["pulse_seq"]) is not int \
+            or memo["pulse_seq"] != seq:
+        _refuse(source, "source-live-binding-sequence")
+    if type(candidate) is not dict or set(candidate) != {
+            "prepare_inputs", "expected_prepare_inputs_sha256"} \
+            or live._sha(candidate["prepare_inputs"]) \
+            != candidate["expected_prepare_inputs_sha256"]:
+        _refuse(source, "source-live-binding-prepare-pin")
+    if type(transition) is not dict \
+            or transition.get("state_sha256") != live._sha(
+                transition.get("state")) \
+            or transition.get("transition_sha256") != live._sha({
+                key: value for key, value in transition.items()
+                if key != "transition_sha256"}):
+        _refuse(source, "source-live-binding-transition-pin")
+
+    parent = memo.get("live_loop_committed")
+    if parent is None:
+        parent_generation_sha256 = parent_state_sha256 = None
+    else:
+        if type(parent) is not dict:
+            _refuse(source, "source-live-binding-parent")
+        parent_generation_sha256 = parent.get("generation_sha256")
+        parent_state_sha256 = parent.get("state_sha256")
+    closure = batch["event_closure"]
+    closure_sha256 = None if closure is None else closure["closure_sha256"]
+    fields = {
+        "status": "prepared-not-published",
+        "seq": seq,
+        "source_pending_receipt": owner["copy"].deepcopy(receipt),
+        "source_batch_sha256": receipt["batch_sha256"],
+        "source_batch_wire_sha256": receipt["batch_wire_sha256"],
+        "observed_at": batch["observed_at"],
+        "prepare_inputs_sha256": candidate["expected_prepare_inputs_sha256"],
+        "state_sha256": transition["state_sha256"],
+        "transition_sha256": transition["transition_sha256"],
+        "parent_generation_sha256": parent_generation_sha256,
+        "parent_state_sha256": parent_state_sha256,
+        "event_closure_sha256": closure_sha256,
+        "admitted_status_sha256": live._sha(admitted_status),
+        "non_claims": list(owner["CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS"]),
+    }
+    identity = {
+        "schema": "sia-controller-source-live-publication-identity-v1",
+        "binding": {key: owner["copy"].deepcopy(fields[key])
+                    for key in sorted(LIVE_BINDING_IDENTITY_KEYS)},
+    }
+    publication_sha256 = live._sha(identity)
+    marker = {
+        "schema": "sia-controller-source-live-pending-v1",
+        **fields,
+        "publication_id": publication_sha256[:32],
+        "publication_sha256": publication_sha256,
+    }
+    marker["marker_sha256"] = live._sha(marker)
+    if set(marker) != LIVE_BINDING_KEYS:
+        _refuse(source, "source-live-binding-marker-shape")
+    return marker
+
+
+def stage_live_binding(owner, *, memo, admitted_status, seq):
+    """Retain the memo-only write-ahead identity for a source/live join."""
+    import siasourcebatch as source
+    import sialiveloop as live
+
+    # Admit every caller-owned value before opening an authority descriptor.
+    original_memo = _wire(owner, source, memo, memo=True)
+    original_status = live._canonical(admitted_status)
+    if not owner["_nonnegative_status_integer"](seq) or type(seq) is not int:
+        _refuse(source, "source-live-binding-sequence")
+
+    with _files(owner, source) as (files, observe, current, named_current):
+        retained_memo = files["memo"]
+        _authority(owner, source, memo, retained_memo.value)
+        frozen_memo = owner["copy"].deepcopy(retained_memo.value)
+        if _wire(owner, source, frozen_memo, memo=True) != original_memo \
+                or not owner["_nonnegative_status_integer"](
+                    frozen_memo.get("pulse_seq")) \
+                or type(frozen_memo["pulse_seq"]) is not int \
+                or frozen_memo["pulse_seq"] != seq \
+                or "ready" in frozen_memo:
+            _refuse(source, "source-live-binding-memo-state")
+        try:
+            existing = owner["_controller_source_live_binding_marker"](
+                frozen_memo)
+        except (TypeError, ValueError, KeyError, OverflowError,
+                RecursionError) as exc:
+            source.refuse(
+                "source-live-binding-pending-invalid", phase="stage",
+                upstream=exc)
+        admitted = owner["_require_status_admission_unchanged"](
+            admitted_status)
+        if type(admitted) is not dict or not admitted:
+            _refuse(source, "source-live-binding-status")
+        frozen_status = owner["copy"].deepcopy(admitted)
+        if live._canonical(frozen_status) != original_status:
+            _refuse(source, "source-live-binding-status")
+
+        source_view = read_pending(owner, memo=frozen_memo)
+        if source_view.get("status") != "pending" \
+                or type(source_view.get("batch")) is not dict \
+                or type(source_view.get("receipt")) is not dict:
+            _refuse(source, "source-live-binding-pending-source")
+        batch = source_view["batch"]
+        receipt = source_view["receipt"]
+        candidate = owner["_prepare_controller_source_live_candidate"](
+            memo=frozen_memo, admitted_status=frozen_status)
+        transition = live.prepare_pulse(**candidate["prepare_inputs"])
+        marker = _live_binding_marker(
+            owner, source, memo=frozen_memo, batch=batch, receipt=receipt,
+            admitted_status=frozen_status, seq=seq, candidate=candidate,
+            transition=transition)
+
+        updated = owner["copy"].deepcopy(frozen_memo)
+        updated["controller_source_live_pending"] = marker
+        updated.pop("ready", None)
+        # Prove both serializers' whole-image ceilings before a first write.
+        _wire(owner, source, marker)
+        _wire(owner, source, updated, memo=True)
+        updated_text = owner["_memo_text"](updated)
+        updated_raw = updated_text.encode("utf-8")
+        if original_memo != _wire(owner, source, memo, memo=True) \
+                or original_status != live._canonical(admitted_status):
+            _refuse(source, "source-live-binding-input-changed")
+
+        if existing is not None:
+            if _wire(owner, source, existing) \
+                    != _wire(owner, source, marker):
+                _refuse(source, "source-live-binding-pending-differs")
+            current()
+            owner["_require_status_admission_unchanged"](admitted_status)
+            if original_memo != _wire(owner, source, memo, memo=True) \
+                    or original_status != live._canonical(admitted_status):
+                _refuse(source, "source-live-binding-input-changed")
+            named_current()
+            return None
+
+        current()
+        owner["_require_status_admission_unchanged"](admitted_status)
+        if original_memo != _wire(owner, source, memo, memo=True) \
+                or original_status != live._canonical(admitted_status):
+            _refuse(source, "source-live-binding-input-changed")
+        owner["atomic_write"](
+            owner["MEMO_PATH"], updated_text, mode=0o600)
+        written = observe(
+            "memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if written.parent_identity != retained_memo.parent_identity \
+                or written.raw != updated_raw:
+            _refuse(source, "source-live-binding-memo-bytes-differ")
+        current()
+        owner["_require_status_admission_unchanged"](admitted_status)
+        if original_memo != _wire(owner, source, memo, memo=True) \
+                or original_status != live._canonical(admitted_status):
+            _refuse(source, "source-live-binding-input-changed-after-write")
+        detached = owner["copy"].deepcopy(updated)
+        if _wire(owner, source, detached, memo=True) \
+                != _wire(owner, source, updated, memo=True):
+            _refuse(source, "source-live-binding-detachment-changed")
+        named_current()
+        memo.clear()
+        memo.update(detached)
+        named_current()
+        return None

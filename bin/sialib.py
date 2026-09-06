@@ -5737,6 +5737,25 @@ MAX_MEMO_BYTES = 16_777_216
 LIVE_CANDIDATE_PATH = os.path.join(STATE, "live-loop-candidate.json")
 LIVE_STATE_PATH = os.path.join(STATE, "live-loop.json")
 CONTROLLER_SOURCE_BATCH_PATH = os.path.join(STATE, "controller-source-batch.json")
+CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS = (
+    "The pending binding is write-ahead recovery authority only; it is not source acknowledgment, live publication, output delivery, consumer execution or readiness.",
+    "The marker binds one retained source receipt, admitted status and computed-unverified pure transition; it does not establish source truth, complete machine history, biological cognition or a held-out win.",
+    "Its compact publication ID is only a display handle backed by the retained full publication hash and every explicit identity pin; the prefix alone is never authority.",
+    "Every later effect must revalidate the full binding under the controller owners and preserve a recoverable redo path until the source is acknowledged and archived.",
+    "Staging does not publish event pages, graph or live state, advance source cursors, settle refusals, mutate legacy mind state or retire the fixed source slot.",
+)
+_CONTROLLER_SOURCE_LIVE_BINDING_KEYS = frozenset({
+    "schema", "status", "seq", "publication_id", "publication_sha256",
+    "source_pending_receipt", "source_batch_sha256",
+    "source_batch_wire_sha256", "observed_at", "prepare_inputs_sha256",
+    "state_sha256", "transition_sha256", "parent_generation_sha256",
+    "parent_state_sha256", "event_closure_sha256",
+    "admitted_status_sha256", "non_claims", "marker_sha256",
+})
+_CONTROLLER_SOURCE_LIVE_BINDING_IDENTITY_KEYS = (
+    _CONTROLLER_SOURCE_LIVE_BINDING_KEYS - {
+        "schema", "publication_id", "publication_sha256", "marker_sha256",
+    })
 LIVE_PUBLICATION_NON_CLAIMS = (
     "Complete prepare inputs are a caller premise; publication does not establish source capture, native-source truth, delivery claims or journal acknowledgment authority.",
     "This generation publishes the complete computed-unverified live-loop transition; it is not JACKAL assurance, biological cognition, a held-out win or cognitive authorization.",
@@ -5864,7 +5883,9 @@ def _live_started(memo):
         _live_refuse("memo is not an object")
     candidate = _live_present(LIVE_CANDIDATE_PATH)
     generation = _live_present(LIVE_STATE_PATH)
-    return candidate or generation or "live_loop_pending" in memo or "live_loop_committed" in memo
+    return candidate or generation or "live_loop_pending" in memo \
+        or "live_loop_committed" in memo \
+        or "controller_source_live_pending" in memo
 
 
 def _prepare_live_pulse_candidate(*, memo, status, events, observed_at, idle):
@@ -5877,6 +5898,88 @@ def _prepare_live_pulse_candidate(*, memo, status, events, observed_at, idle):
 def _live_keys(value, keys):
     if type(value) is not dict or set(value) != keys:
         _live_refuse("closed fields differ")
+
+
+def _controller_source_live_binding_marker(memo):
+    """Validate the complete compact source/live recovery authority."""
+    import sialiveloop
+
+    if type(memo) is not dict:
+        raise ValueError("controller source live binding memo is invalid")
+    if "controller_source_live_pending" not in memo:
+        return None
+    marker = memo["controller_source_live_pending"]
+    if type(marker) is not dict \
+            or set(marker) != _CONTROLLER_SOURCE_LIVE_BINDING_KEYS \
+            or marker.get("schema") != "sia-controller-source-live-pending-v1" \
+            or marker.get("status") != "prepared-not-published" \
+            or not _nonnegative_status_integer(marker.get("seq")) \
+            or type(marker.get("observed_at")) is not int \
+            or not _nonnegative_status_integer(marker.get("observed_at")) \
+            or type(marker.get("publication_id")) is not str \
+            or re.fullmatch(r"[0-9a-f]{32}", marker["publication_id"]) is None \
+            or marker.get("non_claims") \
+            != list(CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS):
+        raise ValueError("controller source live binding marker is invalid")
+    for key in (
+            "publication_sha256", "source_batch_sha256",
+            "source_batch_wire_sha256", "prepare_inputs_sha256",
+            "state_sha256", "transition_sha256",
+            "admitted_status_sha256", "marker_sha256"):
+        if type(marker.get(key)) is not str \
+                or re.fullmatch(r"[0-9a-f]{64}", marker[key]) is None:
+            raise ValueError("controller source live binding digest is invalid")
+    for key in (
+            "parent_generation_sha256", "parent_state_sha256",
+            "event_closure_sha256"):
+        value = marker.get(key)
+        if value is not None and (type(value) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", value) is None):
+            raise ValueError("controller source live binding digest is invalid")
+    if (marker["parent_generation_sha256"] is None) \
+            != (marker["parent_state_sha256"] is None):
+        raise ValueError("controller source live binding parent is invalid")
+    receipt = marker.get("source_pending_receipt")
+    receipt_keys = {
+        "schema", "epoch_id", "batch_id", "epoch_sha256", "batch_sha256",
+        "batch_wire_sha256", "batch_bytes", "parent_batch_sha256",
+    }
+    if type(receipt) is not dict or set(receipt) != receipt_keys \
+            or receipt.get("schema") != "sia-controller-source-pending-v1" \
+            or not sialiveloop._token(receipt.get("epoch_id")) \
+            or type(receipt.get("batch_id")) is not str \
+            or re.fullmatch(r"[0-9a-f]{64}", receipt["batch_id"]) is None \
+            or not _nonnegative_status_integer(receipt.get("batch_bytes")) \
+            or receipt["batch_bytes"] == 0 \
+            or receipt["batch_bytes"] > MAX_STATE_JSON_BYTES:
+        raise ValueError("controller source live binding receipt is invalid")
+    for key in ("epoch_sha256", "batch_sha256", "batch_wire_sha256"):
+        if type(receipt.get(key)) is not str \
+                or re.fullmatch(r"[0-9a-f]{64}", receipt[key]) is None:
+            raise ValueError("controller source live binding receipt is invalid")
+    receipt_parent = receipt.get("parent_batch_sha256")
+    if receipt_parent is not None and (type(receipt_parent) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", receipt_parent) is None):
+        raise ValueError("controller source live binding receipt is invalid")
+    if marker["source_batch_sha256"] != receipt["batch_sha256"] \
+            or marker["source_batch_wire_sha256"] \
+            != receipt["batch_wire_sha256"]:
+        raise ValueError("controller source live binding source pin is invalid")
+    pending = memo.get("controller_source_pending")
+    if "controller_source_pending" not in memo or pending != receipt:
+        raise ValueError("controller source live binding source authority is invalid")
+    identity = {
+        "schema": "sia-controller-source-live-publication-identity-v1",
+        "binding": {key: copy.deepcopy(marker[key]) for key in sorted(
+            _CONTROLLER_SOURCE_LIVE_BINDING_IDENTITY_KEYS)},
+    }
+    if marker["publication_sha256"] != sialiveloop._sha(identity) \
+            or marker["publication_id"] != marker["publication_sha256"][:32] \
+            or marker["marker_sha256"] != sialiveloop._sha({
+                key: value for key, value in marker.items()
+                if key != "marker_sha256"}):
+        raise ValueError("controller source live binding identity is invalid")
+    return marker
 
 
 _LIVE_PUBLICATION_MODULE = None
@@ -5957,7 +6060,35 @@ def _read_committed_live_generation(*, memo, admitted_status):
         memo=memo, admitted_status=admitted_status)
 
 
+def _live_root_absent_before_owner(memo):
+    """Recognize only an impossible-to-contain-live-files missing root.
+
+    This keeps an uninitialized runtime effectless.  Once the common owner
+    directory exists, the ordinary leased descriptor probe remains mandatory.
+    """
+    if type(memo) is not dict or any(key in memo for key in (
+            "live_loop_pending", "live_loop_committed",
+            "controller_source_live_pending")):
+        return False
+    parents = {
+        os.path.dirname(os.path.abspath(path)) for path in (
+            CORPUS_OWNER_LOCK, LIVE_CANDIDATE_PATH, LIVE_STATE_PATH)
+    }
+    if len(parents) != 1:
+        return False
+    parent = next(iter(parents))
+    try:
+        os.stat(parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def _recover_pending_live_generation(*, memo):
+    if _live_root_absent_before_owner(memo):
+        return False
     with corpus_owner():
         if not _live_started(memo):
             return False
@@ -5973,6 +6104,7 @@ def _controller_source_present(memo):
         import siasourcebatch
         siasourcebatch.refuse("controller-source-memo-shape")
     return ("controller_source_pending" in memo
+            or "controller_source_live_pending" in memo
             or "controller_source_committed" in memo
             or _live_present(CONTROLLER_SOURCE_BATCH_PATH))
 
@@ -6023,8 +6155,25 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
             previous_state = copy.deepcopy(generation["transition"]["state"])
             previous_sha256 = generation["state_sha256"]
         elif _live_started(memo):
-            siasourcebatch.refuse(
-                "controller-source-live-parent-unbound", phase="live-prepare")
+            # An exact initial binding retry is a started transaction, but it
+            # intentionally has no committed parent or live artifact yet.
+            # Every other started shape remains an orphan refusal.
+            try:
+                binding = _controller_source_live_binding_marker(memo)
+            except (TypeError, ValueError, KeyError, OverflowError,
+                    RecursionError) as exc:
+                siasourcebatch.refuse(
+                    "controller-source-live-parent-unbound",
+                    phase="live-prepare", upstream=exc)
+            if binding is None \
+                    or binding["parent_generation_sha256"] is not None \
+                    or binding["parent_state_sha256"] is not None \
+                    or "live_loop_pending" in memo \
+                    or _live_present(LIVE_CANDIDATE_PATH) \
+                    or _live_present(LIVE_STATE_PATH):
+                siasourcebatch.refuse(
+                    "controller-source-live-parent-unbound",
+                    phase="live-prepare")
         deliveries = {
             "schema": "sia-live-deliveries-v1",
             "epoch_id": intake["epoch_id"],
@@ -6058,6 +6207,14 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
             siasourcebatch.refuse(
                 "controller-source-live-input-changed", phase="live-prepare")
         return detached
+
+
+def _stage_controller_source_live_binding(*, memo, admitted_status, seq):
+    """Durably bind one retained-source transition before any downstream effect."""
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.stage_live_binding(
+            globals(), memo=memo, admitted_status=admitted_status, seq=seq)
 
 
 def _ready_receipt(memo):
