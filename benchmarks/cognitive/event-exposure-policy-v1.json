@@ -1,0 +1,59 @@
+{
+  "schema": "sia-cognitive-event-exposure-policy-v1",
+  "exposures": "retained-native-excerpt-in-returned-chunk-v1",
+  "cue_parser": "signed-history-exact-clause-v1",
+  "timestamp_source": "signed-event-time-utc-v1",
+  "observed_at": 1788663128,
+  "ablation_roster": ["raw-original", "cue-only", "cue-event-exposure"],
+  "ordering": "cue-presence-activation-raw-rank-v1",
+  "unavailable": "preserve-raw-order-v1",
+  "overflow": "refuse-complete-run-v1",
+  "activation_grid": [
+    {
+      "policy": {
+        "v": 1,
+        "algorithm": "log-sum-power-law-v1",
+        "time_unit": "unix-seconds-integer",
+        "age_offset_seconds": 0,
+        "tie_break": "stable-input-order",
+        "unavailable": "last",
+        "max_uses": 4096,
+        "max_total_uses": 4096,
+        "max_candidates": 256,
+        "decay": 0.5
+      },
+      "policy_sha256": "a70a6a80927233828d9a7d12e00cbb39a18197325bf03a08c3201453861e058f"
+    },
+    {
+      "policy": {
+        "v": 1,
+        "algorithm": "log-sum-power-law-v1",
+        "time_unit": "unix-seconds-integer",
+        "age_offset_seconds": 0,
+        "tie_break": "stable-input-order",
+        "unavailable": "last",
+        "max_uses": 4096,
+        "max_total_uses": 4096,
+        "max_candidates": 256,
+        "decay": 1.0
+      },
+      "policy_sha256": "5f48d179cd0332e7a5395a05b0a127f5e13ab02331160d393cf95a32d18e81cd"
+    }
+  ],
+  "activation_grid_sha256": "f9fd89405852a4b8ffbc4f26938fc5b989393757c91ac622f54417e116bdf456",
+  "calibration_objective": {
+    "metric_protocol_sha256": "52b9820c7fbb2e2ff1f556edd319d4ea0a446c3695917fe285de33176cf9ffe7",
+    "class": "recency-heavy",
+    "metric": "recall_at_k",
+    "cutoff": 1,
+    "tie_break": "activation-grid-order-v1"
+  },
+  "resources": {
+    "max_queries": 64,
+    "max_source_events": 65536,
+    "max_grid_policies": 64,
+    "max_input_bytes": 16777216,
+    "max_trace_bytes": 2097152,
+    "max_output_bytes": 16777216
+  }
+}
