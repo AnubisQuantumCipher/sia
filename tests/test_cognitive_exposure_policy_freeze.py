@@ -54,6 +54,7 @@ EXPECTED = {
     },
 }
 ORDERED_POLICY = POLICY.with_name("ordered-measurement-policy-v1.json")
+COMPOUND_POLICY = POLICY.with_name("event-exposure-policy-v2.json")
 EXPECTED_ORDERED = {
     "schema": "sia-cognitive-ordered-measurement-policy-v1",
     "exposure_schema": "sia-cognitive-event-exposure-v1",
@@ -78,6 +79,13 @@ class CognitiveExposurePolicyFreeze(unittest.TestCase):
     def test_fixed_arm_measurement_rules_are_frozen_before_metric_inspection(self):
         self.assertTrue(ORDERED_POLICY.is_file(), "pre-metric ordered measurement policy is missing")
         self.assertEqual(json.loads(ORDERED_POLICY.read_text(encoding="utf-8")), EXPECTED_ORDERED)
+
+    def test_compound_exposure_policy_changes_only_version_and_envelope_admission(self):
+        self.assertTrue(COMPOUND_POLICY.is_file(), "explicit compound exposure policy is missing")
+        expected = {**EXPECTED, "schema": "sia-cognitive-event-exposure-policy-v2",
+                    "resources": {**EXPECTED["resources"], "max_input_bytes": 67108864,
+                                  "max_document_bytes": 16777216}}
+        self.assertEqual(json.loads(COMPOUND_POLICY.read_text(encoding="utf-8")), expected)
 
 
 if __name__ == "__main__":
