@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Contracts for the withdrawn cognitive benchmark claim surface.
+"""Contracts for the pinned private cognitive baseline claim boundary.
 
-The product exposes one complete, structured refusal until a raw-vector
-baseline is admitted.  Behavior-only components have independent tests; no
-unused benchmark transport, metric, gate, or publisher remains callable here.
+Without an externally pinned private request the product exposes a complete,
+structured refusal. The admitted runner has separate transport tests; no
+unused benchmark scaffold, metric, gate, or publisher remains callable here.
 """
 
 import ast
@@ -35,14 +35,13 @@ BRAIN_METAPHOR_BOUNDARY = (
 EXPECTED_REFUSAL = {
     "schema": "sia-cognitive-baseline-refusal-v1",
     "status": "refused",
-    "reason": "admitted-raw-vector-baseline-unavailable",
+    "reason": "pinned-request-required",
     "consequence_ceiling": "informational",
     "non_claims": [
-        "gbrain query is a hybrid retrieval path, not a dense-only baseline",
-        "gbrain exports BrainEngine.searchVector, but SIA has no "
-        "descriptor-bound model/index/config-bound runner that admits its "
-        "ranked rows for this gate",
-        "hybrid diagnostic performance cannot earn cognitive ancestry",
+        "The request SHA-256 binds caller-supplied bytes, not their authorship or the truth of supplied history.",
+        "The private command does not consult resident memory readiness, corpus, index, or an ambient model.",
+        "Baseline and upstream nonclaims remain controlling; this receipt adds no metric, significance, or cognitive-win authority.",
+        "Lifecycle locking and descriptor checks do not establish protection against a hostile same-user process.",
     ],
 }
 
@@ -124,7 +123,7 @@ class CognitiveRefusalBoundary(unittest.TestCase):
 
     def test_refusal_envelope_is_complete_and_canonical(self):
         with self.assertRaises(self.siabench.BenchmarkRefusal) as raised:
-            self.siabench.run_cognitive("/unused", repo="/unused")
+            self.siabench.run_cognitive("/unused")
         self.assertEqual(json.loads(str(raised.exception)), EXPECTED_REFUSAL)
 
     def test_refusal_template_is_private_immutable_canonical_text(self):
@@ -176,7 +175,7 @@ class CognitiveRefusalBoundary(unittest.TestCase):
                 status = self.siabench.main(["cognitive"])
             except SystemExit as exc:
                 self.fail(
-                    "argparse intercepted the unconditional cognitive "
+                    "argparse intercepted the missing-request cognitive "
                     f"refusal with SystemExit {exc.code}")
         self.assertEqual(status, 1)
         self.assertEqual(stdout.getvalue(), "")
@@ -185,12 +184,12 @@ class CognitiveRefusalBoundary(unittest.TestCase):
         self.assertEqual(
             json.loads(stderr.getvalue()[len(prefix):]), EXPECTED_REFUSAL)
 
-    def test_top_level_help_exposes_refusal_only_cognitive_command(self):
+    def test_top_level_help_exposes_pinned_private_cognitive_command(self):
         help_text = _read("bin/sia")
         self.assertIn(
             "sia bench [run|generate|score|cognitive|legacy]", help_text)
         self.assertIn(
-            "cognitive reports an admitted raw-vector-baseline refusal",
+            "cognitive runs an externally pinned private raw-vector baseline",
             help_text,
         )
 
@@ -200,19 +199,25 @@ class CognitiveRefusalBoundary(unittest.TestCase):
                 self.assertFalse(hasattr(self.siabench, name))
         runner = inspect.getsource(self.siabench.run_cognitive)
         function = ast.parse(runner).body[0]
-        executable = function.body[1:]
-        self.assertEqual(len(executable), 1)
-        self.assertIsInstance(executable[0], ast.Raise)
-        refusal = executable[0].exc
-        self.assertIsInstance(refusal, ast.Call)
-        self.assertIsInstance(refusal.func, ast.Name)
-        self.assertEqual(refusal.func.id, "BenchmarkRefusal")
-        self.assertEqual(len(refusal.args), 1)
-        self.assertIsInstance(refusal.args[0], ast.Name)
-        self.assertEqual(
-            refusal.args[0].id,
-            "_COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON",
-        )
+        # The obsolete single-Raise assertion encoded absence of a runner.
+        # Keep the scaffold exclusions and require the concrete private
+        # delegate instead; its behavior is exercised by command tests.
+        calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
+        delegates = [node for node in calls if isinstance(node.func, ast.Attribute)
+                     and isinstance(node.func.value, ast.Name)
+                     and node.func.value.id == "siacognitivecommand"]
+        self.assertEqual([node.func.attr for node in delegates], ["run_command"])
+        delegate = delegates[0]
+        self.assertEqual([node.id for node in delegate.args], ["out_dir"])
+        self.assertEqual([(item.arg, item.value.id) for item in delegate.keywords],
+                         [("repo", "repo"), ("request_file", "request_file"),
+                          ("request_sha256", "request_sha256")])
+        forbidden = set(PROVISIONAL_HELPERS) | {"_engine", "_atomic_text", "build_ledger_dataset"}
+        self.assertFalse([node for node in calls if isinstance(node.func, ast.Name)
+                          and node.func.id in forbidden])
+        translations = [node for node in calls if isinstance(node.func, ast.Name)
+                        and node.func.id == "BenchmarkRefusal"]
+        self.assertEqual([ast.unparse(node) for node in translations], ["BenchmarkRefusal(str(exc))"])
         self.assertIn("structured refusal", runner.lower())
 
     def test_signed_ledger_dataset_has_only_explicit_private_history_capture(self):

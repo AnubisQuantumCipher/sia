@@ -12,8 +12,9 @@ never inferred from missing output.
 
 The older corpus-conditioned probes remain available for the small nightly
 drift tripwire; they are not described as a LongMemEval-style QA population.
-The cognitive subcommand is refusal-only until an admitted raw-vector baseline
-exists.  No dormant benchmark implementation sits behind that refusal.
+The cognitive subcommand invokes the committed private raw-vector baseline
+only from an externally pinned request. It returns a small hash receipt, not
+private answer data, retrieval metrics or a cognitive-win claim.
 """
 
 import argparse
@@ -84,19 +85,7 @@ LEGACY_TRIPWIRE_NON_CLAIMS = [
     "threshold crossings are drift signals, not scored abstention decisions",
 ]
 
-_COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON = json.dumps({
-    "schema": "sia-cognitive-baseline-refusal-v1",
-    "status": "refused",
-    "reason": "admitted-raw-vector-baseline-unavailable",
-    "consequence_ceiling": "informational",
-    "non_claims": [
-        "gbrain query is a hybrid retrieval path, not a dense-only baseline",
-        "gbrain exports BrainEngine.searchVector, but SIA has no "
-        "descriptor-bound model/index/config-bound runner that admits its "
-        "ranked rows for this gate",
-        "hybrid diagnostic performance cannot earn cognitive ancestry",
-    ],
-}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+from siacognitivecommand import _PINNED_REQUEST_REQUIRED_JSON as _COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON
 
 
 class BenchmarkRefusal(RuntimeError):
@@ -2662,9 +2651,14 @@ def run(chain_names=None):
     return report
 
 
-def run_cognitive(out_dir, *, repo=None):
-    """Report the structured refusal until a raw-vector baseline is admitted."""
-    raise BenchmarkRefusal(_COGNITIVE_VECTOR_BASELINE_REFUSAL_JSON)
+def run_cognitive(out_dir, *, repo=None, request_file=None, request_sha256=None):
+    """Run the pinned private handoff or preserve its structured refusal."""
+    import siacognitivecommand
+    try:
+        return siacognitivecommand.run_command(
+            out_dir, repo=repo, request_file=request_file, request_sha256=request_sha256)
+    except siacognitivecommand.CommandRefusal as exc:
+        raise BenchmarkRefusal(str(exc)) from exc
 
 
 def _print_score(score):
@@ -2687,8 +2681,10 @@ def main(argv=None):
     score_p.add_argument("--dataset", required=True)
     score_p.add_argument("--answers", required=True)
     cognitive_p = sub.add_parser(
-        "cognitive", help="report the fail-closed raw-vector refusal")
+        "cognitive", help="run an externally pinned private raw-vector baseline (no scoring)")
     cognitive_p.add_argument("--out")
+    cognitive_p.add_argument("--request", dest="request_file", help="owned mode-0600 private request JSON")
+    cognitive_p.add_argument("--request-sha256", help="external SHA-256 of the exact request file bytes")
     sub.add_parser(
         "legacy", help="run the heuristic slug-retrieval drift tripwire")
     args = parser.parse_args(argv)
@@ -2720,7 +2716,8 @@ def main(argv=None):
             _print_score(score_answer_file(args.dataset, args.answers))
             return 0
         if args.command == "cognitive":
-            print(json.dumps(run_cognitive(args.out), indent=2,
+            print(json.dumps(run_cognitive(args.out, request_file=args.request_file,
+                                          request_sha256=args.request_sha256), indent=2,
                              sort_keys=True))
             return 0
         if args.command == "legacy":

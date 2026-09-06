@@ -46,7 +46,7 @@ biological brain and does not establish cognition or neuroscience.
                         with bounded, pageable domain breakdowns
   sia bench [run|generate|score|cognitive|legacy] ...
                         signed-ledger retrieval and abstention benchmark;
-                        cognitive reports an admitted raw-vector-baseline refusal
+                        cognitive runs an externally pinned private raw-vector baseline
   sia judge-audit       exercise the configured judge against engineered
                         evidence states; writes an owner-private report
   sia continuity roots --json
@@ -2144,6 +2144,11 @@ def _main_under_lifecycle(argv):
     command_args = argv[2:]
     recovery_safe_unpin = (cmd == "memory" and len(command_args) == 2
                            and command_args[0] == "--unpin")
+    if cmd == "bench" and command_args[:1] == ["cognitive"]:
+        # This exact subcommand consumes only an externally pinned private
+        # request. The surrounding lifecycle lease remains held; there is no
+        # resident corpus/index/model fallback and no general readiness skip.
+        return _dispatch(argv, cmd)
     if cmd in READINESS_GATED_COMMANDS and not recovery_safe_unpin:
         # Keep the readiness predicate and every byte returned to the caller
         # in the same corpus generation. Nested corpus owners in ponder/grade
