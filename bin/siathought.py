@@ -2224,10 +2224,13 @@ def _canonical_epoch_event_ids(event_ids, epoch_slug):
     return list(event_ids)
 
 
-def _read_epoch_state(slug, *, expected_generation=None):
+def _read_epoch_state(slug, *, expected_generation=None, dependency_capture=None):
     """Read and validate one bounded epoch plus optional exact shard lineage."""
     try:
-        text = _read_event_page(slug, expected_generation=expected_generation)
+        text = _read_event_page(
+            slug, expected_generation=expected_generation,
+            **({"dependency_capture": dependency_capture}
+               if dependency_capture is not None else {}))
     except FileNotFoundError:
         return {"slug": slug, "text": "", "sources": [], "dates": [],
                 "ndays": 0, "source_manifest": [], "event_ids": [],
@@ -3253,6 +3256,688 @@ def consolidate_corpus():
     result = (len(consolidated_days), written_epochs, len(kept_days))
     _acknowledge_consolidation_claims(scan_state)
     return result
+
+
+def _parse_sia_counts(raw, label):
+    try:
+        counts = _strict_json_loads(raw)
+    except (TypeError, UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError(f"{label} sia_counts is malformed") from exc
+    if not isinstance(counts, dict) or any(
+            not isinstance(key, str) or not key
+            or sanitize_slugpart(key) != key
+            or isinstance(value, bool) or not isinstance(value, int)
+            or value < 0
+            for key, value in counts.items()):
+        raise ValueError(f"{label} sia_counts is invalid")
+    return counts
+
+
+def _event_shard_slug(organ, date, part):
+    if isinstance(part, bool) or not isinstance(part, int) or part < 1:
+        raise ValueError("event shard number is invalid")
+    base = day_slug(organ, date)
+    return base if part == 1 else f"{base}-part-{part}"
+
+
+def _read_event_page(slug, *, expected_generation=None, dependency_capture=None):
+    """Read one bounded regular event page without following its leaf."""
+    path = corpus_path(slug)
+    if dependency_capture is not None:
+        return dependency_capture.read_file(
+            path, MAX_EVENT_PAGE_BYTES,
+            expected_generation=expected_generation).decode("utf-8", errors="strict")
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        fd = (_open_source_nofollow(path, flags)
+              if expected_generation is not None else os.open(path, flags))
+    except OSError as exc:
+        if expected_generation is not None:
+            raise ValueError(f"event page changed before read: {slug}") from exc
+        raise
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_size > MAX_EVENT_PAGE_BYTES:
+            raise ValueError(f"event page is not a bounded regular file: {slug}")
+        if expected_generation is not None \
+                and _file_generation(before) != expected_generation:
+            raise ValueError(f"event page changed before read: {slug}")
+    except Exception:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "rb") as stream:
+        raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    observed = (before.st_dev, before.st_ino, before.st_size,
+                before.st_mtime_ns, before.st_ctime_ns)
+    finished = (after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns)
+    if observed != finished or len(raw) > MAX_EVENT_PAGE_BYTES:
+        raise ValueError(f"event page changed while read: {slug}")
+    if expected_generation is not None:
+        try:
+            target = _source_path_identity(path, flags)
+        except OSError as exc:
+            raise ValueError(f"event page changed after read: {slug}") from exc
+        if _file_generation(target) != expected_generation:
+            raise ValueError(f"event page changed after read: {slug}")
+    return raw.decode("utf-8", errors="strict")
+
+
+def _bounded_event_directory_snapshot(
+        directory, *, cleanup_legacy_atomic=False, dependency_capture=None):
+    """Return one complete event-directory snapshot or refuse its ceiling.
+
+    Each raw directory page is independently bounded and generation-bound.
+    The aggregate never crosses the event occurrence lookup ceiling; a
+    mutation between pages refuses instead of turning a partial cycle into an
+    absence or deletion claim.
+    """
+    if dependency_capture is not None:
+        if cleanup_legacy_atomic:
+            raise ValueError("captured event scans cannot clean source entries")
+        return dependency_capture.directory_snapshot(directory)
+    entries = []
+    page_state = None
+    inspected_total = 0
+    try:
+        while True:
+            remaining = MAX_EVENT_DIRECTORY_INSPECTIONS - inspected_total
+            if remaining <= 0:
+                raise ValueError(
+                    "event occurrence lookup exceeds its page bound")
+            page, complete, inspected, next_state = _bounded_source_entries(
+                directory, page_state,
+                min(remaining, MAX_SOURCE_SCAN_ENTRIES),
+                cleanup_legacy_atomic=cleanup_legacy_atomic)
+            if page_state is not None and next_state.get("reset", False):
+                raise RuntimeError(
+                    "event directory changed during its bounded snapshot")
+            inspected_total += inspected
+            entries.extend(page)
+            if inspected_total > MAX_EVENT_LOOKUP_PAGES:
+                raise ValueError(
+                    "event occurrence lookup exceeds its page bound")
+            if complete:
+                break
+            page_state = next_state
+    except FileNotFoundError as exc:
+        if page_state is None and not entries:
+            return []
+        raise RuntimeError(
+            "event directory disappeared during its bounded snapshot") \
+            from exc
+    names = [entry["name"] for entry in entries]
+    if len(names) != len(set(names)):
+        raise RuntimeError("event directory snapshot repeated an entry")
+    return sorted(entries, key=lambda entry: entry["name"])
+
+
+def _event_page_state(organ, date, part, *, expected_generation=None,
+                      dependency_capture=None):
+    slug = _event_shard_slug(organ, date, part)
+    text = _read_event_page(
+        slug, expected_generation=expected_generation,
+        **({"dependency_capture": dependency_capture}
+           if dependency_capture is not None else {}))
+    match = FM_RE.match(text)
+    if match is None:
+        raise ValueError(f"existing event page lacks frontmatter: {slug}")
+    fmtext = match.group(1)
+    types = re.findall(r"^type:\s*(.*?)\s*$", fmtext, re.M)
+    dates = re.findall(r"^date:\s*(.*?)\s*$", fmtext, re.M)
+    if types != ["event-day"] or dates != [date]:
+        raise ValueError(f"existing event page identity is invalid: {slug}")
+    shard_values = re.findall(r"^sia_shard:\s*(.*?)\s*$", fmtext, re.M)
+    if shard_values and shard_values != [str(part)]:
+        raise ValueError(f"existing event page shard is invalid: {slug}")
+    cm = re.search(r"^sia_counts: (.*)$", fmtext, re.M)
+    if cm is None:
+        raise ValueError(f"existing event page lacks sia_counts: {slug}")
+    counts = _parse_sia_counts(cm.group(1), slug)
+    tags = {organ}
+    tm = re.search(r"^tags: \[(.*)\]$", fmtext, re.M)
+    if tm:
+        tags |= {tag.strip() for tag in tm.group(1).split(",")
+                 if tag.strip()}
+    body = text[match.end():]
+    log_part = body.split("## Timeline", 1)[0]
+    if "## Log" in log_part:
+        log_part = log_part.split("## Log", 1)[1]
+    bullets = [line for line in log_part.splitlines()
+               if line.startswith("- ")]
+    if len(bullets) > MAX_EVENT_BULLETS:
+        raise ValueError(f"existing event shard exceeds its bound: {slug}")
+    return {"slug": slug, "part": part, "counts": counts, "tags": tags,
+            "bullets": bullets, "dirty": False}
+
+
+def _event_day_shards(organ, date, *, dependency_capture=None):
+    base = day_slug(organ, date)
+    base_path = corpus_path(base)
+    root = os.path.dirname(base_path)
+    capture_kw = ({"dependency_capture": dependency_capture}
+                  if dependency_capture is not None else {})
+    entries = _bounded_event_directory_snapshot(
+        root, cleanup_legacy_atomic=dependency_capture is None, **capture_kw)
+    part_re = re.compile(
+        rf"^{re.escape(os.path.basename(base_path[:-3]))}"
+        r"-part-([2-9][0-9]*)\.md$")
+    parts, generations = [], {}
+    base_present = False
+    for entry in entries:
+        is_base = entry["name"] == os.path.basename(base_path)
+        match = part_re.fullmatch(entry["name"])
+        if not is_base and match is None:
+            continue
+        if not stat.S_ISREG(entry["mode"]):
+            raise ValueError("event day page is not a regular file")
+        part = 1 if is_base else int(match.group(1))
+        generations[part] = tuple(entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        if is_base:
+            base_present = True
+        else:
+            parts.append(part)
+    if len(parts) != len(set(parts)) or len(parts) >= MAX_EVENT_SHARDS \
+            or any(part > MAX_EVENT_SHARDS for part in parts):
+        raise ValueError("event day shard set is invalid or exceeds its bound")
+    parts.sort()
+    if base_present:
+        if any(part != position for position, part in
+               enumerate(parts, start=2)):
+            raise ValueError("event day shards are not contiguous")
+        return [_event_page_state(
+            organ, date, part, expected_generation=generations[part], **capture_kw)
+            for part in [1] + parts]
+    if parts:
+        raise ValueError("event day has shards without its base page")
+    return []
+
+
+def _event_line(ev, event_id, semantic_id):
+    stamp = ev.ts.strftime("%H:%M:%SZ")
+    links = " ".join(
+        f"[[{link}]]" for link in sorted(ev.links)
+        if not link.startswith("organs/")
+        and f"[[{link}" not in ev.summary)
+    payload = ev.summary + (f" {links}" if links else "")
+    base_line = f"- {stamp} {payload}"
+    return (base_line
+            + f" <!-- sia-event:{event_id}:{semantic_id} -->", payload,
+            base_line)
+
+
+def _render_event_shard(organ, date, shard, *, dependency_capture=None):
+    name = ORGANS.get(organ, (organ, ""))[0]
+    part = shard["part"]
+    title = f"{name} — {date}" + (f" — part {part}" if part > 1 else "")
+    total = sum(shard["counts"].values())
+    aggregate = ", ".join(
+        f"{value}× {kind}" for kind, value in sorted(
+            shard["counts"].items(), key=lambda item: -item[1])[:6])
+    fm = ["type: event-day", fm_title(title),
+          f"tags: [{', '.join(sorted(shard['tags']))}]", f"date: {date}",
+          f"sia_shard: {part}",
+          f"sia_counts: {json.dumps(shard['counts'], sort_keys=True)}"]
+    if organ == "jackal":
+        fm.insert(1, "origin: derived")
+    body = (f"# {title}\n\n"
+            f"What [[organs/{organ}]] reported to [[sia/cortex]] on {date}.\n\n"
+            f"## Log\n" + "\n".join(shard["bullets"]) + "\n\n"
+            f"## Timeline\n- **{date}** — {total} events in this shard: "
+            f"{aggregate}\n")
+    if dependency_capture is not None:
+        dependency_capture.reserve_render(shard["slug"], fm, body)
+    encoded = ("---\n" + "\n".join(fm) + "\n---\n" + body).encode(
+        "utf-8")
+    if len(encoded) > MAX_EVENT_PAGE_BYTES:
+        raise ValueError("rendered event shard exceeds its byte bound")
+    if dependency_capture is not None:
+        dependency_capture.rendered(shard["slug"], encoded)
+    return fm, body
+
+
+def _event_shard_trial(organ, date, shard, ev, line, *, dependency_capture=None):
+    trial = {"slug": shard["slug"], "part": shard["part"],
+             "counts": dict(shard["counts"]), "tags": set(shard["tags"]),
+             "bullets": list(shard["bullets"]), "dirty": True}
+    trial["bullets"].append(line)
+    trial["counts"][ev.kind] = trial["counts"].get(ev.kind, 0) + 1
+    trial["tags"] |= ev.tags
+    try:
+        _render_event_shard(
+            organ, date, trial,
+            **({"dependency_capture": dependency_capture}
+               if dependency_capture is not None else {}))
+    except ValueError as exc:
+        if str(exc) == "rendered event shard exceeds its byte bound":
+            return None
+        raise
+    return trial
+
+
+def _event_source_parts(relative):
+    """Return the canonical source/day/shard identity of an event source."""
+    if not isinstance(relative, str):
+        raise ValueError("event source path is invalid")
+    match = EVENT_SOURCE_RE.fullmatch(relative)
+    if match is None:
+        raise ValueError("event source path is invalid")
+    try:
+        parsed = datetime.date.fromisoformat(match.group("date"))
+    except ValueError as exc:
+        raise ValueError("event source date is invalid") from exc
+    if parsed.isoformat() != match.group("date"):
+        raise ValueError("event source date is invalid")
+    part = int(match.group("part") or "1")
+    if part > MAX_EVENT_SHARDS:
+        raise ValueError("event source shard exceeds its bound")
+    return match.group("organ"), match.group("date"), part
+
+
+def _event_payload_digest(payload):
+    if not isinstance(payload, str):
+        raise ValueError("event payload is invalid")
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _event_index_relative(organ, event_id):
+    if not isinstance(organ, str) \
+            or re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,199}", organ) is None \
+            or not isinstance(event_id, str) \
+            or re.fullmatch(r"[0-9a-f]{64}", event_id) is None:
+        raise ValueError("consolidated event lookup identity is invalid")
+    return os.path.join(
+        "event-index", organ, event_id[:2], event_id + ".json")
+
+
+def _canonical_event_index_entry(entry):
+    required = {"schema", "organ", "event_id", "semantic_id",
+                "payload_sha256", "source_rel", "source_sha256",
+                "epoch_slug"}
+    if not isinstance(entry, dict) or set(entry) != required \
+            or entry.get("schema") != EVENT_INDEX_SCHEMA \
+            or any(not isinstance(entry.get(key), str) for key in (
+                "organ", "event_id", "payload_sha256", "source_rel",
+                "source_sha256", "epoch_slug")) \
+            or re.fullmatch(r"[0-9a-f]{64}", entry["event_id"]) is None \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", entry["payload_sha256"]) is None \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", entry["source_sha256"]) is None \
+            or (entry["semantic_id"] is not None
+                and (not isinstance(entry["semantic_id"], str)
+                     or re.fullmatch(
+                         r"[0-9a-f]{64}", entry["semantic_id"]) is None)):
+        raise ValueError("consolidated event index entry is invalid")
+    source_organ, source_date, _part = _event_source_parts(
+        entry["source_rel"])
+    year, week, _weekday = datetime.date.fromisoformat(
+        source_date).isocalendar()
+    expected_epoch = f"epochs/{source_organ}/{year}-w{week:02d}"
+    if entry["organ"] != source_organ \
+            or entry["epoch_slug"] != expected_epoch:
+        raise ValueError("consolidated event index binding is invalid")
+    return dict(entry)
+
+
+def _event_index_encoded(entry):
+    entry = _canonical_event_index_entry(entry)
+    encoded = (json.dumps(
+        entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n").encode("utf-8")
+    if len(encoded) > MAX_EVENT_INDEX_BYTES:
+        raise ValueError("consolidated event index entry exceeds its bound")
+    return encoded
+
+
+def _read_event_index_entry(organ, event_id, *, dependency_capture=None):
+    relative = _event_index_relative(organ, event_id)
+    path = os.path.join(CORPUS, relative)
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    if dependency_capture is not None:
+        try:
+            raw = dependency_capture.read_file(path, MAX_EVENT_INDEX_BYTES)
+        except FileNotFoundError:
+            return None
+    else:
+        try:
+            fd = os.open(path, flags)
+        except FileNotFoundError:
+            return None
+        with siaqueue.regular_file_stream(
+                fd, label="consolidated event index entry") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) \
+                    or before.st_size > MAX_EVENT_INDEX_BYTES:
+                raise ValueError(
+                    "consolidated event index entry is not a bounded regular file")
+            raw = stream.read(MAX_EVENT_INDEX_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        observed = (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns)
+        finished = (after.st_dev, after.st_ino, after.st_size,
+                    after.st_mtime_ns, after.st_ctime_ns)
+        if observed != finished or len(raw) > MAX_EVENT_INDEX_BYTES:
+            raise ValueError("consolidated event index entry changed while read")
+    try:
+        entry = _strict_json_loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("consolidated event index entry is malformed") from exc
+    entry = _canonical_event_index_entry(entry)
+    if entry["organ"] != organ or entry["event_id"] != event_id \
+            or raw != _event_index_encoded(entry):
+        raise ValueError("consolidated event index path binding is invalid")
+    epoch = _read_epoch_state(
+        entry["epoch_slug"],
+        **({"dependency_capture": dependency_capture}
+           if dependency_capture is not None else {}))
+    source_record = {"rel": entry["source_rel"],
+                     "sha256": entry["source_sha256"]}
+    if entry["source_sha256"] not in epoch["sources"] \
+            or source_record not in epoch["source_manifest"]:
+        raise ValueError(
+            "consolidated event index lacks exact epoch lineage")
+    if epoch["event_ids_declared"] \
+            and entry["event_id"] not in epoch["event_ids"]:
+        raise ValueError(
+            "consolidated event index lacks epoch completeness lineage")
+    if dependency_capture is not None:
+        dependency_capture.check_file(path)
+    else:
+        try:
+            target = _source_path_identity(path, flags)
+        except OSError as exc:
+            raise ValueError("consolidated event index changed while validating") from exc
+        if _file_generation(target) != finished:
+            raise ValueError("consolidated event index changed while validating")
+    return entry
+
+
+def _preflight_event_index_entries(entries):
+    if not isinstance(entries, list) \
+            or len(entries) > MAX_EVENT_INDEX_RECORDS:
+        raise ValueError("consolidated event index batch exceeds its bound")
+    for entry in entries:
+        entry = _canonical_event_index_entry(entry)
+        existing = _read_event_index_entry(
+            entry["organ"], entry["event_id"])
+        if existing is not None and existing != entry:
+            raise ValueError(
+                "event identity conflicts with durable consolidation index")
+
+
+def _publish_event_index_entries(entries):
+    """Write every exact index entry before its source page may be unlinked."""
+    _preflight_event_index_entries(entries)
+    for entry in entries:
+        existing = _read_event_index_entry(
+            entry["organ"], entry["event_id"])
+        if existing is not None:
+            continue
+        encoded = _event_index_encoded(entry)
+        relative = _event_index_relative(entry["organ"], entry["event_id"])
+        path = os.path.join(CORPUS, relative)
+        _before_corpus_mutation()
+        ensure_durable_directory(os.path.dirname(path))
+        atomic_write(path, encoded.decode("utf-8"))
+
+
+def _missing_event_index_expectations(organ, wanted, *, dependency_capture=None):
+    """Resolve missing leaves only from complete, bounded epoch manifests."""
+    if not wanted:
+        return {}
+    if not isinstance(wanted, set) \
+            or len(wanted) > MAX_EVENT_INDEX_RECORDS \
+            or any(not isinstance(event_id, str)
+                   or re.fullmatch(r"[0-9a-f]{64}", event_id) is None
+                   for event_id in wanted):
+        raise ValueError("event completeness lookup identity is invalid")
+    root = os.path.join(CORPUS, "epochs", organ)
+    capture_kw = ({"dependency_capture": dependency_capture}
+                  if dependency_capture is not None else {})
+    entries = _bounded_event_directory_snapshot(root, **capture_kw)
+    found = {}
+    for directory_entry in entries:
+        name = directory_entry["name"]
+        if EPOCH_PAGE_NAME_RE.fullmatch(name) is None:
+            continue
+        if not stat.S_ISREG(directory_entry["mode"]):
+            raise ValueError(
+                "epoch completeness source is not a regular file")
+        slug = f"epochs/{organ}/{name[:-3]}"
+        expected_generation = tuple(directory_entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        epoch = _read_epoch_state(
+            slug, expected_generation=expected_generation, **capture_kw)
+        if not epoch["source_manifest_declared"]:
+            # Epochs predating exact source/index lineage cannot make a
+            # completeness claim. They remain readable legacy summaries.
+            continue
+        if not epoch["event_ids_declared"]:
+            raise ValueError(
+                f"event-index completeness is unavailable: {slug}")
+        for event_id in wanted.intersection(epoch["event_ids"]):
+            prior = found.get(event_id)
+            if prior is not None and prior != slug:
+                raise ValueError(
+                    "consolidated event identity occurs in multiple epochs")
+            found[event_id] = slug
+    return found
+
+
+def _other_event_occurrences(organ, wanted, excluded, *, dependency_capture=None):
+    """Find source-native IDs already admitted on another recent day."""
+    if not wanted:
+        return {}
+    if len(wanted) > MAX_EVENT_INDEX_RECORDS:
+        raise ValueError("event occurrence lookup exceeds its identity bound")
+    root = os.path.join(CORPUS, "events", organ)
+    capture_kw = ({"dependency_capture": dependency_capture}
+                  if dependency_capture is not None else {})
+    entries = _bounded_event_directory_snapshot(
+        root, cleanup_legacy_atomic=dependency_capture is None, **capture_kw)
+    found = {}
+    page_re = re.compile(
+        rf"^events/{re.escape(organ)}/[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
+        r"(?:-part-[2-9][0-9]*)?$")
+    for entry in entries:
+        if not entry["name"].endswith(".md"):
+            continue
+        slug = f"events/{organ}/{entry['name'][:-3]}"
+        if page_re.fullmatch(slug) is None:
+            continue
+        if not stat.S_ISREG(entry["mode"]):
+            raise ValueError("event occurrence source is not a regular file")
+        if slug in excluded:
+            continue
+        generation = tuple(entry[key] for key in (
+            "device", "inode", "size", "mtime_ns", "ctime_ns"))
+        text = _read_event_page(
+            slug, expected_generation=generation, **capture_kw)
+        for line in text.splitlines():
+            marker = EVENT_MARKER_RE.fullmatch(line)
+            if marker is None:
+                if "sia-event:" in line:
+                    raise ValueError("event page contains a malformed identity")
+                continue
+            if marker.group("id") not in wanted:
+                continue
+            event_id = marker.group("id")
+            prior = found.get(event_id)
+            value = (slug, _event_payload_digest(marker.group("payload")),
+                     marker.group("semantic"))
+            if prior is not None and prior != value:
+                raise ValueError("event identity occurs with conflicting bytes")
+            found[event_id] = value
+    missing = set()
+    for event_id in sorted(wanted):
+        entry = _read_event_index_entry(organ, event_id, **capture_kw)
+        if entry is None:
+            missing.add(event_id)
+            continue
+        if event_id in found:
+            raise ValueError(
+                "event identity occurs in live and consolidated evidence")
+        found[event_id] = (
+            entry["epoch_slug"], entry["payload_sha256"],
+            entry["semantic_id"])
+    expected = _missing_event_index_expectations(organ, missing, **capture_kw)
+    if expected:
+        event_id = sorted(expected)[0]
+        raise ValueError(
+            f"consolidated event index leaf is missing: {event_id}")
+    return found
+
+
+def _preflight_event_lookup(events):
+    organs = {event.organ for event in events if event.occurrence}
+    for organ in organs:
+        root = os.path.join(CORPUS, "events", organ)
+        _bounded_event_directory_snapshot(root, cleanup_legacy_atomic=True)
+
+
+def _preflight_event_path_plan(planned_paths_by_organ):
+    """Bound the union of every day planned for each source in this pulse."""
+    for organ, planned_paths in planned_paths_by_organ.items():
+        root = os.path.join(CORPUS, "events", organ)
+        live_paths = {
+            os.path.abspath(os.path.join(root, entry["name"]))
+            for entry in _bounded_event_directory_snapshot(
+                root, cleanup_legacy_atomic=True)
+            if stat.S_ISREG(entry["mode"])
+            and entry["name"].endswith(".md")}
+        if len(live_paths | set(planned_paths)) > MAX_EVENT_LOOKUP_PAGES:
+            raise ValueError(
+                "event batch would exceed its bounded occurrence index")
+
+
+def _plan_event_day_update(organ, date, new_events, *, dependency_capture=None):
+    """Shared first assignment/render pass; this function never writes pages."""
+    capture_kw = ({"dependency_capture": dependency_capture}
+                  if dependency_capture is not None else {})
+    shards = _event_day_shards(organ, date, **capture_kw)
+    if not shards:
+        shards = [{"slug": _event_shard_slug(organ, date, 1), "part": 1,
+                   "counts": {}, "tags": {organ}, "bullets": [],
+                   "dirty": False}]
+    known_ids, legacy = {}, collections.defaultdict(list)
+    for shard in shards:
+        for index, line in enumerate(shard["bullets"]):
+            marker = EVENT_MARKER_RE.fullmatch(line)
+            if marker is None:
+                if "sia-event:" in line:
+                    raise ValueError("event page contains a malformed identity")
+                legacy[line].append((shard, index))
+                continue
+            event_id = marker.group("id")
+            if event_id in known_ids:
+                raise ValueError("event identity is duplicated in day shards")
+            known_ids[event_id] = (
+                shard, marker.group("payload"), marker.group("semantic"))
+
+    prepared = []
+    stable_wanted = set()
+    for ev in new_events:
+        if not isinstance(ev, Event) or ev.organ != organ:
+            raise ValueError("event does not belong to its day page")
+        event_id = event_memory_identity(ev)
+        semantic_id = event_semantic_identity(ev)
+        line, payload, base_line = _event_line(ev, event_id, semantic_id)
+        prepared.append((ev, event_id, semantic_id, line, payload, base_line))
+        if ev.occurrence and event_id not in known_ids:
+            stable_wanted.add(event_id)
+    other_ids = _other_event_occurrences(
+        organ, stable_wanted, {shard["slug"] for shard in shards}, **capture_kw)
+
+    appended, admitted_pages, admitted_ids = [], [], set()
+    batch_payloads = {}
+    for ev, event_id, semantic_id, line, payload, base_line in prepared:
+        prior_payload = batch_payloads.get(event_id)
+        if prior_payload is not None \
+                and prior_payload != (payload, semantic_id):
+            raise ValueError("event identity conflicts within the input batch")
+        batch_payloads[event_id] = (payload, semantic_id)
+        existing = known_ids.get(event_id)
+        if existing is not None:
+            shard, stored_payload, stored_semantic = existing
+            if stored_payload != payload or stored_semantic != semantic_id:
+                raise ValueError("event identity conflicts with its day page")
+            admitted_slug = shard["slug"]
+        elif event_id in other_ids:
+            admitted_slug, stored_payload_digest, stored_semantic = \
+                other_ids[event_id]
+            if stored_payload_digest != _event_payload_digest(payload) \
+                    or stored_semantic != semantic_id:
+                raise ValueError("event identity conflicts with another day page")
+        elif legacy.get(base_line):
+            raise ValueError(
+                "legacy event cannot be identity-upgraded automatically")
+        else:
+            shard = shards[-1]
+            if len(shard["bullets"]) >= MAX_EVENT_BULLETS:
+                part = shard["part"] + 1
+                if part > MAX_EVENT_SHARDS:
+                    raise ValueError("event day exceeds its shard bound")
+                shard = {"slug": _event_shard_slug(organ, date, part),
+                         "part": part, "counts": {}, "tags": {organ},
+                         "bullets": [], "dirty": False}
+                shards.append(shard)
+            trial = _event_shard_trial(organ, date, shard, ev, line, **capture_kw)
+            if trial is None and shard["bullets"]:
+                part = shard["part"] + 1
+                if part > MAX_EVENT_SHARDS:
+                    raise ValueError("event day exceeds its shard bound")
+                shard = {"slug": _event_shard_slug(organ, date, part),
+                         "part": part, "counts": {}, "tags": {organ},
+                         "bullets": [], "dirty": False}
+                shards.append(shard)
+                trial = _event_shard_trial(organ, date, shard, ev, line, **capture_kw)
+            if trial is None:
+                raise ValueError("one event exceeds the event shard byte bound")
+            shard.update(trial)
+            known_ids[event_id] = (shard, payload, semantic_id)
+            appended.append(ev)
+            admitted_slug = shard["slug"]
+        if event_id not in admitted_ids:
+            admitted_ids.add(event_id)
+            admitted_pages.append((ev, admitted_slug))
+
+    # Render every target before the first mutation. Sequential atomic writes
+    # are then replayable: an interrupted prefix already contains exact IDs.
+    organ_root = os.path.join(CORPUS, "events", organ)
+    live_paths = {
+        os.path.abspath(os.path.join(organ_root, entry["name"]))
+        for entry in _bounded_event_directory_snapshot(
+            organ_root, cleanup_legacy_atomic=dependency_capture is None,
+            **capture_kw)
+        if stat.S_ISREG(entry["mode"])
+        and entry["name"].endswith(".md")}
+    planned_paths = {
+        os.path.abspath(corpus_path(shard["slug"])) for shard in shards}
+    if len(live_paths | planned_paths) > MAX_EVENT_LOOKUP_PAGES:
+        raise ValueError(
+            "event organ would exceed its bounded occurrence index")
+    rendered = ([] if dependency_capture is not None else [
+        (shard, _render_event_shard(organ, date, shard))
+        for shard in shards if shard["dirty"]])
+    return {"shards": shards, "appended": appended,
+            "admitted_pages": admitted_pages, "rendered": rendered}
+
+
+def update_day_page(organ, date, new_events, *, dry_run=False):
+    """Plan or append observations to immutable bounded day shards."""
+    planned = _plan_event_day_update(organ, date, new_events)
+    if not dry_run:
+        for shard, (frontmatter, body) in planned["rendered"]:
+            write_page(shard["slug"], frontmatter, body)
+    return ([shard["slug"] for shard in planned["shards"]],
+            planned["appended"], planned["admitted_pages"])
+
 
 
 # Exports are captured before bind() exists, so the owner can wrap every

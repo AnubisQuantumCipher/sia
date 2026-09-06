@@ -16,7 +16,8 @@ or are implemented in the current tree, and are the pattern to follow:
 |---|---|
 | `bin/siasenses.py` | sensing subsystem (extracted in v1.3.7) |
 | `bin/siagraph.py` | graph/domain projection (extracted in v1.6.0) |
-| `bin/siathought.py` | durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
+| `bin/siathought.py` | event-day admission/indexing, durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
+| `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -162,8 +163,9 @@ single ABI source; `tests/test_thought_recovery.py` remains the behavior gate.
 
 The epoch lifecycle shares this durable memory-page owner: completeness
 manifests, bounded consolidation scan/claims, rendering, and the originating
-recovery marker move together. Event-day admission, occurrence indexing,
-generic corpus publication and scheduled-maintenance orchestration remain core services
+recovery marker move together.
+Event-day admission and occurrence indexing share this owner.
+Generic corpus publication and scheduled-maintenance orchestration remain core services
 (`DREAM` is the compatibility ledger/action name).
 Bounds, regular expressions and consolidation exception classes remain
 parent-owned, so calls through each dynamically loaded core preserve its
@@ -173,6 +175,34 @@ changes. `tests/test_epoch_module_ownership.py` checks ownership and real
 cross-alias calls, while the existing epoch and scheduled-maintenance behavior tests remain
 unchanged. The release export tuple adds the moved functions so the same
 exact-set and binding guards cover the expanded child.
+
+The event-day appender and `_prepare_event_page_plan` use the same
+`_plan_event_day_update` assignment pass. The new planner retains its
+accepted rendered images, original page bytes and complete bounded read
+dependencies, including absence witnesses and directory membership where
+occurrence lookup requires them. Planning does not publish pages or clean
+legacy staging entries. The existing `update_day_page` signature, return
+triple and admitted Event objects remain compatible.
+
+`_publish_event_page_plan` consumes the independently pinned original plan
+without rerendering. It permits only exact original sources or declared
+target images on retry; unrelated dependency changes refuse. Original
+event-entry content and order remain bound, while title/count/timeline
+regeneration does not preserve the entire old page as a literal prefix.
+A failed publication can leave a retained target prefix, and its retry
+preserves the original append/admission roster rather than claiming the
+retry performed those appends.
+
+These lazy core wrappers hold the real reentrant corpus owner across all
+reads, copies, writes and final checks. `siaeventplan` receives the explicit
+owning namespace and introduces no separate binding lock. Result copying
+and serialization finish before the final descriptor/hash checks and
+complete no-hash named-path sweep. `tests/test_event_page_plan.py` exercises
+the exact-byte, lease, retained-origin, dependency and interrupted-retry
+boundaries. Page-byte publication is not live-loop admission, corpus/index
+synchronization, cursor acknowledgment or readiness. Complete source-batch,
+live-transition and status/memo admission remains a separate integration
+requirement; these private helpers do not enable a resident live loop.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
