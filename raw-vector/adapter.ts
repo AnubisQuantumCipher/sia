@@ -34,15 +34,25 @@ const NON_CLAIMS = [
   'Scores and vectors are observed floating-point engine output, not JACKAL-certified arithmetic or a cognitive win.',
   'Returned chunks retain their text; this adapter does not infer an origin label that the raw API did not return.',
 ];
+export const EMBEDDING_INPUT_NON_CLAIMS = [
+  'Embedding input prefixes affect only provider input; original query, page and chunk text identities are retained.',
+  'Embedding-input digests bind adapter-supplied UTF-8 text, not an independently observed HTTP body or proof of model computation.',
+];
+type EmbeddingInputPolicy = {
+  schema: 'sia-embedding-input-policy-v1'; mode: 'bare-v1' | 'nomic-prefix-v1';
+  document_prefix: string; query_prefix: string; encoding: 'utf-8';
+  document_stage: 'after-lossless-chunking'; query_stage: 'original-query'; overflow: 'refuse';
+};
 
 type SnapshotIdentity = { logical_sha256: string; catalog_sha256: string };
 type Embedding = { model: string; dimensions: number; endpoint: string };
 type Request = {
-  v: 1; operation: 'capture' | 'query'; lane: 'raw_vector';
+  v: 1 | 2; operation: 'capture' | 'query'; lane: 'raw_vector';
   queries: { id: string; text: string }[]; limit: number;
   snapshot: { fd: number; logical_sha256: string | null; catalog_sha256: string | null };
   embedding: Embedding;
   binding: { executable_sha256: string; build_receipt_sha256: string };
+  embedding_input_policy?: EmbeddingInputPolicy; embedding_input_policy_sha256?: string;
 };
 type Engine = {
   snapshot(): Promise<SnapshotIdentity>;
@@ -116,6 +126,19 @@ export function canonicalJson(value: unknown, depth = 0): string {
   return refuse('json-value-invalid');
 }
 
+function validateEmbeddingInputPolicy(policy: unknown, digest: unknown, model: unknown): asserts policy is EmbeddingInputPolicy {
+  keys(policy, ['schema', 'mode', 'document_prefix', 'query_prefix', 'encoding', 'document_stage', 'query_stage', 'overflow']);
+  if (!['bare-v1', 'nomic-prefix-v1'].includes(policy.mode as string)) refuse('embedding-input-policy-invalid');
+  const prefixed = policy.mode === 'nomic-prefix-v1';
+  if (policy.schema !== 'sia-embedding-input-policy-v1' || policy.encoding !== 'utf-8'
+    || policy.document_stage !== 'after-lossless-chunking' || policy.query_stage !== 'original-query'
+    || policy.overflow !== 'refuse' || policy.document_prefix !== (prefixed ? 'search_document: ' : '')
+    || policy.query_prefix !== (prefixed ? 'search_query: ' : '')
+    || prefixed && model !== 'ollama:nomic-embed-text:v1.5') refuse('embedding-input-policy-invalid');
+  if (typeof digest !== 'string' || digest.length !== 64 || !HASH.test(digest)
+    || digest !== sha(canonicalJson(policy))) refuse('embedding-input-policy-mismatch');
+}
+
 // JSON.parse normally accepts duplicate members. Scan the token structure first
 // so two different readers cannot disagree about the admitted request.
 function uniqueJson(source: string): unknown {
@@ -172,9 +195,13 @@ function uniqueJson(source: string): unknown {
 }
 
 function validateRequest(raw: unknown): Request {
-  keys(raw, ['v', 'operation', 'lane', 'queries', 'limit', 'snapshot', 'embedding', 'binding']);
-  if (raw.v !== 1 || raw.lane !== 'raw_vector' || !['capture', 'query'].includes(raw.operation as string))
+  const v2 = record(raw) && raw.v === 2;
+  keys(raw, ['v', 'operation', 'lane', 'queries', 'limit', 'snapshot', 'embedding', 'binding',
+    ...(v2 ? ['embedding_input_policy', 'embedding_input_policy_sha256'] : [])]);
+  if (raw.v !== 1 && raw.v !== 2 || raw.lane !== 'raw_vector' || !['capture', 'query'].includes(raw.operation as string))
     refuse('request-shape');
+  if (v2) validateEmbeddingInputPolicy(raw.embedding_input_policy, raw.embedding_input_policy_sha256,
+    record(raw.embedding) ? raw.embedding.model : undefined);
   if (!integer(raw.limit, 1, MAX_RESULTS) || !Array.isArray(raw.queries) || raw.queries.length > MAX_QUERIES)
     refuse('request-shape');
   if (raw.operation === 'capture' ? raw.queries.length !== 0 : raw.queries.length === 0) refuse('request-shape');
@@ -185,6 +212,8 @@ function validateRequest(raw: unknown): Request {
       refuse('request-shape');
     if (typeof query.text === 'string' && bytes(query.text) > MAX_QUERY_BYTES) refuse('query-byte-budget');
     if (!text(query.text, MAX_QUERY_BYTES) || !query.text.trim()) refuse('request-shape');
+    if (v2 && bytes((raw.embedding_input_policy as EmbeddingInputPolicy).query_prefix) + bytes(query.text) > MAX_QUERY_BYTES)
+      refuse('embedding-input-byte-budget');
     ids.add(query.id);
   }
   keys(raw.snapshot, ['fd', 'logical_sha256', 'catalog_sha256']);
@@ -326,16 +355,20 @@ function elapsed(start: number, end: number): number {
   return end - start;
 }
 
-export function validateSnapshotEmbedding(metadata: unknown): void {
+export function validateSnapshotEmbedding(metadata: unknown, withInputPolicy = false): void {
   const fields = ['config_model_matches', 'config_dimensions_match', 'search_column_matches',
-    'physical_column_matches', 'chunk_models_match', 'embedded_text_matches'];
+    'physical_column_matches', 'chunk_models_match', 'embedded_text_matches',
+    ...(withInputPolicy ? ['embedding_input_policy_matches', 'embedding_input_policy_sha256_matches'] : [])];
   if (!record(metadata) || Object.keys(metadata).sort().join('\0') !== fields.sort().join('\0')
     || fields.some(field => metadata[field] !== true)) refuse('snapshot-embedding-mismatch');
 }
 
 export async function inspectSnapshotEmbedding(
   execute: (sql: string, parameters: unknown[]) => Promise<unknown[]>, expected: Embedding,
+  inputPolicy?: EmbeddingInputPolicy, inputPolicySha256?: string,
 ): Promise<void> {
+  const withInputPolicy = inputPolicy !== undefined || inputPolicySha256 !== undefined;
+  if (withInputPolicy) validateEmbeddingInputPolicy(inputPolicy, inputPolicySha256, expected.model);
   // No persisted model label, config value or chunk text crosses the result
   // boundary here. A malformed private snapshot can only return fixed booleans.
   const rows = await execute(`SELECT
@@ -354,16 +387,25 @@ export async function inspectSnapshotEmbedding(
       AND cc.model IS DISTINCT FROM $1) AS chunk_models_match,
     NOT EXISTS (SELECT 1 FROM public.content_chunks cc JOIN public.pages p ON p.id=cc.page_id
       WHERE p.source_id='sia' AND cc.modality='text' AND cc.embedding IS NOT NULL
-      AND (cc.embedded_text_hash IS NULL OR cc.embedded_text_hash <> md5(cc.chunk_text))) AS embedded_text_matches`,
-  [expected.model, String(expected.dimensions), `vector(${expected.dimensions})`]);
+      AND (cc.embedded_text_hash IS NULL OR cc.embedded_text_hash <> md5(cc.chunk_text))) AS embedded_text_matches${withInputPolicy ? `,
+    (SELECT count(*)=1 AND COALESCE(bool_and(value=$4),false) FROM public.config
+      WHERE key='sia_embedding_input_policy') AS embedding_input_policy_matches,
+    (SELECT count(*)=1 AND COALESCE(bool_and(value=$5),false) FROM public.config
+      WHERE key='sia_embedding_input_policy_sha256') AS embedding_input_policy_sha256_matches` : ''}`,
+  [expected.model, String(expected.dimensions), `vector(${expected.dimensions})`,
+    ...(withInputPolicy ? [canonicalJson(inputPolicy), inputPolicySha256] : [])]);
   if (!Array.isArray(rows) || rows.length !== 1) refuse('snapshot-embedding-mismatch');
-  validateSnapshotEmbedding(rows[0]);
+  validateSnapshotEmbedding(rows[0], withInputPolicy);
 }
 
 export async function runRawVector(raw: unknown, dependencies: Dependencies): Promise<any> {
   let engine: Engine | undefined;
   let result: any;
   let stage = 'admission';
+  const v = record(raw) && raw.v === 2 ? 2 : 1;
+  const nonClaims = [...NON_CLAIMS, ...(v === 2 ? EMBEDDING_INPUT_NON_CLAIMS : [])];
+  const refusalHeader = { v, status: 'refused', lane: 'raw_vector',
+    ...(v === 2 && record(raw) && ['capture', 'query'].includes(raw.operation as string) ? { operation: raw.operation } : {}) };
   try {
     const request = validateRequest(raw);
     const started = dependencies.now();
@@ -378,7 +420,8 @@ export async function runRawVector(raw: unknown, dependencies: Dependencies): Pr
     for (const query of request.queries) {
       stage = 'embed';
       const embedStarted = dependencies.now();
-      const vector = await dependencies.embed(query.text, { ...request.embedding }, AbortSignal.timeout(EMBEDDING_TIMEOUT_MS));
+      const embeddingInput = (request.embedding_input_policy?.query_prefix ?? '') + query.text;
+      const vector = await dependencies.embed(embeddingInput, { ...request.embedding }, AbortSignal.timeout(EMBEDDING_TIMEOUT_MS));
       if (!(vector instanceof Float32Array) || vector.length !== request.embedding.dimensions
         || !vector.every(Number.isFinite) || !vector.some(x => x !== 0)) refuse('embedding-vector-invalid');
       const vectorBytes = Buffer.alloc(vector.byteLength);
@@ -388,6 +431,7 @@ export async function runRawVector(raw: unknown, dependencies: Dependencies): Pr
       const rows = normalizedRows(await engine.searchVector(vector, searchOptions(request)), request.limit);
       const rowBytes = Buffer.from(canonicalJson(rows), 'utf8');
       const queryResult = { id: query.id, query_sha256: sha(query.text),
+        ...(request.v === 2 ? { embedding_input_sha256: sha(embeddingInput), embedding_input_bytes: bytes(embeddingInput) } : {}),
         vector_f32le_base64: vectorBytes.toString('base64'), vector_sha256: sha(vectorBytes),
         rows, ranked_rows_canonical_base64: rowBytes.toString('base64'), ranked_rows_sha256: sha(rowBytes),
         latency_ms: { embedding: elapsed(embedStarted, searchStarted), search: elapsed(searchStarted, dependencies.now()) } };
@@ -400,19 +444,21 @@ export async function runRawVector(raw: unknown, dependencies: Dependencies): Pr
     if (canonicalJson(before) !== canonicalJson(after)) refuse('snapshot-changed-during-query');
     stage = 'receipt';
     const config = { engine: 'pglite', embedding: request.embedding, search: searchOptions(request),
-      env: { GBRAIN_SEARCH_EXCLUDE: '', GBRAIN_SOURCE_BOOST: '', GBRAIN_PGLITE_WAL_REPAIR: 'off', TZ: 'UTC' } };
-    result = { v: 1, status: 'ok', operation: request.operation, lane: 'raw_vector',
+      env: { GBRAIN_SEARCH_EXCLUDE: '', GBRAIN_SOURCE_BOOST: '', GBRAIN_PGLITE_WAL_REPAIR: 'off', TZ: 'UTC' },
+      ...(request.v === 2 ? { embedding_input_policy: request.embedding_input_policy,
+        embedding_input_policy_sha256: request.embedding_input_policy_sha256 } : {}) };
+    result = { v: request.v, status: 'ok', operation: request.operation, lane: 'raw_vector',
+      ...(request.v === 2 ? { embedding_input_policy: request.embedding_input_policy } : {}),
       bindings: { ...before, ...request.binding, config_sha256: sha(canonicalJson(config)),
-        request_sha256: sha(canonicalJson(request)) },
-      results, latency_ms: { total: elapsed(started, dependencies.now()) }, non_claims: [...NON_CLAIMS] };
+        request_sha256: sha(canonicalJson(request)),
+        ...(request.v === 2 ? { embedding_input_policy_sha256: request.embedding_input_policy_sha256 } : {}) },
+      results, latency_ms: { total: elapsed(started, dependencies.now()) }, non_claims: nonClaims };
   } catch (error) {
-    result = { v: 1, status: 'refused', lane: 'raw_vector',
-      reason: failureReason(stage, error), non_claims: [...NON_CLAIMS] };
+    result = { ...refusalHeader, reason: failureReason(stage, error), non_claims: nonClaims };
   } finally {
     if (engine) {
       try { await engine.close(); }
-      catch (error) { result = { v: 1, status: 'refused', lane: 'raw_vector',
-        reason: failureReason('close', error), non_claims: [...NON_CLAIMS] }; }
+      catch (error) { result = { ...refusalHeader, reason: failureReason('close', error), non_claims: nonClaims }; }
     }
   }
   return result;
@@ -491,7 +537,8 @@ async function productionDependencies(request: Request): Promise<Dependencies> {
       };
       const snapshot = async (): Promise<SnapshotIdentity> => {
         await withDatabaseStage('embedding-compatibility', () =>
-          inspectSnapshotEmbedding((sql, parameters) => engine.executeRaw(sql, parameters), request.embedding));
+          inspectSnapshotEmbedding((sql, parameters) => engine.executeRaw(sql, parameters), request.embedding,
+            request.embedding_input_policy, request.embedding_input_policy_sha256));
         return digestSnapshot(read);
       };
       return { snapshot,
@@ -503,11 +550,12 @@ async function productionDependencies(request: Request): Promise<Dependencies> {
 
 async function main(): Promise<void> {
   let result: any;
+  let request: Request | undefined;
   let stage = 'entrypoint';
   try {
     const argv = process.argv.slice(2);
     if (argv.length !== 2 || argv[0] !== '--request-fd' || !/^[1-9][0-9]*$/.test(argv[1])) refuse('entrypoint-arguments');
-    const request = readRequestFd(Number(argv[1]));
+    request = readRequestFd(Number(argv[1]));
     // The parent has already chosen a private launch context. Remove policy and
     // credential variables before imported code can consult ambient settings.
     const keep = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL']);
@@ -521,8 +569,9 @@ async function main(): Promise<void> {
     stage = 'runtime-import';
     result = await runRawVector(request, await productionDependencies(request));
   } catch (error) {
-    result = { v: 1, status: 'refused', lane: 'raw_vector',
-      reason: failureReason(stage, error), non_claims: [...NON_CLAIMS] };
+    result = { v: request?.v ?? 1, status: 'refused', lane: 'raw_vector',
+      ...(request?.v === 2 ? { operation: request.operation } : {}),
+      reason: failureReason(stage, error), non_claims: [...NON_CLAIMS, ...(request?.v === 2 ? EMBEDDING_INPUT_NON_CLAIMS : [])] };
   }
   writeSync(1, canonicalJson(result) + '\n');
   // PGlite writes ambient process.exitCode asynchronously; use our own verdict.

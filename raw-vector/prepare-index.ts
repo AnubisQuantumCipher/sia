@@ -12,6 +12,8 @@ export const MAX_REQUEST_BYTES = 8388608;
 export const MAX_PAGES = 256;
 export const MAX_CHUNKS = 4096;
 export const MAX_SETUP_DIAGNOSTIC_BYTES = 65536;
+// Deliberately conservative UTF-8 bound below the pinned gateway's UTF-16 cap.
+const MAX_EMBEDDING_INPUT_BYTES = 8000;
 const MAX_RECEIPT_BYTES = 2097152;
 const HASH = /^[a-f0-9]{64}$/;
 const ORIGINS = ['evidence', 'derived', 'model', 'legacy-unlabeled'];
@@ -25,13 +27,25 @@ const NON_CLAIMS = [
   'Lossless deterministic chunking is a declared benchmark policy, not a cognitive mechanism or a demonstrated retrieval improvement.',
   'Failure can leave a partial private index; it is never reported as an admitted completed snapshot.',
 ];
+export const EMBEDDING_INPUT_NON_CLAIMS = [
+  'Embedding input prefixes affect only provider input; original query, page and chunk text identities are retained.',
+  'Embedding-input digests bind adapter-supplied UTF-8 text, not an independently observed HTTP body or proof of model computation.',
+];
+type EmbeddingInputPolicy = {
+  schema: 'sia-embedding-input-policy-v1'; mode: 'bare-v1' | 'nomic-prefix-v1';
+  document_prefix: string; query_prefix: string; encoding: 'utf-8';
+  document_stage: 'after-lossless-chunking'; query_stage: 'original-query'; overflow: 'refuse';
+};
 type Embedding = { model: string; dimensions: number; endpoint: string };
 type Page = { slug: string; title: string; type: string; origin: string; text: string; text_sha256: string };
-type PrepareRequest = { v: 1; operation: 'prepare_index'; source: 'sia'; dataset_sha256: string;
-  pages_sha256: string; embedding: Embedding; output: { parent_fd: number }; pages: Page[] };
+type PrepareRequest = { v: 1 | 2; operation: 'prepare_index'; source: 'sia'; dataset_sha256: string;
+  pages_sha256: string; embedding: Embedding; output: { parent_fd: number }; pages: Page[];
+  embedding_input_policy?: EmbeddingInputPolicy; embedding_input_policy_sha256?: string };
 type Chunk = { chunk_index: number; chunk_text: string; chunk_source: 'compiled_truth';
   embedding: Float32Array; model: string; modality: 'text' };
 type Engine = {
+  writeEmbeddingInputPolicy?(policy: EmbeddingInputPolicy, digest: string): Promise<void>;
+  assertEmbeddingInputPolicy?(policy: EmbeddingInputPolicy, digest: string): Promise<void>;
   writePage(page: Page, chunks: Chunk[]): Promise<void>;
   readPage(slug: string): Promise<any>;
   readChunks(slug: string): Promise<any[]>;
@@ -77,6 +91,19 @@ export function canonicalJson(value: unknown, depth = 0): string {
   if (record(value)) return '{' + Object.keys(value).sort().map(k =>
     JSON.stringify(k) + ':' + canonicalJson(value[k], depth + 1)).join(',') + '}';
   return refuse('json-value-invalid');
+}
+
+function validateEmbeddingInputPolicy(policy: unknown, digest: unknown, model: unknown): asserts policy is EmbeddingInputPolicy {
+  keys(policy, ['schema', 'mode', 'document_prefix', 'query_prefix', 'encoding', 'document_stage', 'query_stage', 'overflow']);
+  if (!['bare-v1', 'nomic-prefix-v1'].includes(policy.mode as string)) refuse('embedding-input-policy-invalid');
+  const prefixed = policy.mode === 'nomic-prefix-v1';
+  if (policy.schema !== 'sia-embedding-input-policy-v1' || policy.encoding !== 'utf-8'
+    || policy.document_stage !== 'after-lossless-chunking' || policy.query_stage !== 'original-query'
+    || policy.overflow !== 'refuse' || policy.document_prefix !== (prefixed ? 'search_document: ' : '')
+    || policy.query_prefix !== (prefixed ? 'search_query: ' : '')
+    || prefixed && model !== 'ollama:nomic-embed-text:v1.5') refuse('embedding-input-policy-invalid');
+  if (typeof digest !== 'string' || digest.length !== 64 || !HASH.test(digest)
+    || digest !== sha(canonicalJson(policy))) refuse('embedding-input-policy-mismatch');
 }
 
 function uniqueJson(source: string): unknown {
@@ -133,8 +160,10 @@ function uniqueJson(source: string): unknown {
 }
 
 function validate(raw: unknown): PrepareRequest {
-  keys(raw, ['v', 'operation', 'source', 'dataset_sha256', 'pages_sha256', 'embedding', 'output', 'pages']);
-  if (raw.v !== 1 || raw.operation !== 'prepare_index' || raw.source !== 'sia'
+  const v2 = record(raw) && raw.v === 2;
+  keys(raw, ['v', 'operation', 'source', 'dataset_sha256', 'pages_sha256', 'embedding', 'output', 'pages',
+    ...(v2 ? ['embedding_input_policy', 'embedding_input_policy_sha256'] : [])]);
+  if (raw.v !== 1 && raw.v !== 2 || raw.operation !== 'prepare_index' || raw.source !== 'sia'
     || typeof raw.dataset_sha256 !== 'string' || !HASH.test(raw.dataset_sha256)
     || typeof raw.pages_sha256 !== 'string' || !HASH.test(raw.pages_sha256)) refuse('request-shape');
   keys(raw.output, ['parent_fd']);
@@ -148,6 +177,7 @@ function validate(raw: unknown): PrepareRequest {
       || !endpoint.port || endpoint.pathname !== '/v1' || endpoint.search || endpoint.hash
       || endpoint.username || endpoint.password || endpoint.href !== raw.embedding.endpoint) refuse('request-shape');
   } catch { refuse('request-shape'); }
+  if (v2) validateEmbeddingInputPolicy(raw.embedding_input_policy, raw.embedding_input_policy_sha256, raw.embedding.model);
   if (!Array.isArray(raw.pages) || raw.pages.length === 0 || raw.pages.length > MAX_PAGES) refuse('page-count-budget');
   const slugs = new Set<string>();
   let total = 0;
@@ -163,7 +193,10 @@ function validate(raw: unknown): PrepareRequest {
       refuse('page-text-identity-mismatch');
     total += bytes(page.text);
     if (total > MAX_TOTAL_PAGE_BYTES) refuse('page-total-byte-budget');
-    chunks += splitLossless(page.text).length;
+    const pageChunks = splitLossless(page.text);
+    if (v2 && pageChunks.some(chunk => bytes((raw.embedding_input_policy as EmbeddingInputPolicy).document_prefix)
+      + bytes(chunk) > MAX_EMBEDDING_INPUT_BYTES)) refuse('embedding-input-byte-budget');
+    chunks += pageChunks.length;
     if (chunks > MAX_CHUNKS) refuse('chunk-count-budget');
     slugs.add(page.slug);
   }
@@ -293,20 +326,30 @@ function vectorBytes(vector: unknown, dimensions: number): Buffer {
 export async function prepareIndex(raw: unknown, dependencies: Dependencies): Promise<any> {
   let engine: Engine | undefined;
   let result: any;
+  const v = record(raw) && raw.v === 2 ? 2 : 1;
+  const nonClaims = [...NON_CLAIMS, ...(v === 2 ? EMBEDDING_INPUT_NON_CLAIMS : [])];
   try {
     const request = validate(raw);
     engine = await dependencies.openNew(request.output.parent_fd, { ...request.embedding });
+    if (request.v === 2) {
+      if (typeof engine.writeEmbeddingInputPolicy !== 'function' || typeof engine.assertEmbeddingInputPolicy !== 'function')
+        refuse('embedding-input-policy-unavailable');
+      await engine.writeEmbeddingInputPolicy({ ...request.embedding_input_policy! }, request.embedding_input_policy_sha256!);
+      await engine.assertEmbeddingInputPolicy({ ...request.embedding_input_policy! }, request.embedding_input_policy_sha256!);
+    }
     const pages: any[] = [];
     for (const page of request.pages) {
       const chunks: Chunk[] = [];
       const receipts: any[] = [];
       for (const chunkText of splitLossless(page.text)) {
-        const embedding = await dependencies.embedDocument(chunkText, { ...request.embedding }, AbortSignal.timeout(30000));
+        const embeddingInput = (request.embedding_input_policy?.document_prefix ?? '') + chunkText;
+        const embedding = await dependencies.embedDocument(embeddingInput, { ...request.embedding }, AbortSignal.timeout(30000));
         const vector = vectorBytes(embedding, request.embedding.dimensions);
         const chunk_index = chunks.length;
         chunks.push({ chunk_index, chunk_text: chunkText, chunk_source: 'compiled_truth',
           embedding, model: request.embedding.model, modality: 'text' });
-        receipts.push({ chunk_index, text_sha256: sha(chunkText), vector_sha256: sha(vector), bytes: bytes(chunkText) });
+        receipts.push({ chunk_index, text_sha256: sha(chunkText), vector_sha256: sha(vector), bytes: bytes(chunkText),
+          ...(request.v === 2 ? { embedding_input_sha256: sha(embeddingInput), embedding_input_bytes: bytes(embeddingInput) } : {}) });
       }
       await engine.writePage({ ...page }, chunks);
       pages.push({ slug: page.slug, origin: page.origin, text_sha256: page.text_sha256, chunks: receipts });
@@ -331,23 +374,27 @@ export async function prepareIndex(raw: unknown, dependencies: Dependencies): Pr
         if (digest !== pages[index].chunks[chunkIndex].vector_sha256) refuse('index-readback-mismatch');
       }
     }
-    result = { v: 1, status: 'ok', operation: 'prepare_index', index_leaf: 'index',
+    if (request.v === 2)
+      await engine.assertEmbeddingInputPolicy!({ ...request.embedding_input_policy! }, request.embedding_input_policy_sha256!);
+    result = { v: request.v, status: 'ok', operation: 'prepare_index', index_leaf: 'index',
+      ...(request.v === 2 ? { embedding_input_policy: request.embedding_input_policy } : {}),
       bindings: { dataset_sha256: request.dataset_sha256, pages_sha256: request.pages_sha256,
         request_sha256: sha(canonicalJson(request)), policy_sha256: sha(canonicalJson(POLICY)),
-        embedding_sha256: sha(canonicalJson(request.embedding)) },
+        embedding_sha256: sha(canonicalJson(request.embedding)),
+        ...(request.v === 2 ? { embedding_input_policy_sha256: request.embedding_input_policy_sha256 } : {}) },
       policy: { ...POLICY }, embedding: { ...request.embedding }, pages,
-      ...(engine.setupDiagnostics ? { setup_diagnostics: engine.setupDiagnostics } : {}), non_claims: [...NON_CLAIMS] };
+      ...(engine.setupDiagnostics ? { setup_diagnostics: engine.setupDiagnostics } : {}), non_claims: nonClaims };
     if (bytes(canonicalJson(result)) > MAX_RECEIPT_BYTES) refuse('receipt-byte-budget');
   } catch (error) {
-    result = { v: 1, status: 'refused', operation: 'prepare_index',
+    result = { v, status: 'refused', operation: 'prepare_index',
       reason: error instanceof Refusal ? error.reason : 'prepare-execution-failed',
       ...(error instanceof DiagnosticRefusal ? { setup_diagnostics: error.diagnostics }
-        : engine?.setupDiagnostics ? { setup_diagnostics: engine.setupDiagnostics } : {}), non_claims: [...NON_CLAIMS] };
+        : engine?.setupDiagnostics ? { setup_diagnostics: engine.setupDiagnostics } : {}), non_claims: nonClaims };
   } finally {
     if (engine) {
       try { await engine.close(); }
-      catch { result = { v: 1, status: 'refused', operation: 'prepare_index', reason: 'engine-close-failed',
-        ...(result?.setup_diagnostics ? { setup_diagnostics: result.setup_diagnostics } : {}), non_claims: [...NON_CLAIMS] }; }
+      catch { result = { v, status: 'refused', operation: 'prepare_index', reason: 'engine-close-failed',
+        ...(result?.setup_diagnostics ? { setup_diagnostics: result.setup_diagnostics } : {}), non_claims: nonClaims }; }
     }
   }
   return result;
@@ -384,6 +431,23 @@ async function productionDependencies(request: PrepareRequest): Promise<Dependen
       }
       return {
         setupDiagnostics,
+        writeEmbeddingInputPolicy: async (policy, digest) => {
+          validateEmbeddingInputPolicy(policy, digest, embedding.model);
+          await engine.setConfig('sia_embedding_input_policy', canonicalJson(policy));
+          await engine.setConfig('sia_embedding_input_policy_sha256', digest);
+        },
+        assertEmbeddingInputPolicy: async (policy, digest) => {
+          validateEmbeddingInputPolicy(policy, digest, embedding.model);
+          // Only scalar booleans cross the bridge, never unbounded stored labels.
+          const rows = await engine.executeRaw(`SELECT
+            (SELECT count(*)=1 AND COALESCE(bool_and(value=$1),false) FROM public.config
+              WHERE key='sia_embedding_input_policy') AS policy_matches,
+            (SELECT count(*)=1 AND COALESCE(bool_and(value=$2),false) FROM public.config
+              WHERE key='sia_embedding_input_policy_sha256') AS digest_matches`, [canonicalJson(policy), digest]);
+          if (!Array.isArray(rows) || rows.length !== 1 || !record(rows[0])
+            || Object.keys(rows[0]).sort().join('\0') !== ['digest_matches', 'policy_matches'].join('\0')
+            || rows[0].policy_matches !== true || rows[0].digest_matches !== true) refuse('embedding-input-policy-mismatch');
+        },
         writePage: async (page, chunks) => {
           await engine.putPage(page.slug, { title: page.title, type: page.type, compiled_truth: page.text, timeline: '',
             frontmatter: { origin: page.origin, dataset_sha256: request.dataset_sha256, source_text_sha256: page.text_sha256 },
@@ -423,10 +487,11 @@ function readRequest(fd: number): PrepareRequest {
 
 async function main(): Promise<void> {
   let result: any;
+  let request: PrepareRequest | undefined;
   try {
     const argv = process.argv.slice(2);
     if (argv.length !== 2 || argv[0] !== '--request-fd' || !/^[1-9][0-9]*$/.test(argv[1])) refuse('entrypoint-arguments');
-    const request = readRequest(Number(argv[1]));
+    request = readRequest(Number(argv[1]));
     const keep = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL']);
     for (const key of Object.keys(process.env)) if (!keep.has(key)) delete process.env[key];
     process.env.TZ = 'UTC';
@@ -435,8 +500,9 @@ async function main(): Promise<void> {
     console.info = (...args) => console.error(...args);
     result = await prepareIndex(request, await productionDependencies(request));
   } catch (error) {
-    result = { v: 1, status: 'refused', operation: 'prepare_index',
-      reason: error instanceof Refusal ? error.reason : 'prepare-execution-failed', non_claims: [...NON_CLAIMS] };
+    result = { v: request?.v ?? 1, status: 'refused', operation: 'prepare_index',
+      reason: error instanceof Refusal ? error.reason : 'prepare-execution-failed',
+      non_claims: [...NON_CLAIMS, ...(request?.v === 2 ? EMBEDDING_INPUT_NON_CLAIMS : [])] };
   }
   writeSync(1, canonicalJson(result) + '\n');
   process.exit(result.status === 'ok' ? 0 : 2);
