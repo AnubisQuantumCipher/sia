@@ -16,6 +16,7 @@ from pathlib import Path
 import stat
 import struct
 import tarfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -165,7 +166,42 @@ class CognitiveBaseline(unittest.TestCase):
 
     def _model_identity(self):
         expected = self.kw["model_expectations"]
-        return {key: expected[key] for key in ("model_name", "manifest_sha256", "package_sha256")}
+        model_module = importlib.import_module("siavectormodel")
+        model_blob, config_blob = b"GGUF fixture model", b'{"model":"fixture"}'
+        blobs = [
+            {"mediaType": "application/vnd.docker.container.image.v1+json",
+             "digest": "sha256:" + sha(config_blob), "size": len(config_blob)},
+            {"mediaType": "application/vnd.ollama.image.model",
+             "digest": "sha256:" + sha(model_blob), "size": len(model_blob)},
+        ]
+        return {
+            "schema": "sia-raw-vector-model-input-v1",
+            **{key: expected[key] for key in ("model_name", "manifest_sha256", "package_sha256",
+                                              "release_version", "release_archive_sha256")},
+            "ollama_sha256": sha(b"fixture Ollama ELF"),
+            "runner_sha256": sha(b"fixture CPU runner ELF"),
+            "execution_policy": "ollama-cpu-only-v1",
+            "selected_execution_paths": ["bin/ollama", "lib/ollama/libggml-base.so",
+                                         "lib/ollama/llama-server"],
+            "excluded_execution_paths": ["lib/ollama/cuda/libggml-cuda.so"],
+            "model_path": "/models/blobs/sha256-" + sha(model_blob), "blobs": blobs,
+            "sealed_bytes": sum(row["size"] for row in blobs)
+                            + len(b"fixture sealed package, release and manifest bytes"),
+            "non_claims": list(model_module.NON_CLAIMS),
+        }
+
+    def _process_generation(self, *, runner=False):
+        identity = self._model_identity()
+        return {
+            "pid": 3 if runner else 2, "ppid": 2 if runner else 1,
+            "starttime": "100", "executable": "/memfd:fixture-runtime (deleted)",
+            "executable_sha256": identity["runner_sha256" if runner else "ollama_sha256"],
+            "executable_device": 1, "executable_inode": 12 if runner else 11,
+            "executable_bytes": len(b"fixture CPU runner ELF" if runner else b"fixture Ollama ELF"),
+            "argv": (["/runtime/ollama/lib/ollama/llama-server", "--model", identity["model_path"]]
+                     if runner else ["/runtime/ollama/bin/ollama", "serve"]),
+            "network_namespace": "net:[100]", "mount_namespace": "mnt:[100]", "pid_namespace": "pid:[100]",
+        }
 
     def _serving(self, operation, executable_sha256, request_sha256):
         model_module = importlib.import_module("siavectormodel")
@@ -178,7 +214,9 @@ class CognitiveBaseline(unittest.TestCase):
         return {"schema": "sia-raw-vector-served-observation-v1", "status": "observed",
                 "model_identity": self._model_identity(), "launch_config": config,
                 "launch_config_sha256": sha(canonical(config)),
-                "serving_generation": {"model_manifest_sha256": self.kw["model_expectations"]["manifest_sha256"],
+                "serving_generation": {"service": self._process_generation(),
+                                       "runner": self._process_generation(runner=True),
+                                       "model_manifest_sha256": self.kw["model_expectations"]["manifest_sha256"],
                                        "execution_policy": "ollama-cpu-only-v1"},
                 "non_claims": list(model_module.NON_CLAIMS)}
 
@@ -740,6 +778,156 @@ class CognitiveBaseline(unittest.TestCase):
         self.assertFalse((displaced / "baseline.json").exists())
         self.assertEqual({path.name for path in output.iterdir()}, {"operator.data"})
         self.assertEqual((output / "operator.data").read_bytes(), b"replacement generation")
+
+    def _change_all_model_identities(self, result, change):
+        change(result["model_identity"])
+        operations = ("preparation",) if "preparation" in result else ("capture", "query")
+        for operation in operations:
+            serving = result[operation]["model_serving"]
+            change(serving["model_identity"])
+            change(serving["launch_config"]["model_identity"])
+            serving["launch_config_sha256"] = sha(canonical(serving["launch_config"]))
+        return result
+
+    def test_complete_model_provenance_cannot_be_consistently_omitted(self):
+        module = self._module()
+        self._inputs(module)
+        original = self.kw["output_directory"]
+        for field in ("schema", "release_version", "release_archive_sha256", "ollama_sha256", "runner_sha256",
+                      "execution_policy", "selected_execution_paths", "excluded_execution_paths", "model_path",
+                      "blobs", "sealed_bytes", "non_claims"):
+            self.calls = []
+            self.kw["output_directory"] = original + "-omit-" + field
+            def remove(identity):
+                identity.pop(field)
+            def prepare(**kwargs):
+                return self._change_all_model_identities(self._prepare(**kwargs), remove)
+            def observe(**kwargs):
+                return self._change_all_model_identities(self._observe(**kwargs), remove)
+            with self.subTest(field=field), self._controls(prepare=prepare, observe=observe), \
+                    self.assertRaises(module.BaselineRefusal):
+                self._run()
+            self._no_success()
+
+    def test_consistent_model_provenance_substitution_does_not_become_admitted(self):
+        module = self._module()
+        self._inputs(module)
+        original = self.kw["output_directory"]
+        cases = (
+            ("schema", "foreign-model-schema"), ("ollama_sha256", "not-a-digest"),
+            ("runner_sha256", sha(b"different executable than observed runner")),
+            ("execution_policy", "gpu-enabled"), ("selected_execution_paths", []),
+            ("excluded_execution_paths", ["bin/ollama"]),
+            ("model_path", "/models/blobs/sha256-" + sha(b"not the declared model blob")),
+            ("blobs", []), ("sealed_bytes", True), ("non_claims", []),
+        )
+        for field, value in cases:
+            self.calls = []
+            self.kw["output_directory"] = original + "-substitute-" + field
+            def replace(identity):
+                identity[field] = copy.deepcopy(value)
+            def prepare(**kwargs):
+                return self._change_all_model_identities(self._prepare(**kwargs), replace)
+            def observe(**kwargs):
+                return self._change_all_model_identities(self._observe(**kwargs), replace)
+            with self.subTest(field=field), self._controls(prepare=prepare, observe=observe), \
+                    self.assertRaises(module.BaselineRefusal):
+                self._run()
+            self._no_success()
+
+    def test_owned_process_generations_require_complete_real_producer_roster(self):
+        module = self._module()
+        self._inputs(module)
+        original = self.kw["output_directory"]
+        cases = [(role, None) for role in ("service", "runner")]
+        cases.extend((role, field) for role in ("service", "runner")
+                     for field in self._process_generation())
+        for role, field in cases:
+            self.calls = []
+            self.kw["output_directory"] = original + "-process-" + role + "-" + str(field)
+            def omitted(**kwargs):
+                result = self._prepare(**kwargs)
+                generation = result["preparation"]["model_serving"]["serving_generation"]
+                if field is None:
+                    generation.pop(role)
+                else:
+                    generation[role].pop(field)
+                return result
+            with self.subTest(role=role, field=field), self._controls(prepare=omitted) as controls, \
+                    self.assertRaises(module.BaselineRefusal):
+                self._run()
+            controls[1].assert_not_called()
+            self._no_success()
+
+    def test_owned_process_relationships_executable_and_model_operands_are_controlling(self):
+        module = self._module()
+        self._inputs(module)
+        original = self.kw["output_directory"]
+        cases = (
+            ("service", "pid", True), ("service", "starttime", "not-proc-ticks"),
+            ("service", "executable_sha256", sha(b"not admitted Ollama")),
+            ("service", "executable_device", True), ("service", "executable_inode", 0),
+            ("service", "executable_bytes", 0), ("service", "argv", []),
+            ("runner", "ppid", 0), ("runner", "executable_sha256", sha(b"not admitted runner")),
+            ("runner", "argv", ["/runtime/ollama/lib/ollama/llama-server", "--model", "/models/foreign"]),
+            ("runner", "network_namespace", "net:[3]"),
+            ("runner", "mount_namespace", "mnt:[3]"),
+            ("runner", "pid_namespace", "pid:[3]"),
+        )
+        for role, field, value in cases:
+            self.calls = []
+            self.kw["output_directory"] = original + "-relationship-" + role + "-" + field
+            def substituted(**kwargs):
+                result = self._prepare(**kwargs)
+                result["preparation"]["model_serving"]["serving_generation"][role][field] = copy.deepcopy(value)
+                return result
+            with self.subTest(role=role, field=field), self._controls(prepare=substituted) as controls, \
+                    self.assertRaises(module.BaselineRefusal):
+                self._run()
+            controls[1].assert_not_called()
+            self._no_success()
+
+    def _bounded_entries(self):
+        fixtures = [Path(self.registry["aegis"][0]), Path(self.state) / "pub.hex"]
+        entries = [SimpleNamespace(name=path.name, stat=lambda follow_symlinks=False, info=path.stat(): info)
+                   for path in fixtures]
+        class Entries:
+            def __init__(self):
+                self.position = 0
+                self.closed = False
+            def __iter__(self):
+                return self
+            def __next__(self):
+                if self.position >= len(entries):
+                    raise AssertionError("reader exhausted scandir beyond its first excess entry")
+                value = entries[self.position]
+                self.position += 1
+                return value
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                self.closed = True
+            def close(self):
+                self.closed = True
+        return Entries()
+
+    def test_code_inventory_bounds_iterator_consumption_before_collecting_directory(self):
+        module = self._module()
+        entries = self._bounded_entries()
+        with mock.patch.object(module.siavectormodel, "MAX_ENTRIES", 1), \
+                mock.patch.object(module.os, "scandir", return_value=entries), \
+                self.assertRaisesRegex(module.BaselineRefusal, "ceiling"):
+            module._code_roster(SimpleNamespace(fd=None))
+        self.assertTrue(entries.closed)
+
+    def test_stopped_tree_bounds_iterator_consumption_before_sorting_directory(self):
+        module = self._module()
+        entries = self._bounded_entries()
+        with mock.patch.object(module, "MAX_MEMBERS", 1), \
+                mock.patch.object(module.os, "scandir", return_value=entries), \
+                self.assertRaisesRegex(module.BaselineRefusal, "ceiling"):
+            module._tree(str(self.root))
+        self.assertTrue(entries.closed)
 
 
 if __name__ == "__main__":

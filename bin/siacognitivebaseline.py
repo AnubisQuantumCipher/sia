@@ -212,10 +212,18 @@ class _FilePin:
         os.close(self.fd)
 
 
+def _bounded_directory_entries(fd, remaining, label):
+    entries = []
+    with os.scandir(fd) as iterator:
+        for entry in iterator:
+            if len(entries) >= remaining:
+                _fail(label + " exceeds its entry ceiling")
+            entries.append(entry)
+    return entries
+
+
 def _code_roster(directory):
-    entries = list(os.scandir(directory.fd))
-    if len(entries) > siavectormodel.MAX_ENTRIES:
-        _fail("code source inventory exceeds its ceiling")
+    entries = _bounded_directory_entries(directory.fd, siavectormodel.MAX_ENTRIES, "code source inventory")
     names = []
     for entry in entries:
         if entry.name.startswith("."):
@@ -377,12 +385,108 @@ def _query_request(kw, operation, queries, roots):
 
 
 def _model_identity(identity, expected):
-    if type(identity) is not dict or any(identity.get(key) != expected[key] for key in (
-            "model_name", "manifest_sha256", "package_sha256")):
+    _keys(identity, {"schema", "model_name", "package_sha256", "manifest_sha256",
+                     "release_version", "release_archive_sha256", "ollama_sha256", "runner_sha256",
+                     "execution_policy", "selected_execution_paths", "excluded_execution_paths",
+                     "model_path", "blobs", "sealed_bytes", "non_claims"}, "model input identity")
+    if identity["schema"] != "sia-raw-vector-model-input-v1" \
+            or identity["execution_policy"] != "ollama-cpu-only-v1" \
+            or any(identity[key] != expected[key] for key in (
+                "model_name", "manifest_sha256", "package_sha256", "release_version", "release_archive_sha256")):
         _fail("observed model identity differs from caller expectations")
-    for key in ("release_version", "release_archive_sha256"):
-        if key in identity and identity[key] != expected[key]:
-            _fail("observed model release differs from caller expectations")
+    if not all(_digest(identity[key]) for key in ("ollama_sha256", "runner_sha256")) \
+            or not _same(identity["non_claims"], siavectormodel.NON_CLAIMS) \
+            or type(identity["sealed_bytes"]) is not int \
+            or not 0 < identity["sealed_bytes"] <= siavectormodel.MAX_SEALED_BYTES:
+        _fail("model executable, sealed-byte or nonclaim provenance is invalid")
+    paths = {}
+    for field in ("selected_execution_paths", "excluded_execution_paths"):
+        values = identity[field]
+        if type(values) is not list or len(values) > siavectormodel.MAX_ENTRIES \
+                or any(type(path) is not str or not path or path.startswith("/") or "\0" in path
+                       or "\\" in path or len(path.encode("utf-8")) > sialib.MAX_CONFIG_BYTES
+                       or any(part in ("", ".", "..") for part in path.split("/")) for path in values) \
+                or len(set(values)) != len(values):
+            _fail("model execution path roster is invalid")
+        paths[field] = set(values)
+    selected, excluded = paths["selected_execution_paths"], paths["excluded_execution_paths"]
+    if not {"bin/ollama", "lib/ollama/llama-server"}.issubset(selected) or selected & excluded \
+            or any(not siavectormodel._cpu_path(path) for path in selected) \
+            or any(siavectormodel._cpu_path(path) or path == ".sia-release" for path in excluded):
+        _fail("model CPU execution closure is invalid")
+    blobs = identity["blobs"]
+    if type(blobs) is not list or not blobs or len(blobs) > siavectormodel.MAX_ENTRIES:
+        _fail("model blob provenance is missing or excessive")
+    total, seen, model_paths = 0, set(), []
+    for index, blob in enumerate(blobs):
+        _keys(blob, {"mediaType", "digest", "size"}, "model blob")
+        if type(blob["digest"]) is not str or re.fullmatch(r"sha256:[0-9a-f]{64}", blob["digest"]) is None \
+                or blob["digest"] in seen or type(blob["size"]) is not int \
+                or not 0 < blob["size"] <= siavectormodel.MAX_SEALED_BYTES:
+            _fail("model blob byte identity is invalid")
+        seen.add(blob["digest"])
+        total += blob["size"]
+        if total > identity["sealed_bytes"]:
+            _fail("model blobs exceed the observed sealed-byte population")
+        kind = blob["mediaType"]
+        if index == 0 and kind != "application/vnd.docker.container.image.v1+json" \
+                or index != 0 and kind not in {
+                    "application/vnd.ollama.image.model", "application/vnd.ollama.image.params",
+                    "application/vnd.ollama.image.license"}:
+            _fail("model blob media type is invalid")
+        if kind == "application/vnd.ollama.image.model":
+            model_paths.append("/models/blobs/" + blob["digest"].replace(":", "-"))
+    if len(model_paths) != 1 or identity["model_path"] != model_paths[0]:
+        _fail("model path is not the sole admitted model blob")
+
+
+def _process_record(value):
+    _keys(value, {"pid", "ppid", "starttime", "executable", "executable_sha256", "executable_device",
+                  "executable_inode", "executable_bytes", "argv", "network_namespace",
+                  "mount_namespace", "pid_namespace"}, "owned process generation")
+    for field, low, high in (("pid", 1, raw_admission.MAX_SAFE_INTEGER),
+                             ("ppid", 0, raw_admission.MAX_SAFE_INTEGER),
+                             ("executable_device", 0, raw_admission.MAX_SAFE_INTEGER),
+                             ("executable_inode", 1, raw_admission.MAX_SAFE_INTEGER),
+                             ("executable_bytes", 1, siavectormodel.MAX_SEALED_BYTES)):
+        if type(value[field]) is not int or not low <= value[field] <= high:
+            _fail("owned process numeric generation is invalid")
+    if not _digest(value["executable_sha256"]) or type(value["starttime"]) is not str \
+            or len(value["starttime"]) > 128 or re.fullmatch(r"(?:0|[1-9][0-9]*)", value["starttime"]) is None \
+            or not preparation_admission._text(value["executable"], sialib.MAX_CONFIG_BYTES):
+        _fail("owned process executable/start generation is invalid")
+    args = value["argv"]
+    if type(args) is not list or not args or len(args) > siavectormodel.MAX_ENTRIES \
+            or any(not preparation_admission._text(arg, sialib.MAX_CONFIG_BYTES, empty=True) for arg in args) \
+            or not args[0]:
+        _fail("owned process argv is invalid")
+    for field, prefix in (("network_namespace", "net"), ("mount_namespace", "mnt"), ("pid_namespace", "pid")):
+        if type(value[field]) is not str or len(value[field]) > 128 \
+                or re.fullmatch(prefix + r":\[[0-9]+\]", value[field]) is None:
+            _fail("owned process namespace generation is invalid")
+
+
+def _serving_generation(generation, model):
+    _keys(generation, {"service", "runner", "model_manifest_sha256", "execution_policy"}, "owned serving generation")
+    if generation["model_manifest_sha256"] != model["manifest_sha256"] \
+            or generation["execution_policy"] != "ollama-cpu-only-v1":
+        _fail("owned CPU serving generation disagrees")
+    service, process = generation["service"], generation["runner"]
+    _process_record(service)
+    _process_record(process)
+    if service["pid"] == process["pid"] or process["ppid"] != service["pid"] \
+            or service["executable_sha256"] != model["ollama_sha256"] \
+            or process["executable_sha256"] != model["runner_sha256"] \
+            or any(service[field] != process[field] for field in (
+                "network_namespace", "mount_namespace", "pid_namespace")):
+        _fail("owned service/runner relationships disagree")
+    args = process["argv"]
+    if args.count("--model") != 1 or args.index("--model") + 1 >= len(args) \
+            or args[args.index("--model") + 1] != model["model_path"]:
+        _fail("owned runner model operand disagrees")
+    # These are relationships within one owned namespace generation, not host
+    # attestation or stable PIDs across independent prepare/capture/query runs.
+    # The /proc executable display alias can legitimately contain '(deleted)'.
 
 
 def _transport_observation(observation, request, build, model, kw):
@@ -413,10 +517,7 @@ def _transport_observation(observation, request, build, model, kw):
             or config.get("request_sha256") != original_sha \
             or served["launch_config_sha256"] != _sha(_canonical(config)):
         _fail("owned model launch configuration disagrees")
-    generation = served["serving_generation"]
-    if type(generation) is not dict or generation.get("model_manifest_sha256") != model["manifest_sha256"] \
-            or generation.get("execution_policy") != "ollama-cpu-only-v1":
-        _fail("owned CPU serving generation disagrees")
+    _serving_generation(served["serving_generation"], model)
     runtime = config.get("system_runtime")
     if type(runtime) is not list or len(runtime) != len(kw["shared_runtime"]):
         _fail("served runtime roster disagrees")
@@ -502,16 +603,20 @@ def _observation(value, archive, preparation, queries, selected, kw):
 
 def _tree(path):
     """Snapshot a stopped ordinary tree without following any member links."""
-    rows, seen, total = [], set(), 0
+    rows, seen, total, inspected = [], set(), 0, 0
 
     def visit(directory, prefix, depth):
-        nonlocal total
+        nonlocal total, inspected
         if depth > 64:
             _fail("private index directory depth exceeds its ceiling")
         fd = siavectormodel._open(directory, os.O_RDONLY | os.O_DIRECTORY)
         try:
             before = _generation(os.fstat(fd))
-            for entry in sorted(os.scandir(fd), key=lambda item: item.name):
+            entries = _bounded_directory_entries(fd, MAX_MEMBERS - inspected, "private index member count")
+            # Reserve all collected siblings before descending, so queued parent
+            # entries and recursively inspected children share one global cap.
+            inspected += len(entries)
+            for entry in sorted(entries, key=lambda item: item.name):
                 name = prefix + entry.name
                 if not entry.name or entry.name in (".", "..") or "\x00" in name \
                         or len(name.encode("utf-8")) > sialib.MAX_CONFIG_BYTES:
