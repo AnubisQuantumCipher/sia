@@ -215,12 +215,28 @@ class CognitiveRefusalBoundary(unittest.TestCase):
         )
         self.assertIn("structured refusal", runner.lower())
 
-    def test_signed_ledger_dataset_has_no_cognitive_extension(self):
+    def test_signed_ledger_dataset_has_only_explicit_private_history_capture(self):
         parameters = inspect.signature(
             self.siabench.build_ledger_dataset).parameters
+        self.assertEqual(list(parameters), [
+            "corpus", "chain_registry", "chain_names", "cognitive_history"])
+        self.assertIs(parameters["cognitive_history"].default, False)
+        self.assertEqual(parameters["cognitive_history"].kind,
+                         inspect.Parameter.KEYWORD_ONLY)
         self.assertNotIn("split_policy", parameters)
         source = inspect.getsource(self.siabench.build_ledger_dataset)
-        self.assertNotIn("cognitive_", source)
+        function = ast.parse(source).body[0]
+        capture = function.body[-2]
+        self.assertIsInstance(capture, ast.If)
+        self.assertIsInstance(capture.test, ast.Name)
+        self.assertEqual(capture.test.id, "cognitive_history")
+        self.assertEqual(capture.orelse, [])
+        calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute)
+                 and isinstance(node.func.value, ast.Name)
+                 and node.func.value.id == "siacognitivehistory"]
+        self.assertEqual([node.func.attr for node in calls], ["build_capture"])
+        self.assertIn(calls[0], list(ast.walk(capture)))
         self.assertNotIn("cognitive-group-disjoint", source)
 
 
