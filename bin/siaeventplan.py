@@ -673,10 +673,16 @@ def _images(owner, plan):
 
 def _observe(owner, plan, images, required_targets=frozenset()):
     """Admit original dependencies plus only exact declared target transitions."""
-    deps = plan["read_dependencies"]
-    writes = {relative for relative, image in images.items() if image["page"]["write"]}
+    return _observe_closure(owner, plan["read_dependencies"], images, required_targets)
+
+
+def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
+                     allow_target_deltas=True, budget=None):
+    """Observe one complete closure under an explicit original/delta policy."""
+    writes = {relative for relative, image in images.items()
+              if allow_target_deltas and image["page"]["write"]}
     allowed_dirs = {ancestor for relative in writes for ancestor in _ancestors(relative)}
-    capture = _Capture(owner, _Budget(owner, 4096))
+    capture = _Capture(owner, _Budget(owner, 4096) if budget is None else budget)
     targets = set()
     try:
         if not _same(owner, capture.root_identity, deps["corpus_identity"]):
@@ -955,6 +961,48 @@ def _result(plan):
                               for page in plan["pages"]], "non_claims": plan["non_claims"]}
 
 
+def _publish_images(owner, deps, images, write_paths, state, *, shared_budget=None):
+    """The single guarded write engine; state always owns the latest handles.
+
+    Individual publication retains its original observation budget behavior.
+    Batch publication supplies one union budget through every observation,
+    never a fresh allowance per member. No result is materialized here.
+    """
+    for relative in write_paths:
+        live, targets = state["live"], state["targets"]
+        if relative in targets:
+            continue
+        live.current()
+        owner["_before_corpus_mutation"]()
+        live.current()
+        path = owner["corpus_path"](images[relative]["page"]["slug"])
+        owner["ensure_durable_directory"](os.path.dirname(path))
+        affected_dirs = frozenset(_ancestors(relative))
+        live.current(exempt_directories=affected_dirs)
+        interim, interim_targets = _observe_closure(
+            owner, deps, images, targets, budget=shared_budget)
+        try:
+            live.named_current(exempt_directories=affected_dirs)
+        except BaseException:
+            interim.close()
+            raise
+        live.close()
+        live, targets = interim, interim_targets
+        state.update(live=live, targets=targets)
+        live.current()
+        owner["atomic_write"](path, images[relative]["raw"].decode("utf-8", errors="strict"))
+        live.current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
+        refreshed, refreshed_targets = _observe_closure(
+            owner, deps, images, targets | {relative}, budget=shared_budget)
+        try:
+            live.named_current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
+        except BaseException:
+            refreshed.close()
+            raise
+        live.close()
+        state.update(live=refreshed, targets=refreshed_targets)
+
+
 def publish(owner, *, plan, expected_plan_sha256):
     # The complete original document includes all before/target/dependency
     # rosters. Admit it, and the complete result, before decoding or copying.
@@ -971,41 +1019,12 @@ def publish(owner, *, plan, expected_plan_sha256):
         _refuse("input-copy-change")
     images = _images(owner, admitted)
     live, targets = _observe(owner, admitted, images)
+    state = {"live": live, "targets": targets}
     try:
         _semantic_join(owner, admitted, images, live)
         live.current()
-        for page in admitted["pages"]:
-            relative = page["slug"] + ".md"
-            if not page["write"] or relative in targets:
-                continue
-            live.current()
-            owner["_before_corpus_mutation"]()
-            # The barrier can itself call other code: recheck before any
-            # directory/page effect, retaining all original descriptors.
-            live.current()
-            path = owner["corpus_path"](page["slug"])
-            owner["ensure_durable_directory"](os.path.dirname(path))
-            affected_dirs = frozenset(_ancestors(relative))
-            live.current(exempt_directories=affected_dirs)
-            interim, interim_targets = _observe(owner, admitted, images, targets)
-            try:
-                live.named_current(exempt_directories=affected_dirs)
-            except BaseException:
-                interim.close()
-                raise
-            live.close()
-            live, targets = interim, interim_targets
-            live.current()
-            owner["atomic_write"](path, images[relative]["raw"].decode("utf-8", errors="strict"))
-            live.current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
-            refreshed, refreshed_targets = _observe(owner, admitted, images, targets | {relative})
-            try:
-                live.named_current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
-            except BaseException:
-                refreshed.close()
-                raise
-            live.close()
-            live, targets = refreshed, refreshed_targets
+        _publish_images(owner, admitted["read_dependencies"], images,
+                        [page["slug"] + ".md" for page in admitted["pages"] if page["write"]], state)
         result = _result(admitted)
         _size(result, owner["MAX_STATE_JSON_BYTES"])
         detached = owner["copy"].deepcopy(result)
@@ -1013,7 +1032,251 @@ def publish(owner, *, plan, expected_plan_sha256):
             _refuse("result-or-input-change")
         # All result materialization and serialization precedes this final
         # hash-then-whole-roster sweep. Only returning/closing follows it.
+        state["live"].current()
+        return detached
+    finally:
+        state["live"].close()
+
+
+BATCH_KEYS = frozenset({"schema", "organ", "members", "read_dependencies",
+                        "write_order", "new_directories", "non_claims", "batch_sha256"})
+BATCH_NON_CLAIMS = NON_CLAIMS + [
+    "Batch composition does not resolve shared-page write conflicts or reassign event occurrences; conflicting member targets require a separately admitted original assignment cut.",
+]
+
+
+def _member_structure(owner, plans):
+    """Complete cheap member/count/page gates before any member digest work."""
+    _size(plans, owner["MAX_STATE_JSON_BYTES"])
+    if type(plans) is not list or not plans:
+        _refuse("batch-member-roster")
+    total_events = 0
+    for plan in plans:
+        if type(plan) is not dict or type(plan.get("input_records")) is not list:
+            _refuse("batch-member-shape")
+        total_events += len(plan["input_records"])
+        if total_events > owner["MAX_SOURCE_REPLAY_EVENTS"]:
+            _refuse("batch-input-event-capacity")
+    for plan in plans:
+        _shape(owner, plan)
+        for page in plan["pages"]:
+            if page["before"] is not None \
+                    and page["before"]["raw_bytes"] > owner["MAX_EVENT_PAGE_BYTES"]:
+                _refuse("batch-before-page-capacity")
+    organ = plans[0]["organ"]
+    dates, identities = set(), set()
+    for plan in plans:
+        if plan["organ"] != organ or plan["date"] in dates \
+                or plan["plan_sha256"] in identities:
+            _refuse("batch-organ-day-or-member-conflict")
+        dates.add(plan["date"])
+        identities.add(plan["plan_sha256"])
+    return sorted(plans, key=lambda plan: plan["date"])
+
+
+def _member_pins(owner, plans, expected):
+    if type(expected) is not list or len(expected) != len(plans):
+        _refuse("batch-independent-member-pins")
+    for plan, pin in zip(plans, expected):
+        _hex(pin)
+        if plan["plan_sha256"] != pin:
+            _refuse("batch-independent-member-pins")
+    # Caller order is checked above, before the deterministic output sort.
+    for plan, pin in zip(plans, expected):
+        body = {key: value for key, value in plan.items() if key != "plan_sha256"}
+        if _hash(owner, _json(owner, body)) != pin:
+            _refuse("batch-member-digest")
+
+
+def _batch_body(owner, members):
+    """Join original witnesses and derive effects without observing or rendering."""
+    files, directories, pages, occurrences = {}, {}, {}, {}
+    corpus_identity = members[0]["read_dependencies"]["corpus_identity"]
+    write_order = []
+    for member in members:
+        deps = member["read_dependencies"]
+        if not _same(owner, deps["corpus_identity"], corpus_identity):
+            _refuse("batch-corpus-identity-conflict")
+        for row in deps["files"]:
+            relative = row["relative"]
+            if relative in files and not _same(owner, files[relative], row):
+                _refuse("batch-original-file-conflict")
+            files[relative] = row
+        for row in deps["directories"]:
+            relative, before = row["relative"], row["before"]
+            if relative not in directories:
+                directories[relative] = row
+                continue
+            previous = directories[relative]["before"]
+            if before is None or previous is None:
+                if before is not None or previous is not None:
+                    _refuse("batch-original-directory-conflict")
+                continue
+            if not _same(owner, previous["identity"], before["identity"]):
+                _refuse("batch-original-directory-conflict")
+            if previous["entries"] is None:
+                directories[relative] = row
+            elif before["entries"] is not None \
+                    and not _same(owner, previous["entries"], before["entries"]):
+                _refuse("batch-original-scan-conflict")
+        for page in member["pages"]:
+            relative = page["slug"] + ".md"
+            prior = pages.get(relative)
+            if prior is not None:
+                if page["write"] or prior["write"]:
+                    _refuse("batch-target-write-conflict")
+                if not _same(owner, page, prior):
+                    _refuse("batch-retained-target-conflict")
+            pages[relative] = page
+            if page["write"]:
+                write_order.append({"plan_sha256": member["plan_sha256"], "slug": page["slug"]})
+        for admission in member["admissions"]:
+            event_id = admission["event_id"]
+            previous = occurrences.get(event_id)
+            if previous is not None:
+                if previous["disposition"] == "appended" or admission["disposition"] == "appended":
+                    _refuse("batch-occurrence-reassigned")
+                if not _same(owner, previous, admission):
+                    _refuse("batch-retained-occurrence-conflict")
+            occurrences[event_id] = admission
+    ancestors = {name for relative, page in pages.items() if page["write"]
+                 for name in _ancestors(relative)}
+    if not ancestors.issubset(directories):
+        _refuse("batch-missing-write-ancestor")
+    organ_root = "events/" + members[0]["organ"]
+    if organ_root not in directories:
+        _refuse("batch-missing-complete-day-scan")
+    before = directories[organ_root]["before"]
+    if before is not None and before["entries"] is None:
+        _refuse("batch-missing-complete-day-scan")
+    entries = [] if before is None else before["entries"]
+    names = {entry["name"] for entry in entries}
+    new_names = {os.path.basename(relative) for relative, page in pages.items()
+                 if page["write"] and os.path.basename(relative) not in names}
+    if len(names) + len(new_names) > owner["MAX_EVENT_LOOKUP_PAGES"] \
+            or len(names) + len(new_names) > owner["MAX_EVENT_DIRECTORY_INSPECTIONS"]:
+        _refuse("batch-event-directory-capacity")
+    live_pages = {organ_root + "/" + entry["name"] for entry in entries
+                  if stat.S_ISREG(entry["generation"]["mode"]) and entry["name"].endswith(".md")}
+    planned_pages = {slug + ".md" for member in members for slug in member["day_slugs"]}
+    if len(live_pages | planned_pages) > owner["MAX_EVENT_LOOKUP_PAGES"]:
+        _refuse("batch-event-path-capacity")
+    return {"schema": "sia-event-page-render-batch-v1", "organ": members[0]["organ"],
+            "members": members,
+            "read_dependencies": {"schema": "sia-event-page-read-dependencies-v1",
+                                  "corpus_identity": corpus_identity,
+                                  "directories": [directories[name] for name in sorted(directories)],
+                                  "files": [files[name] for name in sorted(files)]},
+            "write_order": write_order,
+            "new_directories": sorted(name for name in ancestors if directories[name]["before"] is None),
+            "non_claims": list(BATCH_NON_CLAIMS)}
+
+
+def _batch_result(batch):
+    return {"schema": "sia-event-page-render-batch-publication-v1",
+            "status": "page-bytes-published", "batch_sha256": batch["batch_sha256"],
+            "members": [_result(member) for member in batch["members"]],
+            "non_claims": batch["non_claims"]}
+
+
+def _batch_reservation(owner, body):
+    # The enclosing document counts every retained member in full, including
+    # repeated member dependencies; only the additional union deduplicates.
+    bounded = dict(body, batch_sha256="0" * 64)
+    _size(bounded, owner["MAX_STATE_JSON_BYTES"])
+    _size(_batch_result(bounded), owner["MAX_STATE_JSON_BYTES"])
+
+
+def _union_images(owner, members):
+    result = {}
+    for member in members:
+        for relative, image in _images(owner, member).items():
+            if relative not in result:
+                result[relative] = image
+    return result
+
+
+def compose(owner, *, plans, expected_plan_sha256s):
+    # The request's complete original documents and external pin roster share
+    # the existing cap. No member gets a separate count or output allowance.
+    request = {"plans": plans, "expected_plan_sha256s": expected_plan_sha256s}
+    _size(request, owner["MAX_STATE_JSON_BYTES"])
+    members = _member_structure(owner, plans)
+    body = _batch_body(owner, members)
+    _batch_reservation(owner, body)
+    # Freeze the admitted input and derived body before the first digest
+    # callback. A later member's hash may otherwise change an earlier member
+    # after its check and have that changed value adopted as the baseline.
+    original_request = _json(owner, request)
+    original_body = _json(owner, body)
+    _member_pins(owner, plans, expected_plan_sha256s)
+    if _json(owner, request) != original_request or _json(owner, body) != original_body:
+        _refuse("batch-input-changed-during-pins")
+    admitted = owner["copy"].deepcopy(body)
+    if _json(owner, admitted) != original_body or _json(owner, request) != original_request:
+        _refuse("batch-input-copy-change")
+    images = _union_images(owner, admitted["members"])
+    budget = _Budget(owner, 4096)
+    live, _targets = _observe_closure(owner, admitted["read_dependencies"], images,
+                                     allow_target_deltas=False, budget=budget)
+    try:
+        for member in admitted["members"]:
+            # The view keeps this member's exact dependency roster, but any
+            # shared page is sourced from the union's original before image.
+            _semantic_join(owner, member, images, live)
+        admitted["batch_sha256"] = _hash(owner, _json(owner, admitted))
+        detached = owner["copy"].deepcopy(admitted)
+        if not _same(owner, admitted, detached) or _json(owner, request) != original_request:
+            _refuse("batch-result-or-input-change")
         live.current()
         return detached
     finally:
         live.close()
+
+
+def publish_batch(owner, *, batch, expected_batch_sha256):
+    _size(batch, owner["MAX_STATE_JSON_BYTES"])
+    if type(batch) is not dict or set(batch) != BATCH_KEYS \
+            or batch["schema"] != "sia-event-page-render-batch-v1":
+        _refuse("batch-shape")
+    members = _member_structure(owner, batch["members"])
+    body = _batch_body(owner, members)
+    _batch_reservation(owner, body)
+    supplied_body = {key: value for key, value in batch.items() if key != "batch_sha256"}
+    if not _same(owner, supplied_body, body):
+        _refuse("batch-original-union-or-effect-roster")
+    _hex(expected_batch_sha256)
+    _hex(batch["batch_sha256"])
+    original = _json(owner, batch)
+    original_body = _json(owner, body)
+    if batch["batch_sha256"] != expected_batch_sha256 \
+            or _hash(owner, original_body) != expected_batch_sha256:
+        _refuse("external-batch-pin")
+    # The independent whole-batch pin binds the original member pin roster;
+    # this is validation of those bytes, not reconstruction of new authority.
+    _member_pins(owner, batch["members"], [member["plan_sha256"] for member in batch["members"]])
+    if _json(owner, batch) != original or _json(owner, body) != original_body:
+        _refuse("batch-input-changed-during-pins")
+    admitted = owner["copy"].deepcopy(batch)
+    if _json(owner, admitted) != original or _json(owner, batch) != original:
+        _refuse("batch-input-copy-change")
+    images = _union_images(owner, admitted["members"])
+    budget = _Budget(owner, 4096)
+    live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
+    state = {"live": live, "targets": targets}
+    try:
+        for member in admitted["members"]:
+            _semantic_join(owner, member, images, live)
+        live.current()
+        _publish_images(owner, admitted["read_dependencies"], images,
+                        [row["slug"] + ".md" for row in admitted["write_order"]], state,
+                        shared_budget=budget)
+        result = _batch_result(admitted)
+        _size(result, owner["MAX_STATE_JSON_BYTES"])
+        detached = owner["copy"].deepcopy(result)
+        if not _same(owner, detached, result) or _json(owner, batch) != original:
+            _refuse("batch-result-or-input-change")
+        state["live"].current()
+        return detached
+    finally:
+        state["live"].close()

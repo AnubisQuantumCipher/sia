@@ -3810,6 +3810,22 @@ def _publish_event_page_plan(*, plan, expected_plan_sha256):
             globals(), plan=plan, expected_plan_sha256=expected_plan_sha256)
 
 
+def _compose_event_page_plans(*, plans, expected_plan_sha256s):
+    """Bind complete frozen day plans to one unchanged original corpus cut."""
+    with corpus_owner():
+        import siaeventplan
+        return siaeventplan.compose(
+            globals(), plans=plans, expected_plan_sha256s=expected_plan_sha256s)
+
+
+def _publish_event_page_plan_batch(*, batch, expected_batch_sha256):
+    """Publish only the batch's declared exact images and ancestor deltas."""
+    with corpus_owner():
+        import siaeventplan
+        return siaeventplan.publish_batch(
+            globals(), batch=batch, expected_batch_sha256=expected_batch_sha256)
+
+
 def ensure_event_entities(events):
     """Create referenced entity pages (units/packages/projects) lazily."""
     made = False

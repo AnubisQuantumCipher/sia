@@ -193,6 +193,19 @@ A failed publication can leave a retained target prefix, and its retry
 preserves the original append/admission roster rather than claiming the
 retry performed those appends.
 
+`_compose_event_page_plans` admits complete day plans from one unchanged
+original cut, preserving each member and its independently supplied pin.
+The batch binds the compatible union of read dependencies and exact write
+order; write/write and write/retained-page conflicts refuse rather than
+reassigning events. Complete member documents, source-event counts and the
+combined lookup roster retain their existing aggregate ceilings.
+`_publish_event_page_plan_batch` validates all members before page effects
+and uses the same guarded write engine as individual publication. Its
+shared before-images preserve each member's original reads after a partial
+write. Retry consumes the original sealed batch, never recomposition or
+rerendering, and permits only its declared target and ancestor deltas.
+`tests/test_event_page_batch.py` exercises this additional boundary.
+
 These lazy core wrappers hold the real reentrant corpus owner across all
 reads, copies, writes and final checks. `siaeventplan` receives the explicit
 owning namespace and introduces no separate binding lock. Result copying
