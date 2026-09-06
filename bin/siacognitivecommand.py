@@ -24,6 +24,8 @@ import siavector
 MAX_REQUEST_BYTES = sialib.MAX_STATE_JSON_BYTES
 REQUEST_SCHEMA = "sia-cognitive-command-request-v1"
 RECEIPT_SCHEMA = "sia-cognitive-command-observation-v1"
+REQUEST_SCHEMA_V2 = "sia-cognitive-command-request-v2"
+RECEIPT_SCHEMA_V2 = "sia-cognitive-command-observation-v2"
 REFUSAL_SCHEMA = "sia-cognitive-baseline-refusal-v1"
 NON_CLAIMS = (
     "The request SHA-256 binds caller-supplied bytes, not their authorship or the truth of supplied history.",
@@ -38,12 +40,14 @@ _KWARGS = frozenset({
     "model_expectations", "shared_runtime", "code_expectations", "limit", "timeout",
     "scratch_parent", "parameter_freeze", "expected_parameter_freeze_sha256",
 })
+_KWARGS_V2 = _KWARGS | {"embedding_input_policy", "expected_embedding_input_policy_sha256"}
 _RESULT_KEYS = frozenset({
     "schema", "status", "lane", "split", "capture_sha256", "policy_sha256", "selection_sha256",
     "pages_sha256", "query_roster_sha256", "baseline_contract_sha256", "parameter_freeze_sha256",
     "parameter_freeze", "contract", "queries", "pages", "answer_key", "preparation", "observation",
     "retrieval_rows", "archive", "source_non_claims", "non_claims", "artifact_sha256",
 })
+_RESULT_KEYS_V2 = _RESULT_KEYS | {"embedding_input_policy", "embedding_input_policy_sha256"}
 _STAT_FIELDS = (
     "st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size",
     "st_mtime_ns", "st_ctime_ns",
@@ -162,8 +166,12 @@ def _request(raw):
         # solely the committed baseline's responsibility.
         baseline._bounded(document, MAX_REQUEST_BYTES)
         if type(document) is not dict or set(document) != {"schema", "baseline"} \
-                or document["schema"] != REQUEST_SCHEMA or type(document["schema"]) is not str \
-                or type(document["baseline"]) is not dict or set(document["baseline"]) != _KWARGS:
+                or type(document["schema"]) is not str \
+                or document["schema"] not in (REQUEST_SCHEMA, REQUEST_SCHEMA_V2) \
+                or type(document["baseline"]) is not dict:
+            _fail("request-schema-not-admitted")
+        expected = _KWARGS if document["schema"] == REQUEST_SCHEMA else _KWARGS_V2
+        if set(document["baseline"]) != expected:
             _fail("request-schema-not-admitted")
         return copy.deepcopy(document["baseline"])
     except CommandRefusal:
@@ -176,8 +184,12 @@ def _admit_result(result, inputs):
     import siacognitivebaseline as baseline
     try:
         baseline._bounded(result)
-        if type(result) is not dict or set(result) != _RESULT_KEYS \
-                or result["schema"] != "sia-cognitive-baseline-v1" \
+        v2 = "embedding_input_policy" in inputs
+        result_keys = _RESULT_KEYS_V2 if v2 else _RESULT_KEYS
+        result_schema = "sia-cognitive-baseline-v2" if v2 else "sia-cognitive-baseline-v1"
+        nonclaims = baseline.NON_CLAIMS_V2 if v2 else baseline.NON_CLAIMS
+        if type(result) is not dict or set(result) != result_keys \
+                or result["schema"] != result_schema \
                 or result["status"] != "observed" or result["lane"] != "raw_vector" \
                 or result["split"] != inputs["split"]:
             _fail("baseline-result-not-admitted")
@@ -199,7 +211,16 @@ def _admit_result(result, inputs):
         for key in ("queries", "pages", "answer_key", "retrieval_rows", "non_claims"):
             if type(result[key]) is not list:
                 _fail("baseline-result-not-admitted")
-        if result["non_claims"] != baseline.NON_CLAIMS \
+        if v2:
+            policy_sha = inputs["expected_embedding_input_policy_sha256"]
+            if not _digest(policy_sha) or result["embedding_input_policy_sha256"] != policy_sha \
+                    or not baseline._same(result["embedding_input_policy"], inputs["embedding_input_policy"]) \
+                    or hashlib.sha256(baseline._canonical(result["embedding_input_policy"])).hexdigest() != policy_sha \
+                    or result["contract"].get("schema") != "sia-cognitive-baseline-contract-v2" \
+                    or result["contract"].get("embedding_input_policy_sha256") != policy_sha \
+                    or not baseline._same(result["contract"].get("embedding_input_policy"), inputs["embedding_input_policy"]):
+                _fail("baseline-result-not-admitted")
+        if result["non_claims"] != nonclaims \
                 or result["query_roster_sha256"] != hashlib.sha256(baseline._canonical(result["queries"])).hexdigest() \
                 or result["baseline_contract_sha256"] != hashlib.sha256(baseline._canonical(result["contract"])).hexdigest():
             _fail("baseline-result-not-admitted")
@@ -213,14 +234,15 @@ def _admit_result(result, inputs):
         _fail("baseline-result-not-admitted")
 
 
-def _baseline_refusal(error):
+def _baseline_refusal(error, *, v2=False):
     import siacognitivebaseline as baseline
     # Error text may contain source paths or private data. Retain only the
     # explicitly reportable nonclaim fields, after bounding their structure.
-    retained = {"baseline_non_claims": list(baseline.NON_CLAIMS),
+    nonclaims = baseline.NON_CLAIMS_V2 if v2 else baseline.NON_CLAIMS
+    retained = {"baseline_non_claims": list(nonclaims),
                 "upstream_non_claims": getattr(error, "upstream_non_claims", [])}
     declared = getattr(error, "non_claims", [])
-    if declared and declared != baseline.NON_CLAIMS:
+    if declared and declared != nonclaims:
         retained["exception_non_claims"] = declared
     try:
         baseline._bounded(retained)
@@ -256,16 +278,23 @@ def run_command(out_dir, *, repo=None, request_file=None, request_sha256=None):
         pin = _RequestPin(request_file, request_sha256)
         inputs = _request(pin.read())
         pin.current()
+        # The closed decoded roster follows an explicit wire schema. Missing
+        # v2 policy fields never fall back to the v1 execution capability.
+        v2 = "embedding_input_policy" in inputs
+        execute = baseline.run_baseline_v2 if v2 else baseline.run_baseline
         try:
-            result = baseline.run_baseline(**inputs, output_directory=out_dir)
+            result = execute(**inputs, output_directory=out_dir)
         except baseline.BaselineRefusal as error:
             pin.current()
-            _baseline_refusal(error)
+            _baseline_refusal(error, v2=v2)
         pin.current()
         artifact_sha256, retained = _admit_result(result, inputs)
-        receipt = {"schema": RECEIPT_SCHEMA, "status": "observed", "request_sha256": request_sha256,
+        receipt = {"schema": RECEIPT_SCHEMA_V2 if v2 else RECEIPT_SCHEMA,
+                   "status": "observed", "request_sha256": request_sha256,
                    "baseline_artifact_sha256": artifact_sha256, "output_directory": out_dir,
                    "artifact": "baseline.json", "baseline_non_claims": retained, "non_claims": list(NON_CLAIMS)}
+        if v2:
+            receipt["embedding_input_policy_sha256"] = inputs["expected_embedding_input_policy_sha256"]
         pin.current()
         return receipt
     except CommandRefusal:

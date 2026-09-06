@@ -29,8 +29,8 @@ _EXPECTED = {
 }
 
 
-def configuration_sha256(embedding, limit):
-    """Independently construct the adapter's effective, non-hybrid policy."""
+def _configuration(embedding, limit):
+    """The unchanged original raw-search configuration body."""
     config = {
         "engine": "pglite", "embedding": embedding,
         "search": {
@@ -44,6 +44,24 @@ def configuration_sha256(embedding, limit):
         "env": {"GBRAIN_SEARCH_EXCLUDE": "", "GBRAIN_SOURCE_BOOST": "",
                 "GBRAIN_PGLITE_WAL_REPAIR": "off", "TZ": "UTC"},
     }
+    return config
+
+
+def configuration_sha256(embedding, limit):
+    """Independently construct the adapter's effective, non-hybrid v1 policy."""
+    return hashlib.sha256(siavector._canonical_bytes(_configuration(embedding, limit))).hexdigest()
+
+
+def configuration_sha256_v2(embedding, limit, *, embedding_input_policy,
+                            expected_embedding_input_policy_sha256):
+    """Bind the full declared transform without changing the v1 identity."""
+    policy = siavectoradmit.admit_embedding_input_policy(
+        embedding_input_policy, expected_sha256=expected_embedding_input_policy_sha256, embedding=embedding)
+    if type(limit) is not int or not 1 <= limit <= siavectoradmit.MAX_RESULTS:
+        raise siavector.VectorRefusal("vector result limit is invalid")
+    config = _configuration(embedding, limit)
+    config.update(embedding_input_policy=policy,
+                  embedding_input_policy_sha256=expected_embedding_input_policy_sha256)
     return hashlib.sha256(siavector._canonical_bytes(config)).hexdigest()
 
 
@@ -99,7 +117,8 @@ def _served_observation(served, model):
 
 def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
              index_archive, index_sha256, embedding, queries, limit, timeout,
-             scratch_parent, model_inputs=None):
+             scratch_parent, model_inputs=None, version=1,
+             embedding_input_policy=None, expected_embedding_input_policy_sha256=None):
     """Capture then query fresh copies of one admitted physical archive.
 
     Caller expectations are supplied independently of the build under review.
@@ -111,11 +130,16 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
     if type(timeout) not in (int, float) or not 0 < timeout <= 1800 \
             or not math.isfinite(timeout):
         raise siavector.VectorRefusal("vector timeout is invalid")
+    policy_fields = {}
+    if version == 2:
+        policy_fields = {"embedding_input_policy": siavectoradmit.admit_embedding_input_policy(
+            embedding_input_policy, expected_sha256=expected_embedding_input_policy_sha256, embedding=embedding),
+            "embedding_input_policy_sha256": expected_embedding_input_policy_sha256}
     # Validate every query before capturing or opening artifacts. These null
     # digest sentinels are shape-only placeholders, never sent to a process;
     # capture below removes them and supplies the independently observed roots.
     pending = siavectoradmit.admit_request({
-        "v": 1, "lane": "raw_vector", "operation": "query",
+        "v": version, "lane": "raw_vector", "operation": "query", **policy_fields,
         "queries": queries, "limit": limit,
         "snapshot": {"fd": None, "logical_sha256": "0" * 64,
                      "catalog_sha256": "0" * 64},
@@ -126,6 +150,12 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
     embedding = pending["embedding"]
     queries = pending["queries"]
     limit = pending["limit"]
+    if version == 2:
+        if type(model_inputs) is not dict or set(model_inputs) != {"expectations", "runtime"}:
+            raise siavector.VectorRefusal("v2 vector observation requires owned model inputs")
+        # The full query/policy request has already been admitted before making
+        # detached model-launch inputs. V2 has no unbound diagnostic fallback.
+        model_inputs = _bound_model_inputs(model_inputs["expectations"], model_inputs["runtime"])
     with siavector.sealed_file(
             build_receipt, build_receipt_sha256,
             max_bytes=siavector.sialib.MAX_STATE_JSON_BYTES) as build, \
@@ -137,7 +167,10 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
             raise siavector.VectorRefusal("vector build receipt is invalid JSON") from exc
         _admit_build(receipt, expected)
         try:
-            config_sha256 = configuration_sha256(embedding, limit)
+            config_sha256 = (configuration_sha256_v2(
+                embedding, limit, embedding_input_policy=policy_fields["embedding_input_policy"],
+                expected_embedding_input_policy_sha256=expected_embedding_input_policy_sha256)
+                if version == 2 else configuration_sha256(embedding, limit))
         except (KeyError, TypeError, ValueError) as exc:
             raise siavector.VectorRefusal("vector embedding configuration is invalid") from exc
         model = None
@@ -145,7 +178,7 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
             model = model_stack.enter_context(siavectormodel.admit_model(
                 **model_inputs["expectations"]))
         request = {
-            "v": 1, "lane": "raw_vector", "operation": "capture",
+            "v": version, "lane": "raw_vector", "operation": "capture", **policy_fields,
             "queries": [], "limit": limit,
             "snapshot": {"fd": None, "logical_sha256": None,
                          "catalog_sha256": None},
@@ -187,8 +220,9 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
                 observations.append(observation)
             build.assert_current()
         result = {
-            "schema": "sia-raw-vector-observation-v1" if model is None
-                      else "sia-raw-vector-bound-observation-v1", "status": "observed",
+            "schema": "sia-raw-vector-bound-observation-v2" if version == 2
+                      else "sia-raw-vector-observation-v1" if model is None
+                      else "sia-raw-vector-bound-observation-v1", "status": "observed", **policy_fields,
             "lane": "raw_vector", "build_receipt_sha256": build.sha256,
             "index_archive_sha256": index_sha256,
             "expected": copy.deepcopy(expected), "embedding": embedding,
@@ -231,6 +265,8 @@ def _bound_model_inputs(model_expectations, shared_runtime):
 
 def observe_bound(*, model_expectations, shared_runtime, **observation_inputs):
     """Require admitted model inputs for capture and query, without an ambient fallback."""
+    if {"version", "embedding_input_policy", "expected_embedding_input_policy_sha256"} & set(observation_inputs):
+        raise siavector.VectorRefusal("v1 vector observation does not accept v2 policy arguments")
     model_inputs = _bound_model_inputs(model_expectations, shared_runtime)
     try:
         return _observe(**observation_inputs, model_inputs=model_inputs)
@@ -240,9 +276,30 @@ def observe_bound(*, model_expectations, shared_runtime, **observation_inputs):
         raise refusal from exc
 
 
-def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
-                  request, output_directory, timeout, scratch_parent,
-                  model_expectations, shared_runtime):
+def observe_bound_v2(*, executable, expected, build_receipt, build_receipt_sha256,
+                     index_archive, index_sha256, embedding, queries, limit, timeout,
+                     scratch_parent, model_expectations, shared_runtime,
+                     embedding_input_policy, expected_embedding_input_policy_sha256):
+    """A separately versioned, policy-bound observation with no guessed mode."""
+    try:
+        return _observe(
+            executable=executable, expected=expected, build_receipt=build_receipt,
+            build_receipt_sha256=build_receipt_sha256, index_archive=index_archive,
+            index_sha256=index_sha256, embedding=embedding, queries=queries, limit=limit,
+            timeout=timeout, scratch_parent=scratch_parent, version=2,
+            model_inputs={"expectations": model_expectations, "runtime": shared_runtime},
+            embedding_input_policy=embedding_input_policy,
+            expected_embedding_input_policy_sha256=expected_embedding_input_policy_sha256)
+    except siavectormodel.ModelRefusal as exc:
+        refusal = siavector.VectorRefusal("vector model serving refused: " + str(exc))
+        refusal.non_claims = list(siavectormodel.NON_CLAIMS)
+        raise refusal from exc
+
+
+def _prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
+                   request, output_directory, timeout, scratch_parent,
+                   model_expectations, shared_runtime, version,
+                   expected_embedding_input_policy_sha256=None):
     """Prepare a new private index and admit its complete page/chunk receipt.
 
     Output freshness and partial-index retention are enforced by the owned
@@ -250,7 +307,18 @@ def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
     result. No resident index or ambient model fallback is available.
     """
     expected = _expectation_values(expected)
+    if version == 2:
+        if type(request) is not dict:
+            raise siavector.VectorRefusal("v2 vector preparation request is invalid")
+        siavectoradmit._embedding_input_policy(request.get("embedding_input_policy"),
+                                             expected_embedding_input_policy_sha256, request.get("embedding"))
+        if request.get("embedding_input_policy_sha256") != expected_embedding_input_policy_sha256:
+            raise siavector.VectorRefusal("v2 vector preparation policy differs from its external pin")
     request = siavectorprepare.admit_request(request)
+    if request["v"] != version:
+        raise siavector.VectorRefusal("vector preparation request version differs from its entrypoint")
+    policy_fields = ({key: request[key] for key in ("embedding_input_policy", "embedding_input_policy_sha256")}
+                     if version == 2 else {})
     if type(timeout) not in (int, float) or not 0 < timeout <= 1800 \
             or not math.isfinite(timeout):
         raise siavector.VectorRefusal("vector timeout is invalid")
@@ -284,7 +352,8 @@ def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
                 model_identity = copy.deepcopy(model.identity)
             build.assert_current()
             return {
-                "schema": "sia-raw-vector-bound-preparation-v1", "status": "observed",
+                "schema": "sia-raw-vector-bound-preparation-v2" if version == 2
+                          else "sia-raw-vector-bound-preparation-v1", "status": "observed", **policy_fields,
                 "dataset_sha256": request["dataset_sha256"], "pages_sha256": request["pages_sha256"],
                 "build_receipt_sha256": build.sha256, "expected": expected,
                 "model_identity": model_identity, "preparation": observation,
@@ -301,3 +370,26 @@ def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
         refusal = siavector.VectorRefusal("vector model serving refused: " + str(exc))
         refusal.non_claims = list(siavectormodel.NON_CLAIMS)
         raise refusal from exc
+
+
+def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
+                  request, output_directory, timeout, scratch_parent,
+                  model_expectations, shared_runtime):
+    """Original v1 preparation entrypoint; v2 must be selected explicitly."""
+    return _prepare_bound(
+        executable=executable, expected=expected, build_receipt=build_receipt,
+        build_receipt_sha256=build_receipt_sha256, request=request,
+        output_directory=output_directory, timeout=timeout, scratch_parent=scratch_parent,
+        model_expectations=model_expectations, shared_runtime=shared_runtime, version=1)
+
+
+def prepare_bound_v2(*, executable, expected, build_receipt, build_receipt_sha256,
+                     request, output_directory, timeout, scratch_parent,
+                     model_expectations, shared_runtime, expected_embedding_input_policy_sha256):
+    """Prepare a fresh index for an independently pinned explicit input policy."""
+    return _prepare_bound(
+        executable=executable, expected=expected, build_receipt=build_receipt,
+        build_receipt_sha256=build_receipt_sha256, request=request,
+        output_directory=output_directory, timeout=timeout, scratch_parent=scratch_parent,
+        model_expectations=model_expectations, shared_runtime=shared_runtime, version=2,
+        expected_embedding_input_policy_sha256=expected_embedding_input_policy_sha256)

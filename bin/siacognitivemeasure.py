@@ -123,9 +123,13 @@ def _finish(body, field):
 
 def _contract(value, selected):
     """Admit retained policy fields, not paths or current host source bytes."""
+    version = ({"sia-cognitive-baseline-contract-v1": 1,
+                "sia-cognitive-baseline-contract-v2": 2}.get(value.get("schema"))
+               if type(value) is dict and type(value.get("schema")) is str else None)
+    input_fields = {"embedding_input_policy", "embedding_input_policy_sha256"} if version == 2 else set()
     _keys(value, {"schema", *_SOURCE_PINS, "preparer", "adapter", "embedding", "model",
-                  "runtime", "code_expectations", "limit", "timeout"}, "baseline contract")
-    if value["schema"] != "sia-cognitive-baseline-contract-v1" \
+                  "runtime", "code_expectations", "limit", "timeout", *input_fields}, "baseline contract")
+    if version is None \
             or any(value[key] != selected[key] for key in _SOURCE_PINS):
         _fail("baseline contract source identities disagree")
     for role in ("preparer", "adapter"):
@@ -171,14 +175,18 @@ def _contract(value, selected):
     kw = {"preparer": value["preparer"], "adapter": value["adapter"],
           "embedding": value["embedding"], "model_expectations": model,
           "shared_runtime": runtime, "limit": value["limit"]}
+    if version == 2:
+        kw.update(_raw_version=2, embedding_input_policy=value["embedding_input_policy"],
+                  expected_embedding_input_policy_sha256=value["embedding_input_policy_sha256"])
+        # This field is independently pinned by the complete source contract;
+        # admitting a response's own policy would not establish that binding.
+        baseline_module._admit_input_policy(kw)
     baseline_module.raw_admission.admit_request(baseline_module._query_request(kw, "capture", [], {}))
     if value["embedding"]["model"] != "ollama:" + model["model_name"] \
             or value["embedding"]["endpoint"] != "http://127.0.0.1:11434/v1":
         _fail("baseline embedding does not identify its private model")
-    request = baseline_module.preparation_admission.admit_request({
-        "v": 1, "operation": "prepare_index", "source": "sia",
-        "dataset_sha256": selected["selection_sha256"], "pages_sha256": selected["pages_sha256"],
-        "embedding": value["embedding"], "output": {"parent_fd": None}, "pages": selected["pages"]})
+    request = baseline_module.preparation_admission.admit_request(
+        baseline_module._preparation_request(kw, selected))
     return kw, request
 
 
@@ -328,18 +336,21 @@ def _freeze(value, protocol, expected):
 
 def _baseline(kw, selected, protocol, replay_kw, request):
     value = kw["baseline"]
+    input_fields = baseline_module._input_policy_fields(replay_kw)
     _keys(value, {"schema", "status", "lane", "split", *_SOURCE_PINS, "query_roster_sha256",
                   "baseline_contract_sha256", "parameter_freeze_sha256", "parameter_freeze", "contract",
                   "queries", "pages", "answer_key", "preparation", "observation", "retrieval_rows", "archive",
-                  "source_non_claims", "non_claims", "artifact_sha256"}, "baseline artifact")
+                  "source_non_claims", "non_claims", "artifact_sha256", *input_fields}, "baseline artifact")
     _pin(value, kw["expected_baseline_sha256"], "artifact_sha256")
-    if value["schema"] != "sia-cognitive-baseline-v1" or value["status"] != "observed" \
+    if value["schema"] != "sia-cognitive-baseline-v" + str(baseline_module._raw_version(replay_kw)) \
+            or value["status"] != "observed" \
             or value["lane"] != "raw_vector" or type(value["split"]) is not str \
             or value["split"] not in ("calibration", "heldout") \
             or any(value[key] != protocol[key] for key in _SOURCE_PINS) \
             or value["baseline_contract_sha256"] != kw["expected_baseline_contract_sha256"] \
             or not _same(value["contract"], kw["baseline_contract"]) \
-            or not _same(value["non_claims"], baseline_module.NON_CLAIMS):
+            or not _same(value["non_claims"], baseline_module._baseline_nonclaims(replay_kw)) \
+            or any(not _same(value[key], expected) for key, expected in input_fields.items()):
         _fail("baseline schema, source, contract or nonclaims disagree")
     queries = [{"id": row["id"], "text": row["text"]}
                for row in selected["queries"] if row["split"] == value["split"]]

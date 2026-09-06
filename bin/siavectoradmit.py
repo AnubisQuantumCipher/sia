@@ -48,6 +48,10 @@ NON_CLAIMS = (
     "Scores and vectors are observed floating-point engine output, not JACKAL-certified arithmetic or a cognitive win.",
     "Returned chunks retain their text; this adapter does not infer an origin label that the raw API did not return.",
 )
+EMBEDDING_INPUT_NON_CLAIMS = (
+    "Embedding input prefixes affect only provider input; original query, page and chunk text identities are retained.",
+    "Embedding-input digests bind adapter-supplied UTF-8 text, not an independently observed HTTP body or proof of model computation.",
+)
 
 
 class AdapterRefusal(VectorRefusal):
@@ -114,42 +118,7 @@ def _blob(value, maximum, label):
     return decoded
 
 
-def _request(request):
-    _keys(request, {
-        "v", "operation", "lane", "queries", "limit", "snapshot",
-        "embedding", "binding",
-    }, "request")
-    if not _integer(request["v"], 1, 1) \
-            or request["operation"] not in ("capture", "query") \
-            or request["lane"] != "raw_vector" \
-            or not _integer(request["limit"], 1, MAX_RESULTS) \
-            or type(request["queries"]) is not list \
-            or len(request["queries"]) > MAX_QUERIES \
-            or (request["operation"] == "capture") != (not request["queries"]):
-        _refuse("request contract is invalid")
-    ids = set()
-    for query in request["queries"]:
-        _keys(query, {"id", "text"}, "request query")
-        if not _text(query["id"], 128) \
-                or _QUERY_ID.fullmatch(query["id"]) is None \
-                or query["id"] in ids \
-                or not _text(query["text"], MAX_QUERY_BYTES) \
-                or not query["text"].strip():
-            _refuse("request query is invalid")
-        ids.add(query["id"])
-    snapshot = request["snapshot"]
-    _keys(snapshot, {"fd", "logical_sha256", "catalog_sha256"},
-          "request snapshot")
-    if snapshot["fd"] is not None \
-            and not _integer(snapshot["fd"], 3, 1048576):
-        _refuse("request snapshot descriptor is invalid")
-    for key in ("logical_sha256", "catalog_sha256"):
-        if request["operation"] == "capture":
-            if snapshot[key] is not None:
-                _refuse("capture request already names an observed identity")
-        elif not _digest(snapshot[key]):
-            _refuse("request snapshot identity is invalid")
-    embedding = request["embedding"]
+def _embedding(embedding):
     _keys(embedding, {"model", "dimensions", "endpoint"}, "request embedding")
     if not _text(embedding["model"], 256) \
             or _MODEL.fullmatch(embedding["model"]) is None \
@@ -163,6 +132,120 @@ def _request(request):
     if len(port) > 5 or not 1 <= int(port) <= 65535 \
             or str(int(port)) != port or int(port) == 80:
         _refuse("request endpoint is not canonical")
+
+
+def _embedding_input_policy(policy, expected_sha256, embedding):
+    """Admit literal fields before serialization; there is no guessed prefix."""
+    _keys(policy, {"schema", "mode", "document_prefix", "query_prefix", "encoding",
+                   "document_stage", "query_stage", "overflow"}, "embedding input policy")
+    if type(policy["mode"]) is not str or policy["mode"] not in ("bare-v1", "nomic-prefix-v1"):
+        _refuse("embedding input policy mode is invalid")
+    prefixed = policy["mode"] == "nomic-prefix-v1"
+    expected = {"schema": "sia-embedding-input-policy-v1", "mode": policy["mode"],
+                "document_prefix": "search_document: " if prefixed else "",
+                "query_prefix": "search_query: " if prefixed else "", "encoding": "utf-8",
+                "document_stage": "after-lossless-chunking", "query_stage": "original-query", "overflow": "refuse"}
+    if any(type(policy[key]) is not str or policy[key] != value for key, value in expected.items()):
+        _refuse("embedding input policy is not a declared literal transform")
+    _embedding(embedding)
+    if prefixed and embedding["model"] != "ollama:nomic-embed-text:v1.5":
+        _refuse("embedding input policy model is unsupported")
+    if not _digest(expected_sha256) or hashlib.sha256(_canonical_bytes(policy)).hexdigest() != expected_sha256:
+        _refuse("embedding input policy external identity disagrees")
+
+
+def admit_embedding_input_policy(policy, *, expected_sha256, embedding):
+    """Return an explicit policy checked against a separately supplied pin."""
+    try:
+        _embedding_input_policy(policy, expected_sha256, embedding)
+        return dict(policy)
+    except VectorRefusal:
+        raise
+    except (TypeError, ValueError, OverflowError, RecursionError, UnicodeError, KeyError) as exc:
+        raise VectorRefusal("vector embedding input policy could not be admitted") from exc
+
+
+def _bounded_response_input(value, limit):
+    """Bound the complete v2 JSON shape before whole-payload serialization.
+
+    Tokens and string bytes give a conservative allocation preflight. Exact
+    canonical byte admission follows it; this does not replace wire admission.
+    The older v1 response path deliberately keeps its original behavior.
+    """
+    used = 0
+
+    def visit(item, depth):
+        nonlocal used
+        used += 1
+        if depth > 32 or used > limit:
+            _refuse("envelope structure exceeds its byte ceiling")
+        if type(item) is str:
+            if len(item) > limit - used:
+                _refuse("envelope string exceeds its byte ceiling")
+            used += len(item.encode("utf-8", "strict"))
+        elif type(item) is dict:
+            if len(item) > limit - used:
+                _refuse("envelope map exceeds its byte ceiling")
+            for key, child in item.items():
+                if type(key) is not str:
+                    _refuse("envelope JSON key is invalid")
+                visit(key, depth + 1)
+                visit(child, depth + 1)
+        elif type(item) is list:
+            if len(item) > limit - used:
+                _refuse("envelope list exceeds its byte ceiling")
+            for child in item:
+                visit(child, depth + 1)
+        elif item is not None and type(item) is not bool and not _number(item):
+            _refuse("envelope JSON scalar is invalid")
+        if used > limit:
+            _refuse("envelope complete byte capacity exceeded")
+
+    visit(value, 0)
+
+
+def _request(request):
+    v2 = type(request) is dict and type(request.get("v")) is int and request["v"] == 2
+    _keys(request, {
+        "v", "operation", "lane", "queries", "limit", "snapshot",
+        "embedding", "binding",
+    } | ({"embedding_input_policy", "embedding_input_policy_sha256"} if v2 else set()), "request")
+    if not _integer(request["v"], 1, 2) \
+            or request["operation"] not in ("capture", "query") \
+            or request["lane"] != "raw_vector" \
+            or not _integer(request["limit"], 1, MAX_RESULTS) \
+            or type(request["queries"]) is not list \
+            or len(request["queries"]) > MAX_QUERIES \
+            or (request["operation"] == "capture") != (not request["queries"]):
+        _refuse("request contract is invalid")
+    if v2:
+        _embedding_input_policy(request["embedding_input_policy"], request["embedding_input_policy_sha256"], request["embedding"])
+    ids = set()
+    for query in request["queries"]:
+        _keys(query, {"id", "text"}, "request query")
+        if not _text(query["id"], 128) \
+                or _QUERY_ID.fullmatch(query["id"]) is None \
+                or query["id"] in ids \
+                or not _text(query["text"], MAX_QUERY_BYTES) \
+                or not query["text"].strip():
+            _refuse("request query is invalid")
+        if v2 and len(request["embedding_input_policy"]["query_prefix"].encode("utf-8")) \
+                + len(query["text"].encode("utf-8")) > MAX_QUERY_BYTES:
+            _refuse("complete embedding input exceeds its byte ceiling")
+        ids.add(query["id"])
+    snapshot = request["snapshot"]
+    _keys(snapshot, {"fd", "logical_sha256", "catalog_sha256"},
+          "request snapshot")
+    if snapshot["fd"] is not None \
+            and not _integer(snapshot["fd"], 3, 1048576):
+        _refuse("request snapshot descriptor is invalid")
+    for key in ("logical_sha256", "catalog_sha256"):
+        if request["operation"] == "capture":
+            if snapshot[key] is not None:
+                _refuse("capture request already names an observed identity")
+        elif not _digest(snapshot[key]):
+            _refuse("request snapshot identity is invalid")
+    _embedding(request["embedding"])
     _keys(request["binding"], {"executable_sha256", "build_receipt_sha256"},
           "request binding")
     if any(not _digest(value) for value in request["binding"].values()):
@@ -257,45 +340,56 @@ def _latency(value, keys, total=None):
 
 def _admit(payload, request, executable_sha256, request_sha256, config_sha256):
     _request(request)
+    v2 = request["v"] == 2
+    non_claims = NON_CLAIMS + (EMBEDDING_INPUT_NON_CLAIMS if v2 else ())
     if any(not _digest(value) for value in (
             executable_sha256, request_sha256, config_sha256)) \
             or executable_sha256 != request["binding"]["executable_sha256"]:
         _refuse("caller binding is invalid")
     if type(payload) is not dict:
         _refuse("envelope must be an object")
+    if v2:
+        _bounded_response_input(payload, MAX_RESPONSE_BYTES)
     # This is only a local allocation ceiling. It is never used to recreate
     # the adapter's original row or stdout identity.
     if len(_canonical_bytes(payload)) > MAX_RESPONSE_BYTES:
         _refuse("envelope exceeds its byte ceiling")
     if type(payload.get("non_claims")) is not list \
-            or not _same_json(payload["non_claims"], list(NON_CLAIMS)):
+            or not _same_json(payload["non_claims"], list(non_claims)):
         _refuse("non-claim roster is invalid")
     if payload.get("status") == "refused":
-        _keys(payload, {"v", "status", "lane", "reason", "non_claims"},
+        _keys(payload, {"v", "status", "lane", "reason", "non_claims"} | ({"operation"} if v2 else set()),
               "refusal")
-        if not _integer(payload["v"], 1, 1) \
+        if not _integer(payload["v"], request["v"], request["v"]) \
+                or v2 and payload["operation"] != request["operation"] \
                 or payload["lane"] != "raw_vector" \
                 or type(payload["reason"]) is not str \
                 or re.fullmatch(r"[a-z][a-z0-9-]{0,127}", payload["reason"]) is None:
             _refuse("refusal contract is invalid")
         raise AdapterRefusal(payload["reason"], payload["non_claims"])
     _keys(payload, {"v", "status", "operation", "lane", "bindings",
-                    "results", "latency_ms", "non_claims"}, "envelope")
-    if not _integer(payload["v"], 1, 1) or payload["status"] != "ok" \
+                    "results", "latency_ms", "non_claims"} | ({"embedding_input_policy"} if v2 else set()), "envelope")
+    if not _integer(payload["v"], request["v"], request["v"]) or payload["status"] != "ok" \
             or payload["operation"] != request["operation"] \
             or payload["lane"] != "raw_vector":
         _refuse("envelope contract is invalid")
+    if v2:
+        _embedding_input_policy(payload["embedding_input_policy"], request["embedding_input_policy_sha256"], request["embedding"])
+        if payload["embedding_input_policy"] != request["embedding_input_policy"]:
+            _refuse("embedding input policy differs from the caller request")
     bindings = payload["bindings"]
     _keys(bindings, {
         "logical_sha256", "catalog_sha256", "executable_sha256",
         "build_receipt_sha256", "config_sha256", "request_sha256",
-    }, "binding")
+    } | ({"embedding_input_policy_sha256"} if v2 else set()), "binding")
     if any(not _digest(value) for value in bindings.values()):
         _refuse("binding digests are invalid")
     expected = {
         **request["binding"], "executable_sha256": executable_sha256,
         "request_sha256": request_sha256, "config_sha256": config_sha256,
     }
+    if v2:
+        expected["embedding_input_policy_sha256"] = request["embedding_input_policy_sha256"]
     if request["operation"] == "query":
         expected.update({key: request["snapshot"][key]
                          for key in ("logical_sha256", "catalog_sha256")})
@@ -311,11 +405,17 @@ def _admit(payload, request, executable_sha256, request_sha256, config_sha256):
             "id", "query_sha256", "vector_f32le_base64", "vector_sha256",
             "rows", "ranked_rows_canonical_base64", "ranked_rows_sha256",
             "latency_ms",
-        }, "query result")
+        } | ({"embedding_input_sha256", "embedding_input_bytes"} if v2 else set()), "query result")
         if result["id"] != query["id"] \
                 or result["query_sha256"] != hashlib.sha256(
                     query["text"].encode("utf-8")).hexdigest():
             _refuse("query identity or order disagrees with the request")
+        if v2:
+            encoded_input = (request["embedding_input_policy"]["query_prefix"] + query["text"]).encode("utf-8")
+            if not _integer(result["embedding_input_bytes"], len(encoded_input), len(encoded_input)) \
+                    or not _digest(result["embedding_input_sha256"]) \
+                    or result["embedding_input_sha256"] != hashlib.sha256(encoded_input).hexdigest():
+                _refuse("query embedding input witness disagrees with original bytes and policy")
         width = request["embedding"]["dimensions"] * struct.calcsize("<f")
         vector = _blob(result["vector_f32le_base64"], width, "query vector")
         if len(vector) != width or not _digest(result["vector_sha256"]) \

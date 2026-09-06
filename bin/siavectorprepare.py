@@ -14,6 +14,7 @@ import hashlib
 import re
 
 import siaqueue
+import siavectoradmit as raw_admission
 from siavector import VectorRefusal, _canonical_bytes
 
 
@@ -38,6 +39,7 @@ NON_CLAIMS = (
     "Lossless deterministic chunking is a declared benchmark policy, not a cognitive mechanism or a demonstrated retrieval improvement.",
     "Failure can leave a partial private index; it is never reported as an admitted completed snapshot.",
 )
+EMBEDDING_INPUT_NON_CLAIMS = raw_admission.EMBEDDING_INPUT_NON_CLAIMS
 DIAGNOSTIC_NON_CLAIMS = (
     "Captured setup diagnostics are informational output, not proof of schema or data correctness.",
     "When truncated is true, text/base64 and sha256 describe only the retained prefix, not the complete diagnostic stream.",
@@ -141,9 +143,11 @@ def _embedding(value):
 
 
 def _request(request):
+    v2 = type(request) is dict and type(request.get("v")) is int and request["v"] == 2
     _keys(request, {"v", "operation", "source", "dataset_sha256", "pages_sha256",
-                    "embedding", "output", "pages"}, "request")
-    if not _integer(request["v"], 1, 1) or request["operation"] != "prepare_index" \
+                    "embedding", "output", "pages"}
+          | ({"embedding_input_policy", "embedding_input_policy_sha256"} if v2 else set()), "request")
+    if not _integer(request["v"], 1, 2) or request["operation"] != "prepare_index" \
             or request["source"] != "sia" or not _digest(request["dataset_sha256"]) \
             or not _digest(request["pages_sha256"]):
         _refuse("request contract is invalid")
@@ -152,6 +156,9 @@ def _request(request):
     if descriptor is not None and not _integer(descriptor, 3, 1048576):
         _refuse("output descriptor is invalid")
     _embedding(request["embedding"])
+    if v2:
+        raw_admission._embedding_input_policy(request["embedding_input_policy"],
+                                             request["embedding_input_policy_sha256"], request["embedding"])
     pages = request["pages"]
     if type(pages) is not list or not 1 <= len(pages) <= MAX_PAGES:
         _refuse("page roster is outside its count ceiling")
@@ -173,7 +180,11 @@ def _request(request):
         total_bytes += len(content)
         if total_bytes > MAX_TOTAL_PAGE_BYTES:
             _refuse("input pages exceed the aggregate byte ceiling")
-        total_chunks += sum(1 for _ in _chunk_bytes(page["text"]))
+        for chunk in _chunk_bytes(page["text"]):
+            if v2 and len(request["embedding_input_policy"]["document_prefix"].encode("utf-8")) \
+                    + len(chunk) > raw_admission.MAX_QUERY_BYTES:
+                _refuse("complete embedding input exceeds its byte ceiling")
+            total_chunks += 1
         if total_chunks > MAX_CHUNKS:
             _refuse("input pages exceed the chunk count ceiling")
     if _sha(_canonical_bytes(pages)) != request["pages_sha256"]:
@@ -249,19 +260,23 @@ def _diagnostics(value, dimensions, *, success):
 
 def _admit(payload, request, request_sha256):
     _request(request)
+    v2 = request["v"] == 2
+    non_claims = NON_CLAIMS + (EMBEDDING_INPUT_NON_CLAIMS if v2 else ())
     if not _digest(request_sha256):
         _refuse("caller-held sealed request identity is invalid")
     if type(payload) is not dict:
         _refuse("response is not an object")
+    if v2:
+        raw_admission._bounded_response_input(payload, MAX_RECEIPT_BYTES)
     if payload.get("status") == "refused":
         fields = {"v", "status", "operation", "reason", "non_claims"}
         if "setup_diagnostics" in payload:
             fields.add("setup_diagnostics")
         _keys(payload, fields, "refusal")
-        if not _integer(payload["v"], 1, 1) or payload["operation"] != "prepare_index" \
+        if not _integer(payload["v"], request["v"], request["v"]) or payload["operation"] != "prepare_index" \
                 or type(payload["reason"]) is not str or _REASON.fullmatch(payload["reason"]) is None:
             _refuse("refusal contract is invalid")
-        _non_claims(payload["non_claims"], NON_CLAIMS, "preparer")
+        _non_claims(payload["non_claims"], non_claims, "preparer")
         diagnostic = payload.get("setup_diagnostics")
         if "setup_diagnostics" in payload:
             _diagnostics(diagnostic, request["embedding"]["dimensions"], success=False)
@@ -269,11 +284,17 @@ def _admit(payload, request, request_sha256):
             _refuse("refusal exceeds its byte ceiling")
         raise PreparationRefusal(payload["reason"], payload["non_claims"], diagnostic)
     _keys(payload, {"v", "status", "operation", "index_leaf", "bindings", "policy",
-                    "embedding", "pages", "setup_diagnostics", "non_claims"}, "success")
-    if not _integer(payload["v"], 1, 1) or payload["status"] != "ok" \
+                    "embedding", "pages", "setup_diagnostics", "non_claims"}
+          | ({"embedding_input_policy"} if v2 else set()), "success")
+    if not _integer(payload["v"], request["v"], request["v"]) or payload["status"] != "ok" \
             or payload["operation"] != "prepare_index" or payload["index_leaf"] != "index":
         _refuse("success contract is invalid")
-    _non_claims(payload["non_claims"], NON_CLAIMS, "preparer")
+    _non_claims(payload["non_claims"], non_claims, "preparer")
+    if v2:
+        raw_admission._embedding_input_policy(payload["embedding_input_policy"],
+                                             request["embedding_input_policy_sha256"], request["embedding"])
+        if not _same(payload["embedding_input_policy"], request["embedding_input_policy"]):
+            _refuse("preparer changed the caller-held embedding input policy")
     _keys(payload["policy"], set(POLICY), "chunk policy")
     if not _same(payload["policy"], POLICY):
         _refuse("preparer changed the admitted chunk policy")
@@ -283,6 +304,8 @@ def _admit(payload, request, request_sha256):
     expected_bindings = {"dataset_sha256": request["dataset_sha256"], "pages_sha256": request["pages_sha256"],
                          "request_sha256": request_sha256, "policy_sha256": _sha(_canonical_bytes(POLICY)),
                          "embedding_sha256": _sha(_canonical_bytes(request["embedding"]))}
+    if v2:
+        expected_bindings["embedding_input_policy_sha256"] = request["embedding_input_policy_sha256"]
     _keys(payload["bindings"], set(expected_bindings), "bindings")
     if not _same(payload["bindings"], expected_bindings):
         _refuse("preparer bindings differ from independently held expectations")
@@ -299,12 +322,19 @@ def _admit(payload, request, request_sha256):
         if type(chunks) is not list or len(chunks) != len(expected_chunks):
             _refuse("page witness omitted or added a chunk")
         for index, (chunk, content) in enumerate(zip(chunks, expected_chunks)):
-            _keys(chunk, {"chunk_index", "text_sha256", "vector_sha256", "bytes"}, "chunk witness")
+            _keys(chunk, {"chunk_index", "text_sha256", "vector_sha256", "bytes"}
+                  | ({"embedding_input_sha256", "embedding_input_bytes"} if v2 else set()), "chunk witness")
             if not _integer(chunk["chunk_index"], index, index) \
                     or not _integer(chunk["bytes"], len(content), len(content)) \
                     or not _digest(chunk["text_sha256"]) or chunk["text_sha256"] != _sha(content) \
                     or not _digest(chunk["vector_sha256"]):
                 _refuse("chunk witness does not preserve exact ordered input bytes or a vector digest")
+            if v2:
+                encoded_input = request["embedding_input_policy"]["document_prefix"].encode("utf-8") + content
+                if not _integer(chunk["embedding_input_bytes"], len(encoded_input), len(encoded_input)) \
+                        or not _digest(chunk["embedding_input_sha256"]) \
+                        or chunk["embedding_input_sha256"] != _sha(encoded_input):
+                    _refuse("chunk embedding input witness differs from original bytes and policy")
     _diagnostics(payload["setup_diagnostics"], request["embedding"]["dimensions"], success=True)
     if len(_canonical_bytes(payload)) > MAX_RECEIPT_BYTES:
         _refuse("receipt exceeds its byte ceiling")

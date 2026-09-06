@@ -39,6 +39,11 @@ NON_CLAIMS = [
     "Source origins are bound from selected pages, not inferred from raw scores or promoted by signed-row provenance.",
     "All retained capture, selection, build, preparer, model and adapter nonclaims remain controlling.",
 ]
+EMBEDDING_INPUT_NON_CLAIMS = [
+    "Embedding input prefixes affect only provider input; original query, page and chunk text identities are retained.",
+    "Embedding-input digests bind adapter-supplied UTF-8 text, not an independently observed HTTP body or proof of model computation.",
+]
+NON_CLAIMS_V2 = [*NON_CLAIMS, *EMBEDDING_INPUT_NON_CLAIMS]
 FREEZE_NON_CLAIMS = [
     "This externally pinned manifest declares calibration-only tuning; it does not independently prove historical tuning chronology.",
     "Frozen parameters and identities do not establish retrieval relevance, significance, or a cognitive win.",
@@ -279,11 +284,59 @@ def _runtime(value):
         _fail("runtime has no pinned Python executable")
 
 
+def _raw_version(kw):
+    # Only the explicit public v2 API or an admitted retained v2 contract sets
+    # this private dispatch marker. Presence of arbitrary caller fields is not
+    # a request to reinterpret a legacy baseline.
+    version = kw.get("_raw_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        _fail("raw baseline version is invalid")
+    return version
+
+
+def _input_policy_fields(kw):
+    if _raw_version(kw) == 1:
+        return {}
+    return {"embedding_input_policy": kw["embedding_input_policy"],
+            "embedding_input_policy_sha256": kw["expected_embedding_input_policy_sha256"]}
+
+
+def _baseline_nonclaims(kw):
+    return NON_CLAIMS if _raw_version(kw) == 1 else NON_CLAIMS_V2
+
+
+def _configuration_sha256(kw):
+    if _raw_version(kw) == 1:
+        return runner.configuration_sha256(kw["embedding"], kw["limit"])
+    return runner.configuration_sha256_v2(
+        kw["embedding"], kw["limit"], embedding_input_policy=kw["embedding_input_policy"],
+        expected_embedding_input_policy_sha256=kw["expected_embedding_input_policy_sha256"])
+
+
+def _admit_input_policy(kw):
+    if _raw_version(kw) == 2:
+        raw_admission.admit_embedding_input_policy(
+            kw["embedding_input_policy"], expected_sha256=kw["expected_embedding_input_policy_sha256"],
+            embedding=kw["embedding"])
+
+
+def _preparation_request(kw, selected):
+    return {"v": _raw_version(kw), "operation": "prepare_index", "source": "sia",
+            "dataset_sha256": selected["selection_sha256"], "pages_sha256": selected["pages_sha256"],
+            "embedding": kw["embedding"], "output": {"parent_fd": None}, "pages": selected["pages"],
+            **_input_policy_fields(kw)}
+
+
 def _preflight(kw):
     # Check bounded structure before any copy, hash, source open or output write.
     for key in ("capture", "selection_policy", "selection", "preparer", "adapter", "embedding",
                 "model_expectations", "shared_runtime", "code_expectations", "parameter_freeze"):
         _bounded(kw[key])
+    if _raw_version(kw) == 2:
+        _bounded(kw["embedding_input_policy"])
+        # All complete document bounds precede even the small detached policy
+        # admission, so a cyclic/excessive policy cannot hide behind selection.
+        _admit_input_policy(kw)
     for key in ("expected_capture_sha256", "expected_policy_sha256", "expected_selection_sha256"):
         if not _digest(kw[key]):
             _fail("external source pins are required")
@@ -335,12 +388,10 @@ def _preflight(kw):
     if embedding["model"] != "ollama:" + model["model_name"] \
             or embedding["endpoint"] != "http://127.0.0.1:11434/v1":
         _fail("embedding does not identify the owned private model")
-    request = preparation_admission.admit_request({
-        "v": 1, "operation": "prepare_index", "source": "sia",
-        "dataset_sha256": selected["selection_sha256"], "pages_sha256": selected["pages_sha256"],
-        "embedding": embedding, "output": {"parent_fd": None}, "pages": selected["pages"]})
+    request = preparation_admission.admit_request(_preparation_request(kw, selected))
     contract = {
-        "schema": "sia-cognitive-baseline-contract-v1", "capture_sha256": kw["expected_capture_sha256"],
+        "schema": "sia-cognitive-baseline-contract-v" + str(_raw_version(kw)),
+        "capture_sha256": kw["expected_capture_sha256"],
         "policy_sha256": kw["expected_policy_sha256"], "selection_sha256": kw["expected_selection_sha256"],
         "pages_sha256": selected["pages_sha256"],
         **{role: {"expected": kw[role]["expected"], "build_receipt_sha256": kw[role]["build_receipt_sha256"]}
@@ -349,6 +400,7 @@ def _preflight(kw):
         "runtime": sorted(({"destination": row["destination"], "sha256": row["sha256"]}
                            for row in kw["shared_runtime"]), key=lambda row: row["destination"]),
         "code_expectations": code, "limit": kw["limit"], "timeout": kw["timeout"],
+        **_input_policy_fields(kw),
     }
     contract_sha = _sha(_canonical(contract))
     freeze = kw["parameter_freeze"]
@@ -375,13 +427,14 @@ def _preflight(kw):
 
 
 def _query_request(kw, operation, queries, roots):
-    return {"v": 1, "lane": "raw_vector", "operation": operation,
+    return {"v": _raw_version(kw), "lane": "raw_vector", "operation": operation,
             "queries": queries if operation == "query" else [], "limit": kw["limit"],
             "snapshot": {"fd": None, **(roots if operation == "query" else {
                 "logical_sha256": None, "catalog_sha256": None})},
             "embedding": kw["embedding"], "binding": {
                 "executable_sha256": kw["adapter"]["expected"]["executable_sha256"],
-                "build_receipt_sha256": kw["adapter"]["build_receipt_sha256"]}}
+                "build_receipt_sha256": kw["adapter"]["build_receipt_sha256"]},
+            **_input_policy_fields(kw)}
 
 
 def _model_identity(identity, expected):
@@ -535,12 +588,15 @@ def _transport_observation(observation, request, build, model, kw):
 def _preparation(value, request, kw):
     _bounded(value)
     _keys(value, {"schema", "status", "dataset_sha256", "pages_sha256", "build_receipt_sha256", "expected",
-                  "model_identity", "preparation", "build_non_claims", "non_claims"}, "bound preparation")
-    if value["schema"] != "sia-raw-vector-bound-preparation-v1" or value["status"] != "observed" \
+                  "model_identity", "preparation", "build_non_claims", "non_claims",
+                  *_input_policy_fields(kw)}, "bound preparation")
+    if value["schema"] != "sia-raw-vector-bound-preparation-v" + str(_raw_version(kw)) \
+            or value["status"] != "observed" \
             or value["dataset_sha256"] != request["dataset_sha256"] \
             or value["pages_sha256"] != request["pages_sha256"] \
             or value["build_receipt_sha256"] != kw["preparer"]["build_receipt_sha256"] \
-            or not _same(value["expected"], kw["preparer"]["expected"]):
+            or not _same(value["expected"], kw["preparer"]["expected"]) \
+            or any(not _same(value[key], expected) for key, expected in _input_policy_fields(kw).items()):
         _fail("bound preparation identities disagree")
     _nonclaims(value["build_non_claims"])
     _nonclaims(value["non_claims"])
@@ -556,14 +612,16 @@ def _observation(value, archive, preparation, queries, selected, kw):
     _bounded(value)
     _keys(value, {"schema", "status", "lane", "build_receipt_sha256", "index_archive_sha256", "expected",
                   "embedding", "config_sha256", "capture", "query", "model_identity",
-                  "build_non_claims", "non_claims"}, "bound raw observation")
-    config_sha = runner.configuration_sha256(kw["embedding"], kw["limit"])
-    if value["schema"] != "sia-raw-vector-bound-observation-v1" or value["status"] != "observed" \
+                  "build_non_claims", "non_claims", *_input_policy_fields(kw)}, "bound raw observation")
+    config_sha = _configuration_sha256(kw)
+    if value["schema"] != "sia-raw-vector-bound-observation-v" + str(_raw_version(kw)) \
+            or value["status"] != "observed" \
             or value["lane"] != "raw_vector" or value["index_archive_sha256"] != archive["sha256"] \
             or value["build_receipt_sha256"] != kw["adapter"]["build_receipt_sha256"] \
             or not _same(value["expected"], kw["adapter"]["expected"]) \
             or not _same(value["embedding"], kw["embedding"]) or value["config_sha256"] != config_sha \
-            or not _same(value["model_identity"], preparation["model_identity"]):
+            or not _same(value["model_identity"], preparation["model_identity"]) \
+            or any(not _same(value[key], expected) for key, expected in _input_policy_fields(kw).items()):
         _fail("bound observation identities disagree with preparation and contract")
     _nonclaims(value["build_non_claims"])
     _nonclaims(value["non_claims"])
@@ -804,24 +862,33 @@ def _execute(kw):
                     receipt.assert_current()
 
             current()
-            preparation = _preparation(runner.prepare_bound(
+            if _raw_version(kw) == 1:
+                prepare_bound, observe_bound = runner.prepare_bound, runner.observe_bound
+                prepare_policy, observe_policy = {}, {}
+            else:
+                prepare_bound, observe_bound = runner.prepare_bound_v2, runner.observe_bound_v2
+                prepare_policy = {"expected_embedding_input_policy_sha256": kw["expected_embedding_input_policy_sha256"]}
+                observe_policy = {**prepare_policy, "embedding_input_policy": kw["embedding_input_policy"]}
+            preparation = _preparation(prepare_bound(
                 **kw["preparer"], request=request, output_directory=prepared.path,
                 timeout=kw["timeout"], scratch_parent=kw["scratch_parent"],
-                model_expectations=kw["model_expectations"], shared_runtime=kw["shared_runtime"]), request, kw)
+                model_expectations=kw["model_expectations"], shared_runtime=kw["shared_runtime"],
+                **prepare_policy), request, kw)
             current()
             archive = _archive(prepared, output)
             archive_pin = _FilePin(os.path.join(output.path, archive["path"]), archive["sha256"])
             stack.callback(archive_pin.close)
             pins.append(archive_pin)
-            observation, labels = _observation(runner.observe_bound(
+            observation, labels = _observation(observe_bound(
                 **kw["adapter"], index_archive=archive_pin.path, index_sha256=archive["sha256"],
                 embedding=kw["embedding"], queries=queries, limit=kw["limit"], timeout=kw["timeout"],
                 scratch_parent=kw["scratch_parent"], model_expectations=kw["model_expectations"],
-                shared_runtime=kw["shared_runtime"]), archive, preparation, queries, selected, kw)
+                shared_runtime=kw["shared_runtime"], **observe_policy), archive, preparation, queries, selected, kw)
             current()
             ids = {row["id"] for row in queries}
             body = {
-                "schema": "sia-cognitive-baseline-v1", "status": "observed", "lane": "raw_vector", "split": kw["split"],
+                "schema": "sia-cognitive-baseline-v" + str(_raw_version(kw)),
+                "status": "observed", "lane": "raw_vector", "split": kw["split"],
                 "capture_sha256": kw["expected_capture_sha256"], "policy_sha256": kw["expected_policy_sha256"],
                 "selection_sha256": kw["expected_selection_sha256"], "pages_sha256": selected["pages_sha256"],
                 "query_roster_sha256": _sha(_canonical(queries)), "baseline_contract_sha256": _sha(_canonical(contract)),
@@ -830,7 +897,7 @@ def _execute(kw):
                 "answer_key": [row for row in selected["answer_key"] if row["id"] in ids],
                 "preparation": preparation, "observation": observation, "retrieval_rows": labels, "archive": archive,
                 "source_non_claims": {"selection": selected["non_claims"], "history": selected["source_non_claims"]},
-                "non_claims": list(NON_CLAIMS),
+                "non_claims": list(_baseline_nonclaims(kw)), **_input_policy_fields(kw),
             }
             result = {**body, "artifact_sha256": _sha(_canonical(body))}
             published = _publish(output, result, current)
@@ -864,5 +931,30 @@ def run_baseline(*, capture, expected_capture_sha256, selection_policy, expected
             siavector.VectorRefusal, siavectormodel.ModelRefusal, tarfile.TarError) as exc:
         error = BaselineRefusal("cognitive baseline refused: " + str(exc))
         error.non_claims = list(NON_CLAIMS)
+        error.upstream_non_claims = copy.deepcopy(getattr(exc, "non_claims", []))
+        raise error from exc
+
+
+def run_baseline_v2(*, capture, expected_capture_sha256, selection_policy, expected_policy_sha256,
+                    selection, expected_selection_sha256, split, preparer, adapter, embedding,
+                    embedding_input_policy, expected_embedding_input_policy_sha256,
+                    model_expectations, shared_runtime, code_expectations, limit, timeout,
+                    scratch_parent, output_directory, parameter_freeze=None,
+                    expected_parameter_freeze_sha256=None):
+    """Run an explicitly pinned input policy without reinterpreting any v1 run.
+
+    Prefix bytes enter only the v2 preparation/query controllers. Original
+    selected source, query and target material remains unchanged throughout.
+    """
+    inputs = locals()
+    inputs["_raw_version"] = 2
+    try:
+        return _execute(inputs)
+    except BaselineRefusal:
+        raise
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, OverflowError,
+            siavector.VectorRefusal, siavectormodel.ModelRefusal, tarfile.TarError) as exc:
+        error = BaselineRefusal("cognitive baseline refused: " + str(exc))
+        error.non_claims = list(NON_CLAIMS_V2)
         error.upstream_non_claims = copy.deepcopy(getattr(exc, "non_claims", []))
         raise error from exc
