@@ -234,11 +234,13 @@ def _policy(policy):
             ("schema", "sia-live-loop-policy-v1"), ("scope", SCOPE),
             ("time_unit", "unix-seconds-integer"),
             ("workspace_release", "expiry-only-v1"),
-            ("recall_order", "activation-desc-stable-input-v1"),
             ("delivery_body", BODY_SCOPE),
             ("idle", "supported-capture-replay-gist-fresh-derived-only-v1")):
         if type(policy[key]) is not str or policy[key] != literal:
             _fail("policy-contract")
+    if type(policy["recall_order"]) is not str or policy["recall_order"] not in {
+            "activation-desc-stable-input-v1", "origin-slot-preserving-activation-v1"}:
+        _fail("policy-contract")
     if policy["activation_events"] != ["encoding-admitted", "service-output-completed"]:
         _fail("activation-event-roster")
     gate = policy["novelty_admission"]
@@ -697,7 +699,26 @@ def rank_recall(*, rows, expected_rows_sha256, state, expected_state_sha256,
         lookup = {trace["subject"]: trace for trace in state["traces"]}
         traces = [lookup[versions[version]["subject"]] for version in unique]
         ranked = activation.rank_traces(traces, observed_at=observed_at, policy=policy["activation"])
-        order = [row["row_ref"] for subject in ranked["order"] for row in rows if row["row"]["slug"] == subject]
+        if policy["recall_order"] == "origin-slot-preserving-activation-v1":
+            # The supplied base order is the caller's admitted hybrid/PPR
+            # order, not independently recomputed origin weighting here.
+            # Preserve every origin slot, including display-prefix slots.
+            # Sort rows, not grouped versions: equal/unavailable scores must
+            # preserve separated references to the same immutable version.
+            scores = {item["subject"]: item["score"] for item in ranked["activations"]}
+
+            def origin(row):
+                return versions[row["version_sha256"]]["origin"]
+
+            def key(row):
+                score = scores[versions[row["version_sha256"]]["subject"]]
+                return score is None, -score if score is not None else 0
+
+            slots = {label: iter(sorted((row for row in rows if origin(row) == label), key=key))
+                     for label in _ORIGINS}
+            order = [next(slots[origin(row)])["row_ref"] for row in rows]
+        else:
+            order = [row["row_ref"] for subject in ranked["order"] for row in rows if row["row"]["slug"] == subject]
         result = {"schema": "sia-live-recall-plan-v1", "status": "computed-unverified",
                   "epoch_id": state["epoch_id"], "observed_at": observed_at,
                   "state_sha256": expected_state_sha256, "policy": policy, "policy_sha256": expected_policy_sha256,
