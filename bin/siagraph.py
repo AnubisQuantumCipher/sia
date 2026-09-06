@@ -436,6 +436,32 @@ def _recoverable_graph_snapshot(graph):
         "v", "ts", "publication_id", "nodes", "edges", "pages_total",
         "pages_total_complete", "snapshot",
     }
+    if not isinstance(graph, dict) or set(graph) != graph_keys \
+            or not _status_publication_id(graph.get("publication_id")):
+        return None
+    counts = _graph_snapshot_body_counts(graph)
+    return None if counts is None else {
+        "publication_id": graph["publication_id"], **counts}
+
+
+def _legacy_graph_snapshot_body_valid(graph):
+    """Classify old complete output shape, never grant graph read authority.
+
+    The installed legacy producer omitted publication_id.  Absence is the
+    only permitted schema difference; no historical identity is synthesized.
+    This Boolean is usable only by the explicit regeneration transaction.
+    """
+    graph_keys = {
+        "v", "ts", "nodes", "edges", "pages_total",
+        "pages_total_complete", "snapshot",
+    }
+    return isinstance(graph, dict) and set(graph) == graph_keys \
+        and _graph_snapshot_body_counts(graph) is not None \
+        and graph["snapshot"]["complete"] is True
+
+
+def _graph_snapshot_body_counts(graph):
+    """Shared pure body validation; callers separately validate identity shape."""
     snapshot_keys = {
         "complete", "truncated", "omitted_nodes", "omitted_edges",
         "omissions_imply_absence", "aged_out", "counts_by_kind",
@@ -458,9 +484,8 @@ def _recoverable_graph_snapshot(graph):
         except (TypeError, ValueError):
             return False
 
-    if not isinstance(graph, dict) or set(graph) != graph_keys \
+    if not isinstance(graph, dict) \
             or type(graph.get("v")) is not int or graph.get("v") != 2 \
-            or not _status_publication_id(graph.get("publication_id")) \
             or not isinstance(graph.get("nodes"), list) \
             or len(graph["nodes"]) > MAX_GRAPH_NODES \
             or not isinstance(graph.get("edges"), list) \
@@ -573,7 +598,6 @@ def _recoverable_graph_snapshot(graph):
             or len(graph["nodes"]) != pages_total - aged_out - truncated:
         return None
     return {
-        "publication_id": graph["publication_id"],
         "nodes": len(graph["nodes"]),
         "edges": len(graph["edges"]),
         "pages": pages_total,

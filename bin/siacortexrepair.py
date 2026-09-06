@@ -17,6 +17,10 @@ import uuid
 
 
 PUBLICATION_SCHEMA = "sia-cortex-boundary-publication-v1"
+LEGACY_PUBLICATION_SCHEMA = "sia-cortex-boundary-publication-v2"
+LEGACY_GRAPH_SCHEMA = "sia-cortex-boundary-legacy-graph-v1"
+LEGACY_GRAPH_LEAF = "cortex-boundary-legacy-graph.json"
+LEGACY_GRAPH_AUTHORITY = "legacy-shape-only-not-ranking"
 COMMAND_SCHEMA = "sia-cortex-boundary-command-v1"
 TARGET_PATH = "sia/cortex.md"
 NON_CLAIMS = (
@@ -25,6 +29,7 @@ NON_CLAIMS = (
     "Publication does not establish cognitive improvement or replace the ordinary memory-readiness gate.",
     "Owner leases serialize cooperating SIA writers; the operating system, Git, and keeper remain trusted runtime dependencies.",
     "Generation witnesses are not authentication against a hostile same-user process able to rewrite both the journal and its inputs.",
+    "Explicit legacy graph regeneration preserves old output as shape-only provenance; it neither invents historical publication identity nor admits that output to ranking.",
 )
 _HASH = re.compile(r"[0-9a-f]{64}")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
@@ -41,6 +46,10 @@ _REFUSAL_PHASES = {
     "memo-generation-changed": "preflight", "graph-generation-not-authorized": "preflight",
     "unsafe-debt-directory": "preflight", "invalid-graph-snapshot": "preflight",
     "index-sync-failed": "publication", "graph-publication-failed": "publication",
+    "legacy-graph-flag-required": "preflight", "legacy-graph-mode-mismatch": "preflight",
+    "legacy-graph-only-not-authorized": "preflight", "legacy-graph-generation-changed": "preflight",
+    "legacy-graph-preservation-conflict": "preflight", "legacy-graph-not-regenerated": "publication",
+    "regenerated-graph-generation-changed": "publication",
 }
 
 
@@ -73,7 +82,7 @@ def _path(core):
     return os.path.join(core.STATE, "cortex-boundary-publication.json")
 
 
-def _read(core, path, limit, label, *, missing=False):
+def _read(core, path, limit, label, *, missing=False, mode=None):
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
         fd = core._open_source_nofollow(path, flags)
@@ -86,7 +95,8 @@ def _read(core, path, limit, label, *, missing=False):
     try:
         before = os.fstat(fd)
         if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() \
-                or before.st_nlink != 1 or before.st_size > limit:
+                or before.st_nlink != 1 or before.st_size > limit \
+                or mode is not None and stat.S_IMODE(before.st_mode) != mode:
             raise RuntimeError(label + " is not a bounded owned single-link file")
         with os.fdopen(fd, "rb") as stream:
             fd = -1
@@ -96,7 +106,8 @@ def _read(core, path, limit, label, *, missing=False):
         if len(raw) > limit or core._file_generation(before) != core._file_generation(after) \
                 or core._file_generation(after) != core._file_generation(current) \
                 or not stat.S_ISREG(current.st_mode) or current.st_nlink != 1 \
-                or current.st_uid != os.geteuid():
+                or current.st_uid != os.geteuid() \
+                or mode is not None and stat.S_IMODE(current.st_mode) != mode:
             raise RuntimeError(label + " changed during admission")
         return raw
     finally:
@@ -115,6 +126,119 @@ def _read_json(core, path, limit, label, *, missing=False):
     if not isinstance(value, dict):
         raise RuntimeError(label + " must be an object")
     return value
+
+
+def _legacy_path(core):
+    return os.path.join(core.STATE, LEGACY_GRAPH_LEAF)
+
+
+def _read_graph(core):
+    # The byte ceiling and complete no-follow walk precede decoding, JSON
+    # materialization, and any preservation copy.
+    raw = _read(core, core.GRAPH_PATH, core.MAX_STATE_JSON_BYTES, "graph snapshot")
+    try:
+        value = core._strict_json_loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        raise RepairRefusal("invalid-graph-snapshot") from exc
+    if not isinstance(value, dict):
+        raise RepairRefusal("invalid-graph-snapshot")
+    return raw, value
+
+
+def _legacy_descriptor(raw):
+    return {"schema": LEGACY_GRAPH_SCHEMA, "path": LEGACY_GRAPH_LEAF,
+            "sha256": _digest(raw), "bytes": len(raw),
+            "authority": LEGACY_GRAPH_AUTHORITY}
+
+
+def _matches_legacy(raw, publication):
+    descriptor = publication["legacy_graph"]
+    return len(raw) == descriptor["bytes"] and _digest(raw) == descriptor["sha256"]
+
+
+def _preserved_legacy(core, publication, *, missing=False):
+    raw = _read(core, _legacy_path(core), core.MAX_STATE_JSON_BYTES,
+                "preserved legacy graph", missing=missing, mode=0o600)
+    if raw is not None and not _matches_legacy(raw, publication):
+        raise RepairRefusal("legacy-graph-generation-changed")
+    return raw
+
+
+def _regenerated_graph(core, publication, projection):
+    raw, value = _read_graph(core)
+    counts = core._recoverable_graph_snapshot(value)
+    if counts is None or value["snapshot"]["complete"] is not True \
+            or projection["phase"] != "ready" \
+            or projection["generation"] != publication["graph_dirty"]["generation"]:
+        raise RepairRefusal("legacy-graph-not-regenerated")
+    return {"publication_id": counts["publication_id"], "sha256": _digest(raw),
+            "bytes": len(raw), "generation": projection["generation"]}
+
+
+def _admit_legacy_publication_graph(core, memo, publication, projection):
+    raw, value = _read_graph(core)
+    preserved = _preserved_legacy(core, publication, missing=True)
+    original = _matches_legacy(raw, publication)
+    if preserved is None:
+        # A write-ahead witness may outlive an interruption before preservation.
+        # It cannot excuse a missing copy after any publication mutation.
+        if publication["phase"] != "pending" or not original \
+                or _digest(_json(memo)) != publication["memo_original_sha256"] \
+                or _digest(_json(projection)) != publication["graph_original_sha256"]:
+            raise RepairRefusal("legacy-graph-generation-changed")
+    if publication["phase"] in {"ready", "complete"}:
+        if _regenerated_graph(core, publication, projection) != publication["graph_regeneration"]:
+            raise RepairRefusal("regenerated-graph-generation-changed")
+        return
+    if original:
+        if not core._legacy_graph_snapshot_body_valid(value):
+            raise RepairRefusal("invalid-graph-snapshot")
+        original_projection = _digest(_json(projection)) == publication["graph_original_sha256"]
+        if not original_projection and projection["phase"] != "scan":
+            raise RepairRefusal("legacy-graph-not-regenerated")
+        return
+    # A bounded owned export can leave a canonical partial output.  It is never
+    # returned as read authority: the pending transaction resets its recorded
+    # empty projection and builds anew from the corpus on retry.
+    if preserved is None or not memo.get("sync_needed", False) \
+            or projection["generation"] != publication["graph_dirty"]["generation"] \
+            or core._recoverable_graph_snapshot(value) is None:
+        raise RepairRefusal("legacy-graph-generation-changed")
+
+
+def _preserve_legacy_graph(core, publication):
+    if _preserved_legacy(core, publication, missing=True) is not None:
+        return
+    raw, value = _read_graph(core)
+    if not _matches_legacy(raw, publication) \
+            or not core._legacy_graph_snapshot_body_valid(value):
+        raise RepairRefusal("legacy-graph-generation-changed")
+    parent = core._open_source_nofollow(core.STATE, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        before = os.fstat(parent)
+        if before.st_uid != os.geteuid() or before.st_mode & 0o022:
+            raise RuntimeError("legacy graph preservation parent is not owner-controlled")
+        # Exclusive fixed-leaf creation never overwrites an unknown file.
+        # A killed partial write is retained and refused, not silently deleted.
+        descriptor = os.open(LEGACY_GRAPH_LEAF,
+                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             0o600, dir_fd=parent)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(parent)
+        current = core._source_path_identity(core.STATE, os.O_RDONLY | os.O_DIRECTORY)
+        if (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino) \
+                or current.st_uid != os.geteuid() or current.st_mode & 0o022:
+            raise RuntimeError("legacy graph preservation parent generation changed")
+    finally:
+        os.close(parent)
+    if _preserved_legacy(core, publication) != raw:
+        raise RepairRefusal("legacy-graph-generation-changed")
+    source, _value = _read_graph(core)
+    if source != raw:
+        raise RepairRefusal("legacy-graph-generation-changed")
 
 
 def _scan(core, directory, *, allowed=None, reason_code="unrelated-recovery-entry"):
@@ -163,7 +287,7 @@ def _memo_base(memo):
     return {key: value for key, value in memo.items() if key not in {"ready", "sync_needed"}}
 
 
-def _readonly_debt(core, memo, publication):
+def _readonly_debt(core, memo, publication, *, regenerate_legacy_graph=False):
     if core.load_memo() != memo:
         raise RepairRefusal("memo-generation-changed")
     if os.environ.get("SIA_RESTORE_FULL_SYNC") == "1":
@@ -253,6 +377,20 @@ def _readonly_debt(core, memo, publication):
         allowed = _occurrence(core, publication["repair"])
     _scan(core, core._ledger_pending_dir(), allowed=allowed,
           reason_code="unrelated-ledger-pending-entry")
+    if publication is not None and publication["schema"] == LEGACY_PUBLICATION_SCHEMA:
+        if not regenerate_legacy_graph:
+            raise RepairRefusal("legacy-graph-flag-required")
+        _admit_legacy_publication_graph(core, memo, publication, graph)
+        return graph, _digest(raw_mind)
+    if regenerate_legacy_graph:
+        if publication is not None:
+            raise RepairRefusal("legacy-graph-mode-mismatch")
+        _raw, graph_snapshot = _read_graph(core)
+        if not core._legacy_graph_snapshot_body_valid(graph_snapshot):
+            raise RepairRefusal("invalid-graph-snapshot")
+        if os.path.lexists(_legacy_path(core)):
+            raise RepairRefusal("legacy-graph-preservation-conflict")
+        return graph, _digest(raw_mind)
     graph_snapshot = core.read_state_json(core.GRAPH_PATH, {}, "graph snapshot")
     try:
         core._require_recoverable_graph_snapshot(graph_snapshot)
@@ -353,8 +491,12 @@ def _validate_publication(core, value):
             "memo_original_sha256", "memo_base_sha256", "original_ready",
             "graph_original_sha256", "graph_dirty", "mind_sha256",
             "commit_head", "ready_receipt"}
+    legacy = isinstance(value, dict) and value.get("schema") == LEGACY_PUBLICATION_SCHEMA
+    if legacy:
+        keys |= {"legacy_graph", "graph_regeneration"}
     if not isinstance(value, dict) or set(value) != keys \
-            or value.get("schema") != PUBLICATION_SCHEMA or value.get("path") != TARGET_PATH \
+            or value.get("schema") not in {PUBLICATION_SCHEMA, LEGACY_PUBLICATION_SCHEMA} \
+            or value.get("path") != TARGET_PATH \
             or not isinstance(value.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", value["id"]) is None \
             or value.get("phase") not in {"pending", "ready", "complete"}:
@@ -372,6 +514,31 @@ def _validate_publication(core, value):
             or graph["pages_seen"] or graph["eligible_seen"] \
             or graph["queue"] != [{"relative": "", "levels": core.MAX_GRAPH_TREE_LEVELS, "page": {}}]:
         raise RuntimeError("cortex publication write-ahead graph is not fresh")
+    if legacy:
+        descriptor = value["legacy_graph"]
+        if not isinstance(descriptor, dict) \
+                or set(descriptor) != {"schema", "path", "sha256", "bytes", "authority"} \
+                or descriptor.get("schema") != LEGACY_GRAPH_SCHEMA \
+                or descriptor.get("path") != LEGACY_GRAPH_LEAF \
+                or descriptor.get("authority") != LEGACY_GRAPH_AUTHORITY \
+                or not isinstance(descriptor.get("sha256"), str) \
+                or _HASH.fullmatch(descriptor["sha256"]) is None \
+                or type(descriptor.get("bytes")) is not int \
+                or not 0 < descriptor["bytes"] <= core.MAX_STATE_JSON_BYTES:
+            raise RuntimeError("legacy graph preservation witness is invalid")
+        regenerated = value["graph_regeneration"]
+        if value["phase"] == "pending":
+            if regenerated is not None:
+                raise RuntimeError("pending legacy graph has a premature output receipt")
+        elif not isinstance(regenerated, dict) \
+                or set(regenerated) != {"publication_id", "sha256", "bytes", "generation"} \
+                or not core._status_publication_id(regenerated.get("publication_id")) \
+                or not isinstance(regenerated.get("sha256"), str) \
+                or _HASH.fullmatch(regenerated["sha256"]) is None \
+                or type(regenerated.get("bytes")) is not int \
+                or not 0 < regenerated["bytes"] <= core.MAX_STATE_JSON_BYTES \
+                or regenerated.get("generation") != graph["generation"]:
+            raise RuntimeError("regenerated graph publication witness is invalid")
     if value["phase"] == "pending":
         if value["ready_receipt"] is not None:
             raise RuntimeError("pending cortex publication has a premature ready receipt")
@@ -480,18 +647,27 @@ def _result(status, receipt=None):
             "repair": receipt, "non_claims": list(NON_CLAIMS)}
 
 
-def repair_cortex_boundary(core):
+def repair_cortex_boundary(core, *, regenerate_legacy_graph=False):
     """Publish exactly one historical cortex suffix, or refuse without repair.
 
     The public CLI already holds its lifecycle reader.  These leases never
     stop/restart a service; an active resident owner causes a normal refusal.
     """
+    if type(regenerate_legacy_graph) is not bool:
+        raise ValueError("legacy graph regeneration option must be Boolean")
     with core.brainstem_owner(), core.corpus_owner():
         if core._CORPUS_MUTATION_BARRIER.get() is not None:
             raise RuntimeError("cortex repair cannot inherit another publication callback")
         publication = _load_publication(core)
+        if publication is not None:
+            legacy = publication["schema"] == LEGACY_PUBLICATION_SCHEMA
+            if legacy and not regenerate_legacy_graph:
+                raise RepairRefusal("legacy-graph-flag-required")
+            if regenerate_legacy_graph and not legacy:
+                raise RepairRefusal("legacy-graph-mode-mismatch")
         memo = core.load_memo()
-        graph, mind_sha256 = _readonly_debt(core, memo, publication)
+        graph, mind_sha256 = _readonly_debt(
+            core, memo, publication, regenerate_legacy_graph=regenerate_legacy_graph)
         view = _git_view(core)
         current = core._read_cortex_root_bytes()
         core._validate_cortex_root(current)
@@ -500,6 +676,8 @@ def repair_cortex_boundary(core):
                 raise RuntimeError("unwitnessed dirty cortex cannot start repair")
             ready, _reason = core._cortex_boundary_status()
             if ready:
+                if regenerate_legacy_graph:
+                    raise RepairRefusal("legacy-graph-only-not-authorized")
                 return _result("already-ready", core._load_cortex_repair_receipt())
             if core._load_cortex_repair_journal() is not None \
                     or core._load_cortex_repair_receipt() is not None:
@@ -525,6 +703,12 @@ def repair_cortex_boundary(core):
                 "graph_original_sha256": _digest(_json(graph)),
                 "graph_dirty": core._fresh_graph_projection_state(), "mind_sha256": mind_sha256,
                 "commit_head": None, "ready_receipt": None}
+            if regenerate_legacy_graph:
+                raw, legacy_graph = _read_graph(core)
+                if not core._legacy_graph_snapshot_body_valid(legacy_graph):
+                    raise RepairRefusal("invalid-graph-snapshot")
+                publication.update(schema=LEGACY_PUBLICATION_SCHEMA,
+                                   legacy_graph=_legacy_descriptor(raw), graph_regeneration=None)
             _save_publication(core, None, publication)
         else:
             _root_generation(core, publication, view, current)
@@ -534,10 +718,17 @@ def repair_cortex_boundary(core):
                         or memo["ready"] != publication["ready_receipt"]:
                     raise RuntimeError("completed cortex publication changed: " + reason)
                 return _result("already-ready", _receipt(core, publication["repair"]))
+            if regenerate_legacy_graph and publication["phase"] == "ready":
+                # A fresh output receipt is already durable. Recheck its exact
+                # bytes and finish that generation; do not re-export beneath it.
+                _finish_publication(core, memo, publication)
+                return _result("repaired", _receipt(core, publication["repair"]))
 
         # Repeat every read-only admission before the first corpus/ledger effect.
-        _readonly_debt(core, memo, publication)
+        _readonly_debt(core, memo, publication, regenerate_legacy_graph=regenerate_legacy_graph)
         _root_generation(core, publication, _git_view(core), core._read_cortex_root_bytes())
+        if regenerate_legacy_graph:
+            _preserve_legacy_graph(core, publication)
         _publication_barrier(core, memo, publication)
         if core._load_cortex_repair_journal() is None:
             ready, _reason = core._cortex_boundary_status()
@@ -562,20 +753,32 @@ def repair_cortex_boundary(core):
             raise RepairRefusal("graph-publication-failed") from exc
         # Recheck exact live/committed bytes and unrelated state before issuing
         # the compatible ready receipt. No mind loader or generic recovery runs.
-        graph, _mind = _readonly_debt(core, memo, publication)
+        graph, _mind = _readonly_debt(
+            core, memo, publication, regenerate_legacy_graph=regenerate_legacy_graph)
         _root_generation(core, publication, _git_view(core), core._read_cortex_root_bytes())
         if graph["generation"] != publication["graph_dirty"]["generation"] or graph["phase"] != "ready":
             raise RuntimeError("cortex graph publication did not complete its bound generation")
         if publication["ready_receipt"] is None:
             ready_memo = core._with_ready_receipt(memo, "recovery", publication["id"])
             updated = dict(publication, phase="ready", ready_receipt=ready_memo["ready"])
+            if regenerate_legacy_graph:
+                updated["graph_regeneration"] = _regenerated_graph(core, publication, graph)
             _save_publication(core, publication, updated)
             publication = updated
-        updated_memo = dict(memo, ready=copy.deepcopy(publication["ready_receipt"]))
-        updated_memo.pop("sync_needed", None)
-        core._write_memo(updated_memo)
-        if core.load_memo() != updated_memo:
-            raise RuntimeError("cortex publication readiness receipt did not persist")
-        completed = dict(publication, phase="complete")
-        _save_publication(core, publication, completed)
+        _finish_publication(core, memo, publication)
         return _result("repaired", _receipt(core, publication["repair"]))
+
+
+def _finish_publication(core, memo, publication):
+    if publication["schema"] == LEGACY_PUBLICATION_SCHEMA:
+        # This check occurs after the ready witness persisted, not merely
+        # before it. A substituted output must not receive memo readiness.
+        _readonly_debt(core, memo, publication, regenerate_legacy_graph=True)
+        _root_generation(core, publication, _git_view(core), core._read_cortex_root_bytes())
+    updated_memo = dict(memo, ready=copy.deepcopy(publication["ready_receipt"]))
+    updated_memo.pop("sync_needed", None)
+    core._write_memo(updated_memo)
+    if core.load_memo() != updated_memo:
+        raise RuntimeError("cortex publication readiness receipt did not persist")
+    completed = dict(publication, phase="complete")
+    _save_publication(core, publication, completed)

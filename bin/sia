@@ -19,7 +19,7 @@ biological brain and does not establish cognition or neuroscience.
   sia graph             graph statistics
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
-  sia repair-cortex-boundary [--json]
+  sia repair-cortex-boundary [--regenerate-legacy-graph] [--json]
                         publish only the witnessed additive cortex prose repair
   sia dream             run the weekly-compaction cycle now (daemon must be off)
   sia verify            re-verify every signed evidence chain with attest
@@ -1091,12 +1091,14 @@ def cmd_pulse():
 
 
 def cmd_repair_cortex_boundary(args):
-    if args not in ([], ["--json"]):
-        print("usage: sia repair-cortex-boundary [--json]")
+    if len(args) != len(set(args)) or any(
+            item not in {"--json", "--regenerate-legacy-graph"} for item in args):
+        print("usage: sia repair-cortex-boundary [--regenerate-legacy-graph] [--json]")
         return 2
     import siacortexrepair
     try:
-        result = siacortexrepair.repair_cortex_boundary(sialib)
+        result = siacortexrepair.repair_cortex_boundary(
+            sialib, regenerate_legacy_graph="--regenerate-legacy-graph" in args)
     except sialib.OwnerBusy:
         result = siacortexrepair.refusal_result(
             siacortexrepair.RepairRefusal("runtime-owned"))
@@ -1109,7 +1111,7 @@ def cmd_repair_cortex_boundary(args):
     if len(encoded.encode("utf-8")) > sialib.MAX_CONFIG_BYTES:
         print("Cortex repair refused: result-output-bound")
         return 1
-    if args == ["--json"]:
+    if "--json" in args:
         print(encoded)
     else:
         print("Cortex boundary: " + result["status"] + ".")
