@@ -3198,6 +3198,194 @@ def corpus_origin(slug, ptype=""):
         return "legacy-unlabeled"
 
 
+# These shared validators belong to the core, not the pinned child façade.
+# The graph child receives them through its existing parent namespace bind.
+def _legacy_graph_snapshot_body_valid(graph):
+    """Classify old complete output shape, never grant graph read authority.
+
+    The installed legacy producer omitted publication_id and only collapsed
+    whitespace and clipped edge explanations, without making markup inert.
+    Those bounded explanations remain opaque preservation bytes. Every other
+    body invariant stays current; no historical identity is synthesized.
+    This Boolean is usable only by the explicit regeneration transaction,
+    which must export a new strictly inert graph before issuing readiness.
+    """
+    graph_keys = {
+        "v", "ts", "nodes", "edges", "pages_total",
+        "pages_total_complete", "snapshot",
+    }
+    return isinstance(graph, dict) and set(graph) == graph_keys \
+        and _graph_snapshot_body_counts(graph, legacy_explanations=True) is not None \
+        and graph["snapshot"]["complete"] is True
+
+
+def _graph_snapshot_body_counts(graph, *, legacy_explanations=False):
+    """Pure body validation; only the legacy classifier permits old why bytes.
+
+    This helper never grants read authority. The normal snapshot wrapper
+    always uses the strict default and independently requires publication ID.
+    """
+    snapshot_keys = {
+        "complete", "truncated", "omitted_nodes", "omitted_edges",
+        "omissions_imply_absence", "aged_out", "counts_by_kind",
+        "failed_ops", "window_days",
+    }
+    node_keys = {"id", "t", "title", "ts", "origin",
+                 "deg", "din", "dout"}
+    edge_keys = {"s", "d", "t", "why"}
+    observed_by = iso()
+
+    def inert_text(value, limit, *, nonempty=False):
+        return _strict_config_string(
+            value, nonempty=nonempty, limit=limit) \
+            and inert_summary(value) == value
+
+    def explanation(value):
+        if not legacy_explanations:
+            return inert_text(value, 90)
+        if not _strict_config_string(value, limit=90) \
+                or strip_controls(value) != value:
+            return False
+        normalized = re.sub(r"\s+", " ", value).strip()
+        # The old producer stripped before its character slice. A clipped
+        # string may therefore end in one normalized space at that ceiling;
+        # shorter trailing whitespace is not a recognized producer shape.
+        return normalized == value or (
+            len(value) == 90 and value.endswith(" ")
+            and normalized == value[:-1])
+
+    def observed_timestamp(value):
+        try:
+            return _canonical_utc_timestamp(value) == value \
+                and value <= observed_by
+        except (TypeError, ValueError):
+            return False
+
+    if not isinstance(graph, dict) \
+            or type(graph.get("v")) is not int or graph.get("v") != 2 \
+            or not isinstance(graph.get("nodes"), list) \
+            or len(graph["nodes"]) > MAX_GRAPH_NODES \
+            or not isinstance(graph.get("edges"), list) \
+            or len(graph["edges"]) > MAX_GRAPH_EDGES \
+            or not _nonnegative_status_integer(graph.get("pages_total")) \
+            or not isinstance(graph.get("pages_total_complete"), bool):
+        return None
+    if not observed_timestamp(graph.get("ts")):
+        return None
+    snapshot = graph.get("snapshot")
+    if not isinstance(snapshot, dict) or set(snapshot) != snapshot_keys \
+            or not isinstance(snapshot.get("complete"), bool) \
+            or any(not _nonnegative_status_integer(snapshot.get(key))
+                   for key in ("truncated", "omitted_nodes",
+                               "omitted_edges", "aged_out")) \
+            or not isinstance(snapshot.get("omissions_imply_absence"), bool) \
+            or type(snapshot.get("window_days")) is not int \
+            or snapshot.get("window_days") != 14 \
+            or not isinstance(snapshot.get("counts_by_kind"), dict) \
+            or len(snapshot["counts_by_kind"]) > MAX_GRAPH_NODES \
+            or not isinstance(snapshot.get("failed_ops"), list) \
+            or len(snapshot["failed_ops"]) > MAX_GRAPH_SCAN_ENTRIES:
+        return None
+    if snapshot["complete"] != (not snapshot["failed_ops"]) \
+            or snapshot["complete"] and not graph["pages_total_complete"] \
+            or snapshot["omissions_imply_absence"] \
+            or snapshot["omitted_nodes"] != snapshot["truncated"] \
+            or (snapshot["omitted_edges"] != 0
+                and len(graph["edges"]) != MAX_GRAPH_EDGES):
+        return None
+    failures = set()
+    for failure in snapshot["failed_ops"]:
+        if not inert_text(
+                failure, MAX_CONFIG_TEXT_CHARS, nonempty=True) \
+                or failure in failures:
+            return None
+        failures.add(failure)
+
+    nodes = {}
+    observed_counts = {}
+    expected_in = {}
+    expected_out = {}
+    for node in graph["nodes"]:
+        if not isinstance(node, dict) or set(node) != node_keys \
+                or not _strict_config_string(
+                    node.get("t"), nonempty=True,
+                    limit=MAX_SOURCE_NAME_CHARS) \
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]*", node["t"]) is None \
+                or not inert_text(
+                    node.get("title"), MAX_SOURCE_NAME_CHARS,
+                    nonempty=True) \
+                or not observed_timestamp(node.get("ts")) \
+                or node.get("origin") not in _STATUS_THOUGHT_ORIGINS \
+                or any(not _nonnegative_status_integer(node.get(key))
+                       for key in ("deg", "din", "dout")):
+            return None
+        try:
+            if _canonical_corpus_slug(node["id"]) != node["id"]:
+                return None
+        except (KeyError, TypeError, ValueError):
+            return None
+        if node["id"] in nodes:
+            return None
+        nodes[node["id"]] = node
+        expected_in[node["id"]] = 0
+        expected_out[node["id"]] = 0
+        observed_counts[node["t"]] = observed_counts.get(node["t"], 0) + 1
+
+    seen_edges = set()
+    for edge in graph["edges"]:
+        if not isinstance(edge, dict) or set(edge) != edge_keys \
+                or not isinstance(edge.get("s"), str) \
+                or not isinstance(edge.get("d"), str) \
+                or edge.get("s") not in nodes or edge.get("d") not in nodes \
+                or not inert_text(
+                    edge.get("t"), MAX_SOURCE_NAME_CHARS, nonempty=True) \
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9._-]*", edge["t"]) is None \
+                or not explanation(edge.get("why")):
+            return None
+        identity = (edge["s"], edge["d"], edge["t"])
+        if identity in seen_edges:
+            return None
+        seen_edges.add(identity)
+        expected_out[edge["s"]] += 1
+        expected_in[edge["d"]] += 1
+    for identity, node in nodes.items():
+        if node["din"] != expected_in[identity] \
+                or node["dout"] != expected_out[identity] \
+                or node["deg"] != (
+                    expected_in[identity] + expected_out[identity]):
+            return None
+
+    counts = snapshot["counts_by_kind"]
+    if set(counts) != set(observed_counts):
+        return None
+    for kind, count in counts.items():
+        if not _strict_config_string(
+                kind, nonempty=True, limit=MAX_SOURCE_NAME_CHARS) \
+                or re.fullmatch(r"[a-z0-9][a-z0-9._-]*", kind) is None \
+                or not _nonnegative_status_integer(count) \
+                or count != observed_counts[kind]:
+            return None
+    pages_total = graph["pages_total"]
+    aged_out = snapshot["aged_out"]
+    truncated = snapshot["truncated"]
+    if aged_out > pages_total \
+            or truncated > pages_total - aged_out \
+            or len(graph["nodes"]) != pages_total - aged_out - truncated:
+        return None
+    return {
+        "nodes": len(graph["nodes"]),
+        "edges": len(graph["edges"]),
+        "pages": pages_total,
+    }
+
+
+def _capture_corpus_page_version(slug):
+    """Capture exact page bytes and origin, not event-source authentication."""
+    return _read_graph_corpus_page(slug, capture_version=True)
+
+
 UNVERIFIED_JACKAL_RECALL_NOTICE = (
     "[unverified JACKAL ledger/file-presence observation suppressed; "
     "artifact presence is recall, not mathematical evidence]")

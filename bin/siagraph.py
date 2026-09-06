@@ -212,10 +212,85 @@ def _mark_graph_projection_dirty():
     _save_graph_projection_state(_fresh_graph_projection_state())
 
 
-def _read_graph_corpus_page(slug):
-    """Read and parse one bounded corpus page with a full no-follow walk."""
+def _read_graph_corpus_page(slug, *, capture_version=False):
+    """Project one retained page, or capture its complete immutable bytes.
+
+    The optional version projection shares the exact same byte admission and
+    origin parser. It neither reconstructs frontmatter nor authenticates the
+    event sources named by a page. The legacy graph tuple stays unchanged.
+    """
+    if type(capture_version) is not bool:
+        raise ValueError("corpus version capture mode must be boolean")
     slug = _canonical_corpus_slug(slug)
     path = corpus_path(slug)
+
+    def project(raw, before):
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeError as exc:
+            raise RuntimeError(f"graph source is not valid UTF-8: {slug}") \
+                from exc
+        match = FM_RE.match(text)
+        frontmatter = match.group(1) if match else ""
+        body = text[match.end():] if match else text
+
+        type_values = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
+        if not type_values:
+            page_type = "note"
+        elif len(type_values) != 1:
+            raise RuntimeError(f"graph source type is ambiguous: {slug}")
+        else:
+            try:
+                page_type = _yaml_scalar(type_values[0])
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"graph source type is invalid: {slug}") \
+                    from exc
+        if len(page_type) > MAX_SOURCE_NAME_CHARS or re.fullmatch(
+                r"[a-z0-9][a-z0-9._-]*", page_type) is None:
+            raise RuntimeError(f"graph source type is invalid: {slug}")
+        title_values = re.findall(r"^title:\s*(.*?)\s*$", frontmatter, re.M)
+        title = slug
+        if len(title_values) == 1:
+            try:
+                title = _yaml_scalar(title_values[0])
+            except (ValueError, json.JSONDecodeError):
+                title = slug
+        title = clip(title, MAX_SOURCE_NAME_CHARS)
+        origin_values = re.findall(r"^origin:\s*(.*?)\s*$", frontmatter, re.M)
+        if len(origin_values) > 1:
+            raise RuntimeError(f"graph source origin is ambiguous: {slug}")
+        declared_origin = ""
+        if origin_values:
+            try:
+                declared_origin = _yaml_scalar(origin_values[0])
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"graph source origin is invalid: {slug}") \
+                    from exc
+            if declared_origin not in THOUGHT_ORIGINS:
+                raise RuntimeError(f"graph source origin is invalid: {slug}")
+        if not capture_version:
+            updated_at = datetime.datetime.fromtimestamp(
+                before.st_mtime, tz=datetime.timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ")
+            if updated_at > iso():
+                raise RuntimeError(f"graph source has a future timestamp: {slug}")
+        origin = siamind.origin_class(slug, page_type, declared_origin or None)
+        source_sha256 = hashlib.sha256(raw).hexdigest()
+        if capture_version:
+            # Both hashes name the complete page bytes, not the authenticity
+            # of a named event source. No timestamp or usage is inferred.
+            result = {"subject": slug, "content": text, "origin": origin,
+                      "source_sha256": source_sha256, "content_sha256": source_sha256}
+            version = {key: result[key] for key in
+                       ("subject", "content_sha256", "source_sha256", "origin")}
+            result["version_sha256"] = hashlib.sha256(json.dumps(
+                version, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
+            return result
+        return {"slug": slug, "type": page_type, "title": title,
+                "updated_at": updated_at, "origin": origin,
+                "sha256": source_sha256}, frontmatter, body
+
     fd = _open_source_nofollow(path, os.O_RDONLY)
     with siaqueue.regular_file_stream(
             fd, label="graph source", error_type=RuntimeError) as stream:
@@ -227,80 +302,29 @@ def _read_graph_corpus_page(slug):
             raise RuntimeError(
                 "graph source is not a bounded owned single-link "
                 f"regular page: {slug}")
-        raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
-        after = os.fstat(stream.fileno())
-        try:
-            target = _source_path_identity(path, os.O_RDONLY)
-        except FileNotFoundError as exc:
-            raise RuntimeError(
-                f"graph source changed while reading: {slug}") from exc
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    current = (target.st_dev, target.st_ino, target.st_size,
-               target.st_mtime_ns, target.st_ctime_ns)
-    if observed != finished or len(raw) > MAX_EVENT_PAGE_BYTES \
-            or current != finished or not stat.S_ISREG(target.st_mode) \
-            or target.st_uid != os.geteuid() or target.st_nlink != 1:
-        raise RuntimeError(f"graph source changed while reading: {slug}")
-    try:
-        text = raw.decode("utf-8", errors="strict")
-    except UnicodeError as exc:
-        raise RuntimeError(f"graph source is not valid UTF-8: {slug}") \
-            from exc
-    match = FM_RE.match(text)
-    frontmatter = match.group(1) if match else ""
-    body = text[match.end():] if match else text
+        fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                  "st_size", "st_mtime_ns", "st_ctime_ns")
+        observed = tuple(getattr(before, key) for key in fields)
 
-    type_values = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
-    if not type_values:
-        page_type = "note"
-    elif len(type_values) != 1:
-        raise RuntimeError(f"graph source type is ambiguous: {slug}")
-    else:
-        try:
-            page_type = _yaml_scalar(type_values[0])
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"graph source type is invalid: {slug}") \
-                from exc
-    if len(page_type) > MAX_SOURCE_NAME_CHARS or re.fullmatch(
-            r"[a-z0-9][a-z0-9._-]*", page_type) is None:
-        raise RuntimeError(f"graph source type is invalid: {slug}")
-    title_values = re.findall(r"^title:\s*(.*?)\s*$", frontmatter, re.M)
-    title = slug
-    if len(title_values) == 1:
-        try:
-            title = _yaml_scalar(title_values[0])
-        except (ValueError, json.JSONDecodeError):
-            title = slug
-    title = clip(title, MAX_SOURCE_NAME_CHARS)
-    origin_values = re.findall(r"^origin:\s*(.*?)\s*$", frontmatter, re.M)
-    if len(origin_values) > 1:
-        raise RuntimeError(f"graph source origin is ambiguous: {slug}")
-    declared_origin = ""
-    if origin_values:
-        try:
-            declared_origin = _yaml_scalar(origin_values[0])
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"graph source origin is invalid: {slug}") \
-                from exc
-        if declared_origin not in THOUGHT_ORIGINS:
-            raise RuntimeError(f"graph source origin is invalid: {slug}")
-    updated_at = datetime.datetime.fromtimestamp(
-        before.st_mtime, tz=datetime.timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ")
-    if updated_at > iso():
-        raise RuntimeError(f"graph source has a future timestamp: {slug}")
-    return {
-        "slug": slug,
-        "type": page_type,
-        "title": title,
-        "updated_at": updated_at,
-        "origin": siamind.origin_class(
-            slug, page_type, declared_origin or None),
-        "sha256": hashlib.sha256(raw).hexdigest(),
-    }, frontmatter, body
+        def current():
+            after = os.fstat(stream.fileno())
+            try:
+                target = _source_path_identity(path, os.O_RDONLY)
+            except OSError as exc:
+                raise RuntimeError(f"graph source changed while reading: {slug}") from exc
+            if tuple(getattr(after, key) for key in fields) != observed \
+                    or tuple(getattr(target, key) for key in fields) != observed:
+                raise RuntimeError(f"graph source changed while reading: {slug}")
+
+        raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+        if len(raw) != before.st_size or len(raw) > MAX_EVENT_PAGE_BYTES:
+            raise RuntimeError(f"graph source changed while reading: {slug}")
+        current()
+        result = project(raw, before)
+        # Retain the open descriptor through parsing, all hashes and final
+        # result construction; a matching initial read alone is insufficient.
+        current()
+        return result
 
 
 def _admit_graph_candidate(state, record):
@@ -442,187 +466,6 @@ def _recoverable_graph_snapshot(graph):
     counts = _graph_snapshot_body_counts(graph)
     return None if counts is None else {
         "publication_id": graph["publication_id"], **counts}
-
-
-def _legacy_graph_snapshot_body_valid(graph):
-    """Classify old complete output shape, never grant graph read authority.
-
-    The installed legacy producer omitted publication_id and only collapsed
-    whitespace and clipped edge explanations, without making markup inert.
-    Those bounded explanations remain opaque preservation bytes. Every other
-    body invariant stays current; no historical identity is synthesized.
-    This Boolean is usable only by the explicit regeneration transaction,
-    which must export a new strictly inert graph before issuing readiness.
-    """
-    graph_keys = {
-        "v", "ts", "nodes", "edges", "pages_total",
-        "pages_total_complete", "snapshot",
-    }
-    return isinstance(graph, dict) and set(graph) == graph_keys \
-        and _graph_snapshot_body_counts(graph, legacy_explanations=True) is not None \
-        and graph["snapshot"]["complete"] is True
-
-
-def _graph_snapshot_body_counts(graph, *, legacy_explanations=False):
-    """Pure body validation; only the legacy classifier permits old why bytes.
-
-    This helper never grants read authority. The normal snapshot wrapper
-    always uses the strict default and independently requires publication ID.
-    """
-    snapshot_keys = {
-        "complete", "truncated", "omitted_nodes", "omitted_edges",
-        "omissions_imply_absence", "aged_out", "counts_by_kind",
-        "failed_ops", "window_days",
-    }
-    node_keys = {"id", "t", "title", "ts", "origin",
-                 "deg", "din", "dout"}
-    edge_keys = {"s", "d", "t", "why"}
-    observed_by = iso()
-
-    def inert_text(value, limit, *, nonempty=False):
-        return _strict_config_string(
-            value, nonempty=nonempty, limit=limit) \
-            and inert_summary(value) == value
-
-    def explanation(value):
-        if not legacy_explanations:
-            return inert_text(value, 90)
-        if not _strict_config_string(value, limit=90) \
-                or strip_controls(value) != value:
-            return False
-        normalized = re.sub(r"\s+", " ", value).strip()
-        # The old producer stripped before its character slice. A clipped
-        # string may therefore end in one normalized space at that ceiling;
-        # shorter trailing whitespace is not a recognized producer shape.
-        return normalized == value or (
-            len(value) == 90 and value.endswith(" ")
-            and normalized == value[:-1])
-
-    def observed_timestamp(value):
-        try:
-            return _canonical_utc_timestamp(value) == value \
-                and value <= observed_by
-        except (TypeError, ValueError):
-            return False
-
-    if not isinstance(graph, dict) \
-            or type(graph.get("v")) is not int or graph.get("v") != 2 \
-            or not isinstance(graph.get("nodes"), list) \
-            or len(graph["nodes"]) > MAX_GRAPH_NODES \
-            or not isinstance(graph.get("edges"), list) \
-            or len(graph["edges"]) > MAX_GRAPH_EDGES \
-            or not _nonnegative_status_integer(graph.get("pages_total")) \
-            or not isinstance(graph.get("pages_total_complete"), bool):
-        return None
-    if not observed_timestamp(graph.get("ts")):
-        return None
-    snapshot = graph.get("snapshot")
-    if not isinstance(snapshot, dict) or set(snapshot) != snapshot_keys \
-            or not isinstance(snapshot.get("complete"), bool) \
-            or any(not _nonnegative_status_integer(snapshot.get(key))
-                   for key in ("truncated", "omitted_nodes",
-                               "omitted_edges", "aged_out")) \
-            or not isinstance(snapshot.get("omissions_imply_absence"), bool) \
-            or type(snapshot.get("window_days")) is not int \
-            or snapshot.get("window_days") != 14 \
-            or not isinstance(snapshot.get("counts_by_kind"), dict) \
-            or len(snapshot["counts_by_kind"]) > MAX_GRAPH_NODES \
-            or not isinstance(snapshot.get("failed_ops"), list) \
-            or len(snapshot["failed_ops"]) > MAX_GRAPH_SCAN_ENTRIES:
-        return None
-    if snapshot["complete"] != (not snapshot["failed_ops"]) \
-            or snapshot["complete"] and not graph["pages_total_complete"] \
-            or snapshot["omissions_imply_absence"] \
-            or snapshot["omitted_nodes"] != snapshot["truncated"] \
-            or (snapshot["omitted_edges"] != 0
-                and len(graph["edges"]) != MAX_GRAPH_EDGES):
-        return None
-    failures = set()
-    for failure in snapshot["failed_ops"]:
-        if not inert_text(
-                failure, MAX_CONFIG_TEXT_CHARS, nonempty=True) \
-                or failure in failures:
-            return None
-        failures.add(failure)
-
-    nodes = {}
-    observed_counts = {}
-    expected_in = {}
-    expected_out = {}
-    for node in graph["nodes"]:
-        if not isinstance(node, dict) or set(node) != node_keys \
-                or not _strict_config_string(
-                    node.get("t"), nonempty=True,
-                    limit=MAX_SOURCE_NAME_CHARS) \
-                or re.fullmatch(
-                    r"[a-z0-9][a-z0-9._-]*", node["t"]) is None \
-                or not inert_text(
-                    node.get("title"), MAX_SOURCE_NAME_CHARS,
-                    nonempty=True) \
-                or not observed_timestamp(node.get("ts")) \
-                or node.get("origin") not in _STATUS_THOUGHT_ORIGINS \
-                or any(not _nonnegative_status_integer(node.get(key))
-                       for key in ("deg", "din", "dout")):
-            return None
-        try:
-            if _canonical_corpus_slug(node["id"]) != node["id"]:
-                return None
-        except (KeyError, TypeError, ValueError):
-            return None
-        if node["id"] in nodes:
-            return None
-        nodes[node["id"]] = node
-        expected_in[node["id"]] = 0
-        expected_out[node["id"]] = 0
-        observed_counts[node["t"]] = observed_counts.get(node["t"], 0) + 1
-
-    seen_edges = set()
-    for edge in graph["edges"]:
-        if not isinstance(edge, dict) or set(edge) != edge_keys \
-                or not isinstance(edge.get("s"), str) \
-                or not isinstance(edge.get("d"), str) \
-                or edge.get("s") not in nodes or edge.get("d") not in nodes \
-                or not inert_text(
-                    edge.get("t"), MAX_SOURCE_NAME_CHARS, nonempty=True) \
-                or re.fullmatch(
-                    r"[a-z0-9][a-z0-9._-]*", edge["t"]) is None \
-                or not explanation(edge.get("why")):
-            return None
-        identity = (edge["s"], edge["d"], edge["t"])
-        if identity in seen_edges:
-            return None
-        seen_edges.add(identity)
-        expected_out[edge["s"]] += 1
-        expected_in[edge["d"]] += 1
-    for identity, node in nodes.items():
-        if node["din"] != expected_in[identity] \
-                or node["dout"] != expected_out[identity] \
-                or node["deg"] != (
-                    expected_in[identity] + expected_out[identity]):
-            return None
-
-    counts = snapshot["counts_by_kind"]
-    if set(counts) != set(observed_counts):
-        return None
-    for kind, count in counts.items():
-        if not _strict_config_string(
-                kind, nonempty=True, limit=MAX_SOURCE_NAME_CHARS) \
-                or re.fullmatch(r"[a-z0-9][a-z0-9._-]*", kind) is None \
-                or not _nonnegative_status_integer(count) \
-                or count != observed_counts[kind]:
-            return None
-    pages_total = graph["pages_total"]
-    aged_out = snapshot["aged_out"]
-    truncated = snapshot["truncated"]
-    if aged_out > pages_total \
-            or truncated > pages_total - aged_out \
-            or len(graph["nodes"]) != pages_total - aged_out - truncated:
-        return None
-    return {
-        "nodes": len(graph["nodes"]),
-        "edges": len(graph["edges"]),
-        "pages": pages_total,
-    }
 
 
 # gbrain's NER gazetteer deliberately covers its built-in entity types. SIA
