@@ -53,6 +53,20 @@ EXPECTED = {
         "max_output_bytes": 16777216,
     },
 }
+ORDERED_POLICY = POLICY.with_name("ordered-measurement-policy-v1.json")
+EXPECTED_ORDERED = {
+    "schema": "sia-cognitive-ordered-measurement-policy-v1",
+    "exposure_schema": "sia-cognitive-event-exposure-v1",
+    "metric_protocol_sha256": "52b9820c7fbb2e2ff1f556edd319d4ea0a446c3695917fe285de33176cf9ffe7",
+    "arms": ["raw-original", "cue-only", "cue-event-exposure"],
+    "ordering": "replayed-row-reference-bijection-v1",
+    "targets": "replayed-raw-native-occurrence-coverage-v1",
+    "queries": "complete-observed-split-roster-v1",
+    "summaries": "frozen-retrieval-policy-cutoffs-and-class-means-v1",
+    "latencies": "retain-raw-no-rerank-timing-v1",
+    "resources": {"max_input_bytes": 16777216, "max_output_bytes": 16777216,
+                  "max_queries": 64},
+}
 
 
 class CognitiveExposurePolicyFreeze(unittest.TestCase):
@@ -60,6 +74,10 @@ class CognitiveExposurePolicyFreeze(unittest.TestCase):
         self.assertTrue(POLICY.is_file(), "pre-results event-exposure grid is missing")
         self.assertEqual(json.loads(POLICY.read_text(encoding="utf-8")), EXPECTED)
         self.assertEqual(digest(json.loads(POLICY.read_text(encoding="utf-8"))), digest(EXPECTED))
+
+    def test_fixed_arm_measurement_rules_are_frozen_before_metric_inspection(self):
+        self.assertTrue(ORDERED_POLICY.is_file(), "pre-metric ordered measurement policy is missing")
+        self.assertEqual(json.loads(ORDERED_POLICY.read_text(encoding="utf-8")), EXPECTED_ORDERED)
 
 
 if __name__ == "__main__":
