@@ -378,6 +378,9 @@ MODERN_V8_RUNTIME_NAMES = MODERN_V7_RUNTIME_NAMES + (
     "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
     "siasourcegit.py",
 )
+MODERN_V9_RUNTIME_NAMES = MODERN_V8_RUNTIME_NAMES + (
+    "siacontrollerepoch.py", "siacontrollersourcerunner.py",
+)
 
 # Independent rung fixtures, not an operational ladder.  The historical
 # entries pin bytes already accepted by shipped receipts, while the newest
@@ -399,6 +402,8 @@ RUNTIME_RUNG_FIXTURES = (
      "54f7917d096b318649cf6c15138eb9dade967277e41fe9256e3f003f69e360bc"),
     ("v8", b"sia-runtime-v8\0", MODERN_V8_RUNTIME_NAMES,
      "0225ff0d0a864a8f26ad75f37afb92ced45ef5966ad2c17b7343e5081a8ebcfc"),
+    ("v9", b"sia-runtime-v9\0", MODERN_V9_RUNTIME_NAMES,
+     "8f68448335643681bebf024dd14fa946280f5d888e24d5d0c55688931fadb524"),
 )
 
 
@@ -1674,13 +1679,15 @@ fenced_runtime_authorized
             f"Staged yet outside the ladder (installed unmeasured by any "
             f"receipt): {unmeasured}")
 
-    def test_v8_runtime_modules_are_in_the_release_source_snapshot(self):
+    def test_v9_runtime_modules_are_in_the_release_source_snapshot(self):
         installer = _read("install.sh")
         release_files = set(shlex.split(installer.split(
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
         expected = {
             "bin/siasourceack.py", "bin/siasourceeffects.py",
             "bin/siasourceengine.py", "bin/siasourcegit.py",
+            "bin/siacontrollerepoch.py",
+            "bin/siacontrollersourcerunner.py",
         }
         self.assertTrue(expected.issubset(release_files),
                         expected - release_files)
@@ -2185,6 +2192,20 @@ fenced_runtime_authorized
                         FileNotFoundError, _runtime_digest, runtime)
                     os.unlink(os.path.join(runtime, selector))
 
+            _plant_runtime_tree(runtime, MODERN_V8_RUNTIME_NAMES)
+            for selector in (
+                    "siacontrollerepoch.py",
+                    "siacontrollersourcerunner.py"):
+                with self.subTest(v9_selector=selector):
+                    _write(os.path.join(runtime, selector), selector + "\n",
+                           0o644)
+                    salt, names = SIARELEASE.runtime_rung(runtime)
+                    self.assertEqual(salt, b"sia-runtime-v9\0")
+                    self.assertEqual(names, MODERN_V9_RUNTIME_NAMES)
+                    self.assertRaises(
+                        FileNotFoundError, _runtime_digest, runtime)
+                    os.unlink(os.path.join(runtime, selector))
+
     def test_runtime_v5_digest_migrates_without_replacing_valid_v4_tree(self):
         installer = _read("install.sh")
         digest_function = _runtime_tree_digest_shell(installer)
@@ -2353,7 +2374,7 @@ fenced_runtime_authorized
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_runtime_digest_consumers_agree_across_v4_through_v8(self):
+    def test_runtime_digest_consumers_agree_across_v4_through_v9(self):
         # Both normal shell consumers delegate to the authority and the
         # uninstaller's fenced path must accept exactly the same receipt
         # bytes, including the current top rung.
@@ -2416,7 +2437,7 @@ fenced_runtime_authorized
                     check=False).returncode == 0
 
             measured = {}
-            for rung in ("v4", "v5", "v6", "v7", "v8"):
+            for rung in ("v4", "v5", "v6", "v7", "v8", "v9"):
                 if rung == "v5":
                     _write(graph, "siagraph.py\n", 0o644)
                 elif rung == "v6":
@@ -2425,6 +2446,8 @@ fenced_runtime_authorized
                     _plant_runtime_tree(runtime, MODERN_V7_RUNTIME_NAMES)
                 elif rung == "v8":
                     _plant_runtime_tree(runtime, MODERN_V8_RUNTIME_NAMES)
+                elif rung == "v9":
+                    _plant_runtime_tree(runtime, MODERN_V9_RUNTIME_NAMES)
                 mirror = _runtime_digest(runtime)
                 measured[rung] = mirror
                 for site, result in (
@@ -2439,10 +2462,11 @@ fenced_runtime_authorized
             self.assertNotEqual(measured["v5"], measured["v6"])
             self.assertNotEqual(measured["v6"], measured["v7"])
             self.assertNotEqual(measured["v7"], measured["v8"])
-            for historical in ("v4", "v5", "v6", "v7"):
+            self.assertNotEqual(measured["v8"], measured["v9"])
+            for historical in ("v4", "v5", "v6", "v7", "v8"):
                 self.assertFalse(fence_admits(measured[historical]))
 
-            # Every site refuses the partial v8 tree, and none of them falls
+            # Every site refuses the partial v9 tree, and none of them falls
             # back to a digest any stored receipt would accept.
             os.unlink(member)
             for site, result in (

@@ -58,6 +58,7 @@ MODERN_V5_NAMES = SIARELEASE.MODERN_V5_RUNTIME_NAMES
 MODERN_V6_NAMES = SIARELEASE.MODERN_V6_RUNTIME_NAMES
 MODERN_V7_NAMES = SIARELEASE.MODERN_V7_RUNTIME_NAMES
 MODERN_V8_NAMES = SIARELEASE.MODERN_V8_RUNTIME_NAMES
+MODERN_V9_NAMES = SIARELEASE.MODERN_V9_RUNTIME_NAMES
 
 # Members each rung added over its predecessor.  A rung is only pinned when
 # every one of them is load-bearing, including each marker whose presence
@@ -84,6 +85,9 @@ V7_NEW_MEMBERS = V6_NEW_MEMBERS + (
 V8_NEW_MEMBERS = V7_NEW_MEMBERS + (
     "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
     "siasourcegit.py",
+)
+V9_NEW_MEMBERS = V8_NEW_MEMBERS + (
+    "siacontrollerepoch.py", "siacontrollersourcerunner.py",
 )
 
 
@@ -516,7 +520,9 @@ fenced_runtime_authorized
                 ("v6", MODERN_V6_NAMES, V6_NEW_MEMBERS, "sialiveloop.py"),
                 ("v7", MODERN_V7_NAMES, V7_NEW_MEMBERS,
                  "siasourceack.py"),
-                ("v8", MODERN_V8_NAMES, V8_NEW_MEMBERS, None)):
+                ("v8", MODERN_V8_NAMES, V8_NEW_MEMBERS,
+                 "siacontrollerepoch.py"),
+                ("v9", MODERN_V9_NAMES, V9_NEW_MEMBERS, None)):
             with self.subTest(rung=rung):
                 self._assert_rung_pins_every_member(
                     script, names, added, promotion)

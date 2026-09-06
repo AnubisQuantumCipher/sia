@@ -88,7 +88,7 @@ def _marker(owner, source, live, batch, raw, admitted_status,
             or marker["observed_at"] != batch["observed_at"] \
             or marker["admitted_status_sha256"] \
             != live._sha(admitted_status) \
-            or marker["seq"] != admitted_status["pulse_seq"]:
+            or marker["seq"] < admitted_status["pulse_seq"]:
         _refuse("live-binding-external-pins")
 
     if type(candidate) is not dict or set(candidate) != {

@@ -105,7 +105,8 @@ class RuntimeStateIsolation(unittest.TestCase):
                 "BUN_DIR", "CONFIG_PATH", "CURSORS_PATH", "THOUGHTS_PATH",
                 "STATUS_PATH", "GRAPH_PATH", "MEMO_PATH",
                 "CONTROLLER_SOURCE_BATCH_PATH",
-                "CONTROLLER_SOURCE_ARCHIVE_DIR"):
+                "CONTROLLER_SOURCE_ARCHIVE_DIR",
+                "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR"):
             with self.subTest(module="sialib", path=name):
                 _assert_under(self, getattr(sialib, name))
         _assert_under(self, sialib.GBRAIN_ENV["GBRAIN_HOME"])

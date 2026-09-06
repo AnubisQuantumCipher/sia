@@ -2,9 +2,9 @@
 
 This module consumes an exact committed source-effects receipt.  It does not
 collect sources, publish pages, invoke Git or gbrain, or construct a live
-generation.  Its effects are limited to immutable batch archival, refusal
-settlement, journal/main cursor publication and the final memo/readiness
-transition, in that order.
+generation.  Its effects are limited, in order, to immutable full-receipt
+retention, immutable batch archival, refusal settlement, journal/main cursor
+publication and the final memo/readiness transition.
 """
 
 import base64
@@ -16,8 +16,8 @@ import stat
 
 NON_CLAIMS = (
     "Acknowledgment validates and retires one already-published local source transaction; it does not authenticate source truth, complete machine history or hostile same-user immutability.",
-    "An archived batch and advanced cursors prove only this local durable ordering; they do not prove external delivery, retrieval quality, biological cognition or a held-out win.",
-    "The compact committed marker cross-pins the consumed effects receipt and live generation but is not a replacement for their pre-acknowledgment validation.",
+    "An archived effects receipt, archived batch and advanced cursors prove only this local durable ordering; they do not prove external delivery, retrieval quality, biological cognition or a held-out win.",
+    "The compact committed marker cross-pins the retained effects receipt and live generation but is not a replacement for revalidating the full archived receipt.",
 )
 
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -258,6 +258,93 @@ class _ArchiveSlot:
         self.held.close()
 
 
+class _EffectsArchiveSlot:
+    """One digest-named immutable source-effects receipt or exact absence."""
+
+    def __init__(self, owner, source, expected_sha256, *,
+                 expected_raw=None, required=False):
+        if type(expected_sha256) is not str \
+                or _HEX.fullmatch(expected_sha256) is None \
+                or expected_raw is not None \
+                and not isinstance(expected_raw, bytes) \
+                or type(required) is not bool:
+            _refuse(source, "ack-effects-archive-contract")
+        self.owner = owner
+        self.source = source
+        self.directory_path = source._canonical_path(
+            owner, owner["CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR"])
+        self.archive_path = os.path.join(
+            self.directory_path, expected_sha256 + ".json")
+        self.expected_raw = expected_raw
+        self.held = None
+        if _path_present(self.directory_path):
+            directory = _private_archive_directory(
+                owner, source, self.directory_path, required=True)
+            directory.close()
+        if not _path_present(self.archive_path):
+            if required:
+                _refuse(source, "ack-effects-archive-absent")
+            self.state = "absent"
+            return
+        self.held = _HeldRaw(
+            owner, source, self.archive_path, owner["MAX_MEMO_BYTES"],
+            allow_absent=False)
+        if expected_raw is not None and self.held.raw != expected_raw:
+            self.close()
+            _refuse(source, "ack-effects-archive-differs")
+        self.state = "archive"
+
+    @property
+    def raw(self):
+        return None if self.held is None else self.held.raw
+
+    def current(self):
+        if self.held is not None:
+            self.held.current()
+            if self.expected_raw is not None \
+                    and self.held.raw != self.expected_raw:
+                _refuse(self.source, "ack-effects-archive-differs")
+        elif _path_present(self.archive_path):
+            _refuse(self.source, "ack-effects-archive-appeared")
+
+    def publish(self):
+        if self.expected_raw is None:
+            _refuse(self.source, "ack-effects-archive-payload")
+        if self.state == "archive":
+            self.current()
+            return
+        self.current()
+        owner = self.owner
+        source = self.source
+        owner["ensure_durable_directory"](self.directory_path, mode=0o700)
+        directory = _private_archive_directory(
+            owner, source, self.directory_path, required=True)
+        directory.close()
+        try:
+            owner["siaqueue"].fixed_atomic_publish(
+                self.archive_path, self.expected_raw, mode=0o600,
+                exclusive=True,
+                staging_dir=owner["siaqueue"].staging_dir_for(
+                    self.archive_path,
+                    authority_roots=(owner["CORPUS"], owner["STATE"],
+                                     owner["SHARE"])))
+        except (OSError, ValueError, RuntimeError) as exc:
+            _refuse(source, "ack-effects-archive-publication", exc)
+        self.held = _HeldRaw(
+            owner, source, self.archive_path, owner["MAX_MEMO_BYTES"],
+            allow_absent=False)
+        if self.held.raw != self.expected_raw:
+            self.close()
+            _refuse(source, "ack-effects-archive-publication-differs")
+        self.state = "archive"
+        self.current()
+
+    def close(self):
+        if self.held is not None:
+            self.held.close()
+            self.held = None
+
+
 def _image_raw(source, image, reason):
     if image is None:
         return None
@@ -383,7 +470,8 @@ def _journal_cursors(owner, source, batch):
     return result
 
 
-def _all_current(archive, main, journals):
+def _all_current(effects_archive, archive, main, journals):
+    effects_archive.current()
     archive.current()
     main.current()
     for _scope, cursor in journals:
@@ -398,7 +486,8 @@ def _memo_current(owner, source, memo, original, admitted_status):
     owner["_require_status_admission_unchanged"](admitted_status)
 
 
-def _completed(owner, source, live, memo, admitted_status, committed):
+def _completed(owner, source, effects, live, memo, admitted_status,
+               committed):
     if type(committed) is not dict or set(committed) != _COMMITTED_KEYS:
         _refuse(source, "ack-committed-shape")
     for value in committed.values():
@@ -409,17 +498,30 @@ def _completed(owner, source, live, memo, admitted_status, committed):
         _refuse(source, "ack-completed-has-pending-authority")
     archive = _ArchiveSlot(
         owner, source, committed["source_batch_sha256"])
+    effects_archive = None
     try:
+        effects_archive = _EffectsArchiveSlot(
+            owner, source, committed["source_effects_receipt_sha256"],
+            required=True)
         if archive.state != "archive":
             _refuse(source, "ack-completed-source-not-retired")
         status = owner["_require_status_admission_unchanged"](
             admitted_status)
+        receipt = effects.validate_archived_receipt(
+            owner, raw=effects_archive.raw, retained_batch=archive.batch,
+            memo=memo, admitted_status=status,
+            expected_receipt_sha256=
+                committed["source_effects_receipt_sha256"])
         view = owner["_read_committed_live_generation"](
             memo=memo, admitted_status=status)
         generation = view.get("generation")
         if view.get("status") != "available" \
                 or type(generation) is not dict \
                 or generation.get("generation_sha256") \
+                != committed["live_generation_sha256"] \
+                or receipt["source_batch_sha256"] \
+                != committed["source_batch_sha256"] \
+                or receipt["live_generation"]["generation_sha256"] \
                 != committed["live_generation_sha256"]:
             _refuse(source, "ack-completed-live-generation")
         ready = owner["_ready_receipt"](memo)
@@ -429,9 +531,12 @@ def _completed(owner, source, live, memo, admitted_status, committed):
         }
         if ready != expected_ready:
             _refuse(source, "ack-completed-readiness")
+        effects_archive.current()
         archive.current()
         return None
     finally:
+        if effects_archive is not None:
+            effects_archive.close()
         archive.close()
 
 
@@ -452,7 +557,7 @@ def acknowledge(owner, *, memo, admitted_status):
     committed = memo.get("controller_source_committed")
     if committed is not None:
         return _completed(
-            owner, source, live, memo, admitted_status, committed)
+            owner, source, effects, live, memo, admitted_status, committed)
     pending = memo.get("controller_source_pending")
     if type(pending) is not dict \
             or type(pending.get("batch_sha256")) is not str \
@@ -460,6 +565,7 @@ def acknowledge(owner, *, memo, admitted_status):
         _refuse(source, "ack-source-pending-authority")
 
     archive = _ArchiveSlot(owner, source, pending["batch_sha256"])
+    effects_archive = None
     main = None
     journals = []
     try:
@@ -485,6 +591,11 @@ def acknowledge(owner, *, memo, admitted_status):
                 != generation.get("generation_sha256") \
                 or receipt["source_batch_sha256"] != batch["batch_sha256"]:
             _refuse(source, "ack-effects-live-join")
+        receipt_raw = source.native_bytes(
+            owner, receipt, ceiling=owner["MAX_MEMO_BYTES"])
+        effects_archive = _EffectsArchiveSlot(
+            owner, source, receipt["receipt_sha256"],
+            expected_raw=receipt_raw)
 
         marker = batch["notification_baseline_attempt"]
         retained_marker = memo.get(owner["NOTIFY_BASELINE_ATTEMPT_KEY"])
@@ -499,12 +610,24 @@ def acknowledge(owner, *, memo, admitted_status):
 
         main = _main_cursor(owner, source, batch["cursor_proposal"])
         journals = _journal_cursors(owner, source, batch)
-        _all_current(archive, main, journals)
+        _all_current(effects_archive, archive, main, journals)
+        _memo_current(owner, source, memo, original, admitted_status)
+
+        effects_archive.publish()
+        retained_receipt = effects.validate_archived_receipt(
+            owner, raw=effects_archive.raw, retained_batch=batch,
+            memo=memo, admitted_status=status,
+            expected_receipt_sha256=receipt["receipt_sha256"])
+        if not _same(owner, source, retained_receipt, receipt):
+            _refuse(source, "ack-effects-archive-receipt-differs")
+        owner["_controller_source_ack_boundary"](
+            "effects-receipt-archive-durable")
+        _all_current(effects_archive, archive, main, journals)
         _memo_current(owner, source, memo, original, admitted_status)
 
         archive.move()
         owner["_controller_source_ack_boundary"]("archive-durable")
-        _all_current(archive, main, journals)
+        _all_current(effects_archive, archive, main, journals)
         _memo_current(owner, source, memo, original, admitted_status)
 
         for intent in batch["refusal_intents"]:
@@ -517,7 +640,7 @@ def acknowledge(owner, *, memo, admitted_status):
                     intent["source_id"],
                     copy.deepcopy(intent["entry_refusals"]))
         owner["_controller_source_ack_boundary"]("refusals-durable")
-        _all_current(archive, main, journals)
+        _all_current(effects_archive, archive, main, journals)
         _memo_current(owner, source, memo, original, admitted_status)
 
         for index, (scope, cursor) in enumerate(journals):
@@ -527,12 +650,14 @@ def acknowledge(owner, *, memo, admitted_status):
             cursor.publish()
             owner["_controller_source_ack_boundary"](
                 "journal-" + scope + "-durable")
+            effects_archive.current()
             archive.current()
             _memo_current(owner, source, memo, original, admitted_status)
 
         main.current()
         main.publish(copy.deepcopy(batch["cursor_proposal"]["after"]))
         owner["_controller_source_ack_boundary"]("cursor-state-durable")
+        effects_archive.current()
         archive.current()
         main.current()
         for _scope, cursor in journals:
@@ -568,4 +693,6 @@ def acknowledge(owner, *, memo, admitted_status):
             main.close()
         for _scope, cursor in journals:
             cursor.close()
+        if effects_archive is not None:
+            effects_archive.close()
         archive.close()

@@ -177,6 +177,82 @@ def stage(owner, *, memo, batch, expected_batch_sha256):
         return None
 
 
+def recover_orphan(owner, *, memo):
+    """Adopt one exact retained batch whose memo receipt did not publish."""
+    import siasourcebatch as source
+
+    original = _wire(owner, source, memo, memo=True)
+    with _files(owner, source) as (files, observe, current, named_current):
+        _authority(owner, source, memo, files["memo"].value)
+        held = files["batch"]
+        has_pending = "controller_source_pending" in memo
+        if has_pending:
+            pending = memo.get("controller_source_pending")
+            if type(pending) is not dict or set(pending) != RECEIPT_KEYS \
+                    or held.raw is None or type(held.value) is not dict:
+                _refuse(source, "source-publication-pending-shape-or-file")
+            source.validate_batch(
+                owner, held.value, pending.get("batch_sha256"))
+            raw = _wire(owner, source, held.value)
+            if raw != held.raw \
+                    or _wire(owner, source, _receipt(
+                        owner, source, held.value, raw)) \
+                    != _wire(owner, source, pending):
+                _refuse(source, "source-publication-pending-receipt-differs")
+            current()
+            if _wire(owner, source, memo, memo=True) != original:
+                _refuse(source, "source-publication-recovery-input-changed")
+            named_current()
+            return False
+        if held.raw is None:
+            current()
+            if _wire(owner, source, memo, memo=True) != original:
+                _refuse(source, "source-publication-recovery-input-changed")
+            named_current()
+            return False
+        if any(key in memo for key in (
+                "controller_source_live_pending",
+                "controller_source_effects_pending",
+                "controller_source_effects_committed",
+                "pulse_status_effects_pending")):
+            _refuse(source, "source-publication-orphan-downstream-authority")
+        batch = held.value
+        if type(batch) is not dict \
+                or type(batch.get("batch_sha256")) is not str:
+            _refuse(source, "source-publication-orphan-batch-shape")
+        source.validate_batch(owner, batch, batch["batch_sha256"])
+        raw = _wire(owner, source, batch)
+        if raw != held.raw:
+            _refuse(source, "source-publication-orphan-batch-not-canonical")
+        receipt = _receipt(owner, source, batch, raw)
+        updated = dict(memo, controller_source_pending=receipt)
+        updated.pop("ready", None)
+        updated_raw = _wire(owner, source, updated, memo=True)
+        owner["_memo_text"](updated)
+        detached = owner["copy"].deepcopy(updated)
+        if _wire(owner, source, detached, memo=True) != updated_raw \
+                or _wire(owner, source, memo, memo=True) != original:
+            _refuse(source, "source-publication-recovery-detachment-changed")
+        current()
+        memo_parent_identity = files["memo"].parent_identity
+        owner["atomic_write"](
+            owner["MEMO_PATH"], updated_raw.decode("utf-8"), mode=0o600)
+        written = observe(
+            "memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if written.parent_identity != memo_parent_identity \
+                or written.raw != updated_raw:
+            _refuse(source, "source-publication-recovery-memo-differs")
+        current()
+        if _wire(owner, source, memo, memo=True) != original \
+                or _wire(owner, source, detached, memo=True) != updated_raw:
+            _refuse(source, "source-publication-recovery-input-changed")
+        named_current()
+        memo.clear()
+        memo.update(detached)
+        named_current()
+        return True
+
+
 def read_pending(owner, *, memo):
     import siasourcebatch as source
 
@@ -224,7 +300,10 @@ def _live_binding_marker(owner, source, *, memo, batch, receipt,
     if not owner["_nonnegative_status_integer"](seq) \
             or type(seq) is not int \
             or type(admitted_status) is not dict \
-            or admitted_status.get("pulse_seq") != seq \
+            or not owner["_nonnegative_status_integer"](
+                admitted_status.get("pulse_seq")) \
+            or type(admitted_status.get("pulse_seq")) is not int \
+            or admitted_status["pulse_seq"] > seq \
             or not owner["_nonnegative_status_integer"](
                 memo.get("pulse_seq")) \
             or type(memo["pulse_seq"]) is not int \

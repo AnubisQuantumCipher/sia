@@ -640,6 +640,91 @@ def _disabled_policy(owner, config):
     return {owner["sanitize_slugpart"](value) for value in disabled}
 
 
+def _owned_home(owner):
+    home = owner.get("HOME")
+    maximum = owner.get("MAX_CONFIG_PATH_CHARS")
+    if type(home) is not str or not home or "\x00" in home \
+            or type(maximum) is not int or maximum <= 0 \
+            or len(home) > maximum or not os.path.isabs(home) \
+            or os.path.normpath(home) != home:
+        refuse("owned-home-contract")
+    return home
+
+
+def _canonical_custom_path(owner, raw):
+    """Expand only the runtime owner's home and return an absolute path."""
+    if type(raw) is not str or not raw or "\x00" in raw:
+        refuse("custom-selection-path")
+    if raw == "~":
+        expanded = _owned_home(owner)
+    elif raw.startswith("~/"):
+        expanded = os.path.join(_owned_home(owner), raw[2:])
+    elif raw.startswith("~"):
+        refuse("custom-selection-path")
+    else:
+        expanded = raw
+    if not os.path.isabs(expanded):
+        refuse("custom-selection-path")
+    canonical = os.path.normpath(expanded)
+    maximum = owner.get("MAX_CONFIG_PATH_CHARS")
+    if type(maximum) is not int or maximum <= 0 \
+            or len(canonical) > maximum or not os.path.isabs(canonical) \
+            or os.path.normpath(canonical) != canonical:
+        refuse("custom-selection-path")
+    return canonical
+
+
+def _canonical_custom_selection_entry(owner, entry, normalized):
+    """Materialize the exact intake configuration represented by defaults."""
+    normalized_fields = {
+        "name", "source_id", "organ", "description", "path",
+        "stream_type", "match_literals", "exclude_literals", "field",
+        "kind", "tags",
+    }
+    if type(entry) is not dict or type(normalized) is not dict \
+            or set(normalized) != normalized_fields:
+        refuse("runtime-custom-selection")
+    for field in ("name", "source_id", "organ", "description", "path",
+                  "stream_type", "field", "kind"):
+        if type(normalized[field]) is not str or not normalized[field]:
+            refuse("runtime-custom-selection")
+    if normalized["source_id"] != "sense_custom:" + normalized["name"] \
+            or normalized["stream_type"] not in {"lines", "jsonl"}:
+        refuse("runtime-custom-selection")
+    for field in ("match_literals", "exclude_literals"):
+        values = normalized[field]
+        if type(values) is not tuple \
+                or any(type(value) is not str or not value or "|" in value
+                       for value in values):
+            refuse("runtime-custom-selection")
+    tags = normalized["tags"]
+    if type(tags) is not set \
+            or any(type(tag) is not str or not tag for tag in tags):
+        refuse("runtime-custom-selection")
+    value = {
+        "name": normalized["name"],
+        "organ": normalized["organ"],
+        "description": normalized["description"],
+        "path": _canonical_custom_path(owner, entry.get("path")),
+        "type": normalized["stream_type"],
+        "enabled": True,
+        "match": "|".join(normalized["match_literals"]),
+        "exclude": "|".join(normalized["exclude_literals"]),
+        "field": normalized["field"],
+        "kind": normalized["kind"],
+        "tags": sorted(tags),
+    }
+    try:
+        repeated = owner["_validated_custom_sense_entry"](value)
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        refuse("runtime-custom-selection", upstream=exc)
+    expected = dict(normalized)
+    expected["path"] = value["path"]
+    if repeated != expected:
+        refuse("custom-selection-normalization")
+    return value
+
+
 def _runtime_projection(owner, epoch):
     config = owner["CONFIG"]
     if type(config) is not dict:
@@ -708,7 +793,8 @@ def _runtime_projection(owner, epoch):
         source_id = normalized["source_id"]
         if normalized["organ"] not in organs:
             refuse("runtime-custom-selection")
-        selected_raw.append(entry)
+        selected_raw.append(_canonical_custom_selection_entry(
+            owner, entry, normalized))
         selected_rows.append({"entry_index": index, "source_id": source_id})
         custom_indexes[source_id] = index
     if not _same_native(owner, selected_raw, expected["custom_collectors"]):

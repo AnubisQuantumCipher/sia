@@ -1859,10 +1859,12 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v8` member set adds
+the install. The current `sia-runtime-v9` member set adds
+`siacontrollerepoch.py` and `siacontrollersourcerunner.py` to the complete v8
+source/live/cognitive dependency closure; that v8 rung added
 `siasourceack.py`, `siasourceeffects.py`, `siasourceengine.py`, and
-`siasourcegit.py` to the complete v7 source/live/cognitive dependency closure;
-the receipt reader still recognizes complete historical v1–v7 generations,
+`siasourcegit.py`. The receipt reader still recognizes complete historical
+v1–v8 generations,
 but it never accepts a tree that contains a later child
 under an older digest. `bin/siarelease.py:RUNTIME_LADDER` is the executable
 member-set authority. The previous tree remains at the printed backup path.

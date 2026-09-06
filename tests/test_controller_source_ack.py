@@ -42,11 +42,13 @@ ACK = "_acknowledge_controller_source_batch"
 BOUNDARY = "_controller_source_ack_boundary"
 EFFECTS = "_publish_controller_source_effects"
 ARCHIVE_DIR = "CONTROLLER_SOURCE_ARCHIVE_DIR"
+EFFECTS_ARCHIVE_DIR = "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR"
 COMMITTED_KEYS = {
     "source_batch_sha256", "live_generation_sha256",
     "source_effects_receipt_sha256",
 }
 CORE_PHASES = (
+    "effects-receipt-archive-durable",
     "archive-durable",
     "refusals-durable",
     "cursor-state-durable",
@@ -91,11 +93,16 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
 
         self.source_state = self.source.root / "state"
         self.archive_dir = self.live.root / "controller-source-archive"
+        self.effects_archive_dir = (
+            self.live.root / "controller-source-effects-archive")
         self.archive_constant_existed = hasattr(self.lib, ARCHIVE_DIR)
         # ``create=True`` keeps the first RED focused on the missing behavior;
         # the API-shape test separately requires the production constant.
         self.stack.enter_context(mock.patch.object(
             self.lib, ARCHIVE_DIR, str(self.archive_dir), create=True))
+        self.stack.enter_context(mock.patch.object(
+            self.lib, EFFECTS_ARCHIVE_DIR,
+            str(self.effects_archive_dir), create=True))
         for name, value in (
                 ("STATE", str(self.source_state)),
                 ("CURSORS_PATH", str(self.source.cursors_path)),
@@ -128,6 +135,13 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
         selected = self.batch if batch is None else batch
         self.assertIsNotNone(selected)
         return self.archive_dir / (selected["batch_sha256"] + ".json")
+
+    def effects_archive_path(self, receipt=None):
+        selected = (self.memo_before_ack[
+            "controller_source_effects_committed"]
+            if receipt is None else receipt)
+        return self.effects_archive_dir / (
+            selected["receipt_sha256"] + ".json")
 
     def _copy_acquisition_fences(self):
         key = self.source.lib.NOTIFY_BASELINE_ATTEMPT_KEY
@@ -388,6 +402,12 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
         self.assertTrue(archive.is_file())
         self.assertEqual(archive.read_bytes(), capture_tests.canonical(
             self.batch))
+        effects_archive = self.effects_archive_path()
+        self.assertTrue(effects_archive.is_file())
+        self.assertEqual(
+            effects_archive.read_bytes(),
+            capture_tests.canonical(self.memo_before_ack[
+                "controller_source_effects_committed"]))
         self.assertEqual(durable, self.live.memo)
         self.assertNotIn("controller_source_pending", durable)
         self.assertNotIn("controller_source_live_pending", durable)
@@ -491,7 +511,10 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
             self.assertIs(self.lib.PENDING_CURSOR_RENAMES, pending)
             self.assertEqual(self.lib.PENDING_CURSOR_RENAMES, [
                 (str(temporary), str(destination))])
-        self.assertEqual(archive_move.call_count, 1)
+        batch_moves = [call for call in archive_move.call_args_list
+                       if len(call.args) > 1
+                       and call.args[1] == source.name]
+        self.assertEqual(len(batch_moves), 1)
         archive = self.archive_path()
         archive_info = archive.stat()
         self.assertEqual(archive.read_bytes(), source_raw)
@@ -575,11 +598,19 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
                 self.assertEqual(
                     tuple(calls),
                     CORE_PHASES[:CORE_PHASES.index(selected) + 1])
-                self.assertFalse(os.path.lexists(case.producer.source_path))
-                self.assertEqual(
-                    case.archive_path().read_bytes(),
-                    capture_tests.canonical(case.batch))
-                if selected in ("archive-durable", "refusals-durable"):
+                if selected == "effects-receipt-archive-durable":
+                    self.assertTrue(os.path.lexists(
+                        case.producer.source_path))
+                    self.assertFalse(os.path.lexists(case.archive_path()))
+                else:
+                    self.assertFalse(os.path.lexists(
+                        case.producer.source_path))
+                    self.assertEqual(
+                        case.archive_path().read_bytes(),
+                        capture_tests.canonical(case.batch))
+                if selected in (
+                        "effects-receipt-archive-durable",
+                        "archive-durable", "refusals-durable"):
                     self.assertEqual(
                         case.source.cursors_path.read_bytes(), cursor_before)
                 else:
@@ -676,10 +707,11 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
             raise AssertionError(
                 "post-archive cursor race reached a later effect")
 
+        fixed_publish = self.lib.siaqueue.fixed_atomic_publish
         shim = page_tests._ModuleShim(
             self.lib.siaqueue,
             _rename_noreplace=self.lib.siaqueue._rename_noreplace,
-            fixed_atomic_publish=forbidden)
+            fixed_atomic_publish=fixed_publish)
         with mock.patch.object(self.lib, BOUNDARY,
                                side_effect=boundary, create=True), \
                 mock.patch.object(self.lib, "siaqueue", shim), \
@@ -693,7 +725,8 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
                     side_effect=forbidden), \
                 self.assertRaises(REFUSALS):
             self.acknowledge()
-        self.assertEqual(phases, ["archive-durable"])
+        self.assertEqual(phases, [
+            "effects-receipt-archive-durable", "archive-durable"])
         self.assertFalse(os.path.lexists(self.producer.source_path))
         self.assertEqual(self.archive_path().read_bytes(), source_raw)
         self.assertEqual(self.source.cursors_path.read_bytes(), cursor_raw)
@@ -714,6 +747,7 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
         self.assertEqual(sys_path.read_bytes(), self.journal_target("sys"))
         self.assertEqual(user_path.read_bytes(), self.journal_target("user"))
         self.assertEqual(tuple(phases), (
+            "effects-receipt-archive-durable",
             "archive-durable", "refusals-durable",
             "journal-sys-durable", "journal-user-durable",
             "cursor-state-durable", "memo-durable",
@@ -759,10 +793,11 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
             raise AssertionError(
                 "journal cursor race reached a later effect")
 
+        fixed_publish = self.lib.siaqueue.fixed_atomic_publish
         shim = page_tests._ModuleShim(
             self.lib.siaqueue,
             _rename_noreplace=self.lib.siaqueue._rename_noreplace,
-            fixed_atomic_publish=forbidden)
+            fixed_atomic_publish=fixed_publish)
         with mock.patch.object(self.lib, BOUNDARY,
                                side_effect=boundary, create=True), \
                 mock.patch.object(self.lib, "siaqueue", shim), \
@@ -771,6 +806,7 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
                 self.assertRaises(REFUSALS):
             self.acknowledge()
         self.assertEqual(phases, [
+            "effects-receipt-archive-durable",
             "archive-durable", "refusals-durable"])
         self.assertFalse(os.path.lexists(self.producer.source_path))
         self.assertEqual(self.archive_path().read_bytes(), source_raw)
@@ -795,6 +831,7 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
                 def cut(phase):
                     calls.append(phase)
                     if phase in (
+                            "effects-receipt-archive-durable",
                             "archive-durable", "refusals-durable"):
                         self.assertEqual(sys_path.read_bytes(), sys_before)
                         self.assertEqual(user_path.read_bytes(), user_before)
@@ -815,6 +852,7 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
                             KeyboardInterrupt, "fixture journal cut"):
                     case.acknowledge()
                 prefix = (
+                    "effects-receipt-archive-durable",
                     "archive-durable", "refusals-durable",
                     "journal-sys-durable", "journal-user-durable",
                 )
@@ -932,6 +970,10 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
 
         def collide(source_descriptor, source_name,
                     destination_descriptor, destination_name):
+            if source_name == "payload":
+                return rename(
+                    source_descriptor, source_name,
+                    destination_descriptor, destination_name)
             self.assertEqual(source_name, source.name)
             self.assertEqual(destination_name, archive.name)
             descriptor = os.open(
@@ -1020,6 +1062,7 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
             self.assertIsNone(self.acknowledge())
         self.assertEqual(settled, expected)
         self.assertEqual(trace, [
+            ("phase", "effects-receipt-archive-durable"),
             ("phase", "archive-durable"),
             *[("settle", item) for item in expected],
             ("phase", "refusals-durable"),

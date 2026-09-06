@@ -5745,6 +5745,8 @@ LIVE_STATE_PATH = os.path.join(STATE, "live-loop.json")
 CONTROLLER_SOURCE_BATCH_PATH = os.path.join(STATE, "controller-source-batch.json")
 CONTROLLER_SOURCE_ARCHIVE_DIR = os.path.join(
     STATE, "controller-source-archive")
+CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR = os.path.join(
+    STATE, "controller-source-effects-archive")
 CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS = (
     "The pending binding is write-ahead recovery authority only; it is not source acknowledgment, live publication, output delivery, consumer execution or readiness.",
     "The marker binds one retained source receipt, admitted status and computed-unverified pure transition; it does not establish source truth, complete machine history, biological cognition or a held-out win.",
@@ -6155,6 +6157,26 @@ def _stage_controller_source_batch(*, memo, batch, expected_batch_sha256):
             globals(), memo=memo, batch=batch, expected_batch_sha256=expected_batch_sha256)
 
 
+def _recover_orphan_controller_source_batch(*, memo):
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.recover_orphan(
+            globals(), memo=memo)
+
+
+def _run_controller_source_transaction(*, operation):
+    """Run or recover the terminal initial source transaction."""
+    import siacontrollersourcerunner
+    if not callable(operation):
+        raise TypeError("controller source operation must be callable")
+    ensure_dirs()
+    ensure_durable_directory(
+        os.path.dirname(BRAINSTEM_OWNER_LOCK), mode=0o700)
+    with brainstem_owner(), corpus_owner():
+        return siacontrollersourcerunner.run(
+            globals(), operation=operation)
+
+
 def _read_pending_controller_source_batch(*, memo):
     import siasourcepublication
     with corpus_owner():
@@ -6290,7 +6312,8 @@ def _publish_controller_source_effects(*, memo, admitted_status):
 def _controller_source_ack_boundary(stage):
     """Named crash seam after each durable source acknowledgment prefix."""
     if stage not in (
-            "archive-durable", "refusals-durable",
+            "effects-receipt-archive-durable", "archive-durable",
+            "refusals-durable",
             "journal-sys-durable", "journal-user-durable",
             "cursor-state-durable", "memo-durable"):
         raise ValueError("controller-source acknowledgment boundary is invalid")

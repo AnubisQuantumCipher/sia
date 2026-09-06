@@ -528,6 +528,7 @@ def _project_status(owner, source, live, admitted, binding, handoff,
     status = copy.deepcopy(admitted)
     status.update({
         "version": owner["VERSION"], "ts": observed_at,
+        "pulse_seq": binding["seq"],
         "state": "thinking" if effects["events_pulse"] else "ok",
         "publication_id": binding["publication_id"],
         "graph_publication_id": snapshot["publication_id"],
@@ -890,6 +891,81 @@ def committed_receipt(owner, *, memo, admitted_status, retained_batch=None):
     _completed(
         owner, source, live, memo, admitted_status, receipt,
         retained_batch=retained_batch)
+    return copy.deepcopy(receipt)
+
+
+def validate_archived_receipt(
+        owner, *, raw, retained_batch, memo, admitted_status,
+        expected_receipt_sha256):
+    """Re-admit one canonical retained receipt after its memo compaction.
+
+    The original live-binding marker is deliberately retired by ACK.  The
+    immutable receipt retains every binding field used by ``_receipt_shape``;
+    this reader reconstructs only that validation view, then rejoins it to the
+    retained batch and the currently admitted graph, status and live files.
+    """
+    import siasourcebatch as source
+    import sialiveloop as live
+
+    if not isinstance(raw, bytes) or not raw \
+            or len(raw) > owner["MAX_MEMO_BYTES"]:
+        _refuse(source, "source-effects-archive-bytes")
+    if type(expected_receipt_sha256) is not str \
+            or _HEX.fullmatch(expected_receipt_sha256) is None:
+        _refuse(source, "source-effects-archive-digest")
+    if type(memo) is not dict or type(retained_batch) is not dict:
+        _refuse(source, "source-effects-archive-authority")
+    try:
+        receipt = owner["_strict_json_loads"](
+            raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        _refuse(source, "source-effects-archive-json", upstream=exc)
+    _self_hash(
+        source, live, receipt, "receipt_sha256", RECEIPT_KEYS,
+        "source-effects-archive-receipt")
+    if receipt["receipt_sha256"] != expected_receipt_sha256:
+        _refuse(source, "source-effects-archive-identity")
+    canonical = source.native_bytes(
+        owner, receipt, ceiling=owner["MAX_MEMO_BYTES"])
+    if canonical != raw:
+        _refuse(source, "source-effects-archive-not-canonical")
+    source.validate_batch(
+        owner, retained_batch, receipt["source_batch_sha256"])
+    batch_raw = source.native_bytes(owner, retained_batch)
+    if receipt["source_batch_wire_sha256"] \
+            != owner["hashlib"].sha256(batch_raw).hexdigest():
+        _refuse(source, "source-effects-archive-batch-wire")
+
+    publication_id = receipt["live_generation"].get("publication_id") \
+        if type(receipt["live_generation"]) is dict else None
+    binding = {
+        "publication_id": publication_id,
+        "publication_sha256": receipt["source_live_publication_sha256"],
+        "source_batch_wire_sha256": receipt["source_batch_wire_sha256"],
+        "prepare_inputs_sha256": receipt["prepare_inputs_sha256"],
+        "state_sha256": receipt["state_sha256"],
+        "transition_sha256": receipt["transition_sha256"],
+    }
+    status = owner["_require_status_admission_unchanged"](
+        admitted_status)
+    status_generation, retained_status = _status_generation_file(
+        owner, source, live)
+    _receipt_shape(
+        owner, source, live, receipt, retained_batch, binding,
+        retained_status=retained_status)
+    graph_generation, graph = _graph_generation(owner, source, live)
+    if not _same(live, status, retained_status) \
+            or receipt["status_generation"] != status_generation \
+            or receipt["graph_generation"] != graph_generation:
+        _refuse(source, "source-effects-archive-artifacts")
+    try:
+        owner["_live_graph_status"](status, graph)
+    except (TypeError, ValueError, RuntimeError, KeyError,
+            OverflowError, RecursionError) as exc:
+        _refuse(source, "source-effects-archive-status-graph", upstream=exc)
+    if receipt["live_generation"] \
+            != _live_generation(owner, source, live, memo, status):
+        _refuse(source, "source-effects-archive-live")
     return copy.deepcopy(receipt)
 
 
