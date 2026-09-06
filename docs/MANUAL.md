@@ -1825,9 +1825,10 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v6` member set includes `siasenses.py`
-and `siathought.py`; the receipt reader still recognizes complete historical
-v1–v5 generations, but it never accepts a tree that contains a later child
+the install. The current `sia-runtime-v7` member set includes the complete
+transitive source/live/cognitive runtime dependency closure; the receipt
+reader still recognizes complete historical v1–v6 generations, but it never
+accepts a tree that contains a later child
 under an older digest. `bin/siarelease.py:RUNTIME_LADDER` is the executable
 member-set authority. The previous tree remains at the printed backup path.
 Before any

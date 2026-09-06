@@ -8554,7 +8554,17 @@ SIA_RELEASE_FILES=(
   uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
   bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
-  bin/siamind.py bin/siaqueue.py bin/siarelease.py
+  bin/siamind.py bin/siaqueue.py bin/siarelease.py bin/siaactivation.py
+  bin/siacognitivebaseline.py bin/siacognitivecommand.py
+  bin/siacognitivehistory.py bin/siacognitiveselect.py
+  bin/siacontrollerliveinput.py bin/siacontrollerstatus.py
+  bin/siacoretrieval.py bin/siacortexrepair.py bin/siaencoding.py
+  bin/siaeventintake.py bin/siaeventplan.py bin/siagist.py
+  bin/siajournalcapture.py bin/sialivegist.py bin/sialiveloop.py
+  bin/sialivepublication.py bin/siasourcebatch.py
+  bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
+  bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
+  bin/siaworkspace.py
   bin/siatakes.py docs/ARCHITECTURE.md docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
@@ -9278,7 +9288,14 @@ step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
 for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siatakes.py siabench.py siaqueue.py siacapsule.py siabackup.py \
-    siagraph.py siathought.py; do
+    siagraph.py siathought.py siaactivation.py siacognitivebaseline.py \
+    siacognitivecommand.py siacognitivehistory.py siacognitiveselect.py \
+    siacontrollerliveinput.py siacontrollerstatus.py siacoretrieval.py \
+    siacortexrepair.py siaencoding.py siaeventintake.py siaeventplan.py \
+    siagist.py siajournalcapture.py sialivegist.py sialiveloop.py \
+    sialivepublication.py siasourcebatch.py siasourcepublication.py \
+    siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
+    siavectorrun.py siaworkspace.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done
