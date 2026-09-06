@@ -48,6 +48,12 @@ CORTEX_BOUNDARY_REPAIR_SUFFIX = (
     "The preceding wording is retained historical product prose. This "
     "boundary governs the current claim.\n")
 GBRAIN = os.path.join(TOOLCHAIN, "gbrain", "bin", "gbrain")
+GIT = "/usr/bin/git"
+GBRAIN_PIN = os.path.join(SHARE, "GBRAIN_PIN")
+GBRAIN_PIN_RECEIPT = os.path.join(
+    STATE, "managed-install", "gbrain-pin")
+GBRAIN_RUNTIME_RECEIPT = os.path.join(
+    TOOLCHAIN, "gbrain", ".sia-release")
 GBRAIN_OWNER_LOCK = os.path.join(STATE, "gbrain-owner.lock")
 CORPUS_OWNER_LOCK = os.path.join(STATE, "corpus-owner.lock")
 BRAINSTEM_OWNER_LOCK = os.path.join(STATE, "brainstem-owner.lock")
@@ -5737,6 +5743,8 @@ MAX_MEMO_BYTES = 16_777_216
 LIVE_CANDIDATE_PATH = os.path.join(STATE, "live-loop-candidate.json")
 LIVE_STATE_PATH = os.path.join(STATE, "live-loop.json")
 CONTROLLER_SOURCE_BATCH_PATH = os.path.join(STATE, "controller-source-batch.json")
+CONTROLLER_SOURCE_ARCHIVE_DIR = os.path.join(
+    STATE, "controller-source-archive")
 CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS = (
     "The pending binding is write-ahead recovery authority only; it is not source acknowledgment, live publication, output delivery, consumer execution or readiness.",
     "The marker binds one retained source receipt, admitted status and computed-unverified pure transition; it does not establish source truth, complete machine history, biological cognition or a held-out win.",
@@ -5763,6 +5771,17 @@ LIVE_PUBLICATION_NON_CLAIMS = (
     "The readiness completed_at value retains the frozen status publication timestamp; it is not an independently observed fsync-completion clock reading.",
     "A pending or orphaned candidate is not available; recovery replays the original complete inputs without a new producer, clock, source event, engine sync or weaker policy.",
     "Fixed candidate and generation files are retained across publication and failure; this boundary does not delete source episodes, candidate journals or corpus pages.",
+)
+CONTROLLER_SOURCE_EFFECTS_NON_CLAIMS = (
+    "The effects receipt binds one retained source/live transition, staged status-effects handoff, local artifact bytes, structured corpus generation and source-scoped index witnesses; it does not authenticate source truth, complete machine history or a hostile same-user environment.",
+    "Matching logical page witnesses and a zero-unembedded count do not prove embedding-vector values, ranking behavior, retrieval quality or a held-out cognitive-mechanism win.",
+    "Publication does not acknowledge source cursors, settle source refusals, archive the retained batch, prove output delivery or establish readiness.",
+    "The receipt is local transaction evidence, not JACKAL assurance or biological cognition.",
+)
+CONTROLLER_SOURCE_ACK_NON_CLAIMS = (
+    "Acknowledgment validates and retires one already-published local source transaction; it does not authenticate source truth, complete machine history or hostile same-user immutability.",
+    "An archived batch and advanced cursors prove only this local durable ordering; they do not prove external delivery, retrieval quality, biological cognition or a held-out win.",
+    "The compact committed marker cross-pins the consumed effects receipt and live generation but is not a replacement for their pre-acknowledgment validation.",
 )
 _LIVE_CANDIDATE_KEYS = {
     "schema", "prepare_inputs", "prepare_inputs_sha256", "transition", "status",
@@ -6109,6 +6128,18 @@ def _controller_source_present(memo):
             or _live_present(CONTROLLER_SOURCE_BATCH_PATH))
 
 
+def _controller_source_ack_pending(memo):
+    """Return whether a source transaction still requires publication or ACK."""
+    if type(memo) is not dict:
+        import siasourcebatch
+        siasourcebatch.refuse("controller-source-memo-shape")
+    return (any(key in memo for key in (
+        "controller_source_pending", "controller_source_live_pending",
+        "controller_source_effects_pending",
+        "controller_source_effects_committed"))
+        or _live_present(CONTROLLER_SOURCE_BATCH_PATH))
+
+
 def _capture_controller_source_batch(*, memo, epoch, expected_epoch_sha256, observed_at):
     import siasourcebatch
     with brainstem_owner(), corpus_owner():
@@ -6236,6 +6267,64 @@ def _stage_controller_source_status_effects(
             started_at=started_at)
 
 
+def _controller_source_effects_boundary(stage):
+    """Named crash seam after each durable source-effects prefix."""
+    if stage not in ("effects-pending", "live-published"):
+        raise ValueError("controller-source effects boundary is invalid")
+
+
+def _controller_source_effects_observed_at():
+    """Read the one post-graph source-effects publication timestamp."""
+    return iso()
+
+
+def _publish_controller_source_effects(*, memo, admitted_status):
+    """Publish the bound corpus, index, graph, status and live generation."""
+    import siasourceeffects
+    with brainstem_owner(), corpus_owner():
+        _load_live_publication()
+        return siasourceeffects.publish(
+            globals(), memo=memo, admitted_status=admitted_status)
+
+
+def _controller_source_ack_boundary(stage):
+    """Named crash seam after each durable source acknowledgment prefix."""
+    if stage not in (
+            "archive-durable", "refusals-durable",
+            "journal-sys-durable", "journal-user-durable",
+            "cursor-state-durable", "memo-durable"):
+        raise ValueError("controller-source acknowledgment boundary is invalid")
+
+
+def _acknowledge_controller_source_batch(*, memo, admitted_status):
+    """Archive and acknowledge one exactly published controller source."""
+    import siasourceack
+    with brainstem_owner(), corpus_owner():
+        _load_live_publication()
+        return siasourceack.acknowledge(
+            globals(), memo=memo, admitted_status=admitted_status)
+
+
+def _controller_source_corpus_commit_generation(
+        *, source_batch_sha256, event_closure_sha256):
+    """Return a descriptor-bound clean Git generation for source effects."""
+    import siasourcegit
+    with corpus_owner():
+        return siasourcegit.commit_generation(
+            globals(), source_batch_sha256=source_batch_sha256,
+            event_closure_sha256=event_closure_sha256)
+
+
+def _controller_source_sync_generation(*, corpus_generation,
+                                       target_versions):
+    """Return one receipt-bound gbrain sync and exact target projection."""
+    import siasourceengine
+    with corpus_owner(), gbrain_owner():
+        return siasourceengine.sync_generation(
+            globals(), corpus_generation=corpus_generation,
+            target_versions=target_versions)
+
+
 def _ready_receipt(memo):
     receipt = memo.get("ready")
     if receipt is None:
@@ -6335,7 +6424,7 @@ def memory_readiness():
         # take store under one lease prevents a false-ready TOCTOU snapshot.
         with corpus_owner():
             memo = load_memo()
-            if _controller_source_present(memo):
+            if _controller_source_ack_pending(memo):
                 return False, "controller source batch publication is pending"
             if _live_started(memo):
                 if "live_loop_pending" in memo:
