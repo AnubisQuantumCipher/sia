@@ -20,8 +20,10 @@ from mutation_raw_vector_build import capture, file_sha, green, run_test, sha, w
 
 PRODUCTION = "bin/siavectormodel.py"
 TEST = "tests.test_raw_vector_model.RawVectorModelContract."
+PREPARATION = "tests.test_raw_vector_model_preparation.RawVectorModelPreparation."
 SUPPORT_FILES = (
     PRODUCTION, "tests/test_raw_vector_model.py", "tests/sia_test_home.py",
+    "tests/test_raw_vector_model_preparation.py",
     "tests/mutation_raw_vector_build.py", "tests/mutation_raw_vector_model.py",
 )
 
@@ -122,6 +124,85 @@ MUTATIONS = (
          '                        and info["executable_inode"] == runner_mount["inode"]:\n',
          '                if info["ppid"] == service.pid:\n'),
     ), TEST + "test_serving_executable_inode_device_or_hash_mismatch_refuses"),
+    Mutation("large-request-inlined-into-metadata-config", ((
+        '                         "request_bytes": len(request_bytes), "non_claims": list(NON_CLAIMS)}\n',
+        '                         "request": request, "request_bytes": len(request_bytes), "non_claims": list(NON_CLAIMS)}\n',
+    ),), PREPARATION + "test_prepare_request_is_separate_sealed_input_with_explicit_larger_wire_ceiling"),
+    Mutation("preparation-request-ceiling-widened-to-output-ceiling", ((
+        '    if operation == "prepare_index":\n'
+        '        return MAX_PREPARE_REQUEST_BYTES\n',
+        '    if operation == "prepare_index":\n'
+        '        return MAX_OUTPUT_BYTES\n',
+    ),), PREPARATION + "test_operation_specific_request_limits_precede_runtime_snapshotting"),
+    Mutation("query-request-ceiling-widened-to-preparation-ceiling", ((
+        '    if operation in ("capture", "query"):\n'
+        '        return MAX_QUERY_REQUEST_BYTES\n',
+        '    if operation in ("capture", "query"):\n'
+        '        return MAX_PREPARE_REQUEST_BYTES\n',
+    ),), PREPARATION + "test_operation_specific_request_limits_precede_runtime_snapshotting"),
+    Mutation("default-metadata-sealing-ceiling-widened", ((
+        'def _sealed_bytes(payload, *, max_bytes=None):\n'
+        '    ceiling = MAX_JSON_BYTES if max_bytes is None else max_bytes\n',
+        'def _sealed_bytes(payload, *, max_bytes=None):\n'
+        '    ceiling = MAX_PREPARE_REQUEST_BYTES if max_bytes is None else max_bytes\n',
+    ),), PREPARATION + "test_preparation_capacity_does_not_widen_default_metadata_parsing_or_sealing"),
+    Mutation("default-metadata-parsing-ceiling-widened", ((
+        '        ceiling = MAX_JSON_BYTES if max_bytes is None else max_bytes\n',
+        '        ceiling = MAX_PREPARE_REQUEST_BYTES if max_bytes is None else max_bytes\n',
+    ),), PREPARATION + "test_preparation_capacity_does_not_widen_default_metadata_parsing_or_sealing"),
+    Mutation("preparation-descriptor-role-validation-disabled", ((
+        '        if "snapshot" in request or type(role) is not dict \\\n'
+        '                or set(role) != {"parent_fd"} or role["parent_fd"] is not None:\n',
+        '        if False:\n',
+    ),), PREPARATION + "test_bound_request_reader_rejects_changed_digest_length_operation_and_role"),
+    Mutation("separate-bound-request-digest-check-disabled", ((
+        '        if len(raw) != expected_size or _sha(raw) != expected_sha \\\n',
+        '        if len(raw) != expected_size or False \\\n',
+    ),), PREPARATION + "test_bound_request_reader_rejects_changed_digest_length_operation_and_role"),
+    Mutation("expected-request-size-replaced-with-observed-size", ((
+        '        descriptor = _open("/runtime/request.json", os.O_RDONLY)\n'
+        '        before = os.fstat(descriptor)\n',
+        '        descriptor = _open("/runtime/request.json", os.O_RDONLY)\n'
+        '        before = os.fstat(descriptor)\n'
+        '        expected_size = before.st_size\n',
+    ),), PREPARATION + "test_bound_request_reader_rejects_changed_digest_length_operation_and_role"),
+    Mutation("original-request-identity-replaced-with-rebound-wire-identity", ((
+        '                "bound_request_sha256": config["request_sha256"],\n',
+        '                "bound_request_sha256": _sha(raw),\n',
+    ),), PREPARATION + "test_inner_preparer_receives_only_output_parent_fd_and_distinct_wire_identity"),
+    Mutation("rebound-wire-identity-replaced-with-original-request-identity", ((
+        '                "request_sha256": _sha(raw), "stdout_sha256": _sha(result.stdout),\n',
+        '                "request_sha256": config["request_sha256"], "stdout_sha256": _sha(result.stdout),\n',
+    ),), PREPARATION + "test_inner_preparer_receives_only_output_parent_fd_and_distinct_wire_identity"),
+    Mutation("output-parent-descriptor-not-rebound", ((
+        '            request["output"]["parent_fd"] = parent_fd\n',
+        '            request["output"]["parent_fd"] = None\n',
+    ),), PREPARATION + "test_inner_preparer_receives_only_output_parent_fd_and_distinct_wire_identity"),
+    Mutation("preparation-fresh-parent-emptiness-check-disabled", ((
+        '            or stat.S_IMODE(info.st_mode) != 0o700 or os.listdir(parent_fd):\n',
+        '            or stat.S_IMODE(info.st_mode) != 0o700 or False:\n',
+    ),), PREPARATION + "test_prepare_requires_empty_owned_parent_and_absent_fixed_child"),
+    Mutation("created-index-private-ownership-mode-check-disabled", ((
+        '    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:\n',
+        '    if False:\n',
+    ),), PREPARATION + "test_success_requires_created_ordinary_private_child_and_failure_retains_partial_output"),
+    Mutation("failed-preparation-partial-diagnostic-deleted", ((
+        '        yield plan\n',
+        '        try:\n'
+        '            yield plan\n'
+        '        except ModelRefusal:\n'
+        '            partial_fd = os.open("index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)\n'
+        '            try:\n'
+        '                os.unlink("partial", dir_fd=partial_fd)\n'
+        '            finally:\n'
+        '                os.close(partial_fd)\n'
+        '            raise\n',
+    ),), PREPARATION + "test_success_requires_created_ordinary_private_child_and_failure_retains_partial_output"),
+    Mutation("named-preparer-refusal-accepted-as-completion", ((
+        '            if result.returncode != 0 or payload.get("status") != "ok" \\\n'
+        '                    or payload.get("operation") != "prepare_index":\n',
+        '            if False:\n',
+    ),), PREPARATION + "test_inner_preparer_named_refusal_retains_partial_index_without_success_envelope"),
 )
 
 
