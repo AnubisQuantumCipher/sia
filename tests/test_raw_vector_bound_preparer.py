@@ -15,15 +15,17 @@ class BoundVectorPreparer(unittest.TestCase):
     _inputs = bound.BoundVectorRunner._inputs
     _model = bound.BoundVectorRunner._model
 
-    def _run(self):
+    def _run(self, **changes):
         operation = getattr(self.runner, "prepare_bound", None)
         self.assertTrue(callable(operation), "public bound preparation controller must exist")
-        return operation(
+        arguments = dict(
             executable=str(self.root / "executable"), expected=self.expected,
             build_receipt=str(self.receipt), build_receipt_sha256=self.receipt_sha,
             request=self.request, output_directory=str(self.root / "fresh-parent"),
             timeout=30, scratch_parent=str(self.root),
             model_expectations=self.model_expectations, shared_runtime=self.runtime)
+        arguments.update(changes)
+        return operation(**arguments)
 
     def _served(self, **kwargs):
         self.assertIs(kwargs["admitted"], self.model)
@@ -91,6 +93,14 @@ class BoundVectorPreparer(unittest.TestCase):
                 self._run()
         controls[0].assert_not_called()
         controls[1].assert_not_called()
+        for timeout in (False, 0, "30", float("inf"), float("nan")):
+            with self.subTest(timeout=timeout), self._controls() as controls, \
+                    mock.patch.object(self.runner.siavector, "sealed_file") as artifacts:
+                with self.assertRaises(self.runner.siavector.VectorRefusal):
+                    self._run(timeout=timeout)
+            artifacts.assert_not_called()
+            controls[0].assert_not_called()
+            controls[1].assert_not_called()
 
     def test_foreign_build_refuses_before_model(self):
         with self._controls() as controls:
