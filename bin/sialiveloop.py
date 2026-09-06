@@ -230,12 +230,16 @@ def _policy(policy):
     for key, maximum in _LIMITS.items():
         if not _integer(policy["limits"][key], maximum, 1):
             _fail("policy-capacity")
+    if type(policy["schema"]) is not str or type(policy["idle"]) is not str \
+            or (policy["schema"], policy["idle"]) not in (
+            ("sia-live-loop-policy-v1", "supported-capture-replay-gist-fresh-derived-only-v1"),
+            ("sia-live-loop-policy-v2", "bound-native-episodes-replay-gist-fresh-derived-only-v2")):
+        _fail("policy-contract")
     for key, literal in (
-            ("schema", "sia-live-loop-policy-v1"), ("scope", SCOPE),
+            ("scope", SCOPE),
             ("time_unit", "unix-seconds-integer"),
             ("workspace_release", "expiry-only-v1"),
-            ("delivery_body", BODY_SCOPE),
-            ("idle", "supported-capture-replay-gist-fresh-derived-only-v1")):
+            ("delivery_body", BODY_SCOPE)):
         if type(policy[key]) is not str or policy[key] != literal:
             _fail("policy-contract")
     if type(policy["recall_order"]) is not str or policy["recall_order"] not in {
@@ -542,13 +546,33 @@ def _coretrace(intake, deliveries, policy):
                       for page in intake["pages"]], "deliveries": rows}
 
 
-def _gist_inputs(value, intake, policy, idle):
+def _gist_inputs(value, intake, policy, idle, *, expected_intake_sha256=None,
+                 expected_policy_sha256=None, observed_at=None):
     if type(idle) is not bool:
         _fail("idle-contract")
     if not idle:
         if value is not None:
             _fail("gist-outside-idle")
         return
+    if policy["schema"] == "sia-live-loop-policy-v2":
+        _keys(value, {"episode_bindings", "expected_episode_bindings_sha256",
+                      "gist_inputs", "expected_gist_inputs_sha256"}, "bound-idle-gist-inputs")
+        bindings = value["episode_bindings"]
+        if type(bindings) is not dict \
+                or not _integer(observed_at) \
+                or type(bindings.get("observed_at")) is not int \
+                or bindings["observed_at"] != observed_at \
+                or bindings.get("epoch_id") != intake["epoch_id"] \
+                or bindings.get("intake_sha256") != expected_intake_sha256 \
+                or bindings.get("live_policy_sha256") != expected_policy_sha256 \
+                or _canonical(bindings.get("live_policy")) != _canonical(policy):
+            _fail("bound-idle-outer-pulse-binding")
+        # Lazy, one-directional integration. This is admission/reservation,
+        # not replay; the public binder is invoked once by the idle stage.
+        import sialivegist
+        _original, _dispositions, _ceiling, reserved = sialivegist._prepare_request_with_reservation(
+            {"intake": intake, "expected_intake_sha256": expected_intake_sha256, **value})
+        return reserved
     _keys(value, {"capture", "expected_capture_sha256", "replay", "expected_replay_sha256",
                   "policy", "expected_policy_sha256"}, "idle-gist-inputs")
     if not _digest(value["expected_capture_sha256"]) \
@@ -568,13 +592,24 @@ def _gist_inputs(value, intake, policy, idle):
                 _fail("gist-source-version-join")
 
 
-def _idle(value, intake, idle):
+def _idle(value, intake, idle, *, policy=None, expected_intake_sha256=None):
     if not idle:
         return {"requested": False, "gist": None}, []
-    import siagist
-    artifact = siagist.replay_gist(**value)
+    if policy is not None and policy["schema"] == "sia-live-loop-policy-v2":
+        import sialivegist
+        binding = sialivegist.bind_replay_gist(
+            intake=intake, expected_intake_sha256=expected_intake_sha256, **value)
+        artifact = binding["gist"]
+        selected = set(binding["proposed_candidate_ids"])
+        idle_state = {"requested": True, "binding": binding}
+    else:
+        import siagist
+        artifact = siagist.replay_gist(**value)
+        selected = None
+        idle_state = {"requested": True, "gist": artifact}
     body = json.loads(artifact["artifact_json"])
-    selected = {identity for row in body["readout"] for identity in row["selected"]}
+    if selected is None:
+        selected = {identity for row in body["readout"] for identity in row["selected"]}
     old = {page["subject"] for page in intake["pages"]}
     pages = []
     for candidate in body["candidates"]:
@@ -587,7 +622,7 @@ def _idle(value, intake, idle):
                 "source_sha256": artifact["artifact_sha256"],
                 "content_sha256": hashlib.sha256(candidate["text"].encode("utf-8")).hexdigest()}
         pages.append({**page, "version_sha256": _version(page)})
-    return {"requested": True, "gist": artifact}, pages
+    return idle_state, pages
 
 
 def _capture(state, state_sha):
@@ -605,6 +640,46 @@ def _upstream(exc):
     return LiveLoopRefusal("component-input-or-representation-refusal", getattr(exc, "non_claims", ()))
 
 
+def _bound_pulse_output_reservation(*, intake, deliveries, policy, expected_policy_sha256,
+                                    expected_previous_state_sha256, observed_at, idle,
+                                    binding_reservation):
+    """Reserve known v2 enclosing documents before any numerical component.
+
+    Count each actual retained occurrence, including aliasing. The nested
+    binding uses its existing complete reservation, not a copied gist formula.
+    This is deliberately NOT a bound for the later encoding, activation,
+    workspace, co-retrieval or proposed-page traces. Their component limits
+    and the complete post-computation output checks remain controlling.
+    """
+    placeholder = "0" * 64
+    shared = {"epoch_id": intake["epoch_id"], "observed_at": observed_at,
+              "intake": intake, "deliveries": deliveries, "policy": policy,
+              "policy_sha256": expected_policy_sha256, "non_claims": list(NON_CLAIMS)}
+    state = {**shared, "schema": "sia-live-loop-state-v1",
+             "parent_state_sha256": expected_previous_state_sha256,
+             "idle": {"requested": True, "binding": None} if idle else
+                     {"requested": False, "gist": None}}
+    captured = {**shared, "schema": "sia-live-history-capture-v1", "complete": True,
+                "scope": SCOPE, "state_sha256": placeholder, "capture_sha256": placeholder}
+    known = {"schema": "sia-live-loop-transition-v1", "status": "planned",
+             "state": state, "state_sha256": placeholder, "history_capture": captured,
+             "history_capture_sha256": placeholder, "gist_pages": [],
+             "non_claims": list(NON_CLAIMS), "transition_sha256": placeholder}
+    ceiling = policy["limits"]["max_output_bytes"]
+    try:
+        amount = _size(known, ceiling)
+    except LiveLoopRefusal as exc:
+        if exc.reason != "complete-json-byte-capacity":
+            raise
+        _fail("bound-pulse-output-reservation-capacity")
+    if idle:
+        # Replace the counted null at exactly state.idle.binding. The bound
+        # already includes that binding's full intake and variable nonclaims.
+        amount += binding_reservation - _size(None, ceiling)
+    if amount > ceiling:
+        _fail("bound-pulse-output-reservation-capacity")
+
+
 def prepare_pulse(*, intake, expected_intake_sha256, deliveries, expected_deliveries_sha256,
                   previous_state, expected_previous_state_sha256, policy, expected_policy_sha256,
                   observed_at, idle, gist_inputs):
@@ -612,24 +687,55 @@ def prepare_pulse(*, intake, expected_intake_sha256, deliveries, expected_delive
     try:
         args = locals().copy()
         _budget(policy, args)
+        bound_v2 = policy["schema"] == "sia-live-loop-policy-v2"
+        original_args = _canonical(args) if bound_v2 else None
         versions, trace = _inputs(intake, deliveries, policy, observed_at)
         _pin(intake, expected_intake_sha256)
         _pin(deliveries, expected_deliveries_sha256)
         _pin(policy, expected_policy_sha256)
+        if bound_v2:
+            binding_reservation = _gist_inputs(
+                gist_inputs, intake, policy, idle, expected_intake_sha256=expected_intake_sha256,
+                expected_policy_sha256=expected_policy_sha256, observed_at=observed_at)
+            _bound_pulse_output_reservation(
+                intake=intake, deliveries=deliveries, policy=policy,
+                expected_policy_sha256=expected_policy_sha256,
+                expected_previous_state_sha256=expected_previous_state_sha256,
+                observed_at=observed_at, idle=idle, binding_reservation=binding_reservation)
+            if _canonical(args) != original_args:
+                _fail("bound-pulse-input-changed-before-learning")
         if previous_state is None:
             if expected_previous_state_sha256 is not None:
                 _fail("unexpected-initial-state-pin")
         else:
             _state(previous_state, expected_previous_state_sha256, policy, observed_at)
             _continuation(previous_state, intake, deliveries)
-        _gist_inputs(gist_inputs, intake, policy, idle)
+        if not bound_v2:
+            _gist_inputs(gist_inputs, intake, policy, idle,
+                         expected_intake_sha256=expected_intake_sha256,
+                         expected_policy_sha256=expected_policy_sha256, observed_at=observed_at)
+        if bound_v2 and _canonical(args) != original_args:
+            _fail("bound-pulse-input-changed")
         detached = copy.deepcopy(args)
+        if bound_v2 and (_canonical(args) != original_args or _canonical(detached) != original_args):
+            _fail("bound-pulse-input-changed-during-copy")
         intake, deliveries, policy = detached["intake"], detached["deliveries"], detached["policy"]
         previous_state, gist_inputs = detached["previous_state"], detached["gist_inputs"]
         versions, trace = _inputs(intake, deliveries, policy, observed_at)
         _pin(intake, expected_intake_sha256)
         _pin(deliveries, expected_deliveries_sha256)
         _pin(policy, expected_policy_sha256)
+        if bound_v2:
+            binding_reservation = _gist_inputs(
+                gist_inputs, intake, policy, idle, expected_intake_sha256=expected_intake_sha256,
+                expected_policy_sha256=expected_policy_sha256, observed_at=observed_at)
+            _bound_pulse_output_reservation(
+                intake=intake, deliveries=deliveries, policy=policy,
+                expected_policy_sha256=expected_policy_sha256,
+                expected_previous_state_sha256=expected_previous_state_sha256,
+                observed_at=observed_at, idle=idle, binding_reservation=binding_reservation)
+            if _canonical(args) != original_args or _canonical(detached) != original_args:
+                _fail("bound-pulse-input-changed-before-learning")
         encoded, admission, uses = _reconstruct(intake, deliveries, versions, trace, policy, observed_at)
         traces = _traces(intake, versions, uses)
         ranked = activation.rank_traces(traces, observed_at=observed_at, policy=policy["activation"])
@@ -659,7 +765,8 @@ def prepare_pulse(*, intake, expected_intake_sha256, deliveries, expected_delive
                     "admission": admission, "activation": ranked}
         core_trace = _coretrace(intake, deliveries, policy)
         learned = coretrieval.learn_coretrieval(core_trace, observed_at=observed_at, policy=policy["coretrieval"])
-        idle_state, gist_pages = _idle(gist_inputs, intake, idle)
+        idle_state, gist_pages = _idle(gist_inputs, intake, idle, policy=policy,
+                                      expected_intake_sha256=expected_intake_sha256)
         state = {"schema": "sia-live-loop-state-v1", "epoch_id": intake["epoch_id"],
                  "observed_at": observed_at, "parent_state_sha256": expected_previous_state_sha256,
                  "intake": intake, "deliveries": deliveries, "policy": policy, "policy_sha256": expected_policy_sha256,
@@ -668,15 +775,29 @@ def prepare_pulse(*, intake, expected_intake_sha256, deliveries, expected_delive
                  "coretrieval_trace": core_trace, "coretrieval": learned, "idle": idle_state,
                  "non_claims": list(NON_CLAIMS)}
         _size(state, policy["limits"]["max_output_bytes"])
+        original_state = _canonical(state) if bound_v2 else None
         state_sha = _sha(state)
         captured = _capture(state, state_sha)
+        if bound_v2 and _canonical(state) != original_state:
+            _fail("bound-pulse-state-changed-during-digest")
         result = {"schema": "sia-live-loop-transition-v1", "status": "planned", "state": state,
                   "state_sha256": state_sha, "history_capture": captured,
                   "history_capture_sha256": captured["capture_sha256"], "gist_pages": gist_pages,
                   "non_claims": list(NON_CLAIMS)}
         _size(result, policy["limits"]["max_output_bytes"])
+        original_result = _canonical(result) if bound_v2 else None
         result["transition_sha256"] = _sha(result)
+        if bound_v2 and _canonical({key: value for key, value in result.items()
+                                    if key != "transition_sha256"}) != original_result:
+            _fail("bound-pulse-result-changed-during-digest")
         _size(result, policy["limits"]["max_output_bytes"])
+        if bound_v2:
+            final_bytes = _canonical(result)
+            final = copy.deepcopy(result)
+            if _canonical(result) != final_bytes or _canonical(final) != final_bytes \
+                    or _canonical(args) != original_args or _canonical(detached) != original_args:
+                _fail("bound-pulse-result-or-input-changed-during-copy")
+            return final
         return result
     except (ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
         raise _upstream(exc) from exc

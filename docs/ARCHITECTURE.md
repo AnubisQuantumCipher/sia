@@ -19,6 +19,7 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siathought.py` | event-day admission/indexing, durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
 | `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
 | `bin/siaeventintake.py` | pure collector-return/page-version projection for the live loop (implemented, unreleased) |
+| `bin/sialivegist.py` | pure native-episode/replay-gist binding for idle live proposals (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -259,6 +260,40 @@ published. It establishes neither collector execution, effective config,
 source freshness, cursor/acknowledgment ordering nor a held-out cognitive
 win. `tests/test_event_live_intake.py` covers this boundary; the durable
 runtime source transaction and live publication remain separate work.
+
+The separate `sialivegist.bind_replay_gist` contract binds a complete native
+capture and the unchanged replay-gist result to every supplied live
+observation. Supported native episodes require the exact normalized source
+record, signed-occurrence identity, and unambiguous full marker/excerpt in
+both the original observation version and the current captured page.
+Their page-byte hashes may differ after an append; neither becomes the
+whole capture hash. Missing required native witnesses refuse rather than
+producing an empty success. Valid unsupported source/grammar dispositions
+and complete ineligible cues remain distinct outcomes.
+
+All native alternatives remain in the complete capture, replay artifact
+and support roster. Unobserved alternatives are labeled fresh-capture-only:
+they may support attributed gist content but create no controller
+observations, encodings, retrievals or uses. Only existing learned
+selections for replay-touched eligible cues become live proposals; every
+candidate decision and the static control remain inspectable. The binder
+retains its full raw inputs and upstream nonclaims. Its complete binder output
+reservation reuses the original gist preflight calculation and accounts
+for nested escaping and repeated documents before learning, without
+changing existing artifact fields or limits.
+
+The explicit v2 idle wrapper must match its complete policy, intake, epoch
+and outer pulse clock. The v2 pulse also reserves its known repeated input
+documents and binding before current or prior-state reconstruction. This is
+not a complete advance bound for dynamic component traces or proposed gist
+pages; component limits and complete final-output checks remain required.
+The old v1 capture-hash gate remains unchanged;
+there is no fallback between the contracts. These are pure prepared
+proposals, not durable consolidation, publication, delivery or a cognitive
+win. The eventual runtime must retain or revalidate fresh source
+generations through publication; supplied-record correspondence does not
+itself prove collector execution, authenticity, freshness or acknowledgment.
+`tests/test_live_gist_binding.py` covers this separate boundary.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;

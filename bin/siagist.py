@@ -387,9 +387,10 @@ def _reservations(capture, replay, policy, input_size, events, pages, groups, ex
             _refuse("output-byte-capacity")
     if reserved > limits["max_output_bytes"]:
         _refuse("output-byte-capacity")
+    return reserved
 
 
-def _preflight(capture, expected_capture, replay, expected_replay, policy, expected_policy):
+def _preflight_with_reservation(capture, expected_capture, replay, expected_replay, policy, expected_policy):
     _policy(policy)
     if any(not _digest(value) for value in (expected_capture, expected_replay, expected_policy)):
         _refuse("external-pins-required")
@@ -400,7 +401,13 @@ def _preflight(capture, expected_capture, replay, expected_replay, policy, expec
                             text_limit=policy["limits"]["max_text_bytes"])
     events, pages, groups = _source_shape(capture, policy)
     exposures = _replay_shape(replay, events, policy)
-    _reservations(capture, replay, policy, input_size, events, pages, groups, exposures)
+    reserved = _reservations(capture, replay, policy, input_size, events, pages, groups, exposures)
+    return events, pages, groups, reserved
+
+
+def _preflight(capture, expected_capture, replay, expected_replay, policy, expected_policy):
+    events, pages, groups, _reserved = _preflight_with_reservation(
+        capture, expected_capture, replay, expected_replay, policy, expected_policy)
     return events, pages, groups
 
 
