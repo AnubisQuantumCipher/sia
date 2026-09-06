@@ -20,6 +20,20 @@ EXPECTED = {
                  "page_pooling": "single-chunk-per-slug", "max_query_bytes": 8000},
     "required_classes": ["recency-heavy", "repetition-heavy", "novelty"],
 }
+METRIC_POLICY = POLICY.with_name('retrieval-policy-v1.json')
+EXPECTED_METRIC_POLICY = {
+    'schema': 'sia-cognitive-retrieval-policy-v1', 'cutoffs': [1, 3, 5, 10],
+    'targets': 'signed-answer-occurrences-v1',
+    'matching': 'exact-selected-source-chunk-and-native-excerpt-v1',
+    'recall': 'distinct-target-union-at-k-v1',
+    'reciprocal_rank': 'first-any-target-row-at-k-v1',
+    'aggregation': 'macro-query-within-class-v1',
+    'duplicates': 'refuse-invalid-raw-roster-v1',
+    'origins': 'preserve-source-labels-no-promotion-v1',
+    'missing': 'zero-hit-no-denominator-shrink-v1',
+    'dependence': 'chain-raw-subject-groups-and-shared-pages-v1',
+    'chronology': 'externally-pinned-before-heldout-v1',
+}
 
 
 class CognitivePolicyFreeze(unittest.TestCase):
@@ -28,6 +42,12 @@ class CognitivePolicyFreeze(unittest.TestCase):
         # These are declared protocol choices and existing representation
         # ceilings, not calculated metrics or fitted mechanism parameters.
         self.assertEqual(json.loads(POLICY.read_text(encoding="utf-8")), EXPECTED)
+
+    def test_initial_retrieval_metric_policy_is_explicit_before_results(self):
+        self.assertTrue(METRIC_POLICY.is_file(), 'initial pre-results retrieval metric policy is missing')
+        # Cutoffs are declared retrieval windows, not derived measurements.
+        self.assertEqual(json.loads(METRIC_POLICY.read_text(encoding='utf-8')),
+                         EXPECTED_METRIC_POLICY)
 
 
 if __name__ == "__main__":
