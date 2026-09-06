@@ -19,6 +19,8 @@ biological brain and does not establish cognition or neuroscience.
   sia graph             graph statistics
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
+  sia repair-cortex-boundary [--json]
+                        publish only the witnessed additive cortex prose repair
   sia dream             run the weekly-compaction cycle now (daemon must be off)
   sia verify            re-verify every signed evidence chain with attest
                         (the cockpit supplies a generation-bound receipt)
@@ -1088,6 +1090,36 @@ def cmd_pulse():
         return 1
 
 
+def cmd_repair_cortex_boundary(args):
+    if args not in ([], ["--json"]):
+        print("usage: sia repair-cortex-boundary [--json]")
+        return 2
+    import siacortexrepair
+    try:
+        result = siacortexrepair.repair_cortex_boundary(sialib)
+    except sialib.OwnerBusy:
+        result = siacortexrepair.refusal_result(
+            siacortexrepair.RepairRefusal("runtime-owned"))
+    except (OSError, RuntimeError, ValueError, OverflowError) as exc:
+        # Only the module's closed typed reason codes cross this boundary;
+        # arbitrary corpus, Git, keeper, or exception text never does.
+        result = siacortexrepair.refusal_result(exc)
+    encoded = json.dumps(result, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False)
+    if len(encoded.encode("utf-8")) > sialib.MAX_CONFIG_BYTES:
+        print("Cortex repair refused: result-output-bound")
+        return 1
+    if args == ["--json"]:
+        print(encoded)
+    else:
+        print("Cortex boundary: " + result["status"] + ".")
+        if result["status"] == "refused":
+            print("Reason: " + result["reason_code"] + " (" + result["phase"] + ").")
+        for nonclaim in result["non_claims"]:
+            print(nonclaim)
+    return 1 if result["status"] == "refused" else 0
+
+
 def _memo_pulse_sequence(memo):
     if not isinstance(memo, dict):
         raise ValueError("brainstem memo must be an object")
@@ -2155,6 +2187,8 @@ def _dispatch(argv, cmd):
         return cmd_graph()
     if cmd == "pulse":
         return cmd_pulse()
+    if cmd == "repair-cortex-boundary":
+        return cmd_repair_cortex_boundary(argv[2:])
     if cmd == "dream":
         return cmd_dream()
     if cmd == "verify":
