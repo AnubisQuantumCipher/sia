@@ -16,6 +16,7 @@ import math
 import re
 
 import siaactivation as activation
+import siacognitiveenvelope as envelope
 import siacognitivemeasure as measurement
 
 
@@ -59,6 +60,13 @@ _RESOURCE_LIMITS = {
 _REPLAY_KEYS = {
     *measurement._SOURCE_KEYS, "protocol", "expected_protocol_sha256", "baseline", "expected_baseline_sha256",
     "expected_parameter_freeze_sha256",
+}
+_COMPOUND_SCHEMA = "sia-cognitive-event-exposure-policy-v2"
+_COMPOUND_LAYOUT = {
+    "measurement_plan": None, "expected_measurement_plan_sha256": None,
+    "replay_inputs": {key: None for key in _REPLAY_KEYS},
+    "rerank_policy": None, "expected_rerank_policy_sha256": None,
+    "activation_policy": None, "expected_activation_policy_sha256": None,
 }
 _CHAIN = re.compile(r"[a-z][a-z0-9_-]*")
 _UTC = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
@@ -168,18 +176,40 @@ def _canonical(value, ceiling):
 def _policy(kw):
     # Admit ALL complete input structures before any copy, JSON serialization,
     # hash, or numerical work, including late malformed grid/replay fields.
-    measurement.baseline_module._bounded(kw, MAX_INPUT_BYTES)
     policy = kw["rerank_policy"]
+    compound = type(policy) is dict and policy.get("schema") == _COMPOUND_SCHEMA
+    limits = _RESOURCE_LIMITS
+    if compound:
+        limits = {**_RESOURCE_LIMITS, "max_input_bytes": envelope.MAX_INPUT_BYTES,
+                  "max_document_bytes": envelope.MAX_DOCUMENT_BYTES}
+        resources = policy.get("resources")
+        _keys(resources, limits, "compound resource policy")
+        for key, ceiling in limits.items():
+            if not _integer(resources[key], ceiling, positive=True):
+                _fail("compound resource policy is outside its strict hard ceiling: " + key)
+        # This topology is code-defined, never supplied by an artifact. Every
+        # original capture, selection, protocol, baseline and measurement stays
+        # whole; no subdivision, ignored branch or shared-reference discount
+        # can relax an original document's ceiling. All graph admission occurs
+        # in the shared helper before it serializes any constituent document.
+        envelope.admit_compound(envelope=kw, layout=_COMPOUND_LAYOUT,
+                                max_input_bytes=resources["max_input_bytes"],
+                                max_document_bytes=resources["max_document_bytes"])
+    else:
+        # The frozen v1 path and its original aggregate ceiling are unchanged.
+        measurement.baseline_module._bounded(kw, MAX_INPUT_BYTES)
     _keys(policy, {*_POLICY, "observed_at", "ablation_roster", "activation_grid",
                    "activation_grid_sha256", "calibration_objective", "resources"}, "rerank policy")
-    if any(type(policy[key]) is not str or policy[key] != expected for key, expected in _POLICY.items()):
+    expected_policy = {**_POLICY, "schema": _COMPOUND_SCHEMA} if compound else _POLICY
+    if any(type(policy[key]) is not str or policy[key] != expected for key, expected in expected_policy.items()):
         _fail("rerank policy changes the frozen exposure or ordering contract")
     resources = policy["resources"]
-    _keys(resources, _RESOURCE_LIMITS, "resource policy")
-    for key, ceiling in _RESOURCE_LIMITS.items():
+    _keys(resources, limits, "resource policy")
+    for key, ceiling in limits.items():
         if not _integer(resources[key], ceiling, positive=True):
             _fail("resource policy is outside its strict hard ceiling: " + key)
-    _json_size(kw, resources["max_input_bytes"])
+    if not compound:
+        _json_size(kw, resources["max_input_bytes"])
     if not _integer(policy["observed_at"], activation.MAX_SAFE_INTEGER):
         _fail("observation time must be an explicit unsigned integer Unix time")
     if type(policy["ablation_roster"]) is not list or policy["ablation_roster"] != list(ARMS):
