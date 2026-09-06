@@ -34,6 +34,18 @@ EXPECTED_METRIC_POLICY = {
     'dependence': 'chain-raw-subject-groups-and-shared-pages-v1',
     'chronology': 'externally-pinned-before-heldout-v1',
 }
+LATENCY_POLICY = POLICY.with_name('latency-policy-v1.json')
+EXPECTED_LATENCY_POLICY = {
+    'schema': 'sia-cognitive-latency-policy-v1',
+    'samples': 'adapter-query-embedding-search-v1',
+    'aggregation': 'macro-query-within-class-v1',
+    'numbers': 'retained-json-roundtrip-decimal-as-given-v1',
+    'units': 'producer-ms-no-conversion-v1',
+    'roster': 'same-admitted-query-roster-v1',
+    'missing': 'refuse-sample-drop-v1',
+    'operation_timings': 'retain-separate-no-query-allocation-v1',
+    'chronology': 'externally-pinned-before-heldout-v1',
+}
 
 
 class CognitivePolicyFreeze(unittest.TestCase):
@@ -48,6 +60,11 @@ class CognitivePolicyFreeze(unittest.TestCase):
         # Cutoffs are declared retrieval windows, not derived measurements.
         self.assertEqual(json.loads(METRIC_POLICY.read_text(encoding='utf-8')),
                          EXPECTED_METRIC_POLICY)
+
+    def test_initial_latency_policy_preserves_reported_timing_domains(self):
+        self.assertTrue(LATENCY_POLICY.is_file(), 'pre-results latency policy is missing')
+        self.assertEqual(json.loads(LATENCY_POLICY.read_text(encoding='utf-8')),
+                         EXPECTED_LATENCY_POLICY)
 
 
 if __name__ == "__main__":
