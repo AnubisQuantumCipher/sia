@@ -46,6 +46,22 @@ EXPECTED_LATENCY_POLICY = {
     'operation_timings': 'retain-separate-no-query-allocation-v1',
     'chronology': 'externally-pinned-before-heldout-v1',
 }
+EVENT_POLICY = POLICY.with_name('selection-policy-v2.json')
+EXPECTED_EVENT_POLICY = {
+    **EXPECTED, 'schema': 'sia-cognitive-selection-policy-v2',
+    'queries': {
+        **EXPECTED['queries'], 'templates': 'signed-history-event-recency-v2',
+        'recency': {
+            'population': 'complete-chain-exact-action-raw-subject-v1',
+            'time': 'canonical-native-event-time-utc-v1',
+            'target': 'unique-maximum-event-time-v1',
+            'contrast': 'nearest-strictly-older-global-v1',
+            'contrast_ties': 'highest-signed-sequence-v1',
+            'page_relation': 'distinct-target-contrast-source-pages-v1',
+            'witnesses': 'target-and-contrast-required-no-substitution-v1',
+        },
+    },
+}
 
 
 class CognitivePolicyFreeze(unittest.TestCase):
@@ -65,6 +81,11 @@ class CognitivePolicyFreeze(unittest.TestCase):
         self.assertTrue(LATENCY_POLICY.is_file(), 'pre-results latency policy is missing')
         self.assertEqual(json.loads(LATENCY_POLICY.read_text(encoding='utf-8')),
                          EXPECTED_LATENCY_POLICY)
+
+    def test_event_time_task_is_a_separately_frozen_policy_with_unchanged_split(self):
+        self.assertTrue(EVENT_POLICY.is_file(), 'separate pre-results event-recency policy is missing')
+        self.assertEqual(json.loads(EVENT_POLICY.read_text(encoding='utf-8')),
+                         EXPECTED_EVENT_POLICY)
 
 
 if __name__ == "__main__":
