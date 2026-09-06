@@ -8,6 +8,7 @@ These engineering tasks do not establish cognitive mechanisms or improvements.
 """
 
 import copy
+import datetime
 import hashlib
 import json
 import re
@@ -20,6 +21,17 @@ import siavectorprepare as preparer
 
 SCHEMA = "sia-cognitive-selection-v1"
 POLICY_SCHEMA = "sia-cognitive-selection-policy-v1"
+EVENT_RECENCY_SCHEMA = "sia-cognitive-selection-v2"
+EVENT_RECENCY_POLICY_SCHEMA = "sia-cognitive-selection-policy-v2"
+EVENT_RECENCY_RULES = {
+    "population": "complete-chain-exact-action-raw-subject-v1",
+    "time": "canonical-native-event-time-utc-v1",
+    "target": "unique-maximum-event-time-v1",
+    "contrast": "nearest-strictly-older-global-v1",
+    "contrast_ties": "highest-signed-sequence-v1",
+    "page_relation": "distinct-target-contrast-source-pages-v1",
+    "witnesses": "target-and-contrast-required-no-substitution-v1",
+}
 MAX_POLICY_BYTES = history.sialib.MAX_EVENT_INDEX_BYTES
 MAX_SELECTION_BYTES = history.MAX_CAPTURE_BYTES
 CLASSES = ("recency-heavy", "repetition-heavy", "novelty",
@@ -39,7 +51,14 @@ NON_CLAIMS = (
     "Selection hashes bind represented bytes; external capture and policy authentication remain caller obligations.",
     "No retrieval scores, tuned parameters, statistical power, or cognitive improvement are established.",
 )
+EVENT_RECENCY_NON_CLAIMS = tuple(
+    "Latest event-time occurrence uses the complete exact action/raw-subject population, a unique maximum native timestamp, and the nearest strictly older occurrence on a distinct witnessed page; event time is not signed sequence order or a measured memory-use time."
+    if statement == "Latest recorded outcome follows signed sequence order, not necessarily event-time chronology."
+    else statement for statement in NON_CLAIMS
+)
 _DIGEST = re.compile(r"[a-f0-9]{64}")
+_UTC_STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+_UNIX_STAMP = re.compile(r"(?:0|[1-9][0-9]*)")
 
 
 class SelectionRefusal(ValueError):
@@ -123,7 +142,8 @@ def _integer(value, low, high):
 def _policy(value):
     _keys(value, {"schema", "seed", "split", "pages", "queries", "protocol",
                   "required_classes"}, "policy")
-    if value["schema"] != POLICY_SCHEMA or not preparer._text(value["seed"], 1024):
+    if value["schema"] not in (POLICY_SCHEMA, EVENT_RECENCY_POLICY_SCHEMA) \
+            or not preparer._text(value["seed"], 1024):
         _fail("policy schema or seed is invalid")
     split = value["split"]
     _keys(split, {"kind", "group_key", "calibration_modulus", "calibration_residue"}, "split")
@@ -143,11 +163,20 @@ def _policy(value):
         if not _integer(pages[field], 1, hard):
             _fail("page policy ceiling is invalid: " + field)
     queries = value["queries"]
-    _keys(queries, {"templates", "max_groups_per_class", "max_queries"}, "query policy")
-    if queries["templates"] != "signed-history-tasks-v1" \
+    event_recency = value["schema"] == EVENT_RECENCY_POLICY_SCHEMA
+    query_fields = {"templates", "max_groups_per_class", "max_queries"}
+    if event_recency:
+        query_fields.add("recency")
+    _keys(queries, query_fields, "query policy")
+    template = "signed-history-event-recency-v2" if event_recency else "signed-history-tasks-v1"
+    if queries["templates"] != template \
             or any(not _integer(queries[key], 1, adapter.MAX_QUERIES)
                    for key in ("max_groups_per_class", "max_queries")):
         _fail("query policy is invalid")
+    if event_recency:
+        _keys(queries["recency"], EVENT_RECENCY_RULES, "event recency policy")
+        if any(queries["recency"][key] != rule for key, rule in EVENT_RECENCY_RULES.items()):
+            _fail("event recency policy changes a frozen rule")
     protocol = value["protocol"]
     _keys(protocol, {"chunking", "max_chunk_bytes", "page_pooling", "max_query_bytes"}, "protocol")
     if protocol["chunking"] != preparer.POLICY["chunking"] \
@@ -302,11 +331,14 @@ def _support(events, chunks, *, value_required=False):
     return result, None
 
 
-def _question(klass, chain, action, subject):
+def _question(klass, chain, action, subject, *, event_recency=False):
     action = json.dumps(action, ensure_ascii=False)
     subject = json.dumps(subject, ensure_ascii=False)
     clause = f"exact action {action} and raw subject {subject} in the complete signed {chain} chain"
     if klass == "recency-heavy":
+        if event_recency:
+            return (f"At what native timestamp did the unique latest event-time occurrence of {clause} occur? "
+                    "Use native event-time chronology, not signed sequence order; the scope is this chain, not the entire machine.")
         return (f"What was the latest recorded outcome value for {clause}? "
                 "Use signed sequence order, not event-time chronology.")
     if klass == "repetition-heavy":
@@ -315,8 +347,69 @@ def _question(klass, chain, action, subject):
             "Use signed sequence order; the scope is this chain, not the entire machine.")
 
 
+def _event_times(capture, populations):
+    """Admit every task-population timestamp before any witness or query cap.
+
+    The native capture parser historically admits looser attest timestamps.
+    This new policy deliberately does not repair or reinterpret those strings.
+    Fixed-width, calendar-valid UTC text orders lexically within an attest
+    chain; Custos uses its native canonical unsigned integer, without a float
+    timestamp conversion. Neither representation supplies a memory-use time.
+    """
+    chains = {row["chain"]: row for row in capture["chains"]}
+    times = {}
+    for (chain, _subject), actions in populations.items():
+        chain_format = chains[chain]["chain_format"]
+        if chain == "custos" and chain_format == siabench.CUSTOS_CHAIN_FORMAT:
+            unix = True
+        elif chain != "custos" and chain_format == siabench.ATTEST_CHAIN_FORMAT:
+            unix = False
+        else:
+            _fail("event-time chain format disagrees with native registry identity")
+        for events in actions.values():
+            for event in events:
+                stamp = event["row"][1]
+                if unix:
+                    if _UNIX_STAMP.fullmatch(stamp) is None:
+                        _fail("event-time timestamp is not canonical native unsigned Unix text")
+                    # Complete native capture admission already bounds the
+                    # representable Unix timestamp; keep integer precision here.
+                    value = int(stamp)
+                else:
+                    if _UTC_STAMP.fullmatch(stamp) is None:
+                        _fail("event-time timestamp is not canonical native UTC text")
+                    try:
+                        datetime.datetime.fromisoformat(stamp)
+                    except ValueError as exc:
+                        raise SelectionRefusal("cognitive selection refused: event-time timestamp is not calendar-valid UTC") from exc
+                    value = stamp
+                times[(chain, event["seq"])] = value
+    return times
+
+
+def _event_recency(events, times):
+    """Choose from the complete group before consulting retained witnesses."""
+    key = lambda event: times[(event["chain"], event["seq"])]
+    latest_time = max(key(event) for event in events)
+    latest = [event for event in events if key(event) == latest_time]
+    if len(latest) != 1:
+        return None, None, "ambiguous-maximum-event-time"
+    older = [event for event in events if key(event) < latest_time]
+    if not older:
+        return None, None, "no-strictly-older-event-time"
+    # Sequence resolves only equal-time older contrasts, never a maximum tie.
+    contrast = max(older, key=lambda event: (key(event), int(event["seq"])))
+    target = latest[0]
+    return [contrast, target], {
+        "kind": "latest-event-time-occurrence", "value": target["row"][1],
+        "sequences": [target["seq"]],
+    }, None
+
+
 def _candidates(capture, policy, groups, populations, chunks, exclusions):
     chains = {row["chain"]: row for row in capture["chains"]}
+    event_recency = policy["schema"] == EVENT_RECENCY_POLICY_SCHEMA
+    times = _event_times(capture, populations) if event_recency else None
     candidates = []
     for group in groups:
         chain, subject = group["chain"], group["subject"]
@@ -329,15 +422,17 @@ def _candidates(capture, policy, groups, populations, chunks, exclusions):
             for klass in CLASSES:
                 if klass in UNSUPPORTED:
                     continue
-                if klass == "recency-heavy" and not action.startswith("OUTCOME:"):
+                if klass == "recency-heavy" and not event_recency and not action.startswith("OUTCOME:"):
                     continue
-                question = _question(klass, chain, action, subject)
+                question = _question(klass, chain, action, subject, event_recency=event_recency)
                 identifier = siabench._question_id({"question": question})
                 reason = None
                 if not adapter._text(question, adapter.MAX_QUERY_BYTES):
                     reason = "query-text-contract"
                 elif klass == "recency-heavy":
-                    if len(events) < 2 or events[-1]["row"][4] == events[-2]["row"][4]:
+                    if event_recency:
+                        required, answer, reason = _event_recency(events, times)
+                    elif len(events) < 2 or events[-1]["row"][4] == events[-2]["row"][4]:
                         reason = "no-competing-recorded-outcome"
                     else:
                         required = events[-2:]
@@ -355,7 +450,11 @@ def _candidates(capture, policy, groups, populations, chunks, exclusions):
                     answer = {"kind": "first-occurrence", "value": events[0]["row"][1],
                               "sequences": [events[0]["seq"]]}
                 if reason is None:
-                    support, reason = _support(required, chunks, value_required=klass == "recency-heavy")
+                    support, reason = _support(
+                        required, chunks, value_required=klass == "recency-heavy" and not event_recency)
+                    if reason is None and klass == "recency-heavy" and event_recency \
+                            and support[0]["slug"] == support[-1]["slug"]:
+                        reason = "nearest-older-contrast-shares-target-page"
                 if reason is not None:
                     _exclude(exclusions, kind="query", identifier=identifier,
                              klass=klass, group=group["id"], reason=reason)
@@ -427,7 +526,8 @@ def _select(capture, expected_capture_sha256, policy, expected_policy_sha256):
         if klass in policy["required_classes"] and not rows:
             _fail("required class is unavailable: " + klass + " (" + reason + ")")
     body = {
-        "schema": SCHEMA, "capture_sha256": expected_capture_sha256,
+        "schema": EVENT_RECENCY_SCHEMA if policy["schema"] == EVENT_RECENCY_POLICY_SCHEMA else SCHEMA,
+        "capture_sha256": expected_capture_sha256,
         "policy_sha256": expected_policy_sha256, "pages": pages,
         "pages_sha256": _sha(_canonical(pages)), "groups": groups,
         "queries": [item["public"] for item in selected],
@@ -435,7 +535,8 @@ def _select(capture, expected_capture_sha256, policy, expected_policy_sha256):
         "coverage": coverage, "exclusions": sorted(exclusions, key=_canonical),
         "source_non_claims": {"capture": capture["non_claims"],
                               "generator": capture["source_non_claims"]},
-        "non_claims": list(NON_CLAIMS),
+        "non_claims": list(EVENT_RECENCY_NON_CLAIMS if policy["schema"] == EVENT_RECENCY_POLICY_SCHEMA
+                           else NON_CLAIMS),
     }
     result = {**body, "selection_sha256": _sha(_canonical(body))}
     _canonical(result)

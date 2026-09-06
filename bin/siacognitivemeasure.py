@@ -212,6 +212,16 @@ def _source(kw):
 
 
 def _protocol(kw, selected):
+    # _source has replayed the complete policy/capture selection. New answer
+    # semantics belong to that admitted version pair, not to an answer-kind
+    # string that a caller could attach to an old selection and rehash.
+    selector = baseline_module.selection_module
+    version = (kw["selection_policy"]["schema"], selected["schema"])
+    answer_kinds = dict(_ANSWER_KINDS)
+    if version == (selector.EVENT_RECENCY_POLICY_SCHEMA, selector.EVENT_RECENCY_SCHEMA):
+        answer_kinds["recency-heavy"] = "latest-event-time-occurrence"
+    elif version != (selector.POLICY_SCHEMA, selector.SCHEMA):
+        _fail("selection policy and task schema have no matching target definition")
     pages = {row["slug"]: row for row in selected["pages"]}
     chunks = {slug: tuple(baseline_module.preparation_admission._chunk_bytes(page["text"]))
               for slug, page in pages.items()}
@@ -220,7 +230,7 @@ def _protocol(kw, selected):
     queries = []
     for public in selected["queries"]:
         answer = answers[public["id"]]
-        if answer["class"] not in _ANSWER_KINDS or answer["answer"]["kind"] != _ANSWER_KINDS[answer["class"]]:
+        if answer["class"] not in answer_kinds or answer["answer"]["kind"] != answer_kinds[answer["class"]]:
             _fail("selected task has no frozen occurrence-target definition")
         support = {(row["chain"], row["seq"]): row for row in answer["support"]}
         sequences = answer["answer"]["sequences"]
