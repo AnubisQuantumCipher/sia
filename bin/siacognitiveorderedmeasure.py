@@ -9,6 +9,7 @@ It emits unevaluated requests, not a retrieval result or mathematical assurance.
 
 import copy
 
+import siacognitiveenvelope as envelope_module
 import siacognitiveexposure as exposure_module
 import siacognitivemeasure as measurement
 
@@ -38,9 +39,34 @@ _POLICY = {
 }
 _RESOURCES = {"max_input_bytes": MAX_INPUT_BYTES, "max_output_bytes": MAX_OUTPUT_BYTES,
               "max_queries": MAX_QUERIES}
+_V2_POLICY_SCHEMA = "sia-cognitive-ordered-measurement-policy-v2"
+_V2_RESOURCES = {**_RESOURCES, "max_input_bytes": envelope_module.MAX_INPUT_BYTES,
+                 "max_document_bytes": envelope_module.MAX_DOCUMENT_BYTES}
 _EXPOSURE_INPUTS = {
     "measurement_plan", "expected_measurement_plan_sha256", "replay_inputs", "rerank_policy",
     "expected_rerank_policy_sha256", "activation_policy", "expected_activation_policy_sha256",
+}
+# Only argument envelopes are decomposed here. In particular, None leaves
+# keep exposure, measurement, capture, selection, protocol and baseline whole;
+# an artifact may never supply a layout that divides itself around a ceiling.
+_COMPOUND_LAYOUT = {
+    "exposure": None, "expected_exposure_sha256": None,
+    "ordered_policy": None, "expected_ordered_policy_sha256": None,
+    "exposure_inputs": {
+        "measurement_plan": None, "expected_measurement_plan_sha256": None,
+        "rerank_policy": None, "expected_rerank_policy_sha256": None,
+        "activation_policy": None, "expected_activation_policy_sha256": None,
+        "replay_inputs": {
+            "capture": None, "expected_capture_sha256": None,
+            "selection_policy": None, "expected_policy_sha256": None,
+            "selection": None, "expected_selection_sha256": None,
+            "baseline_contract": None, "expected_baseline_contract_sha256": None,
+            "metric_policy": None, "expected_metric_policy_sha256": None,
+            "protocol": None, "expected_protocol_sha256": None,
+            "baseline": None, "expected_baseline_sha256": None,
+            "expected_parameter_freeze_sha256": None,
+        },
+    },
 }
 _SOURCE_FIELDS = (
     "capture_sha256", "policy_sha256", "selection_sha256", "pages_sha256",
@@ -68,24 +94,38 @@ def _keys(value, fields, label):
 
 
 def _policy(kw):
-    # This v1 contract intentionally retains its complete aggregate ceiling.
-    # A future compound-envelope version must not silently widen this lane.
-    measurement.baseline_module._bounded(kw, MAX_INPUT_BYTES)
     policy = kw["ordered_policy"]
+    # Inspect only the bounded policy to select a versioned argument-envelope
+    # contract. Complete domain admission still precedes every serialization,
+    # hash, detached copy and exposure replay on either path.
+    measurement.baseline_module._bounded(policy, envelope_module.MAX_DOCUMENT_BYTES)
     _keys(policy, {*_POLICY, "metric_protocol_sha256", "arms", "resources"}, "ordered policy")
-    if any(type(policy[key]) is not str or policy[key] != expected for key, expected in _POLICY.items()):
+    compound = policy["schema"] == _V2_POLICY_SCHEMA
+    if not compound:
+        # Original v1 aggregate bound and byte-accounting path are unchanged.
+        measurement.baseline_module._bounded(kw, MAX_INPUT_BYTES)
+    expected_schema = _V2_POLICY_SCHEMA if compound else _POLICY["schema"]
+    if any(type(policy[key]) is not str or policy[key] != (expected_schema if key == "schema" else expected)
+           for key, expected in _POLICY.items()):
         _fail("ordered policy changes a frozen admission or scoring rule")
     if type(policy["arms"]) is not list or policy["arms"] != list(ARMS):
         _fail("complete fixed ordered arm roster is required")
-    _keys(policy["resources"], _RESOURCES, "ordered resources")
-    for key, ceiling in _RESOURCES.items():
+    resource_limits = _V2_RESOURCES if compound else _RESOURCES
+    _keys(policy["resources"], resource_limits, "ordered resources")
+    for key, ceiling in resource_limits.items():
         value = policy["resources"][key]
         if type(value) is not int or not 0 < value <= ceiling:
             _fail("ordered resource declaration exceeds its strict hard ceiling")
+    if compound:
+        envelope_module.admit_compound(
+            envelope=kw, layout=_COMPOUND_LAYOUT,
+            max_input_bytes=policy["resources"]["max_input_bytes"],
+            max_document_bytes=policy["resources"]["max_document_bytes"])
+    else:
+        # Domain checks precede byte accounting for an earlier valid object
+        # when a later input contains a cycle or bad number.
+        exposure_module._json_size(kw, policy["resources"]["max_input_bytes"])
     _keys(kw["exposure_inputs"], _EXPOSURE_INPUTS, "independent exposure replay")
-    # Domain checks above precede byte accounting or serialization of any
-    # earlier valid object when a later input contains a cycle or bad number.
-    exposure_module._json_size(kw, policy["resources"]["max_input_bytes"])
     measurement._pin(policy, kw["expected_ordered_policy_sha256"])
     measurement._pin(kw["exposure"], kw["expected_exposure_sha256"], "artifact_sha256")
     replay = kw["exposure_inputs"]["replay_inputs"]
