@@ -454,7 +454,7 @@ def _graph_projection_debt():
     return ""
 
 
-def _recoverable_graph_snapshot(graph):
+def _recoverable_graph_snapshot(graph, *, observed_by=None):
     """Return exact generation counts for one canonical graph snapshot."""
     graph_keys = {
         "v", "ts", "publication_id", "nodes", "edges", "pages_total",
@@ -463,7 +463,7 @@ def _recoverable_graph_snapshot(graph):
     if not isinstance(graph, dict) or set(graph) != graph_keys \
             or not _status_publication_id(graph.get("publication_id")):
         return None
-    counts = _graph_snapshot_body_counts(graph)
+    counts = _graph_snapshot_body_counts(graph, observed_by=observed_by)
     return None if counts is None else {
         "publication_id": graph["publication_id"], **counts}
 
