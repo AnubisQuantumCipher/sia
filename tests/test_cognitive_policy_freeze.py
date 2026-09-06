@@ -35,6 +35,7 @@ EXPECTED_METRIC_POLICY = {
     'chronology': 'externally-pinned-before-heldout-v1',
 }
 LATENCY_POLICY = POLICY.with_name('latency-policy-v1.json')
+COMPOUND_LATENCY_POLICY = POLICY.with_name('latency-policy-v2.json')
 EXPECTED_LATENCY_POLICY = {
     'schema': 'sia-cognitive-latency-policy-v1',
     'samples': 'adapter-query-embedding-search-v1',
@@ -86,6 +87,13 @@ class CognitivePolicyFreeze(unittest.TestCase):
         self.assertTrue(EVENT_POLICY.is_file(), 'separate pre-results event-recency policy is missing')
         self.assertEqual(json.loads(EVENT_POLICY.read_text(encoding='utf-8')),
                          EXPECTED_EVENT_POLICY)
+
+    def test_compound_latency_policy_retains_every_original_timing_rule(self):
+        self.assertTrue(COMPOUND_LATENCY_POLICY.is_file(), 'explicit compound latency policy is missing')
+        self.assertEqual(json.loads(COMPOUND_LATENCY_POLICY.read_text(encoding='utf-8')),
+                         {**EXPECTED_LATENCY_POLICY, 'schema': 'sia-cognitive-latency-policy-v2',
+                          'resources': {'max_input_bytes': 67108864, 'max_document_bytes': 16777216,
+                                        'max_output_bytes': 16777216}})
 
 
 if __name__ == "__main__":

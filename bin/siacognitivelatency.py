@@ -17,6 +17,7 @@ import math
 import re
 
 import siacognitivemeasure as measurement
+import siacognitiveenvelope as envelope
 
 
 MAX_ARTIFACT_BYTES = measurement.MAX_ARTIFACT_BYTES
@@ -63,6 +64,13 @@ _REPLAY_KEYS = {
     *measurement._SOURCE_KEYS, "protocol", "expected_protocol_sha256", "baseline", "expected_baseline_sha256",
     "expected_parameter_freeze_sha256",
 }
+_COMPOUND_SCHEMA = "sia-cognitive-latency-policy-v2"
+_COMPOUND_LAYOUT = {
+    "measurement_plan": None, "expected_measurement_plan_sha256": None,
+    "replay_inputs": {key: None for key in _REPLAY_KEYS},
+    "latency_policy": None, "expected_latency_policy_sha256": None,
+}
+_RESOURCE_KEYS = {"max_input_bytes", "max_document_bytes", "max_output_bytes"}
 _NUMBER = re.compile(r"(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:[eE]([+-]?[0-9]+))?")
 
 
@@ -84,10 +92,30 @@ def _keys(value, fields, label):
 def _admit(kw):
     # Bound every complete input before any copying or JSON serialization. A
     # late malformed policy must not trigger eager work on an earlier baseline.
-    measurement._bounded_inputs(kw.values())
-    _keys(kw["latency_policy"], _POLICY, "latency policy")
-    if any(type(kw["latency_policy"][key]) is not str or kw["latency_policy"][key] != expected
-           for key, expected in _POLICY.items()):
+    policy = kw["latency_policy"]
+    compound = type(policy) is dict and policy.get("schema") == _COMPOUND_SCHEMA
+    if compound:
+        resources = policy.get("resources")
+        _keys(resources, _RESOURCE_KEYS, "compound latency resources")
+        maximum = resources["max_output_bytes"]
+        if type(maximum) is not int or not 0 < maximum <= MAX_ARTIFACT_BYTES:
+            _fail("compound latency output limit is invalid")
+        # Each complete source/protocol/baseline remains a document. The
+        # literal topology never splits an artifact to evade its old ceiling.
+        envelope.admit_compound(envelope=kw, layout=_COMPOUND_LAYOUT,
+                                max_input_bytes=resources["max_input_bytes"],
+                                max_document_bytes=resources["max_document_bytes"])
+        # The entire unchanged measurement must fit the output before replay
+        # and request construction; the completed result is also byte checked.
+        measurement.baseline_module._canonical(kw["measurement_plan"], maximum)
+        _keys(policy, {*_POLICY, "resources"}, "compound latency policy")
+        expected_policy = {**_POLICY, "schema": _COMPOUND_SCHEMA}
+    else:
+        measurement._bounded_inputs(kw.values())
+        _keys(policy, _POLICY, "latency policy")
+        expected_policy = _POLICY
+    if any(type(policy[key]) is not str or policy[key] != expected
+           for key, expected in expected_policy.items()):
         _fail("latency policy changes a frozen sampling, unit or aggregation rule")
     measurement._pin(kw["latency_policy"], kw["expected_latency_policy_sha256"])
     _keys(kw["replay_inputs"], _REPLAY_KEYS, "complete measurement replay inputs")
@@ -187,8 +215,10 @@ def _prepare(kw):
     plan = _admit(kw)
     query_samples, operation_samples = _samples(plan)
     requests = _requests(plan["classes"], query_samples)
-    return measurement._finish({
-        "schema": "sia-cognitive-latency-plan-v1", "status": "prepared-for-jackal",
+    compound = kw["latency_policy"]["schema"] == _COMPOUND_SCHEMA
+    result = measurement._finish({
+        "schema": "sia-cognitive-latency-plan-v2" if compound else "sia-cognitive-latency-plan-v1",
+        "status": "prepared-for-jackal",
         "arithmetic_status": "not-evaluated",
         **{key: plan[key] for key in (
             "capture_sha256", "policy_sha256", "selection_sha256", "pages_sha256", "metric_policy_sha256",
@@ -202,6 +232,9 @@ def _prepare(kw):
         "source_non_claims": {"measurement": plan["non_claims"], "history": plan["source_non_claims"]},
         "non_claims": list(NON_CLAIMS),
     }, "plan_sha256")
+    if compound:
+        measurement.baseline_module._canonical(result, kw["latency_policy"]["resources"]["max_output_bytes"])
+    return result
 
 
 def prepare_latency(*, measurement_plan, expected_measurement_plan_sha256, replay_inputs,
