@@ -351,6 +351,16 @@ def _reservations(capture, replay, policy, input_size, events, pages, groups, ex
         _refuse("rational-bit-capacity")
     records = len(events) + len(groups) + completions + len(replay["steps"]) + updates + cells
     reserved = input_size + (records + 1) * _METADATA_RECORD_BYTES + cells * (2 * rational_bits)
+    # Retained unsupported chains can have variable-size labels. Reserve each
+    # actual occurrence reference, rather than counting its text as fixed
+    # metadata; supported occurrences can also carry a witness reference.
+    for event in events.values():
+        reference_size = _json_size(_reference(event), MAX_INPUT_BYTES)
+        reserved += reference_size
+        if _native_relation(event)[0] is not None:
+            reserved += reference_size
+    for step in replay["steps"]:
+        reserved += _json_size(step["occurrence"], MAX_INPUT_BYTES)
     # Every focused candidate embeds the SAME full alternative bundle twice:
     # once as its immutable JSON witness and once inside its meaning text.
     # Reserve worst-case JSON re-escaping without creating either string.
@@ -365,7 +375,10 @@ def _reservations(capture, replay, policy, input_size, events, pages, groups, ex
                 page = pages.get(retention["source_slug"])
                 witness_text = {"excerpt": excerpt, "page_slug": None if page is None else page["slug"]}
                 size = _json_size(witness_text, MAX_INPUT_BYTES)
-                bundle_size += _METADATA_RECORD_BYTES + size
+                reference_size = _json_size(_reference(event), MAX_INPUT_BYTES)
+                # The alternative occurrence roster and its witness each
+                # retain the complete reference before outer JSON escaping.
+                bundle_size += _METADATA_RECORD_BYTES + size + 2 * reference_size
                 reserved += size
         for completion in group:
             focus_text = source_text + _json_size(list(completion), MAX_INPUT_BYTES)
