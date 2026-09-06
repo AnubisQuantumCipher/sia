@@ -460,20 +460,36 @@ def _prepare_queries(kw, policy, *, parsed_queries=None):
     return prepared, population
 
 
-def _rank_query(*, query, candidates, observed_at, activation_policy):
-    """The target-blind numerical boundary: no capture, classes, or keys enter."""
+def _rank_arm(*, arm, query, candidates, observed_at, activation_policy):
+    """Shared target-blind worker over already admitted complete candidates.
+
+    Both the pure overlay and the separately observed timed replay call this
+    worker. It does not receive source packets, target keys or class labels.
+    """
+    if arm == "raw-original":
+        return {"order": [row["row_ref"] for row in candidates], "activation": None}
+    if arm == "cue-only":
+        return {"order": [row["row_ref"] for row in candidates if row["trace"]["uses"]]
+                + [row["row_ref"] for row in candidates if not row["trace"]["uses"]],
+                "activation": None}
+    if arm != "cue-event-exposure":
+        _fail("arm worker has no declared ordering rule")
     traces = [row["trace"] for row in candidates]
     receipt = activation.rank_traces(traces, observed_at=observed_at, policy=activation_policy)
     original = [row["row_ref"] for row in candidates]
-    cue_only = [row["row_ref"] for row in candidates if row["trace"]["uses"]] \
-        + [row["row_ref"] for row in candidates if not row["trace"]["uses"]]
     order = receipt["order"]
     if len(order) != len(original) or set(order) != set(original) or len(set(order)) != len(order):
         _fail("activation receipt is not a complete candidate permutation")
-    return {**query, "candidates": candidates, "activation": receipt,
-            "arms": [{"name": "raw-original", "order": original},
-                     {"name": "cue-only", "order": cue_only},
-                     {"name": "cue-event-exposure", "order": order}]}
+    return {"order": order, "activation": receipt}
+
+
+def _rank_query(*, query, candidates, observed_at, activation_policy):
+    """The target-blind numerical boundary: no capture, classes, or keys enter."""
+    results = {arm: _rank_arm(arm=arm, query=query, candidates=candidates,
+                             observed_at=observed_at, activation_policy=activation_policy)
+               for arm in ARMS}
+    return {**query, "candidates": candidates, "activation": results["cue-event-exposure"]["activation"],
+            "arms": [{"name": arm, "order": results[arm]["order"]} for arm in ARMS]}
 
 
 def _result_body(kw, queries, population):
