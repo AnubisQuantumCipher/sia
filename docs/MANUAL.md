@@ -721,6 +721,41 @@ systemctl --user start sia-brainstem
 names for this scheduled-maintenance transaction; they do not name a sleep
 process.
 
+### Product-metaphor boundary repair
+
+```
+sia repair-cortex-boundary [--regenerate-legacy-graph] [--json]
+```
+
+This explicit command appends the current product-metaphor boundary to a
+historical `sia/cortex` page without rewriting its existing prose. It retains
+exact repair receipts, signs the migration, commits only the scoped root-page
+change, synchronizes the index, and republishes the graph. It does not run a
+pulse, migrate mind state, consolidate, consume touches, or install a daemon.
+
+Stop `sia-brainstem` before invoking it; the command acquires the brainstem
+and corpus leases but never stops or restarts the service itself. It requires
+a previous successful publication receipt and fails closed on unrelated
+publication/recovery debt, unrelated corpus changes, or malformed or changed
+authority. Preserve the retained journals and repair the named condition;
+do not delete debt to force success. An interrupted repair can resume only
+against its exact journal-bound generation, using the same legacy-graph mode.
+
+`--regenerate-legacy-graph` is an explicit option for a validated legacy graph
+alongside this boundary repair, not a generic invalid-graph override. It
+preserves the old graph as shape-only provenance and builds a new graph from
+the corpus; it does not invent historical publication identity or admit the
+old output to ranking. `--json` requests the bounded structured command
+result: `repaired`, `already-ready`, or `refused`, with a reason code and phase
+on refusal.
+
+Neither successful result replaces the ordinary `sia ready` check; other
+migrations or recovery work may still be required. This command grants no
+restore authorization and refuses `SIA_RESTORE_FULL_SYNC=1`. Resolve an active
+restore through its authorized `sia restore` workflow, not by changing that
+variable or removing restore barriers. The repair is product-prose maintenance,
+not evidence of cognition or improved recall.
+
 ## 4. Reading generated entries
 
 | Glyph | Kind | Meaning |

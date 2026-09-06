@@ -3775,12 +3775,37 @@ retain_unowned_cli_before_fence
     # not a smaller module.  Pin the exact set; the next extraction adds its
     # module here and inherits every façade guard below.
     FACADE_CHILD_EXPORTS = {
+        "sialivepublication": (
+            "_live_authority_memo",
+            "_live_bytes",
+            "_live_files",
+            "_live_final_memo",
+            "_live_generation",
+            "_live_graph_status",
+            "_live_memo_bytes",
+            "_live_memo_sha",
+            "_live_own",
+            "_live_parent_generation",
+            "_live_prepare_replay",
+            "_live_receipt",
+            "_live_receipt_shape",
+            "_live_replay_candidate",
+            "_live_same",
+            "_live_sha",
+            "_live_status_image",
+            "_live_upstream_refusal",
+            "_publish_staged_live_generation",
+            "_read_committed_live_generation",
+            "_recover_pending_live_generation",
+            "_stage_live_generation",
+        ),
         "siagraph": (
             "_admit_graph_candidate", "_advance_graph_projection",
             "_append_graph_failure", "_canonical_graph_projection_state",
             "_export_graph_publication", "_fresh_graph_projection_state",
             "_graph_display_nodes", "_graph_projection_debt",
             "_graph_projection_pages", "_graph_projection_state_path",
+            "_graph_snapshot_body_counts",
             "_infer_domain_link_type", "_iter_corpus_link_edges",
             "_load_graph_projection_state", "_mark_graph_projection_dirty",
             "_recoverable_graph_snapshot",
@@ -4059,7 +4084,7 @@ retain_unowned_cli_before_fence
                 self.assertTrue(imported.isdisjoint(core),
                                 sorted(imported.intersection(core)))
                 expected_imports = {"threading"}
-                if name == "siathought":
+                if name in {"siathought", "sialivepublication"}:
                     expected_imports.add("contextlib")
                 if name == "siasenses":
                     expected_imports.add("errno")

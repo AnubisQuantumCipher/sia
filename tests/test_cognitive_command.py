@@ -67,6 +67,18 @@ EXACT_NON_CLAIMS = [
 ]
 
 
+class _OsShim:
+    """Keep syscall faults local to the module executing the command."""
+
+    def __init__(self, **overrides):
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(os, name)
+
+
 def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -155,6 +167,7 @@ class CognitiveCommandRequest(unittest.TestCase):
     def setUp(self):
         self.bench = importlib.import_module("siabench")
         self.baseline = importlib.import_module("siacognitivebaseline")
+        self.command = importlib.import_module("siacognitivecommand")
         parameters = inspect.signature(self.bench.run_cognitive).parameters
         self.assertIn("request_file", parameters, "public cognitive entrypoint lacks pinned-request admission")
         self.assertIn("request_sha256", parameters, "external request hash must be a separate argument")
@@ -313,11 +326,14 @@ class CognitiveCommandRequest(unittest.TestCase):
         # Sparse over-ceiling file: no large fixture buffer or database.
         with self.request_path.open("r+b") as stream:
             stream.truncate(16777217)
+        request_os = _OsShim(
+            read=mock.Mock(side_effect=AssertionError("oversized bytes read")),
+            pread=mock.Mock(side_effect=AssertionError("oversized bytes read")),
+            fdopen=mock.Mock(side_effect=AssertionError("oversized descriptor streamed")),
+        )
         with mock.patch.object(self.baseline, "run_baseline") as runner, \
                 mock.patch.object(self.bench.json, "loads", side_effect=AssertionError("oversized input parsed")), \
-                mock.patch.object(self.bench.os, "read", side_effect=AssertionError("oversized bytes read")), \
-                mock.patch.object(self.bench.os, "pread", side_effect=AssertionError("oversized bytes read")), \
-                mock.patch.object(self.bench.os, "fdopen", side_effect=AssertionError("oversized descriptor streamed")):
+                mock.patch.object(self.command, "os", request_os):
             with self.assertRaises(self.bench.BenchmarkRefusal):
                 self._run()
         runner.assert_not_called()
@@ -350,7 +366,7 @@ class CognitiveCommandRequest(unittest.TestCase):
             self.request_path.chmod(0o600)
             self._refused(lambda: self._run(request_file="request.json"))
             # Observed operator UID was 1000; JACKAL derived the foreign fixture 1001.
-            with mock.patch.object(self.bench.os, "geteuid", return_value=1001):
+            with mock.patch.object(self.command, "os", _OsShim(geteuid=mock.Mock(return_value=1001))):
                 self._refused(self._run)
         runner.assert_not_called()
 

@@ -302,6 +302,53 @@ class LivePublication(unittest.TestCase):
         self.assertFalse(Path(self.paths["LIVE_CANDIDATE_PATH"]).exists())
         self.assertFalse(Path(self.paths["LIVE_STATE_PATH"]).exists())
 
+    def _assert_unstarted_recovery_owns_probe_without_loading(self):
+        original_owner = self.lib.corpus_owner
+        original_started = self.lib._live_started
+        phase, calls = {"owned": False}, []
+
+        @contextlib.contextmanager
+        def owned():
+            with original_owner() as descriptor:
+                phase["owned"] = True
+                calls.append("enter")
+                try:
+                    yield descriptor
+                finally:
+                    phase["owned"] = False
+                    calls.append("exit")
+
+        def started(memo):
+            self.assertIs(memo, self.memo)
+            self.assertTrue(phase["owned"], "no-start probe escaped its original owner lease")
+            calls.append("probe")
+            return original_started(memo)
+
+        with mock.patch.object(self.lib, "corpus_owner", owned), \
+                mock.patch.object(self.lib, "_live_started", side_effect=started) as probe, \
+                mock.patch.object(self.lib, "_load_live_publication",
+                                  side_effect=AssertionError("unstarted recovery loaded optional live code")) as load:
+            self.assertIs(self.lib._recover_pending_live_generation(memo=self.memo), False)
+        probe.assert_called_once_with(self.memo)
+        load.assert_not_called()
+        self.assertEqual(calls, ["enter", "probe", "exit"])
+        self.assertFalse(phase["owned"])
+        self.assertFalse(Path(self.paths["LIVE_CANDIDATE_PATH"]).exists())
+        self.assertFalse(Path(self.paths["LIVE_STATE_PATH"]).exists())
+
+    def test_unstarted_recovery_probe_is_leased_before_lazy_load(self):
+        self.assertIsNone(self.lib._LIVE_PUBLICATION_MODULE)
+        self._assert_unstarted_recovery_owns_probe_without_loading()
+        self.assertIsNone(self.lib._LIVE_PUBLICATION_MODULE)
+
+    def test_unstarted_recovery_probe_remains_leased_after_lazy_load(self):
+        original_recovery = self.lib._recover_pending_live_generation
+        loaded = self.lib._load_live_publication()
+        self.assertIs(self.lib._LIVE_PUBLICATION_MODULE, loaded)
+        self.assertIs(self.lib._recover_pending_live_generation, original_recovery)
+        self._assert_unstarted_recovery_owns_probe_without_loading()
+        self.assertIs(self.lib._LIVE_PUBLICATION_MODULE, loaded)
+
     def test_stage_is_pending_and_publisher_commits_exact_complete_transition(self):
         before = copy.deepcopy(self.inputs)
         with mock.patch.object(self.loop, "prepare_pulse", wraps=self.loop.prepare_pulse) as replay:

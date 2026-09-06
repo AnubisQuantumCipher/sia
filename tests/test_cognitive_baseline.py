@@ -6,6 +6,11 @@ defined here. Exact event eligibility support and answer target sequences are
 retained separately and never collapsed to a slug-match score.
 """
 
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
 import base64
 import contextlib
 import copy
@@ -42,6 +47,18 @@ FREEZE_NON_CLAIMS = [
     "This externally pinned manifest declares calibration-only tuning; it does not independently prove historical tuning chronology.",
     "Frozen parameters and identities do not establish retrieval relevance, significance, or a cognitive win.",
 ]
+
+
+class _OsShim:
+    """Keep directory-iterator faults local to baseline admission."""
+
+    def __init__(self, **overrides):
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(os, name)
 
 
 def _body_digest(value, field):
@@ -915,7 +932,7 @@ class CognitiveBaseline(unittest.TestCase):
         module = self._module()
         entries = self._bounded_entries()
         with mock.patch.object(module.siavectormodel, "MAX_ENTRIES", 1), \
-                mock.patch.object(module.os, "scandir", return_value=entries), \
+                mock.patch.object(module, "os", _OsShim(scandir=mock.Mock(return_value=entries))), \
                 self.assertRaisesRegex(module.BaselineRefusal, "ceiling"):
             module._code_roster(SimpleNamespace(fd=None))
         self.assertTrue(entries.closed)
@@ -924,7 +941,7 @@ class CognitiveBaseline(unittest.TestCase):
         module = self._module()
         entries = self._bounded_entries()
         with mock.patch.object(module, "MAX_MEMBERS", 1), \
-                mock.patch.object(module.os, "scandir", return_value=entries), \
+                mock.patch.object(module, "os", _OsShim(scandir=mock.Mock(return_value=entries))), \
                 self.assertRaisesRegex(module.BaselineRefusal, "ceiling"):
             module._tree(str(self.root))
         self.assertTrue(entries.closed)

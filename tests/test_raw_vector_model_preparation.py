@@ -197,7 +197,7 @@ class RawVectorModelPreparation(unittest.TestCase):
                 b'{"v":1,"status":"ok","operation":"prepare_index","non_claims":["preparer boundary"]}\n', b"")
 
         with mock.patch.object(self.model, "_read_bound_request", return_value=copy.deepcopy(request)), \
-                mock.patch.object(os, "open", side_effect=open_parent), \
+                mock.patch.object(self.model, "os", fixtures._OsShim(open=mock.Mock(side_effect=open_parent))), \
                 mock.patch.object(self.model, "_bounded_adapter", side_effect=invoke):
             result = self.model._invoke_in_namespace(config)
         self.assertEqual(result["bound_request_sha256"], fixtures.digest(raw))
@@ -224,7 +224,7 @@ class RawVectorModelPreparation(unittest.TestCase):
                 b'"non_claims":["partial index is not complete"]}\n', b"")
 
         with mock.patch.object(self.model, "_read_bound_request", return_value=copy.deepcopy(request)), \
-                mock.patch.object(os, "open", side_effect=open_parent), \
+                mock.patch.object(self.model, "os", fixtures._OsShim(open=mock.Mock(side_effect=open_parent))), \
                 mock.patch.object(self.model, "_bounded_adapter", side_effect=refuse), \
                 self.assertRaisesRegex(self.model.ModelRefusal, "fixture-embedding-failed"):
             self.model._invoke_in_namespace(config)

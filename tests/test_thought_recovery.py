@@ -873,6 +873,12 @@ class ThoughtRecovery(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "changed after indexing"):
                 self.sialib._prepare_thought_recovery_claim()
 
+    def test_recovery_debt_precedes_cortex_readiness(self):
+        with mock.patch.object(
+                self.sialib, "_cortex_boundary_status",
+                side_effect=AssertionError("cortex checked before recovery debt")):
+            self.test_readiness_refuses_baseline_intent_and_claim_debt()
+
     def test_readiness_refuses_baseline_intent_and_claim_debt(self):
         memo = {"sync_needed": False, "ready": {
             "v": 1, "completed_at": "2026-01-02T03:04:05Z",

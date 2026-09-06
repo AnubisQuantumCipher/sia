@@ -354,6 +354,12 @@ class SourceReplayJournal(unittest.TestCase):
             self.sialib._authorize_pending_source_replay(
                 marker, {"notify.last": ""})
 
+    def test_preupgrade_quarantine_precedes_live_generation_recovery(self):
+        with mock.patch.object(
+                self.sialib, "_recover_pending_live_generation",
+                side_effect=AssertionError("live recovery before source authority")):
+            self.test_preupgrade_notification_batch_refuses_before_any_recovery()
+
     def test_preupgrade_notification_batch_refuses_before_any_recovery(self):
         with tempfile.TemporaryDirectory() as state:
             memo_path = os.path.join(state, "memo.json")

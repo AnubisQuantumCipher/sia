@@ -1128,9 +1128,17 @@ class DreamPublication(unittest.TestCase):
         self.assertTrue(rows)
         self.assertTrue(boundary["legacy_truncated"])
 
-        with mock.patch.object(
-                self.sialib, "corpus_owner",
-                return_value=nullcontext()), \
+        corpus = os.path.join(self.state_root.name, "corpus")
+        with mock.patch.object(self.sialib, "CORPUS", corpus), \
+                mock.patch.object(
+                    self.sialib, "CORTEX_BOUNDARY_REPAIR_JOURNAL",
+                    os.path.join(self.state_root.name, "cortex-journal.json")), \
+                mock.patch.object(
+                    self.sialib, "CORTEX_BOUNDARY_REPAIR_RECEIPT",
+                    os.path.join(self.state_root.name, "cortex-receipt.json")), \
+                mock.patch.object(
+                    self.sialib, "corpus_owner",
+                    return_value=nullcontext()), \
                 mock.patch.object(
                     self.sialib, "load_memo", return_value=self.memo), \
                 mock.patch.object(
@@ -1158,6 +1166,13 @@ class DreamPublication(unittest.TestCase):
                 mock.patch.object(
                     self.sialib.siatakes, "intent_history_required",
                     return_value=False):
+            ready, reason = self.sialib.memory_readiness()
+            self.assertFalse(ready)
+            self.assertIn("cortex product-metaphor boundary root is missing", reason)
+            root = self.sialib.corpus_path("sia/cortex")
+            os.makedirs(os.path.dirname(root))
+            self.sialib.atomic_write(
+                root, self.sialib._current_cortex_root_bytes().decode("utf-8"))
             self.assertEqual(self.sialib.memory_readiness(), (True, ""))
 
     def test_dream_unit_receipt_version_requires_exact_json_integer(self):

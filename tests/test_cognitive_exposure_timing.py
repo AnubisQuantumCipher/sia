@@ -20,6 +20,11 @@ These fixtures do not establish clock accuracy or implementation correctness.
 Other resource literals are observed existing declared source/test ceilings.
 """
 
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
 import contextlib
 import copy
 import importlib

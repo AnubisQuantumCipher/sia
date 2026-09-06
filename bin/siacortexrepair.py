@@ -415,6 +415,7 @@ def _git(core, *args):
            "GIT_TERMINAL_PROMPT": "0"}
     command = ["git", "-c", "core.hooksPath=" + os.devnull,
                "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+               "-c", "maintenance.auto=false", "-c", "gc.auto=0",
                "-c", "commit.gpgsign=false", "-c", "user.email=sia@omarchy.local",
                "-c", "user.name=SIA", *args]
     result = core._run_bounded_text_process(

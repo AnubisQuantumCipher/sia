@@ -26,6 +26,18 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "bin"))
 
 
+class _OsShim:
+    """Forward real syscalls except for model-module-local test hooks."""
+
+    def __init__(self, **overrides):
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(os, name)
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False).encode()
@@ -299,11 +311,12 @@ class RawVectorModelContract(unittest.TestCase):
                       "runner": {"pid": 322, "starttime": "one"}}
         changed = {"service": generation["service"],
                    "runner": {"pid": 323, "starttime": "two"}}
+        kill = mock.Mock()
         with mock.patch.object(self.model, "_spawn_service", return_value=service), \
                 mock.patch.object(self.model, "_warm_model"), \
                 mock.patch.object(self.model, "_serving_generation", side_effect=[generation, changed]), \
                 mock.patch.object(self.model, "_invoke_in_namespace", return_value={"ok": True}), \
-                mock.patch.object(os, "kill") as kill, \
+                mock.patch.object(self.model, "os", _OsShim(kill=kill)), \
                 self.assertRaisesRegex(self.model.ModelRefusal, "generation"):
             self.model.run_owned_session(config)
         service.terminate.assert_called_once_with()
@@ -346,7 +359,7 @@ class RawVectorModelContract(unittest.TestCase):
             return original_pread(fd, count, offset)
 
         with mock.patch.object(self.model, "MAX_JSON_BYTES", 64), \
-                mock.patch.object(os, "pread", side_effect=bounded_pread), \
+                mock.patch.object(self.model, "os", _OsShim(pread=mock.Mock(side_effect=bounded_pread))), \
                 self.assertRaisesRegex(self.model.ModelRefusal, "metadata|receipt"):
             with self._admit():
                 self.fail("oversized release metadata was admitted")
@@ -482,7 +495,7 @@ class RawVectorModelContract(unittest.TestCase):
         with mock.patch.object(self.model, "_process", side_effect=processes.__getitem__), \
                 mock.patch.object(self.model, "_mounted_executable_identity", create=True,
                                   side_effect=mounted.__getitem__) as mount_probe, \
-                mock.patch.object(os, "listdir", return_value=["321", "322"]), \
+                mock.patch.object(self.model, "os", _OsShim(listdir=mock.Mock(return_value=["321", "322"]))), \
                 mock.patch.object(self.model, "_api", return_value=response):
             try:
                 result = self.model._serving_generation(config, service)
@@ -504,7 +517,7 @@ class RawVectorModelContract(unittest.TestCase):
                     mock.patch.object(self.model, "_process", side_effect=processes.__getitem__), \
                     mock.patch.object(self.model, "_mounted_executable_identity", create=True,
                                       side_effect=mounted.__getitem__), \
-                    mock.patch.object(os, "listdir", return_value=["321", "322"]), \
+                    mock.patch.object(self.model, "os", _OsShim(listdir=mock.Mock(return_value=["321", "322"]))), \
                     mock.patch.object(self.model, "_api", return_value=response), \
                     self.assertRaises(self.model.ModelRefusal):
                 self.model._serving_generation(config, service)

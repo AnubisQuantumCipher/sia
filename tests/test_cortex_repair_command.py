@@ -131,7 +131,8 @@ class CortexRepairCommand(unittest.TestCase):
                "XDG_CONFIG_HOME": str(self.home / "config")}
         completed = subprocess.run(
             ["git", "-c", "user.email=fixture@example.invalid", "-c",
-             "user.name=Cortex fixture", *args], cwd=self.root, env=env,
+             "user.name=Cortex fixture", "-c", "maintenance.auto=false",
+             "-c", "gc.auto=0", *args], cwd=self.root, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
         self.assertEqual(completed.returncode, 0, completed.stderr.decode())
         return completed.stdout.decode()
@@ -511,6 +512,34 @@ class CortexRepairCommand(unittest.TestCase):
             self.assertEqual(call.kwargs["env"]["GIT_OPTIONAL_LOCKS"], "0")
             if "add" in argv:
                 self.assertEqual(argv[argv.index("add"):], ["add", "--", TARGET_PATH])
+
+    def test_every_dedicated_repair_git_command_disables_background_maintenance_and_gc(self):
+        # Observe the real bounded repair transport, not the fixture's Git
+        # helper. Automatic maintenance must not outlive the owner lease or
+        # race a subsequent exact-home refusal snapshot.
+        actual = self.core._run_bounded_text_process
+        with mock.patch.object(self.core, "_run_bounded_text_process", wraps=actual) as process:
+            self.assertEqual(self._run()["status"], "repaired")
+        git_calls = [call for call in process.call_args_list
+                     if call.args and call.args[0][0] == "git"]
+        self.assertTrue(git_calls, "repair did not use bounded Git transport")
+        for call in git_calls:
+            argv = call.args[0]
+            # Only leading global -c operands configure Git itself. A string
+            # in a command argument or commit message is not this control.
+            operands = iter(argv[1:])
+            settings = []
+            for operand in operands:
+                if operand != "-c":
+                    break
+                settings.append(next(operands))
+            for key, required in (("maintenance.auto", "maintenance.auto=false"),
+                                  ("gc.auto", "gc.auto=0")):
+                with self.subTest(argv=argv, configuration=key):
+                    self.assertEqual(
+                        [setting for setting in settings if setting.startswith(key + "=")],
+                        [required],
+                        "every repair Git command must explicitly disable automatic maintenance and gc")
 
     def test_bound_graph_generation_precedes_root_and_ledger_effects(self):
         actual = self.core.atomic_write

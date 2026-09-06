@@ -46,6 +46,11 @@ encrypted recovery snapshot; the weekly job performs the deeper repository
 check and exact off-path restore verification. Inspect the live schedule at
 any time with `sia backup schedule`.
 
+![Example SIA cockpit](preview.png)
+
+Example SIA cockpit. This static preview is not current machine state, a live
+readiness result, or evidence of cognitive performance.
+
 ## Install (Omarchy)
 
 SIA is already listed in the
