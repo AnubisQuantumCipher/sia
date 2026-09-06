@@ -29,6 +29,11 @@ MAX_PLAN_BYTES = 1_000_000_000
 MAX_ENTRIES = 10_000
 MAX_JSON_BYTES = 1_048_576
 MAX_OUTPUT_BYTES = 16_777_216
+# Published wire budgets from raw-vector/prepare-index.ts and siavectoradmit.
+MAX_PREPARE_REQUEST_BYTES = 8_388_608
+MAX_QUERY_REQUEST_BYTES = 262_144
+MAX_PREPARE_RESPONSE_BYTES = 2_097_152
+MAX_QUERY_RESPONSE_BYTES = 4_194_304
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _MODEL = re.compile(r"([a-z0-9][a-z0-9._-]*):([a-zA-Z0-9][a-zA-Z0-9._-]*)")
 _SEALS = (fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW
@@ -72,7 +77,7 @@ def _sha(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def _json(raw):
+def _json(raw, *, max_bytes=None):
     def pairs(items):
         result = {}
         for key, value in items:
@@ -81,7 +86,9 @@ def _json(raw):
             result[key] = value
         return result
     try:
-        if len(raw) > MAX_JSON_BYTES:
+        ceiling = MAX_JSON_BYTES if max_bytes is None else max_bytes
+        if type(ceiling) is not int or not 0 < ceiling <= MAX_OUTPUT_BYTES \
+                or len(raw) > ceiling:
             raise ValueError("JSON ceiling")
         return json.loads(raw, object_pairs_hook=pairs,
                           parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
@@ -302,8 +309,9 @@ def _sealed_file(path, expected, *, system=False, executable=False):
 
 
 @contextlib.contextmanager
-def _sealed_bytes(payload):
-    if len(payload) > MAX_JSON_BYTES:
+def _sealed_bytes(payload, *, max_bytes=None):
+    ceiling = MAX_JSON_BYTES if max_bytes is None else max_bytes
+    if type(ceiling) is not int or not 0 < ceiling <= MAX_OUTPUT_BYTES or len(payload) > ceiling:
         raise ModelRefusal("model configuration byte ceiling exceeded")
     fd = os.memfd_create("sia-model-config", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
     try:
@@ -471,6 +479,89 @@ class LaunchPlan:
     non_claims: list
 
 
+def _request_limit(operation):
+    if operation == "prepare_index":
+        return MAX_PREPARE_REQUEST_BYTES
+    if operation in ("capture", "query"):
+        return MAX_QUERY_REQUEST_BYTES
+    raise ModelRefusal("model request operation is invalid")
+
+
+def _request_bytes(request):
+    """Bound transport shape/bytes before making runtime snapshots.
+
+The operation-specific semantic request admitters still own page/query policy;
+this layer admits descriptor roles, JSON capacity, and the closed endpoint.
+"""
+    if type(request) is not dict:
+        raise ModelRefusal("model request must be an object")
+    limit = _request_limit(request.get("operation"))
+    nodes, strings = 0, 0
+
+    def bounded(value, depth=0):
+        nonlocal nodes, strings
+        nodes += 1
+        if nodes > MAX_ENTRIES or depth > 32:
+            raise ModelRefusal("model request structure budget exceeded")
+        if type(value) is str:
+            if len(value) > limit:
+                raise ModelRefusal("model request byte ceiling exceeded")
+            strings += len(value.encode("utf-8", errors="strict"))
+            if strings > limit:
+                raise ModelRefusal("model request byte ceiling exceeded")
+        elif type(value) is dict:
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise ModelRefusal("model request JSON key is invalid")
+                bounded(key, depth + 1)
+                bounded(item, depth + 1)
+        elif type(value) is list:
+            for item in value:
+                bounded(item, depth + 1)
+        elif value is not None and type(value) not in (bool, int, float):
+            raise ModelRefusal("model request JSON value is invalid")
+
+    try:
+        bounded(request)
+        raw = _canonical(request)
+    except (UnicodeError, RecursionError) as exc:
+        raise ModelRefusal("model request JSON budget or encoding refused") from exc
+    if len(raw) > limit:
+        raise ModelRefusal("model request byte ceiling exceeded")
+    if request["operation"] == "prepare_index":
+        role = request.get("output")
+        if "snapshot" in request or type(role) is not dict \
+                or set(role) != {"parent_fd"} or role["parent_fd"] is not None:
+            raise ModelRefusal("model preparation request output descriptor role is invalid")
+    else:
+        role = request.get("snapshot")
+        if "output" in request or type(role) is not dict or role.get("fd", False) is not None:
+            raise ModelRefusal("model query request snapshot descriptor role is invalid")
+    if type(request.get("embedding")) is not dict:
+        raise ModelRefusal("model request embedding is invalid")
+    return raw
+
+
+def _private_index_child(parent_fd):
+    try:
+        descriptor = os.open("index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                             | os.O_CLOEXEC, dir_fd=parent_fd)
+    except OSError as exc:
+        raise ModelRefusal("private index child generation is missing or not ordinary") from exc
+    info = os.fstat(descriptor)
+    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        os.close(descriptor)
+        raise ModelRefusal("private index child is not an owned ordinary0700 directory")
+    return descriptor, info
+
+
+def _empty_preparation_parent(parent_fd):
+    info = os.fstat(parent_fd)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+            or stat.S_IMODE(info.st_mode) != 0o700 or os.listdir(parent_fd):
+        raise ModelRefusal("preparation index requires an empty owned0700 parent and absent child")
+
+
 @contextlib.contextmanager
 def launch_plan(*, admitted, executable, executable_sha256, request,
                 snapshot_directory, shared_runtime, timeout):
@@ -480,10 +571,10 @@ Despite the historical argument name, shared_runtime leaves are copied into
 sealed descriptors too. There are no shared host directory mounts.
 """
     if not isinstance(admitted, AdmittedModel) or type(timeout) not in (int, float) \
-            or not 0 < timeout <= 1800 or not isinstance(request, dict) \
-            or not isinstance(request.get("snapshot"), dict) \
-            or not isinstance(request.get("embedding"), dict):
+            or not 0 < timeout <= 1800:
         raise ModelRefusal("model launch request is invalid")
+    request_bytes = _request_bytes(request)
+    preparing = request["operation"] == "prepare_index"
     embedding = request["embedding"]
     if embedding.get("model") != "ollama:" + admitted.identity["model_name"] \
             or embedding.get("endpoint") != "http://127.0.0.1:11434/v1":
@@ -534,20 +625,33 @@ sealed descriptors too. There are no shared host directory mounts.
         parent_fd = _open(snapshot_directory, os.O_RDONLY | os.O_DIRECTORY)
         stack.callback(os.close, parent_fd)
         parent_info = os.fstat(parent_fd)
-        child_fd = os.open("index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-                           | os.O_CLOEXEC, dir_fd=parent_fd)
-        stack.callback(os.close, child_fd)
-        child_info = os.fstat(child_fd)
-        for info in (parent_info, child_info):
-            if info.st_uid != os.geteuid() or info.st_mode & 0o077:
-                raise ModelRefusal("index parent and fixed child must be owned private directories")
+        child_fd = child_info = None
+        if parent_info.st_uid != os.geteuid() or parent_info.st_mode & 0o077:
+            raise ModelRefusal("index parent must be an owned private directory")
+        if preparing:
+            _empty_preparation_parent(parent_fd)
+        else:
+            child_fd = os.open("index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                               | os.O_CLOEXEC, dir_fd=parent_fd)
+            stack.callback(os.close, child_fd)
+            child_info = os.fstat(child_fd)
+            if child_info.st_uid != os.geteuid() or child_info.st_mode & 0o077:
+                raise ModelRefusal("index fixed child must be an owned private directory")
+        request_fd = stack.enter_context(_sealed_bytes(
+            request_bytes, max_bytes=_request_limit(request["operation"])))
+        files.append({"kind": "file", "fd": request_fd, "destination": "/runtime/request.json",
+                      "sha256": _sha(request_bytes), "bytes": len(request_bytes), "executable": False})
+        total += len(request_bytes)
+        if total > MAX_PLAN_BYTES:
+            raise ModelRefusal("complete sealed model launch exceeds byte ceiling")
         configuration = {"schema": "sia-raw-vector-model-launch-v1",
                          "model_name": admitted.identity["model_name"],
                          "model_identity": admitted.identity, "embedding": dict(embedding),
                          "environment": dict(_ENV), "timeout": timeout,
                          "adapter_sha256": adapter.sha256, "supervisor_sha256": supervisor.sha256,
                          "system_runtime": runtime_identity, "sealed_bytes": total,
-                         "request": _json(_canonical(request)), "non_claims": list(NON_CLAIMS)}
+                         "operation": request["operation"], "request_sha256": _sha(request_bytes),
+                         "request_bytes": len(request_bytes), "non_claims": list(NON_CLAIMS)}
         config_bytes = _canonical(configuration)
         config_fd = stack.enter_context(_sealed_bytes(config_bytes))
         files.append({"kind": "file", "fd": config_fd,
@@ -605,6 +709,9 @@ sealed descriptors too. There are no shared host directory mounts.
                 raise ModelRefusal("private index descriptor parent generation changed")
         finally:
             os.close(rebound)
+        if preparing:
+            child_fd, child_info = _private_index_child(parent_fd)
+            stack.callback(os.close, child_fd)
         child_rebound = None
         try:
             child_rebound = os.open("index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -762,23 +869,68 @@ def _serving_generation(config, service):
         raise ModelRefusal("owned model generation inspection refused") from exc
 
 
+def _read_bound_request(config):
+    operation = config.get("operation")
+    limit = _request_limit(operation)
+    expected_size, expected_sha = config.get("request_bytes"), config.get("request_sha256")
+    if type(expected_size) is not int or not 0 < expected_size <= limit \
+            or type(expected_sha) is not str or not _DIGEST.fullmatch(expected_sha):
+        raise ModelRefusal("bound model request identity is invalid")
+    descriptor = None
+    try:
+        descriptor = _open("/runtime/request.json", os.O_RDONLY)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
+            raise ModelRefusal("bound model request size or type mismatch")
+        raw = os.pread(descriptor, expected_size, 0)
+        if len(raw) != expected_size or _sha(raw) != expected_sha \
+                or _generation(before) != _generation(os.fstat(descriptor)):
+            raise ModelRefusal("bound model request digest or generation mismatch")
+        request = _json(raw, max_bytes=limit)
+        if type(request) is not dict or request.get("operation") != operation \
+                or request.get("embedding") != config.get("embedding"):
+            raise ModelRefusal("bound model request operation or embedding mismatch")
+        if _request_bytes(request) != raw:
+            raise ModelRefusal("bound model request is not canonical transport JSON")
+        return request
+    except OSError as exc:
+        raise ModelRefusal("bound model request could not be opened") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def _invoke_in_namespace(config):
-    request = _json(_canonical(config["request"]))
+    request = _read_bound_request(config)
+    preparing = request["operation"] == "prepare_index"
     parent_fd = os.open("/private-index", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        request["snapshot"]["fd"] = parent_fd
+        if preparing:
+            _empty_preparation_parent(parent_fd)
+            request["output"]["parent_fd"] = parent_fd
+        else:
+            request["snapshot"]["fd"] = parent_fd
         raw = _canonical(request)
-        with _sealed_bytes(raw) as request_fd:
+        with _sealed_bytes(raw, max_bytes=_request_limit(request["operation"])) as request_fd:
             result = _bounded_adapter(["/runtime/adapter", "--request-fd", str(request_fd)],
                                       (parent_fd, request_fd), config["timeout"])
         if len(result.stdout) + len(result.stderr) > MAX_OUTPUT_BYTES \
                 or result.stderr or result.returncode not in (0, 2) \
                 or not result.stdout.endswith(b"\n"):
             raise ModelRefusal("owned adapter output contract refused")
-        payload = _json(result.stdout)
+        payload = _json(result.stdout, max_bytes=(MAX_PREPARE_RESPONSE_BYTES if preparing
+                                                 else MAX_QUERY_RESPONSE_BYTES))
         if type(payload) is not dict:
             raise ModelRefusal("owned adapter output is not an object")
+        if preparing:
+            if result.returncode != 0 or payload.get("status") != "ok" \
+                    or payload.get("operation") != "prepare_index":
+                reason = payload.get("reason", "invalid-preparation-result")
+                raise ModelRefusal("owned model preparation refused: " + str(reason)[:4096])
+            child, _ = _private_index_child(parent_fd)
+            os.close(child)
         return {"payload": payload, "returncode": result.returncode,
+                "bound_request_sha256": config["request_sha256"],
                 "request_sha256": _sha(raw), "stdout_sha256": _sha(result.stdout),
                 "executable_sha256": config["adapter_sha256"]}
     finally:
@@ -874,7 +1026,7 @@ def invoke_model_adapter(*, admitted, shared_runtime, executable, executable_sha
             raise ModelRefusal("private model namespace launch refused") from exc
         if result.returncode != 0 or result.stderr or not result.stdout.endswith("\n"):
             raise ModelRefusal("private model namespace output refused: " + result.stderr[:4096])
-        payload = _json(result.stdout)
+        payload = _json(result.stdout, max_bytes=MAX_OUTPUT_BYTES)
         if type(payload) is not dict or payload.get("status") != "observed" \
                 or payload.get("launch_config_sha256") != plan.config_sha256:
             raise ModelRefusal("private model namespace observation identity refused")
