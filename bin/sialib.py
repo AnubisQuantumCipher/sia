@@ -6132,6 +6132,7 @@ def _read_pending_controller_source_batch(*, memo):
 
 def _prepare_controller_source_live_candidate(*, memo, admitted_status):
     """Build the existing pure live input only from the retained source slot."""
+    import siacontrollerliveinput
     import sialiveloop
     import siasourcebatch
     with brainstem_owner(), corpus_owner():
@@ -6141,7 +6142,6 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
             siasourcebatch.refuse(
                 "controller-source-pending-batch-required", phase="live-prepare")
         batch = source_view["batch"]
-        intake = copy.deepcopy(batch["intake_projection"]["intake"])
         previous_state = previous_sha256 = None
         if "live_loop_committed" in memo:
             live_view = _read_committed_live_generation(
@@ -6174,25 +6174,15 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
                 siasourcebatch.refuse(
                     "controller-source-live-parent-unbound",
                     phase="live-prepare")
-        deliveries = {
-            "schema": "sia-live-deliveries-v1",
-            "epoch_id": intake["epoch_id"],
-            "complete": True,
-            "records": [],
-        }
-        prepare_inputs = {
-            "intake": intake,
-            "expected_intake_sha256": batch["intake_projection"]["intake_sha256"],
-            "deliveries": deliveries,
-            "expected_deliveries_sha256": sialiveloop._sha(deliveries),
-            "previous_state": previous_state,
-            "expected_previous_state_sha256": previous_sha256,
-            "policy": copy.deepcopy(batch["epoch"]["live_policy"]),
-            "expected_policy_sha256": batch["epoch"]["expected_live_policy_sha256"],
-            "observed_at": batch["observed_at"],
-            "idle": False,
-            "gist_inputs": None,
-        }
+        try:
+            prepare_inputs = siacontrollerliveinput.prepare_inputs(
+                batch=batch, previous_state=previous_state,
+                expected_previous_state_sha256=previous_sha256)
+        except (TypeError, ValueError, KeyError, OverflowError,
+                RecursionError) as exc:
+            siasourcebatch.refuse(
+                "controller-source-live-intake-continuation",
+                phase="live-prepare", upstream=exc)
         # Execute the exact component contract now; live publication replays
         # the same pinned input before retaining a candidate.
         sialiveloop.prepare_pulse(**prepare_inputs)
@@ -6215,6 +6205,35 @@ def _stage_controller_source_live_binding(*, memo, admitted_status, seq):
     with brainstem_owner(), corpus_owner():
         return siasourcepublication.stage_live_binding(
             globals(), memo=memo, admitted_status=admitted_status, seq=seq)
+
+
+def _prepare_controller_source_status_effects(
+        *, admitted_status, batch, expected_batch_sha256,
+        source_live_pending, candidate, transition,
+        expected_transition_sha256, started_at):
+    import siacontrollerstatus
+    return siacontrollerstatus.prepare(
+        globals(), admitted_status=admitted_status, batch=batch,
+        expected_batch_sha256=expected_batch_sha256,
+        source_live_pending=source_live_pending, candidate=candidate,
+        transition=transition,
+        expected_transition_sha256=expected_transition_sha256,
+        started_at=started_at)
+
+
+def _stage_controller_source_status_effects(
+        *, memo, admitted_status, batch, expected_batch_sha256,
+        source_live_pending, candidate, transition,
+        expected_transition_sha256, started_at):
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.stage_status_effects(
+            globals(), memo=memo, admitted_status=admitted_status,
+            batch=batch, expected_batch_sha256=expected_batch_sha256,
+            source_live_pending=source_live_pending, candidate=candidate,
+            transition=transition,
+            expected_transition_sha256=expected_transition_sha256,
+            started_at=started_at)
 
 
 def _ready_receipt(memo):

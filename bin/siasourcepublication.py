@@ -390,3 +390,189 @@ def stage_live_binding(owner, *, memo, admitted_status, seq):
         memo.update(detached)
         named_current()
         return None
+
+
+def stage_status_effects(owner, *, memo, admitted_status, batch,
+                         expected_batch_sha256, source_live_pending,
+                         candidate, transition, expected_transition_sha256,
+                         started_at):
+    """Persist the bound counter/history handoff before a closure effect."""
+    import siacontrollerstatus as status_effects
+    import siasourcebatch as source
+    import sialiveloop as live
+
+    originals = {
+        "memo": _wire(owner, source, memo, memo=True),
+        "batch": _wire(owner, source, batch),
+        "admitted_status": live._canonical(admitted_status),
+        "source_live_pending": live._canonical(source_live_pending),
+        "candidate": live._canonical(candidate),
+        "transition": live._canonical(transition),
+        "expected_batch_sha256": expected_batch_sha256,
+        "expected_transition_sha256": expected_transition_sha256,
+        "started_at": started_at,
+    }
+
+    def inputs_current():
+        try:
+            changed = (
+                _wire(owner, source, memo, memo=True) != originals["memo"]
+                or _wire(owner, source, batch) != originals["batch"]
+                or live._canonical(admitted_status)
+                != originals["admitted_status"]
+                or live._canonical(source_live_pending)
+                != originals["source_live_pending"]
+                or live._canonical(candidate) != originals["candidate"]
+                or live._canonical(transition) != originals["transition"]
+                or expected_batch_sha256
+                != originals["expected_batch_sha256"]
+                or expected_transition_sha256
+                != originals["expected_transition_sha256"]
+                or started_at != originals["started_at"])
+        except (TypeError, ValueError, KeyError, OverflowError,
+                RecursionError) as exc:
+            source.refuse(
+                "source-status-input-representation-changed",
+                phase="stage", upstream=exc)
+        if changed:
+            _refuse(source, "source-status-input-changed")
+
+    def parent_current(memo_image, status_image, binding):
+        parent_sha256 = binding["parent_generation_sha256"]
+        committed = memo_image.get("live_loop_committed")
+        if parent_sha256 is None:
+            if committed is not None:
+                _refuse(source, "source-status-unbound-live-parent")
+            return
+        if type(committed) is not dict:
+            _refuse(source, "source-status-live-parent-missing")
+        try:
+            view = owner["_read_committed_live_generation"](
+                memo=memo_image, admitted_status=status_image)
+        except (TypeError, ValueError, RuntimeError, KeyError,
+                OverflowError, RecursionError) as exc:
+            source.refuse(
+                "source-status-live-parent-invalid", phase="stage",
+                upstream=exc)
+        generation = view.get("generation")
+        if view.get("status") != "available" \
+                or type(generation) is not dict \
+                or generation.get("generation_sha256") != parent_sha256 \
+                or generation.get("state_sha256") \
+                != binding["parent_state_sha256"]:
+            _refuse(source, "source-status-live-parent-differs")
+
+    # Pure admission happens before authority descriptors or a durable write.
+    status_effects.prepare(
+        owner, admitted_status=admitted_status, batch=batch,
+        expected_batch_sha256=expected_batch_sha256,
+        source_live_pending=source_live_pending, candidate=candidate,
+        transition=transition,
+        expected_transition_sha256=expected_transition_sha256,
+        started_at=started_at)
+    inputs_current()
+
+    with _files(owner, source) as (files, observe, current, named_current):
+        retained_memo = files["memo"]
+        retained_batch = files["batch"]
+        _authority(owner, source, memo, retained_memo.value)
+        if retained_batch.raw is None \
+                or retained_batch.raw != _wire(owner, source, batch):
+            _refuse(source, "source-status-retained-batch-differs")
+        frozen_memo = owner["copy"].deepcopy(retained_memo.value)
+        frozen_batch = owner["copy"].deepcopy(retained_batch.value)
+        frozen_status = owner["_require_status_admission_unchanged"](
+            admitted_status)
+        try:
+            binding = owner["_controller_source_live_binding_marker"](
+                frozen_memo)
+        except (TypeError, ValueError, KeyError, OverflowError,
+                RecursionError) as exc:
+            source.refuse(
+                "source-status-live-binding-invalid", phase="stage",
+                upstream=exc)
+        if binding is None \
+                or _wire(owner, source, binding) \
+                != _wire(owner, source, source_live_pending):
+            _refuse(source, "source-status-live-binding-differs")
+        if "ready" in frozen_memo \
+                or type(frozen_memo.get("pulse_seq")) is not int \
+                or not owner["_nonnegative_status_integer"](
+                    frozen_memo["pulse_seq"]) \
+                or frozen_memo["pulse_seq"] != binding["seq"]:
+            _refuse(source, "source-status-sequence-or-readiness")
+        parent_current(frozen_memo, frozen_status, binding)
+        prepared = status_effects.prepare(
+            owner, admitted_status=frozen_status, batch=frozen_batch,
+            expected_batch_sha256=expected_batch_sha256,
+            source_live_pending=binding,
+            candidate=owner["copy"].deepcopy(candidate),
+            transition=owner["copy"].deepcopy(transition),
+            expected_transition_sha256=expected_transition_sha256,
+            started_at=started_at)
+        handoff = {
+            "v": 1, "publication_id": binding["publication_id"],
+            "effects": owner["copy"].deepcopy(prepared["effects"]),
+            "history": owner["copy"].deepcopy(prepared["history"][-1]),
+        }
+        has_existing = "pulse_status_effects_pending" in frozen_memo
+        existing = frozen_memo.get("pulse_status_effects_pending")
+        if has_existing:
+            try:
+                admitted_handoff = owner["_pending_pulse_status_effects"](
+                    frozen_memo)
+            except (TypeError, ValueError, RuntimeError) as exc:
+                source.refuse(
+                    "source-status-handoff-invalid", phase="stage",
+                    upstream=exc)
+            if admitted_handoff != handoff \
+                    or frozen_memo.get("pulse_history") \
+                    != prepared["history"]:
+                _refuse(source, "source-status-handoff-differs")
+        elif frozen_memo.get("pulse_history") != frozen_status["history"]:
+            _refuse(source, "source-status-history-authority")
+
+        updated = owner["copy"].deepcopy(frozen_memo)
+        updated["pulse_history"] = owner["copy"].deepcopy(
+            prepared["history"])
+        updated["pulse_status_effects_pending"] = handoff
+        _wire(owner, source, handoff)
+        _wire(owner, source, updated, memo=True)
+        updated_text = owner["_memo_text"](updated)
+        updated_raw = updated_text.encode("utf-8")
+        inputs_current()
+        if has_existing:
+            current()
+            owner["_require_status_admission_unchanged"](admitted_status)
+            inputs_current()
+            parent_current(frozen_memo, frozen_status, binding)
+            named_current()
+            return None
+
+        current()
+        owner["_require_status_admission_unchanged"](admitted_status)
+        inputs_current()
+        parent_current(frozen_memo, frozen_status, binding)
+        owner["atomic_write"](
+            owner["MEMO_PATH"], updated_text, mode=0o600)
+        written = observe(
+            "memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if written.parent_identity != retained_memo.parent_identity \
+                or written.raw != updated_raw:
+            _refuse(source, "source-status-memo-bytes-differ")
+        current()
+        owner["_require_status_admission_unchanged"](admitted_status)
+        inputs_current()
+        parent_current(updated, frozen_status, binding)
+        detached = owner["copy"].deepcopy(updated)
+        if _wire(owner, source, detached, memo=True) \
+                != _wire(owner, source, updated, memo=True):
+            _refuse(source, "source-status-detachment-changed")
+        named_current()
+        owner["_require_status_admission_unchanged"](admitted_status)
+        inputs_current()
+        parent_current(updated, frozen_status, binding)
+        memo.clear()
+        memo.update(detached)
+        named_current()
+        return None
