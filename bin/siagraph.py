@@ -447,21 +447,28 @@ def _recoverable_graph_snapshot(graph):
 def _legacy_graph_snapshot_body_valid(graph):
     """Classify old complete output shape, never grant graph read authority.
 
-    The installed legacy producer omitted publication_id.  Absence is the
-    only permitted schema difference; no historical identity is synthesized.
-    This Boolean is usable only by the explicit regeneration transaction.
+    The installed legacy producer omitted publication_id and only collapsed
+    whitespace and clipped edge explanations, without making markup inert.
+    Those bounded explanations remain opaque preservation bytes. Every other
+    body invariant stays current; no historical identity is synthesized.
+    This Boolean is usable only by the explicit regeneration transaction,
+    which must export a new strictly inert graph before issuing readiness.
     """
     graph_keys = {
         "v", "ts", "nodes", "edges", "pages_total",
         "pages_total_complete", "snapshot",
     }
     return isinstance(graph, dict) and set(graph) == graph_keys \
-        and _graph_snapshot_body_counts(graph) is not None \
+        and _graph_snapshot_body_counts(graph, legacy_explanations=True) is not None \
         and graph["snapshot"]["complete"] is True
 
 
-def _graph_snapshot_body_counts(graph):
-    """Shared pure body validation; callers separately validate identity shape."""
+def _graph_snapshot_body_counts(graph, *, legacy_explanations=False):
+    """Pure body validation; only the legacy classifier permits old why bytes.
+
+    This helper never grants read authority. The normal snapshot wrapper
+    always uses the strict default and independently requires publication ID.
+    """
     snapshot_keys = {
         "complete", "truncated", "omitted_nodes", "omitted_edges",
         "omissions_imply_absence", "aged_out", "counts_by_kind",
@@ -476,6 +483,20 @@ def _graph_snapshot_body_counts(graph):
         return _strict_config_string(
             value, nonempty=nonempty, limit=limit) \
             and inert_summary(value) == value
+
+    def explanation(value):
+        if not legacy_explanations:
+            return inert_text(value, 90)
+        if not _strict_config_string(value, limit=90) \
+                or strip_controls(value) != value:
+            return False
+        normalized = re.sub(r"\s+", " ", value).strip()
+        # The old producer stripped before its character slice. A clipped
+        # string may therefore end in one normalized space at that ceiling;
+        # shorter trailing whitespace is not a recognized producer shape.
+        return normalized == value or (
+            len(value) == 90 and value.endswith(" ")
+            and normalized == value[:-1])
 
     def observed_timestamp(value):
         try:
@@ -565,7 +586,7 @@ def _graph_snapshot_body_counts(graph):
                     edge.get("t"), MAX_SOURCE_NAME_CHARS, nonempty=True) \
                 or re.fullmatch(
                     r"[a-z0-9][a-z0-9._-]*", edge["t"]) is None \
-                or not inert_text(edge.get("why"), 90):
+                or not explanation(edge.get("why")):
             return None
         identity = (edge["s"], edge["d"], edge["t"])
         if identity in seen_edges:
