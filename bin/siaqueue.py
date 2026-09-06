@@ -347,7 +347,9 @@ def _ensure_staging_directory(path):
 
 
 @contextlib.contextmanager
-def _staging_lock(staging_descriptor):
+def _staging_lock(staging_descriptor, *, nonblocking=False):
+    if type(nonblocking) is not bool:
+        raise TypeError("publication lock mode must be a Boolean")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(
@@ -358,7 +360,7 @@ def _staging_lock(staging_descriptor):
                 or info.st_nlink != 1:
             raise ValueError("publication staging lock is not an owned file")
         os.fchmod(descriptor, 0o600)
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | (fcntl.LOCK_NB if nonblocking else 0))
         try:
             held = os.fstat(descriptor)
             current = os.stat(
@@ -467,7 +469,7 @@ def _directory_identity(info):
 
 def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                          staging_dir=None, authority_roots=(),
-                         observe_destination=False):
+                         observe_destination=False, nonblocking=False):
     """Publish bytes through one crash-reusable fixed payload slot.
 
     ``exclusive`` never replaces a destination.  An already-present exact
@@ -475,11 +477,16 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
     is refused.  A failed or killed attempt can leave only ``payload`` in the
     owner-private staging directory, and the next holder cleans that exact
     owned regular slot before proceeding.
+
+    ``nonblocking`` opts into immediate staging-lock contention refusal;
+    existing callers retain the blocking lock contract by default.
     """
     if not isinstance(data, bytes):
         raise TypeError("fixed publication payload must be bytes")
     if type(observe_destination) is not bool:
         raise TypeError("destination observation mode must be a Boolean")
+    if type(nonblocking) is not bool:
+        raise TypeError("publication lock mode must be a Boolean")
     target = os.path.abspath(path)
     directory = os.path.dirname(target) or os.curdir
     name = os.path.basename(target)
@@ -497,7 +504,7 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                 != os.fstat(staging_descriptor).st_dev:
             raise ValueError(
                 "publication staging and destination are on different filesystems")
-        with _staging_lock(staging_descriptor):
+        with _staging_lock(staging_descriptor, nonblocking=nonblocking):
             try:
                 _owned_regular_at(
                     staging_descriptor, STAGING_PAYLOAD_NAME,
