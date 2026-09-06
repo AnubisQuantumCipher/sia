@@ -77,6 +77,41 @@ MAX_BENCH_ROWS = sialib.MAX_SOURCE_REPLAY_EVENTS
 MAX_BENCH_SOURCE_PAGES = sialib.MAX_EVENT_LOOKUP_PAGES
 MAX_BENCH_CANDIDATE_QUESTIONS = sialib.MAX_SOURCE_REPLAY_EVENTS
 MAX_BENCH_NEGATIVE_PAIRS = sialib.MAX_SOURCE_REPLAY_EVENTS
+# Immutable scope-tagged catalog in the original legacy manifest order.
+# Native capture retains the source boundary without inheriting QA claims;
+# legacy manifests retain every entry, including their original interleaving.
+_LEDGER_NON_CLAIMS = (
+    ("source", "keeper verification authenticates rows, not memory-system correctness"),
+    ("qa", "generated questions are a local regression population, not LongMemEval"),
+    ("qa", "retrieval evidence recall requires exact digest-bound source-page "
+     "excerpts; it is not reader answer correctness"),
+    ("source", "absence is scoped to the keeper-accepted observed ledger snapshot"),
+    ("source", "before/after byte, inode, metadata, and verifier-digest checks "
+     "do not exclude a same-user in-place ABA completed between observations"),
+    ("source", "private state views preserve captured bytes and mode bits, not "
+     "other inode metadata, pathname identity, or lock leases seen "
+     "by the verifier"),
+    ("source", "the verifier digest binds the registered executable or script, "
+     "not every library, interpreter, kernel, or hardware dependency it loads"),
+    ("source", "generation binding covers registered chain inputs, not undeclared "
+     "data paths opened internally by verifier code"),
+    ("source", "strict format parsing checks row spelling and linkage after keeper "
+     "success; it does not independently re-run signature verification"),
+    ("source", "Custos ledger intake does not re-open or re-hash files named by "
+     "its signed custody rows"),
+    ("qa", "only chains with a shared deterministic row-to-event projector "
+     "can produce present questions; custom verifier success alone "
+     "does not define corpus projection semantics"),
+    ("source", "consolidation-index lineage proves retention of an exact event "
+     "occurrence, not that every answer token remains verbatim in the "
+     "epoch summary"),
+    ("qa", "every present question requires an exact projected event excerpt "
+     "in the bound page; value and update questions also require its "
+     "terminal result field, and omissions are reported as coverage"),
+    ("qa", "thresholded retrieval non-abstention is a proxy, not a reader answer"),
+    ("source", "inputs beyond the manifest capacity policy refuse; no signed "
+     "snapshot or witness is truncated"),
+)
 LEGACY_TRIPWIRE_SCHEMA = "sia-heuristic-slug-retrieval-tripwire-v1"
 LEGACY_TRIPWIRE_NON_CLAIMS = [
     "hand-authored slug-family acceptors are relevance heuristics, not answer keys",
@@ -1493,17 +1528,13 @@ def _assign_splits(questions, seed):
     return sorted(out, key=lambda q: q["id"])
 
 
-def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
-                         *, cognitive_history=False):
-    """Generate deterministic QA + private answer keys from signed rows.
+def _capture_ledger_sources(corpus, chain_registry, chain_names):
+    """Read the shared verified snapshot and scoped projection cache, not QA.
 
-    CLI callers hold ``sialib.corpus_owner`` while this snapshot is built.
-    Every admitted source page is also opened no-follow and digest-bound so
-    the returned bundle remains self-describing after the lease is released.
+    The caller owns the corpus lease. Retention and answer-field coverage are
+    source observations; generating questions or requiring QA usefulness is a
+    separate operation performed only by the legacy dataset entrypoint.
     """
-    if type(cognitive_history) is not bool:
-        raise BenchmarkRefusal("cognitive history opt-in must be a boolean")
-    corpus = corpus or CORPUS
     snapshots, diagnostics = _snapshot_chains(
         chain_registry=chain_registry, names=chain_names)
     records, raw_pairs, raw_subjects, verified_latest_seq = [], {}, {}, {}
@@ -1639,6 +1670,142 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
                         "reason": item["reason"],
                         "rows": item["affected_rows"]}
                        for item in question_coverage)
+    return (snapshots, diagnostics, projected, records, resolver, raw_pairs,
+            raw_subjects, verified_latest_seq, witness_coverage,
+            question_coverage)
+
+
+def _ledger_capacity_policy():
+    """Keep the complete original source and artifact ceilings inspectable."""
+    return {
+        "kind": "complete-snapshot-refusal-v1",
+        "ledger_bytes_per_chain": MAX_BENCH_LEDGER_BYTES,
+        "verifier_bytes_per_chain": MAX_BENCH_VERIFIER_BYTES,
+        "declared_input_bytes_each": MAX_BENCH_CHAIN_INPUT_BYTES,
+        "snapshot_aggregate_bytes": MAX_BENCH_AGGREGATE_BYTES,
+        "ledger_rows_aggregate": MAX_BENCH_ROWS,
+        "source_page_bytes": MAX_BENCH_SOURCE_PAGE_BYTES,
+        "source_pages": MAX_BENCH_SOURCE_PAGES,
+        "witness_files": MAX_BENCH_ROWS,
+        "source_page_aggregate_bytes": MAX_BENCH_SOURCE_BYTES,
+        "candidate_questions": MAX_BENCH_CANDIDATE_QUESTIONS,
+        "negative_pair_cross_product": MAX_BENCH_NEGATIVE_PAIRS,
+        "artifact_bytes_each": MAX_BENCH_FILE_BYTES,
+        "artifact_aggregate_bytes": MAX_BENCH_AGGREGATE_BYTES,
+    }
+
+
+def capture_native_history(*, corpus, chain_registry, chain_names):
+    """Capture explicit native sources without questions or artifact writes.
+
+    This frontdoor binds the supplied corpus to the real active corpus owner;
+    it does not borrow that owner's lease for an arbitrary alternate tree.
+    Complete native ledger rows and the existing scoped resolver cache survive
+    even when no row provides a usable QA answer. The returned capture is a
+    detached private value, not a published artifact or delivery receipt.
+    """
+    if type(corpus) is not str or not corpus or "\x00" in corpus \
+            or not os.path.isabs(corpus) \
+            or os.path.normpath(corpus) != corpus \
+            or corpus != sialib.CORPUS:
+        raise BenchmarkRefusal(
+            "native history corpus must name the active canonical corpus")
+    if type(chain_registry) is not dict or not chain_registry \
+            or len(chain_registry) > MAX_BENCH_ROWS \
+            or type(chain_names) is not list or not chain_names \
+            or len(chain_names) > MAX_BENCH_ROWS:
+        raise BenchmarkRefusal(
+            "native history requires a bounded explicit chain roster")
+    if any(type(name) is not str or not name
+           or len(name) > MAX_BENCH_SOURCE_BYTES
+           for name in chain_registry) \
+            or any(type(name) is not str or not name
+                   or len(name) > MAX_BENCH_SOURCE_BYTES
+                   for name in chain_names):
+        raise BenchmarkRefusal("native history chain names are invalid")
+    # Name text is caller-owned too; do not let a bounded item count hide an
+    # unbounded declared roster before the inherited helper builds its sets.
+    roster_bytes = 0
+    for roster in (chain_registry, chain_names):
+        for name in roster:
+            roster_bytes += len(name.encode("utf-8", errors="strict"))
+            if roster_bytes > MAX_BENCH_SOURCE_BYTES:
+                raise BenchmarkRefusal(
+                    "native history declared roster exceeds its byte ceiling")
+    if len(set(chain_names)) != len(chain_names) \
+            or any(name not in chain_registry for name in chain_names):
+        raise BenchmarkRefusal(
+            "native history requested chains must be distinct and registered")
+    with sialib.corpus_owner():
+        (snapshots, diagnostics, projected, records, resolver, _raw_pairs,
+         _raw_subjects, _verified_latest_seq, witness_coverage,
+         question_coverage) = _capture_ledger_sources(
+             corpus, chain_registry, chain_names)
+        # Fail the complete capture rather than treating a refused required
+        # source as an empty history. Coverage exclusions are retained facts,
+        # not intake failures and not a requirement to generate any question.
+        if any(item.get("status") == "refused" for item in diagnostics) \
+                or {snap["chain"] for snap in snapshots} != set(chain_names):
+            raise BenchmarkRefusal("native history contains refused source intake")
+        chain_fields = (
+            "chain", "chain_format", "ledger_sha256", "head", "row_count",
+            "verifier", "verifier_sha256", "launch_contract_sha256", "inputs")
+        if any(any(key not in snap for key in chain_fields)
+               for snap in snapshots):
+            raise BenchmarkRefusal("native history chain provenance is incomplete")
+        chain_provenance = [{key: snap[key] for key in chain_fields}
+            for snap in snapshots]
+        identity = {
+            "schema": "sia-native-source-capture-v1",
+            "generator_version": GENERATOR_VERSION,
+            "capacity_policy": _ledger_capacity_policy(),
+            "chains": chain_provenance,
+            # Unlike the legacy QA dataset identity, this identity includes
+            # every inspected page, including pages with no answer witness.
+            "source_pages": sorted(
+                ({key: page[key] for key in ("slug", "sha256", "size")}
+                 for page in resolver.page_cache.values()),
+                key=lambda page: page["slug"]),
+            "witness_files": sorted(
+                ({key: artifact[key] for key in ("path", "sha256", "size", "kind")}
+                 for artifact in resolver.witness_files.values()),
+                key=lambda artifact: artifact["path"]),
+            "witness_coverage": witness_coverage,
+            "question_coverage": question_coverage,
+        }
+        manifest = {
+            **identity, "dataset_id": _sha_text(_canonical(identity)),
+            "generation_exclusions": [],
+            "non_claims": [
+                "No questions, answer keys, splits, retrieval scores, or cognitive wins "
+                "are generated by this source-only capture.",
+            ] + [text for scope, text in _LEDGER_NON_CLAIMS if scope == "source"],
+        }
+        import siacognitivehistory
+        try:
+            captured = siacognitivehistory.build_capture(
+                manifest=manifest, snapshots=snapshots, projected=projected,
+                records=records, resolver=resolver, diagnostics=diagnostics)
+            return siacognitivehistory.admit_capture(captured)
+        except siacognitivehistory.HistoryRefusal as exc:
+            raise BenchmarkRefusal(str(exc)) from exc
+
+
+def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
+                         *, cognitive_history=False):
+    """Generate deterministic QA + private answer keys from signed rows.
+
+    CLI callers hold ``sialib.corpus_owner`` while this snapshot is built.
+    Every admitted source page is also opened no-follow and digest-bound so
+    the returned bundle remains self-describing after the lease is released.
+    """
+    if type(cognitive_history) is not bool:
+        raise BenchmarkRefusal("cognitive history opt-in must be a boolean")
+    corpus = corpus or CORPUS
+    (snapshots, diagnostics, projected, records, resolver, raw_pairs,
+     raw_subjects, verified_latest_seq, witness_coverage,
+     question_coverage) = _capture_ledger_sources(
+         corpus, chain_registry, chain_names)
 
     def witness_provenance(record):
         value = {"event_id": record["event_id"],
@@ -1852,22 +2019,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
         key=lambda artifact: artifact["path"])
     seed = _sha_text(_canonical(chain_provenance))
     questions = _assign_splits(questions, seed)
-    capacity_policy = {
-        "kind": "complete-snapshot-refusal-v1",
-        "ledger_bytes_per_chain": MAX_BENCH_LEDGER_BYTES,
-        "verifier_bytes_per_chain": MAX_BENCH_VERIFIER_BYTES,
-        "declared_input_bytes_each": MAX_BENCH_CHAIN_INPUT_BYTES,
-        "snapshot_aggregate_bytes": MAX_BENCH_AGGREGATE_BYTES,
-        "ledger_rows_aggregate": MAX_BENCH_ROWS,
-        "source_page_bytes": MAX_BENCH_SOURCE_PAGE_BYTES,
-        "source_pages": MAX_BENCH_SOURCE_PAGES,
-        "witness_files": MAX_BENCH_ROWS,
-        "source_page_aggregate_bytes": MAX_BENCH_SOURCE_BYTES,
-        "candidate_questions": MAX_BENCH_CANDIDATE_QUESTIONS,
-        "negative_pair_cross_product": MAX_BENCH_NEGATIVE_PAIRS,
-        "artifact_bytes_each": MAX_BENCH_FILE_BYTES,
-        "artifact_aggregate_bytes": MAX_BENCH_AGGREGATE_BYTES,
-    }
+    capacity_policy = _ledger_capacity_policy()
     identity = {
         "schema": DATASET_SCHEMA,
         "generator_version": GENERATOR_VERSION,
@@ -1893,38 +2045,7 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
             "threshold_source": "calibration-only",
         },
         "generation_exclusions": generation_exclusions,
-        "non_claims": [
-            "keeper verification authenticates rows, not memory-system correctness",
-            "generated questions are a local regression population, not LongMemEval",
-            "retrieval evidence recall requires exact digest-bound source-page "
-            "excerpts; it is not reader answer correctness",
-            "absence is scoped to the keeper-accepted observed ledger snapshot",
-            "before/after byte, inode, metadata, and verifier-digest checks "
-            "do not exclude a same-user in-place ABA completed between observations",
-            "private state views preserve captured bytes and mode bits, not "
-            "other inode metadata, pathname identity, or lock leases seen "
-            "by the verifier",
-            "the verifier digest binds the registered executable or script, "
-            "not every library, interpreter, kernel, or hardware dependency it loads",
-            "generation binding covers registered chain inputs, not undeclared "
-            "data paths opened internally by verifier code",
-            "strict format parsing checks row spelling and linkage after keeper "
-            "success; it does not independently re-run signature verification",
-            "Custos ledger intake does not re-open or re-hash files named by "
-            "its signed custody rows",
-            "only chains with a shared deterministic row-to-event projector "
-            "can produce present questions; custom verifier success alone "
-            "does not define corpus projection semantics",
-            "consolidation-index lineage proves retention of an exact event "
-            "occurrence, not that every answer token remains verbatim in the "
-            "epoch summary",
-            "every present question requires an exact projected event excerpt "
-            "in the bound page; value and update questions also require its "
-            "terminal result field, and omissions are reported as coverage",
-            "thresholded retrieval non-abstention is a proxy, not a reader answer",
-            "inputs beyond the manifest capacity policy refuse; no signed "
-            "snapshot or witness is truncated",
-        ],
+        "non_claims": [text for _scope, text in _LEDGER_NON_CLAIMS],
     }
     bundle = {"manifest": manifest, "questions": questions,
               "diagnostics": diagnostics}

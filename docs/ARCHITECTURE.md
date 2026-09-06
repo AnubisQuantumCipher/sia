@@ -21,11 +21,24 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
-| `bin/siabench.py` | signed-ledger QA benchmark |
+| `bin/siabench.py` | signed-ledger QA benchmark and source-only native capture (capture entrypoint implemented, unreleased) |
 | `bin/siamind.py` | usage salience, co-return reinforcement, PPR rerank, stability |
 | `bin/siaqueue.py` | agent note queue |
 | `bin/siarestoreadmit.py` | restore admission |
 | `bin/siarelease.py` | release checks and runtime-receipt authority |
+
+`siabench.capture_native_history` holds the real corpus owner while using
+the benchmark's shared verified-source, projection and witness-cache path.
+It requires the configured corpus's canonical absolute path and an explicit,
+bounded, distinct requested chain roster; it does not inherit the legacy
+dataset entrypoint's ambient defaults. Its `sia-native-source-capture-v1`
+generator identity binds every cached page, including inspected-only pages.
+Complete native rows remain in the existing scoped capture schema even
+when the projection or answer-field checks exclude them. The shared prefix
+performs no QA generation, retrieval scoring or artifact publication.
+The old default and opt-in dataset outputs remain separate compatibility
+contracts. This capture alone does not establish complete machine history,
+idle-gist admission, live-loop publication or a cognitive win.
 
 ## What remains in `bin/sialib.py`
 
