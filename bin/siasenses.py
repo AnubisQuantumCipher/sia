@@ -1133,22 +1133,28 @@ def _journalctl_projected_records(cmd, catalog, scope):
             _journal_abort_process(process)
 
 
-def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
-    tmp = cursor_file + ".pulse"
-    catalog_tmp = tmp + ".catalog"
-    full_tmp = tmp + ".full"
+def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys", journal_context=None):
+    if journal_context is None:
+        tmp = cursor_file + ".pulse"
+        catalog_tmp = tmp + ".catalog"
+        full_tmp = tmp + ".full"
+    else:
+        tmp, catalog_tmp, full_tmp = journal_context.begin(scope, cursor_file, metadata_only)
     temporary = (tmp, catalog_tmp, full_tmp)
     try:
-        for target in temporary:
-            try:
-                tmp_info = os.lstat(target)
-            except FileNotFoundError:
-                continue
-            if not (stat.S_ISREG(tmp_info.st_mode)
-                    or stat.S_ISLNK(tmp_info.st_mode)):
-                raise RuntimeError("journal temporary cursor is not a file")
-            os.unlink(target)
-        _journal_seed_cursor(cursor_file, catalog_tmp)
+        if journal_context is None:
+            for target in temporary:
+                try:
+                    tmp_info = os.lstat(target)
+                except FileNotFoundError:
+                    continue
+                if not (stat.S_ISREG(tmp_info.st_mode)
+                        or stat.S_ISLNK(tmp_info.st_mode)):
+                    raise RuntimeError("journal temporary cursor is not a file")
+                os.unlink(target)
+            _journal_seed_cursor(cursor_file, catalog_tmp)
+        else:
+            journal_context.seed(scope, catalog_tmp)
         catalog_cmd = [
             "journalctl", "-o", "json", "--output-fields=__CURSOR",
             "--no-pager", f"--cursor-file={catalog_tmp}"] + args
@@ -1161,7 +1167,10 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
 
         out, refusals, processed = [], [], len(catalog)
         if not metadata_only and catalog:
-            _journal_seed_cursor(cursor_file, full_tmp)
+            if journal_context is None:
+                _journal_seed_cursor(cursor_file, full_tmp)
+            else:
+                journal_context.seed(scope, full_tmp)
             full_cmd = ["journalctl", "-o", "json", "--no-pager",
                         f"--cursor-file={full_tmp}"] + args
             out, refusals, processed = _journalctl_projected_records(
@@ -1169,6 +1178,9 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
 
         # The source cursor is selected from the verified catalog prefix, not
         # from either producer-owned cursor file (which may have run ahead).
+        if journal_context is not None:
+            captured = journal_context.finish(scope, catalog, processed)
+            return out, captured, refusals
         _journal_seed_cursor(cursor_file, tmp)
         if processed:
             _journal_unlink_tmp(tmp)
@@ -1190,8 +1202,11 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError("journalctl produced an unsafe cursor file")
     except Exception:
-        for target in temporary:
-            _journal_unlink_tmp(target)
+        if journal_context is None:
+            for target in temporary:
+                _journal_unlink_tmp(target)
+        else:
+            journal_context.abort()
         raise
     _journal_unlink_tmp(catalog_tmp)
     _journal_unlink_tmp(full_tmp)
@@ -1213,23 +1228,25 @@ def _journal_msg(msg):
     return str(msg)
 
 
-def sense_journal(cursors):
+def sense_journal(cursors, *, journal_context=None):
     evs = []
     pending = []
     refusals = []
     try:
         for scope, extra in (("sys", []), ("user", ["--user"])):
             cfile = os.path.join(STATE, f"journal-{scope}.cursor")
-            first = not os.path.lexists(cfile)
+            first = (not os.path.lexists(cfile) if journal_context is None
+                     else journal_context.baseline(scope, cfile))
+            context_args = {} if journal_context is None else {"journal_context": journal_context}
             if first:
                 _records, cursor, _refused = _journalctl(
                     extra + ["-n", "1"], cfile,
-                    metadata_only=True, scope=scope)
+                    metadata_only=True, scope=scope, **context_args)
                 pending.append(cursor)
                 continue
             recs, cursor, refused = _journalctl(
                 extra + ["-p", "err..alert", "-n", "+300"], cfile,
-                scope=scope)
+                scope=scope, **context_args)
             pending.append(cursor)
             refusals.extend(refused)
             for record in recs:
@@ -1257,22 +1274,31 @@ def sense_journal(cursors):
                     {"organs/journal", f"units/{u}"}, tags,
                     occurrence=f"journal:{scope}:{source_cursor}"))
     except Exception:
-        for tmp, _real in pending:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+        if journal_context is None:
+            for tmp, _real in pending:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        else:
+            journal_context.abort()
         raise
     if refusals:
         queued = cursors.setdefault(SOURCE_RECORD_REFUSALS_KEY, [])
         if not isinstance(queued, list) \
                 or len(queued) + len(refusals) \
                 > MAX_LEDGER_PENDING_RECORDS:
-            for tmp, _real in pending:
-                _journal_unlink_tmp(tmp)
+            if journal_context is None:
+                for tmp, _real in pending:
+                    _journal_unlink_tmp(tmp)
+            else:
+                journal_context.abort()
             raise ValueError("source record refusal state exceeds its bound")
         queued.extend(refusals)
-    PENDING_CURSOR_RENAMES.extend(pending)
+    if journal_context is None:
+        PENDING_CURSOR_RENAMES.extend(pending)
+    else:
+        journal_context.current()
     return evs
 
 

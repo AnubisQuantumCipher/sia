@@ -3072,6 +3072,13 @@ PENDING_CURSOR_RENAMES = []
 # Journal output is hostile-sized input even though journalctl is asked for a
 # bounded row count: one JSON record can contain an arbitrarily large field.
 # Reuse the source/state bounds already enforced by the resident service.
+def _journal_capture_context(*, operation_id, directory):
+    """Capture journal cursor proposals under an explicit caller-owned operation."""
+    import siajournalcapture
+    return siajournalcapture.JournalCaptureContext(
+        globals(), operation_id=operation_id, directory=directory)
+
+
 MAX_JOURNAL_RECORD_BYTES = MAX_SOURCE_TAIL_BYTES
 MAX_JOURNAL_OUTPUT_BYTES = MAX_STATE_JSON_BYTES
 MAX_JOURNAL_STDERR_BYTES = MAX_CONFIG_BYTES
@@ -5729,6 +5736,7 @@ MEMO_PATH = os.path.join(STATE, "memo.json")
 MAX_MEMO_BYTES = 16_777_216
 LIVE_CANDIDATE_PATH = os.path.join(STATE, "live-loop-candidate.json")
 LIVE_STATE_PATH = os.path.join(STATE, "live-loop.json")
+CONTROLLER_SOURCE_BATCH_PATH = os.path.join(STATE, "controller-source-batch.json")
 LIVE_PUBLICATION_NON_CLAIMS = (
     "Complete prepare inputs are a caller premise; publication does not establish source capture, native-source truth, delivery claims or journal acknowledgment authority.",
     "This generation publishes the complete computed-unverified live-loop transition; it is not JACKAL assurance, biological cognition, a held-out win or cognitive authorization.",
@@ -5959,6 +5967,36 @@ def _recover_pending_live_generation(*, memo):
 _recover_pending_live_generation._sia_senses_delegate = True
 
 
+def _controller_source_present(memo):
+    if type(memo) is not dict:
+        import siasourcebatch
+        siasourcebatch.refuse("controller-source-memo-shape")
+    return ("controller_source_pending" in memo
+            or "controller_source_committed" in memo
+            or _live_present(CONTROLLER_SOURCE_BATCH_PATH))
+
+
+def _capture_controller_source_batch(*, memo, epoch, expected_epoch_sha256, observed_at):
+    import siasourcebatch
+    with brainstem_owner(), corpus_owner():
+        return siasourcebatch.capture(
+            globals(), memo=memo, epoch=epoch,
+            expected_epoch_sha256=expected_epoch_sha256, observed_at=observed_at)
+
+
+def _stage_controller_source_batch(*, memo, batch, expected_batch_sha256):
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.stage(
+            globals(), memo=memo, batch=batch, expected_batch_sha256=expected_batch_sha256)
+
+
+def _read_pending_controller_source_batch(*, memo):
+    import siasourcepublication
+    with corpus_owner():
+        return siasourcepublication.read_pending(globals(), memo=memo)
+
+
 def _ready_receipt(memo):
     receipt = memo.get("ready")
     if receipt is None:
@@ -6058,6 +6096,8 @@ def memory_readiness():
         # take store under one lease prevents a false-ready TOCTOU snapshot.
         with corpus_owner():
             memo = load_memo()
+            if _controller_source_present(memo):
+                return False, "controller source batch publication is pending"
             if _live_started(memo):
                 if "live_loop_pending" in memo:
                     return False, "live generation publication recovery is pending"
@@ -8987,6 +9027,9 @@ def _pulse_transaction_guarded(
         source_marker=None, publication_effects=None,
         admitted_status=_STATUS_ADMISSION_REQUIRED):
     """Run one pulse cycle and return the status dict it exported."""
+    if _controller_source_present(memo):
+        import siasourcebatch
+        siasourcebatch.refuse("controller-source-live-publication-required")
     cursors = load_cursors() if cursors is None else cursors
     _recover_notify_baseline_attempt(memo, cursors)
     current_source_marker = _pending_source_replay_marker(memo)
