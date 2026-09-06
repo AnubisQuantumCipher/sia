@@ -6,7 +6,33 @@ retrieval-and-rehearsal evaluation lane is promoted — and no new capability is
 except on a measured showing. The next phase of SIA is not more machinery. It is evidence
 about the machinery that exists.*
 
-## Where the project actually stands (measured 2026-09-02)
+## Current mission amendment — construction behind an honesty gate (2026-09-06)
+
+The operator's Build the Mind directives supersede this roadmap's capability freeze for
+the in-scope source/live and cognitive construction work. They do not relax the hard
+limits, the marketplace `main` freeze, release integrity, sequential test discipline, or
+the rule that a claim must be proved rather than inferred from an implementation name.
+
+The durable controller-source components now implement the local transaction from an
+immutable retained batch through sealed page effects, a descriptor-bound clean Git
+generation, receipt-bound gbrain sync/projection, graph/status/live publication, and
+finally source acknowledgment. The cumulative `sia-runtime-v8` roster adds
+`siasourceack.py`, `siasourceeffects.py`, `siasourceengine.py`, and `siasourcegit.py`.
+Readiness remains closed until archival, refusal settlement, journal cursors, the main
+cursor, and the final memo receipt have settled in that order. This is component and
+recovery-boundary progress; it is not a claim that a resident pulse used the complete
+path. That claim requires a front-door run with retained witnesses.
+
+The cognitive acceptance rule is now controlling: define each named mechanism by a
+falsifiable behavior from the cited literature, implement an inspectable input/output
+contract, and evaluate it on held-out real machine history captured through SIA's front
+door against an explicit dense-retrieval baseline. Report recall@k, nDCG or MRR, latency,
+and the applicable memory-fidelity measures, with derived arithmetic routed through
+JACKAL and its status class carried verbatim. A mechanism keeps a neurocognitive name only
+after a held-out win; otherwise it is fixed or renamed and every product surface loses the
+unsupported claim. This roadmap records no per-mechanism win yet.
+
+## Historical project snapshot (measured 2026-09-02)
 
 **Proven and usable today — capture and recall.** Origin-labeled capture across nine source
 adapters, the git-versioned corpus (1,604 pages), local recall, the Ed25519 signed ledger
@@ -34,7 +60,11 @@ rehearsal improves answer quality.
 
 ---
 
-## Phase 0 — The Freeze (now → 2026-09-30)
+## Historical Phase 0 — The Freeze (originally 2026-09-02 → 2026-09-30)
+
+The capability-freeze portion below is superseded only for the current operator-directed
+construction described above. Its `main`/marketplace rule and quality gates remain hard
+constraints.
 
 **Frozen:** new source adapters, new retrieval or rehearsal policies, new subsystems,
 cockpit features, chain anchoring into sibling projects, gbrain pin bumps (except a
@@ -91,8 +121,24 @@ freeze ends on evidence, not on mood.
 
 The project's thesis is that a memory system should keep honest books. Phase 1 makes SIA
 keep honest books **about its own retrieval and rehearsal claims**, using its own
-instruments. Nothing here is new machinery; it is the existing machinery under
-measurement.
+instruments. The original subsections measure existing machinery; the controlling P1.0
+gate also permits only the construction needed by the current operator directive.
+
+### P1.0 — Current held-out dense-baseline gate
+
+This gate controls the cognitive names; the older tripwire and rehearsal studies below
+remain useful diagnostics but cannot substitute for it. Build a train/tune/held-out split
+from real retained machine history through the public SIA capture boundary, freeze the
+held-out answers before tuning, and run the same questions and candidate corpus through
+the dense baseline and each single-mechanism intervention. Publish per-query outputs and
+aggregate recall@k, nDCG or MRR, latency, and memory-fidelity measures. Route the metric
+arithmetic through JACKAL and preserve the returned status and non-claims. A tie, loss,
+missing witness, contaminated split, or refused arithmetic is not a win.
+
+No older keyword tripwire, historical associative parity result, component unit test, or
+successful runtime publication earns a neurocognitive label. The fail-closed claim gate
+must consume the held-out artifact and either admit the measured claim or require the
+name/surface copy to be stripped.
 
 ### P1.1 — Investigate the live tripwire warning (first, it is already flashing)
 
@@ -182,6 +228,7 @@ member-set authority.
 | **v1.6.0** | **exports lane → `bin/siagraph.py`** | ~1,000 | **DONE** — 857-test suite + façade smoke green; sialib 517 KB → 477 KB |
 | **v1.7.5** | **outside audit of that extraction, closed** | — | **DONE** — @m10ust: no HIGH/MEDIUM; the three conventions it named are now tests (façade export pin, four-site rung ladder, `bind()` seam) |
 | Unreleased | generated-entry/epoch pages, weekly compaction + recovery/legacy replay | See current source | **IMPLEMENTED**; compatibility-named thought-recovery, epoch-completeness and module-ownership tests are the gates |
+| Unreleased | durable controller-source effects and acknowledgment (`siasourceeffects`, `siasourcegit`, `siasourceengine`, `siasourceack`) | See current source | **COMPONENT CONTRACTS IMPLEMENTED**; v8 packages the closure, readiness refuses pending ACK, and resident front-door invocation remains a separate proof obligation |
 | Unscheduled | cursors lane | ~1,100 | last (senses-substrate; most entangled) |
 
 Order revised from the original guess after four parallel extraction maps:
@@ -244,6 +291,10 @@ Deferred with reasons, not forgotten:
 - **A second marketplace submission** — SIA is already listed; updates flow through the
   existing verify path only.
 
+This historical deferral list does not defer the operator-directed Build the Mind work in
+the current amendment. It still forbids unrelated scope growth and cannot be used to
+launder an unmeasured mechanism into the product.
+
 ## Marketplace track (external, in parallel)
 
 Verify issue #4078 has been retargeted three times, and every retarget had a defensible
@@ -271,8 +322,7 @@ Closing the cycle means editing the line to `state=none`; re-binding means editi
 
 ---
 
-*The short version: capture and recall are finished enough to trust. The retrieval and
-rehearsal policies became a testable experiment at 03:05 this morning, when their
-measurement path worked for the first time. This roadmap spends the next six weeks running
-that experiment instead of building a bigger laboratory — and commits, in advance and in
-writing, to accepting the measured outcome.*
+*The short version: the source/live transaction is now an inspectable, fail-closed set of
+components, but resident invocation and cognitive efficacy are separate claims that still
+need front-door evidence. Build the named mechanisms, measure each against dense retrieval
+on held-out real history, and keep only the names the numbers earn.*

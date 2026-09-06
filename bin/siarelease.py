@@ -39,12 +39,19 @@ MODERN_V7_RUNTIME_NAMES = MODERN_V6_RUNTIME_NAMES + (
     "siavectoradmit.py", "siavectormodel.py", "siavectorprepare.py",
     "siavectorrun.py", "siaworkspace.py",
 )
+MODERN_V8_RUNTIME_NAMES = MODERN_V7_RUNTIME_NAMES + (
+    "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+    "siasourcegit.py",
+)
 
 # Ordered newest first.  Marker presence selects a rung even when the tree is
 # incomplete; hashing then refuses on the missing member instead of silently
 # falling back to an older, weaker receipt contract.  The empty marker tuple
 # is the legacy fallback and therefore must remain last.
 RUNTIME_LADDER = (
+    (b"sia-runtime-v8\0", MODERN_V8_RUNTIME_NAMES, (
+        "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+        "siasourcegit.py")),
     (b"sia-runtime-v7\0", MODERN_V7_RUNTIME_NAMES, ("sialiveloop.py",)),
     (b"sia-runtime-v6\0", MODERN_V6_RUNTIME_NAMES, ("siathought.py",)),
     (b"sia-runtime-v5\0", MODERN_V5_RUNTIME_NAMES, ("siagraph.py",)),

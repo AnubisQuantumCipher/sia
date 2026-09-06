@@ -150,6 +150,7 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                 ("STATE", str(self.state)),
                 ("CORPUS", str(self.corpus)),
                 ("TOOLCHAIN", str(self.toolchain)),
+                ("BUN_DIR", str(self.toolchain / "bun/bin")),
                 ("GBRAIN", str(self.engine_bin)),
                 ("GBRAIN_PIN", str(self.pin)),
                 ("GBRAIN_PIN_RECEIPT", str(self.pin_receipt)),
@@ -342,6 +343,56 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
         self.assertTrue(self.request_paths)
         self.assertTrue(all(not os.path.exists(path)
                             for path in self.request_paths))
+
+    def test_engine_process_environment_is_closed_and_descriptor_bound(self):
+        poison = {
+            "DATABASE_URL": "postgresql://live.example/production",
+            "GBRAIN_DATABASE_URL": "postgresql://live.example/brain",
+            "GBRAIN_BRAIN_ID": "foreign-brain",
+            "GBRAIN_MOUNTS_PATH": "/tmp/foreign-mounts.json",
+            "GBRAIN_GUARDRAILS_MODULE": "/tmp/foreign-guardrail.mjs",
+            "NODE_OPTIONS": "--require=/tmp/foreign-preload.cjs",
+            "BUN_PRELOAD": "/tmp/foreign-preload.ts",
+            "OPENAI_API_KEY": "ambient-provider-secret",
+            "HTTPS_PROXY": "http://ambient-proxy.invalid",
+        }
+        expected = {
+            "HOME": str(self.root),
+            "GBRAIN_HOME": str(self.share),
+            "PATH": str(self.toolchain / "bun/bin") + ":" + os.defpath,
+            "TMPDIR": str(self.state),
+            "BUN_OPTIONS": "--no-env-file",
+            "DO_NOT_TRACK": "1",
+            "NO_COLOR": "1",
+            "GBRAIN_SKIP_STARTUP_HOOKS": "1",
+            "GBRAIN_SYNC_NO_DELEGATE": "1",
+            "GBRAIN_NO_BANNER": "1",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "TZ": "UTC",
+            "XDG_CONFIG_HOME": str(self.root / ".config"),
+            "XDG_DATA_HOME": str(self.root / ".local/share"),
+            "XDG_CACHE_HOME": str(self.root / ".cache"),
+            "XDG_STATE_HOME": str(self.root / ".local/state"),
+        }
+        observed = []
+        runner = self._runner()
+
+        def inspect_environment(command, **kwargs):
+            observed.append(dict(kwargs["env"]))
+            return runner(command, **kwargs)
+
+        with mock.patch.object(sialib, "GBRAIN_ENV", poison), \
+                mock.patch.dict(os.environ, poison, clear=False), \
+                mock.patch.object(
+                    sialib, "_run_bounded_text_process",
+                    side_effect=inspect_environment):
+            self._call()
+
+        self.assertEqual(len(observed), len(self.calls))
+        self.assertTrue(observed)
+        self.assertTrue(all(environment == expected
+                            for environment in observed))
 
     def test_receipt_or_executable_drift_refuses_before_any_process(self):
         for selected in ("pin-receipt", "runtime-receipt", "executable"):

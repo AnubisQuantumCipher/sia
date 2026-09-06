@@ -320,13 +320,30 @@ def _json_result(owner, source, result, reason):
 
 def _run(owner, source, boundary, arguments, *, label, timeout):
     boundary.current()
-    environment = dict(owner["GBRAIN_ENV"])
-    environment.update({
+    # This transaction is descriptor-bound; ambient database selectors,
+    # mount routing, guardrail/preload modules, provider credentials and
+    # proxy settings are not part of its authority.  gbrain reads its owned
+    # config and secret file below GBRAIN_HOME.  BUN_OPTIONS is defense in
+    # depth for standalone Bun executables; the managed build also disables
+    # cwd dotenv/bunfig autoload at compile time.
+    home = owner["HOME"]
+    environment = {
+        "HOME": home,
         "GBRAIN_HOME": owner["SHARE"],
+        "PATH": owner["BUN_DIR"] + ":" + os.defpath,
+        "TMPDIR": owner["STATE"],
+        "BUN_OPTIONS": "--no-env-file",
+        "DO_NOT_TRACK": "1",
+        "NO_COLOR": "1",
         "GBRAIN_SKIP_STARTUP_HOOKS": "1",
         "GBRAIN_SYNC_NO_DELEGATE": "1",
+        "GBRAIN_NO_BANNER": "1",
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
-    })
+        "XDG_CONFIG_HOME": os.path.join(home, ".config"),
+        "XDG_DATA_HOME": os.path.join(home, ".local", "share"),
+        "XDG_CACHE_HOME": os.path.join(home, ".cache"),
+        "XDG_STATE_HOME": os.path.join(home, ".local", "state"),
+    }
     try:
         result = owner["_run_bounded_text_process"](
             [owner["_chain_descriptor_path"](boundary.executable.fd),

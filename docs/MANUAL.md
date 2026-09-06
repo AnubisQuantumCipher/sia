@@ -827,6 +827,38 @@ any concurrent debt bit and preventing sequence reuse. DREAM publishes between
 memory-backed phases: after consolidation before later retrieval, before and
 after grade work, before the benchmark, and before the gbrain dream cycle.
 
+The implemented, unreleased controller-source transaction adds an explicit
+acknowledgment fence around a complete source/live cut. It first retains one
+canonical source batch and binds the exact live transition and status effects
+in `memo.json`; no source cursor advances at capture time. For a batch with an
+event closure, the effects phase publishes the sealed page plans, obtains a
+descriptor-bound clean Git commit/tree generation, and runs the receipt-bound
+pinned gbrain sequence: source sync, stale-link extraction, mention
+extraction, sync-status readback, and no-migrate projection readback for every
+changed source page. Admission requires the indexed commit to equal the corpus
+commit, zero unembedded chunks and unacknowledged failures, zero remaining
+stale links, and exact logical projection matches. These are local publication
+witnesses, not evidence of embedding-vector values or retrieval quality. The
+reported no-write projection contract is not a byte-identical-filesystem
+claim; opening PGLite may maintain its own lock or WAL files.
+
+Graph export and the projected status are then bound to the live candidate in
+a self-hashed effects WAL. The live generation is published and reread before
+that WAL becomes a committed effects receipt. Even then the retained source is
+not acknowledged and `sia ready` remains closed. The final acknowledgment
+revalidates the complete join, moves the exact batch to its digest-named
+archive, settles recorded refusals, publishes each journal cursor, publishes
+the main source cursor, and only then replaces pending state with the compact
+committed marker and ready receipt. A retry accepts only the exact recorded
+before or target image at every durable prefix; it refuses a third state rather
+than choosing a new baseline.
+
+The implemented transaction APIs and recovery tests do not by themselves
+prove that a particular resident pulse invoked the whole sequence. Confirm
+that with a front-door pulse plus the retained committed/archive witnesses;
+component availability, a successful unit test, or an effects receipt before
+final acknowledgment is not that proof.
+
 Readiness refuses while the marker is set, while a
 `~/.local/state/sia/grade-transactions/` journal awaits recovery, or while the
 legacy-take migration is pending or cannot be safely scanned. A gated CLI
@@ -876,6 +908,7 @@ makes their current claims unavailable rather than resetting durable authority.
 
 | Readiness reason family | Retained authority | Recovery action |
 |---|---|---|
+| Controller source batch publication pending | `memo.json`; `controller-source-batch.json` or its exact digest-named archive; live candidate/generation; status and graph; corpus Git generation; gbrain projection; journal and main cursor before/target images | Preserve every member. Resume the same owner-bound controller transaction so it revalidates or completes effects before acknowledgment. Do not advance a cursor, move/delete the batch, remove a pending marker, or synthesize a ready receipt by hand. |
 | Corpus publication pending, graph projection debt, or no successful publication receipt | `memo.json`, corpus git state, PGLite, graph cursor | Run or wait for one successful `sia pulse`; repair the named git/index/graph refusal first if it repeats. |
 | Pulse, DREAM, consolidation, resumable source-replay, or thought recovery pending | `memo.json`, consolidation/source/thought cursors and claims, `thought-recovery-mind-replay.sqlite3` | Keep the marker and run a pulse; SIA resumes the exact bounded transaction. |
 | Source replay quarantine | The exact `memo.json` source marker and `cursors.json` notification authority | Stop automatic retries and preserve both files. Restore them together from the same known-good backup generation through the documented Continuity restore ceremony, or repair the named ambiguous input without changing either authority. Do not delete a marker or cursor to force a new baseline; after coherent authority is restored, run one pulse. |
@@ -1507,6 +1540,7 @@ absence boundary instead of silently claiming equivalent retrieval.
 | Graph or policy state fails after successful readiness during optional associative reranking | Recall reports `associative rerank unavailable; origin-safe fallback` | Hybrid-query ordering with conservative origin weighting; no PPR/usage-salience claim. |
 | Schema pack is missing, invalid, or changes during export | Affected relations fall back to `mentions`; SOURCE HEALTH marks the graph partial and publication debt keeps memory reads closed | The diagnostic partial graph, explicit links, and retained PGLite memory—not the missing typed inference; repair the pack and complete a pulse. |
 | gbrain gazetteer/NER extraction fails | Memory-index sync and its pulse fail; publication debt remains | The prior published memory and the named extraction error; the schema-regex `mentions` fallback does not replace this lane. |
+| Controller-source effects or acknowledgment is interrupted | `sia ready` reports `controller source batch publication is pending`; no pending source is reported acknowledged | The exact retained batch/archive, effects WAL or receipt, live/status/graph generations, and cursor before/target images. Preserve all of them and retry through the same owner-bound transaction. |
 | Publication or recovery debt exists | Memory-dependent CLI/MCP reads refuse; live status and queued note/proposal writes remain available | The refusal reason and retained journals; last-published cockpit fields are diagnostic snapshots. |
 | `sia ready` exits nonzero | It prints the exact live readiness reason; installer first-light stops before later integration/activation | The named retained authority and `sia status`; a successful pulse command alone is not readiness attestation. |
 | Touch queue has a torn or malformed record | The suffix is digest-bound before repair, or a complete malformed record remains visible claim debt | The complete durable prefix; no silent cursor advance or invented touch. |
@@ -1825,10 +1859,11 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v7` member set includes the complete
-transitive source/live/cognitive runtime dependency closure; the receipt
-reader still recognizes complete historical v1–v6 generations, but it never
-accepts a tree that contains a later child
+the install. The current `sia-runtime-v8` member set adds
+`siasourceack.py`, `siasourceeffects.py`, `siasourceengine.py`, and
+`siasourcegit.py` to the complete v7 source/live/cognitive dependency closure;
+the receipt reader still recognizes complete historical v1–v7 generations,
+but it never accepts a tree that contains a later child
 under an older digest. `bin/siarelease.py:RUNTIME_LADDER` is the executable
 member-set authority. The previous tree remains at the printed backup path.
 Before any

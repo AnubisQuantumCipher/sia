@@ -56,6 +56,8 @@ BACKUP_TIMER, _BACKUP_CHECK_TIMER, BACKUP_SERVICE, _BACKUP_CHECK_SERVICE = \
 MODERN_V4_NAMES = SIARELEASE.MODERN_V4_RUNTIME_NAMES
 MODERN_V5_NAMES = SIARELEASE.MODERN_V5_RUNTIME_NAMES
 MODERN_V6_NAMES = SIARELEASE.MODERN_V6_RUNTIME_NAMES
+MODERN_V7_NAMES = SIARELEASE.MODERN_V7_RUNTIME_NAMES
+MODERN_V8_NAMES = SIARELEASE.MODERN_V8_RUNTIME_NAMES
 
 # Members each rung added over its predecessor.  A rung is only pinned when
 # every one of them is load-bearing, including each marker whose presence
@@ -67,6 +69,22 @@ V4_NEW_MEMBERS = (
 )
 V5_NEW_MEMBERS = V4_NEW_MEMBERS + ("siagraph.py",)
 V6_NEW_MEMBERS = V5_NEW_MEMBERS + ("siathought.py",)
+V7_NEW_MEMBERS = V6_NEW_MEMBERS + (
+    "siaactivation.py", "siacognitivebaseline.py",
+    "siacognitivecommand.py", "siacognitivehistory.py",
+    "siacognitiveselect.py", "siacontrollerliveinput.py",
+    "siacontrollerstatus.py", "siacoretrieval.py",
+    "siacortexrepair.py", "siaencoding.py", "siaeventintake.py",
+    "siaeventplan.py", "siagist.py", "siajournalcapture.py",
+    "sialivegist.py", "sialiveloop.py", "sialivepublication.py",
+    "siasourcebatch.py", "siasourcepublication.py", "siavector.py",
+    "siavectoradmit.py", "siavectormodel.py", "siavectorprepare.py",
+    "siavectorrun.py", "siaworkspace.py",
+)
+V8_NEW_MEMBERS = V7_NEW_MEMBERS + (
+    "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+    "siasourcegit.py",
+)
 
 
 SYSTEMCTL_FIXTURE = r'''
@@ -495,7 +513,10 @@ fenced_runtime_authorized
         for rung, names, added, promotion in (
                 ("v4", MODERN_V4_NAMES, V4_NEW_MEMBERS, "siagraph.py"),
                 ("v5", MODERN_V5_NAMES, V5_NEW_MEMBERS, "siathought.py"),
-                ("v6", MODERN_V6_NAMES, V6_NEW_MEMBERS, None)):
+                ("v6", MODERN_V6_NAMES, V6_NEW_MEMBERS, "sialiveloop.py"),
+                ("v7", MODERN_V7_NAMES, V7_NEW_MEMBERS,
+                 "siasourceack.py"),
+                ("v8", MODERN_V8_NAMES, V8_NEW_MEMBERS, None)):
             with self.subTest(rung=rung):
                 self._assert_rung_pins_every_member(
                     script, names, added, promotion)

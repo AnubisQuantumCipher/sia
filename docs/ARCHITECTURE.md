@@ -20,6 +20,12 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
 | `bin/siaeventintake.py` | pure collector-return/page-version projection for the live loop (implemented, unreleased) |
 | `bin/sialivegist.py` | pure native-episode/replay-gist binding for idle live proposals (implemented, unreleased) |
+| `bin/siasourcebatch.py` | bounded collector capture and closed source-batch construction (implemented, unreleased) |
+| `bin/siasourcepublication.py` | immutable retained-batch slot plus source/live/status write-ahead bindings (implemented, unreleased) |
+| `bin/siasourceeffects.py` | crash-recoverable corpus/index/graph/status/live effects publication and committed receipt (implemented, unreleased) |
+| `bin/siasourcegit.py` | descriptor-bound clean corpus Git generation (implemented, unreleased) |
+| `bin/siasourceengine.py` | receipt-bound pinned-engine sync and source-page projection readback (implemented, unreleased) |
+| `bin/siasourceack.py` | immutable batch archival, refusal settlement, cursor publication, and final readiness acknowledgment (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -41,6 +47,53 @@ performs no QA generation, retrieval scoring or artifact publication.
 The old default and opt-in dataset outputs remain separate compatibility
 contracts. This capture alone does not establish complete machine history,
 idle-gist admission, live-loop publication or a cognitive win.
+
+### The durable controller-source transaction
+
+The implemented, unreleased controller-source boundary turns one retained
+collector cut into an ordered, recoverable local transaction. Capture and
+`siasourcepublication` first preserve the canonical batch and bind its exact
+live transition and projected status effects in `memo.json`. Those markers are
+write-ahead recovery authority; they are not acknowledgment or readiness.
+
+`siasourceeffects` then consumes only that retained authority. For a non-empty
+event closure it publishes the already-sealed page plans, asks
+`siasourcegit` for a descriptor-bound clean commit/tree generation, and asks
+`siasourceengine` for a receipt-bound pinned-engine generation. The engine
+phase admits closed JSON for sync, stale-link extraction, mention extraction,
+sync status, and a no-migrate projection of every changed source page. It
+requires the requested commit to be the indexed commit, no unembedded chunks
+or unacknowledged failures, no remaining stale links, and exact logical page
+projection matches. It explicitly records that the projection operation did
+not update retrieval bookkeeping or perform operation writes. That is an
+operation-level contract, not a byte-for-byte claim about PGLite storage;
+opening the engine may maintain its own lock or WAL files. Matching these
+witnesses does not establish vector values, retrieval quality, or a cognitive
+benchmark win.
+
+After graph export, the effects component binds the graph, projected status,
+and live candidate in one self-hashed pending record, publishes the live
+generation, reopens all retained artifacts, and replaces the pending record
+with a committed effects receipt. A no-closure source batch still receives a
+graph/status/live receipt but does not invent a corpus or engine generation.
+At this point the source remains deliberately unacknowledged and readiness is
+still closed.
+
+Only `siasourceack` may retire the source. It revalidates the batch, effects
+receipt, live generation, admitted status, notification fence, and every
+cursor before moving the batch to its immutable digest-named archive. It then
+settles recorded refusals, publishes journal cursors in their declared order,
+publishes the main cursor, and finally replaces all pending authorities with a
+compact committed marker plus the ready receipt. Each durable prefix accepts
+only the exact before or target generation on replay; a third state, changed
+artifact, partial join, or unsafe pathname refuses instead of rebasing.
+
+These are concrete component contracts and recovery gates. Their availability
+alone does not prove that a particular resident controller invocation used the
+whole sequence; that requires an end-to-end front-door run and retained
+receipts. The transaction is cooperative same-user coordination, not a
+hostile same-user sandbox, source-truth attestation, delivery proof, or
+biological-cognition claim.
 
 ## What remains in `bin/sialib.py`
 
@@ -149,10 +202,17 @@ moment it captures its own exports, and adding one dict entry to
 **Current — the runtime ladder is an API, not synchronized prose.** Release
 tests now pin each historical rung with an independent member fixture and
 golden digest, reject ladder declarations in either shell script, exercise the
-normal and fenced consumers through the helper CLI, and cover the current v6
+normal and fenced consumers through the helper CLI, and cover the current v8
 uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
 proves the held authority remains usable and is then closed.
+
+The cumulative `sia-runtime-v8` member set adds `siasourceack.py`,
+`siasourceeffects.py`, `siasourceengine.py`, and `siasourcegit.py` to the v7
+source/live/cognitive closure. The receipt reader continues to recognize
+complete historical v1–v7 trees. Presence of any v8 selector chooses v8 even
+for an incomplete tree, so omitting one of the four new members refuses rather
+than validating the tree under an older salt.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**
@@ -248,7 +308,9 @@ the exact-byte, lease, retained-origin, dependency and interrupted-retry
 boundaries. Page-byte publication is not live-loop admission, corpus/index
 synchronization, cursor acknowledgment or readiness. Complete source-batch,
 live-transition and status/memo admission remains a separate integration
-requirement; these private helpers do not enable a resident live loop.
+requirement. The durable controller-source transaction described above is the
+component boundary that joins those effects; calling these private page
+helpers alone does not enable or prove a resident live loop.
 
 The separate `_prepare_event_live_intake` boundary projects complete,
 caller-supplied collector returns through independently pinned original
@@ -276,8 +338,10 @@ replayed here. Page-byte digests never stand in for whole native-capture
 digests. The output retains upstream nonclaims and is prepared, not
 published. It establishes neither collector execution, effective config,
 source freshness, cursor/acknowledgment ordering nor a held-out cognitive
-win. `tests/test_event_live_intake.py` covers this boundary; the durable
-runtime source transaction and live publication remain separate work.
+win. `tests/test_event_live_intake.py` covers this boundary. The durable
+controller-source transaction may consume the bound result, but this pure
+intake helper alone performs no publication, acknowledgment, or readiness
+transition.
 
 The separate `sialivegist.bind_replay_gist` contract binds a complete native
 capture and the unchanged replay-gist result to every supplied live

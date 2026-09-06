@@ -292,6 +292,51 @@ Failure to persist the marker prevents the mutation. The debt remains until git
 commit or clean verification, PGLite sync, and graph export all succeed; a
 commit, sync, or graph failure cannot be reported ready.
 
+The implemented, unreleased controller-source path adds a narrower
+acknowledgment transaction on top of that publication rule. Its immutable
+source batch and memo bindings precede page, index, graph, status, and live
+effects. The effects publisher accepts only the retained batch, live binding,
+status handoff, and replayed transition it was given; every object has a closed
+schema and self-hashed identity. It records a committed effects receipt only
+after reopening the graph, status, live candidate, and live generation and
+checking their joins. That receipt is not source acknowledgment and does not
+make readiness true.
+
+For a batch with page effects, `siasourcegit` holds the corpus root and
+`/usr/bin/git` executable through no-follow descriptors, disables repository
+hooks, signing, global/system configuration, prompts, and external diff, and
+admits only a clean retained commit/tree generation. This binds the observed
+top-level executable bytes and corpus-directory generation; it does not bind
+Git's loader, libraries, or arbitrary same-user state outside the admitted
+boundary.
+
+`siasourceengine` holds the corpus, managed gbrain executable, pin, pin
+receipt, runtime receipt, and every target page through descriptors. Its child
+receives an explicit environment allowlist rather than ambient database,
+mount, guardrail/preload, provider-credential, or proxy variables. The runner
+admits exact closed JSON from the supported sync, extraction, status, and
+no-migrate page-projection commands. It requires commit equality, zero
+unembedded chunks, zero unacknowledged failures, zero stale links remaining,
+and exact projections for the complete target roster before returning a
+self-hashed generation. The projection explicitly reports no retrieval
+bookkeeping update and no operation write. That is not a byte-for-byte claim
+about the PGLite directory: opening the engine may maintain storage lock or WAL
+files. These checks establish local publication correspondence only; they do
+not inspect vector values, prove ranking quality, authenticate source truth,
+or turn process coordination into a filesystem/network/resource sandbox.
+
+Only `siasourceack` can advance source authority. It revalidates the retained
+batch, effects receipt, live generation, status, notification fence, and all
+cursor generations, then durably orders batch archival, refusal settlement,
+journal cursor publication, main cursor publication, and the final memo/ready
+receipt. Recovery accepts only the exact recorded before image or target image
+at each prefix. Missing, changed, doubly present, or third-state authority
+refuses without advancing a cursor or synthesizing readiness. The archive and
+committed marker prove this local ordering, not delivery, complete machine
+history, hostile same-user immutability, retrieval quality, or biological
+cognition. Availability of these component APIs also does not prove a resident
+pulse invoked them; that requires front-door execution evidence.
+
 The pulse sequence reservation shares the same lease as the pulse cycle, so its
 whole-memo write cannot erase an existing marker. Scheduled maintenance
 (`DREAM` in compatibility ledger/state names) settles between

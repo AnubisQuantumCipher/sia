@@ -374,10 +374,14 @@ MODERN_V7_RUNTIME_NAMES = MODERN_V6_RUNTIME_NAMES + (
     "siavectoradmit.py", "siavectormodel.py", "siavectorprepare.py",
     "siavectorrun.py", "siaworkspace.py",
 )
+MODERN_V8_RUNTIME_NAMES = MODERN_V7_RUNTIME_NAMES + (
+    "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+    "siasourcegit.py",
+)
 
-# Independent historical fixtures, not an operational ladder.  These pin the
-# bytes already accepted by shipped receipts so editing the one production
-# authority cannot silently rewrite an older rung's digest contract.
+# Independent rung fixtures, not an operational ladder.  The historical
+# entries pin bytes already accepted by shipped receipts, while the newest
+# entry pins the candidate contract emitted by the release front door.
 RUNTIME_RUNG_FIXTURES = (
     ("v1", b"sia-runtime-v1\0", LEGACY_RUNTIME_NAMES,
      "f9dc027491272df1e17648cb4dc936b2928a0f15953758b72495f8a29fad29d7"),
@@ -393,6 +397,8 @@ RUNTIME_RUNG_FIXTURES = (
      "3ba7772c833c658c6ad4be4273d5dbff5324fc123824dd62c75514a38a8e182f"),
     ("v7", b"sia-runtime-v7\0", MODERN_V7_RUNTIME_NAMES,
      "54f7917d096b318649cf6c15138eb9dade967277e41fe9256e3f003f69e360bc"),
+    ("v8", b"sia-runtime-v8\0", MODERN_V8_RUNTIME_NAMES,
+     "0225ff0d0a864a8f26ad75f37afb92ced45ef5966ad2c17b7343e5081a8ebcfc"),
 )
 
 
@@ -886,16 +892,20 @@ class ReleaseContract(unittest.TestCase):
                     if "=" in line and not line.startswith("#"))
         self.assertRegex(pins["commit"], r"^[0-9a-f]{40}$")
         self.assertRegex(pins["bun_lock_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(pins["overlay_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(pins["overlay_tree_oid"], r"^[0-9a-f]{40}$")
         self.assertIn('[[ "$PIN" =~ ^[0-9a-f]{40}$ ]]', installer)
         self.assertIn('git -C "$GBRAIN_SOURCE" rev-parse HEAD', installer)
         self.assertRegex(
             flattened_installer,
-            r'run_with_deadline 1800 "\$BUN_BIN" install\s+'
+            r'run_with_deadline 1800 "\$\{GBRAIN_STERILE_ENV\[@\]\}"\s+'
+            r'"\$BUN_BIN" install\s+--no-env-file\s+'
             r'--cwd "\$GBRAIN_SOURCE"\s+--frozen-lockfile')
         self.assertIn('--production --ignore-scripts --no-progress', installer)
         self.assertRegex(
             flattened_installer,
-            r'run_with_deadline 1800 "\$BUN_BIN" build\s+'
+            r'run_with_deadline 1800 "\$\{GBRAIN_STERILE_ENV\[@\]\}"\s+'
+            r'"\$BUN_BIN" build[^\n]*'
             r'--compile\s+--outfile')
         self.assertIn(
             'GBRAIN_VERSION_OUTPUT="$(bounded_command_capture', installer)
@@ -1664,6 +1674,17 @@ fenced_runtime_authorized
             f"Staged yet outside the ladder (installed unmeasured by any "
             f"receipt): {unmeasured}")
 
+    def test_v8_runtime_modules_are_in_the_release_source_snapshot(self):
+        installer = _read("install.sh")
+        release_files = set(shlex.split(installer.split(
+            "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
+        expected = {
+            "bin/siasourceack.py", "bin/siasourceeffects.py",
+            "bin/siasourceengine.py", "bin/siasourcegit.py",
+        }
+        self.assertTrue(expected.issubset(release_files),
+                        expected - release_files)
+
     def test_runtime_fence_metadata_parser_is_strict_and_named(self):
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
@@ -2150,6 +2171,20 @@ fenced_runtime_authorized
             self.assertIn("siagraph.py", names)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
 
+            _plant_runtime_tree(runtime, MODERN_V7_RUNTIME_NAMES)
+            for selector in (
+                    "siasourceack.py", "siasourceeffects.py",
+                    "siasourceengine.py", "siasourcegit.py"):
+                with self.subTest(v8_selector=selector):
+                    _write(os.path.join(runtime, selector), selector + "\n",
+                           0o644)
+                    salt, names = SIARELEASE.runtime_rung(runtime)
+                    self.assertEqual(salt, b"sia-runtime-v8\0")
+                    self.assertEqual(names, MODERN_V8_RUNTIME_NAMES)
+                    self.assertRaises(
+                        FileNotFoundError, _runtime_digest, runtime)
+                    os.unlink(os.path.join(runtime, selector))
+
     def test_runtime_v5_digest_migrates_without_replacing_valid_v4_tree(self):
         installer = _read("install.sh")
         digest_function = _runtime_tree_digest_shell(installer)
@@ -2318,7 +2353,7 @@ fenced_runtime_authorized
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_runtime_digest_consumers_agree_across_v4_v5_v6(self):
+    def test_runtime_digest_consumers_agree_across_v4_through_v8(self):
         # Both normal shell consumers delegate to the authority and the
         # uninstaller's fenced path must accept exactly the same receipt
         # bytes, including the current top rung.
@@ -2381,11 +2416,15 @@ fenced_runtime_authorized
                     check=False).returncode == 0
 
             measured = {}
-            for rung in ("v4", "v5", "v6"):
+            for rung in ("v4", "v5", "v6", "v7", "v8"):
                 if rung == "v5":
                     _write(graph, "siagraph.py\n", 0o644)
                 elif rung == "v6":
                     _write(thought, "siathought.py\n", 0o644)
+                elif rung == "v7":
+                    _plant_runtime_tree(runtime, MODERN_V7_RUNTIME_NAMES)
+                elif rung == "v8":
+                    _plant_runtime_tree(runtime, MODERN_V8_RUNTIME_NAMES)
                 mirror = _runtime_digest(runtime)
                 measured[rung] = mirror
                 for site, result in (
@@ -2398,11 +2437,13 @@ fenced_runtime_authorized
                     self.assertTrue(fence_admits(mirror))
             self.assertNotEqual(measured["v4"], measured["v5"])
             self.assertNotEqual(measured["v5"], measured["v6"])
-            self.assertFalse(fence_admits(measured["v4"]))
-            self.assertFalse(fence_admits(measured["v5"]))
+            self.assertNotEqual(measured["v6"], measured["v7"])
+            self.assertNotEqual(measured["v7"], measured["v8"])
+            for historical in ("v4", "v5", "v6", "v7"):
+                self.assertFalse(fence_admits(measured[historical]))
 
-            # Every site refuses the partial v6 tree, and none of them falls
-            # back to a digest either stored receipt would accept.
+            # Every site refuses the partial v8 tree, and none of them falls
+            # back to a digest any stored receipt would accept.
             os.unlink(member)
             for site, result in (
                     ("install.sh", shell_digest(installer_digest)),
@@ -4639,9 +4680,13 @@ ollama_runtime_receipt_valid
                     "PIN": "b" * 40,
                     "PIN_VERSION": "4.5.6",
                     "PIN_LOCK_SHA256": "c" * 64,
+                    "PIN_OVERLAY_SHA256": "d" * 64,
+                    "PIN_OVERLAY_TREE_OID": "e" * 40,
                 },
                 "managed-by=khephri.sia\ncommit=" + "b" * 40 +
-                "\nversion=4.5.6\nbun_lock_sha256=" + "c" * 64,
+                "\nversion=4.5.6\nbun_lock_sha256=" + "c" * 64 +
+                "\noverlay_sha256=" + "d" * 64 +
+                "\noverlay_tree_oid=" + "e" * 40,
                 "gbrain 4.5.6",
             ),
         )
@@ -4654,8 +4699,8 @@ ollama_runtime_receipt_valid
                 receipt = os.path.join(root, ".sia-release")
                 sentinel = os.path.join(root, "executed")
                 _write(binary, "#!/bin/sh\n"
-                       ': > "${SENTINEL:?}"\n'
-                       "printf '%s\\n' \"$FAKE_VERSION\"\n", 0o755)
+                       f": > {shlex.quote(sentinel)}\n"
+                       f"printf '%s\\n' {shlex.quote(version)}\n", 0o755)
                 with open(binary, "rb") as stream:
                     digest = hashlib.sha256(stream.read()).hexdigest()
                 environment = os.environ.copy()
@@ -4668,7 +4713,10 @@ ollama_runtime_receipt_valid
                     "SENTINEL": sentinel,
                     "FAKE_VERSION": version,
                 })
-                script = (metadata_function + function + "\n" +
+                sterile = (
+                    "GBRAIN_STERILE_ENV=(/usr/bin/env -i PATH=/usr/bin:/bin)\n"
+                    if label == "gbrain" else "")
+                script = (metadata_function + sterile + function + "\n" +
                           function_name + "\n")
 
                 _write(receipt, "managed-by=khephri.sia\n")

@@ -19,7 +19,9 @@ BIN = REPO / "bin"
 sys.path.insert(0, str(BIN))
 RUNTIME_MODULES = (
     "sialib", "siasenses", "siagraph", "siarestoreadmit", "siamind",
-    "siatakes", "siabench", "siaqueue", "siacapsule", "siabackup")
+    "siatakes", "siabench", "siaqueue", "siacapsule", "siabackup",
+    "siasourceack", "siasourceeffects", "siasourceengine",
+    "siasourcegit")
 # The managed runtime is not only importable modules.  These five entry
 # points carry no ".py", so a guard that derived its file set purely from
 # module names could not see them at all: tests/test_ledger_init_recovery.py
@@ -94,12 +96,16 @@ class RuntimeStateIsolation(unittest.TestCase):
 
         for name in (
                 "HOME", "SHARE", "STATE", "CORPUS", "BIN", "TOOLCHAIN",
-                "GBRAIN", "GBRAIN_OWNER_LOCK", "CORPUS_OWNER_LOCK",
+                "GBRAIN", "GBRAIN_PIN", "GBRAIN_PIN_RECEIPT",
+                "GBRAIN_RUNTIME_RECEIPT", "GBRAIN_OWNER_LOCK",
+                "CORPUS_OWNER_LOCK",
                 "BRAINSTEM_OWNER_LOCK", "LIFECYCLE_LOCK",
                 "LIFECYCLE_TOMBSTONE", "THOUGHT_INBOX_PATH",
                 "THOUGHT_INBOX_LOCK", "THOUGHT_INBOX_CLAIM", "ATTEST",
                 "BUN_DIR", "CONFIG_PATH", "CURSORS_PATH", "THOUGHTS_PATH",
-                "STATUS_PATH", "GRAPH_PATH", "MEMO_PATH"):
+                "STATUS_PATH", "GRAPH_PATH", "MEMO_PATH",
+                "CONTROLLER_SOURCE_BATCH_PATH",
+                "CONTROLLER_SOURCE_ARCHIVE_DIR"):
             with self.subTest(module="sialib", path=name):
                 _assert_under(self, getattr(sialib, name))
         _assert_under(self, sialib.GBRAIN_ENV["GBRAIN_HOME"])

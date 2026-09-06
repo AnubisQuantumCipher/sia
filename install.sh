@@ -8550,7 +8550,7 @@ PY
 SIA_RELEASE_FILES=(
   bin/sialifetime.py
   manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md ROADMAP.md LICENSE
-  SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
+  SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
   uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
   bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
@@ -8561,7 +8561,8 @@ SIA_RELEASE_FILES=(
   bin/siacoretrieval.py bin/siacortexrepair.py bin/siaencoding.py
   bin/siaeventintake.py bin/siaeventplan.py bin/siagist.py
   bin/siajournalcapture.py bin/sialivegist.py bin/sialiveloop.py
-  bin/sialivepublication.py bin/siasourcebatch.py
+  bin/sialivepublication.py bin/siasourceack.py bin/siasourcebatch.py
+  bin/siasourceeffects.py bin/siasourceengine.py bin/siasourcegit.py
   bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
   bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
   bin/siaworkspace.py
@@ -8850,16 +8851,305 @@ fi
 bun_runtime_receipt_valid || {
   echo "private Bun receipt or executable verification failed" >&2; exit 1; }
 
-PIN="$(grep '^commit=' "$REPO/GBRAIN_PIN" 2>/dev/null | cut -d= -f2)"
-PIN_VERSION="$(grep '^version=' "$REPO/GBRAIN_PIN" 2>/dev/null | cut -d= -f2)"
-PIN_LOCK_SHA256="$(grep '^bun_lock_sha256=' "$REPO/GBRAIN_PIN" 2>/dev/null \
-  | cut -d= -f2)"
+gbrain_pin_frontdoor() {
+  python3 - "$@" <<'PY'
+import datetime
+import hashlib
+import os
+import re
+import stat
+import sys
+
+
+PIN_MAX_BYTES = 65_536
+OVERLAY_MAX_BYTES = 16_777_216
+PIN_KEYS = {
+    "commit", "version", "bun_lock_sha256", "overlay_sha256",
+    "overlay_tree_oid", "verified",
+}
+
+
+def generation(info):
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+        info.st_uid, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def stable_regular(path, maximum, label):
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or cloexec is None:
+        raise ValueError(label + " cannot be opened with required flags")
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
+                or before.st_uid != os.geteuid() \
+                or before.st_size < 0 or before.st_size > maximum:
+            raise ValueError(label + " is not an admitted regular file")
+        chunks = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1_048_576, remaining))
+            if not chunk:
+                raise ValueError(label + " ended before its held generation")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise ValueError(label + " grew beyond its held generation")
+        after = os.fstat(descriptor)
+        if generation(before) != generation(after):
+            raise ValueError(label + " changed while being read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+try:
+    if len(sys.argv) != 3:
+        raise ValueError("gbrain pin front door requires pin and overlay paths")
+    pin_path, overlay_path = sys.argv[1:]
+    pin_raw = stable_regular(pin_path, PIN_MAX_BYTES, "GBRAIN_PIN")
+    overlay_raw = stable_regular(
+        overlay_path, OVERLAY_MAX_BYTES, "GBRAIN_OVERLAY.patch")
+    try:
+        pin_text = pin_raw.decode("utf-8", errors="strict")
+    except UnicodeError as error:
+        raise ValueError("GBRAIN_PIN is not valid UTF-8") from error
+    values = {}
+    for line in pin_text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.count("=") != 1:
+            raise ValueError("GBRAIN_PIN contains a malformed assignment")
+        key, value = line.split("=", 1)
+        if key not in PIN_KEYS or key in values or not value:
+            raise ValueError("GBRAIN_PIN keys are unknown, missing, or duplicated")
+        values[key] = value
+    if set(values) != PIN_KEYS:
+        raise ValueError("GBRAIN_PIN keys are unknown, missing, or duplicated")
+    if re.fullmatch(r"[0-9a-f]{40}", values["commit"]) is None:
+        raise ValueError("GBRAIN_PIN commit is invalid")
+    if re.fullmatch(r"[0-9]+(?:[.][0-9]+)+", values["version"]) is None:
+        raise ValueError("GBRAIN_PIN version is invalid")
+    for key in ("bun_lock_sha256", "overlay_sha256"):
+        if re.fullmatch(r"[0-9a-f]{64}", values[key]) is None:
+            raise ValueError("GBRAIN_PIN " + key + " is invalid")
+    if re.fullmatch(r"[0-9a-f]{40}", values["overlay_tree_oid"]) is None:
+        raise ValueError("GBRAIN_PIN overlay tree OID is invalid")
+    try:
+        verified = datetime.date.fromisoformat(values["verified"])
+    except ValueError as error:
+        raise ValueError("GBRAIN_PIN verified date is invalid") from error
+    if verified.isoformat() != values["verified"]:
+        raise ValueError("GBRAIN_PIN verified date is not canonical")
+    if hashlib.sha256(overlay_raw).hexdigest() != values["overlay_sha256"]:
+        raise ValueError("GBRAIN_OVERLAY.patch digest does not match GBRAIN_PIN")
+    print("\t".join(values[key] for key in (
+        "commit", "version", "bun_lock_sha256", "overlay_sha256",
+        "overlay_tree_oid")))
+except (OSError, ValueError) as error:
+    raise SystemExit(str(error)) from error
+PY
+}
+
+gbrain_overlay_frontdoor() {
+  python3 - "$@" <<'PY'
+import hashlib
+import os
+import re
+import stat
+import subprocess
+import sys
+
+
+PATCH_MAX_BYTES = 16_777_216
+LOCK_MAX_BYTES = 16_777_216
+PACKAGE_MAX_BYTES = 1_048_576
+GIT = "/usr/bin/git"
+
+
+def generation(info):
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+        info.st_uid, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def stable_regular(path, maximum, label):
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or cloexec is None:
+        raise ValueError(label + " cannot be opened with required flags")
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
+                or before.st_uid != os.geteuid() \
+                or before.st_size < 0 or before.st_size > maximum:
+            raise ValueError(label + " is not an admitted regular file")
+        chunks = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1_048_576, remaining))
+            if not chunk:
+                raise ValueError(label + " ended before its held generation")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise ValueError(label + " grew beyond its held generation")
+        after = os.fstat(descriptor)
+        if generation(before) != generation(after):
+            raise ValueError(label + " changed while being read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def git(source, *arguments, input_bytes=None, ok=(0,)):
+    environment = {
+        "HOME": os.path.dirname(source),
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "UTC",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    result = subprocess.run(
+        [GIT, "-C", source, *arguments], input=input_bytes,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=environment, check=False)
+    if result.returncode not in ok:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError("gbrain overlay Git operation refused: " + detail)
+    return result
+
+
+def line(source, *arguments):
+    raw = git(source, *arguments).stdout
+    try:
+        value = raw.decode("ascii", errors="strict").rstrip("\n")
+    except UnicodeError as error:
+        raise ValueError("gbrain Git identity is not ASCII") from error
+    if "\n" in value or "\r" in value:
+        raise ValueError("gbrain Git identity is not one line")
+    return value
+
+
+try:
+    if len(sys.argv) != 7:
+        raise ValueError("gbrain overlay front door requires six arguments")
+    source, patch_path, commit, lock_sha256, overlay_sha256, tree_oid = sys.argv[1:]
+    for value, width, label in (
+            (commit, 40, "commit"), (lock_sha256, 64, "lock digest"),
+            (overlay_sha256, 64, "overlay digest"),
+            (tree_oid, 40, "overlay tree OID")):
+        if len(value) != width or re.fullmatch(r"[0-9a-f]+", value) is None:
+            raise ValueError("gbrain " + label + " is invalid")
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or directory is None or cloexec is None:
+        raise ValueError("gbrain source cannot be opened with required flags")
+    source_fd = os.open(source, os.O_RDONLY | nofollow | directory | cloexec)
+    try:
+        source_info = os.fstat(source_fd)
+        if not stat.S_ISDIR(source_info.st_mode) \
+                or source_info.st_uid != os.geteuid():
+            raise ValueError("gbrain source is not an admitted directory")
+    finally:
+        os.close(source_fd)
+    patch_raw = stable_regular(
+        patch_path, PATCH_MAX_BYTES, "GBRAIN_OVERLAY.patch")
+    if hashlib.sha256(patch_raw).hexdigest() != overlay_sha256:
+        raise ValueError("gbrain overlay digest changed")
+    lock_path = os.path.join(source, "bun.lock")
+    package_path = os.path.join(source, "package.json")
+    lock_raw = stable_regular(lock_path, LOCK_MAX_BYTES, "gbrain bun.lock")
+    package_raw = stable_regular(
+        package_path, PACKAGE_MAX_BYTES, "gbrain package.json")
+    if hashlib.sha256(lock_raw).hexdigest() != lock_sha256:
+        raise ValueError("gbrain bun.lock does not match its pin")
+    if line(source, "rev-parse", "HEAD") != commit:
+        raise ValueError("gbrain checkout is not the requested commit")
+    if line(source, "rev-parse", "--is-inside-work-tree") != "true":
+        raise ValueError("gbrain source is not a work tree")
+    git(source, "ls-files", "--error-unmatch", "bun.lock", "package.json")
+    git(source, "diff", "--quiet", "--no-ext-diff")
+    git(source, "diff", "--cached", "--quiet", "--no-ext-diff")
+    if git(source, "ls-files", "--others", "--exclude-standard", "-z").stdout:
+        raise ValueError("gbrain pristine source has unexpected untracked files")
+    git(source, "apply", "--check", "--index", "--whitespace=error-all", "-",
+        input_bytes=patch_raw)
+    git(source, "apply", "--index", "--whitespace=error-all", "-",
+        input_bytes=patch_raw)
+    if line(source, "rev-parse", "HEAD") != commit:
+        raise ValueError("gbrain commit changed while applying its overlay")
+    if stable_regular(lock_path, LOCK_MAX_BYTES, "gbrain bun.lock") != lock_raw \
+            or stable_regular(
+                package_path, PACKAGE_MAX_BYTES, "gbrain package.json") \
+            != package_raw:
+        raise ValueError("gbrain dependency inputs changed under the overlay")
+    git(source, "diff", "--quiet", "--no-ext-diff")
+    if git(source, "ls-files", "--others", "--exclude-standard", "-z").stdout:
+        raise ValueError("gbrain overlay introduced unexpected untracked files")
+    if git(source, "diff", "--name-only", "HEAD", "--",
+           "bun.lock", "package.json").stdout:
+        raise ValueError("gbrain overlay changes dependency inputs")
+    observed_tree = line(source, "write-tree")
+    if observed_tree != tree_oid:
+        raise ValueError("gbrain post-overlay tree does not match its pin")
+    print(observed_tree)
+except (OSError, ValueError) as error:
+    raise SystemExit(str(error)) from error
+PY
+}
+
+GBRAIN_OVERLAY="$REPO/GBRAIN_OVERLAY.patch"
+GBRAIN_PIN_VALUES="$(gbrain_pin_frontdoor \
+  "$REPO/GBRAIN_PIN" "$GBRAIN_OVERLAY")" || exit 1
+IFS=$'\t' read -r PIN PIN_VERSION PIN_LOCK_SHA256 \
+  PIN_OVERLAY_SHA256 PIN_OVERLAY_TREE_OID <<< "$GBRAIN_PIN_VALUES"
 [[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || {
   echo "GBRAIN_PIN must contain one full lowercase commit digest"; exit 1; }
 [[ "$PIN_VERSION" =~ ^[0-9]+([.][0-9]+)+$ ]] || {
   echo "GBRAIN_PIN must contain a numeric dotted version"; exit 1; }
 [[ "$PIN_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
   echo "GBRAIN_PIN must bind the upstream bun.lock SHA-256"; exit 1; }
+[[ "$PIN_OVERLAY_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "GBRAIN_PIN must bind the overlay SHA-256"; exit 1; }
+[[ "$PIN_OVERLAY_TREE_OID" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "GBRAIN_PIN must bind the post-overlay Git tree"; exit 1; }
+
+GBRAIN_BUILD_HOME="$SIA_INSTALL_TMP/gbrain-build-home"
+mkdir -p "$GBRAIN_BUILD_HOME" "$GBRAIN_BUILD_HOME/.config" \
+  "$GBRAIN_BUILD_HOME/.cache" "$GBRAIN_BUILD_HOME/.local/state"
+GBRAIN_STERILE_ENV=(
+  /usr/bin/env -i
+  HOME="$GBRAIN_BUILD_HOME"
+  GBRAIN_HOME="$GBRAIN_BUILD_HOME"
+  XDG_CONFIG_HOME="$GBRAIN_BUILD_HOME/.config"
+  XDG_CACHE_HOME="$GBRAIN_BUILD_HOME/.cache"
+  XDG_STATE_HOME="$GBRAIN_BUILD_HOME/.local/state"
+  TMPDIR="$SIA_INSTALL_TMP"
+  BUN_INSTALL_CACHE_DIR="$SIA_INSTALL_TMP/bun-cache"
+  PATH=/usr/bin:/bin
+  LANG=C.UTF-8
+  LC_ALL=C.UTF-8
+  TZ=UTC
+  DO_NOT_TRACK=1
+  NO_COLOR=1
+  GBRAIN_SKIP_STARTUP_HOOKS=1
+  GBRAIN_SYNC_NO_DELEGATE=1
+  GBRAIN_NO_BANNER=1
+  GBRAIN_SELF_UPGRADE_MODE=off
+  GIT_CONFIG_NOSYSTEM=1
+  GIT_CONFIG_GLOBAL=/dev/null
+  GIT_TERMINAL_PROMPT=0
+)
 
 GBRAIN_ROOT="$TOOLCHAIN/gbrain"
 GBRAIN_BIN="$GBRAIN_ROOT/bin/gbrain"
@@ -8869,12 +9159,14 @@ gbrain_runtime_receipt_valid() {
   local receipt_prefix reported_version
   [ -x "$GBRAIN_BIN" ] && [ ! -L "$GBRAIN_BIN" ] \
     && [ -f "$GBRAIN_RECEIPT" ] && [ ! -L "$GBRAIN_RECEIPT" ] || return 1
-  receipt_prefix="$(printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s' \
-    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256")"
+  receipt_prefix="$(printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\noverlay_sha256=%s\noverlay_tree_oid=%s' \
+    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID")"
   owned_metadata release "$GBRAIN_RECEIPT" "$GBRAIN_BIN" \
     "$receipt_prefix" || return 1
   reported_version="$(bounded_command_capture \
-    "$GBRAIN_BIN" --version 2>/dev/null)" || return 1
+    "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" --version 2>/dev/null)" \
+    || return 1
   [ "$reported_version" = "gbrain $PIN_VERSION" ]
 }
 if ! gbrain_runtime_receipt_valid; then
@@ -8912,26 +9204,42 @@ if ! gbrain_runtime_receipt_valid; then
     echo "gbrain checkout did not resolve to the requested commit" >&2; exit 1; }
   printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
     | sha256sum -c -
-  BUN_INSTALL_CACHE_DIR="$SIA_INSTALL_TMP/bun-cache" \
-    run_with_deadline 1800 "$BUN_BIN" install --cwd "$GBRAIN_SOURCE" \
+  run_with_deadline 1800 "${GBRAIN_STERILE_ENV[@]}" \
+    "$BUN_BIN" install --no-env-file --cwd "$GBRAIN_SOURCE" \
       --frozen-lockfile \
       --production --ignore-scripts --no-progress
   printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
     | sha256sum -c -
+  GBRAIN_OVERLAY_TREE="$(gbrain_overlay_frontdoor "$GBRAIN_SOURCE" \
+    "$GBRAIN_OVERLAY" "$PIN" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID")" || exit 1
+  [ "$GBRAIN_OVERLAY_TREE" = "$PIN_OVERLAY_TREE_OID" ] || {
+    echo "gbrain overlay front door returned the wrong tree" >&2; exit 1; }
   SIA_GBRAIN_STAGE="$(mktemp -d "$TOOLCHAIN/.gbrain.stage.XXXXXX")"
   mkdir -p "$SIA_GBRAIN_STAGE/bin"
-  run_with_deadline 1800 "$BUN_BIN" build --compile \
+  run_with_deadline 1800 "${GBRAIN_STERILE_ENV[@]}" "$BUN_BIN" build \
+    --no-env-file --no-install \
+    --no-compile-autoload-dotenv --no-compile-autoload-bunfig --compile \
     --outfile "$SIA_GBRAIN_STAGE/bin/gbrain" \
     "$GBRAIN_SOURCE/src/cli.ts"
+  [ "$(bounded_command_capture git -C "$GBRAIN_SOURCE" write-tree)" \
+    = "$PIN_OVERLAY_TREE_OID" ] || {
+    echo "gbrain source tree changed during build" >&2; exit 1; }
+  git -C "$GBRAIN_SOURCE" diff --quiet --no-ext-diff || {
+    echo "gbrain tracked source changed during build" >&2; exit 1; }
+  printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
+    | sha256sum -c -
   chmod 0755 "$SIA_GBRAIN_STAGE/bin/gbrain"
   GBRAIN_VERSION_OUTPUT="$(bounded_command_capture \
-    "$SIA_GBRAIN_STAGE/bin/gbrain" --version)"
+    "${GBRAIN_STERILE_ENV[@]}" "$SIA_GBRAIN_STAGE/bin/gbrain" --version)"
   [ "$GBRAIN_VERSION_OUTPUT" = "gbrain $PIN_VERSION" ] || {
     echo "compiled gbrain version mismatch" >&2; exit 1; }
   GBRAIN_BINARY_SHA256="$(owned_metadata digest \
     "$SIA_GBRAIN_STAGE/bin/gbrain")" || exit 1
-  printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\nbinary_sha256=%s\n' \
-    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" "$GBRAIN_BINARY_SHA256" \
+  printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\noverlay_sha256=%s\noverlay_tree_oid=%s\nbinary_sha256=%s\n' \
+    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID" \
+    "$GBRAIN_BINARY_SHA256" \
     > "$SIA_GBRAIN_STAGE/.sia-release"
   SIA_INSTALL_MUTATED=1
   GBRAIN_RESULT="$(atomic_install_tree "$SIA_GBRAIN_STAGE" "$GBRAIN_ROOT" \
@@ -8946,8 +9254,8 @@ gbrain_runtime_receipt_valid || {
   echo "private gbrain receipt or executable verification failed" >&2; exit 1; }
 PATH="$GBRAIN_ROOT/bin:$BUN_ROOT/bin:$PATH"
 export PATH
-bounded_command_capture "$GBRAIN_BIN" --version
-echo "  (compiled from requested gbrain commit $PIN and frozen lockfile)"
+bounded_command_capture "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" --version
+echo "  (compiled from requested gbrain commit $PIN, frozen lockfile, and pinned overlay tree $PIN_OVERLAY_TREE_OID)"
 
 step "2/9 ollama (local embeddings — nothing leaves the machine)"
 # Pin provenance (verified 2026-08-30):
@@ -9293,7 +9601,9 @@ for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siacontrollerliveinput.py siacontrollerstatus.py siacoretrieval.py \
     siacortexrepair.py siaencoding.py siaeventintake.py siaeventplan.py \
     siagist.py siajournalcapture.py sialivegist.py sialiveloop.py \
-    sialivepublication.py siasourcebatch.py siasourcepublication.py \
+    sialivepublication.py siasourceack.py siasourcebatch.py \
+    siasourceeffects.py siasourceengine.py siasourcegit.py \
+    siasourcepublication.py \
     siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
     siavectorrun.py siaworkspace.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
@@ -9823,7 +10133,7 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
   fi
   SIA_PLUGIN_STAGE="$(mktemp -d "$PLUGIN_PARENT/.khephri.sia.stage.XXXXXX")"
   PLUGIN_ROOT_FILES=(manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md
-    ROADMAP.md LICENSE SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
+    ROADMAP.md LICENSE SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
     uninstall.sh)
   PLUGIN_DIRS=(bin docs schema-pack skill systemd)
   for relative in "${PLUGIN_ROOT_FILES[@]}"; do
