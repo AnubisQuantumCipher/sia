@@ -345,18 +345,49 @@ def _live_parent_generation(generation, receipt):
         _live_refuse("committed parent generation differs from its durable receipt")
 
 
+def _live_controller_source_pending(memo):
+    if "controller_source_pending" not in memo:
+        return None
+    receipt = memo["controller_source_pending"]
+    _live_keys(receipt, {
+        "schema", "epoch_id", "batch_id", "epoch_sha256", "batch_sha256",
+        "batch_wire_sha256", "batch_bytes", "parent_batch_sha256",
+    })
+    if receipt["schema"] != "sia-controller-source-pending-v1" \
+            or not sialiveloop._token(receipt["epoch_id"]) \
+            or type(receipt["batch_id"]) is not str \
+            or re.fullmatch(r"[0-9a-f]{64}", receipt["batch_id"]) is None \
+            or not _nonnegative_status_integer(receipt["batch_bytes"]) \
+            or receipt["batch_bytes"] == 0 \
+            or receipt["batch_bytes"] > MAX_STATE_JSON_BYTES:
+        _live_refuse("controller source pending receipt is invalid")
+    for key in ("epoch_sha256", "batch_sha256", "batch_wire_sha256"):
+        if type(receipt[key]) is not str \
+                or re.fullmatch(r"[0-9a-f]{64}", receipt[key]) is None:
+            _live_refuse("controller source pending receipt is invalid")
+    parent = receipt["parent_batch_sha256"]
+    if parent is not None and (type(parent) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", parent) is None):
+        _live_refuse("controller source pending receipt is invalid")
+    return receipt
+
+
 def _live_authority_memo(memo, durable):
     if type(memo) is not dict or type(durable) is not dict:
         _live_refuse("durable memo is unavailable")
     # Pulse owns new history/counters in the proposed memo. Its live authority
     # may never come from an in-memory receipt ahead of the durable memo.
-    for key in ("live_loop_pending", "live_loop_committed"):
+    for key in ("live_loop_pending", "live_loop_committed",
+                "controller_source_pending"):
         if (key in memo) != (key in durable) or not _live_same(memo.get(key), durable.get(key)):
             _live_refuse("live memo authority differs from durable receipt")
+    _live_controller_source_pending(memo)
+    _live_controller_source_pending(durable)
 
 
 def _live_final_memo(memo, candidate, receipt):
     _live_memo_bytes(memo)
+    source_pending = _live_controller_source_pending(memo)
     updated = copy.deepcopy(memo)
     marker = _pending_pulse_marker(updated)
     if marker is not None:
@@ -376,9 +407,14 @@ def _live_final_memo(memo, candidate, receipt):
     updated.pop("pulse_status_effects_pending", None)
     updated.pop("live_loop_pending", None)
     updated["live_loop_committed"] = receipt
-    updated["ready"] = {"v": 1, "completed_at": candidate["status"]["ts"],
-                        "kind": "pulse", "identity": receipt["publication_id"]}
-    _ready_receipt(updated)
+    if source_pending is None:
+        updated["ready"] = {"v": 1, "completed_at": candidate["status"]["ts"],
+                            "kind": "pulse", "identity": receipt["publication_id"]}
+        _ready_receipt(updated)
+    else:
+        if not _live_same(updated.get("controller_source_pending"), source_pending):
+            _live_refuse("controller source pending receipt changed")
+        updated.pop("ready", None)
     _live_memo_bytes(updated)
     _memo_text(updated)
     return updated
@@ -497,6 +533,8 @@ def _read_committed_live_generation(*, memo, admitted_status):
         if _live_memo_bytes(memo) != _live_memo_bytes(durable) \
                 or not _live_same(admitted_status, files["status"].value):
             _live_refuse("reader inputs differ from the durable memo or admitted status")
+        _live_controller_source_pending(memo)
+        _live_controller_source_pending(durable)
         pending, committed = durable.get("live_loop_pending"), durable.get("live_loop_committed")
         candidate, generation = files["candidate"].value, files["generation"].value
         if pending is None and committed is None:

@@ -5883,6 +5883,7 @@ _LIVE_PUBLICATION_MODULE = None
 _LIVE_PUBLICATION_EXPORTS = frozenset({
     "_live_authority_memo",
     "_live_bytes",
+    "_live_controller_source_pending",
     "_live_files",
     "_live_final_memo",
     "_live_generation",
@@ -5995,6 +5996,68 @@ def _read_pending_controller_source_batch(*, memo):
     import siasourcepublication
     with corpus_owner():
         return siasourcepublication.read_pending(globals(), memo=memo)
+
+
+def _prepare_controller_source_live_candidate(*, memo, admitted_status):
+    """Build the existing pure live input only from the retained source slot."""
+    import sialiveloop
+    import siasourcebatch
+    with brainstem_owner(), corpus_owner():
+        source_view = _read_pending_controller_source_batch(memo=memo)
+        if source_view.get("status") != "pending" \
+                or type(source_view.get("batch")) is not dict:
+            siasourcebatch.refuse(
+                "controller-source-pending-batch-required", phase="live-prepare")
+        batch = source_view["batch"]
+        intake = copy.deepcopy(batch["intake_projection"]["intake"])
+        previous_state = previous_sha256 = None
+        if "live_loop_committed" in memo:
+            live_view = _read_committed_live_generation(
+                memo=memo, admitted_status=admitted_status)
+            if live_view.get("status") != "available" \
+                    or type(live_view.get("generation")) is not dict:
+                siasourcebatch.refuse(
+                    "controller-source-live-parent-unavailable",
+                    phase="live-prepare")
+            generation = live_view["generation"]
+            previous_state = copy.deepcopy(generation["transition"]["state"])
+            previous_sha256 = generation["state_sha256"]
+        elif _live_started(memo):
+            siasourcebatch.refuse(
+                "controller-source-live-parent-unbound", phase="live-prepare")
+        deliveries = {
+            "schema": "sia-live-deliveries-v1",
+            "epoch_id": intake["epoch_id"],
+            "complete": True,
+            "records": [],
+        }
+        prepare_inputs = {
+            "intake": intake,
+            "expected_intake_sha256": batch["intake_projection"]["intake_sha256"],
+            "deliveries": deliveries,
+            "expected_deliveries_sha256": sialiveloop._sha(deliveries),
+            "previous_state": previous_state,
+            "expected_previous_state_sha256": previous_sha256,
+            "policy": copy.deepcopy(batch["epoch"]["live_policy"]),
+            "expected_policy_sha256": batch["epoch"]["expected_live_policy_sha256"],
+            "observed_at": batch["observed_at"],
+            "idle": False,
+            "gist_inputs": None,
+        }
+        # Execute the exact component contract now; live publication replays
+        # the same pinned input before retaining a candidate.
+        sialiveloop.prepare_pulse(**prepare_inputs)
+        result = {
+            "prepare_inputs": prepare_inputs,
+            "expected_prepare_inputs_sha256": sialiveloop._sha(prepare_inputs),
+        }
+        frozen = sialiveloop._canonical(result)
+        detached = copy.deepcopy(result)
+        if sialiveloop._canonical(result) != frozen \
+                or sialiveloop._canonical(detached) != frozen:
+            siasourcebatch.refuse(
+                "controller-source-live-input-changed", phase="live-prepare")
+        return detached
 
 
 def _ready_receipt(memo):
