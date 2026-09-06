@@ -16,6 +16,7 @@ import siaqueue
 import siavector
 import siavectoradmit
 import siavectormodel
+import siavectorprepare
 
 
 _EXPECTED = {
@@ -72,6 +73,28 @@ def _admit_build(receipt, expected):
             or not receipt["non_claims"] \
             or any(type(item) is not str or not item for item in receipt["non_claims"]):
         raise siavector.VectorRefusal("vector build receipt contract is invalid")
+
+
+def _served_observation(served, model):
+    """Admit the common owned-service envelope before operation-specific data."""
+    if type(served) is not dict or set(served) != {
+            "schema", "status", "observation", "serving_generation",
+            "launch_config_sha256", "launch_config", "model_identity", "non_claims"} \
+            or served["schema"] != "sia-raw-vector-served-observation-v1" \
+            or served["status"] != "observed" \
+            or served["model_identity"] != model.identity \
+            or served["non_claims"] != siavectormodel.NON_CLAIMS \
+            or type(served["observation"]) is not dict \
+            or type(served["launch_config"]) is not dict \
+            or served["launch_config"].get("model_identity") != model.identity \
+            or type(served["serving_generation"]) is not dict \
+            or served["serving_generation"].get("model_manifest_sha256") \
+            != model.identity["manifest_sha256"]:
+        raise siavector.VectorRefusal("vector served model identity disagrees")
+    observation = copy.deepcopy(served["observation"])
+    observation["model_serving"] = {
+        key: copy.deepcopy(value) for key, value in served.items() if key != "observation"}
+    return observation
 
 
 def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
@@ -151,24 +174,7 @@ def _observe(*, executable, expected, build_receipt, build_receipt_sha256,
                         executable=executable, executable_sha256=expected["executable_sha256"],
                         request=request, snapshot_directory=snapshot["descriptor_parent"],
                         timeout=timeout, scratch_parent=scratch_parent)
-                    if type(served) is not dict or set(served) != {
-                            "schema", "status", "observation", "serving_generation",
-                            "launch_config_sha256", "launch_config", "model_identity", "non_claims"} \
-                            or served["schema"] != "sia-raw-vector-served-observation-v1" \
-                            or served["status"] != "observed" \
-                            or served["model_identity"] != model.identity \
-                            or served["non_claims"] != siavectormodel.NON_CLAIMS \
-                            or type(served["observation"]) is not dict \
-                            or type(served["launch_config"]) is not dict \
-                            or served["launch_config"].get("model_identity") != model.identity \
-                            or type(served["serving_generation"]) is not dict \
-                            or served["serving_generation"].get("model_manifest_sha256") \
-                            != model.identity["manifest_sha256"]:
-                        raise siavector.VectorRefusal("vector served model identity disagrees")
-                    observation = copy.deepcopy(served["observation"])
-                    observation["model_serving"] = {
-                        key: copy.deepcopy(value) for key, value in served.items()
-                        if key != "observation"}
+                    observation = _served_observation(served, model)
                 observation["payload"] = siavectoradmit.admit_response(
                     observation["payload"], request,
                     executable_sha256=expected["executable_sha256"],
@@ -213,17 +219,84 @@ def observe(*, executable, expected, build_receipt, build_receipt_sha256,
                     limit=limit, timeout=timeout, scratch_parent=scratch_parent)
 
 
-def observe_bound(*, model_expectations, shared_runtime, **observation_inputs):
-    """Require admitted model inputs for capture and query, without an ambient fallback."""
+def _bound_model_inputs(model_expectations, shared_runtime):
     if type(model_expectations) is not dict or set(model_expectations) != {
             "package_root", "package_sha256", "model_root", "model_name",
             "manifest_sha256", "release_version", "release_archive_sha256"} \
             or type(shared_runtime) is not list or not shared_runtime:
         raise siavector.VectorRefusal("vector model expectations and runtime are required")
+    return {"expectations": copy.deepcopy(model_expectations),
+            "runtime": copy.deepcopy(shared_runtime)}
+
+
+def observe_bound(*, model_expectations, shared_runtime, **observation_inputs):
+    """Require admitted model inputs for capture and query, without an ambient fallback."""
+    model_inputs = _bound_model_inputs(model_expectations, shared_runtime)
     try:
-        return _observe(**observation_inputs, model_inputs={
-            "expectations": copy.deepcopy(model_expectations),
-            "runtime": copy.deepcopy(shared_runtime)})
+        return _observe(**observation_inputs, model_inputs=model_inputs)
+    except siavectormodel.ModelRefusal as exc:
+        refusal = siavector.VectorRefusal("vector model serving refused: " + str(exc))
+        refusal.non_claims = list(siavectormodel.NON_CLAIMS)
+        raise refusal from exc
+
+
+def prepare_bound(*, executable, expected, build_receipt, build_receipt_sha256,
+                  request, output_directory, timeout, scratch_parent,
+                  model_expectations, shared_runtime):
+    """Prepare a new private index and admit its complete page/chunk receipt.
+
+    Output freshness and partial-index retention are enforced by the owned
+    model launch lane. This controller never archives or promotes a partial
+    result. No resident index or ambient model fallback is available.
+    """
+    expected = _expectation_values(expected)
+    request = siavectorprepare.admit_request(request)
+    if type(timeout) not in (int, float) or not 0 < timeout <= 1800 \
+            or not math.isfinite(timeout):
+        raise siavector.VectorRefusal("vector timeout is invalid")
+    model_inputs = _bound_model_inputs(model_expectations, shared_runtime)
+    original_request_sha256 = hashlib.sha256(siavector._canonical_bytes(request)).hexdigest()
+    try:
+        with siavector.sealed_file(
+                build_receipt, build_receipt_sha256,
+                max_bytes=siavector.sialib.MAX_STATE_JSON_BYTES) as build:
+            try:
+                receipt = siaqueue.strict_json_loads(
+                    os.pread(build.fd, build.size, 0).decode("utf-8", errors="strict"))
+            except (ValueError, UnicodeError, RecursionError) as exc:
+                raise siavector.VectorRefusal("vector build receipt is invalid JSON") from exc
+            _admit_build(receipt, expected)
+            with siavectormodel.admit_model(**model_inputs["expectations"]) as model:
+                served = siavectormodel.invoke_model_adapter(
+                    admitted=model, shared_runtime=model_inputs["runtime"],
+                    executable=executable, executable_sha256=expected["executable_sha256"],
+                    request=request, snapshot_directory=output_directory,
+                    timeout=timeout, scratch_parent=scratch_parent)
+                observation = _served_observation(served, model)
+                if observation.get("bound_request_sha256") != original_request_sha256 \
+                        or observation.get("executable_sha256") != expected["executable_sha256"] \
+                        or type(observation.get("returncode")) is not int \
+                        or observation["returncode"] != 0:
+                    raise siavector.VectorRefusal("vector preparation observation binding disagrees")
+                observation["payload"] = siavectorprepare.admit_response(
+                    observation.get("payload"), request,
+                    request_sha256=observation.get("request_sha256"))
+                model_identity = copy.deepcopy(model.identity)
+            build.assert_current()
+            return {
+                "schema": "sia-raw-vector-bound-preparation-v1", "status": "observed",
+                "dataset_sha256": request["dataset_sha256"], "pages_sha256": request["pages_sha256"],
+                "build_receipt_sha256": build.sha256, "expected": expected,
+                "model_identity": model_identity, "preparation": observation,
+                "build_non_claims": receipt["non_claims"],
+                "non_claims": [
+                    "Sealed CPU model inputs and complete preparation receipts are bound; computation and cognitive improvement are not proved.",
+                    "Caller build expectations are not independent package authentication.",
+                    "This is a new private projection, not an attestation of the resident index or complete machine history.",
+                    "Digest-only document-vector witnesses are not independently reconstructed by the parent.",
+                    "All preparer and model non_claims remain controlling in the complete retained observation.",
+                ],
+            }
     except siavectormodel.ModelRefusal as exc:
         refusal = siavector.VectorRefusal("vector model serving refused: " + str(exc))
         refusal.non_claims = list(siavectormodel.NON_CLAIMS)
