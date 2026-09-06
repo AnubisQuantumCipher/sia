@@ -34,6 +34,8 @@ _REFUSAL_PHASES = {
     "invalid-memo-marker": "preflight", "invalid-status-memo": "preflight",
     "unrelated-consolidation-debt": "preflight", "unrelated-thought-debt": "preflight",
     "unrelated-natural-history-debt": "preflight", "unrelated-recovery-entry": "preflight",
+    "unrelated-thought-recovery-entry": "preflight", "unrelated-take-grade-entry": "preflight",
+    "unrelated-take-migration-entry": "preflight", "unrelated-ledger-pending-entry": "preflight",
     "unrelated-graph-debt": "preflight", "unrelated-mind-recovery": "preflight",
     "unrelated-corpus-dirt": "preflight", "restore-policy-not-authorized": "preflight",
     "memo-generation-changed": "preflight", "graph-generation-not-authorized": "preflight",
@@ -115,8 +117,13 @@ def _read_json(core, path, limit, label, *, missing=False):
     return value
 
 
-def _scan(core, directory, *, allowed=None):
+def _scan(core, directory, *, allowed=None, reason_code="unrelated-recovery-entry"):
     """No cleanup, chmod, creation, or swallowed unknown directory entries."""
+    if reason_code not in {
+            "unrelated-recovery-entry", "unrelated-thought-recovery-entry",
+            "unrelated-take-grade-entry", "unrelated-take-migration-entry",
+            "unrelated-ledger-pending-entry"}:
+        raise ValueError("unknown recovery-directory refusal routing")
     try:
         fd = core._open_source_nofollow(directory, os.O_RDONLY | os.O_DIRECTORY)
     except FileNotFoundError:
@@ -134,7 +141,7 @@ def _scan(core, directory, *, allowed=None):
                 if inspected > core.MAX_LEDGER_PENDING_RECORDS:
                     raise RuntimeError("repair debt directory exceeds its scan bound")
                 if allowed is None or entry.name != allowed["record_id"] + ".json":
-                    raise RepairRefusal("unrelated-recovery-entry")
+                    raise RepairRefusal(reason_code)
                 info = entry.stat(follow_symlinks=False)
                 if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
                         or info.st_nlink != 1:
@@ -187,12 +194,14 @@ def _readonly_debt(core, memo, publication):
     for path in (core._thought_recovery_claim_path(), core._thought_mind_replay_path()):
         if os.path.lexists(path):
             raise RepairRefusal("unrelated-thought-debt")
-    _scan(core, core._thought_recovery_dir())
+    _scan(core, core._thought_recovery_dir(), reason_code="unrelated-thought-recovery-entry")
     if core._load_thought_legacy_scan()["phase"] != "complete":
         raise RepairRefusal("unrelated-thought-debt")
     takes = core.siatakes
-    for path in (takes._grade_transaction_dir(), takes._take_migration_transaction_dir()):
-        _scan(core, path)
+    for path, reason_code in (
+            (takes._grade_transaction_dir(), "unrelated-take-grade-entry"),
+            (takes._take_migration_transaction_dir(), "unrelated-take-migration-entry")):
+        _scan(core, path, reason_code=reason_code)
     for kind in ("take", "intent"):
         if os.path.lexists(takes._history_paths(kind)["pending"]):
             raise RepairRefusal("unrelated-natural-history-debt")
@@ -242,7 +251,8 @@ def _readonly_debt(core, memo, publication):
             if not initial and not completed:
                 raise RuntimeError("repair generic publication barrier was replaced")
         allowed = _occurrence(core, publication["repair"])
-    _scan(core, core._ledger_pending_dir(), allowed=allowed)
+    _scan(core, core._ledger_pending_dir(), allowed=allowed,
+          reason_code="unrelated-ledger-pending-entry")
     graph_snapshot = core.read_state_json(core.GRAPH_PATH, {}, "graph snapshot")
     try:
         core._require_recoverable_graph_snapshot(graph_snapshot)

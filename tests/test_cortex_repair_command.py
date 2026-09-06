@@ -609,6 +609,43 @@ class CortexRepairCommand(unittest.TestCase):
         self.assertNotIn(secret, output.getvalue())
         self.assertTrue(value["non_claims"])
 
+    def test_pending_directory_refusals_name_only_the_owning_subsystem(self):
+        cases = (
+            (self.core._thought_recovery_dir(), "unrelated-thought-recovery-entry"),
+            (self.core.siatakes._grade_transaction_dir(), "unrelated-take-grade-entry"),
+            (self.core.siatakes._take_migration_transaction_dir(), "unrelated-take-migration-entry"),
+            (self.core._ledger_pending_dir(), "unrelated-ledger-pending-entry"),
+        )
+        for directory, expected_code in cases:
+            for name in ("private-operator-entry.without-json-suffix", ".private.crash.new"):
+                with self.subTest(subsystem=expected_code, name_kind=name):
+                    target = Path(directory)
+                    target.mkdir(parents=True, exist_ok=True)
+                    entry = target / name
+                    entry.write_bytes(b"PRIVATE RECOVERY CONTENT MUST NOT CROSS THE PUBLIC FRONT DOOR")
+                    before = self._snapshot()
+                    with mock.patch.object(self.core, "_lifecycle_reader", return_value=contextlib.nullcontext()), \
+                            mock.patch.dict(sys.modules, {"sialib": self.core, "siacortexrepair": self.repair}), \
+                            contextlib.redirect_stdout(io.StringIO()) as output:
+                        result = self.cli.main(["sia", "repair-cortex-boundary", "--json"])
+                    self.assertNotEqual(result, 0)
+                    value = json.loads(output.getvalue())
+                    self.assertEqual(value["schema"], COMMAND_SCHEMA)
+                    self.assertEqual(value["status"], "refused")
+                    self.assertEqual(value["reason_code"], expected_code)
+                    self.assertEqual(value["phase"], "preflight")
+                    self.assertEqual(value["non_claims"], list(self.repair.NON_CLAIMS))
+                    self.assertNotIn(str(entry), output.getvalue())
+                    self.assertNotIn(name, output.getvalue())
+                    self.assertNotIn("PRIVATE RECOVERY CONTENT", output.getvalue())
+                    self.assertEqual(self._snapshot(), before)
+                    self.keeper.assert_not_called()
+                    self.sync.assert_not_called()
+                    self.graph.assert_not_called()
+                # Only the known private fixture entry is removed, so an
+                # earlier subsystem cannot mask the next refusal control.
+                entry.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()
