@@ -380,7 +380,7 @@ def _measure_queries(protocol, baseline):
     raw = {row["id"]: row for row in baseline["observation"]["query"]["payload"]["results"]}
     labels = {row["id"]: row["rows"] for row in baseline["retrieval_rows"]}
     protocol_queries = {row["id"]: row for row in protocol["queries"]}
-    queries, requests, expressions = [], [], {}
+    coverage_by_id = {}
     for public in baseline["queries"]:
         identifier = public["id"]
         query = protocol_queries[identifier]
@@ -400,6 +400,27 @@ def _measure_queries(protocol, baseline):
                     hits.append(target["occurrence"])
             row_coverage.append({"rank": rank, "slug": label["slug"], "chunk_index": label["chunk_index"],
                                  "origin": label["origin"], "target_occurrences": hits})
+        coverage_by_id[identifier] = row_coverage
+    return _summarize_coverage(protocol, baseline["queries"], coverage_by_id)
+
+
+def _summarize_coverage(protocol, query_roster, coverage_by_id):
+    """Summarize already admitted native-target hits in an explicit row order.
+
+    This internal seam neither admits observations nor defines relevance.
+    The raw caller above still reconstructs every hit using the exact native
+    witness matcher; ordered callers must independently replay that complete
+    raw measurement and admit a bijection before permuting its hit records.
+    """
+    protocol_queries = {row["id"]: row for row in protocol["queries"]}
+    queries, requests, expressions = [], [], {}
+    for public in query_roster:
+        identifier = public["id"]
+        query = protocol_queries[identifier]
+        targets = query["targets"]
+        if not targets:
+            _fail("a measured query has no frozen occurrence denominator")
+        row_coverage = coverage_by_id[identifier]
         cutoffs = []
         for k in protocol["metric_policy"]["cutoffs"]:
             covered, first_rank = set(), None
