@@ -1088,7 +1088,7 @@ def _member_pins(owner, plans, expected):
             _refuse("batch-member-digest")
 
 
-def _batch_body(owner, members):
+def _member_union(owner, members):
     """Join original witnesses and derive effects without observing or rendering."""
     files, directories, pages, occurrences = {}, {}, {}, {}
     corpus_identity = members[0]["read_dependencies"]["corpus_identity"]
@@ -1143,6 +1143,11 @@ def _batch_body(owner, members):
                  for name in _ancestors(relative)}
     if not ancestors.issubset(directories):
         _refuse("batch-missing-write-ancestor")
+    return corpus_identity, files, directories, pages, write_order, ancestors
+
+
+def _batch_body(owner, members):
+    corpus_identity, files, directories, pages, write_order, ancestors = _member_union(owner, members)
     organ_root = "events/" + members[0]["organ"]
     if organ_root not in directories:
         _refuse("batch-missing-complete-day-scan")
@@ -1277,6 +1282,216 @@ def publish_batch(owner, *, batch, expected_batch_sha256):
         if not _same(owner, detached, result) or _json(owner, batch) != original:
             _refuse("batch-result-or-input-change")
         state["live"].current()
+        return detached
+    finally:
+        state["live"].close()
+
+
+CLOSURE_KEYS = frozenset({"schema", "batches", "read_dependencies", "write_order",
+                          "new_directories", "non_claims", "closure_sha256"})
+CLOSURE_NON_CLAIMS = BATCH_NON_CLAIMS + [
+    "Cross-organ closure publication admits only the original batches' declared page and ancestor deltas; it does not grant a batch authority over another organ or imply source acknowledgment.",
+]
+
+
+def _closure_body(owner, batches):
+    """Keep original one-organ authority; add only a full-path union."""
+    _size(batches, owner["MAX_STATE_JSON_BYTES"])
+    if type(batches) is not list or not batches:
+        _refuse("closure-batch-roster")
+    events = 0
+    for batch in batches:
+        if type(batch) is not dict or set(batch) != BATCH_KEYS \
+                or batch["schema"] != "sia-event-page-render-batch-v1" \
+                or type(batch["organ"]) is not str or type(batch["members"]) is not list:
+            _refuse("closure-batch-shape")
+        for member in batch["members"]:
+            if type(member) is not dict or type(member.get("input_records")) is not list:
+                _refuse("closure-member-shape")
+            events += len(member["input_records"])
+            if events > owner["MAX_SOURCE_REPLAY_EVENTS"]:
+                _refuse("closure-input-event-capacity")
+    organs = set()
+    for batch in batches:
+        _hex(batch["batch_sha256"])
+        if batch["organ"] in organs:
+            _refuse("closure-duplicate-organ")
+        organs.add(batch["organ"])
+        # The original schemas, member order and per-organ quotas are not
+        # redefined by the closure. Validate their exact existing projection.
+        members = _member_structure(owner, batch["members"])
+        original = _batch_body(owner, members)
+        _batch_reservation(owner, original)
+        if not _same(owner, {key: value for key, value in batch.items()
+                             if key != "batch_sha256"}, original):
+            _refuse("closure-original-batch-binding")
+    ordered = sorted(batches, key=lambda batch: batch["organ"])
+    members = [member for batch in ordered for member in batch["members"]]
+    root, files, directories, pages, _order, ancestors = _member_union(owner, members)
+    created = sorted(name for name in ancestors if directories[name]["before"] is None)
+    # These are complete admitted rosters, NOT cumulative syscall work. A
+    # repeated basename in different organs remains a distinct full path.
+    lookup, entries = set(), set()
+    for relative, row in directories.items():
+        before = row["before"]
+        if before is None or before["entries"] is None:
+            continue
+        for entry in before["entries"]:
+            path = relative + "/" + entry["name"]
+            entries.add(path)
+            if stat.S_ISREG(entry["generation"]["mode"]) and entry["name"].endswith(".md"):
+                lookup.add(path)
+    lookup.update(slug + ".md" for member in members for slug in member["day_slugs"])
+    entries.update(relative for relative, page in pages.items() if page["write"])
+    entries.update(created)
+    if len(lookup) > owner["MAX_EVENT_LOOKUP_PAGES"] \
+            or len(entries) > owner["MAX_EVENT_DIRECTORY_INSPECTIONS"]:
+        _refuse("closure-union-roster-capacity")
+    return {
+        "schema": "sia-event-page-publication-closure-v1", "batches": ordered,
+        "read_dependencies": {"schema": "sia-event-page-read-dependencies-v1",
+                              "corpus_identity": root,
+                              "directories": [directories[name] for name in sorted(directories)],
+                              "files": [files[name] for name in sorted(files)]},
+        "write_order": [{"batch_sha256": batch["batch_sha256"], **row}
+                        for batch in ordered for row in batch["write_order"]],
+        "new_directories": created, "non_claims": list(CLOSURE_NON_CLAIMS),
+    }
+
+
+def _closure_result(closure):
+    return {"schema": "sia-event-page-closure-publication-v1", "status": "page-bytes-published",
+            "closure_sha256": closure["closure_sha256"],
+            "batches": [_batch_result(batch) for batch in closure["batches"]],
+            "non_claims": closure["non_claims"]}
+
+
+def _closure_reservation(owner, body):
+    complete = dict(body, closure_sha256="0" * 64)
+    _size(complete, owner["MAX_STATE_JSON_BYTES"])
+    _size(_closure_result(complete), owner["MAX_STATE_JSON_BYTES"])
+
+
+def _batch_pins(owner, batches, expected):
+    if type(expected) is not list or len(expected) != len(batches):
+        _refuse("closure-independent-batch-pins")
+    # Check caller order before the deterministic organ sort or any digest.
+    for batch, pin in zip(batches, expected):
+        _hex(pin)
+        if batch["batch_sha256"] != pin:
+            _refuse("closure-independent-batch-pins")
+    for batch, pin in zip(batches, expected):
+        body = {key: value for key, value in batch.items() if key != "batch_sha256"}
+        if _hash(owner, _json(owner, body)) != pin:
+            _refuse("closure-batch-digest")
+        _member_pins(owner, batch["members"], [member["plan_sha256"] for member in batch["members"]])
+
+
+def _closure_current(owner, value, original):
+    # Native-int, whole-byte admission still precedes each canonical copy.
+    # No callback-produced replacement becomes a new comparison baseline.
+    if _json(owner, value) != original:
+        _refuse("closure-input-or-result-changed")
+
+
+def compose_closure(owner, *, batches, expected_batch_sha256s):
+    request = {"batches": batches, "expected_batch_sha256s": expected_batch_sha256s}
+    _size(request, owner["MAX_STATE_JSON_BYTES"])
+    body = _closure_body(owner, batches)
+    _closure_reservation(owner, body)
+    original_request, original_body = _json(owner, request), _json(owner, body)
+    _batch_pins(owner, batches, expected_batch_sha256s)
+    _closure_current(owner, request, original_request)
+    _closure_current(owner, body, original_body)
+    admitted = owner["copy"].deepcopy(body)
+    _closure_current(owner, admitted, original_body)
+    _closure_current(owner, request, original_request)
+    members = [member for batch in admitted["batches"] for member in batch["members"]]
+    images = _union_images(owner, members)
+    _closure_current(owner, admitted, original_body)
+    _closure_current(owner, request, original_request)
+    # One shared observation and retained-byte budget; all member views use
+    # the same original image map even when a target belongs to another view.
+    budget = _Budget(owner, 4096)
+    live, _targets = _observe_closure(owner, admitted["read_dependencies"], images,
+                                     allow_target_deltas=False, budget=budget)
+    try:
+        for member in members:
+            _semantic_join(owner, member, images, live)
+        _closure_current(owner, admitted, original_body)
+        _closure_current(owner, request, original_request)
+        identity = _hash(owner, original_body)
+        _closure_current(owner, admitted, original_body)
+        _closure_current(owner, request, original_request)
+        admitted["closure_sha256"] = identity
+        original_result = _json(owner, admitted)
+        detached = owner["copy"].deepcopy(admitted)
+        _closure_current(owner, admitted, original_result)
+        _closure_current(owner, detached, original_result)
+        live.current()
+        _closure_current(owner, admitted, original_result)
+        _closure_current(owner, detached, original_result)
+        _closure_current(owner, request, original_request)
+        # No serialization/hash/copy follows this final whole named sweep.
+        live.named_current()
+        return detached
+    finally:
+        live.close()
+
+
+def publish_closure(owner, *, closure, expected_closure_sha256):
+    request = {"closure": closure, "expected_closure_sha256": expected_closure_sha256}
+    _size(request, owner["MAX_STATE_JSON_BYTES"])
+    if type(closure) is not dict or set(closure) != CLOSURE_KEYS \
+            or closure["schema"] != "sia-event-page-publication-closure-v1":
+        _refuse("closure-shape")
+    body = _closure_body(owner, closure["batches"])
+    _closure_reservation(owner, body)
+    if not _same(owner, {key: value for key, value in closure.items() if key != "closure_sha256"}, body):
+        _refuse("closure-original-union-or-effect-roster")
+    _hex(expected_closure_sha256)
+    _hex(closure["closure_sha256"])
+    original_request, original_body = _json(owner, request), _json(owner, body)
+    original = _json(owner, closure)
+    if closure["closure_sha256"] != expected_closure_sha256 \
+            or _hash(owner, original_body) != expected_closure_sha256:
+        _refuse("external-closure-pin")
+    _batch_pins(owner, closure["batches"], [batch["batch_sha256"] for batch in closure["batches"]])
+    _closure_current(owner, request, original_request)
+    _closure_current(owner, body, original_body)
+    admitted = owner["copy"].deepcopy(closure)
+    _closure_current(owner, admitted, original)
+    _closure_current(owner, request, original_request)
+    members = [member for batch in admitted["batches"] for member in batch["members"]]
+    images = _union_images(owner, members)
+    _closure_current(owner, admitted, original)
+    _closure_current(owner, request, original_request)
+    budget = _Budget(owner, 4096)
+    live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
+    state = {"live": live, "targets": targets}
+    try:
+        for member in members:
+            _semantic_join(owner, member, images, live)
+        live.current()
+        _closure_current(owner, admitted, original)
+        _closure_current(owner, request, original_request)
+        live.named_current()
+        _publish_images(owner, admitted["read_dependencies"], images,
+                        [row["slug"] + ".md" for row in admitted["write_order"]], state,
+                        shared_budget=budget)
+        _closure_current(owner, admitted, original)
+        _closure_current(owner, request, original_request)
+        result = _closure_result(admitted)
+        original_result = _json(owner, result)
+        detached = owner["copy"].deepcopy(result)
+        _closure_current(owner, result, original_result)
+        _closure_current(owner, detached, original_result)
+        state["live"].current()
+        _closure_current(owner, result, original_result)
+        _closure_current(owner, detached, original_result)
+        _closure_current(owner, admitted, original)
+        _closure_current(owner, request, original_request)
+        state["live"].named_current()
         return detached
     finally:
         state["live"].close()

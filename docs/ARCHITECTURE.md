@@ -221,6 +221,24 @@ write. Retry consumes the original sealed batch, never recomposition or
 rerendering, and permits only its declared target and ancestor deltas.
 `tests/test_event_page_batch.py` exercises this additional boundary.
 
+The cross-organ closure is implemented and unreleased. Its
+`_compose_event_page_batch_closure` contract admits one
+original cross-organ cut while retaining complete original one-organ batches
+and their independent pins. Only the additional dependency and effect union
+is deduplicated; original per-organ fields and quota checks stay unchanged.
+`_publish_event_page_batch_closure` uses one shared original-before view and
+prefix publisher, so a declared sibling organ under an originally absent
+ancestor is not mistaken for an unrelated mutation. Retry consumes the
+sealed closure, never a new plan or batch.
+
+The complete closure request, retained output and source-event roster share
+the existing ceilings. Aggregate lookup-page and directory-entry rosters
+use full relative paths and include declared targets and ancestor additions.
+They are admitted roster bounds, not a cumulative syscall or inspection-work
+counter; retained-byte accounting remains a separate constraint.
+`tests/test_event_page_closure.py` covers this page-byte-only boundary.
+It grants no source acknowledgment, live-state publication or readiness.
+
 These lazy core wrappers hold the real reentrant corpus owner across all
 reads, copies, writes and final checks. `siaeventplan` receives the explicit
 owning namespace and introduces no separate binding lock. Result copying

@@ -3826,6 +3826,22 @@ def _publish_event_page_plan_batch(*, batch, expected_batch_sha256):
             globals(), batch=batch, expected_batch_sha256=expected_batch_sha256)
 
 
+def _compose_event_page_batch_closure(*, batches, expected_batch_sha256s):
+    """Bind original one-organ batches to one common cross-organ source cut."""
+    with corpus_owner():
+        import siaeventplan
+        return siaeventplan.compose_closure(
+            globals(), batches=batches, expected_batch_sha256s=expected_batch_sha256s)
+
+
+def _publish_event_page_batch_closure(*, closure, expected_closure_sha256):
+    """Publish only the original closure's exact page and ancestor deltas."""
+    with corpus_owner():
+        import siaeventplan
+        return siaeventplan.publish_closure(
+            globals(), closure=closure, expected_closure_sha256=expected_closure_sha256)
+
+
 def _prepare_event_live_intake(*, history, expected_history_sha256,
                              source_catalog, expected_source_catalog_sha256,
                              configuration, expected_configuration_sha256,
