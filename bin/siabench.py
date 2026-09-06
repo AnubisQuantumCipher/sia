@@ -1504,13 +1504,16 @@ def _assign_splits(questions, seed):
     return sorted(out, key=lambda q: q["id"])
 
 
-def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
+def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None,
+                         *, cognitive_history=False):
     """Generate deterministic QA + private answer keys from signed rows.
 
     CLI callers hold ``sialib.corpus_owner`` while this snapshot is built.
     Every admitted source page is also opened no-follow and digest-bound so
     the returned bundle remains self-describing after the lease is released.
     """
+    if type(cognitive_history) is not bool:
+        raise BenchmarkRefusal("cognitive history opt-in must be a boolean")
     corpus = corpus or CORPUS
     snapshots, diagnostics = _snapshot_chains(
         chain_registry=chain_registry, names=chain_names)
@@ -1934,8 +1937,21 @@ def build_ledger_dataset(corpus=None, chain_registry=None, chain_names=None):
             "snapshot or witness is truncated",
         ],
     }
-    return {"manifest": manifest, "questions": questions,
-            "diagnostics": diagnostics}
+    bundle = {"manifest": manifest, "questions": questions,
+              "diagnostics": diagnostics}
+    if cognitive_history:
+        # The cache still contains the exact source bytes admitted under the
+        # caller's corpus lease. Do not reopen mutable pages to build this
+        # optional private export, and do not change the legacy dataset ID.
+        import siacognitivehistory
+        _require_usable_bundle(bundle)
+        try:
+            bundle["cognitive_history"] = siacognitivehistory.build_capture(
+                manifest=manifest, snapshots=snapshots, projected=projected,
+                records=records, resolver=resolver, diagnostics=diagnostics)
+        except siacognitivehistory.HistoryRefusal as exc:
+            raise BenchmarkRefusal(str(exc)) from exc
+    return bundle
 
 
 def _inside(path, root):
@@ -2033,6 +2049,18 @@ def write_dataset(bundle, out_dir, corpus=None):
         "private-manifest.json": private_manifest_text,
         "manifest.json": manifest_text,
     }
+    if "cognitive_history" in bundle:
+        import siacognitivehistory
+        try:
+            capture = siacognitivehistory.admit_capture(bundle["cognitive_history"])
+            if capture["dataset_id"] != manifest["dataset_id"]:
+                raise siacognitivehistory.HistoryRefusal(
+                    "cognitive history belongs to a different dataset")
+            artifacts["cognitive-history.json"] = json.dumps(
+                capture, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False) + "\n"
+        except siacognitivehistory.HistoryRefusal as exc:
+            raise BenchmarkRefusal(str(exc)) from exc
     encoded_sizes = [len(value.encode("utf-8"))
                      for value in artifacts.values()]
     if any(size > MAX_BENCH_FILE_BYTES for size in encoded_sizes) \
@@ -2046,6 +2074,9 @@ def write_dataset(bundle, out_dir, corpus=None):
     _atomic_text(os.path.join(out_dir, "private-manifest.json"),
                  private_manifest_text, 0o600)
     _atomic_text(os.path.join(out_dir, "manifest.json"), manifest_text)
+    if "cognitive-history.json" in artifacts:
+        _atomic_text(os.path.join(out_dir, "cognitive-history.json"),
+                     artifacts["cognitive-history.json"], 0o600)
     return manifest
 
 
@@ -2649,6 +2680,9 @@ def main(argv=None):
     gen_p = sub.add_parser("generate", help="export question-only and private key files")
     gen_p.add_argument("--out", required=True)
     gen_p.add_argument("--chain", action="append", dest="chains")
+    gen_p.add_argument(
+        "--cognitive-history", action="store_true",
+        help="also export the lossless owner-private verified history capture")
     score_p = sub.add_parser("score", help="normalized-score JSONL {id, answer} predictions")
     score_p.add_argument("--dataset", required=True)
     score_p.add_argument("--answers", required=True)
@@ -2664,17 +2698,23 @@ def main(argv=None):
             return 0
         if args.command == "generate":
             with sialib.corpus_owner():
-                bundle = build_ledger_dataset(chain_names=args.chains)
+                bundle = (build_ledger_dataset(
+                    chain_names=args.chains, cognitive_history=True)
+                    if args.cognitive_history else
+                    build_ledger_dataset(chain_names=args.chains))
                 manifest = write_dataset(bundle, args.out)
-            print(json.dumps({"dataset_id": manifest["dataset_id"],
-                              "questions": manifest["question_count"],
-                              "output": os.path.realpath(
-                                  os.path.expanduser(args.out)),
-                              "answer_key": "answer-key.jsonl (mode 0600)",
-                              "private_manifest":
-                                  "private-manifest.json (mode 0600)",
-                              "mcp_evaluation":
-                                  "mcp-evaluation.xml (mode 0600)"}, indent=2))
+            summary = {"dataset_id": manifest["dataset_id"],
+                       "questions": manifest["question_count"],
+                       "output": os.path.realpath(os.path.expanduser(args.out)),
+                       "answer_key": "answer-key.jsonl (mode 0600)",
+                       "private_manifest": "private-manifest.json (mode 0600)",
+                       "mcp_evaluation": "mcp-evaluation.xml (mode 0600)"}
+            if args.cognitive_history:
+                summary.update({
+                    "cognitive_history": "cognitive-history.json (mode 0600)",
+                    "capture_sha256": bundle["cognitive_history"]["capture_sha256"],
+                })
+            print(json.dumps(summary, indent=2))
             return 0
         if args.command == "score":
             _print_score(score_answer_file(args.dataset, args.answers))
