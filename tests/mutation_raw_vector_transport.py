@@ -301,25 +301,25 @@ MUTATIONS = (
         "caller-build-expectations-not-admitted", "bin/siavectorrun.py",
         "        _admit_build(receipt, expected)\n", "",
         RUNNER + "test_build_mismatches_refuse_before_snapshot_or_execution",
-        "observe"),
+        "_observe"),
     Mutation(
         "query-request-validation-deferred-until-after-capture", "bin/siavectorrun.py",
         "    pending = siavectoradmit.admit_request({\n",
         "    pending = dict({\n",
         RUNNER + "test_bad_query_refuses_before_artifact_reads_or_capture",
-        "observe"),
+        "_observe"),
     Mutation(
         "capture-roots-not-propagated-to-query", "bin/siavectorrun.py",
         '                    request["snapshot"][field] = observations[0]["payload"]["bindings"][field]\n',
         '                    request["snapshot"][field] = "0" * 64\n',
         RUNNER + "test_capture_then_query_are_separate_copies_of_one_physical_generation",
-        "observe"),
+        "_observe"),
     Mutation(
         "controller-passes-engine-child-instead-of-parent", "bin/siavectorrun.py",
-        '                    snapshot["descriptor_parent"], timeout=timeout,\n',
-        '                    snapshot["directory"], timeout=timeout,\n',
+        '                        snapshot["descriptor_parent"], timeout=timeout,\n',
+        '                        snapshot["directory"], timeout=timeout,\n',
         RUNNER + "test_capture_then_query_are_separate_copies_of_one_physical_generation",
-        "observe"),
+        "_observe"),
     Mutation(
         "query-reuses-capture-snapshot-context", "bin/siavectorrun.py",
         "            with siavector.private_index_snapshot(\n"
@@ -330,7 +330,7 @@ MUTATIONS = (
         '                    scratch_parent=scratch_parent) if operation == "capture"\n'
         '                    else __import__("contextlib").nullcontext(snapshot)) as snapshot:\n',
         RUNNER + "test_capture_then_query_are_separate_copies_of_one_physical_generation",
-        "observe"),
+        "_observe"),
     Mutation(
         "capture-admission-refusal-bypassed", "bin/siavectorrun.py",
         '                observation["payload"] = siavectoradmit.admit_response(\n'
@@ -340,7 +340,7 @@ MUTATIONS = (
         "                    config_sha256=config_sha256)\n",
         '                observation["payload"] = observation["payload"]\n',
         EXTRA + "RunnerBoundary.test_capture_admission_refusal_stops_before_query",
-        "observe"),
+        "_observe"),
     Mutation(
         "physical-copy-manifest-disagreement-ignored", "bin/siavectorrun.py",
         '                if observations and snapshot["manifest_sha256"] \\\n'
@@ -348,7 +348,7 @@ MUTATIONS = (
         '                    raise siavector.VectorRefusal("vector physical snapshot copies disagree")\n',
         "",
         EXTRA + "RunnerBoundary.test_distinct_physical_manifests_refuse_even_with_admitted_payloads",
-        "observe"),
+        "_observe"),
 )
 SUPPORT = (
     "tests/sia_test_home.py", "tests/test_raw_vector_transport.py",
