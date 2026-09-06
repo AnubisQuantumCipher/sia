@@ -3826,6 +3826,17 @@ def _publish_event_page_plan_batch(*, batch, expected_batch_sha256):
             globals(), batch=batch, expected_batch_sha256=expected_batch_sha256)
 
 
+def _prepare_event_live_intake(*, history, expected_history_sha256,
+                             source_catalog, expected_source_catalog_sha256,
+                             configuration, expected_configuration_sha256,
+                             profile, expected_profile_sha256,
+                             live_policy, expected_live_policy_sha256, observed_at):
+    """Project supplied complete returns without a lease or runtime effects."""
+    request = locals()
+    import siaeventintake
+    return siaeventintake.prepare(globals(), **request)
+
+
 def ensure_event_entities(events):
     """Create referenced entity pages (units/packages/projects) lazily."""
     made = False

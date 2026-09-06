@@ -18,6 +18,7 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siagraph.py` | graph/domain projection (extracted in v1.6.0) |
 | `bin/siathought.py` | event-day admission/indexing, durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
 | `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
+| `bin/siaeventintake.py` | pure collector-return/page-version projection for the live loop (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -229,6 +230,35 @@ boundaries. Page-byte publication is not live-loop admission, corpus/index
 synchronization, cursor acknowledgment or readiness. Complete source-batch,
 live-transition and status/memo admission remains a separate integration
 requirement; these private helpers do not enable a resident live loop.
+
+The separate `_prepare_event_live_intake` boundary projects complete,
+caller-supplied collector returns through independently pinned original
+page batches into the closed live-intake schema. Its lazy `siaeventintake`
+module receives the explicit core namespace but does not acquire a corpus lease
+or read current source/configuration files. Selection, catalog, counting
+profile and the complete live policy are explicit and fixed for the epoch.
+Every declared collector appears, including empty returns; disabled or
+ambiguous selections refuse rather than disappearing from that roster.
+
+All return locations and duplicate plan inputs remain attributable.
+Observations deduplicate only the declared epoch/source/Event association,
+retaining its first controller clock, page version and native timestamp
+metadata. Complete before and target page versions stay in version history;
+current-version replacement requires the exact previously current bytes.
+No observation or use is invented for before-images, and existing uses do
+not transfer to a new version. Native stat integers and floating policy
+values retain their separate admission domains within the complete byte cap.
+The bridge supplies observations, not novelty decisions or typed uses.
+
+Retained-page native grammar is checked against supplied exact bytes;
+retained-epoch index bytes are absent from the plan, so their semantic and
+index provenance remains inherited from its independent pin rather than
+replayed here. Page-byte digests never stand in for whole native-capture
+digests. The output retains upstream nonclaims and is prepared, not
+published. It establishes neither collector execution, effective config,
+source freshness, cursor/acknowledgment ordering nor a held-out cognitive
+win. `tests/test_event_live_intake.py` covers this boundary; the durable
+runtime source transaction and live publication remain separate work.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
