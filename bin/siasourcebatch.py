@@ -90,6 +90,16 @@ _AUTHORITY_KEYS = frozenset({
     "controller_source_pending", "controller_source_live_pending",
     "controller_source_committed",
 })
+_COMMITTED_KEYS = frozenset({
+    "source_batch_sha256", "live_generation_sha256",
+    "source_effects_receipt_sha256",
+})
+_SUCCESSOR_PENDING_KEYS = (_AUTHORITY_KEYS - frozenset({
+    "controller_source_committed",
+})) | frozenset({
+    "pulse_status_effects_pending", "controller_source_effects_pending",
+    "controller_source_effects_committed",
+})
 
 
 class SourceBatchRefusal(ValueError):
@@ -953,6 +963,91 @@ def _durable_initial_authority(owner, files, memo):
         refuse("source-memo-authority")
 
 
+def _successor_history(owner, retained_batch):
+    history = owner["copy"].deepcopy(retained_batch["epoch"]["history"])
+    batches = ([] if retained_batch["event_closure"] is None else
+               retained_batch["event_closure"]["batches"])
+    history["entries"].append({
+        "source_returns": owner["copy"].deepcopy(
+            retained_batch["source_returns"]),
+        "expected_source_returns_sha256":
+            retained_batch["source_returns"]["returns_sha256"],
+        "event_batches": [
+            {
+                "batch": owner["copy"].deepcopy(batch),
+                "expected_batch_sha256": batch["batch_sha256"],
+            }
+            for batch in batches
+        ],
+    })
+    return history
+
+
+def _validate_successor_request(
+        owner, retained_batch, committed, epoch, expected_epoch_sha256,
+        observed_at):
+    """Bind a non-initial epoch to one exact retained completed capture."""
+    _keys(committed, _COMMITTED_KEYS, "successor-commit-shape")
+    for value in committed.values():
+        _hex(value, "successor-commit-digest")
+    if type(retained_batch) is dict \
+            and retained_batch.get("batch_sha256") \
+            != committed["source_batch_sha256"]:
+        refuse("successor-commit-mismatch")
+    validate_batch(
+        owner, retained_batch, committed["source_batch_sha256"])
+    _validate_epoch(
+        owner, epoch, expected_epoch_sha256, observed_at, initial=False)
+    if observed_at < retained_batch["observed_at"]:
+        refuse("successor-clock-gap")
+
+    prior = retained_batch["epoch"]
+    if epoch["epoch_id"] != prior["epoch_id"] \
+            or epoch["started_at"] != prior["started_at"]:
+        refuse("successor-epoch-identity")
+    for field in (
+            "configuration", "source_catalog", "profile", "live_policy"):
+        if not _same_native(owner, epoch[field], prior[field]) \
+                or epoch["expected_" + field + "_sha256"] \
+                != prior["expected_" + field + "_sha256"]:
+            refuse("successor-" + field.replace("_", "-") + "-drift")
+
+    expected_predecessor = {
+        "source_batch_sha256": retained_batch["batch_sha256"],
+        "live_generation_sha256": committed["live_generation_sha256"],
+    }
+    if not _same_native(
+            owner, epoch["predecessor"], expected_predecessor):
+        refuse("successor-predecessor-mismatch")
+    expected_history = _successor_history(owner, retained_batch)
+    if not _same_component(owner, epoch["history"], expected_history) \
+            or epoch["expected_history_sha256"] \
+            != _component_sha(owner, expected_history):
+        refuse("successor-history-mismatch")
+
+
+def _successor_memo(owner, value, committed):
+    if type(value) is not dict:
+        refuse("successor-memo-shape")
+    if _SUCCESSOR_PENDING_KEYS.intersection(value):
+        refuse("successor-pending-authority")
+    if not _same_native(
+            owner, value.get("controller_source_committed"), committed):
+        refuse("successor-commit-authority")
+
+
+def _durable_successor_authority(
+        owner, files, memo, committed):
+    durable = files.files["memo"].value
+    _successor_memo(owner, memo, committed)
+    _successor_memo(owner, durable, committed)
+    if files.files["batch"].raw is not None:
+        refuse("successor-pending-authority")
+    if not _same_native(owner, durable, memo,
+                        ceiling=owner["MAX_MEMO_BYTES"]):
+        refuse("successor-memo-authority")
+
+
 def _epoch_current(owner, epoch, original):
     if native_bytes(owner, epoch) != original:
         refuse("epoch-input-changed")
@@ -1361,7 +1456,7 @@ def _batch_id(owner, epoch_sha256, observed_at, receipt, cursor):
 
 
 def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
-                    observed_at):
+                    observed_at, authority):
     epoch_raw = native_bytes(owner, epoch)
     admitted_epoch = owner["copy"].deepcopy(epoch)
     if native_bytes(owner, admitted_epoch) != epoch_raw \
@@ -1369,12 +1464,15 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
         refuse("epoch-copy-changed")
     files = _CaptureFiles(owner)
     try:
-        _durable_initial_authority(owner, files, memo)
-        files.current()
+        def current():
+            files.current()
+            authority(files)
+
+        current()
         runtime = _RuntimeConfiguration(
             owner, admitted_epoch, files.files["config"], observed_at)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         cursor_value = ({} if files.files["cursor"].raw is None
                         else files.files["cursor"].value)
@@ -1387,7 +1485,7 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
             owner, admitted_epoch, memo, files, runtime, operation_id,
             epoch_raw)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         returns = _source_returns(
             owner, admitted_epoch, observed_at, operation_id,
@@ -1397,7 +1495,7 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
         projection = _intake_projection(
             owner, admitted_epoch, returns, closure, observed_at)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         result = {
             "schema": "sia-controller-source-batch-v1",
@@ -1421,31 +1519,31 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
         _json_size(owner, result, owner["MAX_STATE_JSON_BYTES"],
                    ascii_only=True)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         body = {key: value for key, value in result.items()
                 if key != "batch_sha256"}
         result["batch_sha256"] = native_sha(owner, body)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         validate_batch(owner, result, result["batch_sha256"])
         result_raw = native_bytes(owner, result)
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         detached = owner["copy"].deepcopy(result)
         if native_bytes(owner, result) != result_raw \
                 or native_bytes(owner, detached) != result_raw:
             refuse("batch-result-copy-changed")
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         if native_bytes(owner, result) != result_raw \
                 or native_bytes(owner, detached) != result_raw:
             refuse("batch-final-image-changed")
         runtime.current()
-        files.current()
+        current()
         _epoch_current(owner, epoch, epoch_raw)
         # No serialization, hash, copy, or callback follows this sweep.
         files.named_current()
@@ -1466,12 +1564,16 @@ def _capture_controller_source_batch(
     _initial_memo(owner, memo)
     _validate_epoch(
         owner, epoch, expected_epoch_sha256, observed_at, initial=True)
+
+    def authority(files):
+        _durable_initial_authority(owner, files, memo)
+
     with owner["brainstem_owner"](), owner["corpus_owner"]():
         try:
             return _capture_locked(
                 owner, memo=memo, epoch=epoch,
                 expected_epoch_sha256=expected_epoch_sha256,
-                observed_at=observed_at)
+                observed_at=observed_at, authority=authority)
         except AssertionError:
             raise
         except SourceBatchRefusal:
@@ -1486,6 +1588,64 @@ def capture(owner, *, memo, epoch, expected_epoch_sha256, observed_at):
         owner, memo=memo, epoch=epoch,
         expected_epoch_sha256=expected_epoch_sha256,
         observed_at=observed_at)
+
+
+def capture_successor(
+        owner, *, memo, retained_batch, committed, epoch,
+        expected_epoch_sha256, observed_at):
+    """Capture one exact successor while completed authority remains durable."""
+    request = {
+        "memo": memo, "retained_batch": retained_batch,
+        "committed": committed, "epoch": epoch,
+        "expected_epoch_sha256": expected_epoch_sha256,
+        "observed_at": observed_at,
+    }
+    # Admit the complete represented request before copies, acquisition, or
+    # authority descriptors.  The initial entry point remains separate.
+    _json_size(owner, request, owner["MAX_STATE_JSON_BYTES"],
+               ascii_only=True)
+    retained_raw = native_bytes(owner, retained_batch)
+    committed_raw = native_bytes(owner, committed)
+    epoch_raw = native_bytes(owner, epoch)
+    _successor_memo(owner, memo, committed)
+    _validate_successor_request(
+        owner, retained_batch, committed, epoch,
+        expected_epoch_sha256, observed_at)
+    if native_bytes(owner, retained_batch) != retained_raw \
+            or native_bytes(owner, committed) != committed_raw \
+            or native_bytes(owner, epoch) != epoch_raw:
+        refuse("successor-input-changed")
+
+    admitted_retained = owner["copy"].deepcopy(retained_batch)
+    admitted_committed = owner["copy"].deepcopy(committed)
+    if native_bytes(owner, admitted_retained) != retained_raw \
+            or native_bytes(owner, admitted_committed) != committed_raw:
+        refuse("successor-input-copy-changed")
+
+    def authority(files):
+        _durable_successor_authority(
+            owner, files, memo, admitted_committed)
+        if native_bytes(owner, retained_batch) != retained_raw \
+                or native_bytes(owner, committed) != committed_raw \
+                or native_bytes(owner, admitted_retained) != retained_raw \
+                or native_bytes(
+                    owner, admitted_committed) != committed_raw \
+                or native_bytes(owner, epoch) != epoch_raw:
+            refuse("successor-input-changed")
+
+    with owner["brainstem_owner"](), owner["corpus_owner"]():
+        try:
+            return _capture_locked(
+                owner, memo=memo, epoch=epoch,
+                expected_epoch_sha256=expected_epoch_sha256,
+                observed_at=observed_at, authority=authority)
+        except AssertionError:
+            raise
+        except SourceBatchRefusal:
+            raise
+        except (OSError, ValueError, RuntimeError, TypeError, KeyError,
+                AttributeError, UnicodeError, RecursionError) as exc:
+            refuse("successor-capture-admission", upstream=exc)
 
 
 def _validate_file_image(owner, value, *, allow_absent):

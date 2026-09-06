@@ -119,6 +119,12 @@ def _publish_failure(seq, exc):
 
 def _publish_failure_owned(seq, exc):
     memo = sialib.load_memo()
+    if (sialib._controller_source_present(memo)
+            or sialib._controller_source_enabled()):
+        sialib.log(
+            "SOURCE HEALTH export REFUSED: controller-source transaction "
+            "retains publication authority")
+        return False
     pending = _pending_failure_publication(memo)
     if pending is not None:
         _finish_failure_publication(memo, pending)
@@ -223,6 +229,11 @@ def _dream_due(now, last_dream_day, next_attempt, monotonic_now=None):
 def _attempt_dream(now, last_dream_day):
     sialib.log("scheduled maintenance starting…")
     try:
+        memo = sialib.load_memo()
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            raise RuntimeError(
+                "legacy dream refused while controller-source authority is active")
         sialib.dream()
         return _durable_dream_day(last_dream_day), 0.0
     except Exception as exc:
@@ -232,10 +243,13 @@ def _attempt_dream(now, last_dream_day):
         return _durable_dream_day(last_dream_day), next_attempt
 
 
-def _reserved_pulse(seq):
+def _reserved_pulse():
     """Allocate a sequence and pulse under one corpus/memo transaction."""
     with sialib.corpus_owner():
         memo = sialib.load_memo()
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            return sialib._run_controller_source_cycle()
         pending_failure = _pending_failure_publication(memo)
         if pending_failure is not None:
             _finish_failure_publication(memo, pending_failure)
@@ -250,10 +264,7 @@ def _reserved_pulse(seq):
         sialib._pending_pulse_status_effects(memo)
         current, _last_dream_day = _startup_state(memo)
         admitted_status = sialib._require_status_sequence_not_ahead(current)
-        if not isinstance(seq, int) or isinstance(seq, bool) \
-                or seq > sialib.MAX_JSON_SAFE_INTEGER \
-                or seq <= current:
-            raise ValueError("brainstem pulse sequence was reused or rolled back")
+        seq = current + 1
         memo["pulse_seq"] = seq
         sialib._write_memo(memo)
         return sialib._pulse_transaction(
@@ -330,22 +341,30 @@ def main():
 def _run_owned():
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
+    seq = 0
+    last_dream_day = ""
     try:
         memo = sialib.load_memo()
-        pending_failure = _pending_failure_publication(memo)
-        if pending_failure is not None:
-            _finish_failure_publication(memo, pending_failure)
-        sialib._require_status_memo_fields(memo)
-        cursors = sialib.load_cursors()
-        sialib._recover_notify_baseline_attempt(memo, cursors)
-        source_marker = sialib._pending_source_replay_marker(memo)
-        if source_marker is not None:
-            sialib._authorize_pending_source_replay(
-                source_marker, cursors)
-        sialib._pending_pulse_marker(memo)
-        sialib._pending_pulse_status_effects(memo)
-        seq, last_dream_day = _startup_state(memo)
-        sialib._require_status_sequence_not_ahead(seq)
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            _run_status = sialib._run_controller_source_cycle()
+            memo = sialib.load_memo()
+            seq, last_dream_day = _startup_state(memo)
+        else:
+            pending_failure = _pending_failure_publication(memo)
+            if pending_failure is not None:
+                _finish_failure_publication(memo, pending_failure)
+            sialib._require_status_memo_fields(memo)
+            cursors = sialib.load_cursors()
+            sialib._recover_notify_baseline_attempt(memo, cursors)
+            source_marker = sialib._pending_source_replay_marker(memo)
+            if source_marker is not None:
+                sialib._authorize_pending_source_replay(
+                    source_marker, cursors)
+            sialib._pending_pulse_marker(memo)
+            sialib._pending_pulse_status_effects(memo)
+            seq, last_dream_day = _startup_state(memo)
+            sialib._require_status_sequence_not_ahead(seq)
     except sialib.SourceReplayQuarantine as exc:
         detail = _durable_failure_detail(exc)
         sialib.log(f"brainstem startup source_replay_quarantine: {detail}")
@@ -372,12 +391,13 @@ def _run_owned():
         _publish_failure(seq, detail)
         return 1
     while not _stop:
-        seq += 1
         t0 = time.time()
         try:
             # Reserve the sequence before any effects. A crash may leave a
             # gap, but it can never cause a signed/publication sequence reuse.
-            st = _reserved_pulse(seq)
+            st = _reserved_pulse()
+            durable_memo = sialib.load_memo()
+            seq, _durable_last_dream_day = _startup_state(durable_memo)
             if st["events_pulse"] or st["errors"]:
                 sialib.log(f"pulse {seq}: {st['events_pulse']} events, "
                            f"state {st['state']}"
@@ -388,6 +408,11 @@ def _run_owned():
                 f"pulse {seq} source_replay_quarantine: {detail}")
             return INTENTIONAL_STOP_EXIT
         except Exception as e:
+            try:
+                durable_memo = sialib.load_memo()
+                seq, _durable_last_dream_day = _startup_state(durable_memo)
+            except Exception:
+                pass
             detail = _safe_failure_detail(e)
             sialib.log(f"pulse {seq} FAILED: {detail}")
             _publish_failure(seq, detail)

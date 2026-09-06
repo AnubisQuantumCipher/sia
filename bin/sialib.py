@@ -139,7 +139,7 @@ _CUSTOM_SENSE_ENTRY_KEYS = frozenset({
 
 _CONFIG_TOP_LEVEL_KEYS = frozenset({
     "_comment", "_egress_trust_boundary", "judge", "senses", "skills",
-    "custom_senses", "chains", "retrieval",
+    "custom_senses", "chains", "retrieval", "mind",
 })
 
 
@@ -382,6 +382,18 @@ def load_config():
             if "associative_rerank" in retrieval \
                     and not isinstance(retrieval["associative_rerank"], bool):
                 _record_config_error("retrieval-associative-rerank-must-be-bool")
+        mind = value.get("mind", {})
+        if not isinstance(mind, dict):
+            _record_config_error("mind-must-be-object")
+        else:
+            if set(mind) - {"_comment", "controller_source"}:
+                _record_config_error("mind-unknown-key")
+            if "_comment" in mind and not _strict_config_string(
+                    mind["_comment"], limit=MAX_CONFIG_TEXT_CHARS):
+                _record_config_error("mind-comment-must-be-string")
+            if "controller_source" in mind \
+                    and not isinstance(mind["controller_source"], bool):
+                _record_config_error("mind-controller-source-must-be-bool")
         return _loaded_config(value, True)
     except OSError:
         _record_config_error("config-read-refused")
@@ -6126,8 +6138,25 @@ def _controller_source_present(memo):
         siasourcebatch.refuse("controller-source-memo-shape")
     return ("controller_source_pending" in memo
             or "controller_source_live_pending" in memo
+            or "controller_source_effects_pending" in memo
+            or "controller_source_effects_committed" in memo
             or "controller_source_committed" in memo
             or _live_present(CONTROLLER_SOURCE_BATCH_PATH))
+
+
+def _controller_source_enabled(config=None):
+    """Return the closed, durable opt-in for a clean source transaction."""
+    source = CONFIG if config is None else config
+    if not isinstance(source, dict) \
+            or config is None and (
+                CONFIG_ERRORS or not _active_config_load_valid()):
+        return False
+    mind = source.get("mind", {})
+    return (isinstance(mind, dict)
+            and not set(mind) - {"_comment", "controller_source"}
+            and ("_comment" not in mind or _strict_config_string(
+                mind["_comment"], limit=MAX_CONFIG_TEXT_CHARS))
+            and mind.get("controller_source") is True)
 
 
 def _controller_source_ack_pending(memo):
@@ -6175,6 +6204,86 @@ def _run_controller_source_transaction(*, operation):
     with brainstem_owner(), corpus_owner():
         return siacontrollersourcerunner.run(
             globals(), operation=operation)
+
+
+def _run_controller_source_transaction_v2(*, operation, clock):
+    """Run or recover one recurring controller-source transaction."""
+    import siacontrollersourcerunner
+    if not callable(operation) or not callable(clock):
+        raise TypeError(
+            "controller source operation and clock must be callable")
+    ensure_dirs()
+    ensure_durable_directory(
+        os.path.dirname(BRAINSTEM_OWNER_LOCK), mode=0o700)
+    with brainstem_owner(), corpus_owner():
+        return siacontrollersourcerunner.run_v2(
+            globals(), operation=operation, clock=clock)
+
+
+def _run_controller_source_cycle():
+    """Run or recover one resident controller-source pulse.
+
+    The clock is sampled lazily by the initial or successor builder only after
+    the runner has ruled out an already-durable prefix that can be replayed.
+    """
+    import siacontrollerepoch
+
+    def clock():
+        return int(time.time())
+
+    def initial():
+        return siacontrollerepoch.build_initial(
+            globals(), observed_at=clock())
+
+    return _run_controller_source_transaction_v2(
+        operation=initial, clock=clock)
+
+
+def _read_committed_controller_source_batch(*, memo, admitted_status):
+    """Read and revalidate the predecessor completion without writes."""
+    import siasourceack
+    with brainstem_owner(), corpus_owner():
+        _load_live_publication()
+        return siasourceack.read_completed(
+            globals(), memo=memo, admitted_status=admitted_status)
+
+
+def _capture_controller_source_successor_batch(
+        *, memo, retained_batch, committed, epoch,
+        expected_epoch_sha256, observed_at):
+    import siasourcebatch
+    with brainstem_owner(), corpus_owner():
+        return siasourcebatch.capture_successor(
+            globals(), memo=memo, retained_batch=retained_batch,
+            committed=committed, epoch=epoch,
+            expected_epoch_sha256=expected_epoch_sha256,
+            observed_at=observed_at)
+
+
+def _retain_controller_source_successor_batch(
+        *, memo, retained_batch, committed, batch,
+        expected_batch_sha256, seq):
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.retain_successor(
+            globals(), memo=memo, retained_batch=retained_batch,
+            committed=committed, batch=batch,
+            expected_batch_sha256=expected_batch_sha256, seq=seq)
+
+
+def _recover_orphan_controller_source_successor_batch(
+        *, memo, retained_batch, committed, seq):
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.recover_successor(
+            globals(), memo=memo, retained_batch=retained_batch,
+            committed=committed, seq=seq)
+
+
+def _controller_source_rollover_boundary(stage):
+    """Named crash seam after the fixed successor WAL is durable."""
+    if stage != "successor-batch-durable":
+        raise ValueError("controller-source rollover boundary is invalid")
 
 
 def _read_pending_controller_source_batch(*, memo):
@@ -10599,6 +10708,9 @@ def dream(memo_update=True, now=None):
 def _dream_transaction(memo_update=True, now=None):
     """Install the publication barrier for one scheduled-maintenance cycle."""
     memo = load_memo()
+    if _controller_source_present(memo) or _controller_source_enabled():
+        raise RuntimeError(
+            "legacy dream refused while controller-source authority is active")
     _settle_pending_brainstem_failure_publication(memo)
     _require_status_memo_fields(memo)
     _pending_pulse_marker(memo)

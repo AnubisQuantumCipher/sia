@@ -1141,25 +1141,29 @@ def _cmd_pulse_owned():
     # and prevents an old publication callback from rolling pulse_seq back.
     with sialib.corpus_owner():
         memo = sialib.load_memo()
-        sialib._settle_pending_brainstem_failure_publication(memo)
-        sialib._require_status_memo_fields(memo)
-        cursors = sialib.load_cursors()
-        sialib._recover_notify_baseline_attempt(memo, cursors)
-        source_marker = sialib._pending_source_replay_marker(memo)
-        if source_marker is not None:
-            sialib._authorize_pending_source_replay(
-                source_marker, cursors)
-        sialib._pending_pulse_marker(memo)
-        sialib._pending_pulse_status_effects(memo)
-        current = _memo_pulse_sequence(memo)
-        admitted_status = sialib._require_status_sequence_not_ahead(current)
-        seq = current + 1
-        # Durable allocation comes before effects: interruption can create a
-        # gap, never reuse the same pulse sequence.
-        memo["pulse_seq"] = seq
-        sialib._write_memo(memo)
-        st = sialib._pulse_transaction(
-            seq, admitted_status=admitted_status)
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            st = sialib._run_controller_source_cycle()
+        else:
+            sialib._settle_pending_brainstem_failure_publication(memo)
+            sialib._require_status_memo_fields(memo)
+            cursors = sialib.load_cursors()
+            sialib._recover_notify_baseline_attempt(memo, cursors)
+            source_marker = sialib._pending_source_replay_marker(memo)
+            if source_marker is not None:
+                sialib._authorize_pending_source_replay(
+                    source_marker, cursors)
+            sialib._pending_pulse_marker(memo)
+            sialib._pending_pulse_status_effects(memo)
+            current = _memo_pulse_sequence(memo)
+            admitted_status = sialib._require_status_sequence_not_ahead(current)
+            seq = current + 1
+            # Durable allocation comes before effects: interruption can create
+            # a gap, never reuse the same pulse sequence.
+            memo["pulse_seq"] = seq
+            sialib._write_memo(memo)
+            st = sialib._pulse_transaction(
+                seq, admitted_status=admitted_status)
     if st.get("graph_publication_id"):
         rendered = {key: st[key] for key in
                     ("state", "events_pulse", "pages", "graph_nodes",
@@ -1184,6 +1188,11 @@ def cmd_dream():
 
 
 def _cmd_dream_owned():
+    memo = sialib.load_memo()
+    if (sialib._controller_source_present(memo)
+            or sialib._controller_source_enabled()):
+        raise RuntimeError(
+            "legacy dream refused while controller-source authority is active")
     rep = sialib.dream()
     print(json.dumps(rep, indent=1) if rep else "weekly maintenance failed")
     return 0 if rep else 1

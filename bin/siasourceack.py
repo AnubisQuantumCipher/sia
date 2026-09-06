@@ -1,10 +1,14 @@
-"""Acknowledge one fully published controller-source transaction.
+"""Acknowledge or re-read one fully published controller-source transaction.
 
 This module consumes an exact committed source-effects receipt.  It does not
 collect sources, publish pages, invoke Git or gbrain, or construct a live
 generation.  Its effects are limited, in order, to immutable full-receipt
 retention, immutable batch archival, refusal settlement, journal/main cursor
 publication and the final memo/readiness transition.
+
+The additive completed reader selects the predecessor's digest-named archive
+directly, so a different successor WAL may occupy the fixed slot without
+making predecessor validation ambiguous.  It performs no durable write.
 """
 
 import base64
@@ -175,7 +179,9 @@ def _decode_batch(owner, source, raw, expected_sha256):
 
 
 class _ArchiveSlot:
-    def __init__(self, owner, source, expected_sha256):
+    def __init__(self, owner, source, expected_sha256, *, archive_only=False):
+        if type(archive_only) is not bool:
+            _refuse(source, "ack-archive-selection-contract")
         self.owner = owner
         self.source = source
         self.source_path = source._canonical_path(
@@ -192,10 +198,24 @@ class _ArchiveSlot:
             directory = _private_archive_directory(
                 owner, source, self.directory_path, required=True)
             directory.close()
-        if source_present == archive_present:
-            _refuse(source, "ack-archive-state-ambiguous")
-        self.state = "source" if source_present else "archive"
-        selected = self.source_path if source_present else self.archive_path
+        if archive_only:
+            # A completed predecessor is selected only by the digest in its
+            # compact memo authority.  The fixed slot may now contain a
+            # different, not-yet-adopted successor WAL; it is deliberately
+            # outside this predecessor read and is validated by the rollover
+            # boundary before adoption.
+            if not archive_present:
+                _refuse(source, "ack-completed-archive-absent")
+            self.state = "archive"
+            selected = self.archive_path
+        else:
+            # Preserve the v1 move-recovery rule: before completion, exactly
+            # one of the fixed source name and digest archive may exist.
+            if source_present == archive_present:
+                _refuse(source, "ack-archive-state-ambiguous")
+            self.state = "source" if source_present else "archive"
+            selected = (self.source_path if source_present
+                        else self.archive_path)
         self.held = _HeldRaw(
             owner, source, selected, owner["MAX_STATE_JSON_BYTES"],
             allow_absent=False)
@@ -497,7 +517,8 @@ def _completed(owner, source, effects, live, memo, admitted_status,
             or owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo:
         _refuse(source, "ack-completed-has-pending-authority")
     archive = _ArchiveSlot(
-        owner, source, committed["source_batch_sha256"])
+        owner, source, committed["source_batch_sha256"],
+        archive_only=True)
     effects_archive = None
     try:
         effects_archive = _EffectsArchiveSlot(
@@ -531,9 +552,25 @@ def _completed(owner, source, effects, live, memo, admitted_status,
         }
         if ready != expected_ready:
             _refuse(source, "ack-completed-readiness")
+        durable = owner["load_memo"]()
+        if not _same(owner, source, durable, memo, memo=True) \
+                or owner["_require_status_admission_unchanged"](
+                    admitted_status) != status:
+            _refuse(source, "ack-completed-authority-changed")
         effects_archive.current()
         archive.current()
-        return None
+        detached_batch = owner["copy"].deepcopy(archive.batch)
+        detached_committed = owner["copy"].deepcopy(committed)
+        if source.native_bytes(owner, detached_batch) != archive.raw \
+                or not _same(
+                    owner, source, detached_committed, committed):
+            _refuse(source, "ack-completed-detachment")
+        effects_archive.current()
+        archive.current()
+        return {
+            "status": "available", "batch": detached_batch,
+            "committed": detached_committed,
+        }
     finally:
         if effects_archive is not None:
             effects_archive.close()
@@ -556,8 +593,12 @@ def acknowledge(owner, *, memo, admitted_status):
         _refuse(source, "ack-memo-authority")
     committed = memo.get("controller_source_committed")
     if committed is not None:
-        return _completed(
+        _completed(
             owner, source, effects, live, memo, admitted_status, committed)
+        # The shipped v1 acknowledgment is intentionally effectless and
+        # returns None on a completed retry.  The additive reader below owns
+        # the detached completed view needed by recurring rollover.
+        return None
     pending = memo.get("controller_source_pending")
     if type(pending) is not dict \
             or type(pending.get("batch_sha256")) is not str \
@@ -696,3 +737,32 @@ def acknowledge(owner, *, memo, admitted_status):
         if effects_archive is not None:
             effects_archive.close()
         archive.close()
+
+
+def read_completed(owner, *, memo, admitted_status):
+    """Return one fully revalidated, detached completed predecessor view.
+
+    Selection is by the digest-named immutable archive.  A different batch in
+    the fixed slot is permitted because it is only successor WAL bytes; this
+    function does not adopt, acknowledge, or otherwise interpret that slot.
+    """
+    import siasourcebatch as source
+    import siasourceeffects as effects
+    import sialiveloop as live
+
+    if type(memo) is not dict:
+        _refuse(source, "ack-memo-shape")
+    original = copy.deepcopy(memo)
+    durable = owner["load_memo"]()
+    if not _same(owner, source, original, memo, memo=True) \
+            or not _same(owner, source, durable, memo, memo=True):
+        _refuse(source, "ack-memo-authority")
+    committed = memo.get("controller_source_committed")
+    if committed is None:
+        _refuse(source, "ack-completed-authority-absent")
+    result = _completed(
+        owner, source, effects, live, memo, admitted_status, committed)
+    if not _same(owner, source, original, memo, memo=True) \
+            or result.get("committed") != committed:
+        _refuse(source, "ack-completed-authority-changed")
+    return result

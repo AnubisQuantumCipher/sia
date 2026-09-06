@@ -1,4 +1,4 @@
-"""Fixed-slot source retention and its memo-only live write-ahead binding.
+"""Fixed-slot source retention and its memo write-ahead bindings.
 
 The pending slot is immutable except for an exact byte retry.  Retention is
 inert.  A later binding operation may replay the pure retained-source live
@@ -6,9 +6,17 @@ producer, but its sole durable effect is a compact memo marker; it does not
 publish a live generation, acknowledge a source, or create a history archive.
 No current configuration, source collector, page renderer or downstream
 publication effect runs here.
+
+Recurring rollover reuses the fixed slot as the successor WAL only after the
+predecessor has moved to its immutable digest archive.  Successor retention
+leaves completed readiness intact; adoption is the single later memo swap to
+the ordinary pending receipt consumed by the existing pipeline.
 """
 
 import contextlib
+import copy
+import os
+import re
 import stat
 
 
@@ -27,6 +35,18 @@ LIVE_BINDING_KEYS = frozenset({
 LIVE_BINDING_IDENTITY_KEYS = LIVE_BINDING_KEYS - frozenset({
     "schema", "publication_id", "publication_sha256", "marker_sha256",
 })
+COMMITTED_KEYS = frozenset({
+    "source_batch_sha256", "live_generation_sha256",
+    "source_effects_receipt_sha256",
+})
+SUCCESSOR_PENDING_KEYS = frozenset({
+    "controller_source_pending", "controller_source_live_pending",
+    "pulse_status_effects_pending", "controller_source_effects_pending",
+    "controller_source_effects_committed", "live_loop_pending",
+    "source_replay_pending", "pulse_publication", "dream_publication",
+    "consolidation_pending", "brainstem_failure_pending",
+})
+_HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _refuse(source, reason):
@@ -72,6 +92,96 @@ def _authority(owner, source, memo, durable):
                 "controller_source_committed"):
         if key in memo:
             _refuse(source, "source-publication-other-recovery-authority")
+
+
+def _successor_archive_path(owner, source, committed):
+    directory = source._canonical_path(
+        owner, owner["CONTROLLER_SOURCE_ARCHIVE_DIR"])
+    return os.path.join(
+        directory, committed["source_batch_sha256"] + ".json")
+
+
+def _successor_predecessor_request(
+        owner, source, *, memo, retained_batch, committed, seq):
+    """Admit the complete caller-supplied compact predecessor image."""
+    if type(memo) is not dict \
+            or type(retained_batch) is not dict \
+            or type(committed) is not dict \
+            or set(committed) != COMMITTED_KEYS \
+            or any(type(value) is not str or _HEX.fullmatch(value) is None
+                   for value in committed.values()) \
+            or type(seq) is not int \
+            or not owner["_nonnegative_status_integer"](seq) \
+            or memo.get("pulse_seq") != seq \
+            or _wire(owner, source, memo.get(
+                "controller_source_committed")) \
+            != _wire(owner, source, committed) \
+            or SUCCESSOR_PENDING_KEYS.intersection(memo):
+        _refuse(source, "source-successor-completed-authority")
+    if owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo:
+        _refuse(source, "source-successor-completed-authority")
+    source.validate_batch(
+        owner, retained_batch, committed["source_batch_sha256"])
+    retained_raw = _wire(owner, source, retained_batch)
+    try:
+        ready = owner["_ready_receipt"](memo)
+    except (TypeError, ValueError, RuntimeError, KeyError,
+            OverflowError, RecursionError) as exc:
+        source.refuse(
+            "source-successor-readiness", phase="stage", upstream=exc)
+    live = memo.get("live_loop_committed")
+    if type(ready) is not dict or ready.get("kind") != "pulse" \
+            or type(live) is not dict \
+            or live.get("generation_sha256") \
+            != committed["live_generation_sha256"] \
+            or live.get("publication_id") != ready.get("identity"):
+        _refuse(source, "source-successor-readiness")
+    return retained_raw
+
+
+def _completed_successor_authority(
+        owner, source, *, memo, durable, retained_batch, committed,
+        seq, predecessor):
+    """Rejoin supplied predecessor values to the durable compact state."""
+    retained_raw = _successor_predecessor_request(
+        owner, source, memo=memo, retained_batch=retained_batch,
+        committed=committed, seq=seq)
+    if type(durable) is not dict \
+            or _wire(owner, source, memo, memo=True) \
+            != _wire(owner, source, durable, memo=True):
+        _refuse(source, "source-successor-completed-authority")
+    if predecessor.raw is None or type(predecessor.value) is not dict \
+            or predecessor.raw != retained_raw \
+            or stat.S_IMODE(predecessor.parent_generation["mode"]) != 0o700:
+        _refuse(source, "source-successor-predecessor-archive")
+    source.validate_batch(
+        owner, predecessor.value, committed["source_batch_sha256"])
+    if _wire(owner, source, predecessor.value) != predecessor.raw:
+        _refuse(source, "source-successor-predecessor-canonical")
+    return retained_raw
+
+
+def _successor_material(
+        owner, source, *, retained_batch, committed, batch,
+        expected_batch_sha256):
+    import siacontrollersourcerunner as runner
+
+    runner.validate_successor_wal(
+        owner, retained_batch=retained_batch, committed=committed,
+        successor_batch=batch,
+        expected_batch_sha256=expected_batch_sha256)
+    raw = _wire(owner, source, batch)
+    if type(batch) is not dict or batch.get("batch_sha256") \
+            != expected_batch_sha256:
+        _refuse(source, "source-successor-batch-pin")
+    receipt = _receipt(owner, source, batch, raw)
+    if type(receipt) is not dict or set(receipt) != RECEIPT_KEYS \
+            or receipt["batch_sha256"] != expected_batch_sha256 \
+            or receipt["parent_batch_sha256"] \
+            != committed["source_batch_sha256"]:
+        _refuse(source, "source-successor-receipt")
+    _wire(owner, source, receipt)
+    return raw, receipt
 
 
 @contextlib.contextmanager
@@ -291,6 +401,188 @@ def read_pending(owner, *, memo):
             _refuse(source, "source-publication-final-source-check-changed-view")
         named_current()
         return detached
+
+
+def retain_successor(
+        owner, *, memo, retained_batch, committed, batch,
+        expected_batch_sha256, seq):
+    """Durably retain one exact successor WAL without changing the memo.
+
+    The predecessor's compact completion and readiness remain the only memo
+    authority until :func:`recover_successor` adopts these fixed-slot bytes.
+    An exact existing successor is an idempotent durability retry; any other
+    fixed-slot image is refused.
+    """
+    import siasourcebatch as source
+
+    _successor_predecessor_request(
+        owner, source, memo=memo, retained_batch=retained_batch,
+        committed=committed, seq=seq)
+    original_memo = _wire(owner, source, memo, memo=True)
+    original_retained = _wire(owner, source, retained_batch)
+    original_committed = _wire(owner, source, committed)
+    original_batch = _wire(owner, source, batch)
+    raw, receipt = _successor_material(
+        owner, source, retained_batch=retained_batch,
+        committed=committed, batch=batch,
+        expected_batch_sha256=expected_batch_sha256)
+    if raw != original_batch \
+            or _wire(owner, source, memo, memo=True) != original_memo \
+            or _wire(owner, source, retained_batch) != original_retained \
+            or _wire(owner, source, committed) != original_committed:
+        _refuse(source, "source-successor-input-changed")
+    # Prove that the eventual ordinary pending image fits before the WAL can
+    # appear.  This is admission only; retain_successor never publishes it.
+    pending = copy.deepcopy(memo)
+    pending.pop("controller_source_committed", None)
+    pending.pop("ready", None)
+    pending["controller_source_pending"] = copy.deepcopy(receipt)
+    _wire(owner, source, pending, memo=True)
+    owner["_memo_text"](pending)
+
+    def inputs_current():
+        if _wire(owner, source, memo, memo=True) != original_memo \
+                or _wire(owner, source, retained_batch) \
+                != original_retained \
+                or _wire(owner, source, committed) \
+                != original_committed \
+                or _wire(owner, source, batch) != original_batch \
+                or batch.get("batch_sha256") != expected_batch_sha256 \
+                or memo.get("pulse_seq") != seq:
+            _refuse(source, "source-successor-input-changed")
+
+    with _files(owner, source) as (
+            files, observe, current, named_current):
+        predecessor = observe(
+            "predecessor",
+            _successor_archive_path(owner, source, committed),
+            owner["MAX_STATE_JSON_BYTES"])
+        _completed_successor_authority(
+            owner, source, memo=memo, durable=files["memo"].value,
+            retained_batch=retained_batch, committed=committed, seq=seq,
+            predecessor=predecessor)
+        fixed = files["batch"]
+        if fixed.raw is not None and fixed.raw != raw:
+            _refuse(source, "source-successor-fixed-slot-differs")
+        inputs_current()
+        current()
+
+        owner["siaqueue"].fixed_atomic_publish(
+            owner["CONTROLLER_SOURCE_BATCH_PATH"], raw,
+            mode=0o600, exclusive=True,
+            staging_dir=owner["siaqueue"].staging_dir_for(
+                owner["CONTROLLER_SOURCE_BATCH_PATH"],
+                authority_roots=(owner["CORPUS"], owner["STATE"],
+                                 owner["SHARE"])))
+        published = observe(
+            "batch", owner["CONTROLLER_SOURCE_BATCH_PATH"],
+            owner["MAX_STATE_JSON_BYTES"])
+        if published.parent_identity != fixed.parent_identity \
+                or published.raw != raw:
+            _refuse(source, "source-successor-retained-bytes-differ")
+        inputs_current()
+        if _wire(owner, source, files["memo"].value, memo=True) \
+                != original_memo:
+            _refuse(source, "source-successor-completed-memo-changed")
+        current()
+        inputs_current()
+        named_current()
+        return None
+
+
+def recover_successor(
+        owner, *, memo, retained_batch, committed, seq):
+    """Adopt one exact successor fixed-slot WAL as ordinary pending state."""
+    import siasourcebatch as source
+
+    _successor_predecessor_request(
+        owner, source, memo=memo, retained_batch=retained_batch,
+        committed=committed, seq=seq)
+    original_memo = _wire(owner, source, memo, memo=True)
+    original_retained = _wire(owner, source, retained_batch)
+    original_committed = _wire(owner, source, committed)
+
+    def predecessor_inputs_current():
+        if _wire(owner, source, memo, memo=True) != original_memo \
+                or _wire(owner, source, retained_batch) \
+                != original_retained \
+                or _wire(owner, source, committed) \
+                != original_committed \
+                or memo.get("pulse_seq") != seq:
+            _refuse(source, "source-successor-input-changed")
+
+    with _files(owner, source) as (
+            files, observe, current, named_current):
+        predecessor = observe(
+            "predecessor",
+            _successor_archive_path(owner, source, committed),
+            owner["MAX_STATE_JSON_BYTES"])
+        _completed_successor_authority(
+            owner, source, memo=memo, durable=files["memo"].value,
+            retained_batch=retained_batch, committed=committed, seq=seq,
+            predecessor=predecessor)
+        fixed = files["batch"]
+        predecessor_inputs_current()
+        if fixed.raw is None:
+            current()
+            predecessor_inputs_current()
+            named_current()
+            return False
+        successor = fixed.value
+        if type(successor) is not dict \
+                or type(successor.get("batch_sha256")) is not str \
+                or _HEX.fullmatch(successor["batch_sha256"]) is None:
+            _refuse(source, "source-successor-fixed-slot-shape")
+        expected_batch_sha256 = successor["batch_sha256"]
+        raw, receipt = _successor_material(
+            owner, source, retained_batch=retained_batch,
+            committed=committed, batch=successor,
+            expected_batch_sha256=expected_batch_sha256)
+        if raw != fixed.raw:
+            _refuse(source, "source-successor-fixed-slot-not-canonical")
+
+        updated = copy.deepcopy(memo)
+        updated.pop("controller_source_committed", None)
+        updated.pop("ready", None)
+        updated["controller_source_pending"] = copy.deepcopy(receipt)
+        updated_raw = _wire(owner, source, updated, memo=True)
+        owner["_memo_text"](updated)
+        detached = owner["copy"].deepcopy(updated)
+        if _wire(owner, source, detached, memo=True) != updated_raw:
+            _refuse(source, "source-successor-adoption-detachment")
+        predecessor_inputs_current()
+        current()
+
+        # Replaying the exact exclusive publication fsyncs the destination
+        # directory if a prior publisher died after linking the fixed WAL but
+        # before reporting its durability boundary.
+        owner["siaqueue"].fixed_atomic_publish(
+            owner["CONTROLLER_SOURCE_BATCH_PATH"], raw,
+            mode=0o600, exclusive=True,
+            staging_dir=owner["siaqueue"].staging_dir_for(
+                owner["CONTROLLER_SOURCE_BATCH_PATH"],
+                authority_roots=(owner["CORPUS"], owner["STATE"],
+                                 owner["SHARE"])))
+        current()
+        predecessor_inputs_current()
+
+        memo_parent_identity = files["memo"].parent_identity
+        owner["atomic_write"](
+            owner["MEMO_PATH"], updated_raw.decode("utf-8"), mode=0o600)
+        written = observe(
+            "memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if written.parent_identity != memo_parent_identity \
+                or written.raw != updated_raw:
+            _refuse(source, "source-successor-adoption-memo-differs")
+        current()
+        if _wire(owner, source, memo, memo=True) != original_memo \
+                or _wire(owner, source, detached, memo=True) != updated_raw:
+            _refuse(source, "source-successor-adoption-input-changed")
+        named_current()
+        memo.clear()
+        memo.update(detached)
+        named_current()
+        return True
 
 
 def _live_binding_marker(owner, source, *, memo, batch, receipt,

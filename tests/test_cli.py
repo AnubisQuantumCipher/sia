@@ -2062,7 +2062,7 @@ class MutationBoundaries(unittest.TestCase):
         for runtime, entry in (
                 (sia.sialib, sia._cmd_pulse_owned),
                 (brainstem.sialib,
-                 lambda: brainstem._reserved_pulse(8))):
+                 lambda: brainstem._reserved_pulse())):
             with self.subTest(entry=entry), \
                     mock.patch.object(runtime, "load_memo",
                                       return_value=copy.deepcopy(memo)), \
@@ -2128,7 +2128,7 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(brainstem.sialib, "export_status") as export:
             with self.assertRaisesRegex(
                     RuntimeError, "pulse publication recovery marker") as err:
-                brainstem._reserved_pulse(8)
+                brainstem._reserved_pulse()
             brainstem._publish_failure(8, err.exception)
         self.assertEqual(write.call_count, 2)
         self.assertIn("brainstem_failure_pending", write.call_args_list[0].args[0])
@@ -2158,7 +2158,7 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(
                     brainstem.sialib, "_pulse_transaction") as daemon_pulse:
             with self.assertRaisesRegex(ValueError, "memo exceeds"):
-                brainstem._reserved_pulse(memo["pulse_seq"] + 1)
+                brainstem._reserved_pulse()
         daemon_pulse.assert_not_called()
 
     def test_source_replay_quarantine_precedes_sequence_reservation(self):
@@ -2166,7 +2166,7 @@ class MutationBoundaries(unittest.TestCase):
         for runtime, entry in (
                 (sia.sialib, sia._cmd_pulse_owned),
                 (brainstem.sialib,
-                 lambda: brainstem._reserved_pulse(8))):
+                 lambda: brainstem._reserved_pulse())):
             with self.subTest(entry=entry), \
                     mock.patch.object(
                         runtime, "load_memo", return_value=dict(memo)), \
@@ -2195,7 +2195,7 @@ class MutationBoundaries(unittest.TestCase):
         for runtime, entry in (
                 (sia.sialib, sia._cmd_pulse_owned),
                 (brainstem.sialib,
-                 lambda: brainstem._reserved_pulse(8))):
+                 lambda: brainstem._reserved_pulse())):
             with self.subTest(entry=entry), \
                     mock.patch.object(
                         runtime, "load_memo", return_value=dict(memo)), \
@@ -2221,7 +2221,7 @@ class MutationBoundaries(unittest.TestCase):
         for runtime, entry in (
                 (sia.sialib, sia._cmd_pulse_owned),
                 (brainstem.sialib,
-                 lambda: brainstem._reserved_pulse(8))):
+                 lambda: brainstem._reserved_pulse())):
             with self.subTest(entry=entry), \
                     mock.patch.object(
                         runtime, "load_memo", return_value=dict(memo)), \
@@ -2467,10 +2467,10 @@ class MutationBoundaries(unittest.TestCase):
 
         self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
         ready.assert_called_once_with()
-        pulse.assert_called_once_with(1)
+        pulse.assert_called_once_with()
         publish.assert_not_called()
         self.assertIn(
-            "pulse 1 source_replay_quarantine",
+            "pulse 0 source_replay_quarantine",
             log.call_args.args[0])
 
     def test_failed_dream_attempt_is_rate_limited(self):
@@ -2563,14 +2563,17 @@ class MutationBoundaries(unittest.TestCase):
         self.assertTrue(all("abcdefghijklmnop" not in row for row in logs))
 
     def test_daemon_reservation_failure_prevents_pulse_effects(self):
+        memo = {"pulse_seq": 0}
         with mock.patch.object(brainstem.sialib, "load_memo",
-                               return_value={"pulse_seq": 0}), \
+                               return_value=dict(memo)), \
                 mock.patch.object(brainstem.sialib, "_write_memo",
-                                  side_effect=OSError("disk refused")), \
+                                  side_effect=OSError("disk refused")) as write, \
                 mock.patch.object(
                     brainstem.sialib, "_pulse_transaction") as pulse:
             with self.assertRaisesRegex(OSError, "disk refused"):
-                brainstem._reserved_pulse(1)
+                brainstem._reserved_pulse()
+        write.assert_called_once()
+        self.assertEqual(write.call_args.args[0]["pulse_seq"], 1)
         pulse.assert_not_called()
 
     def test_daemon_reservation_and_pulse_share_corpus_lease(self):
@@ -2606,7 +2609,7 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(
                     brainstem.sialib, "_pulse_transaction",
                     side_effect=pulse):
-            status = brainstem._reserved_pulse(1)
+            status = brainstem._reserved_pulse()
         self.assertEqual(status, {"pulse_seq": 1})
         self.assertEqual(trace, ["lease-enter", ("reserve", 1),
                                  ("pulse", 1), "lease-exit"])
