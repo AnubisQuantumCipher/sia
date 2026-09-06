@@ -225,71 +225,19 @@ def _read_graph_corpus_page(slug, *, capture_version=False):
     path = corpus_path(slug)
 
     def project(raw, before):
-        try:
-            text = raw.decode("utf-8", errors="strict")
-        except UnicodeError as exc:
-            raise RuntimeError(f"graph source is not valid UTF-8: {slug}") \
-                from exc
-        match = FM_RE.match(text)
-        frontmatter = match.group(1) if match else ""
-        body = text[match.end():] if match else text
-
-        type_values = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
-        if not type_values:
-            page_type = "note"
-        elif len(type_values) != 1:
-            raise RuntimeError(f"graph source type is ambiguous: {slug}")
-        else:
-            try:
-                page_type = _yaml_scalar(type_values[0])
-            except (ValueError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"graph source type is invalid: {slug}") \
-                    from exc
-        if len(page_type) > MAX_SOURCE_NAME_CHARS or re.fullmatch(
-                r"[a-z0-9][a-z0-9._-]*", page_type) is None:
-            raise RuntimeError(f"graph source type is invalid: {slug}")
-        title_values = re.findall(r"^title:\s*(.*?)\s*$", frontmatter, re.M)
-        title = slug
-        if len(title_values) == 1:
-            try:
-                title = _yaml_scalar(title_values[0])
-            except (ValueError, json.JSONDecodeError):
-                title = slug
-        title = clip(title, MAX_SOURCE_NAME_CHARS)
-        origin_values = re.findall(r"^origin:\s*(.*?)\s*$", frontmatter, re.M)
-        if len(origin_values) > 1:
-            raise RuntimeError(f"graph source origin is ambiguous: {slug}")
-        declared_origin = ""
-        if origin_values:
-            try:
-                declared_origin = _yaml_scalar(origin_values[0])
-            except (ValueError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"graph source origin is invalid: {slug}") \
-                    from exc
-            if declared_origin not in THOUGHT_ORIGINS:
-                raise RuntimeError(f"graph source origin is invalid: {slug}")
-        if not capture_version:
-            updated_at = datetime.datetime.fromtimestamp(
-                before.st_mtime, tz=datetime.timezone.utc).strftime(
-                    "%Y-%m-%dT%H:%M:%SZ")
-            if updated_at > iso():
-                raise RuntimeError(f"graph source has a future timestamp: {slug}")
-        origin = siamind.origin_class(slug, page_type, declared_origin or None)
-        source_sha256 = hashlib.sha256(raw).hexdigest()
         if capture_version:
-            # Both hashes name the complete page bytes, not the authenticity
-            # of a named event source. No timestamp or usage is inferred.
-            result = {"subject": slug, "content": text, "origin": origin,
-                      "source_sha256": source_sha256, "content_sha256": source_sha256}
-            version = {key: result[key] for key in
-                       ("subject", "content_sha256", "source_sha256", "origin")}
-            result["version_sha256"] = hashlib.sha256(json.dumps(
-                version, sort_keys=True, separators=(",", ":"),
-                ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
-            return result
+            return _corpus_page_version_from_bytes(slug=slug, raw=raw)
+        _text, frontmatter, body, page_type, title, declared_origin = \
+            _corpus_page_parts_from_bytes(slug=slug, raw=raw)
+        updated_at = datetime.datetime.fromtimestamp(
+            before.st_mtime, tz=datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+        if updated_at > iso():
+            raise RuntimeError(f"graph source has a future timestamp: {slug}")
+        origin = siamind.origin_class(slug, page_type, declared_origin or None)
         return {"slug": slug, "type": page_type, "title": title,
                 "updated_at": updated_at, "origin": origin,
-                "sha256": source_sha256}, frontmatter, body
+                "sha256": hashlib.sha256(raw).hexdigest()}, frontmatter, body
 
     fd = _open_source_nofollow(path, os.O_RDONLY)
     with siaqueue.regular_file_stream(

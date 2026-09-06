@@ -1323,8 +1323,8 @@ def _canonical_thought_origin(value):
     return value
 
 
-def _canonical_corpus_slug(value):
-    """Return a lexical corpus slug or refuse traversal/ambiguous forms."""
+def _lexical_corpus_slug(value):
+    """Validate only corpus spelling, without consulting a directory path."""
     if not isinstance(value, str) or not value \
             or len(value) > MAX_THOUGHT_INBOX_TEXT:
         raise ValueError("corpus slug must be a bounded non-empty string")
@@ -1336,6 +1336,12 @@ def _canonical_corpus_slug(value):
            for part in parts[:-1]) \
             or len(parts[-1].encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
         raise ValueError("corpus slug exceeds its component byte bound")
+    return value
+
+
+def _canonical_corpus_slug(value):
+    """Return a lexical corpus slug or refuse traversal/ambiguous forms."""
+    value = _lexical_corpus_slug(value)
     root = os.path.abspath(CORPUS)
     target = os.path.abspath(os.path.join(root, value + ".md"))
     if os.path.commonpath((root, target)) != root:
@@ -3387,6 +3393,77 @@ def _graph_snapshot_body_counts(graph, *, legacy_explanations=False, observed_by
         "edges": len(graph["edges"]),
         "pages": pages_total,
     }
+
+
+def _corpus_page_parts_from_bytes(*, slug, raw):
+    """One strict metadata parser for captured and planned complete page bytes."""
+    if type(raw) is not bytes:
+        raise ValueError("corpus page input must be exact bytes")
+    if len(raw) > MAX_EVENT_PAGE_BYTES:
+        raise ValueError("corpus page exceeds its complete byte bound")
+    if type(slug) is not str:
+        raise ValueError("corpus page slug must be text")
+    _lexical_corpus_slug(slug)
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise RuntimeError(f"graph source is not valid UTF-8: {slug}") \
+            from exc
+    match = FM_RE.match(text)
+    frontmatter = match.group(1) if match else ""
+    body = text[match.end():] if match else text
+
+    type_values = re.findall(r"^type:\s*(.*?)\s*$", frontmatter, re.M)
+    if not type_values:
+        page_type = "note"
+    elif len(type_values) != 1:
+        raise RuntimeError(f"graph source type is ambiguous: {slug}")
+    else:
+        try:
+            page_type = _yaml_scalar(type_values[0])
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"graph source type is invalid: {slug}") \
+                from exc
+    if len(page_type) > MAX_SOURCE_NAME_CHARS or re.fullmatch(
+            r"[a-z0-9][a-z0-9._-]*", page_type) is None:
+        raise RuntimeError(f"graph source type is invalid: {slug}")
+    title_values = re.findall(r"^title:\s*(.*?)\s*$", frontmatter, re.M)
+    title = slug
+    if len(title_values) == 1:
+        try:
+            title = _yaml_scalar(title_values[0])
+        except (ValueError, json.JSONDecodeError):
+            title = slug
+    title = clip(title, MAX_SOURCE_NAME_CHARS)
+    origin_values = re.findall(r"^origin:\s*(.*?)\s*$", frontmatter, re.M)
+    if len(origin_values) > 1:
+        raise RuntimeError(f"graph source origin is ambiguous: {slug}")
+    declared_origin = ""
+    if origin_values:
+        try:
+            declared_origin = _yaml_scalar(origin_values[0])
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"graph source origin is invalid: {slug}") \
+                from exc
+        if declared_origin not in THOUGHT_ORIGINS:
+            raise RuntimeError(f"graph source origin is invalid: {slug}")
+    return text, frontmatter, body, page_type, title, declared_origin
+
+
+def _corpus_page_version_from_bytes(*, slug, raw):
+    """Project supplied full bytes; no capture, source truth or use is inferred."""
+    text, _frontmatter, _body, page_type, _title, declared_origin = \
+        _corpus_page_parts_from_bytes(slug=slug, raw=raw)
+    origin = siamind.origin_class(slug, page_type, declared_origin or None)
+    source_sha256 = hashlib.sha256(raw).hexdigest()
+    result = {"subject": slug, "content": text, "origin": origin,
+              "source_sha256": source_sha256, "content_sha256": source_sha256}
+    version = {key: result[key] for key in
+               ("subject", "content_sha256", "source_sha256", "origin")}
+    result["version_sha256"] = hashlib.sha256(json.dumps(
+        version, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
+    return result
 
 
 def _capture_corpus_page_version(slug):
