@@ -132,9 +132,18 @@ def _marker(owner, source, live, batch, raw, admitted_status,
     if (marker["parent_generation_sha256"] is None) \
             != (previous_sha256 is None):
         _refuse("parent-generation-pin")
-    expected_inputs = siacontrollerliveinput.prepare_inputs(
-        batch=batch, previous_state=previous,
-        expected_previous_state_sha256=previous_sha256)
+    if batch["schema"] == "sia-controller-source-batch-v3":
+        # This pure replay treats the separately supplied marker as a
+        # premise. Current storage authority belongs to the durable handoff
+        # caller, which independently reads and joins the full generation.
+        expected_inputs = siacontrollerliveinput.prepare_inputs_v3(
+            owner, batch=batch,
+            previous_generation=batch["delivery_input"]["epoch_view"]["parent_generation"],
+            expected_previous_generation_sha256=marker["parent_generation_sha256"])
+    else:
+        expected_inputs = siacontrollerliveinput.prepare_inputs(
+            batch=batch, previous_state=previous,
+            expected_previous_state_sha256=previous_sha256)
     if live._canonical(inputs) != live._canonical(expected_inputs):
         _refuse("retained-producer-pin")
     return marker

@@ -6312,6 +6312,7 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
                 "controller-source-pending-batch-required", phase="live-prepare")
         batch = source_view["batch"]
         previous_state = previous_sha256 = None
+        generation = generation_sha256 = None
         if "live_loop_committed" in memo:
             live_view = _read_committed_live_generation(
                 memo=memo, admitted_status=admitted_status)
@@ -6321,6 +6322,7 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
                     "controller-source-live-parent-unavailable",
                     phase="live-prepare")
             generation = live_view["generation"]
+            generation_sha256 = memo["live_loop_committed"]["generation_sha256"]
             previous_state = copy.deepcopy(generation["transition"]["state"])
             previous_sha256 = generation["state_sha256"]
         elif _live_started(memo):
@@ -6344,9 +6346,14 @@ def _prepare_controller_source_live_candidate(*, memo, admitted_status):
                     "controller-source-live-parent-unbound",
                     phase="live-prepare")
         try:
-            prepare_inputs = siacontrollerliveinput.prepare_inputs(
-                batch=batch, previous_state=previous_state,
-                expected_previous_state_sha256=previous_sha256)
+            if batch.get("schema") == "sia-controller-source-batch-v3":
+                prepare_inputs = siacontrollerliveinput.prepare_inputs_v3(
+                    globals(), batch=batch, previous_generation=generation,
+                    expected_previous_generation_sha256=generation_sha256)
+            else:
+                prepare_inputs = siacontrollerliveinput.prepare_inputs(
+                    batch=batch, previous_state=previous_state,
+                    expected_previous_state_sha256=previous_sha256)
         except (TypeError, ValueError, KeyError, OverflowError,
                 RecursionError) as exc:
             siasourcebatch.refuse(

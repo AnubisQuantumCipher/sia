@@ -204,10 +204,14 @@ def prepare_inputs_v3(owner, *, batch, previous_generation,
                       expected_previous_generation_sha256):
     """Bind retained v3 input to the caller's complete admitted generation.
 
-    The caller must obtain that generation through its actual authority
-    reader. This pure component compares its entire represented value to the
-    source wrapper's parent; a matching state alone is insufficient. It does
-    not acquire storage, execute a pulse, consume a journal or observe output.
+    The generation and independent pin are caller premises. Resident
+    preparation must obtain the generation through its actual authority
+    reader. Pure retained status replay instead uses the separately supplied
+    live marker's pin; its durable caller must independently join current
+    storage before effects. This component compares the full represented
+    generation to the wrapper's parent; a matching state is insufficient.
+    It does not acquire storage, execute a pulse, consume a journal or observe
+    output, and represented replay never establishes current authority.
     """
     import siacontrollerdeliverywrapper as wrapper
     import siasourcebatch as source

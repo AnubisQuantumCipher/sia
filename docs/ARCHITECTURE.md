@@ -529,13 +529,14 @@ the original request and owner basis. Neither function opens storage,
 samples a clock, acknowledges a source or enables output.
 
 This pure wrapper validates represented joins, not actual authority. Full
-source-to-projection replay still belongs to source validation; the WAL
-validator must compare its declared parent schema to the actual retained
-parent, and the live adapter must compare its full parent generation to
-the actual admitted generation. Matching only a state digest is insufficient.
+source-to-projection replay still belongs to source validation. The WAL
+validator compares the declared parent schema and entire compact completion
+to the actual retained predecessor, including its effects-receipt pin.
+The live adapter compares its full parent generation to the independently
+supplied generation. Matching only a state digest is insufficient.
 A represented later-v3 continuation retains the original pinned adoption,
 not a rebased birth. An empty legacy bootstrap journal proves no nonempty
-delivery consumption or successful source-v3 resident invocation.
+delivery consumption or an end-to-end resident source-v3 loop.
 
 `siasourcebatch.capture_successor_v3` is the additive acquisition front door.
 It requires the full admitted status and completed source parent, journal
@@ -549,16 +550,30 @@ idle/gist contract and adds the complete delivery wrapper. Pure retained
 validation never reopens the journal or reacquires current sources. Legacy
 successor capture refuses a v3 predecessor rather than discarding its journal.
 
-`siacontrollerliveinput.prepare_inputs_v3` separately requires the full actual
+`siacontrollerliveinput.prepare_inputs_v3` separately requires the full
 parent generation and its independent pin. It replays the real source gate,
 compares the entire parent to the wrapper's retained generation and returns
 the exact live preparation request with the complete bound delivery prefix.
 It performs no storage I/O, acquisition or pulse execution. The legacy
 adapter continues to refuse delivery-bearing input, including null members.
 
-These additive components are source construction, not a resident hook or an
-installed runtime-ladder member. WAL relationship checks, resident dispatch
-and actual v3 acknowledgment remain distinct integration work. Publication
+Resident candidate preparation dispatches v3 with the complete generation
+returned by its actual reader and the memo's independently admitted receipt
+pin. It never falls back to the wrapper's copy when current authority is
+missing. Pure status replay uses the retained generation and a separately
+supplied live-marker pin as represented premises only. Durable status handoff
+independently joins the freshly read entire generation to the frozen batch
+at its existing admission, retry and publication boundaries.
+
+Source v3 shares the existing v2 content-effects format, including the
+explicit gist disposition and content identity on nonidle pulses. Native
+idle/gist publication, pending recovery and completed retry retain those
+same receipt fields; the full source hash also binds the delivery wrapper.
+Effects completion is still not acknowledgment or output authority.
+
+These additive components are source construction, not an enabled resident
+v3 acquisition runner or an installed runtime-ladder member. Actual v3
+acknowledgment and later continuation remain distinct integration work. Publication
 must retain the outer corpus lease across capture and fixed-slot retention.
 A fully acknowledged source-v3 batch must independently retain the adoption
 before writers can be enabled.
@@ -568,7 +583,7 @@ Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
 admission for the capture-held epoch. Its separate fenced successor storage
-path is implemented above; resident dispatch and writer authorization
+path is implemented above; resident acquisition and writer authorization
 remain separate construction work,
 not a relaxed completed/readiness or writer gate.
 

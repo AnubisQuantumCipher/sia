@@ -98,6 +98,15 @@ def validate_successor_wal(
     source.validate_batch(
         owner, successor_batch, expected_batch_sha256)
 
+    if successor_batch.get("schema") == "sia-controller-source-batch-v3":
+        delivery = successor_batch["delivery_input"]
+        # Pure wrapper replay establishes represented consistency only.
+        # Join its declaration to the actual retained source and complete
+        # completion receipt, including the consumed effects receipt pin.
+        if delivery["parent_source_schema"] != retained_batch.get("schema") \
+                or delivery["epoch_view"]["parent_committed"] != committed:
+            _refuse("successor-wal-delivery-parent")
+
     prior_epoch = retained_batch.get("epoch")
     next_epoch = successor_batch.get("epoch")
     if type(prior_epoch) is not dict or type(next_epoch) is not dict:

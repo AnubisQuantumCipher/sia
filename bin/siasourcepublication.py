@@ -1241,6 +1241,10 @@ def stage_status_effects(owner, *, memo, admitted_status, batch,
                 or generation.get("state_sha256") \
                 != binding["parent_state_sha256"]:
             _refuse(source, "source-status-live-parent-differs")
+        if frozen_batch["schema"] == "sia-controller-source-batch-v3" \
+                and source.native_bytes(owner, generation) != source.native_bytes(
+                    owner, frozen_batch["delivery_input"]["epoch_view"]["parent_generation"]):
+            _refuse(source, "source-status-full-live-parent-differs")
 
     # Pure admission happens before authority descriptors or a durable write.
     status_effects.prepare(

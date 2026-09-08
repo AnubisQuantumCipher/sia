@@ -104,7 +104,9 @@ def _sha(live, value):
 
 
 def _v2(batch):
-    return batch.get("schema") == "sia-controller-source-batch-v2"
+    """Source v2 and v3 share the existing v2 content-effects format."""
+    return batch.get("schema") in (
+        "sia-controller-source-batch-v2", "sia-controller-source-batch-v3")
 
 
 def _effect_keys(batch, keys):
