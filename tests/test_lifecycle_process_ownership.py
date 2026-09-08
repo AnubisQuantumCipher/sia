@@ -166,6 +166,7 @@ class _ReleaseRig:
     def __init__(self, testcase, entry, runner="deadline", ambient=None):
         self.testcase = testcase
         self.temporary = tempfile.TemporaryDirectory(prefix="sia-lifetime-test-")
+        testcase.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.actors = {}
         self.closed = False
@@ -174,6 +175,7 @@ class _ReleaseRig:
         self.worker_pidfd = None
         self.runner_pidfd = None
         self.listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        testcase.addCleanup(self.listener.close)
         self.listener.bind(str(self.root / "control.sock"))
         self.listener.listen()
         self.listener.settimeout(10)
@@ -735,6 +737,7 @@ class LifecycleProcessOwnershipTests(unittest.TestCase):
                 control_path = outside / "control.sock"
                 result_path = outside / "observed"
                 listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.addCleanup(listener.close)
                 listener.bind(str(control_path))
                 listener.listen()
                 listener.settimeout(10)
