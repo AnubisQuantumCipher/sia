@@ -26,6 +26,7 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/sialiveview.py` | read-only view of an acknowledged source transaction and its retained workspace (implemented, unreleased) |
 | `bin/siasourcebatch.py` | bounded collector capture and closed source-batch construction (implemented, unreleased) |
 | `bin/siasourcepublication.py` | immutable retained-batch slot plus source/live/status write-ahead bindings (implemented, unreleased) |
+| `bin/siacontrollercandidate.py` | retained-source candidate preparation under the explicit caller's owner scopes (implemented, unreleased) |
 | `bin/siasourceeffects.py` | crash-recoverable corpus/index/graph/status/live effects publication and committed receipt (implemented, unreleased) |
 | `bin/siasourcegit.py` | descriptor-bound clean corpus Git generation (implemented, unreleased) |
 | `bin/siasourceengine.py` | receipt-bound pinned-engine sync and source-page projection readback (implemented, unreleased) |
@@ -55,6 +56,16 @@ contracts. This capture alone does not establish complete machine history,
 idle-gist admission, live-loop publication or a cognitive win.
 
 ## The durable controller-source transaction
+
+`siacontrollercandidate.prepare(owner, *, memo, admitted_status)` contains the
+retained-batch-to-candidate algorithm. The existing
+`_prepare_controller_source_live_candidate` facade keeps its keyword-only
+contract and holds brainstem and corpus ownership around the complete ordinary
+child call. The child uses the supplied resident namespace for callbacks,
+paths and copying; it does not import a canonical core or return a suspended
+context manager. Parent admission, pure replay and detached-copy checks remain
+inside that lifetime. Extraction does not collect, publish, acknowledge or
+activate an additional source cycle.
 
 The implemented, unreleased controller-source boundary turns one retained
 collector cut into an ordered, recoverable local transaction. Capture and
@@ -278,17 +289,24 @@ moment it captures its own exports, and adding one dict entry to
 **Current — the runtime ladder is an API, not synchronized prose.** Release
 tests now pin each historical rung with an independent member fixture and
 golden digest, reject ladder declarations in either shell script, exercise the
-normal and fenced consumers through the helper CLI, and cover the current v10
+normal and fenced consumers through the helper CLI, and cover the current v11
 uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
 proves the held authority remains usable and is then closed.
 
-The cumulative `sia-runtime-v10` member set adds the claim registry, idle
-input/disposition, live view and gist publication modules to v9. Its exact
+The cumulative `sia-runtime-v11` member set adds extracted candidate preparation
+and the epoch, input, wrapper and journal dependencies used by native source-v3
+continuation to v10. The v10 rung added the claim registry, idle input/disposition,
+live view and gist publication modules to v9. The current rung's exact
 members and selectors are declared in `bin/siarelease.py:RUNTIME_LADDER`.
-The receipt reader continues to recognize complete historical v1–v9 trees.
-Presence of any v10 selector chooses v10 even for an incomplete tree; a
+The receipt reader continues to recognize complete historical v1–v10 trees.
+Presence of any v11 selector chooses v11 even for an incomplete tree; a
 missing peer refuses instead of validating the tree under an older salt.
+This is unreleased packaging closure, not deployment, output activation,
+automatic journal adoption, or a benchmark win. The separately implemented
+source-output writer remains outside this roster while no staged entrypoint
+imports it. Every repository-local import, including lazy imports, remains
+subject to the unchanged transitive runtime-closure gate.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**

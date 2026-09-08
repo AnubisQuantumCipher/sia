@@ -59,7 +59,9 @@ class RuntimeV10LiveLoop(unittest.TestCase):
     def test_v10_exact_roster_preserves_every_historical_contract(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[0], (
+        v10_index = next(index for index, rung in enumerate(authority.RUNTIME_LADDER)
+                         if rung[0] == V10_SALT)
+        self.assertEqual(authority.RUNTIME_LADDER[v10_index], (
             V10_SALT, EXPECTED_V10_RUNTIME_NAMES, V10_ADDITIONS))
         fixtures = {
             label: (salt, names, digest)
@@ -69,7 +71,7 @@ class RuntimeV10LiveLoop(unittest.TestCase):
             (fixtures[label][0], fixtures[label][1],
              HISTORICAL_SELECTORS[label])
             for label in HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[1:], expected_history)
+        self.assertEqual(authority.RUNTIME_LADDER[v10_index + 1:], expected_history)
         self.assertEqual(EXPECTED_V10_RUNTIME_NAMES[:-len(V10_ADDITIONS)],
                          v9.EXPECTED_V9_RUNTIME_NAMES)
         for label in HISTORICAL_LABELS:
@@ -90,7 +92,11 @@ class RuntimeV10LiveLoop(unittest.TestCase):
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
         staged = release._staged_runtime_members(installer)
         self.assertEqual(len(staged), len(set(staged)))
-        self.assertEqual(set(staged), set(EXPECTED_V10_RUNTIME_NAMES))
+        # Exact current-stage closure belongs to the latest rung's test and
+        # RuntimeModuleClosure. Historical v10 members still occur once each.
+        for name in EXPECTED_V10_RUNTIME_NAMES:
+            with self.subTest(historical_member=name):
+                self.assertEqual(staged.count(name), 1)
         for name in V10_ADDITIONS:
             with self.subTest(member=name):
                 self.assertEqual(staged.count(name), 1)
