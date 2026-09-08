@@ -319,6 +319,14 @@ def recover_orphan(owner, *, memo):
             if _wire(owner, source, memo, memo=True) != original:
                 _refuse(source, "source-publication-recovery-input-changed")
             named_current()
+            # A prior memo replacement may have reached rename but not its
+            # directory barrier. Complete that barrier on the admitted parent
+            # without replacing the exact pending file or re-publishing WAL.
+            os.fsync(files["memo"].directories.fd)
+            current()
+            if _wire(owner, source, memo, memo=True) != original:
+                _refuse(source, "source-publication-recovery-input-changed")
+            named_current()
             return False
         if held.raw is None:
             current()

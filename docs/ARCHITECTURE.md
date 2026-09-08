@@ -143,6 +143,12 @@ share a pre-effect wire budget; it does not measure process memory. These
 entrypoints neither collect sources nor create a writer permit, and do not
 reinterpret an already-pending memo as a completed predecessor.
 
+An already-pending `recover_orphan` retry separately validates the exact
+receipt and WAL, then flushes the held memo parent without rewriting either
+file. This closes an interruption after pending-memo replacement but before
+its directory barrier. It rechecks caller input and retained paths after the
+flush and propagates failure; `read_pending` remains a non-repairing read.
+
 These are concrete component contracts and recovery gates. Their availability
 alone does not prove that a particular resident controller invocation used the
 whole sequence; that requires an end-to-end front-door run and retained
