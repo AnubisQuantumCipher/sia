@@ -113,6 +113,19 @@ compact committed marker plus the ready receipt. Each durable prefix accepts
 only the exact before or target generation on replay; a third state, changed
 artifact, partial join, or unsafe pathname refuses instead of rebasing.
 
+The additive `siasourceack.read_capturable_predecessor` observes that
+historical predecessor after notification collection opens its acquisition
+fence. It requires the actual complete memo, an independently supplied
+compact predecessor and the exact marker with its independent digest. It
+revalidates source/effects archives and actual status/graph/live publication,
+holding their descriptors through full-result detachment. Its aggregate
+retained-wire budget includes the request, held artifact bodies and result;
+it is not a process-memory measurement. The distinct `capturable-not-ready`
+result grants no readiness, acknowledgment, capture or writer authority.
+Ordinary completed reads and ACK still reject the fenced state. An unrelated
+fixed successor slot is neither interpreted nor adopted by this historical
+reader; the separate capture/retention boundary must admit that slot.
+
 These are concrete component contracts and recovery gates. Their availability
 alone does not prove that a particular resident controller invocation used the
 whole sequence; that requires an end-to-end front-door run and retained
@@ -480,9 +493,11 @@ batch must independently retain the adoption before writers can be enabled.
 Neither an adopted memo alone nor a successful storage test establishes a
 cognitive mechanism win, durable output delivery or human receipt.
 Notification collection can create a pending acquisition fence in the memo;
-the completed reader deliberately rejects that state. The upcoming v3
-capture, retention and pre-WAL recovery path needs distinct source-only
-predecessor admission, not a relaxed completed/readiness or writer gate.
+the completed reader deliberately rejects that state. The distinct
+capture-only source reader above now supplies historical predecessor
+admission. Its delivery-epoch integration and the upcoming v3 capture,
+retention and pre-WAL recovery path remain separate construction work,
+not a relaxed completed/readiness or writer gate.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;

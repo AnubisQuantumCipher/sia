@@ -9,9 +9,15 @@ publication and the final memo/readiness transition.
 The additive completed reader selects the predecessor's digest-named archive
 directly, so a different successor WAL may occupy the fixed slot without
 making predecessor validation ambiguous.  It performs no durable write.
+
+The separate capture-only reader admits the full notification-fenced memo
+without claiming readiness. It retains the prior historical joins and the
+current file generations through copying, but neither authorizes capture
+nor relaxes the general completed reader or acknowledgment path.
 """
 
 import base64
+import contextlib
 import copy
 import os
 import re
@@ -22,6 +28,14 @@ NON_CLAIMS = (
     "Acknowledgment validates and retires one already-published local source transaction; it does not authenticate source truth, complete machine history or hostile same-user immutability.",
     "An archived effects receipt, archived batch and advanced cursors prove only this local durable ordering; they do not prove external delivery, retrieval quality, biological cognition or a held-out win.",
     "The compact committed marker cross-pins the retained effects receipt and live generation but is not a replacement for revalidating the full archived receipt.",
+)
+CAPTURE_NON_CLAIMS = (
+    "Capture-only predecessor observation is not current readiness and does not acknowledge, adopt or recover a source transaction.",
+    "This view retains the complete notification-fenced memo and prior historical joins; it does not authorize capture or establish notification cursor correctness.",
+    "No output or delivery is emitted, observed or consumed, and this view grants no writer authority.",
+    "The unrelated fixed source slot is not interpreted, adopted or certified; predecessor selection comes from the committed archive pins.",
+    "Checked local generations do not establish source truth, complete machine history or protection against hostile same-user mutation.",
+    "No cognitive benchmark win or held-out retrieval win is established; all source, effects, live publication and acknowledgment nonclaims remain controlling.",
 )
 
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -510,16 +524,24 @@ def _memo_current(owner, source, memo, original, admitted_status):
     owner["_require_status_admission_unchanged"](admitted_status)
 
 
-def _completed(owner, source, effects, live, memo, admitted_status,
-               committed):
+def _committed_shape(source, committed):
     if type(committed) is not dict or set(committed) != _COMMITTED_KEYS:
         _refuse(source, "ack-committed-shape")
     for value in committed.values():
         if type(value) is not str or _HEX.fullmatch(value) is None:
             _refuse(source, "ack-committed-digest")
-    if _PENDING_ONLY.intersection(memo) \
-            or owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo:
-        _refuse(source, "ack-completed-has-pending-authority")
+
+
+@contextlib.contextmanager
+def _historical_predecessor(owner, source, effects, memo, admitted_status,
+                            committed):
+    """Hold historical archive/effects/live joins without claiming ready.
+
+    Entry-point policy decides which complete memo authority is allowed.
+    This helper neither filters that memo nor supplies a pending bypass;
+    both actual source-effects and live readers receive it unchanged.
+    """
+    _committed_shape(source, committed)
     archive = _ArchiveSlot(
         owner, source, committed["source_batch_sha256"],
         archive_only=True)
@@ -549,13 +571,36 @@ def _completed(owner, source, effects, live, memo, admitted_status,
                 or receipt["live_generation"]["generation_sha256"] \
                 != committed["live_generation_sha256"]:
             _refuse(source, "ack-completed-live-generation")
-        ready = owner["_ready_receipt"](memo)
-        expected_ready = {
-            "v": 1, "completed_at": status["ts"], "kind": "pulse",
-            "identity": generation["publication_id"],
-        }
-        if ready != expected_ready:
-            _refuse(source, "ack-completed-readiness")
+        effects_archive.current()
+        archive.current()
+        yield archive, effects_archive, status, generation
+    finally:
+        if effects_archive is not None:
+            effects_archive.close()
+        archive.close()
+
+
+def _historical_ready_receipt(owner, source, memo, status, generation):
+    """Check the old completion receipt, not present-tense readiness."""
+    ready = owner["_ready_receipt"](memo)
+    expected_ready = {
+        "v": 1, "completed_at": status["ts"], "kind": "pulse",
+        "identity": generation["publication_id"],
+    }
+    if ready != expected_ready:
+        _refuse(source, "ack-completed-readiness")
+
+
+def _completed(owner, source, effects, live, memo, admitted_status,
+               committed):
+    _committed_shape(source, committed)
+    if _PENDING_ONLY.intersection(memo) \
+            or owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo:
+        _refuse(source, "ack-completed-has-pending-authority")
+    with _historical_predecessor(
+            owner, source, effects, memo, admitted_status, committed) as (
+            archive, effects_archive, status, generation):
+        _historical_ready_receipt(owner, source, memo, status, generation)
         durable = owner["load_memo"]()
         if not _same(owner, source, durable, memo, memo=True) \
                 or owner["_require_status_admission_unchanged"](
@@ -575,10 +620,6 @@ def _completed(owner, source, effects, live, memo, admitted_status,
             "status": "available", "batch": detached_batch,
             "committed": detached_committed,
         }
-    finally:
-        if effects_archive is not None:
-            effects_archive.close()
-        archive.close()
 
 
 def acknowledge(owner, *, memo, admitted_status):
@@ -770,3 +811,204 @@ def read_completed(owner, *, memo, admitted_status):
             or result.get("committed") != committed:
         _refuse(source, "ack-completed-authority-changed")
     return result
+
+
+def _capturable_fence(owner, source, publication, memo, committed,
+                      attempt, expected_attempt_sha256):
+    """Admit the sole allowed pending fence without suppressing any key."""
+    if type(memo) is not dict:
+        _refuse(source, "ack-capturable-memo-shape")
+    if publication.SUCCESSOR_PENDING_KEYS.intersection(memo):
+        _refuse(source, "ack-capturable-other-pending-authority")
+    _committed_shape(source, committed)
+    if not _same(owner, source, memo.get("controller_source_committed"), committed):
+        _refuse(source, "ack-capturable-committed-authority")
+    if type(expected_attempt_sha256) is not str \
+            or _HEX.fullmatch(expected_attempt_sha256) is None:
+        _refuse(source, "ack-capturable-fence-pin")
+    key = owner["NOTIFY_BASELINE_ATTEMPT_KEY"]
+    if key not in memo or memo[key] is None:
+        _refuse(source, "ack-capturable-fence-absent")
+    actual = owner["_pending_notify_baseline_attempt"](memo)
+    if actual is None or not _same(owner, source, actual, attempt) \
+            or source.native_sha(owner, attempt) != expected_attempt_sha256:
+        _refuse(source, "ack-capturable-fence-authority")
+
+
+def _capture_held_object(owner, source, held):
+    try:
+        value = owner["_strict_json_loads"](
+            held.raw.decode("utf-8", errors="strict"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        _refuse(source, "ack-capturable-authority-json", exc)
+    if type(value) is not dict:
+        _refuse(source, "ack-capturable-authority-shape")
+    return value
+
+
+def read_capturable_predecessor(
+        owner, *, memo, admitted_status, committed,
+        notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256):
+    """Read a historical predecessor beneath the exact notification fence.
+
+    This entry point is neither the completed reader nor an ACK operation.
+    It receives the caller's ordinary owner scope and creates none itself.
+    The full actual memo, including its notification marker, is passed to
+    existing effects/live verification; the old ready receipt is checked only
+    as a historical join. No fixed-slot content is acquired or interpreted.
+    """
+    import siasourcebatch as source
+    import siasourceeffects as effects
+    import siasourcepublication as publication
+
+    try:
+        if type(owner) is not dict or type(memo) is not dict \
+                or type(admitted_status) is not dict:
+            _refuse(source, "ack-capturable-input-shape")
+        capacities = {name: owner[name] for name in (
+            "MAX_MEMO_BYTES", "MAX_STATE_JSON_BYTES", "MAX_CONFIG_PATH_CHARS")}
+        if any(type(value) is not int or value <= 0 for value in capacities.values()):
+            _refuse(source, "ack-capturable-capacity-contract")
+        # Snapshot owner selection before serialization or defensive copying
+        # can call out; a changed path must not become the initial basis.
+        paths = {name: source._canonical_path(owner, owner[name]) for name in (
+            "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH",
+            "LIVE_CANDIDATE_PATH", "LIVE_STATE_PATH",
+            "CONTROLLER_SOURCE_BATCH_PATH",
+            "CONTROLLER_SOURCE_ARCHIVE_DIR", "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR",
+        )}
+        basis = {
+            "paths": paths, "capacities": capacities,
+            "notification_key": owner["NOTIFY_BASELINE_ATTEMPT_KEY"],
+        }
+        basis_raw = source.native_bytes(owner, basis)
+        request = {
+            "memo": memo, "admitted_status": admitted_status,
+            "committed": committed,
+            "notification_baseline_attempt": notification_baseline_attempt,
+            "expected_notification_baseline_attempt_sha256":
+                expected_notification_baseline_attempt_sha256,
+        }
+        # Bound the complete compound request before any defensive copy, not
+        # merely its individually bounded memo, status and marker members.
+        request_raw = source.native_bytes(
+            owner, request, ceiling=capacities["MAX_STATE_JSON_BYTES"])
+        memo_raw = source.native_bytes(
+            owner, memo, ceiling=capacities["MAX_MEMO_BYTES"])
+        status_raw = source.native_bytes(
+            owner, admitted_status, ceiling=capacities["MAX_STATE_JSON_BYTES"])
+        _capturable_fence(
+            owner, source, publication, memo, committed,
+            notification_baseline_attempt,
+            expected_notification_baseline_attempt_sha256)
+        admitted = copy.deepcopy(request)
+        if source.native_bytes(owner, request) != request_raw \
+                or source.native_bytes(owner, admitted) != request_raw:
+            _refuse(source, "ack-capturable-request-copy-changed")
+
+        def inputs_current():
+            current_basis = {
+                "paths": {name: owner.get(name) for name in paths},
+                "capacities": {name: owner.get(name) for name in capacities},
+                "notification_key": owner.get("NOTIFY_BASELINE_ATTEMPT_KEY"),
+            }
+            if source.native_bytes(owner, current_basis) != basis_raw \
+                    or source.native_bytes(owner, request) != request_raw \
+                    or source.native_bytes(owner, admitted) != request_raw:
+                _refuse(source, "ack-capturable-request-changed")
+
+        inputs_current()
+        with contextlib.ExitStack() as stack:
+            held = {}
+            retained_bytes = len(request_raw)
+            for name in ("MEMO_PATH", "STATUS_PATH", "GRAPH_PATH",
+                         "LIVE_CANDIDATE_PATH", "LIVE_STATE_PATH"):
+                ceiling = capacities["MAX_MEMO_BYTES"] if name == "MEMO_PATH" \
+                    else capacities["MAX_STATE_JSON_BYTES"]
+                held[name] = _HeldRaw(
+                    owner, source, paths[name], ceiling, allow_absent=False)
+                stack.callback(held[name].close)
+                retained_bytes += len(held[name].raw)
+                if retained_bytes > capacities["MAX_STATE_JSON_BYTES"]:
+                    _refuse(source, "ack-capturable-held-byte-capacity")
+            durable = _capture_held_object(owner, source, held["MEMO_PATH"])
+            retained_status = _capture_held_object(owner, source, held["STATUS_PATH"])
+            if source.native_bytes(owner, durable, ceiling=capacities["MAX_MEMO_BYTES"]) != memo_raw \
+                    or source.native_bytes(owner, retained_status) != status_raw:
+                _refuse(source, "ack-capturable-durable-authority")
+            _capturable_fence(
+                owner, source, publication, durable, admitted["committed"],
+                admitted["notification_baseline_attempt"],
+                admitted["expected_notification_baseline_attempt_sha256"])
+
+            def files_current():
+                inputs_current()
+                for file in held.values():
+                    file.current()
+                inputs_current()
+
+            def current():
+                files_current()
+                actual_memo = owner["load_memo"]()
+                actual_status = owner["_require_status_admission_unchanged"](
+                    admitted["admitted_status"])
+                if source.native_bytes(
+                        owner, actual_memo, ceiling=capacities["MAX_MEMO_BYTES"]) != memo_raw \
+                        or source.native_bytes(owner, actual_status) != status_raw:
+                    _refuse(source, "ack-capturable-authority-changed")
+                files_current()
+
+            current()
+            with _historical_predecessor(
+                    owner, source, effects, memo, admitted_status, committed) as (
+                    archive, effects_archive, status, generation):
+                retained_bytes += len(archive.raw) + len(effects_archive.raw)
+                if retained_bytes > capacities["MAX_STATE_JSON_BYTES"]:
+                    _refuse(source, "ack-capturable-held-byte-capacity")
+                _historical_ready_receipt(owner, source, memo, status, generation)
+                if source.native_bytes(owner, status) != status_raw:
+                    _refuse(source, "ack-capturable-historical-status-changed")
+                current()
+                result = {
+                    "schema": "sia-controller-source-capturable-predecessor-v1",
+                    "status": "capturable-not-ready", "batch": archive.batch,
+                    "committed": admitted["committed"],
+                    "notification_baseline_attempt": admitted["notification_baseline_attempt"],
+                    "expected_notification_baseline_attempt_sha256":
+                        admitted["expected_notification_baseline_attempt_sha256"],
+                    "non_claims": list(CAPTURE_NON_CLAIMS),
+                }
+                # Keep every historical and current descriptor alive while
+                # admitting the entire returned envelope and detaching it.
+                result_raw = source.native_bytes(
+                    owner, result, ceiling=capacities["MAX_STATE_JSON_BYTES"])
+                # Declared retained-wire budget: the complete caller request,
+                # each held memo/status/graph/candidate/generation raw body,
+                # both source/effects archive bodies, and the complete result
+                # envelope. Each listed representation is counted once; this
+                # is not a claim to measure Python heap or process memory.
+                if retained_bytes + len(result_raw) > capacities["MAX_STATE_JSON_BYTES"]:
+                    _refuse(source, "ack-capturable-result-byte-capacity")
+                current()
+                effects_archive.current()
+                archive.current()
+                detached = copy.deepcopy(result)
+                if source.native_bytes(owner, result) != result_raw \
+                        or source.native_bytes(owner, detached) != result_raw \
+                        or source.native_bytes(owner, detached["batch"]) != archive.raw:
+                    _refuse(source, "ack-capturable-result-copy-changed")
+                current()
+                if source.native_bytes(owner, result) != result_raw \
+                        or source.native_bytes(owner, detached) != result_raw:
+                    _refuse(source, "ack-capturable-result-changed")
+                effects_archive.current()
+                archive.current()
+                files_current()
+                return detached
+    except source.SourceBatchRefusal:
+        raise
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError,
+            AttributeError, UnicodeError, RecursionError, OverflowError,
+            IndexError) as exc:
+        _refuse(source, "ack-capturable-predecessor-refused", exc)
