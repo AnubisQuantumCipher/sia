@@ -31,6 +31,7 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siasourceengine.py` | receipt-bound pinned-engine sync and source-page projection readback (implemented, unreleased) |
 | `bin/siasourceack.py` | immutable batch archival, refusal settlement, cursor publication, and final readiness acknowledgment (implemented, unreleased) |
 | `bin/siacontrollerdeliverywrapper.py` | storage-free held-parent and journal binding for successor input (implemented, unreleased) |
+| `bin/siacontrollerdeliverywriter.py` | source-authorized output under a held adopted journal (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -496,6 +497,43 @@ A failed mutable call retires its handle, so durable retry reopens actual
 records. Normal exit revalidates, exceptional exit preserves the caller's
 exception, and only owned descriptors close. No episode or journal is deleted.
 
+`siacontrollerdeliverywriter.deliver` supplies the separate source-v3 writer
+authorization. Mandatory caller pins select the original adoption and
+journal limits; the actual acknowledged source, full live generation and
+absent successor WAL are checked under corpus ownership before the existing
+journal writer is acquired. It never acquires the brainstem lease, prepares
+an adoption, captures sources or acknowledges a pulse. It admits
+caller-supplied rows and rendered body as premises, ranks against that actual
+generation without changing row content/origin, and preserves the original
+request identity and rank clock on exact completed retry.
+
+The returned unchanged journal receipt means `write-all-and-flush-returned`
+at the supplied binary sink. Its body scope remains
+`result-body-before-queue-health-footer-v1`; it does not cover the health
+footer, human reading, understanding or downstream use.
+Incomplete journals, including intent-only prefixes, refuse this entry
+without filtering or reconstructing missing output. A retained-clock ceiling
+admits the complete journal prefix only; it is not a fresh clock or freshness
+claim.
+
+Copies are checked while journal/epoch descriptors remain held. After their
+normal exits, callback-free checks compare the retained in-memory request,
+selected owner identities and returned completion; no path is reacquired
+and no fresh filesystem authority is claimed after release. Once a real
+completion has returned, later wrapper refusal retains the conservative
+`completed-unrecorded` output phase even if a fresh retry handle reports
+`not-started`. That refusal does not erase the durable completion or permit
+a resend. This front door does not enable CLI recall or validate the semantic
+faithfulness of arbitrary rendered prose.
+
+The controlled output-to-resident fixture carries a real short-write/flush
+completion through the next native source-v3 capture, publication and ACK.
+The new full generation and history retain the exact delivery and derived
+service-output use, preserving its subject's content/source hashes and
+origin. The original adoption and journal records are unchanged. Rows/body
+remain caller premises and Git/index observations remain controlled; this
+does not establish a deployed CLI loop or a cognitive retrieval win.
+
 `siacontrollerdeliveryepoch.prepare_epoch` now prepares source-bound journal
 storage separately from capture and output authorization. It requires an
 actually acknowledged legacy parent with empty deliveries, or exact retained
@@ -603,7 +641,7 @@ clock, epoch preparation or native collection. Without a WAL the runner
 prepares or observes the actual adopted epoch, reserves the sequence,
 captures native v3 input and retains it before publication and ACK.
 
-The controlled resident fixtures now complete legacy-to-v3 and v3-to-v3
+The original resident fixtures now complete legacy-to-v3 and v3-to-v3
 cycles, including actual interruption/retry beneath a notification fence.
 Their journal remains empty and their Git/index observations remain
 controlled; they prove neither nonempty delivery consumption nor external
@@ -627,8 +665,9 @@ Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
 admission for the capture-held epoch. Its separate fenced successor storage
-path and resident dispatch are implemented above. Writer authorization and
-configured activation remain separate construction work, not a relaxed
+path and resident dispatch are implemented above. Source-bound writer
+authorization uses the separate strict front door above; configured
+activation remains separate construction work, not a relaxed
 completed/readiness or writer gate.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
