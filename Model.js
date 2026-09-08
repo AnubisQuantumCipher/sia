@@ -991,6 +991,150 @@ function timestampStale(value, nowMs, staleAfterSec) {
   return age < 0 || age > horizon * 1000
 }
 
+// Retained live-loop display only. The CLI owns source admission; these
+// shape/time/generation checks neither authenticate hashes nor certify scores.
+function liveDigest(value) {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value)
+}
+
+function liveBoundaryStrings(value) {
+  return Array.isArray(value) && value.length > 0 && value.length <= 256
+    && value.every(function(item) {
+      return inertStatusString(item, 4096, true)
+    })
+}
+
+function liveActivationShape(value, observedAt) {
+  if (!isPlainRecord(value) || value.component !== "usage-salience"
+      || value.status !== "computed-unverified" || value.observed_at !== observedAt
+      || !Array.isArray(value.activations) || value.activations.length > 256
+      || !Array.isArray(value.order) || value.order.length !== value.activations.length)
+    return false
+  var seen = Object.create(null)
+  for (var item of value.activations) {
+    if (!isPlainRecord(item) || !canonicalCorpusSlug(item.subject)
+        || seen[item.subject] || item.component !== "usage-salience"
+        || item.observed_at !== observedAt) return false
+    seen[item.subject] = true
+    if (item.status === "computed-unverified") {
+      if (typeof item.score !== "number" || !isFinite(item.score)
+          || item.reason !== null) return false
+    } else if (item.status !== "unavailable" || item.score !== null
+               || item.reason !== "no-use-history") return false
+  }
+  var ordered = Object.create(null)
+  return value.order.every(function(subject) {
+    if (typeof subject !== "string" || !seen[subject] || ordered[subject]) return false
+    ordered[subject] = true
+    return true
+  })
+}
+
+function liveAdmissionShape(value) {
+  return Array.isArray(value) && value.every(function(item) {
+    return isPlainRecord(item) && ["perception", "delivery"].indexOf(item.kind) >= 0
+      && typeof item.eligible === "boolean" && liveDigest(item.version_sha256)
+      && inertStatusString(item.record_id, 1024, true)
+      && ["encoding-strength-admitted", "encoding-strength-below-threshold",
+          "explicit-delivery-admitted"].indexOf(item.reason) >= 0
+  })
+}
+
+function liveWorkspaceView(view, status, nowMs, staleAfterSec) {
+  if (!recordHasExactly(view, ["schema", "status", "origin", "as_of", "publication",
+        "workspace", "encoding", "admission", "activation", "coretrieval", "idle",
+        "non_claims", "upstream_non_claims", "view_sha256"])
+      || view.schema !== "sia-controller-live-view-v1" || view.status !== "available"
+      || view.origin !== "derived" || !nonNegativeInteger(view.as_of)
+      || !nonNegativeInteger(view.as_of * 1000) || !liveDigest(view.view_sha256)
+      || !liveBoundaryStrings(view.non_claims) || !isPlainRecord(view.upstream_non_claims)
+      || !residentStatusShape(status) || typeof nowMs !== "number" || !isFinite(nowMs)
+      || typeof staleAfterSec !== "number"
+      || validStaleAfterSec(staleAfterSec, staleAfterDefaultSec()) !== staleAfterSec)
+    return null
+  var publication = view.publication
+  if (!recordHasExactly(publication, ["publication_id", "pulse_seq", "epoch_id",
+        "state_sha256", "transition_sha256", "generation_sha256", "status_timestamp",
+        "source_batch_sha256", "source_effects_receipt_sha256", "policy_sha256"])
+      || typeof publication.publication_id !== "string"
+      || !/^[0-9a-f]{32}$/.test(publication.publication_id)
+      || publication.publication_id !== status.publication_id
+      || publication.pulse_seq !== status.pulse_seq
+      || publication.status_timestamp !== status.ts
+      || !inertStatusString(publication.epoch_id, 1024, true)
+      || timestampStale(status.ts, nowMs, staleAfterSec)
+      || nowMs < view.as_of * 1000 || nowMs - view.as_of * 1000 > staleAfterSec * 1000
+      || ["state_sha256", "transition_sha256", "generation_sha256", "source_batch_sha256",
+          "source_effects_receipt_sha256", "policy_sha256"].some(function(field) {
+            return !liveDigest(publication[field])
+          })) return null
+  var ws = view.workspace
+  if (!isPlainRecord(ws) || ws.component !== "maintained-workspace"
+      || ws.status !== "computed-unverified" || ws.observed_at !== view.as_of
+      || ["idle", "holding"].indexOf(ws.phase) < 0
+      || ["idle", "ignited", "sustained", "released", "replaced"].indexOf(ws.transition) < 0
+      || [null, "hold-expired", "explicit-release"].indexOf(ws.release_reason) < 0
+      || !nonNegativeInteger(ws.capacity) || ws.capacity === 0 || ws.capacity > 256
+      || typeof ws.ignition_threshold !== "number" || !isFinite(ws.ignition_threshold)
+      || !Array.isArray(ws.slots) || ws.slots.length > ws.capacity
+      || !Array.isArray(ws.selected_sources) || ws.selected_sources.length !== ws.slots.length
+      || !Array.isArray(ws.candidates) || ws.candidates.length > 256
+      || !liveActivationShape(view.activation, view.as_of) || !liveAdmissionShape(view.admission))
+    return null
+  var slots = Object.create(null)
+  for (var i = 0; i < ws.slots.length; i++) {
+    var subject = ws.slots[i]
+    var selected = ws.selected_sources[i]
+    if (!canonicalCorpusSlug(subject) || slots[subject]
+        || !recordHasExactly(selected, ["subject", "origin", "source_sha256"])
+        || selected.subject !== subject || !liveDigest(selected.source_sha256)
+        || ["evidence", "derived", "model", "legacy-unlabeled"].indexOf(selected.origin) < 0)
+      return null
+    slots[subject] = true
+  }
+  var candidates = Object.create(null)
+  for (var candidate of ws.candidates) {
+    if (!recordHasExactly(candidate, ["subject", "eligible", "selected"])
+        || !canonicalCorpusSlug(candidate.subject) || candidates[candidate.subject]
+        || typeof candidate.eligible !== "boolean" || typeof candidate.selected !== "boolean"
+        || candidate.selected !== !!slots[candidate.subject]) return null
+    candidates[candidate.subject] = true
+  }
+  if (ws.phase === "holding") {
+    var selection = ws.selection
+    if (!ws.slots.length || !nonNegativeInteger(ws.ignited_at)
+        || !nonNegativeInteger(ws.expires_at) || ws.expires_at <= ws.ignited_at
+        || !nonNegativeInteger(ws.expires_at * 1000) || ws.ignited_at > view.as_of
+        || !isPlainRecord(selection) || selection.observed_at !== ws.ignited_at
+        || !liveActivationShape(selection.activation, selection.observed_at)
+        || !liveAdmissionShape(selection.admission)) return null
+  } else if (ws.slots.length || ws.selection !== null
+             || ws.ignited_at !== null || ws.expires_at !== null) return null
+  var idle = view.idle
+  if (!isPlainRecord(idle) || typeof idle.requested !== "boolean"
+      || ["not-requested", "proposals-only", "gist-pages-published"].indexOf(idle.gist_publication_status) < 0
+      || idle.availability !== null && !inertStatusString(idle.availability, 256, true)) return null
+  var result = {as_of: view.as_of, expired: ws.expires_at !== null && nowMs >= ws.expires_at * 1000,
+    publication: publication, workspace: ws, activation: view.activation,
+    admission: view.admission, idle: idle, non_claims: view.non_claims}
+  try {
+    var raw = JSON.stringify(result)
+    if (raw.length > 16777216) return null
+    return JSON.parse(raw)
+  } catch (e) { return null }
+}
+
+function liveWorkspaceSummary(display) {
+  if (!display) return "Live workspace unavailable — no matching retained source view"
+  var ws = display.workspace
+  return "Live workspace · retained as of " + display.as_of + " · " + ws.status
+    + " · " + ws.slots.length + " of " + ws.capacity + " · " + ws.phase + " / " + ws.transition
+    + (ws.release_reason === null ? "" : " · " + ws.release_reason)
+    + (ws.expires_at === null ? "" : " · " + (display.expired ? "expired " : "expires ") + ws.expires_at)
+    + " · gist " + display.idle.gist_publication_status
+    + (display.idle.availability === null ? "" : " · " + display.idle.availability)
+}
+
 // ------------------------------------------------------------- continuity
 
 // The backup worker publishes independently from the brainstem so recovery

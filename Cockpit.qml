@@ -167,6 +167,14 @@ Item {
   readonly property var snap:
     currentGraph && currentGraph.snapshot ? currentGraph.snapshot : null
   readonly property real staleAfterSec: configuredStaleAfterSec()
+
+  LiveView {
+    id: liveLoopView
+    statusSnapshot: root.statusLoadValid ? root.status : null
+    enabled: root.opened && !root.playing && root.releaseLifecycle === "ready"
+      && root.statusLoadValid && !root.stale
+    staleAfterSec: root.staleAfterSec
+  }
   readonly property string pluginId:
     root.manifest && typeof root.manifest.id === "string"
       && root.manifest.id !== "" ? root.manifest.id : "khephri.sia"
@@ -4635,11 +4643,10 @@ Item {
             }
           }
 
-          // Bounded attention window: score threshold, per-source cap,
-          // and a small incumbent boost.
+          // The source-authorized retained selection, never compatibility
+          // policy slugs or an animation standing in for an observed pulse.
           Rectangle {
-            visible: !!(root.currentStatus && root.currentStatus.workspace
-                        && root.currentStatus.workspace.length)
+            visible: !root.playing
             width: parent.width
             height: wsCol.implicitHeight + Style.space(20)
             radius: Style.cornerRadius
@@ -4656,24 +4663,45 @@ Item {
               Text {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "ATTENTION WINDOW — "
-                  + (root.currentStatus && root.currentStatus.workspace
-                     ? root.currentStatus.workspace.length : 0) + " OF 7"
+                width: wsCol.width
+                text: liveLoopView.summary
+                wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.45)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
               }
               Repeater {
-                model: root.currentStatus && root.currentStatus.workspace
-                  ? root.currentStatus.workspace : []
+                model: liveLoopView.display ? liveLoopView.display.workspace.slots : []
                 delegate: Item {
                   id: wsRow
                   required property var modelData
                   readonly property bool onMap:
                     root.graphHasNode(wsRow.modelData)
+                  readonly property string selectionReason: {
+                    var display = liveLoopView.display
+                    if (!display) return "retained selection unavailable"
+                    var selection = display.workspace.selection
+                    var sources = display.workspace.selected_sources
+                    var origin = sources.find(function(item) {
+                      return item.subject === wsRow.modelData
+                    })
+                    var chosen = selection ? selection.activation.activations.find(function(item) {
+                      return item.subject === wsRow.modelData
+                    }) : null
+                    var current = display.activation.activations.find(function(item) {
+                      return item.subject === wsRow.modelData
+                    })
+                    function score(item) {
+                      if (!item) return "unavailable"
+                      return item.score === null ? item.reason + " (" + item.status + ")"
+                        : String(item.score) + " (" + item.status + ")"
+                    }
+                    return "[origin:" + (origin ? origin.origin : "legacy-unlabeled")
+                      + "] · selection " + score(chosen) + " · current " + score(current)
+                  }
                   width: wsCol.width
-                  height: wsText.implicitHeight + Style.space(2)
+                  height: wsText.implicitHeight + wsReason.implicitHeight + Style.space(5)
                   Text {
                     textFormat: Text.PlainText
                     renderType: Text.NativeRendering
@@ -4687,6 +4715,18 @@ Item {
                     color: !wsRow.onMap ? Qt.alpha(root.fg, 0.45)
                       : root.selectedId === wsRow.modelData
                       ? root.accent : Qt.alpha(root.fg, 0.75)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    id: wsReason
+                    anchors.top: wsText.bottom
+                    width: parent.width
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    text: wsRow.selectionReason
+                    wrapMode: Text.WordWrap
+                    color: Qt.alpha(root.fg, 0.45)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                   }
@@ -4717,7 +4757,10 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 width: wsCol.width
-                text: "off-map entries remain in compatibility policy state; the graph is a bounded display window"
+                text: liveLoopView.display
+                  ? "Retained selection; expiry " + liveLoopView.display.workspace.expires_at
+                    + ". Off-map is only a graph-display limit. Inspect full boundaries with sia live --json."
+                  : "No matching source-authorized view. Inspect sia live --json for the refusal; compatibility slugs are not used here."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.35)
                 font.family: root.fontFamily

@@ -181,6 +181,17 @@ It excludes corpus bodies and broadcast payload text. `sia status` and
 `sia think` include the same source-authorized summary; `sia think` also
 keeps its recent generated-entry listing.
 
+The bar tooltip and cockpit's retained workspace card share the same
+read-only `sia live --json` consumer. They join the response to the resident
+publication identity and clock, show actual policy capacity and source
+origins, and separate held selection scores from the retained pulse's
+current scores. Refresh, failure, stale status and generation changes
+withdraw the prior display. Workspace expiry is labeled as expiry, not
+silently presented as current activity. An unchanged-status poll leaves an
+already-running read eligible to finish; a real invalidation stays
+superseded even if that status is later restored. This source change is not
+an installed-desktop deployment or evidence that a consumer used a broadcast.
+
 `as_of`, selection time and workspace expiry are retained controller clocks.
 Reading the view does not advance the loop, recompute scores, expire a held
 workspace or establish that a displayed slot remains active now. Selection

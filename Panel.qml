@@ -81,6 +81,13 @@ BarWidget {
   readonly property string cockpitWorkspace:
     root.normalizedSetting("cockpitWorkspace")
 
+  LiveView {
+    id: liveLoopView
+    statusSnapshot: root.statusLoadValid ? root.status : null
+    enabled: root.releaseLifecycle === "ready" && root.statusLoadValid && !root.stale
+    staleAfterSec: root.staleAfterSec
+  }
+
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return value === undefined || value === null ? fallback : value
@@ -213,7 +220,8 @@ BarWidget {
           ? "processing" : root.brainState) + " · " + root.eventsToday
           + " events today"
     return brain + " · " + root.continuityText()
-      + " · click for cockpit · right-click for continuity\n" + brainBoundary
+      + " · click for cockpit · right-click for continuity\n"
+      + liveLoopView.summary + "\n" + brainBoundary
   }
 
   function applyStatus(text) {

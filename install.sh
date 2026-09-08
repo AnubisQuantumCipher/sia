@@ -8549,7 +8549,7 @@ PY
 
 SIA_RELEASE_FILES=(
   bin/sialifetime.py
-  manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md ROADMAP.md LICENSE
+  manifest.json preview.png Panel.qml Cockpit.qml LiveView.qml Model.js README.md ROADMAP.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
   uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
@@ -10138,7 +10138,7 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
     PLUGIN_TREE_EXPECTED=absent
   fi
   SIA_PLUGIN_STAGE="$(mktemp -d "$PLUGIN_PARENT/.khephri.sia.stage.XXXXXX")"
-  PLUGIN_ROOT_FILES=(manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md
+  PLUGIN_ROOT_FILES=(manifest.json preview.png Panel.qml Cockpit.qml LiveView.qml Model.js README.md
     ROADMAP.md LICENSE SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
     uninstall.sh)
   PLUGIN_DIRS=(bin docs schema-pack skill systemd)
