@@ -6,6 +6,10 @@ epoch. Its separate held reader checks existing generations without flushing
 or repairing them. A held view is not a durability recovery or writer permit.
 Neither interface captures delivery input or emits output. A source-v3
 completion retaining the adoption is required by the separate writer gate.
+
+The additive capture-only hold observes the same existing storage after one
+explicitly pinned notification-baseline fence. It retains that full fenced
+memo, not a completed/readiness substitute, and cannot prepare or repair it.
 """
 
 import contextlib
@@ -36,6 +40,15 @@ HELD_NON_CLAIMS = (
     "Legacy empty-epoch observation can support construction of the first source-v3 input, not output recording or a replacement for prepare_epoch durability recovery.",
     "No delivery is consumed or emitted and no clock is acquired; this view establishes no human receipt, biological cognition or held-out retrieval win.",
     "Directory identities describe checked local generations, not hostile same-user protection or complete historical recall; all adoption, source, live-loop and journal nonclaims remain controlling.",
+)
+CAPTURE_HELD_NON_CLAIMS = (
+    "A held capturable predecessor is not readiness or source acknowledgment; its notification-baseline fence remains pending and is not cleared or hidden.",
+    "Capture-only observation does not replay durability barriers, repair adoption, reserve a sequence, sample a clock, or publish a source batch; it is not a substitute for prepare_epoch.",
+    "The caller holds the ordinary corpus lease; this reader does not acquire a missing scope, request the resident brainstem lease, or create, publish, flush or repair epoch, memo or journal storage.",
+    "This held view is not writer authorization and emits no output or delivery; a separate writer gate must admit an acknowledged source-v3 batch retaining the exact adoption.",
+    "The exact parent and pinned fence can support bounded input construction, not independent authorization of another capture or adoption of a fixed-slot orphan.",
+    "No complete machine history, human receipt, biological cognition or held-out retrieval win is established; directory identities describe checked local generations, not hostile same-user protection.",
+    "All capture-only source-predecessor, adoption, ordinary held-epoch, live-loop and delivery-journal nonclaims remain controlling.",
 )
 _MARKER = "controller_delivery_epoch"
 _ROOT = "CONTROLLER_DELIVERY_EPOCH_ROOT"
@@ -304,6 +317,16 @@ class _Transaction:
         if self.readonly:
             _refuse("held-epoch-effect-not-authorized")
 
+    def source_predecessor(self):
+        """The ordinary transaction requires the strict completed reader."""
+        completed = acknowledgment.read_completed(
+            self.owner, memo=self.memo,
+            admitted_status=self.admitted["admitted_status"])
+        _keys(completed, {"status", "batch", "committed"}, "completed-source-view")
+        if completed["status"] != "available":
+            _refuse("actual-source-predecessor-differs")
+        return completed["batch"], completed["committed"]
+
     def parent(self):
         owner, request = self.owner, self.admitted
         retained, committed, status = (request[key] for key in (
@@ -321,10 +344,9 @@ class _Transaction:
                      committed["source_batch_sha256"] + ".json"), owner["MAX_STATE_JSON_BYTES"], required=True)
         self.observe("effects-archive", os.path.join(self.paths["CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR"],
                      committed["source_effects_receipt_sha256"] + ".json"), owner["MAX_STATE_JSON_BYTES"], required=True)
-        completed = acknowledgment.read_completed(owner, memo=self.memo, admitted_status=status)
-        _keys(completed, {"status", "batch", "committed"}, "completed-source-view")
-        if completed["status"] != "available" or not _same(owner, completed["batch"], retained) \
-                or not _same(owner, completed["committed"], committed):
+        observed_batch, observed_committed = self.source_predecessor()
+        if not _same(owner, observed_batch, retained) \
+                or not _same(owner, observed_committed, committed):
             _refuse("actual-source-predecessor-differs")
         view = owner["_read_committed_live_generation"](memo=self.memo, admitted_status=status)
         if type(view) is not dict or view.get("status") != "available" \
@@ -559,6 +581,69 @@ class _Transaction:
         self.current()
 
 
+class _CaptureTransaction(_Transaction):
+    """Read-only parent observation for one immutable, explicitly pinned fence.
+
+    Preparation and ordinary held reads never instantiate this transaction.
+    Its distinct predecessor reader validates capturability, not completion;
+    the shared parent checks receive only its joined batch and commit images.
+    """
+
+    def __init__(self, owner, memo, request, stack):
+        if type(owner) is not dict:
+            _refuse("owner-contract")
+        self.notification_key = owner.get("NOTIFY_BASELINE_ATTEMPT_KEY")
+        if type(self.notification_key) is not str or not self.notification_key:
+            _refuse("capture-notification-key-contract")
+        _keys(request, {
+            "admitted_status", "retained_batch", "committed", "journal_limits",
+            "expected_journal_limits_sha256", "expected_adoption_sha256",
+            "notification_baseline_attempt",
+            "expected_notification_baseline_attempt_sha256",
+        }, "capture-epoch-request")
+        super().__init__(owner, memo, request, stack, readonly=True)
+        marker = self.admitted["notification_baseline_attempt"]
+        pin = self.admitted["expected_notification_baseline_attempt_sha256"]
+        _digest(pin)
+        actual = source._notification_marker(owner, memo)
+        if marker is None or actual is None \
+                or not _same(owner, marker, actual) \
+                or source.native_sha(owner, marker) != pin:
+            _refuse("capture-notification-fence-pin")
+        self.current()
+
+    def inputs_current(self):
+        if self.owner.get("NOTIFY_BASELINE_ATTEMPT_KEY") != self.notification_key:
+            _refuse("capture-notification-key-changed")
+        super().inputs_current()
+        if self.owner.get("NOTIFY_BASELINE_ATTEMPT_KEY") != self.notification_key:
+            _refuse("capture-notification-key-changed")
+
+    def source_predecessor(self):
+        owner, request = self.owner, self.admitted
+        view = acknowledgment.read_capturable_predecessor(
+            owner, memo=self.memo, admitted_status=request["admitted_status"],
+            committed=request["committed"],
+            notification_baseline_attempt=request["notification_baseline_attempt"],
+            expected_notification_baseline_attempt_sha256=
+                request["expected_notification_baseline_attempt_sha256"])
+        _keys(view, {
+            "schema", "status", "batch", "committed",
+            "notification_baseline_attempt",
+            "expected_notification_baseline_attempt_sha256", "non_claims",
+        }, "capturable-source-view")
+        if view["schema"] != "sia-controller-source-capturable-predecessor-v1" \
+                or view["status"] != "capturable-not-ready" \
+                or not _same(owner, view["notification_baseline_attempt"],
+                             request["notification_baseline_attempt"]) \
+                or view["expected_notification_baseline_attempt_sha256"] \
+                != request["expected_notification_baseline_attempt_sha256"] \
+                or view["non_claims"] != list(acknowledgment.CAPTURE_NON_CLAIMS):
+            _refuse("capturable-source-view-binding")
+        self.current()
+        return view["batch"], view["committed"]
+
+
 def _validate_birth(tx, value, expected):
     owner = tx.owner
     _keys(value, _BIRTH_KEYS, "birth")
@@ -620,18 +705,7 @@ class _HeldEpoch:
         self._tx = tx
         self._closed = False
         tx.current()
-        view = {
-            "schema": "sia-controller-delivery-epoch-view-v1",
-            "status": "held-not-consumed",
-            "epoch_adoption": adopted,
-            "parent_committed": tx.admitted["committed"],
-            "parent_generation": tx.generation,
-            "expected_parent_generation_sha256":
-                tx.admitted["committed"]["live_generation_sha256"],
-            "records_directory": tx.record_directory.path,
-            "records_identity": adopted["adoption"]["records_identity"],
-            "non_claims": list(HELD_NON_CLAIMS),
-        }
+        view = self._make_view(tx, adopted)
         # A full generation is deliberately exposed, not an unpinned summary.
         # Admit its complete outer view together with held authority bytes
         # before copying. Journal document limits still govern the retained
@@ -644,6 +718,20 @@ class _HeldEpoch:
                 or self._encode(self._view) != self._view_raw:
             _refuse("held-epoch-view-copy-changed")
         self.current()
+
+    def _make_view(self, tx, adopted):
+        return {
+            "schema": "sia-controller-delivery-epoch-view-v1",
+            "status": "held-not-consumed",
+            "epoch_adoption": adopted,
+            "parent_committed": tx.admitted["committed"],
+            "parent_generation": tx.generation,
+            "expected_parent_generation_sha256":
+                tx.admitted["committed"]["live_generation_sha256"],
+            "records_directory": tx.record_directory.path,
+            "records_identity": adopted["adoption"]["records_identity"],
+            "non_claims": list(HELD_NON_CLAIMS),
+        }
 
     def _encode(self, value):
         return _raw(self._tx.owner, value,
@@ -681,6 +769,23 @@ class _HeldEpoch:
     def _retire(self):
         # Refuse access before descriptor numbers can be closed and recycled.
         self._closed = True
+
+
+class _HeldCapturableEpoch(_HeldEpoch):
+    """The same immutable lifetime with a distinct non-readiness view."""
+
+    def _make_view(self, tx, adopted):
+        view = super()._make_view(tx, adopted)
+        view.update({
+            "schema": "sia-controller-delivery-epoch-capture-view-v1",
+            "status": "held-capturable-not-ready",
+            "notification_baseline_attempt":
+                tx.admitted["notification_baseline_attempt"],
+            "expected_notification_baseline_attempt_sha256":
+                tx.admitted["expected_notification_baseline_attempt_sha256"],
+            "non_claims": list(CAPTURE_HELD_NON_CLAIMS),
+        })
+        return view
 
 
 def _require_entered_corpus(owner):
@@ -770,6 +875,74 @@ def hold_epoch(owner, *, memo, admitted_status, retained_batch, committed,
         # Do not place the yield under the entry-domain error conversion.
         # A caller's ValueError, RuntimeError, SystemExit or KeyboardInterrupt
         # remains that original exception, even if its body changed a file.
+        try:
+            yield held
+        except BaseException:
+            raise
+        else:
+            held.current()
+        finally:
+            held._retire()
+
+
+@contextlib.contextmanager
+def hold_capturable_epoch(
+        owner, *, memo, admitted_status, retained_batch, committed,
+        journal_limits, expected_journal_limits_sha256,
+        expected_adoption_sha256, notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256):
+    """Hold existing adopted storage under one explicit notification fence.
+
+    Enter only after preparation and the collector's permitted memo mutation,
+    while the caller continuously owns the ordinary corpus lease. Both the
+    actual fenced memo and separately supplied marker/pin remain immutable
+    throughout this handle. Neither this context nor its parent reader
+    establishes readiness, clears a fence, repairs storage or enables output.
+
+    The source slot must remain absent. Acquire a separate held journal and
+    join its observed directory identity to this adoption before constructing
+    delivery input. Close both handles after final input copies but before
+    fixed-slot publication, retaining the caller's outer corpus lease.
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            if type(owner) is not dict or not callable(owner.get("corpus_owner")):
+                _refuse("owner-contract")
+            _digest(expected_adoption_sha256)
+            _digest(expected_notification_baseline_attempt_sha256)
+            _require_entered_corpus(owner)
+            stack.enter_context(owner["corpus_owner"]())
+            tx = _CaptureTransaction(owner, memo, {
+                "admitted_status": admitted_status, "retained_batch": retained_batch,
+                "committed": committed, "journal_limits": journal_limits,
+                "expected_journal_limits_sha256": expected_journal_limits_sha256,
+                "expected_adoption_sha256": expected_adoption_sha256,
+                "notification_baseline_attempt": notification_baseline_attempt,
+                "expected_notification_baseline_attempt_sha256":
+                    expected_notification_baseline_attempt_sha256,
+            }, stack)
+            expected_birth = tx.parent()
+            marker = memo.get(_MARKER)
+            _keys(marker, _MARKER_KEYS, "epoch-marker")
+            if marker["adoption_sha256"] != tx.external:
+                _refuse("external-adoption-marker-pin")
+            tx.directories_for(must_exist=True, persist=False)
+            if tx.files["birth"].raw is None:
+                _refuse("retained-birth-document-missing")
+            birth = tx.files["birth"].value
+            _validate_birth(tx, birth, expected_birth)
+            _validate_marker(tx, marker, birth)
+            adopted = _finish(tx, birth)
+            held = _HeldCapturableEpoch(tx, adopted)
+            held.current()
+        except ControllerDeliveryEpochRefusal:
+            raise
+        except _ERRORS as exc:
+            raise ControllerDeliveryEpochRefusal(
+                "capture-held-epoch-domain-refused", upstream=exc) from exc
+
+        # As in ordinary hold_epoch, body exceptions keep their own identity;
+        # successful exit performs a final check before owned handles retire.
         try:
             yield held
         except BaseException:

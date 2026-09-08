@@ -484,6 +484,15 @@ observation cannot replace preparation's interrupted-write recovery. The
 journal is acquired separately and its held directory identity must be
 joined to adoption before capture uses any records.
 
+The additive `hold_capturable_epoch` uses the same immutable storage lifetime
+after collection opens a notification-baseline fence. Its separate required
+marker and digest are joined through `read_capturable_predecessor` to the
+full actual memo; the view is `held-capturable-not-ready`, not a completed
+state. Ordinary preparation and `hold_epoch` still require completion.
+Neither held reader refreshes its memo or repairs storage. Capture must
+acquire the appropriate hold after the collector's legal memo change, and
+the fixed successor slot must remain absent throughout its lifetime.
+
 This component is tested source construction, not a resident hook or an
 installed runtime-ladder member. Existing source readers still reject v3.
 The pending integration must retain adoption and journal descriptors through
@@ -495,7 +504,7 @@ cognitive mechanism win, durable output delivery or human receipt.
 Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
-admission. Its delivery-epoch integration and the upcoming v3 capture,
+admission for the capture-held epoch. The upcoming v3 batch construction,
 retention and pre-WAL recovery path remain separate construction work,
 not a relaxed completed/readiness or writer gate.
 
