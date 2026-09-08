@@ -414,10 +414,14 @@ class _CursorAuthority:
         self.main = main
         self.held = _HeldRaw(
             owner, source, path, ceiling, allow_absent=True)
-        if state_identity is not None \
-                and self.held.directories.generation != state_identity:
-            _refuse(source, "ack-cursor-directory-generation")
-        self.state = self._classify()
+        try:
+            if state_identity is not None \
+                    and self.held.directories.generation != state_identity:
+                _refuse(source, "ack-cursor-directory-generation")
+            self.state = self._classify()
+        except BaseException:
+            self.close()
+            raise
 
     def _before_matches(self):
         if self.before is None:
@@ -494,17 +498,22 @@ def _main_cursor(owner, source, proposal):
 
 def _journal_cursors(owner, source, batch):
     result = []
-    for proposal in batch["journal_proposals"]:
-        for row in proposal["cursors"]:
-            target = _journal_image_raw(
-                source, row["target"], "ack-journal-cursor-target")
-            if target is None:
-                _refuse(source, "ack-journal-cursor-target")
-            result.append((row["scope"], _CursorAuthority(
-                owner, source,
-                path=os.path.join(owner["STATE"], row["cursor_name"]),
-                ceiling=owner["MAX_JOURNAL_CURSOR_BYTES"],
-                before=row["before"], target_raw=target)))
+    try:
+        for proposal in batch["journal_proposals"]:
+            for row in proposal["cursors"]:
+                target = _journal_image_raw(
+                    source, row["target"], "ack-journal-cursor-target")
+                if target is None:
+                    _refuse(source, "ack-journal-cursor-target")
+                result.append((row["scope"], _CursorAuthority(
+                    owner, source,
+                    path=os.path.join(owner["STATE"], row["cursor_name"]),
+                    ceiling=owner["MAX_JOURNAL_CURSOR_BYTES"],
+                    before=row["before"], target_raw=target)))
+    except BaseException:
+        for _scope, cursor in result:
+            cursor.close()
+        raise
     return result
 
 
