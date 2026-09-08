@@ -706,7 +706,12 @@ def ensure_dirs():
     for d in (SHARE, STATE, CORPUS, BIN):
         os.makedirs(d, exist_ok=True)
 
-def atomic_write(path, data, *, mode=None):
+def atomic_write(path, data, *, mode=None, destination_dir_fd=None):
+    """Publish text, optionally bound to a caller-held destination directory.
+
+    The publisher duplicates rather than consumes the supplied descriptor.
+    Named-path revalidation remains the surrounding transaction's duty.
+    """
     if mode is not None and (
             isinstance(mode, bool) or not isinstance(mode, int)
             or mode < 0 or mode > 0o777):
@@ -724,10 +729,12 @@ def atomic_write(path, data, *, mode=None):
     if not isinstance(data, str):
         raise TypeError("atomic-write data must be text")
     encoded = data.encode("utf-8", errors="strict")
+    destination = {} if destination_dir_fd is None else {
+        "destination_dir_fd": destination_dir_fd}
     siaqueue.fixed_atomic_publish(
         path, encoded, mode=selected_mode,
         staging_dir=siaqueue.staging_dir_for(
-            path, authority_roots=(CORPUS, STATE, SHARE)))
+            path, authority_roots=(CORPUS, STATE, SHARE)), **destination)
 
 
 def _legacy_atomic_temp_name(name):
