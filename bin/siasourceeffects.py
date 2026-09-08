@@ -82,6 +82,10 @@ RECEIPT_KEYS = frozenset({
     "prepare_inputs_sha256", "state_sha256", "transition_sha256",
     "non_claims", "receipt_sha256",
 })
+CONTENT_FIELDS = frozenset({
+    "gist_page_plan_sha256", "gist_pages_sha256", "gist_publication",
+    "content_publication_sha256",
+})
 _HEX = re.compile(r"[0-9a-f]{64}")
 _OID = {"sha1": re.compile(r"[0-9a-f]{40}"),
         "sha256": re.compile(r"[0-9a-f]{64}")}
@@ -97,6 +101,70 @@ def _same(live, first, second):
 
 def _sha(live, value):
     return live._sha(value)
+
+
+def _v2(batch):
+    return batch.get("schema") == "sia-controller-source-batch-v2"
+
+
+def _effect_keys(batch, keys):
+    return keys | CONTENT_FIELDS if _v2(batch) else keys
+
+
+def _content_identity(live, closure, closure_result_sha256,
+                      gist_publication):
+    return _sha(live, {
+        "schema": "sia-controller-source-content-publication-v1",
+        "event_closure_sha256": (
+            None if closure is None else closure["closure_sha256"]),
+        "closure_result_sha256": closure_result_sha256,
+        "gist_publication_sha256": gist_publication["publication_sha256"],
+    })
+
+
+def _retained_gist_plan(owner, source, live, batch, binding):
+    """Reconstruct only the retained idle proposal, with no source acquisition."""
+    import siasourcegist
+    intake = batch["intake_projection"]["intake"]
+    wrapper = batch["idle_input"]
+    _idle, pages = live._idle(
+        wrapper, intake, wrapper is not None,
+        policy=batch["epoch"]["live_policy"],
+        expected_intake_sha256=live._sha(intake))
+    return siasourcegist.prepare_pages(
+        owner, gist_pages=pages, expected_gist_pages_sha256=live._sha(pages),
+        transition_sha256=binding["transition_sha256"])
+
+
+def _content_targets(owner, source, live, value, batch, binding):
+    """Bind every v2 content witness to the exact captured idle replay."""
+    targets = _target_versions(owner, source, batch["event_closure"])
+    if not _v2(batch):
+        return targets
+    import siasourcegist
+    plan = _retained_gist_plan(owner, source, live, batch, binding)
+    receipt = siasourcegist.publication_receipt(
+        owner, plan=plan, expected_plan_sha256=plan["plan_sha256"])
+    if value["gist_page_plan_sha256"] != plan["plan_sha256"] \
+            or value["gist_pages_sha256"] != plan["gist_pages_sha256"] \
+            or not _same(live, value["gist_publication"], receipt) \
+            or value["content_publication_sha256"] != _content_identity(
+                live, batch["event_closure"],
+                value["closure_result_sha256"], receipt):
+        _refuse(source, "source-effects-gist-content-binding")
+    combined = targets + copy.deepcopy(plan["target_versions"])
+    if len({row["slug"] for row in combined}) != len(combined):
+        _refuse(source, "source-effects-content-target-collision")
+    return sorted(combined, key=lambda row: row["slug"])
+
+
+def _committed_status(closure_sha256, gist_publication=None):
+    if gist_publication is not None and gist_publication["target_versions"]:
+        return ("gist-index-status-live-committed-no-closure"
+                if closure_sha256 is None else
+                "closure-gist-index-status-live-committed")
+    return ("status-live-committed-no-closure" if closure_sha256 is None
+            else "closure-index-status-live-committed")
 
 
 def _hex(source, value, reason="source-effects-digest"):
@@ -420,7 +488,8 @@ def _status_generation_file(owner, source, live):
     return expected, status
 
 
-def _live_generation(owner, source, live, memo, admitted_status):
+def _live_generation(owner, source, live, memo, admitted_status,
+                     *, expected_binding=None):
     try:
         view = owner["_read_committed_live_generation"](
             memo=memo, admitted_status=admitted_status)
@@ -438,8 +507,20 @@ def _live_generation(owner, source, live, memo, admitted_status):
         owner["MAX_STATE_JSON_BYTES"])
     if not _same(live, generation, retained) \
             or candidate.get("candidate_sha256") \
+            != generation.get("candidate_sha256") \
+            or _sha(live, {key: value for key, value in candidate.items()
+                           if key != "candidate_sha256"}) \
             != generation.get("candidate_sha256"):
         _refuse(source, "source-effects-live-artifact-differs")
+    # Archived receipts no longer have the original source/live marker in
+    # the memo. Rejoin their claimed transition to the actual readmitted
+    # live artifacts; a self-consistent receipt is not its own authority.
+    if expected_binding is not None and (
+            candidate.get("prepare_inputs_sha256")
+            != expected_binding["prepare_inputs_sha256"]
+            or any(generation.get(field) != expected_binding[field]
+                   for field in ("state_sha256", "transition_sha256"))):
+        _refuse(source, "source-effects-live-transition-differs")
     return {
         "publication_id": generation["publication_id"],
         "candidate_sha256": generation["candidate_sha256"],
@@ -550,7 +631,7 @@ def _project_status(owner, source, live, admitted, binding, handoff,
 def _pending_value(owner, source, live, *, batch, binding, handoff,
                    candidate, transition, closure_result, target_manifest,
                    corpus_generation, sync_generation, graph_generation,
-                   status_generation, status):
+                   status_generation, status, content_fields=None):
     closure = batch["event_closure"]
     body = {
         "schema": "sia-controller-source-effects-pending-v1",
@@ -574,15 +655,26 @@ def _pending_value(owner, source, live, *, batch, binding, handoff,
         "transition_sha256": binding["transition_sha256"],
         "non_claims": list(NON_CLAIMS),
     }
+    if _v2(batch):
+        if type(content_fields) is not dict \
+                or set(content_fields) != CONTENT_FIELDS:
+            _refuse(source, "source-effects-content-fields")
+        body.update(copy.deepcopy(content_fields))
+        body["schema"] = "sia-controller-source-effects-pending-v2"
+    elif content_fields is not None:
+        _refuse(source, "source-effects-v1-content-fields")
     value = {**body, "pending_sha256": _sha(live, body)}
     _pending_shape(owner, source, live, value, batch, binding)
     return value
 
 
 def _pending_shape(owner, source, live, value, batch, binding):
-    _self_hash(source, live, value, "pending_sha256", PENDING_KEYS,
+    _self_hash(source, live, value, "pending_sha256",
+               _effect_keys(batch, PENDING_KEYS),
                "source-effects-pending")
-    if value["schema"] != "sia-controller-source-effects-pending-v1" \
+    schema = ("sia-controller-source-effects-pending-v2" if _v2(batch)
+              else "sia-controller-source-effects-pending-v1")
+    if value["schema"] != schema \
             or value["non_claims"] != list(NON_CLAIMS) \
             or value["source_batch_sha256"] != batch["batch_sha256"] \
             or value["source_batch_wire_sha256"] \
@@ -596,10 +688,12 @@ def _pending_shape(owner, source, live, value, batch, binding):
         _refuse(source, "source-effects-pending-binding")
     closure = batch["event_closure"]
     closure_sha256 = None if closure is None else closure["closure_sha256"]
+    target_versions = _content_targets(owner, source, live, value, batch, binding)
+    has_content = closure is not None or bool(target_versions)
     if value["event_closure_sha256"] != closure_sha256 \
             or (closure is None) != (value["closure_result_sha256"] is None) \
-            or (closure is None) != (value["corpus_generation"] is None) \
-            or (closure is None) != (value["sync_generation"] is None):
+            or has_content != (value["corpus_generation"] is not None) \
+            or has_content != (value["sync_generation"] is not None):
         _refuse(source, "source-effects-pending-closure")
     _closure_result_identity(
         source, live, closure, value["closure_result_sha256"])
@@ -610,12 +704,11 @@ def _pending_shape(owner, source, live, value, batch, binding):
         _hex(source, value[key])
     if value["closure_result_sha256"] is not None:
         _hex(source, value["closure_result_sha256"])
-    target_versions = _target_versions(owner, source, closure)
     manifest = _target_manifest(
         owner, source, live, value["target_manifest"], target_versions)
     if value["target_manifest_sha256"] != _sha(live, manifest):
         _refuse(source, "source-effects-pending-target-identity")
-    if closure is not None:
+    if has_content:
         corpus = _corpus_generation(
             owner, source, live, value["corpus_generation"])
         _sync_generation(
@@ -653,9 +746,8 @@ def _pending_shape(owner, source, live, value, batch, binding):
 def _receipt_from_pending(owner, source, live, pending, live_generation):
     body = {
         "schema": "sia-controller-source-effects-committed-v1",
-        "status": ("status-live-committed-no-closure"
-                   if pending["event_closure_sha256"] is None
-                   else "closure-index-status-live-committed"),
+        "status": _committed_status(
+            pending["event_closure_sha256"], pending.get("gist_publication")),
         **{key: copy.deepcopy(pending[key]) for key in (
             "source_batch_sha256", "source_batch_wire_sha256",
             "source_live_publication_sha256", "event_closure_sha256",
@@ -666,18 +758,27 @@ def _receipt_from_pending(owner, source, live, pending, live_generation):
             "transition_sha256", "non_claims")},
         "live_generation": copy.deepcopy(live_generation),
     }
+    if pending["schema"] == "sia-controller-source-effects-pending-v2":
+        body["schema"] = "sia-controller-source-effects-committed-v2"
+        body.update({key: copy.deepcopy(pending[key])
+                     for key in CONTENT_FIELDS})
     return {**body, "receipt_sha256": _sha(live, body)}
 
 
 def _receipt_shape(owner, source, live, value, batch, binding,
                    *, retained_status=None):
-    _self_hash(source, live, value, "receipt_sha256", RECEIPT_KEYS,
+    _self_hash(source, live, value, "receipt_sha256",
+               _effect_keys(batch, RECEIPT_KEYS),
                "source-effects-receipt")
     closure = batch["event_closure"]
-    expected_status = ("status-live-committed-no-closure"
-                       if closure is None
-                       else "closure-index-status-live-committed")
-    if value["schema"] != "sia-controller-source-effects-committed-v1" \
+    target_versions = _content_targets(owner, source, live, value, batch, binding)
+    has_content = closure is not None or bool(target_versions)
+    expected_status = _committed_status(
+        None if closure is None else closure["closure_sha256"],
+        value.get("gist_publication"))
+    schema = ("sia-controller-source-effects-committed-v2" if _v2(batch)
+              else "sia-controller-source-effects-committed-v1")
+    if value["schema"] != schema \
             or value["status"] != expected_status \
             or value["non_claims"] != list(NON_CLAIMS):
         _refuse(source, "source-effects-receipt-fields")
@@ -693,8 +794,8 @@ def _receipt_shape(owner, source, live, value, batch, binding,
         _refuse(source, "source-effects-receipt-binding")
     closure_sha256 = None if closure is None else closure["closure_sha256"]
     if value["event_closure_sha256"] != closure_sha256 \
-            or (closure is None) != (value["corpus_generation"] is None) \
-            or (closure is None) != (value["sync_generation"] is None):
+            or has_content != (value["corpus_generation"] is not None) \
+            or has_content != (value["sync_generation"] is not None):
         _refuse(source, "source-effects-receipt-closure")
     _closure_result_identity(
         source, live, closure, value["closure_result_sha256"])
@@ -707,12 +808,11 @@ def _receipt_shape(owner, source, live, value, batch, binding,
     if value["closure_result_sha256"] is not None:
         _hex(source, value["closure_result_sha256"],
              "source-effects-receipt-digest")
-    target_versions = _target_versions(owner, source, closure)
     manifest = _target_manifest(
         owner, source, live, value["target_manifest"], target_versions)
     if value["target_manifest_sha256"] != _sha(live, manifest):
         _refuse(source, "source-effects-receipt-target-identity")
-    if closure is not None:
+    if has_content:
         corpus = _corpus_generation(
             owner, source, live, value["corpus_generation"])
         _sync_generation(
@@ -774,7 +874,8 @@ def _finalize(owner, source, live, memo, pending):
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
         _refuse(source, "source-effects-published-status-graph", upstream=exc)
-    live_generation = _live_generation(owner, source, live, memo, status)
+    live_generation = _live_generation(
+        owner, source, live, memo, status, expected_binding=pending)
     if live_generation["status_sha256"] \
             != status_generation["semantic_sha256"]:
         _refuse(source, "source-effects-live-status-join")
@@ -796,7 +897,11 @@ def _finalize(owner, source, live, memo, pending):
 def _recover_pending(owner, source, live, memo, admitted_status, pending):
     current_status = owner["_require_status_admission_unchanged"](
         admitted_status)
-    if "live_loop_committed" in memo:
+    committed = memo.get("live_loop_committed")
+    # Successors retain the prior committed live generation as their parent.
+    # Its presence is not completion of this pending effects publication.
+    if type(committed) is dict and committed.get("publication_id") \
+            == pending["status_generation"]["publication_id"]:
         if not _same(live, current_status, pending["status"]):
             _refuse(source, "source-effects-recovery-status")
         return _finalize(owner, source, live, memo, pending)
@@ -858,7 +963,8 @@ def _completed(owner, source, live, memo, admitted_status, receipt,
             OverflowError, RecursionError) as exc:
         _refuse(source, "source-effects-completed-status-graph", upstream=exc)
     if receipt["live_generation"] \
-            != _live_generation(owner, source, live, memo, status):
+            != _live_generation(owner, source, live, memo, status,
+                                expected_binding=receipt):
         _refuse(source, "source-effects-completed-live")
     return None
 
@@ -921,7 +1027,8 @@ def validate_archived_receipt(
     except (UnicodeError, ValueError, RecursionError) as exc:
         _refuse(source, "source-effects-archive-json", upstream=exc)
     _self_hash(
-        source, live, receipt, "receipt_sha256", RECEIPT_KEYS,
+        source, live, receipt, "receipt_sha256",
+        _effect_keys(retained_batch, RECEIPT_KEYS),
         "source-effects-archive-receipt")
     if receipt["receipt_sha256"] != expected_receipt_sha256:
         _refuse(source, "source-effects-archive-identity")
@@ -964,7 +1071,8 @@ def validate_archived_receipt(
             OverflowError, RecursionError) as exc:
         _refuse(source, "source-effects-archive-status-graph", upstream=exc)
     if receipt["live_generation"] \
-            != _live_generation(owner, source, live, memo, status):
+            != _live_generation(owner, source, live, memo, status,
+                                expected_binding=receipt):
         _refuse(source, "source-effects-archive-live")
     return copy.deepcopy(receipt)
 
@@ -1006,15 +1114,56 @@ def publish(owner, *, memo, admitted_status):
         closure_result = corpus_generation = sync_generation = None
         target_manifest = []
         target_versions = _target_versions(owner, source, closure)
+        content_fields = None
+        gist_plan = None
+        if _v2(batch):
+            gist_plan = owner["_prepare_controller_source_gist_page_plan"](
+                transition=transition,
+                expected_transition_sha256=transition["transition_sha256"])
+            expected_plan = _retained_gist_plan(
+                owner, source, live, batch, binding)
+            if not _same(live, gist_plan, expected_plan):
+                _refuse(source, "source-effects-gist-plan-binding")
+            combined = target_versions + gist_plan["target_versions"]
+            if len({row["slug"] for row in combined}) != len(combined):
+                _refuse(source, "source-effects-content-target-collision")
+            target_versions = sorted(combined, key=lambda row: row["slug"])
         if closure is not None:
             closure_result = owner["_publish_event_page_batch_closure"](
                 closure=closure,
                 expected_closure_sha256=closure["closure_sha256"])
+        if gist_plan is not None:
+            import siasourcegist
+            expected_publication = siasourcegist.publication_receipt(
+                owner, plan=gist_plan,
+                expected_plan_sha256=gist_plan["plan_sha256"])
+            gist_publication = owner["_publish_controller_source_gist_page_plan"](
+                plan=gist_plan, expected_plan_sha256=gist_plan["plan_sha256"])
+            if not _same(live, gist_publication, expected_publication):
+                _refuse(source, "source-effects-gist-publication-binding")
+            content_fields = {
+                "gist_page_plan_sha256": gist_plan["plan_sha256"],
+                "gist_pages_sha256": gist_plan["gist_pages_sha256"],
+                "gist_publication": gist_publication,
+                "content_publication_sha256": _content_identity(
+                    live, closure,
+                    None if closure_result is None else _sha(live, closure_result),
+                    gist_publication),
+            }
+        if closure is not None or target_versions:
+            if _v2(batch):
+                committed_generation = owner[
+                    "_controller_source_corpus_commit_generation_v2"](
+                        source_batch_sha256=batch["batch_sha256"],
+                        content_publication_sha256=content_fields[
+                            "content_publication_sha256"])
+            else:
+                committed_generation = owner[
+                    "_controller_source_corpus_commit_generation"](
+                        source_batch_sha256=batch["batch_sha256"],
+                        event_closure_sha256=closure["closure_sha256"])
             corpus_generation = _corpus_generation(
-                owner, source, live,
-                owner["_controller_source_corpus_commit_generation"](
-                    source_batch_sha256=batch["batch_sha256"],
-                    event_closure_sha256=closure["closure_sha256"]))
+                owner, source, live, committed_generation)
             observed = owner["_controller_source_sync_generation"](
                 corpus_generation=corpus_generation,
                 target_versions=target_versions)
@@ -1051,7 +1200,8 @@ def publish(owner, *, memo, admitted_status):
             corpus_generation=corpus_generation,
             sync_generation=sync_generation,
             graph_generation=graph_generation,
-            status_generation=status_generation, status=status)
+            status_generation=status_generation, status=status,
+            content_fields=content_fields)
         updated = copy.deepcopy(memo)
         updated["controller_source_effects_pending"] = pending
         updated.pop("ready", None)

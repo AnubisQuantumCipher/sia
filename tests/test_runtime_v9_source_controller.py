@@ -27,7 +27,7 @@ V9_ADDITIONS = (
     "siacontrollersourcerunner.py",
 )
 
-# Independent expected-current roster.  Do not derive this from production's
+# Independent expected-v9 roster.  Do not derive this from production's
 # RUNTIME_LADDER or from install.sh: agreement among those is what is tested.
 EXPECTED_V9_RUNTIME_NAMES = (
     "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
@@ -131,7 +131,9 @@ fenced_runtime_authorized
         authority.validate_runtime_ladder()
         expected_top = (
             b"sia-runtime-v9\0", EXPECTED_V9_RUNTIME_NAMES, V9_ADDITIONS)
-        self.assertEqual(authority.RUNTIME_LADDER[0], expected_top)
+        v9_index = next(index for index, rung in enumerate(authority.RUNTIME_LADDER)
+                        if rung[0] == b"sia-runtime-v9\0")
+        self.assertEqual(authority.RUNTIME_LADDER[v9_index], expected_top)
 
         fixtures = {
             label: (salt, names, digest)
@@ -141,7 +143,7 @@ fenced_runtime_authorized
             (fixtures[label][0], fixtures[label][1],
              HISTORICAL_SELECTORS[label])
             for label in HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[1:], expected_history)
+        self.assertEqual(authority.RUNTIME_LADDER[v9_index + 1:], expected_history)
         self.assertEqual(
             EXPECTED_V9_RUNTIME_NAMES[:-len(V9_ADDITIONS)],
             fixtures["v8"][1])
@@ -162,7 +164,11 @@ fenced_runtime_authorized
         staged = release._staged_runtime_members(installer)
 
         self.assertEqual(len(staged), len(set(staged)))
-        self.assertEqual(set(staged), set(EXPECTED_V9_RUNTIME_NAMES))
+        # The current rung owns exact current-stage membership; every member
+        # of this historical rung must still appear exactly once.
+        for name in EXPECTED_V9_RUNTIME_NAMES:
+            with self.subTest(historical_member=name):
+                self.assertEqual(staged.count(name), 1)
         for name in V9_ADDITIONS:
             relative = "bin/" + name
             with self.subTest(member=name):

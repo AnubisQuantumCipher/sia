@@ -328,6 +328,40 @@ def _open_owned_directory(path, label):
     return descriptor
 
 
+def _copy_bound_destination(path, descriptor):
+    """Own a duplicate joined to an entirely no-follow named directory."""
+    if type(descriptor) is not int or descriptor < 0:
+        raise ValueError("publication destination descriptor is invalid")
+    held = os.dup(descriptor)
+    named = None
+    try:
+        info = os.fstat(held)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+                or stat.S_IMODE(info.st_mode) & 0o022:
+            raise ValueError("publication destination descriptor is not an owned directory")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) \
+            | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        named = os.open(os.sep, flags)
+        for part in os.path.abspath(path).split(os.sep):
+            if not part:
+                continue
+            next_descriptor = os.open(part, flags, dir_fd=named)
+            os.close(named)
+            named = next_descriptor
+        current = os.fstat(named)
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                                  value.st_uid, value.st_gid)
+        if identity(current) != identity(info) or identity(os.fstat(held)) != identity(info):
+            raise ValueError("publication destination descriptor does not bind its named directory")
+        return held
+    except BaseException:
+        os.close(held)
+        raise
+    finally:
+        if named is not None:
+            os.close(named)
+
+
 def _ensure_staging_directory(path):
     """Create and durably bind one owner-private fixed staging directory."""
     parent = os.path.dirname(path) or os.curdir
@@ -469,7 +503,8 @@ def _directory_identity(info):
 
 def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                          staging_dir=None, authority_roots=(),
-                         observe_destination=False, nonblocking=False):
+                         observe_destination=False, nonblocking=False,
+                         destination_dir_fd=None):
     """Publish bytes through one crash-reusable fixed payload slot.
 
     ``exclusive`` never replaces a destination.  An already-present exact
@@ -480,6 +515,10 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
 
     ``nonblocking`` opts into immediate staging-lock contention refusal;
     existing callers retain the blocking lock contract by default.
+
+    ``destination_dir_fd`` binds a caller-held directory before staging or
+    publication. Only a validated duplicate is used and closed here; leaf
+    operations cannot be redirected by replacing a named ancestor.
     """
     if not isinstance(data, bytes):
         raise TypeError("fixed publication payload must be bytes")
@@ -494,12 +533,17 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
         raise ValueError("fixed publication target name is invalid")
     staging_dir = staging_dir or staging_dir_for(
         target, authority_roots=authority_roots)
-    _ensure_staging_directory(staging_dir)
-    destination_descriptor = _open_owned_directory(
-        directory, "publication destination directory")
-    staging_descriptor = _open_owned_directory(
-        staging_dir, "publication staging directory")
+    destination_descriptor = None
+    staging_descriptor = None
     try:
+        if destination_dir_fd is not None:
+            destination_descriptor = _copy_bound_destination(directory, destination_dir_fd)
+        _ensure_staging_directory(staging_dir)
+        if destination_descriptor is None:
+            destination_descriptor = _open_owned_directory(
+                directory, "publication destination directory")
+        staging_descriptor = _open_owned_directory(
+            staging_dir, "publication staging directory")
         if os.fstat(destination_descriptor).st_dev \
                 != os.fstat(staging_descriptor).st_dev:
             raise ValueError(
@@ -593,8 +637,10 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                         "after": directory_published, "stable": stable}
             return "published"
     finally:
-        os.close(staging_descriptor)
-        os.close(destination_descriptor)
+        if staging_descriptor is not None:
+            os.close(staging_descriptor)
+        if destination_descriptor is not None:
+            os.close(destination_descriptor)
 
 
 def _identity(info, request_id, digest):

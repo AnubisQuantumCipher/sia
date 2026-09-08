@@ -546,7 +546,7 @@ class ControllerSourceEffects(unittest.TestCase):
     def publication_effects(
             self, *, corpus_generation=None, sync_generation=None,
             target_manifest=None, null=False, crash_at=None,
-            recovery=False):
+            recovery=False, predecessor_live=None):
         trace = []
         pending_images = []
         selected_corpus = copy.deepcopy(
@@ -652,7 +652,12 @@ class ControllerSourceEffects(unittest.TestCase):
                 if "controller_source_effects_pending" in value \
                         and "controller_source_effects_committed" not in value \
                         and "live_loop_pending" not in value \
-                        and "live_loop_committed" not in value:
+                        and ("live_loop_committed" not in value
+                             or predecessor_live is not None
+                             and value["live_loop_committed"] == predecessor_live):
+                    if predecessor_live is not None:
+                        self.assertEqual(value["live_loop_committed"],
+                                         predecessor_live)
                     self.assertEqual(trace[-1], "graph")
                     pending = value["controller_source_effects_pending"]
                     self.assertEqual(set(pending), PENDING_KEYS)
@@ -663,6 +668,16 @@ class ControllerSourceEffects(unittest.TestCase):
                         }))
                     pending_images.append(copy.deepcopy(pending))
                     trace.append("pending")
+                elif predecessor_live is not None \
+                        and "controller_source_effects_pending" in value \
+                        and "live_loop_pending" not in value:
+                    self.assertEqual(trace[-1], "live-stage")
+                    self.assertEqual(
+                        value["live_loop_committed"]["publication_id"],
+                        self.binding["publication_id"])
+                    self.assertEqual(
+                        value["live_loop_committed"]["transition_sha256"],
+                        self.binding["transition_sha256"])
                 if "controller_source_effects_committed" in value:
                     if recovery and "live_loop_committed" in self.live.memo \
                             and not trace:

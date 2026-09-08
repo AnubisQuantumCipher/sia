@@ -8564,6 +8564,8 @@ SIA_RELEASE_FILES=(
   bin/sialivepublication.py bin/siasourceack.py bin/siasourcebatch.py
   bin/siasourceeffects.py bin/siasourceengine.py bin/siasourcegit.py
   bin/siacontrollerepoch.py bin/siacontrollersourcerunner.py
+  bin/siacognitiveregistry.py bin/siacontrolleridle.py bin/sialiveidle.py
+  bin/sialiveview.py bin/siasourcegist.py
   bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
   bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
   bin/siaworkspace.py
@@ -9605,6 +9607,8 @@ for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     sialivepublication.py siasourceack.py siasourcebatch.py \
     siasourceeffects.py siasourceengine.py siasourcegit.py \
     siacontrollerepoch.py siacontrollersourcerunner.py \
+    siacognitiveregistry.py siacontrolleridle.py sialiveidle.py \
+    sialiveview.py siasourcegist.py \
     siasourcepublication.py \
     siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
     siavectorrun.py siaworkspace.py; do

@@ -170,6 +170,33 @@ a downgrade even when `install.sh` is invoked directly.
 The resident service runs a pulse cycle every 60 seconds. Its
 scheduled maintenance cycle runs nightly at 03:33.
 
+### Inspecting the retained live loop (implemented, unreleased)
+
+`sia live` shows the last acknowledged controller-source observation;
+`sia live --json` returns its structured view, identities and component
+boundaries. The view includes the selected workspace pages and their origins,
+selection-time activation and admission, the retained pulse's activation,
+encoding and co-retrieval state, and the idle/gist publication disposition.
+It excludes corpus bodies and broadcast payload text. `sia status` and
+`sia think` include the same source-authorized summary; `sia think` also
+keeps its recent generated-entry listing.
+
+`as_of`, selection time and workspace expiry are retained controller clocks.
+Reading the view does not advance the loop, recompute scores, expire a held
+workspace or establish that a displayed slot remains active now. Selection
+scores explain why the held set was chosen; the displayed current activation
+belongs to the retained pulse. A gist proposal and its page-publication
+receipt are shown separately. These are `computed-unverified` software
+observations, with no cognitive or held-out retrieval claim.
+
+The reader requires an acknowledged source transaction and revalidates its
+batch, effects receipt, live generation and status. Without that authority,
+or while its transaction is pending, it returns a named refusal; compatibility
+status and old workspace fields do not fill the gap. Source-controller
+activation remains an explicit `mind.controller_source: true` configuration
+selection. This implementation is unreleased; installing the runtime and
+activating its controller are separate deployment steps.
+
 ## 2. The cockpit
 
 Summoned from the bar (or with SUPER+SHIFT+B after an install using
@@ -1859,12 +1886,14 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v9` member set adds
-`siacontrollerepoch.py` and `siacontrollersourcerunner.py` to the complete v8
-source/live/cognitive dependency closure; that v8 rung added
+the install. The current `sia-runtime-v10` member set adds
+`siacognitiveregistry.py`, `siacontrolleridle.py`, `sialiveidle.py`,
+`sialiveview.py`, and `siasourcegist.py` to the complete v9 dependency closure.
+The v9 rung added `siacontrollerepoch.py` and
+`siacontrollersourcerunner.py`; the v8 rung added
 `siasourceack.py`, `siasourceeffects.py`, `siasourceengine.py`, and
 `siasourcegit.py`. The receipt reader still recognizes complete historical
-v1–v8 generations,
+v1–v9 generations,
 but it never accepts a tree that contains a later child
 under an older digest. `bin/siarelease.py:RUNTIME_LADDER` is the executable
 member-set authority. The previous tree remains at the printed backup path.

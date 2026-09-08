@@ -5,6 +5,7 @@
 biological brain and does not establish cognition or neuroscience.
 
   sia status            current indexed-memory and evidence-source state
+  sia live [--json]     inspect the retained source-authorized live loop
   sia version           print the installed SIA runtime release
   sia ready             exit successfully only when memory is reconciled
   sia ask "question" [--no-touch]
@@ -15,7 +16,7 @@ biological brain and does not establish cognition or neuroscience.
   sia memory --pin <slug> | --unpin <slug>
                         queue an operator pin change for the daemon
   sia rehearse [slug]   list due reviews, or recall one page deliberately
-  sia think             recent generated entries
+  sia think             retained workspace and recent generated entries
   sia graph             graph statistics
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
@@ -480,6 +481,131 @@ def daemon_running():
     return r.stdout.strip() == "active"
 
 
+MAX_LIVE_TEXT_BYTES = 65_536
+
+
+def _live_refusal_result(reason, *, refusal=None):
+    import sialiveview
+    value = (refusal if isinstance(refusal, sialiveview.LiveViewRefusal)
+             else sialiveview.LiveViewRefusal(reason))
+    return {
+        "schema": "sia-controller-live-view-refusal-v1",
+        "status": "refused", "reason": value.reason,
+        "upstream_reason": value.upstream_reason,
+        "non_claims": list(sialiveview.NON_CLAIMS),
+        "upstream_non_claims": value.upstream_non_claims,
+    }
+
+
+def _read_live_view_result():
+    import sialiveview
+    try:
+        return sialiveview.read_view(sialib.__dict__)
+    except sialiveview.LiveViewRefusal as exc:
+        return _live_refusal_result(exc.reason, refusal=exc)
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError):
+        return _live_refusal_result("live-inspection-unavailable")
+
+
+def _live_score_text(item):
+    if item["score"] is None:
+        return item["status"] + " (" + item["reason"] + ")"
+    # String conversion renders the retained component observation. No score
+    # adjustment, rounding, confidence conversion or new metric occurs here.
+    return str(item["score"]) + " (" + item["status"] + ")"
+
+
+def _live_view_text(value):
+    if value["status"] == "refused":
+        lines = ["  live     refused · " + value["reason"]]
+        if value["upstream_reason"] is not None:
+            lines.append("           source boundary: " + value["upstream_reason"])
+    else:
+        workspace = value["workspace"]
+        selection = workspace["selection"]
+        lines = [
+            "  live     retained pulse " + str(value["publication"]["pulse_seq"])
+            + " · as_of " + str(value["as_of"]) + " · computed-unverified",
+            "  workspace " + workspace["phase"] + " · " + workspace["transition"]
+            + " · capacity " + str(workspace["capacity"])
+            + " · ignition threshold " + str(workspace["ignition_threshold"]),
+        ]
+        if workspace["release_reason"] is not None:
+            lines.append("           release: " + workspace["release_reason"])
+        if selection is not None:
+            lines.append("           selection retained at " + str(selection["observed_at"])
+                         + " · held expiry " + str(workspace["expires_at"]))
+            selected_scores = {row["subject"]: row
+                               for row in selection["activation"]["activations"]}
+            current_scores = {row["subject"]: row
+                              for row in value["activation"]["activations"]}
+            origins = {row["subject"]: row["origin"]
+                       for row in workspace["selected_sources"]}
+            for subject in workspace["slots"]:
+                lines.append("           [origin:" + origins[subject] + "] " + subject)
+                lines.append("             why: retained activation selection "
+                             + _live_score_text(selected_scores[subject])
+                             + " · current " + _live_score_text(current_scores[subject]))
+        else:
+            lines.append("           no selected slot in this retained observation")
+        lines.append("  encoding " + value["encoding"]["status"]
+                     + " · activation " + value["activation"]["status"]
+                     + " · co-retrieval " + value["coretrieval"]["status"])
+        idle = value["idle"]
+        availability = idle["availability"]
+        if availability is None:
+            availability = "requested" if idle["requested"] else "not-requested"
+        lines.append("  idle     " + availability + " · gist receipt "
+                     + idle["gist_publication_status"])
+    lines.extend("  boundary " + boundary for boundary in value["non_claims"])
+    lines.append("           full retained component boundaries and identities: sia live --json")
+    result = "\n".join(lines) + "\n"
+    if sialib.strip_controls(result) != result \
+            or len(result.encode("utf-8")) > MAX_LIVE_TEXT_BYTES:
+        raise ValueError("live display representation")
+    return result
+
+
+def _print_live_summary(value=None):
+    selected = _read_live_view_result() if value is None else value
+    try:
+        text = _live_view_text(selected)
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError):
+        selected = _live_refusal_result("live-display-unavailable")
+        text = _live_view_text(selected)
+    sys.stdout.write(text)
+    return selected
+
+
+def _print_live_json(value):
+    import sialiveview
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True, allow_nan=False)
+    # The newline is part of the complete public output envelope.
+    if len(encoded.encode("utf-8")) >= sialiveview.MAX_VIEW_BYTES:
+        value = _live_refusal_result("live-output-capacity")
+        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True, allow_nan=False)
+        if len(encoded.encode("utf-8")) >= sialiveview.MAX_VIEW_BYTES:
+            print("SIA live output refused: live-output-capacity", file=sys.stderr)
+            return 1
+    print(encoded)
+    return 1 if value["status"] == "refused" else 0
+
+
+def cmd_live(args):
+    if args not in ([], ["--json"]):
+        print("usage: sia live [--json]")
+        return 2
+    value = _read_live_view_result()
+    if args == ["--json"]:
+        return _print_live_json(value)
+    value = _print_live_summary(value)
+    return 1 if value["status"] == "refused" else 0
+
+
 def cmd_status():
     with sialib.corpus_owner():
         return _cmd_status_owned()
@@ -587,6 +713,7 @@ def _cmd_status_owned():
         print(f"  errors   {st['errors']}")
     if sialib.CONFIG_ERRORS:
         print(f"  config   {sialib.CONFIG_ERRORS}")
+    _print_live_summary()
     return 0
 
 
@@ -1035,6 +1162,7 @@ def cmd_rehearse(argv):
 
 
 def cmd_think():
+    _print_live_summary()
     store = sialib.load_thoughts()
     for t in store["thoughts"][-15:]:
         mark = "!" if t.get("urgent") else "·"
@@ -2137,10 +2265,22 @@ READINESS_GATED_COMMANDS = frozenset({
 
 
 def main(argv):
+    dispatch_started = False
     try:
         with sialib._lifecycle_reader():
+            dispatch_started = True
             return _main_under_lifecycle(argv)
     except (OSError, RuntimeError, ValueError) as exc:
+        if argv[1:] == ["live", "--json"]:
+            # The runtime is already selected and imported. Preserve the
+            # machine-readable endpoint when its inner lifecycle lease
+            # refuses, without admitting source reads or exception prose.
+            if not dispatch_started:
+                return _print_live_json(_live_refusal_result("lifecycle-unavailable"))
+            # Dispatch may already have written bytes. A second JSON object
+            # would fabricate a clean terminal envelope after partial output.
+            print("SIA live output refused: live-dispatch-failed", file=sys.stderr)
+            return 1
         print(f"SIA unavailable: {exc}")
         return 1
 
@@ -2179,6 +2319,8 @@ def _dispatch(argv, cmd):
         return 0
     if cmd == "status":
         return cmd_status()
+    if cmd == "live":
+        return cmd_live(argv[2:])
     if cmd == "ready":
         return cmd_ready()
     if cmd in ("ask", "query") and len(argv) > 2:

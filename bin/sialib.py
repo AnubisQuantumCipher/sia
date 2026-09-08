@@ -6447,6 +6447,32 @@ def _controller_source_corpus_commit_generation(
             event_closure_sha256=event_closure_sha256)
 
 
+def _controller_source_corpus_commit_generation_v2(
+        *, source_batch_sha256, content_publication_sha256):
+    """Return the clean Git cut for the complete source content publication."""
+    import siasourcegit
+    with corpus_owner():
+        return siasourcegit.commit_content_generation(
+            globals(), source_batch_sha256=source_batch_sha256,
+            content_publication_sha256=content_publication_sha256)
+
+
+def _prepare_controller_source_gist_page_plan(
+        *, transition, expected_transition_sha256):
+    """Prepare immutable derived pages from the exact live transition."""
+    import siasourcegist
+    return siasourcegist.prepare(
+        globals(), transition=transition,
+        expected_transition_sha256=expected_transition_sha256)
+
+
+def _publish_controller_source_gist_page_plan(*, plan, expected_plan_sha256):
+    """Publish additive gist pages under the corpus owner lease."""
+    import siasourcegist
+    return siasourcegist.publish(
+        globals(), plan=plan, expected_plan_sha256=expected_plan_sha256)
+
+
 def _controller_source_sync_generation(*, corpus_generation,
                                        target_versions):
     """Return one receipt-bound gbrain sync and exact target projection."""

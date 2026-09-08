@@ -54,6 +54,7 @@ BATCH_KEYS = frozenset({
     "notification_baseline_attempt", "event_closure",
     "intake_projection", "non_claims", "batch_sha256",
 })
+BATCH_V2_KEYS = BATCH_KEYS | frozenset({"idle_input"})
 CONFIG_RECEIPT_KEYS = frozenset({
     "schema", "scope", "observed_at", "config_file", "decoded_config",
     "active_config", "runtime_selection", "configuration_sha256",
@@ -1456,7 +1457,7 @@ def _batch_id(owner, epoch_sha256, observed_at, receipt, cursor):
 
 
 def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
-                    observed_at, authority):
+                    observed_at, authority, successor=False):
     epoch_raw = native_bytes(owner, epoch)
     admitted_epoch = owner["copy"].deepcopy(epoch)
     if native_bytes(owner, admitted_epoch) != epoch_raw \
@@ -1516,6 +1517,17 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
             "non_claims": list(NON_CLAIMS),
             "batch_sha256": "0" * 64,
         }
+        if successor:
+            result["schema"] = "sia-controller-source-batch-v2"
+            result["idle_input"] = None
+            if all(not run["events"] for run in returns["runs"]):
+                import siacontrolleridle
+                result["idle_input"] = siacontrolleridle.capture(
+                    owner, epoch=admitted_epoch, projection=projection,
+                    observed_at=observed_at)
+                runtime.current()
+                current()
+                _epoch_current(owner, epoch, epoch_raw)
         _json_size(owner, result, owner["MAX_STATE_JSON_BYTES"],
                    ascii_only=True)
         runtime.current()
@@ -1638,7 +1650,8 @@ def capture_successor(
             return _capture_locked(
                 owner, memo=memo, epoch=epoch,
                 expected_epoch_sha256=expected_epoch_sha256,
-                observed_at=observed_at, authority=authority)
+                observed_at=observed_at, authority=authority,
+                successor=True)
         except AssertionError:
             raise
         except SourceBatchRefusal:
@@ -1951,8 +1964,13 @@ def _validate_retained_projection(owner, batch, event_batches):
 def validate_batch(owner, batch, expected_batch_sha256):
     """Validate a retained source batch without consulting current sources."""
     _json_size(owner, batch, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
-    _keys(batch, BATCH_KEYS, "source-batch-shape")
-    if batch["schema"] != "sia-controller-source-batch-v1" \
+    successor = type(batch) is dict and batch.get("schema") \
+        == "sia-controller-source-batch-v2"
+    _keys(batch, BATCH_V2_KEYS if successor else BATCH_KEYS,
+          "source-batch-shape")
+    if batch["schema"] not in {
+            "sia-controller-source-batch-v1",
+            "sia-controller-source-batch-v2"} \
             or batch["status"] != "captured-not-published" \
             or type(batch["batch_id"]) is not str \
             or _OPERATION.fullmatch(batch["batch_id"]) is None \
@@ -2026,4 +2044,20 @@ def validate_batch(owner, batch, expected_batch_sha256):
             refuse("notification-baseline-marker", upstream=exc)
     event_batches = _validate_closure(owner, batch["event_closure"], returns)
     _validate_retained_projection(owner, batch, event_batches)
+    if successor:
+        if batch["epoch"]["predecessor"] is None:
+            refuse("idle-successor-predecessor-required")
+        if any(run["events"] for run in returns["runs"]):
+            if batch["idle_input"] is not None:
+                refuse("idle-input-on-nonempty-source-batch")
+        else:
+            try:
+                import siacontrolleridle
+                siacontrolleridle.validate(
+                    owner, epoch=batch["epoch"],
+                    projection=batch["intake_projection"],
+                    observed_at=batch["observed_at"],
+                    idle_input=batch["idle_input"])
+            except (ValueError, RuntimeError, TypeError, KeyError) as exc:
+                refuse("idle-input-contract", upstream=exc)
     return None

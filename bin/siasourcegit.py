@@ -193,9 +193,23 @@ def _one_line(source, result, reason):
 def commit_generation(owner, *, source_batch_sha256,
                       event_closure_sha256):
     """Commit the exact current corpus cut and return its closed identity."""
+    return _commit_generation(
+        owner, source_batch_sha256=source_batch_sha256,
+        publication_sha256=event_closure_sha256)
+
+
+def commit_content_generation(owner, *, source_batch_sha256,
+                              content_publication_sha256):
+    """Commit the corpus cut selected by an event/gist effects publication."""
+    return _commit_generation(
+        owner, source_batch_sha256=source_batch_sha256,
+        publication_sha256=content_publication_sha256)
+
+
+def _commit_generation(owner, *, source_batch_sha256, publication_sha256):
     import siasourcebatch as source
 
-    for value in (source_batch_sha256, event_closure_sha256):
+    for value in (source_batch_sha256, publication_sha256):
         if type(value) is not str or _HEX.fullmatch(value) is None:
             _refuse(source, "source-git-input-digest")
     held = _HeldGitBoundary(owner, source)

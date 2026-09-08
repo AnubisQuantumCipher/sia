@@ -97,15 +97,43 @@ def prepare_inputs(*, batch, previous_state,
             or type(batch.get("epoch")) is not dict:
         _refuse("batch-shape")
     basis = {
+        "schema": batch.get("schema"),
         "intake": batch["intake_projection"].get("intake"),
         "intake_sha256": batch["intake_projection"].get("intake_sha256"),
         "policy": batch["epoch"].get("live_policy"),
         "policy_sha256": batch["epoch"].get(
             "expected_live_policy_sha256"),
         "observed_at": batch.get("observed_at"),
+        "source_returns": batch.get("source_returns"),
+        "idle_input": batch.get("idle_input"),
     }
     original_basis = _canonical(basis)
     original_previous = _canonical(previous_state)
+    idle, gist_inputs = False, None
+    if batch.get("schema") == "sia-controller-source-batch-v1":
+        if "idle_input" in batch:
+            _refuse("legacy-idle-input")
+    elif batch.get("schema") == "sia-controller-source-batch-v2":
+        returns = batch.get("source_returns")
+        if type(returns) is not dict or type(returns.get("runs")) is not list \
+                or not returns["runs"] or "idle_input" not in batch \
+                or any(type(run) is not dict
+                       or set(run) != {"source_id", "events"}
+                       or type(run["events"]) is not list
+                       for run in returns["runs"]):
+            _refuse("source-idle-roster")
+        idle = all(not run["events"] for run in returns["runs"])
+        gist_inputs = batch["idle_input"]
+        try:
+            live._gist_inputs(
+                gist_inputs, basis["intake"], basis["policy"], idle,
+                expected_intake_sha256=basis["intake_sha256"],
+                expected_policy_sha256=basis["policy_sha256"],
+                observed_at=basis["observed_at"])
+        except (ValueError, RuntimeError, TypeError, KeyError) as exc:
+            raise ControllerLiveInputRefusal("source-idle-binding") from exc
+    else:
+        _refuse("source-batch-schema")
     if previous_state is None:
         if expected_previous_state_sha256 is not None:
             _refuse("initial-parent-pin")
@@ -136,18 +164,21 @@ def prepare_inputs(*, batch, previous_state,
         "expected_policy_sha256":
             batch["epoch"]["expected_live_policy_sha256"],
         "observed_at": batch["observed_at"],
-        "idle": False,
-        "gist_inputs": None,
+        "idle": idle,
+        "gist_inputs": copy.deepcopy(gist_inputs),
     }
     encoded = _canonical(result)
     detached = copy.deepcopy(result)
     current_basis = {
+        "schema": batch.get("schema"),
         "intake": batch["intake_projection"].get("intake"),
         "intake_sha256": batch["intake_projection"].get("intake_sha256"),
         "policy": batch["epoch"].get("live_policy"),
         "policy_sha256": batch["epoch"].get(
             "expected_live_policy_sha256"),
         "observed_at": batch.get("observed_at"),
+        "source_returns": batch.get("source_returns"),
+        "idle_input": batch.get("idle_input"),
     }
     if _canonical(current_basis) != original_basis \
             or _canonical(previous_state) != original_previous \

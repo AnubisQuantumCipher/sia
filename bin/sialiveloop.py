@@ -555,6 +555,12 @@ def _gist_inputs(value, intake, policy, idle, *, expected_intake_sha256=None,
             _fail("gist-outside-idle")
         return
     if policy["schema"] == "sia-live-loop-policy-v2":
+        if type(value) is dict and "idle_without_native" in value:
+            import sialiveidle
+            return sialiveidle.reservation(
+                intake=intake, expected_intake_sha256=expected_intake_sha256,
+                policy=policy, expected_policy_sha256=expected_policy_sha256,
+                observed_at=observed_at, idle_input=value)
         _keys(value, {"episode_bindings", "expected_episode_bindings_sha256",
                       "gist_inputs", "expected_gist_inputs_sha256"}, "bound-idle-gist-inputs")
         bindings = value["episode_bindings"]
@@ -592,10 +598,18 @@ def _gist_inputs(value, intake, policy, idle, *, expected_intake_sha256=None,
                 _fail("gist-source-version-join")
 
 
-def _idle(value, intake, idle, *, policy=None, expected_intake_sha256=None):
+def _idle(value, intake, idle, *, policy=None, expected_intake_sha256=None,
+          observed_at=None):
     if not idle:
         return {"requested": False, "gist": None}, []
     if policy is not None and policy["schema"] == "sia-live-loop-policy-v2":
+        if type(value) is dict and "idle_without_native" in value:
+            import sialiveidle
+            receipt = sialiveidle.bind(
+                intake=intake, expected_intake_sha256=expected_intake_sha256,
+                policy=policy, expected_policy_sha256=_sha(policy),
+                observed_at=observed_at, idle_input=value)
+            return {"requested": True, "binding": receipt}, []
         import sialivegist
         binding = sialivegist.bind_replay_gist(
             intake=intake, expected_intake_sha256=expected_intake_sha256, **value)
@@ -766,7 +780,8 @@ def prepare_pulse(*, intake, expected_intake_sha256, deliveries, expected_delive
         core_trace = _coretrace(intake, deliveries, policy)
         learned = coretrieval.learn_coretrieval(core_trace, observed_at=observed_at, policy=policy["coretrieval"])
         idle_state, gist_pages = _idle(gist_inputs, intake, idle, policy=policy,
-                                      expected_intake_sha256=expected_intake_sha256)
+                                      expected_intake_sha256=expected_intake_sha256,
+                                      observed_at=observed_at)
         state = {"schema": "sia-live-loop-state-v1", "epoch_id": intake["epoch_id"],
                  "observed_at": observed_at, "parent_state_sha256": expected_previous_state_sha256,
                  "intake": intake, "deliveries": deliveries, "policy": policy, "policy_sha256": expected_policy_sha256,

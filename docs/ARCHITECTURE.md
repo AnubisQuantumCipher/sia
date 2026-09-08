@@ -20,6 +20,10 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
 | `bin/siaeventintake.py` | pure collector-return/page-version projection for the live loop (implemented, unreleased) |
 | `bin/sialivegist.py` | pure native-episode/replay-gist binding for idle live proposals (implemented, unreleased) |
+| `bin/siacontrolleridle.py` | capture and immutable binding of idle successor inputs (implemented, unreleased) |
+| `bin/sialiveidle.py` | explicit idle disposition when no selected source supports native gist binding (implemented, unreleased) |
+| `bin/siasourcegist.py` | deterministic derived gist page plans and exclusive, retryable publication (implemented, unreleased) |
+| `bin/sialiveview.py` | read-only view of an acknowledged source transaction and its retained workspace (implemented, unreleased) |
 | `bin/siasourcebatch.py` | bounded collector capture and closed source-batch construction (implemented, unreleased) |
 | `bin/siasourcepublication.py` | immutable retained-batch slot plus source/live/status write-ahead bindings (implemented, unreleased) |
 | `bin/siasourceeffects.py` | crash-recoverable corpus/index/graph/status/live effects publication and committed receipt (implemented, unreleased) |
@@ -56,6 +60,15 @@ collector cut into an ordered, recoverable local transaction. Capture and
 live transition and projected status effects in `memo.json`. Those markers are
 write-ahead recovery authority; they are not acknowledgment or readiness.
 
+An empty successor uses `sia-controller-source-batch-v2` to retain its idle
+input in the fixed source slot before adoption. `siacontrolleridle` acquires
+selected native history through `siabench.capture_native_history_v2`, binds
+the complete controller episode roster and fixes the replay inputs. Recovery
+uses those retained inputs without recapture. When no selected source has a
+supported native binding, `sialiveidle` records that scoped disposition and
+preserves the episodes without inventing native occurrences or gist pages.
+The original v1 batch contract remains non-idle.
+
 `siasourceeffects` then consumes only that retained authority. For a non-empty
 event closure it publishes the already-sealed page plans, asks
 `siasourcegit` for a descriptor-bound clean commit/tree generation, and asks
@@ -71,11 +84,23 @@ opening the engine may maintain its own lock or WAL files. Matching these
 witnesses does not establish vector values, retrieval quality, or a cognitive
 benchmark win.
 
+For v2, `siasourcegist` reconstructs the exact idle proposal roster and renders
+derived pages under `gists/live/`. Publication holds the corpus owner and
+destination directory descriptors, checks the complete target roster before
+effects, and accepts only absent targets or exact existing bytes. It adds
+gist pages without deleting or replacing episodes. The effects transaction
+binds event and gist publication together and commits/synchronizes gist
+targets even when the event closure is empty. Its pending and committed v2
+receipts retain the gist plan, proposal and publication identities; recovery
+revalidates them against the captured idle replay. Archived receipt admission
+also joins input, state and transition pins to the retained live artifacts.
+
 After graph export, the effects component binds the graph, projected status,
 and live candidate in one self-hashed pending record, publishes the live
 generation, reopens all retained artifacts, and replaces the pending record
-with a committed effects receipt. A no-closure source batch still receives a
-graph/status/live receipt but does not invent a corpus or engine generation.
+with a committed effects receipt. A batch with neither an event closure nor
+gist targets still receives a graph/status/live receipt without inventing a
+corpus or engine generation.
 At this point the source remains deliberately unacknowledged and readiness is
 still closed.
 
@@ -94,6 +119,19 @@ whole sequence; that requires an end-to-end front-door run and retained
 receipts. The transaction is cooperative same-user coordination, not a
 hostile same-user sandbox, source-truth attestation, delivery proof, or
 biological-cognition claim.
+
+The implemented, unreleased `sialiveview.read_view` front door holds the corpus
+owner and revalidates completed-source authority, its archived effects receipt
+and the committed live generation. It returns a separate bounded display
+envelope, leaving compatibility status schemas unchanged. The view carries
+retained workspace selection reasons, activation, encoding, co-retrieval and
+idle/gist dispositions, while omitting corpus bodies and broadcast text.
+`sia live [--json]`, `sia status` and `sia think` consume this view. Inspection
+does not collect, publish, recompute activation or advance workspace expiry;
+its `as_of` clock belongs to the acknowledged pulse. Missing or pending source
+completion refuses the view. These interfaces do not establish deployment,
+biological cognition or a benchmark win. Controller activation remains an
+explicit `mind.controller_source` selection.
 
 ## What remains in `bin/sialib.py`
 
@@ -202,17 +240,17 @@ moment it captures its own exports, and adding one dict entry to
 **Current — the runtime ladder is an API, not synchronized prose.** Release
 tests now pin each historical rung with an independent member fixture and
 golden digest, reject ladder declarations in either shell script, exercise the
-normal and fenced consumers through the helper CLI, and cover the current v8
+normal and fenced consumers through the helper CLI, and cover the current v10
 uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
 proves the held authority remains usable and is then closed.
 
-The cumulative `sia-runtime-v8` member set adds `siasourceack.py`,
-`siasourceeffects.py`, `siasourceengine.py`, and `siasourcegit.py` to the v7
-source/live/cognitive closure. The receipt reader continues to recognize
-complete historical v1–v7 trees. Presence of any v8 selector chooses v8 even
-for an incomplete tree, so omitting one of the four new members refuses rather
-than validating the tree under an older salt.
+The cumulative `sia-runtime-v10` member set adds the claim registry, idle
+input/disposition, live view and gist publication modules to v9. Its exact
+members and selectors are declared in `bin/siarelease.py:RUNTIME_LADDER`.
+The receipt reader continues to recognize complete historical v1–v9 trees.
+Presence of any v10 selector chooses v10 even for an incomplete tree; a
+missing peer refuses instead of validating the tree under an older salt.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**
