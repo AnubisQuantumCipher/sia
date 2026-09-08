@@ -654,5 +654,691 @@ class GbrainArgvGate(unittest.TestCase):
             "file (ROADMAP standing gate 3): "
             + ", ".join(" ".join(shape) for shape in missing))
 
+    def test_23_installed_descriptor_transport_is_actually_discovered(self):
+        # A prefix already exercised by a different call must not hide this
+        # descriptor emitter from the scanner. The real compiled contract
+        # above separately checks exact no-migrate argv and projection receipt.
+        self.assertIn(("siainstalledengine", "_run_installed_gbrain"), self.scan.forwarders)
+        self.assertEqual(
+            self.scan.emitters.get(("siainstalledengine", "version")),
+            {("--version",)})
+        self.assertEqual(
+            self.scan.emitters.get(("siainstalledengine", "project")),
+            {("call",)})
+        self.assertEqual(
+            self.scan.emitters.get(("siainstalledengine", "get")),
+            {("get",)})
+        used, unreadable = self.scan.shapes({"siainstalledengine"})
+        self.assertEqual(unreadable, [])
+        self.assertEqual(used, {("--version",), ("get",), ("call",)})
+        # Existing pathname GET probes cannot satisfy this call-site check.
+        # The actual compiled fixture must call the discovered held emitter.
+        probe = "test_compiled_candidate_exact_get_receipt_through_held_sia_transport"
+        scopes = [scope for scope in self.scan.scopes
+                  if scope.module == _module_name(__file__) and scope.name == probe]
+        self.assertEqual([scope.name for scope in scopes], [probe])
+        self.assertEqual(
+            [(hint, name) for scope in scopes for _node, hint, name, _tail in scope.calls
+             if hint == "siainstalledengine" and name == "get"],
+            [("siainstalledengine", "get")])
+
+"""PRIVATE actual compiled transport probe, not yet executed.
+
+Admission destination: append this fragment before __main__ in the existing
+tests/test_gbrain_contract.py. Do not add a second discoverable imported class:
+that would run this expensive real-PGLite fixture twice in full discovery.
+
+Absent opt-in skips an UNEXERCISED lane. Once selected, missing/invalid files,
+unavailable API, CLI errors and unsupported operations FAIL; no skip fallback.
+The external expectation document and its caller-supplied hash authorize the
+candidate. Candidate receipts never choose their own acceptable digests.
+"""
+
+import contextlib
+import datetime
+import errno
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
+
+_CR_REPO = (Path(__file__).resolve().parents[1]
+            if Path(__file__).parent.name == "tests"
+            else Path("/home/sicarii/Projects/sia"))
+_CR_SOURCE = "sia"
+_CR_SUBJECT = "notes/projection"
+# An intentionally unregistered routing name, not another database fixture.
+_CR_HOSTILE_MOUNT_BYTES = b"sia-fixture-unregistered\n"
+_CR_OPERATION = "get_page_render_projection"
+_CR_SCHEMA = "sia-compiled-render-contract-expectations-v1"
+_CR_PIN_KEYS = {"commit", "version", "bun_lock_sha256", "overlay_sha256",
+                "overlay_tree_oid", "verified"}
+_CR_DIGEST_KEYS = {"base_pin_sha256", "gbrain_pin_sha256",
+                   "gbrain_runtime_receipt_sha256", "gbrain_executable_sha256",
+                   "bun_lock_sha256", "overlay_sha256"}
+_CR_LIMIT_KEYS = {"max_executable_bytes", "max_metadata_bytes",
+                  "max_request_bytes", "max_output_bytes"}
+_CR_INPUT_ENV = {
+    "base_pin": "SIA_GBRAIN_PIN",
+    "candidate_pin": "SIA_GBRAIN_CANDIDATE_PIN",
+    "runtime_receipt": "SIA_GBRAIN_CANDIDATE_RUNTIME_RECEIPT",
+    "binary": "SIA_GBRAIN_CANDIDATE_BIN",
+    "overlay": "SIA_GBRAIN_CANDIDATE_OVERLAY",
+}
+# Identical synthetic raw/golden premises to the separately frozen interpreted
+# CLI lane. No source parser, serializer, handler or engine result is mocked.
+_CR_RAW = ("---\n# source comment must not leak into canonical GET\n"
+           "title: 'Projection café'\ntype: note\norigin: model\n"
+           "captured_at: 'retained-before'\ntags: [zeta, alpha]\n---\n\n"
+           "A retained body with café and cafe\u0301.\n\n"
+           "<!-- timeline -->\n\n- Fixture timeline, not machine history.\n")
+_CR_GET = ("---\ntype: note\ntitle: Projection café\norigin: model\n"
+           "captured_at: retained-before\ntags:\n  - alpha\n  - zeta\n---\n\n"
+           "A retained body with café and cafe\u0301.\n\n"
+           "<!-- timeline -->\n\n- Fixture timeline, not machine history.\n")
+_CR_RECEIPT_KEYS = {
+    "schema", "status", "source_id", "source_reference", "get_stdout_sha256",
+    "page_state", "parse_error_codes", "type_basis", "expected_projection_sha256",
+    "current_projection_sha256", "current_content_hash", "current_content_hash_match",
+    "projection_match", "display_fields_match", "current_get_stdout_sha256",
+    "get_stdout_match", "mismatch_reasons", "retrieval_bookkeeping_updated",
+    "operation_writes_performed", "non_claims",
+}
+_CR_GET_TRANSPORT_KEYS = {
+    "schema", "status", "operation", "source_id", "subject", "binding_sha256",
+    "expected_expectations_sha256", "request_sha256", "returncode", "timeout",
+    "stdout", "stderr", "stdout_sha256", "stderr_sha256", "non_claims",
+    "transport_sha256",
+}
+
+
+def _cr_canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True, allow_nan=False).encode("utf-8")
+
+
+def _cr_sha(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _cr_identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _cr_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise AssertionError("duplicate external JSON key")
+        result[key] = value
+    return result
+
+
+def _cr_json(raw):
+    return json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_cr_object,
+                      parse_constant=lambda _value: (_ for _ in ()).throw(
+                          AssertionError("nonfinite external JSON")))
+
+
+class _CRArtifact:
+    """Retain supplied files across comparison/copy; never execute originals."""
+
+    def __init__(self, path, ceiling, expected=None, *, executable=False):
+        self.fd = None
+        if type(path) is not str or not os.path.isabs(path) \
+                or os.path.realpath(path) != path:
+            raise AssertionError("candidate artifact requires explicit canonical absolute path")
+        self.path = path
+        try:
+            self.fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+            before = os.fstat(self.fd)
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid() \
+                    or before.st_mode & 0o022 or before.st_nlink != 1 \
+                    or not 0 < before.st_size <= ceiling:
+                raise AssertionError("candidate artifact is not owned, regular and bounded")
+            if executable and (not before.st_mode & 0o111
+                               or os.pread(self.fd, 4, 0) != b"\x7fELF"):
+                raise AssertionError("selected candidate is not an executable ELF")
+            self.identity = _cr_identity(before)
+            digest = hashlib.sha256()
+            offset = 0
+            while offset < before.st_size:
+                block = os.pread(self.fd, min(1_048_576, before.st_size - offset), offset)
+                if not block:
+                    raise AssertionError("short candidate artifact read")
+                digest.update(block)
+                offset += len(block)
+            self.sha256 = digest.hexdigest()
+            if expected is not None and self.sha256 != expected:
+                raise AssertionError("selected candidate differs from external expectation")
+            self.current()
+        except BaseException:
+            self.close()
+            raise
+
+    def current(self):
+        if self.fd is None or _cr_identity(os.fstat(self.fd)) != self.identity \
+                or _cr_identity(os.stat(self.path, follow_symlinks=False)) != self.identity:
+            raise AssertionError("supplied artifact changed during compiled fixture")
+
+    def read_metadata(self):
+        self.current()
+        raw = os.pread(self.fd, self.identity[6], 0)
+        self.current()
+        if _cr_sha(raw) != self.sha256:
+            raise AssertionError("supplied metadata changed")
+        return raw
+
+    def copy_to(self, destination, *, executable=False):
+        self.current()
+        digest = hashlib.sha256()
+        offset = 0
+        with open(destination, "xb") as stream:
+            while offset < self.identity[6]:
+                block = os.pread(self.fd, min(1_048_576, self.identity[6] - offset), offset)
+                if not block:
+                    raise AssertionError("candidate disappeared during real copy")
+                stream.write(block)
+                digest.update(block)
+                offset += len(block)
+        os.chmod(destination, 0o755 if executable else 0o600)
+        self.current()
+        if digest.hexdigest() != self.sha256:
+            raise AssertionError("copied candidate differs from admitted bytes")
+
+    def close(self):
+        descriptor, self.fd = self.fd, None
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _cr_pin(raw):
+    result = {}
+    for line in raw.decode("utf-8", "strict").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.count("=") != 1:
+            raise AssertionError("candidate pin assignment malformed")
+        key, value = line.split("=", 1)
+        if key not in _CR_PIN_KEYS or key in result:
+            raise AssertionError("candidate pin closed shape failed")
+        result[key] = value
+    if set(result) != _CR_PIN_KEYS:
+        raise AssertionError("candidate pin is incomplete")
+    return result
+
+
+def _cr_selected_inputs(stack, lib, structural):
+    # Hash comes from the operator/build invocation, NOT the JSON under review.
+    path = os.environ.get("SIA_GBRAIN_COMPILED_EXPECTATIONS")
+    expected = os.environ.get("SIA_GBRAIN_COMPILED_EXPECTATIONS_SHA256")
+    if type(expected) is not str or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+        raise AssertionError("explicit compiled expectation hash is mandatory")
+
+    def retain(path, ceiling, expected=None, **kwargs):
+        artifact = _CRArtifact(path, ceiling, expected, **kwargs)
+        stack.callback(artifact.close)
+        return artifact
+
+    document = retain(path, lib.MAX_CONFIG_BYTES, expected)
+    raw = document.read_metadata()
+    value = _cr_json(raw)
+    keys = {"schema", "limits", *_CR_PIN_KEYS, *_CR_DIGEST_KEYS}
+    if type(value) is not dict or set(value) != keys or _cr_canonical(value) != raw \
+            or value["schema"] != _CR_SCHEMA:
+        raise AssertionError("external compiled expectation closed/canonical shape failed")
+    for key in _CR_DIGEST_KEYS:
+        if type(value[key]) is not str or re.fullmatch(r"[0-9a-f]{64}", value[key]) is None:
+            raise AssertionError("external compiled digest malformed")
+    for key in ("commit", "overlay_tree_oid"):
+        if type(value[key]) is not str or re.fullmatch(r"[0-9a-f]{40}", value[key]) is None:
+            raise AssertionError("external compiled OID malformed")
+    if type(value["version"]) is not str \
+            or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))+", value["version"]) is None \
+            or type(value["verified"]) is not str:
+        raise AssertionError("external compiled version/date malformed")
+    try:
+        date = datetime.date.fromisoformat(value["verified"])
+    except ValueError as exc:
+        raise AssertionError("external compiled verified date malformed") from exc
+    if date.isoformat() != value["verified"]:
+        raise AssertionError("external compiled verified date is not canonical")
+    limits = value["limits"]
+    ceilings = {"max_executable_bytes": structural.MAX_EXECUTABLE_BYTES,
+                "max_metadata_bytes": lib.MAX_CONFIG_BYTES,
+                "max_request_bytes": structural.MAX_PROJECTION_REQUEST_BYTES,
+                "max_output_bytes": lib.MAX_EXTERNAL_OUTPUT_BYTES}
+    if type(limits) is not dict or set(limits) != _CR_LIMIT_KEYS \
+            or any(type(limits[key]) is not int or not 0 < limits[key] <= ceiling
+                   for key, ceiling in ceilings.items()):
+        raise AssertionError("external compiled byte ceiling malformed")
+    artifacts = {"expectations": document}
+    for name, variable in _CR_INPUT_ENV.items():
+        key = {"base_pin": "base_pin_sha256", "candidate_pin": "gbrain_pin_sha256",
+               "runtime_receipt": "gbrain_runtime_receipt_sha256",
+               "binary": "gbrain_executable_sha256", "overlay": "overlay_sha256"}[name]
+        ceiling = (limits["max_executable_bytes"] if name == "binary"
+                   else structural.MAX_PROJECTION_REQUEST_BYTES if name == "overlay"
+                   else limits["max_metadata_bytes"])
+        artifacts[name] = retain(os.environ.get(variable), ceiling, value[key],
+                                 executable=name == "binary")
+    base = _cr_pin(artifacts["base_pin"].read_metadata())
+    if any(base[key] != value[key] for key in ("commit", "version", "bun_lock_sha256")):
+        raise AssertionError("candidate does not retain explicitly admitted base")
+    if _cr_pin(artifacts["candidate_pin"].read_metadata()) != {
+            key: value[key] for key in _CR_PIN_KEYS}:
+        raise AssertionError("candidate pin is not the externally expected overlay/build")
+    runtime = ("managed-by=khephri.sia\n" + "".join(
+        key + "=" + value[key] + "\n" for key in (
+            "commit", "version", "bun_lock_sha256", "overlay_sha256", "overlay_tree_oid"))
+        + "binary_sha256=" + value["gbrain_executable_sha256"] + "\n").encode("utf-8")
+    if artifacts["runtime_receipt"].read_metadata() != runtime:
+        raise AssertionError("candidate runtime receipt is not the externally expected exact build record")
+    return value, artifacts
+
+
+class _CRFixture:
+    def __init__(self, case, stack, lib, selected, artifacts):
+        self.case, self.lib = case, lib
+        self.selected, self.artifacts = selected, artifacts
+        self.root = Path(stack.enter_context(tempfile.TemporaryDirectory(
+            prefix="sia-compiled-render-", dir=sia_test_home.ISOLATED_HOME)))
+        self.share, self.state = self.root / "share", self.root / "state"
+        self.corpus = self.share / "corpus"
+        self.toolchain = self.share / "toolchain"
+        self.engine = self.toolchain / "gbrain/bin/gbrain"
+        self.pin = self.share / "GBRAIN_PIN"
+        self.runtime = self.toolchain / "gbrain/.sia-release"
+        self.pin_receipt = self.state / "managed-install/gbrain-pin"
+        self.corpus.mkdir(parents=True)
+        self.engine.parent.mkdir(parents=True)
+        self.pin_receipt.parent.mkdir(parents=True)
+        artifacts["binary"].copy_to(self.engine, executable=True)
+        artifacts["candidate_pin"].copy_to(self.pin)
+        artifacts["runtime_receipt"].copy_to(self.runtime)
+        # This receipt has an unavoidable fixture-local path. Its pin digest
+        # is independently admitted above; this is NOT new build evidence.
+        local_receipt = ("managed-by=khephri.sia\nkind=gbrain-pin\n"
+                         f"path={self.pin}\nsha256={selected['gbrain_pin_sha256']}\n").encode("utf-8")
+        self.pin_receipt.write_bytes(local_receipt)
+        self.pin_receipt.chmod(0o600)
+        self.expectations = {
+            "schema": "sia-installed-overlay-engine-expectations-v1", "source_id": _CR_SOURCE,
+            **{key: selected[key] for key in _CR_PIN_KEYS},
+            "gbrain_pin_sha256": selected["gbrain_pin_sha256"],
+            "gbrain_pin_receipt_sha256": _cr_sha(local_receipt),
+            "gbrain_runtime_receipt_sha256": selected["gbrain_runtime_receipt_sha256"],
+            "gbrain_executable_sha256": selected["gbrain_executable_sha256"],
+            "limits": dict(selected["limits"]),
+        }
+        self.expected_expectations_sha256 = _cr_sha(_cr_canonical(self.expectations))
+        values = {
+            "HOME": self.root, "SHARE": self.share, "STATE": self.state,
+            "CORPUS": self.corpus, "TOOLCHAIN": self.toolchain,
+            "BUN_DIR": self.toolchain / "bun/bin", "GBRAIN": self.engine,
+            "GBRAIN_PIN": self.pin, "GBRAIN_PIN_RECEIPT": self.pin_receipt,
+            "GBRAIN_RUNTIME_RECEIPT": self.runtime,
+            "GBRAIN_OWNER_LOCK": self.state / "gbrain-owner.lock",
+            "CORPUS_OWNER_LOCK": self.state / "corpus-owner.lock",
+            "LIFECYCLE_LOCK": self.state / "lifecycle.lock",
+            "LIFECYCLE_TOMBSTONE": self.state / "lifecycle-removed",
+            "RESTORE_BARRIER_PATH": self.state / "restore.json",
+            "RESTORE_MASK_PATH": self.state / "restore-mask",
+            "RESTORE_SUPERVISOR_PATH": self.state / "restore-supervisor.json",
+        }
+        for key, value in values.items():
+            stack.enter_context(mock.patch.object(lib, key, str(value), create=True))
+        stack.enter_context(mock.patch.object(lib, "GBRAIN_SOURCE", _CR_SOURCE))
+        self.env = {
+            "HOME": str(self.root), "GBRAIN_HOME": str(self.share), "GBRAIN_BRAIN_ID": "host",
+            "TMPDIR": str(self.state), "PATH": "/usr/bin:/bin", "BUN_OPTIONS": "--no-env-file",
+            "GBRAIN_SELF_UPGRADE_MODE": "off", "GBRAIN_SKIP_STARTUP_HOOKS": "1",
+            "GBRAIN_SYNC_NO_DELEGATE": "1", "DO_NOT_TRACK": "1", "NO_COLOR": "1",
+            "GBRAIN_NO_BANNER": "1", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        stack.enter_context(mock.patch.object(lib, "GBRAIN_ENV", self.env))
+        self.git(["-c", "init.templateDir=", "init", "-q"])
+        self.page = self.corpus / (_CR_SUBJECT + ".md")
+        self.page.parent.mkdir(parents=True)
+        self.page.write_bytes(_CR_RAW.encode("utf-8"))
+        self.git(["add", "--", _CR_SUBJECT + ".md"])
+        self.git(["-c", "user.name=compiled-render-fixture",
+                  "-c", "user.email=projection@example.invalid",
+                  "commit", "-qm", "synthetic exact source for compiled transport"])
+        self.head = self.git(["rev-parse", "HEAD"])
+        case.assertEqual(self.git(["show", "HEAD:" + _CR_SUBJECT + ".md"]), _CR_RAW)
+        self.page_identity = _cr_identity(self.page.stat())
+        # The SAME private corpus/index now lives under an adversarial
+        # ancestor marker. Setup commands explicitly select host already;
+        # the held GET transport must independently do so as well. Never
+        # register this name or write another DB/config for the control.
+        marker = self.share / ".gbrain-mount"
+        with marker.open("xb") as stream:
+            stream.write(_CR_HOSTILE_MOUNT_BYTES)
+        marker.chmod(0o600)
+        self.mount_marker = _CRArtifact(
+            str(marker), lib.MAX_CONFIG_BYTES, _cr_sha(_CR_HOSTILE_MOUNT_BYTES))
+        stack.callback(self.mount_marker.close)
+        case.assertEqual(marker.parent, self.corpus.parent)
+        case.assertFalse(os.path.lexists(self.corpus / ".gbrain-mount"))
+        case.assertFalse(os.path.lexists(self.root / ".gbrain/mounts.json"))
+
+    def git(self, args):
+        result = subprocess.run(
+            ["/usr/bin/git", "--no-replace-objects", "-c", "core.hooksPath=/dev/null",
+             "-c", "commit.gpgsign=false", *args], cwd=self.corpus, env=self.env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="strict", timeout=180, check=False)
+        self.case.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def cli(self, args):
+        sialib = self.lib  # module-qualified spelling joins the existing argv scan.
+        result = sialib.gbrain(args, timeout=180)
+        self.case.assertEqual(result.returncode, 0, f"{args!r}: {result.stderr}")
+        return result.stdout
+
+    def authority_current(self):
+        # This is fixture artifact/source authority, not a source-generation or
+        # database truth claim. The actual transport separately holds artifacts.
+        for artifact in self.artifacts.values():
+            artifact.current()
+        self.mount_marker.current()
+        self.case.assertEqual(self.mount_marker.read_metadata(), _CR_HOSTILE_MOUNT_BYTES)
+        self.case.assertFalse(os.path.lexists(self.corpus / ".gbrain-mount"))
+        self.case.assertFalse(os.path.lexists(self.root / ".gbrain/mounts.json"))
+        self.case.assertEqual(_cr_identity(self.page.stat()), self.page_identity)
+        self.case.assertEqual(self.page.read_bytes(), _CR_RAW.encode("utf-8"))
+        return None
+
+
+class GbrainCompiledRenderContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        selected = os.environ.get("SIA_GBRAIN_COMPILED_RENDER")
+        if selected is None:
+            raise unittest.SkipTest(
+                "compiled render transport NOT EXERCISED: select SIA_GBRAIN_COMPILED_RENDER=1 "
+                "and independently pinned candidate artifacts; this skip is not proof")
+        if selected != "1":
+            raise AssertionError("SIA_GBRAIN_COMPILED_RENDER must be exactly 1 when supplied")
+
+    def test_compiled_candidate_exact_get_receipt_through_held_sia_transport(self):
+        sys.path.insert(0, str(_CR_REPO / "bin"))
+        import siainstalledengine as installed
+        import siasourceengine as structural
+        spec = importlib.util.spec_from_file_location(
+            "sialib_compiled_render_contract", _CR_REPO / "bin/sialib.py")
+        lib = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lib)
+        self.assertTrue(str(lib.SHARE).startswith(sia_test_home.ISOLATED_HOME + os.sep))
+        self.assertTrue(callable(getattr(installed, "hold_overlay_engine", None)))
+        self.assertTrue(callable(getattr(installed._Engine, "get", None)),
+                        "missing actual installed-engine GET transport")
+        with contextlib.ExitStack() as stack:
+            selected, artifacts = _cr_selected_inputs(stack, lib, structural)
+            fixture = _CRFixture(self, stack, lib, selected, artifacts)
+            with lib.corpus_owner() as caller_fd:
+                caller_identity = _cr_identity(os.fstat(caller_fd))
+                # Real CLI front doors initialize/index only this fresh private
+                # corpus. No direct database/config write or ordinary store read.
+                database = str(fixture.share / ".gbrain/brain.pglite")
+                fixture.cli(args=["init", "--pglite", "--non-interactive", "--json",
+                             "--skip-embed-check", "--path", database, "--no-embedding"])
+                fixture.cli(args=["sources", "add", "sia", "--path", str(fixture.corpus)])
+                fixture.cli(args=["sync", "--source", "sia", "--no-pull", "--no-embed", "--no-extract"])
+                fixture.cli(args=["config", "set", "search.track_retrieval", "false"])
+                actual_get = fixture.cli(args=["get", _CR_SUBJECT, "--source", "sia"])
+                fixture.cli(args=["config", "set", "search.track_retrieval", "true"])
+                self.assertEqual(actual_get, _CR_GET)
+                self.assertNotEqual(actual_get, _CR_RAW)
+                calls = []
+                get_descriptor_observations = []
+                real_process = lib._run_bounded_text_process
+
+                def observed_process(command, **kwargs):
+                    # Observation wraps and delegates the actual bounded process;
+                    # never supplies a CompletedProcess or fabricated stdout.
+                    self.assertEqual(lib._CORPUS_OWNER_FD.get(), caller_fd)
+                    self.assertGreater(lib._CORPUS_OWNER_DEPTH.get(), 0)
+                    engine_fd = lib._GBRAIN_OWNER_FD.get()
+                    self.assertIs(type(engine_fd), int)
+                    self.assertEqual(os.fstat(engine_fd).st_ino,
+                                     os.stat(lib.GBRAIN_OWNER_LOCK).st_ino)
+                    descriptors = kwargs["pass_fds"]
+                    self.assertIn(caller_fd, descriptors)
+                    self.assertIn(engine_fd, descriptors)
+                    self.assertTrue(command[0].startswith("/proc/self/fd/"))
+                    executable_fd = int(command[0].rsplit("/", 1)[1])
+                    self.assertIn(executable_fd, descriptors)
+                    self.assertEqual(_cr_identity(os.fstat(executable_fd)),
+                                     _cr_identity(fixture.engine.stat()))
+                    self.assertEqual(os.stat(kwargs["cwd"]).st_ino, fixture.corpus.stat().st_ino)
+                    self.assertEqual(kwargs["env"]["GBRAIN_HOME"], str(fixture.share))
+                    self.assertNotIn("GBRAIN_DATABASE_URL", kwargs["env"])
+                    self.assertNotIn("DATABASE_URL", kwargs["env"])
+                    self.assertNotIn("GBRAIN_SOURCE", kwargs["env"])
+                    is_get = command[1:2] == ["get"]
+                    get_descriptors = None
+                    if is_get:
+                        self.assertEqual(command[1:],
+                                         ["get", _CR_SUBJECT, "--source", "sia"])
+                        self.assertTrue(kwargs["cwd"].startswith("/proc/self/fd/"))
+                        corpus_fd = int(kwargs["cwd"].rsplit("/", 1)[1])
+                        self.assertEqual(tuple(descriptors),
+                                         (executable_fd, corpus_fd, caller_fd, engine_fd))
+                        self.assertEqual(os.fstat(corpus_fd).st_ino,
+                                         fixture.corpus.stat().st_ino)
+                        self.assertEqual(kwargs["timeout"], 180)
+                        self.assertEqual(kwargs["output_limit"],
+                                         fixture.expectations["limits"]["max_output_bytes"])
+                        # Observe only inherited descriptors, without any
+                        # syscall replacement or newly opened test descriptor.
+                        # Directory identity excludes ordinary metadata churn.
+                        get_descriptors = tuple(
+                            (descriptor, (info.st_dev, info.st_ino, info.st_mode,
+                                          info.st_uid, info.st_gid))
+                            for descriptor in descriptors
+                            for info in (os.fstat(descriptor),))
+                        self.assertEqual(
+                            list(fixture.state.glob("sia-installed-projection-*")), [])
+                    elif command[1:] != ["--version"]:
+                        self.assertEqual(command[1:6], ["call", "--no-migrate", "--source",
+                                                       "sia", "--params-file"])
+                        self.assertEqual(command[7:], [_CR_OPERATION])
+                        request_path = command[6]
+                        directory_path, leaf = request_path.rsplit("/", 1)
+                        self.assertEqual(leaf, "request.json")
+                        self.assertTrue(directory_path.startswith("/proc/self/fd/"))
+                        request_directory_fd = int(directory_path.rsplit("/", 1)[1])
+                        self.assertIn(request_directory_fd, descriptors)
+                        self.assertEqual(stat.S_IMODE(os.fstat(request_directory_fd).st_mode), 0o700)
+                        request_stat = os.stat(leaf, dir_fd=request_directory_fd, follow_symlinks=False)
+                        self.assertTrue(stat.S_ISREG(request_stat.st_mode))
+                        self.assertEqual(stat.S_IMODE(request_stat.st_mode), 0o600)
+                        self.assertEqual(Path(request_path).read_bytes(), current_request)
+                    result = real_process(command, **kwargs)
+                    if is_get:
+                        # Check after the REAL child. Before the production
+                        # host fix this must expose its Unknown brain stderr,
+                        # not fail an environment assertion before execution.
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(kwargs["env"].get("GBRAIN_BRAIN_ID"), "host")
+                        self.assertNotIn("GBRAIN_MOUNTS_PATH", kwargs["env"])
+                        fixture.mount_marker.current()
+                        self.assertEqual(fixture.mount_marker.read_metadata(),
+                                         _CR_HOSTILE_MOUNT_BYTES)
+                        # This is the actual returning child, not a fabricated
+                        # CompletedProcess. The same native FDs must survive it.
+                        for descriptor, identity in get_descriptors:
+                            info = os.fstat(descriptor)
+                            self.assertEqual(
+                                (info.st_dev, info.st_ino, info.st_mode,
+                                 info.st_uid, info.st_gid), identity)
+                        self.assertEqual(command[1:],
+                                         ["get", _CR_SUBJECT, "--source", "sia"])
+                        get_descriptor_observations.append(get_descriptors)
+                    calls.append((tuple(command[1:]), result.returncode, result.stdout, result.stderr))
+                    return result
+
+                stack.enter_context(mock.patch.object(lib, "_run_bounded_text_process", observed_process))
+                source_sha = _cr_sha(_CR_RAW.encode("utf-8"))
+                version_fields = {"subject": _CR_SUBJECT, "origin": "model",
+                                  "source_sha256": source_sha, "content_sha256": source_sha}
+                source_version = {**version_fields, "content": _CR_RAW,
+                                  "version_sha256": _cr_sha(_cr_canonical(version_fields))}
+                source_reference = {key: value for key, value in source_version.items() if key != "content"}
+                outputs = []
+                # This module-qualified handle spelling keeps the unchanged
+                # argv scanner joined to the actual get/project/version emitters.
+                with installed.hold_overlay_engine(
+                        vars(lib), expectations=fixture.expectations,
+                        expected_expectations_sha256=fixture.expected_expectations_sha256,
+                        authority_current=fixture.authority_current) as siainstalledengine:
+                    binding = siainstalledengine.read()
+                    self.assertEqual(binding["status"], "bound-installed-artifacts")
+                    self.assertEqual(binding["artifacts"]["executable"]["sha256"],
+                                     selected["gbrain_executable_sha256"])
+                    self.assertEqual(binding["binding_sha256"], _cr_sha(_cr_canonical(
+                        {key: value for key, value in binding.items() if key != "binding_sha256"})))
+                    version = siainstalledengine.version(timeout=180)
+                    self.assertEqual(version["status"], "observed-version-only")
+                    self.assertEqual(version["stdout"], "gbrain " + selected["version"] + "\n")
+                    held_get = siainstalledengine.get(subject=_CR_SUBJECT, timeout=180)
+                    self.assertEqual(set(held_get), _CR_GET_TRANSPORT_KEYS)
+                    self.assertEqual(held_get["schema"],
+                                     "sia-installed-overlay-engine-get-transport-v1")
+                    self.assertEqual(held_get["status"], "captured-unadmitted-get")
+                    self.assertEqual(held_get["operation"], "get")
+                    self.assertEqual(held_get["source_id"], "sia")
+                    self.assertEqual(held_get["subject"], _CR_SUBJECT)
+                    self.assertEqual(held_get["binding_sha256"], binding["binding_sha256"])
+                    self.assertEqual(held_get["expected_expectations_sha256"],
+                                     fixture.expected_expectations_sha256)
+                    self.assertIs(type(held_get["returncode"]), int)
+                    self.assertEqual(held_get["returncode"], 0)
+                    self.assertEqual(held_get["timeout"], 180)
+                    self.assertIs(type(held_get["stdout"]), str)
+                    self.assertIs(type(held_get["stderr"]), str)
+                    # The independent golden predates this transport; never
+                    # derive a GET oracle from its returned bytes or parser.
+                    self.assertEqual(held_get["stdout"], _CR_GET)
+                    self.assertEqual(held_get["stdout"], actual_get)
+                    self.assertNotEqual(held_get["stdout"], _CR_RAW)
+                    self.assertEqual(held_get["stdout_sha256"],
+                                     _cr_sha(_CR_GET.encode("utf-8")))
+                    get_request = {"operation": "get", "source_id": "sia",
+                                   "subject": _CR_SUBJECT, "timeout": 180}
+                    self.assertEqual(held_get["request_sha256"],
+                                     _cr_sha(_cr_canonical(get_request)))
+                    self.assertEqual(held_get["transport_sha256"], _cr_sha(_cr_canonical(
+                        {key: value for key, value in held_get.items() if key != "transport_sha256"})))
+                    self.assertEqual(held_get["non_claims"], list(installed.GET_NON_CLAIMS))
+                    get_boundary = " ".join(held_get["non_claims"])
+                    self.assertIn("Ordinary GET is not the no-migrate render-projection operation",
+                                  get_boundary)
+                    self.assertIn("connection migrations and retrieval bookkeeping may occur", get_boundary)
+                    self.assertIn("does not establish whether they occurred", get_boundary)
+                    self.assertIn("not necessarily original Markdown bytes", get_boundary)
+                    self.assertIn("source-version join, rendered-field admission, output delivery", get_boundary)
+                    # Tracking is enabled by the original real config call.
+                    # This GET makes no no-bookkeeping/no-migrate assertion;
+                    # those fields below belong only to the projection receipt.
+                    get_calls = [row for row in calls if row[0][:1] == ("get",)]
+                    self.assertEqual([row[0] for row in get_calls],
+                                     [("get", _CR_SUBJECT, "--source", "sia")])
+                    self.assertEqual(held_get["stdout"], get_calls[0][2])
+                    self.assertEqual(held_get["stderr"], get_calls[0][3])
+                    self.assertEqual(held_get["stderr_sha256"],
+                                     _cr_sha(get_calls[0][3].encode("utf-8")))
+                    self.assertTrue(get_descriptor_observations)
+                    outputs.append((_cr_canonical(held_get), held_get))
+                    for supplied_stdout, expected_status, reasons in (
+                            (held_get["stdout"], "matched", []),
+                            (_CR_RAW, "mismatch", ["get-stdout-mismatch"])):
+                        request = {"source_id": "sia", "source_version": source_version,
+                                   "get_stdout": supplied_stdout,
+                                   "expected_get_stdout_sha256": _cr_sha(supplied_stdout.encode("utf-8"))}
+                        current_request = _cr_canonical(request)
+                        result = siainstalledengine.project(
+                            operation="get_page_render_projection", request_utf8=current_request,
+                            expected_request_sha256=_cr_sha(current_request), timeout=180)
+                        self.assertEqual(result["status"], "captured-unadmitted-projection")
+                        self.assertEqual(result["operation"], _CR_OPERATION)
+                        self.assertEqual(result["source_id"], "sia")
+                        self.assertEqual(result["binding_sha256"], binding["binding_sha256"])
+                        self.assertEqual(result["request_sha256"], _cr_sha(current_request))
+                        self.assertEqual(result["stdout_sha256"], _cr_sha(result["stdout"].encode("utf-8")))
+                        self.assertEqual(result["non_claims"], list(installed.NON_CLAIMS))
+                        receipt = _cr_json(result["stdout"].encode("utf-8"))
+                        self.assertEqual(set(receipt), _CR_RECEIPT_KEYS)
+                        self.assertEqual(receipt["schema"], "sia-gbrain-get-render-projection-v1")
+                        self.assertEqual(receipt["status"], expected_status)
+                        self.assertEqual(receipt["source_id"], "sia")
+                        self.assertEqual(receipt["source_reference"], source_reference)
+                        self.assertEqual(receipt["page_state"], "live")
+                        self.assertEqual(receipt["parse_error_codes"], [])
+                        self.assertEqual(receipt["type_basis"], "source-explicit")
+                        for key in ("current_content_hash_match", "projection_match", "display_fields_match"):
+                            self.assertIs(receipt[key], True)
+                        self.assertIs(receipt["get_stdout_match"], supplied_stdout == actual_get)
+                        self.assertEqual(receipt["get_stdout_sha256"], request["expected_get_stdout_sha256"])
+                        self.assertEqual(receipt["current_get_stdout_sha256"], _cr_sha(actual_get.encode("utf-8")))
+                        self.assertEqual(receipt["mismatch_reasons"], reasons)
+                        self.assertEqual(receipt["expected_projection_sha256"], receipt["current_projection_sha256"])
+                        self.assertEqual(receipt["current_projection_sha256"], receipt["current_content_hash"])
+                        self.assertNotEqual(receipt["current_content_hash"], source_sha)
+                        self.assertIs(receipt["retrieval_bookkeeping_updated"], False)
+                        self.assertIs(receipt["operation_writes_performed"], False)
+                        self.assertIn("supplied source/version pins and origin are not independently authenticated",
+                                      " ".join(receipt["non_claims"]))
+                        self.assertIn("not output delivery", " ".join(receipt["non_claims"]))
+                        self.assertIn("no JACKAL status", " ".join(receipt["non_claims"]))
+                        outputs.append((_cr_canonical(result), result))
+                    siainstalledengine.current()
+                    # The GET descriptors are still held through BOTH actual
+                    # projections and the final currentness sweep, not closed
+                    # when GET returned or replaced with newly opened handles.
+                    for observed in get_descriptor_observations:
+                        for descriptor, identity in observed:
+                            info = os.fstat(descriptor)
+                            self.assertEqual(
+                                (info.st_dev, info.st_ino, info.st_mode,
+                                 info.st_uid, info.st_gid), identity)
+                self.assertEqual(_cr_identity(os.fstat(caller_fd)), caller_identity)
+                self.assertIsNone(lib._GBRAIN_OWNER_FD.get())
+                for observed in get_descriptor_observations:
+                    for descriptor, _identity in observed:
+                        if descriptor == caller_fd:
+                            continue
+                        with self.assertRaises(OSError) as closed:
+                            os.fstat(descriptor)
+                        self.assertEqual(closed.exception.errno, errno.EBADF)
+                for raw, result in outputs:
+                    self.assertEqual(_cr_canonical(result), raw)
+                self.assertEqual([row[0][0] for row in calls], ["--version", "get", "call", "call"])
+                for _argv, code, _stdout, _stderr in calls:
+                    self.assertEqual(code, 0)
+                self.assertEqual(fixture.git(["rev-parse", "HEAD"]), fixture.head)
+                fixture.authority_current()
+                self.assertEqual(list(fixture.state.glob("sia-installed-projection-*")), [])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
