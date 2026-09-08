@@ -532,6 +532,8 @@ This pure wrapper validates represented joins, not actual authority. Full
 source-to-projection replay still belongs to source validation. The WAL
 validator compares the declared parent schema and entire compact completion
 to the actual retained predecessor, including its effects-receipt pin.
+A v3 predecessor requires a v3 successor with the same independently
+retained adoption pin; resealed legacy omissions or adoption rebasing refuse.
 The live adapter compares its full parent generation to the independently
 supplied generation. Matching only a state digest is insufficient.
 A represented later-v3 continuation retains the original pinned adoption,
@@ -572,8 +574,13 @@ same receipt fields; the full source hash also binds the delivery wrapper.
 Effects completion is still not acknowledgment or output authority.
 
 These additive components are source construction, not an enabled resident
-v3 acquisition runner or an installed runtime-ladder member. Actual v3
-acknowledgment and later continuation remain distinct integration work. Publication
+v3 acquisition runner or an installed runtime-ladder member. The controlled
+transaction fixtures now perform actual v3 acknowledgment and capture a
+later v3 successor under the original adoption, with a newly published full
+parent generation. Their journal remains empty and their Git/index
+observations remain controlled; they prove neither nonempty delivery
+consumption nor external engine behavior. Sequence reservation uses the real
+legacy runner only through its clock stop, not a completed v3 runner cycle. Publication
 must retain the outer corpus lease across capture and fixed-slot retention.
 A fully acknowledged source-v3 batch must independently retain the adoption
 before writers can be enabled.

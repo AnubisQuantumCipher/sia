@@ -98,6 +98,9 @@ def validate_successor_wal(
     source.validate_batch(
         owner, successor_batch, expected_batch_sha256)
 
+    if retained_batch.get("schema") == "sia-controller-source-batch-v3" \
+            and successor_batch.get("schema") != "sia-controller-source-batch-v3":
+        _refuse("successor-wal-delivery-downgrade")
     if successor_batch.get("schema") == "sia-controller-source-batch-v3":
         delivery = successor_batch["delivery_input"]
         # Pure wrapper replay establishes represented consistency only.
@@ -106,6 +109,10 @@ def validate_successor_wal(
         if delivery["parent_source_schema"] != retained_batch.get("schema") \
                 or delivery["epoch_view"]["parent_committed"] != committed:
             _refuse("successor-wal-delivery-parent")
+        if retained_batch.get("schema") == "sia-controller-source-batch-v3" \
+                and delivery["expected_adoption_sha256"] \
+                != retained_batch["delivery_input"]["expected_adoption_sha256"]:
+            _refuse("successor-wal-delivery-adoption")
 
     prior_epoch = retained_batch.get("epoch")
     next_epoch = successor_batch.get("epoch")
