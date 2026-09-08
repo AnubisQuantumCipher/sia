@@ -8322,7 +8322,11 @@ remove_managed_skill
         self.assertIn("MEMORY LENS", cockpit)
         self.assertIn("AGENT RELAY — last published pulse", cockpit)
         self.assertIn("off-map", cockpit)
-        self.assertIn("remain in compatibility policy state", cockpit)
+        # The retained-source card replaces compatibility workspace slugs;
+        # off-map remains a display limit, never loss of retained selection.
+        self.assertIn("Off-map is only a graph-display limit", cockpit)
+        self.assertIn("compatibility slugs are not used here", cockpit)
+        self.assertNotIn("root.currentStatus.workspace", cockpit)
         self.assertIn("CORPUS-LINKED RELATIONS", cockpit)
         self.assertIn("Model.originLabel", cockpit)
         self.assertIn('return "record"', model)
