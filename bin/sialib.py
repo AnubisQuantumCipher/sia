@@ -5766,6 +5766,8 @@ CONTROLLER_SOURCE_ARCHIVE_DIR = os.path.join(
     STATE, "controller-source-archive")
 CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR = os.path.join(
     STATE, "controller-source-effects-archive")
+CONTROLLER_DELIVERY_EPOCH_ROOT = os.path.join(
+    STATE, "controller-delivery-epochs")
 CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS = (
     "The pending binding is write-ahead recovery authority only; it is not source acknowledgment, live publication, output delivery, consumer execution or readiness.",
     "The marker binds one retained source receipt, admitted status and computed-unverified pure transition; it does not establish source truth, complete machine history, biological cognition or a held-out win.",
@@ -6225,6 +6227,35 @@ def _run_controller_source_transaction_v2(*, operation, clock):
     with brainstem_owner(), corpus_owner():
         return siacontrollersourcerunner.run_v2(
             globals(), operation=operation, clock=clock)
+
+
+def _run_controller_source_transaction_v3(
+        *, operation, clock, journal_limits, expected_journal_limits_sha256,
+        expected_adoption_sha256):
+    """Own one explicit adopted-delivery source transaction, without opt-in.
+
+    Existing initial/pending prefixes may finish in their original schema.
+    A completed predecessor advances through actual v3 capture under the
+    caller's explicit journal limits and original adoption pin. This entry
+    does not change the configured resident cycle or authorize recall output.
+    """
+    import siacontrollersourcerunner
+    if not callable(operation) or not callable(clock):
+        raise TypeError(
+            "controller source operation and clock must be callable")
+    ensure_dirs()
+    ensure_durable_directory(
+        os.path.dirname(BRAINSTEM_OWNER_LOCK), mode=0o700)
+    with brainstem_owner(), corpus_owner():
+        return siacontrollersourcerunner.run_v3(
+            globals(), operation=operation, clock=clock,
+            journal_limits=journal_limits,
+            expected_journal_limits_sha256=expected_journal_limits_sha256,
+            expected_adoption_sha256=expected_adoption_sha256)
+
+
+def _controller_delivery_epoch_boundary(stage):
+    """Named crash-injection seam; actual epoch code owns durable ordering."""
 
 
 def _run_controller_source_cycle():

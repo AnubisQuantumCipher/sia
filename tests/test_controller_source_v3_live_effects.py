@@ -146,6 +146,8 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
         publish = getattr(fixture.lib, idle_tests.GIST_PUBLISHER)
         original_status = fixture._new_status
         plans, publications = [], []
+        has_content = f.batch["event_closure"] is not None \
+            or bool(f.gist_plan["target_versions"])
 
         def prepare_gist(**kwargs):
             plan = prepare(**kwargs)
@@ -161,7 +163,8 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
             publications.append(copy.deepcopy(receipt))
             if f.batch["event_closure"] is None:
                 self.assertEqual(observed["trace"], [])
-                observed["trace"].append("closure")
+                if has_content:
+                    observed["trace"].append("closure")
             else:
                 self.assertEqual(observed["trace"], ["closure"])
             return receipt
@@ -169,6 +172,7 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
         def commit_content(*, source_batch_sha256, content_publication_sha256):
             if recovery:
                 raise AssertionError("v3 recovery repeated content commit")
+            self.assertTrue(has_content, "empty v3 pulse requested corpus commit")
             self.assertEqual(observed["trace"], ["closure"])
             self.assertEqual(source_batch_sha256, f.batch["batch_sha256"])
             closure = f.batch["event_closure"]
@@ -195,7 +199,7 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
                 set(effects_tests.PENDING_KEYS) | idle_tests.V2_EFFECT_FIELDS), \
                 mock.patch.object(fixture, "_new_status", side_effect=successor_status), \
                 fixture.publication_effects(
-                    null=False, crash_at="effects-pending" if crash else None,
+                    null=not has_content, crash_at="effects-pending" if crash else None,
                     recovery=recovery,
                     predecessor_live=fixture.memo_before["live_loop_committed"]) as observed, \
                 contextlib.ExitStack() as stack:
@@ -210,6 +214,10 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
                 self.forbidden("legacy closure-only commit for source v3")))
             yield {**observed, "gist_plans": plans, "gist_receipts": publications,
                    "content_committed": content_commit}
+            if not has_content:
+                observed["published"].assert_not_called()
+                content_commit.assert_not_called()
+                observed["synced"].assert_not_called()
 
     def content_images(self, f):
         versions = f.case.effects._target_versions()

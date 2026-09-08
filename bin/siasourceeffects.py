@@ -132,7 +132,8 @@ def _retained_gist_plan(owner, source, live, batch, binding):
     _idle, pages = live._idle(
         wrapper, intake, wrapper is not None,
         policy=batch["epoch"]["live_policy"],
-        expected_intake_sha256=live._sha(intake))
+        expected_intake_sha256=live._sha(intake),
+        observed_at=batch["observed_at"])
     return siasourcegist.prepare_pages(
         owner, gist_pages=pages, expected_gist_pages_sha256=live._sha(pages),
         transition_sha256=binding["transition_sha256"])

@@ -591,15 +591,34 @@ idle/gist publication, pending recovery and completed retry retain those
 same receipt fields; the full source hash also binds the delivery wrapper.
 Effects completion is still not acknowledgment or output authority.
 
-These additive components are source construction, not an enabled resident
-v3 acquisition runner or an installed runtime-ladder member. The controlled
-transaction fixtures now perform actual v3 acknowledgment and capture a
-later v3 successor under the original adoption, with a newly published full
-parent generation. Their journal remains empty and their Git/index
-observations remain controlled; they prove neither nonempty delivery
-consumption nor external engine behavior. Sequence reservation uses the real
-legacy runner only through its clock stop, not a completed v3 runner cycle. Publication
-must retain the outer corpus lease across capture and fixed-slot retention.
+The additive `_run_controller_source_transaction_v3` owning entry invokes
+`siacontrollersourcerunner.run_v3` under continuous brainstem and corpus
+leases. Every request supplies journal limits, their pin, the original
+adoption pin, an initial-operation callback and a controller clock. Only
+actually unadopted legacy completion permits a null adoption pin; existing
+adoption must match the caller's independent pin. Initial/pending delegation
+can still finish a legacy transaction without relabeling its source schema.
+A retained source-v3 WAL is admitted and recovered before another sequence,
+clock, epoch preparation or native collection. Without a WAL the runner
+prepares or observes the actual adopted epoch, reserves the sequence,
+captures native v3 input and retains it before publication and ACK.
+
+The controlled resident fixtures now complete legacy-to-v3 and v3-to-v3
+cycles, including actual interruption/retry beneath a notification fence.
+Their journal remains empty and their Git/index observations remain
+controlled; they prove neither nonempty delivery consumption nor external
+engine behavior. The configured resident cycle remains v2; this additive
+entry does not activate a service, enable a writer or extend the installed
+runtime ladder. Publication retains the outer corpus lease across capture
+and fixed-slot retention.
+
+After live publication, a retired status handoff is represented by matching
+source, binding, effects and compact live receipt identities. The dispatcher
+selects recovery from those joins; actual effects replay and source ACK
+still validate the retained artifacts. Idle effects replay uses the retained
+batch's observation clock, not a new clock or the wrapper's self-declaration.
+An empty closure/gist disposition still publishes graph/status/live state
+and ACK, while its receipt retains null corpus/index generations.
 A fully acknowledged source-v3 batch must independently retain the adoption
 before writers can be enabled.
 Neither an adopted memo alone nor a successful storage test establishes a
@@ -608,9 +627,9 @@ Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
 admission for the capture-held epoch. Its separate fenced successor storage
-path is implemented above; resident acquisition and writer authorization
-remain separate construction work,
-not a relaxed completed/readiness or writer gate.
+path and resident dispatch are implemented above. Writer authorization and
+configured activation remain separate construction work, not a relaxed
+completed/readiness or writer gate.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;

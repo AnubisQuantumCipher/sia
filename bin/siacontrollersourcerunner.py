@@ -7,6 +7,12 @@ that operation or allocating another pulse sequence.  The v1 entry remains
 terminal at a completed transaction.  The additive v2 entry advances a
 completed transaction only through an explicit successor epoch, capture front
 door, and fixed-slot write-ahead batch.
+
+The additive v3 dispatcher advances a completed legacy/v3 source through an
+actually adopted delivery epoch and genuine source-v3 capture. Its caller
+holds the resident and corpus owners continuously. Existing initial/pending
+transactions still delegate to the original dispatcher and may finish as
+legacy; no source schema is relabeled and no resident mode is activated here.
 """
 
 import copy
@@ -154,6 +160,81 @@ def validate_successor_wal(
     return None
 
 
+def _published_effects_prefix(memo, effects, *, committed):
+    """Join the published prefix that legitimately retires the handoff.
+
+    This only selects a recovery branch. Effects replay and source ACK still
+    validate the retained artifacts through their existing front doors.
+    """
+    source = memo.get("controller_source_pending")
+    binding = memo.get("controller_source_live_pending")
+    live = memo.get("live_loop_committed")
+    if any(type(value) is not dict
+           for value in (source, binding, live, effects)):
+        return False
+    if source.get("schema") != "sia-controller-source-pending-v1" \
+            or binding.get("schema") != "sia-controller-source-live-pending-v1" \
+            or live.get("schema") != "sia-live-publication-receipt-v1":
+        return False
+    status = effects.get("status_generation")
+    publication_id = live.get("publication_id")
+    seq = live.get("pulse_seq")
+    if type(status) is not dict \
+            or type(publication_id) is not str \
+            or re.fullmatch(r"[0-9a-f]{32}", publication_id) is None \
+            or publication_id != binding.get("publication_id") \
+            or publication_id != status.get("publication_id") \
+            or type(seq) is not int or seq < 0 \
+            or type(binding.get("seq")) is not int \
+            or type(memo.get("pulse_seq")) is not int \
+            or seq != binding["seq"] or seq != memo["pulse_seq"] \
+            or type(live.get("epoch_id")) is not str \
+            or not live["epoch_id"] \
+            or live["epoch_id"] != source.get("epoch_id"):
+        return False
+    for key in ("state_sha256", "transition_sha256", "candidate_sha256",
+                "generation_sha256", "status_sha256"):
+        if type(live.get(key)) is not str \
+                or _HEX.fullmatch(live[key]) is None:
+            return False
+    parent = live.get("parent_generation_sha256")
+    if "parent_generation_sha256" not in live \
+            or "parent_generation_sha256" not in binding \
+            or parent != binding["parent_generation_sha256"] \
+            or parent is not None and (
+                type(parent) is not str or _HEX.fullmatch(parent) is None):
+        return False
+    for key in ("state_sha256", "transition_sha256"):
+        if live[key] != binding.get(key) or live[key] != effects.get(key):
+            return False
+    for key, source_key, binding_key in (
+            ("source_batch_sha256", "batch_sha256", "source_batch_sha256"),
+            ("source_batch_wire_sha256", "batch_wire_sha256",
+             "source_batch_wire_sha256")):
+        value = effects.get(key)
+        if type(value) is not str or _HEX.fullmatch(value) is None \
+                or value != source.get(source_key) \
+                or value != binding.get(binding_key):
+            return False
+    for key, binding_key in (
+            ("source_live_publication_sha256", "publication_sha256"),
+            ("prepare_inputs_sha256", "prepare_inputs_sha256")):
+        value = effects.get(key)
+        if type(value) is not str or _HEX.fullmatch(value) is None \
+                or value != binding.get(binding_key):
+            return False
+    if status.get("semantic_sha256") != live["status_sha256"]:
+        return False
+    if committed:
+        generation = effects.get("live_generation")
+        if type(generation) is not dict or any(
+                generation.get(key) != live[key] for key in (
+                    "publication_id", "candidate_sha256",
+                    "generation_sha256", "status_sha256")):
+            return False
+    return True
+
+
 def _source_state(memo):
     """Classify only the durable source prefixes this runner can resume."""
     if type(memo) is not dict:
@@ -179,8 +260,14 @@ def _source_state(memo):
             _refuse("downstream state lacks source authority")
         return "absent"
     if effects_pending or effects_committed:
-        if not live_pending or not handoff_pending:
+        if not live_pending:
             _refuse("effects state lacks its durable prefix")
+        if not handoff_pending:
+            effects = memo["controller_source_effects_pending" if effects_pending
+                           else "controller_source_effects_committed"]
+            if not _published_effects_prefix(
+                    memo, effects, committed=effects_committed):
+                _refuse("effects state lacks its joined published prefix")
         return "effects-pending" if effects_pending else "effects-committed"
     if handoff_pending:
         if not live_pending:
@@ -430,3 +517,350 @@ def run_v2(owner, *, operation, clock):
     if recovered is not True or _source_state(memo) != "batch":
         _refuse("successor batch adoption did not establish authority")
     return run(owner, operation=operation)
+
+
+class _RunnerV3Admission:
+    """Pin explicit rollover policy and owner scalars across its effects."""
+
+    def __init__(self, owner, *, journal_limits, expected_journal_limits_sha256,
+                 expected_adoption_sha256):
+        import siadelivery
+        import sialiveloop
+        import siasourcebatch
+
+        self.owner, self.source = owner, siasourcebatch
+        self.paths = {name: owner.get(name) for name in (
+            "HOME", "CORPUS", "STATE", "SHARE", "CONFIG_PATH", "CURSORS_PATH",
+            "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH", "LIVE_CANDIDATE_PATH",
+            "LIVE_STATE_PATH", "CONTROLLER_SOURCE_BATCH_PATH",
+            "CONTROLLER_SOURCE_ARCHIVE_DIR", "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR",
+            "CONTROLLER_DELIVERY_EPOCH_ROOT", "CORPUS_OWNER_LOCK", "BRAINSTEM_OWNER_LOCK",
+        )}
+        self.capacities = {name: owner.get(name) for name in (
+            "MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS",
+            "MAX_CONFIG_TEXT_CHARS", "MAX_CONFIG_BYTES", "MAX_SOURCE_REPLAY_EVENTS",
+            "MAX_SOURCE_REPLAY_SOURCES", "MAX_LEDGER_PENDING_RECORDS",
+            "MAX_JSON_SAFE_INTEGER")}
+        self.notification_key = owner.get("NOTIFY_BASELINE_ATTEMPT_KEY")
+        if any(type(value) is not int or value <= 0 for value in self.capacities.values()) \
+                or type(self.notification_key) is not str or not self.notification_key:
+            _refuse("v3-owner-contract")
+        for name, value in self.paths.items():
+            # Initial/pending legacy delegation does not invent an epoch
+            # root. A completed rollover's actual epoch front door requires it.
+            if name != "CONTROLLER_DELIVERY_EPOCH_ROOT" or value is not None:
+                siasourcebatch._canonical_path(owner, value)
+        self.basis_current()
+        self.request = {
+            "journal_limits": journal_limits,
+            "expected_journal_limits_sha256": expected_journal_limits_sha256,
+            "expected_adoption_sha256": expected_adoption_sha256,
+        }
+        self.raw = self.wire(self.request)
+        self.basis_current()
+        siadelivery._limits(journal_limits)
+        if type(expected_journal_limits_sha256) is not str \
+                or _HEX.fullmatch(expected_journal_limits_sha256) is None \
+                or sialiveloop._sha(journal_limits) != expected_journal_limits_sha256:
+            _refuse("v3-journal-limits-pin")
+        if expected_adoption_sha256 is not None and (
+                type(expected_adoption_sha256) is not str
+                or _HEX.fullmatch(expected_adoption_sha256) is None):
+            _refuse("v3-adoption-pin")
+        self.basis_current()
+        if self.wire(self.request) != self.raw:
+            _refuse("v3-policy-input-changed")
+        self.admitted = copy.deepcopy(self.request)
+        self.current()
+
+    def wire(self, value):
+        return self.source.native_bytes(
+            self.owner, value, ceiling=self.capacities["MAX_STATE_JSON_BYTES"])
+
+    def basis_current(self):
+        for name, expected in {**self.paths, **self.capacities,
+                               "NOTIFY_BASELINE_ATTEMPT_KEY": self.notification_key}.items():
+            actual = self.owner.get(name)
+            if type(actual) is not type(expected) or actual != expected:
+                _refuse("v3-owner-basis-changed")
+
+    def current(self):
+        self.basis_current()
+        if self.wire(self.request) != self.raw or self.wire(self.admitted) != self.raw:
+            _refuse("v3-policy-input-changed")
+        self.basis_current()
+
+
+def _v3_completed_parent(owner, memo, admitted_status, marker):
+    """Select the strict ready reader or the distinct capture-only reader."""
+    if marker is None:
+        owner["_acknowledge_controller_source_batch"](
+            memo=memo, admitted_status=admitted_status)
+        return _completed_view(owner, memo, admitted_status)
+    import siasourceack
+    import siasourcebatch
+
+    marker_pin = siasourcebatch.native_sha(owner, marker)
+    view = siasourceack.read_capturable_predecessor(
+        owner, memo=memo, admitted_status=admitted_status,
+        committed=memo.get("controller_source_committed"),
+        notification_baseline_attempt=marker,
+        expected_notification_baseline_attempt_sha256=marker_pin)
+    if type(view) is not dict or set(view) != {
+            "schema", "status", "batch", "committed", "notification_baseline_attempt",
+            "expected_notification_baseline_attempt_sha256", "non_claims"} \
+            or view["schema"] != "sia-controller-source-capturable-predecessor-v1" \
+            or view["status"] != "capturable-not-ready" \
+            or view["non_claims"] != list(siasourceack.CAPTURE_NON_CLAIMS) \
+            or siasourcebatch.native_bytes(owner, view["notification_baseline_attempt"]) \
+            != siasourcebatch.native_bytes(owner, marker) \
+            or view["expected_notification_baseline_attempt_sha256"] != marker_pin \
+            or view["committed"] != memo.get("controller_source_committed"):
+        _refuse("v3-capturable-predecessor")
+    return view
+
+
+def _v3_adoption_pin(admission, memo, retained_batch):
+    """Require caller authorization for every already committed adoption.
+
+    None permits only unadopted legacy preparation, including a recoverable
+    birth-pending prefix. It never adopts an existing pin from a wrapper.
+    """
+    import siacontrollerdeliveryepoch as epoch_api
+
+    expected = admission.admitted["expected_adoption_sha256"]
+    schema = retained_batch.get("schema")
+    if schema not in {"sia-controller-source-batch-v1", "sia-controller-source-batch-v2",
+                      "sia-controller-source-batch-v3"}:
+        _refuse("v3-parent-source-schema")
+    marker = memo.get(epoch_api._MARKER)
+    if epoch_api._MARKER in memo:
+        if type(marker) is not dict or set(marker) != epoch_api._MARKER_KEYS \
+                or marker.get("schema") != "sia-controller-delivery-epoch-marker-v1":
+            _refuse("v3-epoch-marker-shape")
+    actual = None if marker is None else marker["adoption_sha256"]
+    if expected is None:
+        if schema == "sia-controller-source-batch-v3" or actual is not None:
+            _refuse("v3-original-adoption-pin-required")
+    elif actual != expected:
+        _refuse("v3-original-adoption-pin-differs")
+    admission.current()
+
+
+def _v3_wal_parameters(admission, memo, batch, expected_adoption_sha256):
+    """Join represented WAL parameters to caller pins and the actual memo.
+
+    This pure relationship check does not promote its wrapper into source or
+    epoch authority. The held WAL and existing recovery front door establish
+    the actual immutable bytes and completed predecessor independently.
+    """
+    import siacontrollerdeliveryepoch as epoch_api
+
+    if type(batch) is not dict or batch.get("schema") != "sia-controller-source-batch-v3" \
+            or type(expected_adoption_sha256) is not str \
+            or _HEX.fullmatch(expected_adoption_sha256) is None:
+        _refuse("v3-successor-wal-required")
+    wrapped = batch["delivery_input"]
+    adopted = wrapped["epoch_view"]["epoch_adoption"]
+    birth = adopted["birth"]
+    if wrapped["expected_adoption_sha256"] != expected_adoption_sha256 \
+            or adopted["expected_adoption_sha256"] != expected_adoption_sha256 \
+            or admission.wire(birth["limits"]) != admission.wire(
+                admission.admitted["journal_limits"]) \
+            or birth["limits_sha256"] != admission.admitted["expected_journal_limits_sha256"] \
+            or admission.wire(memo.get(epoch_api._MARKER)) != admission.wire(
+                epoch_api._marker(birth, expected_adoption_sha256)):
+        _refuse("v3-successor-wal-policy-or-adoption")
+    admission.current()
+
+
+def _recover_v3_wal(admission, *, memo, admitted_status, retained_batch,
+                    committed, seq, expected_adoption_sha256):
+    """Hold the exact fixed slot across policy admission and actual adoption."""
+    import siasourcepublication as publication
+
+    owner, source = admission.owner, admission.source
+    admission.current()
+    held = source.HeldFile(owner, admission.paths["CONTROLLER_SOURCE_BATCH_PATH"],
+                           admission.capacities["MAX_STATE_JSON_BYTES"], allow_absent=True)
+    try:
+        publication._private(source, held)
+        if held.raw is not None:
+            batch = held.value
+            # Bound the complete preflight before pure WAL replay copies any
+            # history. The underlying artifact ceilings remain unchanged.
+            admission.wire({"policy": admission.admitted, "memo": memo,
+                            "admitted_status": admitted_status,
+                            "retained_batch": retained_batch, "committed": committed,
+                            "successor_batch": batch})
+            if type(batch) is not dict or type(batch.get("batch_sha256")) is not str:
+                _refuse("v3-successor-wal-shape")
+            validate_successor_wal(
+                owner, retained_batch=retained_batch, committed=committed,
+                successor_batch=batch, expected_batch_sha256=batch["batch_sha256"])
+            _v3_wal_parameters(admission, memo, batch, expected_adoption_sha256)
+            if admission.wire(batch) != held.raw:
+                _refuse("v3-successor-wal-not-canonical")
+        held.current()
+        admission.current()
+        marker = source._notification_marker(owner, memo)
+        if marker is None:
+            recovered = owner["_recover_orphan_controller_source_successor_batch"](
+                memo=memo, retained_batch=retained_batch, committed=committed, seq=seq)
+        else:
+            marker_pin = source.native_sha(owner, marker)
+            admission.current()
+            recovered = publication.recover_capturable_successor(
+                owner, memo=memo, admitted_status=admitted_status,
+                retained_batch=retained_batch, committed=committed, seq=seq,
+                notification_baseline_attempt=marker,
+                expected_notification_baseline_attempt_sha256=marker_pin)
+        if recovered is not (held.raw is not None):
+            _refuse("v3-successor-wal-recovery-result")
+        held.current()
+        if held.raw is not None and admission.wire(held.value) != held.raw:
+            _refuse("v3-successor-wal-image-changed")
+        admission.current()
+        return recovered
+    finally:
+        held.close()
+
+
+def run_v3(owner, *, operation, clock, journal_limits,
+           expected_journal_limits_sha256, expected_adoption_sha256):
+    """Advance one completed source through the adopted source-v3 pipeline.
+
+    The owning wrapper must hold brainstem and corpus scopes continuously.
+    This dispatcher creates no missing owner scope and activates no service.
+    Non-completed initial/pending prefixes delegate to run and may return a
+    legacy completion; this is not an assertion that every result is v3.
+
+    On completed state, a genuine v3 WAL is admitted and recovered before
+    preparation, sequence reservation, the supplied clock or any collector.
+    With no WAL, only actual unadopted legacy state permits a None adoption
+    pin. Existing adoption always requires the caller's original pin. An
+    acquisition fence selects separate capture-only readers/storage calls;
+    it is neither cleared nor treated as readiness. The existing retained
+    publication/effects/ACK dispatcher completes the transaction afterward.
+    """
+    if type(owner) is not dict:
+        raise TypeError("owner must be a globals-style dictionary")
+    if not callable(operation) or not callable(clock):
+        raise TypeError("operation and clock must be callable")
+    import siacontrollerdeliveryepoch as epoch_api
+    import siacontrollerepoch
+    import siasourcepublication as publication
+
+    admission = _RunnerV3Admission(
+        owner, journal_limits=journal_limits,
+        expected_journal_limits_sha256=expected_journal_limits_sha256,
+        expected_adoption_sha256=expected_adoption_sha256)
+    epoch_api._require_entered_corpus(owner)
+    admission.current()
+    memo = owner["load_memo"]()
+    owner["_require_status_memo_fields"](memo)
+    if _source_state(memo) != "completed":
+        admission.current()
+        result = run(owner, operation=operation)
+        admission.current()
+        return result
+
+    seq = _sequence(owner, memo)
+    admitted_status = owner["_require_status_sequence_not_ahead"](seq)
+    source = admission.source
+    marker = source._notification_marker(owner, memo)
+    admission.current()
+    view = _v3_completed_parent(owner, memo, admitted_status, marker)
+    retained_batch, committed = view["batch"], view["committed"]
+    _v3_adoption_pin(admission, memo, retained_batch)
+    if _recover_v3_wal(
+            admission, memo=memo, admitted_status=admitted_status,
+            retained_batch=retained_batch, committed=committed, seq=seq,
+            expected_adoption_sha256=expected_adoption_sha256):
+        if _source_state(memo) != "batch":
+            _refuse("v3-successor-orphan-adoption")
+        result = run(owner, operation=operation)
+        admission.current()
+        return result
+
+    epoch_arguments = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed,
+        **admission.admitted,
+    }
+    if marker is None:
+        adopted = epoch_api.prepare_epoch(owner, **epoch_arguments)
+        if type(adopted) is not dict or type(adopted.get("expected_adoption_sha256")) is not str \
+                or _HEX.fullmatch(adopted["expected_adoption_sha256"]) is None:
+            _refuse("v3-prepared-adoption-result")
+        adopted_pin = adopted["expected_adoption_sha256"]
+        if expected_adoption_sha256 is not None and adopted_pin != expected_adoption_sha256:
+            _refuse("v3-prepared-adoption-pin")
+    else:
+        # The fence can only continue an already adopted epoch. Do not call
+        # ordinary preparation with hidden/filtered pending state or claim
+        # that this no-fsync observation replays preparation durability.
+        if expected_adoption_sha256 is None:
+            _refuse("v3-fenced-adoption-pin-required")
+        marker_pin = source.native_sha(owner, marker)
+        admission.current()
+        with epoch_api.hold_capturable_epoch(
+                owner, **epoch_arguments, notification_baseline_attempt=marker,
+                expected_notification_baseline_attempt_sha256=marker_pin) as held:
+            held.current()
+            admission.current()
+        adopted_pin = expected_adoption_sha256
+    admission.current()
+
+    seq = _sequence(owner, memo, reservable=True) + 1
+    memo["pulse_seq"] = seq
+    owner["_write_memo"](memo)
+    admission.current()
+    observed_at = clock()
+    admission.current()
+    request = siacontrollerepoch.build_successor(
+        owner, retained_batch=retained_batch, committed=committed, observed_at=observed_at)
+    if type(request) is not dict or set(request) != _REQUEST_KEYS:
+        _refuse("v3-successor-capture-request")
+    admission.current()
+    batch = source.capture_successor_v3(
+        owner, memo=memo, admitted_status=admitted_status,
+        retained_batch=retained_batch, committed=committed,
+        epoch=request["epoch"], expected_epoch_sha256=request["expected_epoch_sha256"],
+        observed_at=request["observed_at"],
+        journal_limits=admission.admitted["journal_limits"],
+        expected_journal_limits_sha256=admission.admitted["expected_journal_limits_sha256"],
+        expected_adoption_sha256=adopted_pin)
+    admission.current()
+    if type(batch) is not dict or type(batch.get("batch_sha256")) is not str:
+        _refuse("v3-captured-successor-batch")
+    validate_successor_wal(
+        owner, retained_batch=retained_batch, committed=committed,
+        successor_batch=batch, expected_batch_sha256=batch["batch_sha256"])
+    _v3_wal_parameters(admission, memo, batch, adopted_pin)
+    marker = source._notification_marker(owner, memo)
+    admission.current()
+    retention = {
+        "memo": memo, "retained_batch": retained_batch, "committed": committed,
+        "batch": batch, "expected_batch_sha256": batch["batch_sha256"], "seq": seq,
+    }
+    if marker is None:
+        owner["_retain_controller_source_successor_batch"](**retention)
+    else:
+        marker_pin = source.native_sha(owner, marker)
+        admission.current()
+        publication.retain_capturable_successor(
+            owner, **retention, admitted_status=admitted_status,
+            notification_baseline_attempt=marker,
+            expected_notification_baseline_attempt_sha256=marker_pin)
+    admission.current()
+    owner["_controller_source_rollover_boundary"]("successor-batch-durable")
+    admission.current()
+    if not _recover_v3_wal(
+            admission, memo=memo, admitted_status=admitted_status,
+            retained_batch=retained_batch, committed=committed, seq=seq,
+            expected_adoption_sha256=adopted_pin) or _source_state(memo) != "batch":
+        _refuse("v3-successor-batch-adoption")
+    result = run(owner, operation=operation)
+    admission.current()
+    return result
