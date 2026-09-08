@@ -433,9 +433,33 @@ handle and close owned descriptors, and a caller exception remains its own
 exception. The legacy one-shot inspector delegates to the same reader.
 Neither path creates missing journal directories or repairs pending output.
 Source authority, journal adoption and the successor WAL cut still belong
-to the future outer integration. The inspection retains completion records,
+to the separate outer integration. The inspection retains completion records,
 not complete rank intents: it does not independently reproduce historical
 ranking, prove human receipt/use, or establish a cognitive benchmark win.
+
+`siacontrollerdeliveryepoch.prepare_epoch` now prepares source-bound journal
+storage separately from capture and output authorization. It requires an
+actually acknowledged legacy parent with empty deliveries, or exact retained
+adoption authority; caller hashes alone cannot bootstrap missing history.
+An immutable birth document binds the stable predecessor, epoch, policy and
+limits. A pending memo marker precedes records-directory creation; a separate
+adoption receipt pins the directory identity before the adopted memo marker.
+Retries preserve exact documents and directory identity. Every derived path
+and complete output reservation is checked before storage creation, and
+interrupted directory/memo publication is persisted through held parent
+descriptors before later effects depend on it. Missing adopted storage,
+changed parents, pending successor WAL or pre-v3 deliveries refuse without
+repair. The result is `adopted-not-enabled`: it emits no output, samples no
+clock and does not consume a delivery or acknowledge a source batch.
+
+This component is tested source construction, not a resident hook or an
+installed runtime-ladder member. Existing source readers still reject v3.
+The pending integration must retain adoption and journal descriptors through
+capture, close that read-only interval before publishing the successor WAL,
+and retain the outer corpus lease across both. A fully acknowledged source-v3
+batch must independently retain the adoption before writers can be enabled.
+Neither an adopted memo alone nor a successful storage test establishes a
+cognitive mechanism win, durable output delivery or human receipt.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;

@@ -1,0 +1,631 @@
+"""Source-bound, crash-resumable delivery-journal birth and adoption.
+
+Storage adoption is deliberately separate from output authorization. This
+module prepares an empty legacy epoch or readmits an already pinned epoch.
+It neither captures delivery input nor provides a writer interface. A future
+source-v3 completion, not this receipt or its memo marker, enables writers.
+"""
+
+import contextlib
+import copy
+import hashlib
+import os
+import re
+import stat
+
+import siadelivery as journal
+import siasourceack as acknowledgment
+import siasourcebatch as source
+import siasourcepublication as publication
+
+
+NON_CLAIMS = (
+    "Birth and adoption establish a bounded local storage transaction, not delivery, pulse consumption, source acknowledgment or writer authorization.",
+    "New writers require a fully acknowledged source-v3 batch retaining this exact adoption; legacy source completion or an adopted memo marker alone cannot enable output recording.",
+    "Bootstrap requires an acknowledged legacy parent with no prior live deliveries; no legacy touch history or missing journal records are reconstructed.",
+    "Directory and file joins concern the checked local descriptor generations, not protection against hostile same-user mutation or complete historical recall.",
+    "No output is emitted and no clock is sampled by adoption; no human receipt, JACKAL assurance, biological cognition or held-out retrieval win is established.",
+    "All source, live-loop and delivery-journal nonclaims remain controlling.",
+)
+_MARKER = "controller_delivery_epoch"
+_ROOT = "CONTROLLER_DELIVERY_EPOCH_ROOT"
+_BOUNDARY = "_controller_delivery_epoch_boundary"
+_BIRTH_KEYS = {
+    "schema", "status", "epoch_id", "started_at", "epoch_key_sha256",
+    "bootstrap_parent", "policy_sha256", "limits", "limits_sha256",
+    "non_claims", "birth_sha256",
+}
+_ADOPTION_KEYS = {
+    "schema", "status", "epoch_id", "started_at", "birth_sha256",
+    "records_identity", "initial_journal_sha256", "non_claims",
+    "adoption_sha256",
+}
+_MARKER_KEYS = {
+    "schema", "epoch_id", "started_at", "birth_sha256", "adoption_sha256",
+}
+_IDENTITY_KEYS = {"dev", "ino", "mode", "uid", "gid"}
+# A declared representation ceiling, reserved before directory creation. An
+# observed identity outside it refuses; it is not rounded or stringified.
+_IDENTITY_CEILING = (1 << 64) - 1
+_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_ERRORS = (OSError, ValueError, RuntimeError, TypeError, KeyError, IndexError,
+           AttributeError, OverflowError, RecursionError)
+
+
+class ControllerDeliveryEpochRefusal(ValueError):
+    def __init__(self, reason, *, upstream=None):
+        self.reason = reason
+        self.non_claims = list(NON_CLAIMS)
+        self.upstream_reason = getattr(upstream, "reason", None)
+        self.upstream_non_claims = copy.deepcopy(getattr(upstream, "non_claims", ()))
+        super().__init__("controller delivery epoch refused: " + reason)
+
+
+def _refuse(reason):
+    raise ControllerDeliveryEpochRefusal(reason)
+
+
+def _keys(value, names, label):
+    if type(value) is not dict or set(value) != names:
+        _refuse(label + "-shape")
+
+
+def _digest(value):
+    if type(value) is not str or _DIGEST.fullmatch(value) is None:
+        _refuse("digest-shape")
+
+
+def _raw(owner, value, *, ceiling=None):
+    return source._component_bytes(owner, value, ceiling=ceiling)
+
+
+def _sha(owner, value):
+    return hashlib.sha256(_raw(owner, value)).hexdigest()
+
+
+def _seal(owner, value, field):
+    return {**value, field: _sha(owner, value)}
+
+
+def _own(owner, value, field):
+    return _sha(owner, {key: item for key, item in value.items() if key != field})
+
+
+def _same(owner, left, right):
+    return _raw(owner, left) == _raw(owner, right)
+
+
+def _wire(owner, value, limits):
+    ceiling = min(owner["MAX_STATE_JSON_BYTES"], limits["max_document_bytes"])
+    raw = _raw(owner, value, ceiling=ceiling)
+    if len(raw) >= ceiling:
+        _refuse("document-wire-capacity")
+    return raw + b"\n"
+
+
+def _identity(info):
+    value = {key: getattr(info, "st_" + key) for key in _IDENTITY_KEYS}
+    if any(type(item) is not int or not 0 <= item <= _IDENTITY_CEILING
+           for item in value.values()):
+        _refuse("directory-identity-capacity")
+    return value
+
+
+def _empty(owner, epoch_id):
+    value = {
+        "schema": "sia-live-delivery-journal-v1", "epoch_id": epoch_id,
+        "complete": True, "records": [], "pending": [],
+        "non_claims": list(journal.NON_CLAIMS),
+    }
+    return _sha(owner, value)
+
+
+def _marker(birth, adoption_sha256):
+    return {
+        "schema": "sia-controller-delivery-epoch-marker-v1",
+        "epoch_id": birth["epoch_id"], "started_at": birth["started_at"],
+        "birth_sha256": birth["birth_sha256"],
+        "adoption_sha256": adoption_sha256,
+    }
+
+
+def _adoption(owner, birth, identity):
+    return _seal(owner, {
+        "schema": "sia-controller-delivery-epoch-adoption-v1",
+        "status": "adopted-not-enabled", "epoch_id": birth["epoch_id"],
+        "started_at": birth["started_at"], "birth_sha256": birth["birth_sha256"],
+        "records_identity": identity,
+        "initial_journal_sha256": _empty(owner, birth["epoch_id"]),
+        "non_claims": list(NON_CLAIMS),
+    }, "adoption_sha256")
+
+
+def _result(birth, adoption):
+    return {
+        "schema": "sia-controller-delivery-epoch-v1",
+        "status": "adopted-not-enabled", "birth": birth,
+        "expected_birth_sha256": birth["birth_sha256"],
+        "adoption": adoption,
+        "expected_adoption_sha256": adoption["adoption_sha256"],
+        "non_claims": list(NON_CLAIMS),
+    }
+
+
+class _Transaction:
+    """Retain original input and descriptor joins through named effects."""
+
+    def __init__(self, owner, memo, request, stack):
+        self.owner, self.memo, self.stack = owner, memo, stack
+        if type(owner) is not dict or type(memo) is not dict:
+            _refuse("owner-or-memo-shape")
+        for name in ("brainstem_owner", "corpus_owner", "_load_live_publication",
+                     "_read_committed_live_generation", "_memo_text", _BOUNDARY):
+            if not callable(owner.get(name)):
+                _refuse("owner-operation-contract")
+        for name in ("MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS"):
+            if type(owner.get(name)) is not int or owner[name] <= 0:
+                _refuse("owner-capacity-contract")
+        self.paths = {name: source._canonical_path(owner, owner[name]) for name in (
+            _ROOT, "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH", "LIVE_STATE_PATH",
+            "LIVE_CANDIDATE_PATH", "CONTROLLER_SOURCE_BATCH_PATH",
+            "CONTROLLER_SOURCE_ARCHIVE_DIR", "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR",
+            "CORPUS", "STATE", "SHARE")}
+        root = self.paths[_ROOT]
+        if root == os.sep or ".gbrain" in root.split(os.sep) \
+                or os.path.commonpath((root, self.paths["CORPUS"])) == self.paths["CORPUS"]:
+            _refuse("epoch-root-authority-scope")
+        self.capacities = {key: owner[key] for key in (
+            "MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS")}
+        self.owner_basis = source.native_bytes(owner, {
+            "paths": self.paths,
+            "capacities": self.capacities,
+        })
+        self.request = request
+        self.request_raw = source.native_bytes(owner, request)
+        self.admitted = copy.deepcopy(request)
+        if source.native_bytes(owner, self.admitted) != self.request_raw \
+                or source.native_bytes(owner, request) != self.request_raw:
+            _refuse("input-changed-during-admission")
+        self.memo_raw = source.native_bytes(owner, memo, ceiling=owner["MAX_MEMO_BYTES"])
+        self.limits = self.admitted["journal_limits"]
+        journal._limits(self.limits)
+        _digest(self.admitted["expected_journal_limits_sha256"])
+        if _sha(owner, self.limits) != self.admitted["expected_journal_limits_sha256"]:
+            _refuse("journal-limits-pin")
+        self.external = self.admitted["expected_adoption_sha256"]
+        if self.external is not None:
+            _digest(self.external)
+        self.files, self.directories = {}, {}
+        self.epoch_directory = None
+        self.epoch_entries = None
+        self.record_directory = None
+        self.legacy = None
+        self.budget = len(self.request_raw) + len(self.memo_raw)
+        self.observe("memo", self.paths["MEMO_PATH"], owner["MAX_MEMO_BYTES"], required=True)
+        if source.native_bytes(owner, self.files["memo"].value,
+                               ceiling=owner["MAX_MEMO_BYTES"]) != self.memo_raw:
+            _refuse("memo-authority")
+        self.observe("source-slot", self.paths["CONTROLLER_SOURCE_BATCH_PATH"],
+                     owner["MAX_STATE_JSON_BYTES"])
+        if self.files["source-slot"].raw is not None:
+            _refuse("successor-wal-must-be-recovered-first")
+
+    def observe(self, name, path, ceiling, *, required=False, document=False):
+        held = source.HeldFile(self.owner, path, ceiling, allow_absent=not required)
+        self.stack.callback(held.close)
+        if held.generation is not None and stat.S_IMODE(held.generation["mode"]) != 0o600:
+            _refuse("authority-file-not-private")
+        if document and held.raw is not None and held.raw != _wire(self.owner, held.value, self.limits):
+            _refuse("epoch-document-not-canonical")
+        previous = self.files.get(name)
+        before = 0 if previous is None or previous.raw is None else len(previous.raw)
+        after = 0 if held.raw is None else len(held.raw)
+        self.budget += after - before
+        if self.budget > self.owner["MAX_STATE_JSON_BYTES"]:
+            _refuse("complete-authority-byte-capacity")
+        self.files[name] = held
+        return held
+
+    def hold_directory(self, name, path):
+        held = source._DirectoryChain(self.owner, path, private_terminal=True)
+        self.stack.callback(held.close)
+        self.directories[name] = held
+        return held
+
+    def inputs_current(self):
+        owner = self.owner
+        current_basis = {
+            "paths": {name: owner.get(name) for name in self.paths},
+            "capacities": {key: owner.get(key) for key in (
+                "MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS")},
+        }
+        if source.native_bytes(owner, current_basis,
+                               ceiling=self.capacities["MAX_STATE_JSON_BYTES"]) != self.owner_basis:
+            _refuse("owner-path-or-capacity-changed")
+        if source.native_bytes(owner, self.request) != self.request_raw \
+                or source.native_bytes(owner, self.admitted) != self.request_raw \
+                or source.native_bytes(owner, self.memo, ceiling=owner["MAX_MEMO_BYTES"]) != self.memo_raw:
+            _refuse("input-or-memo-changed")
+
+    def current(self):
+        self.inputs_current()
+        for directory in self.directories.values():
+            directory.current()
+        for name, held in self.files.items():
+            held.current()
+            if name in ("birth", "adoption") and held.raw is not None \
+                    and _wire(self.owner, held.value, self.limits) != held.raw:
+                _refuse("retained-epoch-document-value-changed")
+        if self.epoch_directory is not None:
+            with os.scandir(self.epoch_directory.fd) as entries:
+                names = set()
+                for entry in entries:
+                    if entry.name not in {"birth.json", "adoption.json", "records"}:
+                        _refuse("epoch-unrecognized-entry")
+                    names.add(entry.name)
+            if names != self.epoch_entries:
+                _refuse("epoch-entry-roster-changed")
+        if self.record_directory is not None and self.legacy:
+            with os.scandir(self.record_directory.fd) as entries:
+                if next(entries, None) is not None:
+                    _refuse("legacy-epoch-has-unadmitted-records")
+        self.inputs_current()
+
+    def boundary(self, phase):
+        self.current()
+        self.owner[_BOUNDARY](phase)
+        self.current()
+
+    def parent(self):
+        owner, request = self.owner, self.admitted
+        retained, committed, status = (request[key] for key in (
+            "retained_batch", "committed", "admitted_status"))
+        _keys(committed, set(publication.COMMITTED_KEYS), "completed-source")
+        for value in committed.values():
+            _digest(value)
+        if not _same(owner, self.memo.get("controller_source_committed"), committed) \
+                or publication.SUCCESSOR_PENDING_KEYS.intersection(self.memo):
+            _refuse("completed-source-authority")
+        owner["_load_live_publication"]()
+        for name in ("STATUS_PATH", "GRAPH_PATH", "LIVE_STATE_PATH", "LIVE_CANDIDATE_PATH"):
+            self.observe(name, self.paths[name], owner["MAX_STATE_JSON_BYTES"], required=True)
+        self.observe("source-archive", os.path.join(self.paths["CONTROLLER_SOURCE_ARCHIVE_DIR"],
+                     committed["source_batch_sha256"] + ".json"), owner["MAX_STATE_JSON_BYTES"], required=True)
+        self.observe("effects-archive", os.path.join(self.paths["CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR"],
+                     committed["source_effects_receipt_sha256"] + ".json"), owner["MAX_STATE_JSON_BYTES"], required=True)
+        completed = acknowledgment.read_completed(owner, memo=self.memo, admitted_status=status)
+        _keys(completed, {"status", "batch", "committed"}, "completed-source-view")
+        if completed["status"] != "available" or not _same(owner, completed["batch"], retained) \
+                or not _same(owner, completed["committed"], committed):
+            _refuse("actual-source-predecessor-differs")
+        view = owner["_read_committed_live_generation"](memo=self.memo, admitted_status=status)
+        if type(view) is not dict or view.get("status") != "available" \
+                or type(view.get("generation")) is not dict:
+            _refuse("actual-live-predecessor-unavailable")
+        generation = view["generation"]
+        if generation.get("generation_sha256") != committed["live_generation_sha256"] \
+                or _own(owner, generation, "generation_sha256") != committed["live_generation_sha256"]:
+            _refuse("actual-live-predecessor-pin")
+        transition = generation["transition"]
+        state = transition["state"]
+        if _own(owner, transition, "transition_sha256") != generation["transition_sha256"] \
+                or transition["transition_sha256"] != generation["transition_sha256"] \
+                or _sha(owner, state) != generation["state_sha256"] \
+                or transition["state_sha256"] != generation["state_sha256"]:
+            _refuse("actual-live-state-binding")
+        epoch = retained["epoch"]
+        if state["epoch_id"] != epoch["epoch_id"] \
+                or state["intake"]["started_at"] != epoch["started_at"] \
+                or state["policy_sha256"] != epoch["expected_live_policy_sha256"] \
+                or not _same(owner, state["policy"], epoch["live_policy"]):
+            _refuse("actual-source-live-epoch-binding")
+        schema = retained["schema"]
+        self.legacy = schema in ("sia-controller-source-batch-v1", "sia-controller-source-batch-v2")
+        if self.legacy:
+            deliveries = state["deliveries"]
+            _keys(deliveries, {"schema", "epoch_id", "complete", "records"}, "legacy-deliveries")
+            if deliveries["schema"] != "sia-live-deliveries-v1" \
+                    or deliveries["epoch_id"] != epoch["epoch_id"] \
+                    or deliveries["complete"] is not True \
+                    or type(deliveries["records"]) is not list or deliveries["records"]:
+                _refuse("legacy-parent-must-have-no-deliveries")
+        elif schema == "sia-controller-source-batch-v3":
+            wrapper = retained.get("delivery_input")
+            if type(wrapper) is not dict or self.external is None \
+                    or wrapper.get("expected_adoption_sha256") != self.external:
+                _refuse("parent-v3-adoption-pin-required")
+        else:
+            _refuse("parent-source-schema")
+        self.current()
+        self.epoch, self.generation = epoch, generation
+        self.epoch_key = _sha(owner, {
+            "schema": "sia-controller-delivery-epoch-path-v1",
+            "epoch_id": epoch["epoch_id"], "started_at": epoch["started_at"],
+        })
+        # All destination and staging paths are statically known now. Admit
+        # their capacities before creating any part of the storage tree.
+        epoch_path = os.path.join(self.paths[_ROOT], self.epoch_key)
+        self.epoch_paths = {name: source._canonical_path(owner, path)
+                            for name, path in {
+                                "epoch": epoch_path,
+                                "birth": os.path.join(epoch_path, "birth.json"),
+                                "adoption": os.path.join(epoch_path, "adoption.json"),
+                                "records": os.path.join(epoch_path, "records"),
+                            }.items()}
+        roots = tuple(self.paths[name] for name in (_ROOT, "CORPUS", "STATE", "SHARE"))
+        self.staging_paths = {}
+        for name, path in {"memo": self.paths["MEMO_PATH"],
+                           "birth": self.epoch_paths["birth"],
+                           "adoption": self.epoch_paths["adoption"]}.items():
+            staging = source._canonical_path(
+                owner, owner["siaqueue"].staging_dir_for(path, authority_roots=roots))
+            for leaf in (owner["siaqueue"].STAGING_LOCK_NAME,
+                         owner["siaqueue"].STAGING_PAYLOAD_NAME):
+                source._canonical_path(owner, os.path.join(staging, leaf))
+            self.staging_paths[name] = staging
+        birth = _seal(owner, {
+            "schema": "sia-controller-delivery-epoch-birth-v1",
+            "status": "birth-pending", "epoch_id": epoch["epoch_id"],
+            "started_at": epoch["started_at"], "epoch_key_sha256": self.epoch_key,
+            "bootstrap_parent": {
+                "source_batch_sha256": retained["batch_sha256"],
+                "live_generation_sha256": committed["live_generation_sha256"],
+                "state_sha256": generation["state_sha256"],
+            },
+            "policy_sha256": epoch["expected_live_policy_sha256"],
+            "limits": copy.deepcopy(self.limits),
+            "limits_sha256": request["expected_journal_limits_sha256"],
+            "non_claims": list(NON_CLAIMS),
+        }, "birth_sha256")
+        # Reserve both documents, result and both complete future memo images
+        # before root or records creation. The actual identity must fit this
+        # declared integer representation; every retained byte is rechecked.
+        prototype = _adoption(owner, birth, {key: _IDENTITY_CEILING for key in _IDENTITY_KEYS})
+        reserved = self.budget
+        for value in (birth, prototype, _result(birth, prototype)):
+            reserved += len(_wire(owner, value, self.limits))
+        future_memo = len(self.files["memo"].raw)
+        for pin in (None, prototype["adoption_sha256"]):
+            prospective = {**self.memo, _MARKER: _marker(birth, pin)}
+            future_memo = max(future_memo, len(source.native_bytes(
+                owner, prospective, ceiling=owner["MAX_MEMO_BYTES"])))
+            owner["_memo_text"](prospective)
+        reserved += future_memo - len(self.files["memo"].raw)
+        if reserved > owner["MAX_STATE_JSON_BYTES"]:
+            _refuse("complete-adoption-reservation-capacity")
+        self.current()
+        return birth
+
+    def directories_for(self, *, must_exist):
+        root = self.paths[_ROOT]
+        parent = source._DirectoryChain(self.owner, os.path.dirname(root))
+        self.stack.callback(parent.close)
+        self.directories["root-parent"] = parent
+        for name, path, leaf in (("root", root, os.path.basename(root)),
+                                 ("epoch", self.epoch_paths["epoch"], self.epoch_key)):
+            self.current()
+            try:
+                observed = os.stat(leaf, dir_fd=parent.fd, follow_symlinks=False)
+            except FileNotFoundError:
+                if must_exist:
+                    _refuse("pinned-epoch-directory-missing")
+                os.mkdir(leaf, 0o700, dir_fd=parent.fd)
+            else:
+                if not stat.S_ISDIR(observed.st_mode):
+                    _refuse("epoch-directory-not-ordinary")
+            # Retry may see mkdir's entry before the creating process
+            # persisted it. Flush its held parent even for an existing leaf,
+            # before any child directory or publication can depend on it.
+            os.fsync(parent.fd)
+            parent.current()
+            parent = self.hold_directory(name, path)
+            os.fsync(parent.fd)
+        self.epoch_directory = parent
+        with os.scandir(parent.fd) as entries:
+            self.epoch_entries = set()
+            for entry in entries:
+                if entry.name not in {"birth.json", "adoption.json", "records"}:
+                    _refuse("epoch-unrecognized-entry")
+                self.epoch_entries.add(entry.name)
+        ceiling = min(self.owner["MAX_STATE_JSON_BYTES"], self.limits["max_document_bytes"])
+        for name in ("birth", "adoption"):
+            self.observe(name, self.epoch_paths[name], ceiling, document=True)
+        if "records" in self.epoch_entries:
+            self.record_directory = self.hold_directory("records", self.epoch_paths["records"])
+        self.current()
+
+    def publish_document(self, name, value):
+        raw = _wire(self.owner, value, self.limits)
+        held = self.files[name]
+        if held.raw is not None:
+            if held.raw != raw:
+                _refuse("immutable-epoch-document-differs")
+            self.current()
+            return
+        self.current()
+        self.owner["siaqueue"].fixed_atomic_publish(
+            held.path, raw, mode=0o600, exclusive=True, nonblocking=True,
+            destination_dir_fd=self.epoch_directory.fd,
+            staging_dir=self.staging_paths[name])
+        refreshed = self.observe(name, held.path, held.ceiling, required=True, document=True)
+        self.epoch_entries.add(name + ".json")
+        if refreshed.raw != raw or refreshed.parent_identity != held.parent_identity:
+            _refuse("epoch-publication-readback")
+        self.current()
+
+    def publish_marker(self, marker):
+        owner = self.owner
+        if _MARKER in self.memo and _same(owner, self.memo[_MARKER], marker):
+            self.current()
+            return
+        updated = {**self.memo, _MARKER: marker}
+        raw = source.native_bytes(owner, updated, ceiling=owner["MAX_MEMO_BYTES"])
+        owner["_memo_text"](updated)
+        detached = copy.deepcopy(updated)
+        if source.native_bytes(owner, detached, ceiling=owner["MAX_MEMO_BYTES"]) != raw:
+            _refuse("memo-copy-changed")
+        self.current()
+        prior = self.files["memo"]
+        owner["siaqueue"].fixed_atomic_publish(
+            prior.path, raw, mode=0o600, exclusive=False, nonblocking=True,
+            destination_dir_fd=prior.directories.fd,
+            staging_dir=self.staging_paths["memo"])
+        self.inputs_current()
+        held = self.observe("memo", prior.path, owner["MAX_MEMO_BYTES"], required=True)
+        if held.raw != raw or held.parent_identity != prior.parent_identity:
+            _refuse("epoch-memo-publication-readback")
+        self.memo.clear()
+        self.memo.update(detached)
+        self.memo_raw = raw
+        self.current()
+
+    def persist_retained_marker(self):
+        # A previous process can die after replacing the memo but before its
+        # parent-directory flush. Readable bytes alone do not close that cut.
+        # Sync the held parent without replacing the retained memo generation.
+        self.current()
+        os.fsync(self.files["memo"].directories.fd)
+        self.current()
+
+    def records_create(self):
+        if self.record_directory is not None:
+            self.current()
+            return
+        self.current()
+        os.mkdir("records", 0o700, dir_fd=self.epoch_directory.fd)
+        os.fsync(self.epoch_directory.fd)
+        self.record_directory = self.hold_directory(
+            "records", self.epoch_paths["records"])
+        self.epoch_entries.add("records")
+        os.fsync(self.record_directory.fd)
+        self.current()
+
+
+def _validate_birth(tx, value, expected):
+    owner = tx.owner
+    _keys(value, _BIRTH_KEYS, "birth")
+    _digest(value["birth_sha256"])
+    _keys(value["bootstrap_parent"], {
+        "source_batch_sha256", "live_generation_sha256", "state_sha256"}, "birth-parent")
+    for pin in value["bootstrap_parent"].values():
+        _digest(pin)
+    if value["schema"] != "sia-controller-delivery-epoch-birth-v1" \
+            or value["status"] != "birth-pending" \
+            or value["epoch_id"] != tx.epoch["epoch_id"] \
+            or not _same(owner, value["started_at"], tx.epoch["started_at"]) \
+            or value["epoch_key_sha256"] != tx.epoch_key \
+            or value["policy_sha256"] != tx.epoch["expected_live_policy_sha256"] \
+            or not _same(owner, value["limits"], tx.limits) \
+            or value["limits_sha256"] != tx.admitted["expected_journal_limits_sha256"] \
+            or value["non_claims"] != list(NON_CLAIMS) \
+            or _own(owner, value, "birth_sha256") != value["birth_sha256"]:
+        _refuse("birth-epoch-or-content-binding")
+    if tx.legacy and not _same(owner, value, expected):
+        _refuse("legacy-bootstrap-parent-changed")
+
+
+def _validate_marker(tx, marker, birth):
+    _keys(marker, _MARKER_KEYS, "epoch-marker")
+    if marker["adoption_sha256"] is not None:
+        _digest(marker["adoption_sha256"])
+    if not _same(tx.owner, marker, _marker(birth, marker["adoption_sha256"])):
+        _refuse("epoch-marker-birth-binding")
+
+
+def _finish(tx, birth):
+    adoption = tx.files["adoption"].value
+    if adoption is None or tx.record_directory is None:
+        _refuse("adopted-storage-missing")
+    _keys(adoption, _ADOPTION_KEYS, "adoption")
+    expected = _adoption(tx.owner, birth, _identity(os.fstat(tx.record_directory.fd)))
+    if not _same(tx.owner, adoption, expected):
+        _refuse("adoption-directory-or-content-binding")
+    if tx.external is not None and adoption["adoption_sha256"] != tx.external:
+        _refuse("external-adoption-pin-differs")
+    if not _same(tx.owner, tx.memo.get(_MARKER), _marker(birth, adoption["adoption_sha256"])):
+        _refuse("adopted-memo-binding")
+    result = _result(birth, adoption)
+    encoded = _wire(tx.owner, result, tx.limits)
+    tx.current()
+    detached = copy.deepcopy(result)
+    if _wire(tx.owner, detached, tx.limits) != encoded \
+            or _wire(tx.owner, result, tx.limits) != encoded:
+        _refuse("epoch-result-copy-changed")
+    tx.current()
+    return detached
+
+
+def prepare_epoch(owner, *, memo, admitted_status, retained_batch, committed,
+                  journal_limits, expected_journal_limits_sha256,
+                  expected_adoption_sha256):
+    """Prepare exact adopted storage, or refuse without fabricating history.
+
+    The caller's memo is synchronized only after each durable marker readback.
+    A killed process must reload that memo before retrying. An already adopted
+    epoch is an effectless byte/identity check, not another adoption or output.
+    """
+    try:
+        if type(owner) is not dict \
+                or not callable(owner.get("brainstem_owner")) \
+                or not callable(owner.get("corpus_owner")):
+            _refuse("owner-contract")
+        with owner["brainstem_owner"](), owner["corpus_owner"](), contextlib.ExitStack() as stack:
+            tx = _Transaction(owner, memo, {
+                "admitted_status": admitted_status, "retained_batch": retained_batch,
+                "committed": committed, "journal_limits": journal_limits,
+                "expected_journal_limits_sha256": expected_journal_limits_sha256,
+                "expected_adoption_sha256": expected_adoption_sha256,
+            }, stack)
+            expected_birth = tx.parent()
+            marker = memo.get(_MARKER)
+            if _MARKER in memo:
+                _keys(marker, _MARKER_KEYS, "epoch-marker")
+            committed_adoption = marker is not None and marker["adoption_sha256"] is not None
+            if tx.external is not None or not tx.legacy:
+                if not committed_adoption:
+                    _refuse("externally-pinned-adoption-marker-missing")
+                if marker["adoption_sha256"] != tx.external:
+                    _refuse("external-adoption-marker-pin")
+            if tx.legacy and marker is not None:
+                _validate_marker(tx, marker, expected_birth)
+            tx.directories_for(must_exist=(marker is not None or tx.external is not None or not tx.legacy))
+            birth_file, adoption_file = tx.files["birth"], tx.files["adoption"]
+            if marker is not None and birth_file.raw is None:
+                _refuse("retained-birth-document-missing")
+            if marker is None and (adoption_file.raw is not None or tx.record_directory is not None):
+                _refuse("unadmitted-epoch-storage")
+            if birth_file.raw is None:
+                if not tx.legacy or tx.external is not None:
+                    _refuse("birth-bootstrap-not-authorized")
+                tx.publish_document("birth", expected_birth)
+                tx.boundary("birth-durable")
+            birth = tx.files["birth"].value
+            _validate_birth(tx, birth, expected_birth)
+            if marker is not None:
+                _validate_marker(tx, marker, birth)
+                tx.persist_retained_marker()
+            if committed_adoption:
+                return _finish(tx, birth)
+            if not tx.legacy or tx.external is not None:
+                _refuse("adoption-repair-not-authorized")
+            if marker is None:
+                tx.publish_marker(_marker(birth, None))
+                tx.boundary("birth-pending")
+            if tx.files["adoption"].raw is not None and tx.record_directory is None:
+                _refuse("adoption-receipt-records-directory-missing")
+            if tx.record_directory is None:
+                tx.records_create()
+                tx.boundary("records-directory-durable")
+            adoption = _adoption(owner, birth, _identity(os.fstat(tx.record_directory.fd)))
+            if tx.files["adoption"].raw is None:
+                tx.publish_document("adoption", adoption)
+                tx.boundary("adoption-receipt-durable")
+            elif not _same(owner, tx.files["adoption"].value, adoption):
+                _refuse("immutable-adoption-receipt-differs")
+            tx.publish_marker(_marker(birth, adoption["adoption_sha256"]))
+            tx.boundary("adoption-memo-durable")
+            return _finish(tx, birth)
+    except ControllerDeliveryEpochRefusal:
+        raise
+    except _ERRORS as exc:
+        raise ControllerDeliveryEpochRefusal("epoch-domain-refused", upstream=exc) from exc
