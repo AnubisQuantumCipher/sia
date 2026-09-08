@@ -1,9 +1,11 @@
-"""Source-bound, crash-resumable delivery-journal birth and adoption.
+"""Source-bound delivery-journal adoption and descriptor-held observation.
 
 Storage adoption is deliberately separate from output authorization. This
-module prepares an empty legacy epoch or readmits an already pinned epoch.
-It neither captures delivery input nor provides a writer interface. A future
-source-v3 completion, not this receipt or its memo marker, enables writers.
+module durably prepares an empty legacy epoch or recovers an already pinned
+epoch. Its separate held reader checks existing generations without flushing
+or repairing them. A held view is not a durability recovery or writer permit.
+Neither interface captures delivery input or emits output. A source-v3
+completion retaining the adoption is required by the separate writer gate.
 """
 
 import contextlib
@@ -26,6 +28,14 @@ NON_CLAIMS = (
     "Directory and file joins concern the checked local descriptor generations, not protection against hostile same-user mutation or complete historical recall.",
     "No output is emitted and no clock is sampled by adoption; no human receipt, JACKAL assurance, biological cognition or held-out retrieval win is established.",
     "All source, live-loop and delivery-journal nonclaims remain controlling.",
+)
+HELD_NON_CLAIMS = (
+    "Held observation validates current retained descriptor generations; it does not replay durability barriers or repair an interrupted adoption.",
+    "The caller holds the ordinary corpus lease; this reader does not request the resident brainstem lease or create, publish, flush or repair epoch, memo or journal storage.",
+    "This held view is not writer authorization; a separate writer gate must admit an acknowledged source-v3 batch retaining the exact adoption.",
+    "Legacy empty-epoch observation can support construction of the first source-v3 input, not output recording or a replacement for prepare_epoch durability recovery.",
+    "No delivery is consumed or emitted and no clock is acquired; this view establishes no human receipt, biological cognition or held-out retrieval win.",
+    "Directory identities describe checked local generations, not hostile same-user protection or complete historical recall; all adoption, source, live-loop and journal nonclaims remain controlling.",
 )
 _MARKER = "controller_delivery_epoch"
 _ROOT = "CONTROLLER_DELIVERY_EPOCH_ROOT"
@@ -152,14 +162,20 @@ def _result(birth, adoption):
 
 
 class _Transaction:
-    """Retain original input and descriptor joins through named effects."""
+    """Retain input and descriptor joins for preparation or held reads."""
 
-    def __init__(self, owner, memo, request, stack):
+    def __init__(self, owner, memo, request, stack, *, readonly=False):
         self.owner, self.memo, self.stack = owner, memo, stack
+        if type(readonly) is not bool:
+            _refuse("transaction-mode-contract")
+        self.readonly = readonly
         if type(owner) is not dict or type(memo) is not dict:
             _refuse("owner-or-memo-shape")
-        for name in ("brainstem_owner", "corpus_owner", "_load_live_publication",
-                     "_read_committed_live_generation", "_memo_text", _BOUNDARY):
+        operations = ("corpus_owner", "_load_live_publication",
+                      "_read_committed_live_generation")
+        if not readonly:
+            operations += ("brainstem_owner", "_memo_text", _BOUNDARY)
+        for name in operations:
             if not callable(owner.get(name)):
                 _refuse("owner-operation-contract")
         for name in ("MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS"):
@@ -200,6 +216,7 @@ class _Transaction:
         self.epoch_entries = None
         self.record_directory = None
         self.legacy = None
+        self.generation_raw = None
         self.budget = len(self.request_raw) + len(self.memo_raw)
         self.observe("memo", self.paths["MEMO_PATH"], owner["MAX_MEMO_BYTES"], required=True)
         if source.native_bytes(owner, self.files["memo"].value,
@@ -246,6 +263,12 @@ class _Transaction:
                 or source.native_bytes(owner, self.admitted) != self.request_raw \
                 or source.native_bytes(owner, self.memo, ceiling=owner["MAX_MEMO_BYTES"]) != self.memo_raw:
             _refuse("input-or-memo-changed")
+        if self.generation_raw is not None:
+            if _raw(owner, self.generation,
+                    ceiling=self.capacities["MAX_STATE_JSON_BYTES"]) != self.generation_raw \
+                    or self.generation.get("generation_sha256") \
+                    != self.admitted["committed"]["live_generation_sha256"]:
+                _refuse("held-parent-generation-changed")
 
     def current(self):
         self.inputs_current()
@@ -272,9 +295,14 @@ class _Transaction:
         self.inputs_current()
 
     def boundary(self, phase):
+        self.require_preparation()
         self.current()
         self.owner[_BOUNDARY](phase)
         self.current()
+
+    def require_preparation(self):
+        if self.readonly:
+            _refuse("held-epoch-effect-not-authorized")
 
     def parent(self):
         owner, request = self.owner, self.admitted
@@ -337,6 +365,18 @@ class _Transaction:
         else:
             _refuse("parent-source-schema")
         self.current()
+        if self.readonly:
+            generation_raw = _raw(
+                owner, generation, ceiling=self.capacities["MAX_STATE_JSON_BYTES"])
+            self.budget += len(generation_raw)
+            if self.budget > self.capacities["MAX_STATE_JSON_BYTES"]:
+                _refuse("complete-held-authority-byte-capacity")
+            detached_generation = copy.deepcopy(generation)
+            if _raw(owner, generation) != generation_raw \
+                    or _raw(owner, detached_generation) != generation_raw:
+                _refuse("held-parent-generation-copy-changed")
+            generation = detached_generation
+            self.generation_raw = generation_raw
         self.epoch, self.generation = epoch, generation
         self.epoch_key = _sha(owner, {
             "schema": "sia-controller-delivery-epoch-path-v1",
@@ -352,17 +392,18 @@ class _Transaction:
                                 "adoption": os.path.join(epoch_path, "adoption.json"),
                                 "records": os.path.join(epoch_path, "records"),
                             }.items()}
-        roots = tuple(self.paths[name] for name in (_ROOT, "CORPUS", "STATE", "SHARE"))
         self.staging_paths = {}
-        for name, path in {"memo": self.paths["MEMO_PATH"],
-                           "birth": self.epoch_paths["birth"],
-                           "adoption": self.epoch_paths["adoption"]}.items():
-            staging = source._canonical_path(
-                owner, owner["siaqueue"].staging_dir_for(path, authority_roots=roots))
-            for leaf in (owner["siaqueue"].STAGING_LOCK_NAME,
-                         owner["siaqueue"].STAGING_PAYLOAD_NAME):
-                source._canonical_path(owner, os.path.join(staging, leaf))
-            self.staging_paths[name] = staging
+        if not self.readonly:
+            roots = tuple(self.paths[name] for name in (_ROOT, "CORPUS", "STATE", "SHARE"))
+            for name, path in {"memo": self.paths["MEMO_PATH"],
+                               "birth": self.epoch_paths["birth"],
+                               "adoption": self.epoch_paths["adoption"]}.items():
+                staging = source._canonical_path(
+                    owner, owner["siaqueue"].staging_dir_for(path, authority_roots=roots))
+                for leaf in (owner["siaqueue"].STAGING_LOCK_NAME,
+                             owner["siaqueue"].STAGING_PAYLOAD_NAME):
+                    source._canonical_path(owner, os.path.join(staging, leaf))
+                self.staging_paths[name] = staging
         birth = _seal(owner, {
             "schema": "sia-controller-delivery-epoch-birth-v1",
             "status": "birth-pending", "epoch_id": epoch["epoch_id"],
@@ -377,6 +418,12 @@ class _Transaction:
             "limits_sha256": request["expected_journal_limits_sha256"],
             "non_claims": list(NON_CLAIMS),
         }, "birth_sha256")
+        if self.readonly:
+            # Existing-only observation does not need prospective writer
+            # staging paths or future memo images. The full held view has its
+            # own combined representation admission before its first copy.
+            self.current()
+            return birth
         # Reserve both documents, result and both complete future memo images
         # before root or records creation. The actual identity must fit this
         # declared integer representation; every retained byte is rechecked.
@@ -396,7 +443,12 @@ class _Transaction:
         self.current()
         return birth
 
-    def directories_for(self, *, must_exist):
+    def directories_for(self, *, must_exist, persist=True):
+        if type(must_exist) is not bool or type(persist) is not bool \
+                or (not persist and not must_exist):
+            _refuse("epoch-directory-mode-contract")
+        if persist:
+            self.require_preparation()
         root = self.paths[_ROOT]
         parent = source._DirectoryChain(self.owner, os.path.dirname(root))
         self.stack.callback(parent.close)
@@ -416,10 +468,12 @@ class _Transaction:
             # Retry may see mkdir's entry before the creating process
             # persisted it. Flush its held parent even for an existing leaf,
             # before any child directory or publication can depend on it.
-            os.fsync(parent.fd)
+            if persist:
+                os.fsync(parent.fd)
             parent.current()
             parent = self.hold_directory(name, path)
-            os.fsync(parent.fd)
+            if persist:
+                os.fsync(parent.fd)
         self.epoch_directory = parent
         with os.scandir(parent.fd) as entries:
             self.epoch_entries = set()
@@ -435,6 +489,7 @@ class _Transaction:
         self.current()
 
     def publish_document(self, name, value):
+        self.require_preparation()
         raw = _wire(self.owner, value, self.limits)
         held = self.files[name]
         if held.raw is not None:
@@ -454,6 +509,7 @@ class _Transaction:
         self.current()
 
     def publish_marker(self, marker):
+        self.require_preparation()
         owner = self.owner
         if _MARKER in self.memo and _same(owner, self.memo[_MARKER], marker):
             self.current()
@@ -480,6 +536,7 @@ class _Transaction:
         self.current()
 
     def persist_retained_marker(self):
+        self.require_preparation()
         # A previous process can die after replacing the memo but before its
         # parent-directory flush. Readable bytes alone do not close that cut.
         # Sync the held parent without replacing the retained memo generation.
@@ -488,6 +545,7 @@ class _Transaction:
         self.current()
 
     def records_create(self):
+        self.require_preparation()
         if self.record_directory is not None:
             self.current()
             return
@@ -555,6 +613,173 @@ def _finish(tx, birth):
     return detached
 
 
+class _HeldEpoch:
+    """An existing generation held only through its caller's context body."""
+
+    def __init__(self, tx, adopted):
+        self._tx = tx
+        self._closed = False
+        tx.current()
+        view = {
+            "schema": "sia-controller-delivery-epoch-view-v1",
+            "status": "held-not-consumed",
+            "epoch_adoption": adopted,
+            "parent_committed": tx.admitted["committed"],
+            "parent_generation": tx.generation,
+            "expected_parent_generation_sha256":
+                tx.admitted["committed"]["live_generation_sha256"],
+            "records_directory": tx.record_directory.path,
+            "records_identity": adopted["adoption"]["records_identity"],
+            "non_claims": list(HELD_NON_CLAIMS),
+        }
+        # A full generation is deliberately exposed, not an unpinned summary.
+        # Admit its complete outer view together with held authority bytes
+        # before copying. Journal document limits still govern the retained
+        # birth/adoption documents, not a newly invented journal record.
+        self._view_raw = self._encode(view)
+        if tx.budget + len(self._view_raw) > tx.capacities["MAX_STATE_JSON_BYTES"]:
+            _refuse("complete-held-view-byte-capacity")
+        self._view = copy.deepcopy(view)
+        if self._encode(view) != self._view_raw \
+                or self._encode(self._view) != self._view_raw:
+            _refuse("held-epoch-view-copy-changed")
+        self.current()
+
+    def _encode(self, value):
+        return _raw(self._tx.owner, value,
+                    ceiling=self._tx.capacities["MAX_STATE_JSON_BYTES"])
+
+    def current(self):
+        try:
+            if self._closed:
+                _refuse("held-epoch-closed")
+            self._tx.current()
+            if self._encode(self._view) != self._view_raw:
+                _refuse("held-epoch-view-changed")
+            self._tx.current()
+        except ControllerDeliveryEpochRefusal:
+            raise
+        except _ERRORS as exc:
+            raise ControllerDeliveryEpochRefusal(
+                "held-epoch-domain-refused", upstream=exc) from exc
+
+    def read(self):
+        try:
+            self.current()
+            detached = copy.deepcopy(self._view)
+            if self._encode(detached) != self._view_raw \
+                    or self._encode(self._view) != self._view_raw:
+                _refuse("held-epoch-view-copy-changed")
+            self.current()
+            return detached
+        except ControllerDeliveryEpochRefusal:
+            raise
+        except _ERRORS as exc:
+            raise ControllerDeliveryEpochRefusal(
+                "held-epoch-domain-refused", upstream=exc) from exc
+
+    def _retire(self):
+        # Refuse access before descriptor numbers can be closed and recycled.
+        self._closed = True
+
+
+def _require_entered_corpus(owner):
+    """Check the core's entered scope without creating or acquiring a lease.
+
+    A raw inherited descriptor is not an entered scope. Its caller must
+    first use the ordinary core owner context, which validates that handoff.
+    This check never closes or changes the caller's descriptor or lock.
+    """
+    depth = owner["_CORPUS_OWNER_DEPTH"].get()
+    descriptor = owner["_CORPUS_OWNER_FD"].get()
+    if type(depth) is not int or depth <= 0 \
+            or type(descriptor) is not int or descriptor < 0:
+        _refuse("entered-corpus-scope-required")
+    observed = os.fstat(descriptor)
+    if not stat.S_ISREG(observed.st_mode) \
+            or observed.st_uid != os.geteuid() \
+            or stat.S_IMODE(observed.st_mode) != 0o600 \
+            or observed.st_nlink != 1:
+        _refuse("entered-corpus-descriptor-contract")
+    path = source._canonical_path(owner, owner["CORPUS_OWNER_LOCK"])
+    if path == os.sep or ".gbrain" in path.split(os.sep):
+        _refuse("entered-corpus-path-contract")
+    with contextlib.closing(source._DirectoryChain(
+            owner, os.path.dirname(path))) as parent:
+        named = os.stat(os.path.basename(path), dir_fd=parent.fd,
+                        follow_symlinks=False)
+        if _identity(named) != _identity(observed) or named.st_nlink != 1:
+            _refuse("entered-corpus-descriptor-name-binding")
+        parent.current()
+        current = os.fstat(descriptor)
+        if _identity(current) != _identity(observed) or current.st_nlink != 1:
+            _refuse("entered-corpus-descriptor-changed")
+
+
+@contextlib.contextmanager
+def hold_epoch(owner, *, memo, admitted_status, retained_batch, committed,
+               journal_limits, expected_journal_limits_sha256,
+               expected_adoption_sha256):
+    """Hold an existing source-bound epoch without storage effects.
+
+    The caller already owns the ordinary corpus lease; this reader nests it
+    for its entire lifetime and never requests the resident brainstem lease.
+    Unentered or invalid scoped ownership refuses before any owner call.
+    Existing marker/adoption generations must match the nonnull external pin.
+    This is an observation, not a replay of prepare_epoch's durability steps.
+    Legacy first-v3 capture must settle that preparation before entering here.
+
+    Journal acquisition and its independent directory-identity join remain
+    separate. Close this handle before publishing a successor source slot,
+    retaining the caller's outer corpus lease across the phase boundary.
+    Normal exit revalidates; exceptional exit preserves the caller exception.
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            if type(owner) is not dict or not callable(owner.get("corpus_owner")):
+                _refuse("owner-contract")
+            _digest(expected_adoption_sha256)
+            _require_entered_corpus(owner)
+            stack.enter_context(owner["corpus_owner"]())
+            tx = _Transaction(owner, memo, {
+                "admitted_status": admitted_status, "retained_batch": retained_batch,
+                "committed": committed, "journal_limits": journal_limits,
+                "expected_journal_limits_sha256": expected_journal_limits_sha256,
+                "expected_adoption_sha256": expected_adoption_sha256,
+            }, stack, readonly=True)
+            expected_birth = tx.parent()
+            marker = memo.get(_MARKER)
+            _keys(marker, _MARKER_KEYS, "epoch-marker")
+            if marker["adoption_sha256"] != tx.external:
+                _refuse("external-adoption-marker-pin")
+            tx.directories_for(must_exist=True, persist=False)
+            if tx.files["birth"].raw is None:
+                _refuse("retained-birth-document-missing")
+            birth = tx.files["birth"].value
+            _validate_birth(tx, birth, expected_birth)
+            _validate_marker(tx, marker, birth)
+            adopted = _finish(tx, birth)
+            held = _HeldEpoch(tx, adopted)
+            held.current()
+        except ControllerDeliveryEpochRefusal:
+            raise
+        except _ERRORS as exc:
+            raise ControllerDeliveryEpochRefusal(
+                "held-epoch-domain-refused", upstream=exc) from exc
+
+        # Do not place the yield under the entry-domain error conversion.
+        # A caller's ValueError, RuntimeError, SystemExit or KeyboardInterrupt
+        # remains that original exception, even if its body changed a file.
+        try:
+            yield held
+        except BaseException:
+            raise
+        else:
+            held.current()
+        finally:
+            held._retire()
+
+
 def prepare_epoch(owner, *, memo, admitted_status, retained_batch, committed,
                   journal_limits, expected_journal_limits_sha256,
                   expected_adoption_sha256):
@@ -562,7 +787,9 @@ def prepare_epoch(owner, *, memo, admitted_status, retained_batch, committed,
 
     The caller's memo is synchronized only after each durable marker readback.
     A killed process must reload that memo before retrying. An already adopted
-    epoch is an effectless byte/identity check, not another adoption or output.
+    epoch replays directory durability barriers without replacing retained
+    publications; it is not another adoption or output. Use hold_epoch only
+    for the separate existing-generation, no-fsync observation contract.
     """
     try:
         if type(owner) is not dict \

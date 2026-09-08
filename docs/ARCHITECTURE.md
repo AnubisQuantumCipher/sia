@@ -456,6 +456,21 @@ changed parents, pending successor WAL or pre-v3 deliveries refuse without
 repair. The result is `adopted-not-enabled`: it emits no output, samples no
 clock and does not consume a delivery or acknowledge a source batch.
 
+The separate `hold_epoch` reader requires existing adoption storage and a
+nonnull independent pin. It first checks the core's entered corpus scope
+and its live private descriptor against the named lease, without acquiring
+one; raw inherited descriptors must first enter the ordinary core scope.
+Within that caller-owned lease it
+retains the source, status, memo and adoption descriptors, exact full parent
+generation and records-directory identity. Its detached
+`held-not-consumed` view revalidates on reads and normal context exit;
+exceptional exit preserves the caller error and retires the handle before
+closing owned descriptors. It never requests the resident brainstem lease
+or creates, flushes, publishes or repairs epoch storage. A no-fsync
+observation cannot replace preparation's interrupted-write recovery. The
+journal is acquired separately and its held directory identity must be
+joined to adoption before capture uses any records.
+
 This component is tested source construction, not a resident hook or an
 installed runtime-ladder member. Existing source readers still reject v3.
 The pending integration must retain adoption and journal descriptors through
@@ -464,6 +479,10 @@ and retain the outer corpus lease across both. A fully acknowledged source-v3
 batch must independently retain the adoption before writers can be enabled.
 Neither an adopted memo alone nor a successful storage test establishes a
 cognitive mechanism win, durable output delivery or human receipt.
+Notification collection can create a pending acquisition fence in the memo;
+the completed reader deliberately rejects that state. The upcoming v3
+capture, retention and pre-WAL recovery path needs distinct source-only
+predecessor admission, not a relaxed completed/readiness or writer gate.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
