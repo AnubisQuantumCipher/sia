@@ -528,6 +528,22 @@ class _HeldDeliveryInspection:
         except _ERRORS as exc:
             _raise(exc, "not-started")
 
+    def directory_identity(self):
+        """Return detached native stat fields for the actually held directory.
+
+        The whole record roster remains controlling. This observation alone
+        is neither adoption authority nor permission to emit or consume output.
+        """
+        try:
+            self.current()
+            info = os.fstat(self._snapshot.directory.fd)
+            result = {name: getattr(info, "st_" + name)
+                      for name in ("dev", "ino", "mode", "uid", "gid")}
+            self.current()
+            return result
+        except _ERRORS as exc:
+            _raise(exc, "not-started")
+
     def read(self):
         try:
             self.current()

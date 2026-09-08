@@ -431,6 +431,10 @@ returns the unchanged detached journal-v1 inspection; `current()` checks the
 whole held roster. Normal context exit revalidates, all exits retire the
 handle and close owned descriptors, and a caller exception remains its own
 exception. The legacy one-shot inspector delegates to the same reader.
+The additive `directory_identity()` accessor returns detached native
+`dev`, `ino`, `mode`, `uid` and `gid` observations for the held directory,
+bracketed by complete snapshot checks. It preserves journal-v1 read bytes
+and does not turn a matching directory into adoption or writer authority.
 Neither path creates missing journal directories or repairs pending output.
 Source authority, journal adoption and the successor WAL cut still belong
 to the separate outer integration. The inspection retains completion records,
