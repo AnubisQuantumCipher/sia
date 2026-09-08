@@ -537,19 +537,38 @@ A represented later-v3 continuation retains the original pinned adoption,
 not a rebased birth. An empty legacy bootstrap journal proves no nonempty
 delivery consumption or successful source-v3 resident invocation.
 
-This component is tested source construction, not a resident hook or an
-installed runtime-ladder member. Existing source readers still reject v3.
-The pending integration must retain adoption and journal descriptors through
-capture, close that read-only interval before publishing the successor WAL,
-and retain the outer corpus lease across both. A fully acknowledged source-v3
-batch must independently retain the adoption before writers can be enabled.
+`siasourcebatch.capture_successor_v3` is the additive acquisition front door.
+It requires the full admitted status and completed source parent, journal
+limits and independent adoption pin. A genuine epoch preflight precedes
+collection. The shared collector then runs once; only its existing successful
+notification marker/memo refresh can update that request's memo authority.
+Final epoch and journal holds span wrapper construction, full batch hashing,
+retained validation and detachment. They close before the last source named
+sweep. The resulting v3 batch preserves the original source origins and v2
+idle/gist contract and adds the complete delivery wrapper. Pure retained
+validation never reopens the journal or reacquires current sources. Legacy
+successor capture refuses a v3 predecessor rather than discarding its journal.
+
+`siacontrollerliveinput.prepare_inputs_v3` separately requires the full actual
+parent generation and its independent pin. It replays the real source gate,
+compares the entire parent to the wrapper's retained generation and returns
+the exact live preparation request with the complete bound delivery prefix.
+It performs no storage I/O, acquisition or pulse execution. The legacy
+adapter continues to refuse delivery-bearing input, including null members.
+
+These additive components are source construction, not a resident hook or an
+installed runtime-ladder member. WAL relationship checks, resident dispatch
+and actual v3 acknowledgment remain distinct integration work. Publication
+must retain the outer corpus lease across capture and fixed-slot retention.
+A fully acknowledged source-v3 batch must independently retain the adoption
+before writers can be enabled.
 Neither an adopted memo alone nor a successful storage test establishes a
 cognitive mechanism win, durable output delivery or human receipt.
 Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
 admission for the capture-held epoch. Its separate fenced successor storage
-path is implemented above; v3 batch construction and resident dispatch
+path is implemented above; resident dispatch and writer authorization
 remain separate construction work,
 not a relaxed completed/readiness or writer gate.
 

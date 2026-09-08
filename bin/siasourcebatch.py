@@ -6,6 +6,11 @@ selected collector exactly once, and returns an inert batch.  It does not
 publish page bytes, acknowledge a cursor, settle a refusal, stage a live
 generation, or make the batch durable.
 
+Source-v3 additionally observes an already adopted delivery epoch and its
+independently held journal. It preserves the source-v2 idle contract and
+returns an inert delivery wrapper, not a writer permit or consumed history.
+Retained batch validation never reacquires these authority front doors.
+
 The outer source documents use ASCII canonical JSON because they retain
 native finite configuration floats and stat integers.  Nested event, page,
 intake, policy, and journal documents retain their original UTF-8 canonical
@@ -55,6 +60,7 @@ BATCH_KEYS = frozenset({
     "intake_projection", "non_claims", "batch_sha256",
 })
 BATCH_V2_KEYS = BATCH_KEYS | frozenset({"idle_input"})
+BATCH_V3_KEYS = BATCH_V2_KEYS | frozenset({"delivery_input"})
 CONFIG_RECEIPT_KEYS = frozenset({
     "schema", "scope", "observed_at", "config_file", "decoded_config",
     "active_config", "runtime_selection", "configuration_sha256",
@@ -1457,107 +1463,349 @@ def _batch_id(owner, epoch_sha256, observed_at, receipt, cursor):
     })
 
 
+class _DeliveryCaptureFiles(_CaptureFiles):
+    """Retain the existing collector's actual notification memo transitions.
+
+    This does not authorize a memo write. The sole refresh entry point is the
+    shared notification collector callback, after its existing marker write.
+    Initial and v2 capture retain their original file-holder behavior.
+    """
+
+    def __init__(self, owner):
+        self.notification_refreshes = []
+        super().__init__(owner)
+
+    def refresh_memo(self, expected):
+        before = native_bytes(self.owner, self.files["memo"].value,
+                              ceiling=self.owner["MAX_MEMO_BYTES"])
+        super().refresh_memo(expected)
+        after = native_bytes(self.owner, self.files["memo"].value,
+                             ceiling=self.owner["MAX_MEMO_BYTES"])
+        self.notification_refreshes.append((before, after))
+
+
+class _DeliveryCaptureRequest:
+    """A source-v3 request, not a readiness bypass or a publication owner.
+
+    The complete represented request is bounded before any copy or lease.
+    Scalar authority paths, capacities and the notification key are selected
+    before its first serialization. A collector-produced notification refresh
+    may add only that exact valid marker to the otherwise unchanged memo.
+    The admitted original remains separately pinned throughout capture.
+    """
+
+    def __init__(self, owner, request):
+        self.owner, self.request = owner, request
+        if type(owner) is not dict:
+            refuse("delivery-capture-owner-contract")
+        self.paths = {name: owner.get(name) for name in (
+            "HOME", "CORPUS", "STATE", "SHARE", "CONFIG_PATH", "CURSORS_PATH",
+            "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH", "LIVE_CANDIDATE_PATH",
+            "LIVE_STATE_PATH", "CONTROLLER_SOURCE_BATCH_PATH",
+            "CONTROLLER_SOURCE_ARCHIVE_DIR", "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR",
+            "CONTROLLER_DELIVERY_EPOCH_ROOT", "CORPUS_OWNER_LOCK", "BRAINSTEM_OWNER_LOCK",
+        )}
+        self.capacities = {name: owner.get(name) for name in (
+            "MAX_MEMO_BYTES", "MAX_STATE_JSON_BYTES", "MAX_CONFIG_PATH_CHARS",
+            "MAX_CONFIG_TEXT_CHARS", "MAX_CONFIG_BYTES", "MAX_SOURCE_REPLAY_EVENTS",
+            "MAX_SOURCE_REPLAY_SOURCES", "MAX_LEDGER_PENDING_RECORDS",
+            "MAX_JSON_SAFE_INTEGER",
+        )}
+        self.notification_key = owner.get("NOTIFY_BASELINE_ATTEMPT_KEY")
+        if any(type(value) is not int or value <= 0
+               for value in self.capacities.values()) \
+                or type(self.notification_key) is not str or not self.notification_key:
+            refuse("delivery-capture-owner-contract")
+        for path in self.paths.values():
+            _canonical_path(owner, path)
+        self.basis_current()
+        self.original_raw = self.wire(request)
+        self.expected_raw = self.original_raw
+        self.basis_current()
+        self.memo_raw = self.wire(request["memo"], memo=True)
+        self.basis_current()
+        if self.wire(request) != self.original_raw:
+            refuse("delivery-capture-request-changed")
+        _successor_memo(owner, request["memo"], request["committed"])
+        _hex(request["expected_adoption_sha256"], "delivery-adoption-pin")
+        _hex(request["expected_journal_limits_sha256"], "delivery-journal-limits-pin")
+        import siadelivery
+        siadelivery._limits(request["journal_limits"])
+        if _live._sha(request["journal_limits"]) \
+                != request["expected_journal_limits_sha256"]:
+            refuse("delivery-journal-limits-pin")
+        _validate_successor_request(
+            owner, request["retained_batch"], request["committed"], request["epoch"],
+            request["expected_epoch_sha256"], request["observed_at"])
+        _notification_marker(owner, request["memo"])
+        self.basis_current()
+        if self.wire(request) != self.original_raw:
+            refuse("delivery-capture-request-changed")
+        self.admitted = owner["copy"].deepcopy(request)
+        self.held_epoch = self.held_journal = None
+        self.epoch_view = self.journal_view = None
+        self.epoch_view_raw = self.journal_view_raw = None
+        self.collected = False
+        self.inputs_current()
+
+    def wire(self, value, *, memo=False):
+        return native_bytes(self.owner, value, ceiling=self.capacities[
+            "MAX_MEMO_BYTES" if memo else "MAX_STATE_JSON_BYTES"])
+
+    def basis_current(self):
+        for name, expected in {**self.paths, **self.capacities,
+                               "NOTIFY_BASELINE_ATTEMPT_KEY": self.notification_key}.items():
+            actual = self.owner.get(name)
+            if type(actual) is not type(expected) or actual != expected:
+                refuse("delivery-capture-owner-basis-changed")
+
+    def inputs_current(self):
+        self.basis_current()
+        if self.wire(self.request) != self.expected_raw \
+                or self.wire(self.admitted) != self.original_raw \
+                or self.wire(self.request["memo"], memo=True) != self.memo_raw:
+            refuse("delivery-capture-request-changed")
+        self.basis_current()
+
+    def authority(self, files):
+        self.inputs_current()
+        _durable_successor_authority(
+            self.owner, files, self.request["memo"], self.admitted["committed"])
+        self.inputs_current()
+
+    def epoch_context(self):
+        import siacontrollerdeliveryepoch
+        self.inputs_current()
+        request = self.admitted
+        arguments = {key: request[key] for key in (
+            "admitted_status", "retained_batch", "committed", "journal_limits",
+            "expected_journal_limits_sha256", "expected_adoption_sha256")}
+        arguments["memo"] = self.request["memo"]
+        marker = _notification_marker(self.owner, self.request["memo"])
+        self.inputs_current()
+        if marker is None:
+            return siacontrollerdeliveryepoch.hold_epoch(self.owner, **arguments)
+        marker_pin = native_sha(self.owner, marker)
+        self.inputs_current()
+        return siacontrollerdeliveryepoch.hold_capturable_epoch(
+            self.owner, **arguments, notification_baseline_attempt=marker,
+            expected_notification_baseline_attempt_sha256=marker_pin)
+
+    def preflight(self):
+        # Preparation must already have completed. This genuine held read
+        # refuses missing/rebound adopted storage before source acquisition.
+        # Close it before the collector's existing legal memo refresh.
+        self.inputs_current()
+        with self.epoch_context() as held:
+            held.current()
+            self.inputs_current()
+        self.inputs_current()
+
+    def accept_collection(self, files, collected):
+        if self.collected:
+            refuse("delivery-capture-duplicate-collection")
+        self.basis_current()
+        if self.wire(self.admitted) != self.original_raw:
+            refuse("delivery-capture-request-changed")
+        transitions = files.notification_refreshes
+        actual_marker = _notification_marker(self.owner, self.request["memo"])
+        if self.wire(actual_marker) != self.wire(collected["notification_baseline_attempt"]):
+            refuse("delivery-capture-notification-binding")
+        if transitions:
+            original_memo = self.admitted["memo"]
+            if len(transitions) != 1 or actual_marker is None \
+                    or transitions[0][0] != self.memo_raw:
+                refuse("delivery-capture-notification-transition")
+            prior = _notification_marker(self.owner, original_memo)
+            if prior is not None and self.wire(prior) != self.wire(actual_marker):
+                refuse("delivery-capture-notification-transition")
+            expected_memo = {**original_memo, self.notification_key: actual_marker}
+            expected_request = {**self.admitted, "memo": expected_memo}
+            updated_raw = self.wire(expected_request)
+            updated_memo_raw = self.wire(expected_memo, memo=True)
+            if transitions[0][1] != updated_memo_raw \
+                    or self.wire(self.request) != updated_raw \
+                    or self.wire(files.files["memo"].value, memo=True) != updated_memo_raw:
+                refuse("delivery-capture-notification-transition")
+            self.expected_raw, self.memo_raw = updated_raw, updated_memo_raw
+        self.inputs_current()
+        self.collected = True
+
+    def bind(self, stack, result):
+        import siacontrollerdeliverywrapper
+        import siadelivery
+        self.inputs_current()
+        if not self.collected or self.held_epoch is not None:
+            refuse("delivery-capture-phase")
+        self.held_epoch = stack.enter_context(self.epoch_context())
+        self.epoch_view = self.held_epoch.read()
+        self.epoch_view_raw = self.wire(self.epoch_view)
+        self.held_journal = stack.enter_context(siadelivery.hold_deliveries(
+            directory=self.epoch_view["records_directory"],
+            epoch_id=self.admitted["epoch"]["epoch_id"],
+            limits=self.admitted["journal_limits"]))
+        if self.held_journal.directory_identity() != self.epoch_view["records_identity"]:
+            refuse("delivery-capture-records-identity")
+        self.journal_view = self.held_journal.read()
+        self.journal_view_raw = self.wire(self.journal_view)
+        self.current()
+        projection = result["intake_projection"]
+        wrapped = siacontrollerdeliverywrapper.build(
+            self.owner, parent_source_schema=self.admitted["retained_batch"]["schema"],
+            epoch_view=self.epoch_view,
+            expected_epoch_view_sha256=native_sha(self.owner, self.epoch_view),
+            expected_adoption_sha256=self.admitted["expected_adoption_sha256"],
+            journal=self.journal_view, expected_journal_sha256=_live._sha(self.journal_view),
+            epoch=result["epoch"], expected_epoch_sha256=result["epoch_sha256"],
+            projection=projection, expected_projection_sha256=projection["projection_sha256"],
+            observed_at=result["observed_at"],
+            notification_baseline_attempt=result["notification_baseline_attempt"])
+        self.current()
+        return wrapped
+
+    def current(self):
+        self.inputs_current()
+        if self.held_epoch is not None:
+            self.held_epoch.current()
+            self.held_journal.current()
+            if self.wire(self.epoch_view) != self.epoch_view_raw \
+                    or self.wire(self.journal_view) != self.journal_view_raw \
+                    or self.held_journal.directory_identity() != self.epoch_view["records_identity"]:
+                refuse("delivery-capture-held-image-changed")
+            self.held_epoch.current()
+            self.held_journal.current()
+        self.inputs_current()
+
+
 def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
-                    observed_at, authority, successor=False):
+                    observed_at, authority, successor=False, delivery=None):
     epoch_raw = native_bytes(owner, epoch)
     admitted_epoch = owner["copy"].deepcopy(epoch)
     if native_bytes(owner, admitted_epoch) != epoch_raw \
             or native_bytes(owner, epoch) != epoch_raw:
         refuse("epoch-copy-changed")
-    files = _CaptureFiles(owner)
+    files = (_CaptureFiles(owner) if delivery is None
+             else _DeliveryCaptureFiles(owner))
     try:
         def current():
             files.current()
             authority(files)
+            if delivery is not None:
+                delivery.current()
 
-        current()
-        runtime = _RuntimeConfiguration(
-            owner, admitted_epoch, files.files["config"], observed_at)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        cursor_value = ({} if files.files["cursor"].raw is None
-                        else files.files["cursor"].value)
-        if type(cursor_value) is not dict:
-            refuse("cursor-shape")
-        operation_id = _batch_id(
-            owner, expected_epoch_sha256, observed_at,
-            runtime.receipt, cursor_value)
-        collected = _collect(
-            owner, admitted_epoch, memo, files, runtime, operation_id,
-            epoch_raw)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        returns = _source_returns(
-            owner, admitted_epoch, observed_at, operation_id,
-            collected["runs"])
-        closure = _plan_events(
-            owner, collected, runtime, files, epoch, epoch_raw)
-        projection = _intake_projection(
-            owner, admitted_epoch, returns, closure, observed_at)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        result = {
-            "schema": "sia-controller-source-batch-v1",
-            "status": "captured-not-published",
-            "batch_id": operation_id,
-            "observed_at": observed_at,
-            "epoch": admitted_epoch,
-            "epoch_sha256": expected_epoch_sha256,
-            "configuration_receipt": runtime.receipt,
-            "source_returns": returns,
-            "cursor_proposal": _cursor_proposal(owner, files, collected),
-            "journal_proposals": collected["journal_proposals"],
-            "refusal_intents": collected["refusal_intents"],
-            "notification_baseline_attempt": collected[
-                "notification_baseline_attempt"],
-            "event_closure": closure,
-            "intake_projection": projection,
-            "non_claims": list(NON_CLAIMS),
-            "batch_sha256": "0" * 64,
-        }
-        if successor:
-            result["schema"] = "sia-controller-source-batch-v2"
-            result["idle_input"] = None
-            if all(not run["events"] for run in returns["runs"]):
-                import siacontrolleridle
-                result["idle_input"] = siacontrolleridle.capture(
-                    owner, epoch=admitted_epoch, projection=projection,
-                    observed_at=observed_at)
+        with contextlib.ExitStack() as delivery_holds:
+            current()
+            runtime = _RuntimeConfiguration(
+                owner, admitted_epoch, files.files["config"], observed_at)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            if delivery is not None:
+                delivery.preflight()
                 runtime.current()
                 current()
                 _epoch_current(owner, epoch, epoch_raw)
-        _json_size(owner, result, owner["MAX_STATE_JSON_BYTES"],
-                   ascii_only=True)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        body = {key: value for key, value in result.items()
-                if key != "batch_sha256"}
-        result["batch_sha256"] = native_sha(owner, body)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        validate_batch(owner, result, result["batch_sha256"])
-        result_raw = native_bytes(owner, result)
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        detached = owner["copy"].deepcopy(result)
-        if native_bytes(owner, result) != result_raw \
-                or native_bytes(owner, detached) != result_raw:
-            refuse("batch-result-copy-changed")
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
-        if native_bytes(owner, result) != result_raw \
-                or native_bytes(owner, detached) != result_raw:
-            refuse("batch-final-image-changed")
-        runtime.current()
-        current()
-        _epoch_current(owner, epoch, epoch_raw)
+            cursor_value = ({} if files.files["cursor"].raw is None
+                            else files.files["cursor"].value)
+            if type(cursor_value) is not dict:
+                refuse("cursor-shape")
+            operation_id = _batch_id(
+                owner, expected_epoch_sha256, observed_at,
+                runtime.receipt, cursor_value)
+            collected = _collect(
+                owner, admitted_epoch, memo, files, runtime, operation_id,
+                epoch_raw)
+            if delivery is not None:
+                delivery.accept_collection(files, collected)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            returns = _source_returns(
+                owner, admitted_epoch, observed_at, operation_id,
+                collected["runs"])
+            closure = _plan_events(
+                owner, collected, runtime, files, epoch, epoch_raw)
+            projection = _intake_projection(
+                owner, admitted_epoch, returns, closure, observed_at)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            result = {
+                "schema": "sia-controller-source-batch-v1",
+                "status": "captured-not-published",
+                "batch_id": operation_id,
+                "observed_at": observed_at,
+                "epoch": admitted_epoch,
+                "epoch_sha256": expected_epoch_sha256,
+                "configuration_receipt": runtime.receipt,
+                "source_returns": returns,
+                "cursor_proposal": _cursor_proposal(owner, files, collected),
+                "journal_proposals": collected["journal_proposals"],
+                "refusal_intents": collected["refusal_intents"],
+                "notification_baseline_attempt": collected[
+                    "notification_baseline_attempt"],
+                "event_closure": closure,
+                "intake_projection": projection,
+                "non_claims": list(NON_CLAIMS),
+                "batch_sha256": "0" * 64,
+            }
+            if successor:
+                result["schema"] = "sia-controller-source-batch-v2"
+                result["idle_input"] = None
+                if all(not run["events"] for run in returns["runs"]):
+                    import siacontrolleridle
+                    result["idle_input"] = siacontrolleridle.capture(
+                        owner, epoch=admitted_epoch, projection=projection,
+                        observed_at=observed_at)
+                    runtime.current()
+                    current()
+                    _epoch_current(owner, epoch, epoch_raw)
+            if delivery is not None:
+                result["schema"] = "sia-controller-source-batch-v3"
+                result["delivery_input"] = delivery.bind(delivery_holds, result)
+            _json_size(owner, result, owner["MAX_STATE_JSON_BYTES"],
+                       ascii_only=True)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            body = {key: value for key, value in result.items()
+                    if key != "batch_sha256"}
+            result["batch_sha256"] = native_sha(owner, body)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            validate_batch(owner, result, result["batch_sha256"])
+            result_raw = native_bytes(owner, result)
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            detached = owner["copy"].deepcopy(result)
+            if native_bytes(owner, result) != result_raw \
+                    or native_bytes(owner, detached) != result_raw:
+                refuse("batch-result-copy-changed")
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+            if native_bytes(owner, result) != result_raw \
+                    or native_bytes(owner, detached) != result_raw:
+                refuse("batch-final-image-changed")
+            runtime.current()
+            current()
+            _epoch_current(owner, epoch, epoch_raw)
+        # Held journal then epoch contexts close before the final source
+        # sweep; their exit checks/callbacks must not follow that sweep.
+        if delivery is not None:
+            runtime.current()
+            files.current()
+            authority(files)
+            _epoch_current(owner, epoch, epoch_raw)
+            # Normal hold exits may run callbacks. They cannot change the
+            # detached result after its last in-hold image check, nor can
+            # tail serialization change the pinned scalar owner basis.
+            if native_bytes(owner, result) != result_raw \
+                    or native_bytes(owner, detached) != result_raw:
+                refuse("batch-post-hold-image-changed")
+            delivery.basis_current()
         # No serialization, hash, copy, or callback follows this sweep.
         files.named_current()
         return detached
@@ -1607,6 +1855,9 @@ def capture_successor(
         owner, *, memo, retained_batch, committed, epoch,
         expected_epoch_sha256, observed_at):
     """Capture one exact successor while completed authority remains durable."""
+    if type(retained_batch) is dict \
+            and retained_batch.get("schema") == "sia-controller-source-batch-v3":
+        refuse("delivery-predecessor-requires-source-v3-capture")
     request = {
         "memo": memo, "retained_batch": retained_batch,
         "committed": committed, "epoch": epoch,
@@ -1660,6 +1911,46 @@ def capture_successor(
         except (OSError, ValueError, RuntimeError, TypeError, KeyError,
                 AttributeError, UnicodeError, RecursionError) as exc:
             refuse("successor-capture-admission", upstream=exc)
+
+
+def capture_successor_v3(
+        owner, *, memo, admitted_status, retained_batch, committed,
+        epoch, expected_epoch_sha256, observed_at, journal_limits,
+        expected_journal_limits_sha256, expected_adoption_sha256):
+    """Capture sources, idle input and a held adopted delivery epoch once.
+
+    Preparation is a separate durable front door and must have completed.
+    The epoch is preflighted before collectors run, then held anew after any
+    notification collector's permitted memo refresh. The final epoch and
+    journal observations cover wrapper construction, complete batch hashing,
+    pure validation and detachment. They close before the last source-name
+    sweep. Capture neither consumes delivery records nor publishes a source
+    slot, advances delivery state, acknowledges sources or authorizes output.
+    """
+    request = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed,
+        "epoch": epoch, "expected_epoch_sha256": expected_epoch_sha256,
+        "observed_at": observed_at, "journal_limits": journal_limits,
+        "expected_journal_limits_sha256": expected_journal_limits_sha256,
+        "expected_adoption_sha256": expected_adoption_sha256,
+    }
+    try:
+        delivery = _DeliveryCaptureRequest(owner, request)
+        with owner["brainstem_owner"](), owner["corpus_owner"]():
+            delivery.inputs_current()
+            return _capture_locked(
+                owner, memo=memo, epoch=epoch,
+                expected_epoch_sha256=expected_epoch_sha256,
+                observed_at=observed_at, authority=delivery.authority,
+                successor=True, delivery=delivery)
+    except AssertionError:
+        raise
+    except SourceBatchRefusal:
+        raise
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError,
+            AttributeError, UnicodeError, RecursionError) as exc:
+        refuse("delivery-successor-capture-admission", upstream=exc)
 
 
 def _validate_file_image(owner, value, *, allow_absent):
@@ -1965,13 +2256,16 @@ def _validate_retained_projection(owner, batch, event_batches):
 def validate_batch(owner, batch, expected_batch_sha256):
     """Validate a retained source batch without consulting current sources."""
     _json_size(owner, batch, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
-    successor = type(batch) is dict and batch.get("schema") \
-        == "sia-controller-source-batch-v2"
-    _keys(batch, BATCH_V2_KEYS if successor else BATCH_KEYS,
+    delivery = type(batch) is dict and batch.get("schema") \
+        == "sia-controller-source-batch-v3"
+    successor = delivery or (type(batch) is dict and batch.get("schema")
+                            == "sia-controller-source-batch-v2")
+    _keys(batch, BATCH_V3_KEYS if delivery else BATCH_V2_KEYS if successor else BATCH_KEYS,
           "source-batch-shape")
     if batch["schema"] not in {
             "sia-controller-source-batch-v1",
-            "sia-controller-source-batch-v2"} \
+            "sia-controller-source-batch-v2",
+            "sia-controller-source-batch-v3"} \
             or batch["status"] != "captured-not-published" \
             or type(batch["batch_id"]) is not str \
             or _OPERATION.fullmatch(batch["batch_id"]) is None \
@@ -2061,4 +2355,18 @@ def validate_batch(owner, batch, expected_batch_sha256):
                     idle_input=batch["idle_input"])
             except (ValueError, RuntimeError, TypeError, KeyError) as exc:
                 refuse("idle-input-contract", upstream=exc)
+    if delivery:
+        try:
+            import siacontrollerdeliverywrapper
+            wrapped = batch["delivery_input"]
+            siacontrollerdeliverywrapper.validate(
+                owner, delivery_input=wrapped,
+                expected_input_sha256=wrapped["input_sha256"],
+                epoch=batch["epoch"], expected_epoch_sha256=batch["epoch_sha256"],
+                projection=batch["intake_projection"],
+                expected_projection_sha256=batch["intake_projection"]["projection_sha256"],
+                observed_at=batch["observed_at"],
+                notification_baseline_attempt=batch["notification_baseline_attempt"])
+        except (ValueError, RuntimeError, TypeError, KeyError) as exc:
+            refuse("delivery-input-contract", upstream=exc)
     return None

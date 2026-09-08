@@ -5,8 +5,10 @@ This pure component preserves an initial descriptor-validated projection
 exactly; with a committed parent it requires the supplied complete projection
 to contain the parent's pages and observations as byte-exact prefixes.  It
 does not guess that a truncated or empty history is an incremental delta.
-Delivery history is likewise copied exactly from the committed parent because
-this source-only seam has no authority to add, remove or rewrite deliveries.
+The legacy entrypoint copies delivery history exactly from the committed
+parent. The additive v3 entrypoint uses the complete source-bound delivery
+envelope and requires the caller's independently admitted full generation.
+Neither entrypoint acquires output receipts or executes the planned pulse.
 """
 
 import copy
@@ -89,33 +91,14 @@ def compose(*, frame, previous_state):
     return detached
 
 
-def prepare_inputs(*, batch, previous_state,
-                   expected_previous_state_sha256):
-    """Return the sole live-loop request authorized by a source frame."""
-    if type(batch) is not dict \
-            or type(batch.get("intake_projection")) is not dict \
-            or type(batch.get("epoch")) is not dict:
-        _refuse("batch-shape")
-    if "delivery_input" in batch:
-        _refuse("legacy-delivery-input")
-    basis = {
-        "schema": batch.get("schema"),
-        "intake": batch["intake_projection"].get("intake"),
-        "intake_sha256": batch["intake_projection"].get("intake_sha256"),
-        "policy": batch["epoch"].get("live_policy"),
-        "policy_sha256": batch["epoch"].get(
-            "expected_live_policy_sha256"),
-        "observed_at": batch.get("observed_at"),
-        "source_returns": batch.get("source_returns"),
-        "idle_input": batch.get("idle_input"),
-    }
-    original_basis = _canonical(basis)
-    original_previous = _canonical(previous_state)
+def _idle_inputs(batch, basis, *, allow_v3=False):
+    """Share retained idle semantics without relabeling a source schema."""
     idle, gist_inputs = False, None
     if batch.get("schema") == "sia-controller-source-batch-v1":
         if "idle_input" in batch:
             _refuse("legacy-idle-input")
-    elif batch.get("schema") == "sia-controller-source-batch-v2":
+    elif batch.get("schema") == "sia-controller-source-batch-v2" \
+            or allow_v3 and batch.get("schema") == "sia-controller-source-batch-v3":
         returns = batch.get("source_returns")
         if type(returns) is not dict or type(returns.get("runs")) is not list \
                 or not returns["runs"] or "idle_input" not in batch \
@@ -136,6 +119,32 @@ def prepare_inputs(*, batch, previous_state,
             raise ControllerLiveInputRefusal("source-idle-binding") from exc
     else:
         _refuse("source-batch-schema")
+    return idle, gist_inputs
+
+
+def prepare_inputs(*, batch, previous_state,
+                   expected_previous_state_sha256):
+    """Return the sole live-loop request authorized by a legacy source frame."""
+    if type(batch) is not dict \
+            or type(batch.get("intake_projection")) is not dict \
+            or type(batch.get("epoch")) is not dict:
+        _refuse("batch-shape")
+    if "delivery_input" in batch:
+        _refuse("legacy-delivery-input")
+    basis = {
+        "schema": batch.get("schema"),
+        "intake": batch["intake_projection"].get("intake"),
+        "intake_sha256": batch["intake_projection"].get("intake_sha256"),
+        "policy": batch["epoch"].get("live_policy"),
+        "policy_sha256": batch["epoch"].get(
+            "expected_live_policy_sha256"),
+        "observed_at": batch.get("observed_at"),
+        "source_returns": batch.get("source_returns"),
+        "idle_input": batch.get("idle_input"),
+    }
+    original_basis = _canonical(basis)
+    original_previous = _canonical(previous_state)
+    idle, gist_inputs = _idle_inputs(batch, basis)
     if previous_state is None:
         if expected_previous_state_sha256 is not None:
             _refuse("initial-parent-pin")
@@ -189,3 +198,78 @@ def prepare_inputs(*, batch, previous_state,
     if "delivery_input" in batch:
         _refuse("legacy-delivery-input")
     return detached
+
+
+def prepare_inputs_v3(owner, *, batch, previous_generation,
+                      expected_previous_generation_sha256):
+    """Bind retained v3 input to the caller's complete admitted generation.
+
+    The caller must obtain that generation through its actual authority
+    reader. This pure component compares its entire represented value to the
+    source wrapper's parent; a matching state alone is insufficient. It does
+    not acquire storage, execute a pulse, consume a journal or observe output.
+    """
+    import siacontrollerdeliverywrapper as wrapper
+    import siasourcebatch as source
+
+    try:
+        request = {
+            "batch": batch, "previous_generation": previous_generation,
+            "expected_previous_generation_sha256": expected_previous_generation_sha256,
+        }
+        # The wrapper's native admission bounds the whole original request
+        # and pins its owner basis before any copy. Filesystem identities in
+        # the source envelope must never enter the live serializer.
+        admission = wrapper._Admission(owner, request)
+        retained = admission.admitted["batch"]
+        generation = admission.admitted["previous_generation"]
+        pin = admission.admitted["expected_previous_generation_sha256"]
+        if type(retained) is not dict \
+                or retained.get("schema") != "sia-controller-source-batch-v3" \
+                or type(generation) is not dict or not live._digest(pin):
+            _refuse("v3-source-and-full-parent-required")
+        source.validate_batch(owner, retained, retained.get("batch_sha256"))
+        admission.current()
+        view = retained["delivery_input"]["epoch_view"]
+        if generation.get("generation_sha256") != pin \
+                or live._own(generation, "generation_sha256") != pin \
+                or view["expected_parent_generation_sha256"] != pin \
+                or source.native_bytes(owner, generation) \
+                   != source.native_bytes(owner, view["parent_generation"]):
+            _refuse("v3-full-parent-generation-differs")
+        previous_state = generation["transition"]["state"]
+        binding = retained["delivery_input"]["binding"]
+        projection, epoch = retained["intake_projection"], retained["epoch"]
+        basis = {
+            "intake": projection["intake"],
+            "intake_sha256": projection["intake_sha256"],
+            "policy": epoch["live_policy"],
+            "policy_sha256": epoch["expected_live_policy_sha256"],
+            "observed_at": retained["observed_at"],
+        }
+        idle, gist_inputs = _idle_inputs(retained, basis, allow_v3=True)
+        intake = compose(frame=projection["intake"], previous_state=previous_state)
+        result = {
+            "intake": intake, "expected_intake_sha256": live._sha(intake),
+            "deliveries": copy.deepcopy(binding["deliveries"]),
+            "expected_deliveries_sha256": binding["deliveries_sha256"],
+            "previous_state": copy.deepcopy(previous_state),
+            "expected_previous_state_sha256": generation["state_sha256"],
+            "policy": copy.deepcopy(epoch["live_policy"]),
+            "expected_policy_sha256": epoch["expected_live_policy_sha256"],
+            "observed_at": retained["observed_at"], "idle": idle,
+            "gist_inputs": copy.deepcopy(gist_inputs),
+        }
+        live._budget(result["policy"], result)
+        encoded = _canonical(result)
+        admission.current()
+        detached = copy.deepcopy(result)
+        if _canonical(result) != encoded or _canonical(detached) != encoded:
+            _refuse("v3-prepared-result-changed")
+        admission.current()
+        return detached
+    except ControllerLiveInputRefusal:
+        raise
+    except (ValueError, RuntimeError, TypeError, KeyError, IndexError,
+            AttributeError, OverflowError, RecursionError, OSError) as exc:
+        raise ControllerLiveInputRefusal("v3-live-input-refused") from exc
