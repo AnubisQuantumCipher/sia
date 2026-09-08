@@ -30,6 +30,7 @@ or are implemented in the current tree, and are the pattern to follow:
 | `bin/siasourcegit.py` | descriptor-bound clean corpus Git generation (implemented, unreleased) |
 | `bin/siasourceengine.py` | receipt-bound pinned-engine sync and source-page projection readback (implemented, unreleased) |
 | `bin/siasourceack.py` | immutable batch archival, refusal settlement, cursor publication, and final readiness acknowledgment (implemented, unreleased) |
+| `bin/siacontrollerdeliverywrapper.py` | storage-free held-parent and journal binding for successor input (implemented, unreleased) |
 | `bin/siatakes.py` | predictions, judge, grading, calibration |
 | `bin/siacapsule.py` | continuity capsules, freeze/thaw, restore |
 | `bin/siabackup.py` | repository adapters and scheduled verification |
@@ -515,6 +516,26 @@ state. Ordinary preparation and `hold_epoch` still require completion.
 Neither held reader refreshes its memo or repairs storage. Capture must
 acquire the appropriate hold after the collector's legal memo change, and
 the fixed successor slot must remain absent throughout its lifetime.
+
+`siacontrollerdeliverywrapper.build` retains that complete detached held
+view, independently pinned adoption, complete journal and the replayed
+delivery binding in a closed source-native envelope. Its matching
+`validate` replays the entire binding with the supplied successor epoch,
+projection, clock and notification context. Native directory identities
+remain native integers; the outer envelope/view, birth/adoption and live
+documents keep their distinct existing hash domains. The whole represented
+request is bounded before copies or binding, and final detachment rechecks
+the original request and owner basis. Neither function opens storage,
+samples a clock, acknowledges a source or enables output.
+
+This pure wrapper validates represented joins, not actual authority. Full
+source-to-projection replay still belongs to source validation; the WAL
+validator must compare its declared parent schema to the actual retained
+parent, and the live adapter must compare its full parent generation to
+the actual admitted generation. Matching only a state digest is insufficient.
+A represented later-v3 continuation retains the original pinned adoption,
+not a rebased birth. An empty legacy bootstrap journal proves no nonempty
+delivery consumption or successful source-v3 resident invocation.
 
 This component is tested source construction, not a resident hook or an
 installed runtime-ladder member. Existing source readers still reject v3.
