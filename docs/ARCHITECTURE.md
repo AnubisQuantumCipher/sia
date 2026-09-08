@@ -415,6 +415,28 @@ generations through publication; supplied-record correspondence does not
 itself prove collector execution, authenticity, freshness or acknowledgment.
 `tests/test_live_gist_binding.py` covers this separate boundary.
 
+The separate delivery-input construction is implemented but not connected to
+resident recall or source successors. `siacontrollerdeliveryinput.bind`
+requires a complete inspected epoch, actual supplied parent state, cumulative
+intake, policy, clock and independent pins. It preserves the committed
+delivery prefix byte-for-byte, appending new inspected records only when
+they bind that parent and its retained versions. Equal completion clocks do
+not reorder previously consumed identities. Incomplete output, missing
+history or substituted content/origin refuses; the result is
+`bound-not-consumed`, not a publication or acknowledgment.
+
+`siadelivery.hold_deliveries` holds the existing private directory lock and
+all inspected record descriptors through caller computation. Its `read()`
+returns the unchanged detached journal-v1 inspection; `current()` checks the
+whole held roster. Normal context exit revalidates, all exits retire the
+handle and close owned descriptors, and a caller exception remains its own
+exception. The legacy one-shot inspector delegates to the same reader.
+Neither path creates missing journal directories or repairs pending output.
+Source authority, journal adoption and the successor WAL cut still belong
+to the future outer integration. The inspection retains completion records,
+not complete rank intents: it does not independently reproduce historical
+ranking, prove human receipt/use, or establish a cognitive benchmark win.
+
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
 extracting it adds a second delegate hop in the pulse hot path, so it moves

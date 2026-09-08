@@ -511,24 +511,87 @@ def deliver_reserved(*, directory, reservation, expected_reservation_sha256,
         _raise(exc, phase)
 
 
-def inspect_deliveries(*, directory, epoch_id, limits):
-    try:
-        _limits(limits)
-        if not live._token(epoch_id):
-            _fail("explicit-inspection-epoch")
-        with contextlib.ExitStack() as stack:
-            owned = _Directory(directory)
-            stack.callback(owned.close)
-            snapshot = _Snapshot(owned, epoch_id, limits, stack)
-            records = [row["complete"]["record"] for row in snapshot.records.values() if "complete" in row]
-            pending = sorted(key for key, row in snapshot.records.items() if "complete" not in row)
+class _HeldDeliveryInspection:
+    """Read-only lifetime around an already admitted descriptor snapshot."""
+
+    def __init__(self, snapshot, epoch_id, limits):
+        self._snapshot = snapshot
+        self._epoch_id = epoch_id
+        self._limits = limits
+        self._closed = False
+
+    def current(self):
+        try:
+            if self._closed:
+                _fail("held-inspection-closed")
+            self._snapshot.current()
+        except _ERRORS as exc:
+            _raise(exc, "not-started")
+
+    def read(self):
+        try:
+            self.current()
+            records = [row["complete"]["record"]
+                       for row in self._snapshot.records.values() if "complete" in row]
+            pending = sorted(key for key, row in self._snapshot.records.items()
+                             if "complete" not in row)
             records.sort(key=lambda row: (row["completed_at"], row["id"]))
-            result = {"schema": "sia-live-delivery-journal-v1", "epoch_id": epoch_id,
+            result = {"schema": "sia-live-delivery-journal-v1", "epoch_id": self._epoch_id,
                       "complete": not pending, "records": records, "pending": pending,
                       "non_claims": list(NON_CLAIMS)}
-            _wire(result, limits)
-            result = copy.deepcopy(result)
-            snapshot.current()
-            return result
-    except _ERRORS as exc:
-        _raise(exc, "not-started")
+            original = _wire(result, self._limits)
+            detached = copy.deepcopy(result)
+            if _wire(result, self._limits) != original \
+                    or _wire(detached, self._limits) != original:
+                _fail("held-inspection-copy-changed")
+            self.current()
+            return detached
+        except _ERRORS as exc:
+            _raise(exc, "not-started")
+
+    def _retire(self):
+        # Never leave a usable handle pointing at file descriptors that may
+        # later be recycled for a different caller's files.
+        self._closed = True
+
+
+@contextlib.contextmanager
+def hold_deliveries(*, directory, epoch_id, limits):
+    """Hold the whole inspected epoch through caller computation and copying.
+
+    The caller owns source authority and any wider corpus transaction. This
+    context only locks/adopts existing journal descriptors; it never creates
+    a directory, reads a clock, repairs output or changes the v1 boundary.
+    Normal exit revalidates. Exceptional exit preserves the caller's error
+    and closes acquired descriptors without masking it with a later check.
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            _limits(limits)
+            original = live._canonical(limits)
+            admitted_limits = copy.deepcopy(limits)
+            if live._canonical(limits) != original \
+                    or live._canonical(admitted_limits) != original:
+                _fail("inspection-limits-changed")
+            if not live._token(epoch_id):
+                _fail("explicit-inspection-epoch")
+            owned = _Directory(directory)
+            stack.callback(owned.close)
+            snapshot = _Snapshot(owned, epoch_id, admitted_limits, stack)
+            held = _HeldDeliveryInspection(snapshot, epoch_id, admitted_limits)
+            held.current()
+        except _ERRORS as exc:
+            _raise(exc, "not-started")
+        try:
+            yield held
+        except BaseException:
+            raise
+        else:
+            held.current()
+        finally:
+            held._retire()
+
+
+def inspect_deliveries(*, directory, epoch_id, limits):
+    with hold_deliveries(directory=directory, epoch_id=epoch_id, limits=limits) as held:
+        return held.read()
