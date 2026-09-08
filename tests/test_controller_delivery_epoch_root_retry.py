@@ -70,8 +70,8 @@ class ControllerDeliveryEpochRootRetry(unittest.TestCase):
                     initial_events.append("root-parent-fsync")
                 return real_fsync(descriptor)
 
-            with mock.patch.object(os, "mkdir", side_effect=die_after_real_root_mkdir), \
-                    mock.patch.object(os, "fsync", side_effect=observe_initial_fsync), \
+            with self.fixture._local_os(
+                    case, mkdir=die_after_real_root_mkdir, fsync=observe_initial_fsync), \
                     mock.patch.object(case.lib, epoch_tests.BOUNDARY_KEY, initial_boundary), \
                     self.fixture.no_new_work(case), self.assertRaises(epoch_tests._EpochDeath):
                 self.fixture.prepare(case, retained, committed, status)
@@ -116,8 +116,8 @@ class ControllerDeliveryEpochRootRetry(unittest.TestCase):
                 self.assertIn(phase, epoch_tests.PHASES)
                 retry_events.append("boundary:" + phase)
 
-            with mock.patch.object(os, "mkdir", side_effect=observe_retry_mkdir), \
-                    mock.patch.object(os, "fsync", side_effect=observe_retry_fsync), \
+            with self.fixture._local_os(
+                    case, mkdir=observe_retry_mkdir, fsync=observe_retry_fsync), \
                     mock.patch.object(case.lib.siaqueue, "fixed_atomic_publish",
                                       side_effect=observe_retry_publish), \
                     mock.patch.object(case.lib, epoch_tests.BOUNDARY_KEY, observe_retry_boundary), \

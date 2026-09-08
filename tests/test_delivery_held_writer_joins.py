@@ -33,6 +33,7 @@ sys.path.insert(0, str(REPO / "bin"))
 from tests import sia_test_home
 from tests import test_delivery_held_writer as writer_tests
 from tests import test_delivery_journal as journal_tests
+from tests import test_event_page_plan as page_tests
 from tests import test_live_loop as live_tests
 
 
@@ -63,8 +64,9 @@ class DeliveryHeldWriterJoins(unittest.TestCase):
                     return actual_stat(descriptor)
 
                 try:
-                    with mock.patch.object(os, "open", side_effect=opened), \
-                            mock.patch.object(os, "fstat", side_effect=failed_identity):
+                    with mock.patch.object(
+                            self.module, "os", page_tests._ModuleShim(
+                                self.module.os, open=opened, fstat=failed_identity)):
                         with self.assertRaises(self.module.DeliveryJournalRefusal):
                             with self.fixture.hold():
                                 self.fail("entry ignored its failed directory identity")

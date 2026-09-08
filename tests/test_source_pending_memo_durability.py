@@ -35,7 +35,9 @@ from tests import sia_test_home
 from tests import test_controller_source_capture as capture_tests
 from tests import test_controller_source_publication as publication_tests
 from tests import test_controller_source_publication_boundary as boundary_tests
+from tests import test_event_page_plan as page_tests
 
+import siasourcebatch as source
 import siasourcepublication as publication
 
 
@@ -69,6 +71,17 @@ def _descriptors():
 
 
 class SourcePendingMemoDurability(unittest.TestCase):
+    @contextlib.contextmanager
+    def local_os(self, lib, **overrides):
+        # Cover the publication transaction, source descriptor helpers,
+        # owning core and actual atomic publisher. The stdlib module and
+        # the test's original native observers remain untouched.
+        with contextlib.ExitStack() as stack:
+            for module in (publication, source, lib, lib.siaqueue):
+                stack.enter_context(mock.patch.object(
+                    module, "os", page_tests._ModuleShim(module.os, **overrides)))
+            yield
+
     @contextlib.contextmanager
     def crashed_pending(self):
         fixture = boundary_tests.ControllerSourcePublicationBoundary(methodName="runTest")
@@ -133,7 +146,7 @@ class SourcePendingMemoDurability(unittest.TestCase):
                 scope_identity = _identity(os.fstat(scope_fd))
                 with publication_tests.ControllerSourcePublication.inert(
                         SimpleNamespace(lib=lib)), \
-                        mock.patch.object(os, "fsync", observe_stage_fsync), \
+                        self.local_os(lib, fsync=observe_stage_fsync), \
                         mock.patch.object(lib.siaqueue, "_publish_boundary", publication_boundary), \
                         mock.patch.object(lib, "atomic_write", write_real_memo):
                     with self.assertRaises(_MemoTargetPublished) as caught:
@@ -203,9 +216,9 @@ class SourcePendingMemoDurability(unittest.TestCase):
                     stack.enter_context(mock.patch.object(f.lib, name, side_effect=forbidden))
             stack.enter_context(mock.patch.object(f.lib.siaqueue, "fixed_atomic_publish",
                                                   side_effect=forbidden))
-            for name in ("mkdir", "replace", "rename", "unlink"):
-                stack.enter_context(mock.patch.object(os, name, side_effect=forbidden))
-            stack.enter_context(mock.patch.object(os, "fsync", persist))
+            stack.enter_context(self.local_os(
+                f.lib, mkdir=forbidden, replace=forbidden, rename=forbidden,
+                unlink=forbidden, fsync=persist))
             yield
 
     def test_already_pending_retry_flushes_memo_parent_without_rewriting(self):

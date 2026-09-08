@@ -32,6 +32,7 @@ from unittest import mock
 from tests import test_controller_source_ack as ack_tests
 from tests import test_controller_source_capture as capture_tests
 from tests import test_controller_source_rollover_storage as rollover_tests
+from tests import test_event_page_plan as page_tests
 
 
 RETAIN_PARAMETERS = (
@@ -548,8 +549,15 @@ class SourceCapturableSuccessorStorage(unittest.TestCase):
                         events.append("memo-replacement")
                     return original_write(path, data, **kwargs)
 
+                # Observe the real replay publisher and its owning helpers,
+                # without altering os.fsync for unrelated test infrastructure.
                 with self.no_collect(case), mock.patch.object(
-                        os, "fsync", side_effect=fsync), mock.patch.object(
+                        self.publication, "os", page_tests._ModuleShim(
+                            self.publication.os, fsync=fsync)), mock.patch.object(
+                        case.lib, "os", page_tests._ModuleShim(
+                            case.lib.os, fsync=fsync)), mock.patch.object(
+                        case.lib.siaqueue, "os", page_tests._ModuleShim(
+                            case.lib.siaqueue.os, fsync=fsync)), mock.patch.object(
                         case.lib, "atomic_write", side_effect=write):
                     self.assertIs(self.recover(case, arguments, memo=fresh), True)
                 self.assertIn("memo-replacement", events)

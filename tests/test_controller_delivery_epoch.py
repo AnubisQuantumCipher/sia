@@ -40,6 +40,7 @@ from unittest import mock
 from tests import test_controller_source_ack as ack_tests
 from tests import test_controller_source_idle as idle_tests
 from tests import test_controller_source_rollover_storage as rollover_tests
+from tests import test_event_page_plan as page_tests
 from tests import test_live_loop as live_tests
 
 
@@ -420,7 +421,18 @@ class ControllerDeliveryEpoch(unittest.TestCase):
         case.live.memo.update(visible)
 
     @contextlib.contextmanager
-    def _observe_memo_parent_fsync(self, memo_path):
+    def _local_os(self, case, **overrides):
+        # These are the actual syscall providers for epoch preparation,
+        # owned-directory helpers and fixed publication. Rebinding their
+        # module names preserves native fallback without patching stdlib os.
+        with contextlib.ExitStack() as stack:
+            for module in (self.module, self.queue, case.lib):
+                stack.enter_context(mock.patch.object(
+                    module, "os", page_tests._ModuleShim(module.os, **overrides)))
+            yield
+
+    @contextlib.contextmanager
+    def _observe_memo_parent_fsync(self, case, memo_path):
         parent = os.lstat(Path(memo_path).parent)
         identity = (parent.st_dev, parent.st_ino)
         fsync = os.fsync
@@ -434,7 +446,7 @@ class ControllerDeliveryEpoch(unittest.TestCase):
                 synced.append(identity)
             return result
 
-        with mock.patch.object(os, "fsync", observe):
+        with self._local_os(case, fsync=observe):
             yield synced
 
     def test_pending_memo_rename_retry_syncs_parent_before_records_effect(self):
@@ -468,8 +480,8 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             # retry, so setup cannot stand in for the memo persistence step.
             with self.idle.source_owner(case), case.lib.brainstem_owner(), \
                     case.lib.corpus_owner(), self.no_new_work(case), \
-                    self._observe_memo_parent_fsync(memo_path) as synced, \
-                    mock.patch.object(os, "mkdir", ordered_mkdir):
+                    self._observe_memo_parent_fsync(case, memo_path) as synced, \
+                    self._local_os(case, mkdir=ordered_mkdir):
                 result = self.prepare(case, retained, committed, status)
             self.assertEqual(records_effect, ["records"])
             self.assertEqual(ack_tests._path_image(birth_path), birth_image)
@@ -486,7 +498,7 @@ class ControllerDeliveryEpoch(unittest.TestCase):
                 side_effect=AssertionError("adopted retry replaced a retained publication"))
             with self.idle.source_owner(case), case.lib.brainstem_owner(), \
                     case.lib.corpus_owner(), self.no_new_work(case), \
-                    self._observe_memo_parent_fsync(memo_path) as synced, \
+                    self._observe_memo_parent_fsync(case, memo_path) as synced, \
                     mock.patch.object(self.queue, "fixed_atomic_publish", publication):
                 result = self.prepare(
                     case, retained, committed, status,
