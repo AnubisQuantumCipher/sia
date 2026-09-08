@@ -526,6 +526,31 @@ completion has returned, later wrapper refusal retains the conservative
 a resend. This front door does not enable CLI recall or validate the semantic
 faithfulness of arbitrary rendered prose.
 
+`siacontrollerdeliverywriter.render_and_deliver` adds callback rendering to
+the same transaction without changing the original `deliver` contract.
+Its mandatory `sia-controller-delivery-render-config-v1` configuration is
+bound by `expected_render_config_sha256`. The `rank-prefix-v1` selection
+requires exactly the available prefix selected by `display_limit` from
+one actual held rank;
+the configured body ceiling cannot exceed the admitted journal/live limits.
+The callback receives detached rank/config values and their expected hashes,
+then returns exactly `emitted_row_refs` and UTF-8 `output_utf8` bytes. It may
+not alter its rank/config inputs. Admission, ranking, rendering, reservation,
+write-all and flush all occur within the same corpus/epoch/journal lifetime;
+the public premised-body writer is not called again and no second rank or
+source acquisition is used between those stages.
+
+Byte limits and the complete represented-wire budget are checked before
+intent publication. Callback inputs and output references/bytes stay pinned
+through output and normal ownership exits. The renderer is an explicit
+caller operation, not a sandbox: there is
+no semantic fidelity claim for arbitrary callback prose, and independent
+callback side effects are not journaled. Body scope still excludes the
+health footer. The controlled test renders a genuine same-origin activation
+order change without changing source content/origin; this is not a cognitive
+benchmark result. Configured activation and
+exact front-door CLI version joins remain separate.
+
 The controlled output-to-resident fixture carries a real short-write/flush
 completion through the next native source-v3 capture, publication and ACK.
 The new full generation and history retain the exact delivery and derived

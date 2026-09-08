@@ -5,6 +5,8 @@ represented wrapper into permission. It reopens the actual acknowledged
 source, complete live generation and original delivery-epoch storage before
 using the journal's held writer. No legacy touch, UUID or observation clock
 is acquired here; rendered bytes and row references remain caller premises.
+The additive render entry supplies the actual held rank to a caller renderer
+before the shared journal reservation. It does not establish prose fidelity.
 """
 
 import copy
@@ -26,7 +28,15 @@ NON_CLAIMS = (
     "Incomplete journals, including intent-only histories, refuse this writer front door; no legacy touch history, missing record or ambiguous output is reconstructed, retried as fresh output, deleted or repaired.",
     "Continuous local descriptor and corpus ownership is not protection against hostile same-user mutation; no CLI deployment, JACKAL assurance, biological cognition or held-out retrieval improvement is established.",
     "All source, live-loop, adoption, held-epoch, delivery-binding and journal nonclaims remain controlling.",
+    "The render entry enforces an actual rank prefix and a pinned byte ceiling, not the semantic fidelity of callback prose or preservation of engine metadata; a caller renderer is not a sandbox and its independent side effects are not journaled here.",
+    "The delivery body scope remains result-body-before-queue-health-footer-v1; callers must exclude the queue-health footer from renderer result bytes, and no footer output is covered by the returned completion.",
 )
+
+RENDER_CONFIG_SCHEMA = "sia-controller-delivery-render-config-v1"
+RENDER_SELECTION = "rank-prefix-v1"
+_RENDER_CONFIG_KEYS = {
+    "schema", "selection", "display_limit", "max_body_bytes",
+}
 
 _PATHS = (
     "HOME", "CORPUS", "STATE", "SHARE", "CONFIG_PATH", "CURSORS_PATH",
@@ -100,10 +110,34 @@ def _plain_same(value, pin):
     return value == expected
 
 
+def _render_config(config, expected, limits, owner_ceiling, *, policy=None):
+    if type(config) is not dict \
+            or any(type(key) is not str for key in config) \
+            or set(config) != _RENDER_CONFIG_KEYS \
+            or type(config["schema"]) is not str \
+            or config["schema"] != RENDER_CONFIG_SCHEMA \
+            or type(config["selection"]) is not str \
+            or config["selection"] != RENDER_SELECTION:
+        _refuse("render-config-contract")
+    if type(config["display_limit"]) is not int \
+            or not 0 < config["display_limit"] <= live._LIMITS["max_rows"] \
+            or type(config["max_body_bytes"]) is not int \
+            or not 0 < config["max_body_bytes"] <= limits["max_body_bytes"] \
+            or config["max_body_bytes"] > live.MAX_CONTENT_BYTES \
+            or config["max_body_bytes"] > owner_ceiling:
+        _refuse("render-config-capacity")
+    if not live._digest(expected) or live._sha(config) != expected:
+        _refuse("render-config-pin")
+    if policy is not None and (
+            config["display_limit"] > policy["limits"]["max_rows"]
+            or config["max_body_bytes"] > policy["limits"]["max_delivery_bytes"]):
+        _refuse("render-config-live-policy-capacity")
+
+
 class _Request:
     """Pin scalar authority selection before the first request wire or copy."""
 
-    def __init__(self, owner, arguments, output_utf8):
+    def __init__(self, owner, arguments, output_utf8, *, rendering=False):
         if type(owner) is not dict:
             _refuse("owner-contract")
         self.owner = owner
@@ -123,15 +157,22 @@ class _Request:
         self.basis_current()
         limits = arguments["journal_limits"]
         journal_api._limits(limits)
-        # Bound original bytes before decoding or any base64 representation.
-        if type(output_utf8) is not bytes \
-                or len(output_utf8) > limits["max_body_bytes"] \
-                or len(output_utf8) > live.MAX_CONTENT_BYTES \
-                or len(output_utf8) > self.capacities["MAX_STATE_JSON_BYTES"]:
-            _refuse("output-byte-capacity")
+        self.rendering = rendering
         self.output_utf8 = output_utf8
-        text = output_utf8.decode("utf-8", "strict")
-        self.arguments = {**arguments, "output_utf8_text": text}
+        if rendering:
+            _render_config(arguments["render_config"],
+                           arguments["expected_render_config_sha256"], limits,
+                           self.capacities["MAX_STATE_JSON_BYTES"])
+            self.arguments = dict(arguments)
+        else:
+            # Bound original bytes before decoding or any base64 representation.
+            if type(output_utf8) is not bytes \
+                    or len(output_utf8) > limits["max_body_bytes"] \
+                    or len(output_utf8) > live.MAX_CONTENT_BYTES \
+                    or len(output_utf8) > self.capacities["MAX_STATE_JSON_BYTES"]:
+                _refuse("output-byte-capacity")
+            text = output_utf8.decode("utf-8", "strict")
+            self.arguments = {**arguments, "output_utf8_text": text}
         self.basis = {
             "paths": self.paths, "capacities": self.capacities,
             "notification_key": self.notification_key, "version": self.version,
@@ -184,7 +225,8 @@ class _Request:
     def current(self):
         self.basis_current()
         self.pure.current()
-        if self.admitted["output_utf8_text"].encode("utf-8") != self.output_utf8:
+        if not self.rendering \
+                and self.admitted["output_utf8_text"].encode("utf-8") != self.output_utf8:
             _refuse("output-bytes-changed")
         self.basis_current()
 
@@ -207,6 +249,92 @@ class _Request:
                        for name, reference in self._tail_references.items()):
             _refuse("exit-tail-request-or-owner-changed")
         self.basis_current()
+
+
+class _RenderedOutput:
+    """Hold detached callback inputs and its bounded output through final exit.
+
+    The comparisons are over admitted plain types, not callbacks or another
+    source acquisition. No semantic statement about the body is inferred.
+    """
+
+    def __init__(self, request, ranked, rank_plain):
+        self.request = request
+        self.ranked = ranked
+        if not _plain_same(ranked, rank_plain):
+            _refuse("renderer-input-changed")
+        request.final_current()
+        config = request.admitted["render_config"]
+        self.rank_pin = ranked["rank_sha256"]
+        self.config_pin = request.admitted["expected_render_config_sha256"]
+        self._rank_plain = rank_plain
+        self._config_plain = _plain_pin(config)
+        self.expected_refs = tuple(ranked["order"][:config["display_limit"]])
+        self.max_body_bytes = config["max_body_bytes"]
+        # The caller reserves the aggregate representation before these copies.
+        self.callback_ranked = copy.deepcopy(ranked)
+        self.callback_config = copy.deepcopy(config)
+        self.result = None
+        self.emitted_row_refs = None
+        self.output_utf8 = None
+        self.output_utf8_text = None
+        self._refs_plain = None
+        self.current()
+
+    def accept(self, result):
+        self.current()
+        if type(result) is not dict \
+                or any(type(key) is not str for key in result) \
+                or set(result) != {"emitted_row_refs", "output_utf8"}:
+            _refuse("renderer-result-contract")
+        body = result["output_utf8"]
+        # The pinned configuration is no larger than the journal, live or
+        # owner ceiling. Check bytes before UTF-8 decoding, copying or base64.
+        if type(body) is not bytes or len(body) > self.max_body_bytes:
+            _refuse("renderer-output-byte-capacity")
+        refs = result["emitted_row_refs"]
+        if type(refs) is not list or len(refs) != len(self.expected_refs) \
+                or any(type(ref) is not str for ref in refs) \
+                or tuple(refs) != self.expected_refs:
+            _refuse("renderer-rank-prefix")
+        text = body.decode("utf-8", "strict")
+        self.result = result
+        self.output_utf8 = body
+        self.output_utf8_text = text
+        self._refs_plain = _plain_pin(refs)
+        self.emitted_row_refs = copy.deepcopy(refs)
+        self.current()
+
+    def budget_fields(self):
+        return {
+            "renderer_ranked": self.callback_ranked,
+            "renderer_config": self.callback_config,
+            "renderer_output": {
+                "emitted_row_refs": self.emitted_row_refs,
+                "output_utf8_text": self.output_utf8_text,
+            },
+        }
+
+    def current(self):
+        self.final_current()
+
+    def final_current(self):
+        if not _plain_same(self.ranked, self._rank_plain) \
+                or not _plain_same(self.callback_ranked, self._rank_plain) \
+                or not _plain_same(self.request.admitted["render_config"], self._config_plain) \
+                or not _plain_same(self.callback_config, self._config_plain):
+            _refuse("renderer-input-changed")
+        if self.result is not None and (
+                type(self.result) is not dict
+                or len(self.result) != 2
+                or any(type(key) is not str for key in self.result)
+                or "emitted_row_refs" not in self.result
+                or "output_utf8" not in self.result
+                or not _plain_same(self.result["emitted_row_refs"], self._refs_plain)
+                or not _plain_same(self.emitted_row_refs, self._refs_plain)
+                or type(self.result["output_utf8"]) is not bytes
+                or self.result["output_utf8"] != self.output_utf8):
+            _refuse("renderer-result-changed")
 
 
 def _rank_current(owner, ranked, data, generation):
@@ -239,29 +367,73 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
     every incomplete epoch, including intent-only requests; a separate future
     pending-output retry interface must not be inferred from this function.
     """
+    arguments = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed,
+        "journal_limits": journal_limits,
+        "expected_journal_limits_sha256": expected_journal_limits_sha256,
+        "expected_adoption_sha256": expected_adoption_sha256,
+        "rows": rows, "expected_rows_sha256": expected_rows_sha256,
+        "observed_at": observed_at, "emitted_row_refs": emitted_row_refs,
+        "request_id": request_id, "consumer": consumer,
+    }
+    return _execute(owner, arguments=arguments, output_utf8=output_utf8,
+                    binary_sink=binary_sink, clock=clock)
+
+
+def render_and_deliver(owner, *, memo, admitted_status, retained_batch, committed,
+                       journal_limits, expected_journal_limits_sha256,
+                       expected_adoption_sha256, rows, expected_rows_sha256,
+                       observed_at, render_config, expected_render_config_sha256,
+                       renderer, request_id, consumer, binary_sink, clock):
+    """Render the actual held rank, then use the same output transaction.
+
+    The renderer receives keyword-only ranked/expected_ranked_sha256 and
+    config/expected_config_sha256 arguments. Its detached plain inputs must
+    remain unchanged. It returns exactly emitted_row_refs and output_utf8;
+    references must be the configured rank prefix and body bytes must fit
+    the externally pinned ceiling. The result body excludes the health
+    footer by caller contract, not by interpreting arbitrary callback prose.
+
+    No public writer is called, no rank is repeated, and no authority is
+    reacquired between ranking, rendering, reservation and actual delivery.
+    Renderer callbacks are explicit caller operations, not a sandbox.
+    """
+    arguments = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed,
+        "journal_limits": journal_limits,
+        "expected_journal_limits_sha256": expected_journal_limits_sha256,
+        "expected_adoption_sha256": expected_adoption_sha256,
+        "rows": rows, "expected_rows_sha256": expected_rows_sha256,
+        "observed_at": observed_at, "render_config": render_config,
+        "expected_render_config_sha256": expected_render_config_sha256,
+        "request_id": request_id, "consumer": consumer,
+    }
+    return _execute(owner, arguments=arguments, output_utf8=None,
+                    binary_sink=binary_sink, clock=clock,
+                    rendering=True, renderer=renderer)
+
+
+def _execute(owner, *, arguments, output_utf8, binary_sink, clock,
+             rendering=False, renderer=None):
+    """One authority/rank/output path for premised and callback-rendered bodies."""
     phase = "not-started"
+    rendered = None
     try:
-        arguments = {
-            "memo": memo, "admitted_status": admitted_status,
-            "retained_batch": retained_batch, "committed": committed,
-            "journal_limits": journal_limits,
-            "expected_journal_limits_sha256": expected_journal_limits_sha256,
-            "expected_adoption_sha256": expected_adoption_sha256,
-            "rows": rows, "expected_rows_sha256": expected_rows_sha256,
-            "observed_at": observed_at, "emitted_row_refs": emitted_row_refs,
-            "request_id": request_id, "consumer": consumer,
-        }
-        request = _Request(owner, arguments, output_utf8)
+        request = _Request(owner, arguments, output_utf8, rendering=rendering)
         data = request.admitted
         if not callable(getattr(binary_sink, "write", None)) \
                 or not callable(getattr(binary_sink, "flush", None)) or not callable(clock):
             _refuse("explicit-binary-output-and-clock-required")
+        if rendering and not callable(renderer):
+            _refuse("explicit-renderer-required")
         request.current()
         # Never acquire the resident brainstem lease on an output path.
         with request.corpus_owner():
             request.current()
             with epoch_api.hold_epoch(
-                    owner, memo=memo, admitted_status=data["admitted_status"],
+                    owner, memo=arguments["memo"], admitted_status=data["admitted_status"],
                     retained_batch=data["retained_batch"], committed=data["committed"],
                     journal_limits=data["journal_limits"],
                     expected_journal_limits_sha256=data["expected_journal_limits_sha256"],
@@ -285,10 +457,14 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
 
                 def authority_current():
                     request.current()
+                    if rendered is not None:
+                        rendered.current()
                     epoch.current()
                     if source.native_bytes(owner, view) != view_raw:
                         _refuse("held-epoch-view-changed")
                     request.current()
+                    if rendered is not None:
+                        rendered.current()
                     return None
 
                 authority_current()
@@ -318,16 +494,55 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
                         observed_at=chronology)
                     writer.current()
                     authority_current()
+                    if rendering:
+                        _render_config(
+                            data["render_config"], data["expected_render_config_sha256"],
+                            data["journal_limits"], request.capacities["MAX_STATE_JSON_BYTES"],
+                            policy=state["policy"])
                     ranked = live.rank_recall(
                         rows=data["rows"], expected_rows_sha256=data["expected_rows_sha256"],
                         state=state, expected_state_sha256=generation["state_sha256"],
                         policy=state["policy"], expected_policy_sha256=state["policy_sha256"],
                         observed_at=data["observed_at"])
+                    # Capture the actual returned plain rank before any owner
+                    # serializer/currentness callback or defensive copy.
+                    rank_plain = _plain_pin(ranked) if rendering else None
                     _rank_current(owner, ranked, data, generation)
                     writer.current()
+                    if rendering:
+                        # Reserve both callback copies while the whole held
+                        # request is still current, before invoking its renderer.
+                        request.budget(
+                            epoch_view=view, journal=inspected, binding=bound,
+                            ranked=ranked, renderer_ranked=ranked,
+                            renderer_config=data["render_config"])
+                        writer.current()
+                        authority_current()
+                        rendered = _RenderedOutput(request, ranked, rank_plain)
+                        writer.current()
+                        authority_current()
+                        result = renderer(
+                            ranked=rendered.callback_ranked,
+                            expected_ranked_sha256=rendered.rank_pin,
+                            config=rendered.callback_config,
+                            expected_config_sha256=rendered.config_pin)
+                        # Admit source and input currentness after the callback,
+                        # before accepting even its bounded result as a premise.
+                        writer.current()
+                        authority_current()
+                        rendered.accept(result)
+                        request.budget(
+                            epoch_view=view, journal=inspected, binding=bound,
+                            ranked=ranked, **rendered.budget_fields())
+                        writer.current()
+                        authority_current()
+                        output_utf8 = rendered.output_utf8
+                        emitted_row_refs = rendered.emitted_row_refs
+                    else:
+                        emitted_row_refs = data["emitted_row_refs"]
                     intent = journal_api._new_intent(
                         ranked=ranked, expected_ranked_sha256=ranked["rank_sha256"],
-                        emitted_row_refs=data["emitted_row_refs"], output_utf8=output_utf8,
+                        emitted_row_refs=emitted_row_refs, output_utf8=output_utf8,
                         request_id=data["request_id"], consumer=data["consumer"],
                         limits=data["journal_limits"])
                     expected_reservation = journal_api._reservation(intent)
@@ -338,12 +553,13 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
                         intent, output_utf8, live.MAX_SAFE_INTEGER))
                     request.budget(epoch_view=view, journal=inspected, binding=bound,
                                    ranked=ranked, reservation=expected_reservation,
-                                   terminal=terminal)
+                                   terminal=terminal,
+                                   **({} if rendered is None else rendered.budget_fields()))
                     writer.current()
                     authority_current()
                     reservation = writer.reserve(
                         ranked=ranked, expected_ranked_sha256=ranked["rank_sha256"],
-                        emitted_row_refs=data["emitted_row_refs"], output_utf8=output_utf8,
+                        emitted_row_refs=emitted_row_refs, output_utf8=output_utf8,
                         request_id=data["request_id"], consumer=data["consumer"])
                     if journal_api._wire(reservation, data["journal_limits"]) != reservation_raw:
                         _refuse("journal-reservation-differs")
@@ -378,12 +594,16 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
                     _refuse("journal-exit-completion-changed")
                 epoch.current()
                 request.final_current()
+                if rendered is not None:
+                    rendered.final_current()
                 if not _plain_same(completed, completed_pin) \
                         or not _plain_same(detached, completed_pin):
                     _refuse("journal-exit-completion-changed")
             # Epoch exit has run under the still-continuous corpus lease.
             # Its closed descriptors are not reused and no path is reopened.
             request.final_current()
+            if rendered is not None:
+                rendered.final_current()
             if not _plain_same(completed, completed_pin) \
                     or not _plain_same(detached, completed_pin):
                 _refuse("epoch-exit-completion-changed")
@@ -392,6 +612,8 @@ def deliver(owner, *, memo, admitted_status, retained_batch, committed,
         # provider/serializer call or a new defensive copy after release.
         # This is not a fresh filesystem observation after ownership ends.
         request.final_current()
+        if rendered is not None:
+            rendered.final_current()
         if not _plain_same(completed, completed_pin) \
                 or not _plain_same(detached, completed_pin):
             _refuse("corpus-exit-completion-changed")
