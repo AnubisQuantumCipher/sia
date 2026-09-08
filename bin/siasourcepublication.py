@@ -11,6 +11,12 @@ Recurring rollover reuses the fixed slot as the successor WAL only after the
 predecessor has moved to its immutable digest archive.  Successor retention
 leaves completed readiness intact; adoption is the single later memo swap to
 the ordinary pending receipt consumed by the existing pipeline.
+
+The additive capturable-successor entrypoints admit only the exact durable
+notification acquisition fence over a fully revalidated historical source
+completion. They retain that fence unchanged while writing the successor WAL
+and adopting it as pending. They do not make the predecessor currently ready,
+capture sources, enable delivery, or admit a different pending authority.
 """
 
 import contextlib
@@ -582,6 +588,401 @@ def recover_successor(
         memo.clear()
         memo.update(detached)
         named_current()
+        return True
+
+
+class _CapturableSuccessor:
+    """Keep a fenced completed predecessor pinned across its own WAL swap.
+
+    The caller supplies its existing corpus ownership; this object acquires
+    no owner and performs no capture. All named input files remain held until
+    the outer operation closes. Only this transaction's successful fixed-slot
+    and memo publications replace their respective held observations.
+    """
+
+    def __init__(self, owner, source, request, stack):
+        self.owner, self.source, self.request, self.stack = (
+            owner, source, request, stack)
+        if type(owner) is not dict:
+            _refuse(source, "source-capturable-owner-shape")
+        # Select immutable scalar values before any serialization or copy.
+        # A callback cannot change the paths/capacities and have those changed
+        # values silently become the transaction's original authority basis.
+        self.paths = {name: owner.get(name) for name in (
+            "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH",
+            "LIVE_CANDIDATE_PATH", "LIVE_STATE_PATH",
+            "CONTROLLER_SOURCE_BATCH_PATH", "CONTROLLER_SOURCE_ARCHIVE_DIR",
+            "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR", "CORPUS", "STATE", "SHARE",
+        )}
+        self.capacities = {name: owner.get(name) for name in (
+            "MAX_MEMO_BYTES", "MAX_STATE_JSON_BYTES", "MAX_CONFIG_PATH_CHARS",
+            "MAX_CONFIG_TEXT_CHARS", "MAX_CONFIG_BYTES",
+            "MAX_SOURCE_REPLAY_EVENTS", "MAX_SOURCE_REPLAY_SOURCES",
+            "MAX_LEDGER_PENDING_RECORDS", "MAX_JSON_SAFE_INTEGER",
+        )}
+        self.notification_key = owner.get("NOTIFY_BASELINE_ATTEMPT_KEY")
+        if any(type(value) is not int or value <= 0
+               for value in self.capacities.values()) \
+                or type(self.notification_key) is not str \
+                or not self.notification_key:
+            _refuse(source, "source-capturable-owner-contract")
+        for path in self.paths.values():
+            source._canonical_path(owner, path)
+        self.basis_current()
+        self.request_raw = self.wire(request)
+        self.original_request_raw = self.request_raw
+        self.basis_current()
+        self.memo_raw = self.wire(request["memo"], memo=True)
+        self.validate_request()
+        self.basis_current()
+        if self.wire(request) != self.request_raw:
+            _refuse(source, "source-capturable-request-changed")
+        self.admitted = copy.deepcopy(request)
+        self.files, self.file_values = {}, {}
+        self.capture_view = self.capture_view_raw = None
+        self.successor = self.successor_raw = None
+        self.pending = self.pending_raw = self.detached_pending = None
+        self.final_request_raw = None
+        self.inputs_current()
+
+    def wire(self, value, *, memo=False, ceiling=None):
+        if ceiling is None:
+            ceiling = self.capacities[
+                "MAX_MEMO_BYTES" if memo else "MAX_STATE_JSON_BYTES"]
+        return self.source.native_bytes(self.owner, value, ceiling=ceiling)
+
+    def basis_current(self):
+        for name, expected in {**self.paths, **self.capacities,
+                               "NOTIFY_BASELINE_ATTEMPT_KEY":
+                                   self.notification_key}.items():
+            actual = self.owner.get(name)
+            if type(actual) is not type(expected) or actual != expected:
+                _refuse(self.source, "source-capturable-owner-basis-changed")
+
+    def validate_request(self):
+        request = self.request
+        memo, status, retained, committed, seq = (
+            request[key] for key in (
+                "memo", "admitted_status", "retained_batch", "committed", "seq"))
+        if type(memo) is not dict or type(status) is not dict \
+                or type(retained) is not dict or type(committed) is not dict \
+                or set(committed) != COMMITTED_KEYS \
+                or any(type(value) is not str or _HEX.fullmatch(value) is None
+                       for value in committed.values()) \
+                or type(seq) is not int or seq < 0 \
+                or seq > self.capacities["MAX_JSON_SAFE_INTEGER"] \
+                or type(memo.get("pulse_seq")) is not int \
+                or memo["pulse_seq"] != seq \
+                or SUCCESSOR_PENDING_KEYS.intersection(memo) \
+                or self.wire(memo.get("controller_source_committed")) \
+                   != self.wire(committed):
+            _refuse(self.source, "source-capturable-completed-authority")
+        attempt = request["notification_baseline_attempt"]
+        pin = request["expected_notification_baseline_attempt_sha256"]
+        if type(attempt) is not dict or type(pin) is not str \
+                or _HEX.fullmatch(pin) is None \
+                or self.notification_key not in memo \
+                or memo[self.notification_key] is None:
+            _refuse(self.source, "source-capturable-notification-fence")
+        actual = self.owner["_pending_notify_baseline_attempt"](memo)
+        if type(actual) is not dict or self.wire(actual) != self.wire(attempt) \
+                or self.owner["hashlib"].sha256(self.wire(attempt)).hexdigest() != pin:
+            _refuse(self.source, "source-capturable-notification-fence")
+
+    def inputs_current(self):
+        self.basis_current()
+        if self.wire(self.request) != self.request_raw \
+                or self.wire(self.admitted) != self.request_raw:
+            _refuse(self.source, "source-capturable-request-changed")
+        if self.capture_view is not None \
+                and self.wire(self.capture_view) != self.capture_view_raw:
+            _refuse(self.source, "source-capturable-predecessor-view-changed")
+        if self.successor is not None \
+                and self.wire(self.successor) != self.successor_raw:
+            _refuse(self.source, "source-capturable-successor-changed")
+        if self.pending is not None \
+                and self.wire(self.pending, memo=True) != self.pending_raw:
+            _refuse(self.source, "source-capturable-pending-changed")
+        if self.detached_pending is not None \
+                and self.wire(self.detached_pending, memo=True) != self.pending_raw:
+            _refuse(self.source, "source-capturable-pending-copy-changed")
+        self.basis_current()
+
+    def observe(self, name, path, ceiling, *, required=True, archive=False):
+        held = self.source.HeldFile(
+            self.owner, path, ceiling, allow_absent=not required)
+        self.stack.callback(held.close)
+        _private(self.source, held)
+        if archive and stat.S_IMODE(held.parent_generation["mode"]) != 0o700:
+            _refuse(self.source, "source-capturable-archive-not-private")
+        value_raw = None if held.raw is None else self.wire(
+            held.value, ceiling=ceiling)
+        self.files[name] = held
+        self.file_values[name] = value_raw
+        self.capacity()
+        return held
+
+    def capacity(self):
+        # Declared retained-wire reservation, not a Python heap estimate:
+        # original full request; each selected current file's raw body;
+        # the exact capturable view; successor wire; prospective pending memo;
+        # and the complete post-adoption request. Each representation is
+        # counted once, even where its contents duplicate another document.
+        retained = len(self.original_request_raw)
+        for held in self.files.values():
+            if held.raw is not None:
+                retained += len(held.raw)
+        for raw in (self.capture_view_raw, self.successor_raw,
+                    self.pending_raw, self.final_request_raw):
+            if raw is not None:
+                retained += len(raw)
+        if retained > self.capacities["MAX_STATE_JSON_BYTES"]:
+            _refuse(self.source, "source-capturable-retained-wire-capacity")
+
+    def current(self):
+        self.inputs_current()
+        for name, held in self.files.items():
+            held.current()
+            if held.raw is not None and self.wire(
+                    held.value, ceiling=held.ceiling) != self.file_values[name]:
+                _refuse(self.source, "source-capturable-held-value-changed")
+        self.inputs_current()
+        # No serialization or defensive copy follows this final descriptor
+        # pass: an input-check callback must not change a previously checked
+        # file and have the operation return successfully on that old check.
+        for held in self.files.values():
+            held.current()
+        self.basis_current()
+
+    def predecessor(self):
+        import siasourceack as acknowledgment
+
+        for name in ("MEMO_PATH", "STATUS_PATH", "GRAPH_PATH",
+                     "LIVE_CANDIDATE_PATH", "LIVE_STATE_PATH"):
+            self.observe(name, self.paths[name], self.capacities[
+                "MAX_MEMO_BYTES" if name == "MEMO_PATH" else "MAX_STATE_JSON_BYTES"])
+        self.observe("fixed", self.paths["CONTROLLER_SOURCE_BATCH_PATH"],
+                     self.capacities["MAX_STATE_JSON_BYTES"], required=False)
+        committed = self.admitted["committed"]
+        for name, directory, pin, ceiling in (
+                ("source-archive", "CONTROLLER_SOURCE_ARCHIVE_DIR",
+                 committed["source_batch_sha256"], "MAX_STATE_JSON_BYTES"),
+                ("effects-archive", "CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR",
+                 committed["source_effects_receipt_sha256"], "MAX_MEMO_BYTES")):
+            self.observe(name, os.path.join(self.paths[directory], pin + ".json"),
+                         self.capacities[ceiling], archive=True)
+        if self.file_values["MEMO_PATH"] != self.memo_raw \
+                or self.file_values["STATUS_PATH"] \
+                   != self.wire(self.admitted["admitted_status"]) \
+                or self.files["source-archive"].raw \
+                   != self.wire(self.admitted["retained_batch"]):
+            _refuse(self.source, "source-capturable-retained-authority")
+        self.current()
+        # The real capture-only reader sees the FULL caller memo and status.
+        # All authority handles opened above remain live after it closes its
+        # own transient contexts and throughout the subsequent storage work.
+        self.capture_view = acknowledgment.read_capturable_predecessor(
+            self.owner, memo=self.request["memo"],
+            admitted_status=self.request["admitted_status"],
+            committed=self.request["committed"],
+            notification_baseline_attempt=
+                self.request["notification_baseline_attempt"],
+            expected_notification_baseline_attempt_sha256=
+                self.request["expected_notification_baseline_attempt_sha256"])
+        self.capture_view_raw = self.wire(self.capture_view)
+        view = self.capture_view
+        if type(view) is not dict or set(view) != {
+                "schema", "status", "batch", "committed",
+                "notification_baseline_attempt",
+                "expected_notification_baseline_attempt_sha256", "non_claims"} \
+                or view["schema"] != "sia-controller-source-capturable-predecessor-v1" \
+                or view["status"] != "capturable-not-ready" \
+                or self.wire(view["batch"]) != self.files["source-archive"].raw \
+                or self.wire(view["committed"]) != self.wire(committed) \
+                or self.wire(view["notification_baseline_attempt"]) \
+                   != self.wire(self.admitted["notification_baseline_attempt"]) \
+                or view["expected_notification_baseline_attempt_sha256"] \
+                   != self.admitted["expected_notification_baseline_attempt_sha256"] \
+                or view["non_claims"] != list(acknowledgment.CAPTURE_NON_CLAIMS):
+            _refuse(self.source, "source-capturable-predecessor-view")
+        self.capacity()
+        self.current()
+
+    def material(self, batch, expected_batch_sha256):
+        raw, receipt = _successor_material(
+            self.owner, self.source,
+            retained_batch=self.admitted["retained_batch"],
+            committed=self.admitted["committed"], batch=batch,
+            expected_batch_sha256=expected_batch_sha256)
+        if self.wire(batch.get("notification_baseline_attempt")) \
+                != self.wire(self.admitted["notification_baseline_attempt"]) \
+                or self.owner["hashlib"].sha256(self.wire(
+                    batch["notification_baseline_attempt"])).hexdigest() \
+                != self.admitted["expected_notification_baseline_attempt_sha256"]:
+            _refuse(self.source, "source-capturable-successor-fence")
+        self.successor, self.successor_raw = batch, raw
+        fixed = self.files["fixed"]
+        if fixed.raw is not None and fixed.raw != raw:
+            _refuse(self.source, "source-capturable-immutable-wal-differs")
+        pending = dict(self.admitted["memo"])
+        pending.pop("controller_source_committed")
+        pending.pop("ready")
+        pending["controller_source_pending"] = receipt
+        self.pending, self.pending_raw = pending, self.wire(pending, memo=True)
+        encoded = self.owner["_memo_text"](pending)
+        if type(encoded) is not str \
+                or len(encoded.encode("utf-8")) > self.capacities["MAX_MEMO_BYTES"]:
+            _refuse(self.source, "source-capturable-prospective-memo-capacity")
+        final_request = dict(self.admitted, memo=pending)
+        self.final_request_raw = self.wire(final_request)
+        self.capacity()
+        # Also reserve the selected files after WAL/memo replacement, before
+        # either publication can consume storage. The old descriptor bytes
+        # are still represented by the original request and pending images;
+        # this remains a document budget, not a total-process-memory claim.
+        future_extra = (0 if fixed.raw is not None else len(raw))
+        future_extra += max(0, len(self.pending_raw)
+                            - len(self.files["MEMO_PATH"].raw))
+        retained = len(self.original_request_raw) + sum(
+            len(held.raw) for held in self.files.values() if held.raw is not None)
+        retained += sum(len(value) for value in (
+            self.capture_view_raw, self.successor_raw,
+            self.pending_raw, self.final_request_raw))
+        if retained + future_extra > self.capacities["MAX_STATE_JSON_BYTES"]:
+            _refuse(self.source, "source-capturable-publication-reservation-capacity")
+        self.current()
+        self.detached_pending = copy.deepcopy(pending)
+        self.current()
+        roots = tuple(self.paths[name] for name in ("CORPUS", "STATE", "SHARE"))
+        self.staging = {}
+        for name, path in (("fixed", self.paths["CONTROLLER_SOURCE_BATCH_PATH"]),
+                           ("memo", self.paths["MEMO_PATH"])):
+            self.staging[name] = self.source._canonical_path(
+                self.owner, self.owner["siaqueue"].staging_dir_for(
+                    path, authority_roots=roots))
+            for leaf in (self.owner["siaqueue"].STAGING_LOCK_NAME,
+                         self.owner["siaqueue"].STAGING_PAYLOAD_NAME):
+                self.source._canonical_path(
+                    self.owner, os.path.join(self.staging[name], leaf))
+        self.current()
+
+    def publish_wal(self):
+        fixed = self.files["fixed"]
+        self.current()
+        result = self.owner["siaqueue"].fixed_atomic_publish(
+            fixed.path, self.successor_raw, mode=0o600, exclusive=True,
+            destination_dir_fd=fixed.directories.fd, nonblocking=True,
+            observe_destination=True, staging_dir=self.staging["fixed"])
+        self.inputs_current()
+        fixed.directories.current()
+        if type(result) is not dict or set(result) != {
+                "status", "before", "after", "stable"} \
+                or result["status"] not in {"published", "existing"} \
+                or result["stable"] is not True \
+                or result["after"] != self.owner["siaqueue"]._directory_identity(
+                    os.fstat(fixed.directories.fd)):
+            _refuse(self.source, "source-capturable-wal-publication-observation")
+        if fixed.raw is not None:
+            # An exact durability retry must not replace the existing WAL's
+            # inode. Do not refresh away a changed original descriptor.
+            fixed.current()
+        else:
+            refreshed = self.observe(
+                "fixed", fixed.path, fixed.ceiling, required=True)
+            if refreshed.parent_identity != fixed.parent_identity \
+                    or refreshed.raw != self.successor_raw:
+                _refuse(self.source, "source-capturable-wal-readback")
+        self.current()
+
+    def adopt(self):
+        prior = self.files["MEMO_PATH"]
+        self.current()
+        self.owner["atomic_write"](
+            prior.path, self.pending_raw.decode("utf-8"), mode=0o600,
+            destination_dir_fd=prior.directories.fd)
+        self.inputs_current()
+        prior.directories.current()
+        written = self.observe("MEMO_PATH", prior.path, prior.ceiling)
+        if written.parent_identity != prior.parent_identity \
+                or written.raw != self.pending_raw:
+            _refuse(self.source, "source-capturable-memo-readback")
+        self.current()
+        # Publish the caller's mutable mirror only after the exact durable
+        # pending memo and all retained authority have passed their checks.
+        self.request["memo"].clear()
+        self.request["memo"].update(self.detached_pending)
+        self.admitted = dict(self.admitted, memo=self.detached_pending)
+        self.request_raw = self.final_request_raw
+        self.current()
+
+
+def retain_capturable_successor(
+        owner, *, memo, admitted_status, retained_batch, committed,
+        batch, expected_batch_sha256, seq, notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256):
+    """Retain an exact fenced successor WAL, leaving the full memo unchanged.
+
+    The explicit notification fence is acquisition history, not readiness or
+    delivery. Exact retries retain the existing WAL inode and replay its
+    parent-directory durability barrier. No owner scope is acquired here.
+    """
+    import siasourcebatch as source
+
+    request = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed,
+        "batch": batch, "expected_batch_sha256": expected_batch_sha256,
+        "seq": seq, "notification_baseline_attempt": notification_baseline_attempt,
+        "expected_notification_baseline_attempt_sha256":
+            expected_notification_baseline_attempt_sha256,
+    }
+    with contextlib.ExitStack() as stack:
+        transaction = _CapturableSuccessor(owner, source, request, stack)
+        transaction.predecessor()
+        transaction.material(transaction.admitted["batch"],
+                             transaction.admitted["expected_batch_sha256"])
+        transaction.publish_wal()
+        transaction.current()
+        return None
+
+
+def recover_capturable_successor(
+        owner, *, memo, admitted_status, retained_batch, committed, seq,
+        notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256):
+    """Adopt exact fenced WAL bytes, or return False only for an absent WAL.
+
+    This is a completed-predecessor-only entrypoint. A process interrupted
+    after pending-memo replacement must dispatch its actual pending state;
+    this function never filters that state into a completed retry. The marker
+    remains byte-for-byte represented in the pending memo and successor hash.
+    """
+    import siasourcebatch as source
+
+    request = {
+        "memo": memo, "admitted_status": admitted_status,
+        "retained_batch": retained_batch, "committed": committed, "seq": seq,
+        "notification_baseline_attempt": notification_baseline_attempt,
+        "expected_notification_baseline_attempt_sha256":
+            expected_notification_baseline_attempt_sha256,
+    }
+    with contextlib.ExitStack() as stack:
+        transaction = _CapturableSuccessor(owner, source, request, stack)
+        transaction.predecessor()
+        fixed = transaction.files["fixed"]
+        if fixed.raw is None:
+            transaction.current()
+            return False
+        successor = fixed.value
+        if type(successor) is not dict \
+                or type(successor.get("batch_sha256")) is not str \
+                or _HEX.fullmatch(successor["batch_sha256"]) is None:
+            _refuse(source, "source-capturable-wal-shape")
+        transaction.material(successor, successor["batch_sha256"])
+        # This exact immutable replay closes a crash after WAL publication
+        # but before the parent sync, before pending memo adoption can run.
+        transaction.publish_wal()
+        transaction.adopt()
         return True
 
 

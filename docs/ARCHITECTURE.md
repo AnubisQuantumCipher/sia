@@ -126,6 +126,23 @@ Ordinary completed reads and ACK still reject the fenced state. An unrelated
 fixed successor slot is neither interpreted nor adopted by this historical
 reader; the separate capture/retention boundary must admit that slot.
 
+The additive `retain_capturable_successor` and
+`recover_capturable_successor` provide that separate storage boundary. Both
+require the reserved sequence, admitted status, retained predecessor,
+compact commit and independently pinned notification marker. They hold the
+actual memo, status, graph, live artifacts and source/effects archives across
+the write, and bind publication to held destination directory descriptors.
+Retention leaves the full fenced memo unchanged; exact WAL retries preserve
+its inode and replay its parent-directory durability barrier. Recovery
+adopts only those validated bytes, replacing historical completion/readiness
+with the existing pending receipt while preserving the marker. An absent
+slot returns false; another pending authority or unrelated WAL refuses.
+Legacy completed storage entrypoints remain strict. The complete request,
+held bodies, capture view, successor and prospective memo representations
+share a pre-effect wire budget; it does not measure process memory. These
+entrypoints neither collect sources nor create a writer permit, and do not
+reinterpret an already-pending memo as a completed predecessor.
+
 These are concrete component contracts and recovery gates. Their availability
 alone does not prove that a particular resident controller invocation used the
 whole sequence; that requires an end-to-end front-door run and retained
@@ -504,8 +521,9 @@ cognitive mechanism win, durable output delivery or human receipt.
 Notification collection can create a pending acquisition fence in the memo;
 the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
-admission for the capture-held epoch. The upcoming v3 batch construction,
-retention and pre-WAL recovery path remain separate construction work,
+admission for the capture-held epoch. Its separate fenced successor storage
+path is implemented above; v3 batch construction and resident dispatch
+remain separate construction work,
 not a relaxed completed/readiness or writer gate.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
