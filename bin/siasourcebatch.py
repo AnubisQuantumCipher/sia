@@ -298,17 +298,18 @@ class _DirectoryChain:
                  | system.O_CLOEXEC)
         try:
             descriptor = system.open(system.sep, flags)
+            # Own the descriptor before any fallible stat/identity work.
+            self.chain.append((system.sep, descriptor, None))
             info = system.fstat(descriptor)
-            self.chain.append((system.sep, descriptor,
-                               _directory_identity(info)))
+            self.chain[-1] = (system.sep, descriptor, _directory_identity(info))
             for name in self.path.split(system.sep)[1:]:
                 if not name:
                     continue
                 descriptor = system.open(
                     name, flags, dir_fd=self.chain[-1][1])
+                self.chain.append((name, descriptor, None))
                 info = system.fstat(descriptor)
-                self.chain.append((name, descriptor,
-                                   _directory_identity(info)))
+                self.chain[-1] = (name, descriptor, _directory_identity(info))
             terminal = system.fstat(self.chain[-1][1])
             if not stat.S_ISDIR(terminal.st_mode) \
                     or terminal.st_uid != system.geteuid() \
