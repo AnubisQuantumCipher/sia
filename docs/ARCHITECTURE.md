@@ -52,7 +52,7 @@ The old default and opt-in dataset outputs remain separate compatibility
 contracts. This capture alone does not establish complete machine history,
 idle-gist admission, live-loop publication or a cognitive win.
 
-### The durable controller-source transaction
+## The durable controller-source transaction
 
 The implemented, unreleased controller-source boundary turns one retained
 collector cut into an ordered, recoverable local transaction. Capture and

@@ -58,6 +58,10 @@
       ]
     }
   ],
+  "mind": {
+    "_comment": "Implemented, unreleased controller-source loop: explicit opt-in to retained source transactions, workspace observations and idle gist publication. Disabled by default. This selection does not authorize cognitive names, prove a held-out win or enable the pending delivery-recall integration.",
+    "controller_source": false
+  },
   "retrieval": {
     "_comment": "Off by measurement: on the extended 22-probe tripwire set (2026-09-02) the graph-influenced blend scored uniformly below the unmodified hybrid query, so `sia ask` uses origin-weighted hybrid-query ordering unless you enable this deliberately. The nightly tripwire keeps measuring the blend lane either way.",
     "associative_rerank": false
