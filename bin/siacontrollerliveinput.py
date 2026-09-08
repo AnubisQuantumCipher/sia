@@ -96,6 +96,8 @@ def prepare_inputs(*, batch, previous_state,
             or type(batch.get("intake_projection")) is not dict \
             or type(batch.get("epoch")) is not dict:
         _refuse("batch-shape")
+    if "delivery_input" in batch:
+        _refuse("legacy-delivery-input")
     basis = {
         "schema": batch.get("schema"),
         "intake": batch["intake_projection"].get("intake"),
@@ -184,4 +186,6 @@ def prepare_inputs(*, batch, previous_state,
             or _canonical(previous_state) != original_previous \
             or _canonical(detached) != encoded:
         _refuse("prepare-input-or-result-changed")
+    if "delivery_input" in batch:
+        _refuse("legacy-delivery-input")
     return detached
