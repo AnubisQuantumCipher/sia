@@ -1528,7 +1528,8 @@ def _assign_splits(questions, seed):
     return sorted(out, key=lambda q: q["id"])
 
 
-def _capture_ledger_sources(corpus, chain_registry, chain_names):
+def _capture_ledger_sources(corpus, chain_registry, chain_names,
+                            *, include_controller_metadata=False):
     """Read the shared verified snapshot and scoped projection cache, not QA.
 
     The caller owns the corpus lease. Retention and answer-field coverage are
@@ -1559,7 +1560,9 @@ def _capture_ledger_sources(corpus, chain_registry, chain_names):
             label = _label_for(row)
             if action and label:
                 raw_pairs[chain].add((action, label))
-            if not action or action.startswith("GENESIS:") or not label:
+            if not action or not label or (
+                    action.startswith("GENESIS:")
+                    and not include_controller_metadata):
                 continue
             subject = (chain, action, label)
             raw_subjects.setdefault(subject, []).append(row)
@@ -1704,6 +1707,26 @@ def capture_native_history(*, corpus, chain_registry, chain_names):
     even when no row provides a usable QA answer. The returned capture is a
     detached private value, not a published artifact or delivery receipt.
     """
+    return _capture_native_history(
+        corpus=corpus, chain_registry=chain_registry, chain_names=chain_names,
+        include_controller_metadata=False)
+
+
+def capture_native_history_v2(*, corpus, chain_registry, chain_names):
+    """Capture all defined controller projections, including source metadata.
+
+    The original front door retains its frozen projection exclusions. This
+    source-only version includes projected genesis records with the same
+    keeper, corpus owner, exact Event witnesses, budgets and refusal rules.
+    No question or replay eligibility follows from metadata retention.
+    """
+    return _capture_native_history(
+        corpus=corpus, chain_registry=chain_registry, chain_names=chain_names,
+        include_controller_metadata=True)
+
+
+def _capture_native_history(*, corpus, chain_registry, chain_names,
+                            include_controller_metadata):
     if type(corpus) is not str or not corpus or "\x00" in corpus \
             or not os.path.isabs(corpus) \
             or os.path.normpath(corpus) != corpus \
@@ -1740,7 +1763,8 @@ def capture_native_history(*, corpus, chain_registry, chain_names):
         (snapshots, diagnostics, projected, records, resolver, _raw_pairs,
          _raw_subjects, _verified_latest_seq, witness_coverage,
          question_coverage) = _capture_ledger_sources(
-             corpus, chain_registry, chain_names)
+             corpus, chain_registry, chain_names,
+             include_controller_metadata=include_controller_metadata)
         # Fail the complete capture rather than treating a refused required
         # source as an empty history. Coverage exclusions are retained facts,
         # not intake failures and not a requirement to generate any question.
@@ -1756,7 +1780,9 @@ def capture_native_history(*, corpus, chain_registry, chain_names):
         chain_provenance = [{key: snap[key] for key in chain_fields}
             for snap in snapshots]
         identity = {
-            "schema": "sia-native-source-capture-v1",
+            "schema": ("sia-native-controller-source-capture-v2"
+                       if include_controller_metadata
+                       else "sia-native-source-capture-v1"),
             "generator_version": GENERATOR_VERSION,
             "capacity_policy": _ledger_capacity_policy(),
             "chains": chain_provenance,
