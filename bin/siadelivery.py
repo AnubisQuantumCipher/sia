@@ -217,11 +217,13 @@ class _Directory:
         self.fd = None
         try:
             parent = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-            self.chain.append((None, "", parent, _directory_identity(os.fstat(parent))))
+            self.chain.append((None, "", parent, None))
+            self.chain[-1] = (None, "", parent, _directory_identity(os.fstat(parent)))
             for part in path.split("/")[1:]:
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
                                 dir_fd=parent)
-                self.chain.append((parent, part, child, _directory_identity(os.fstat(child))))
+                self.chain.append((parent, part, child, None))
+                self.chain[-1] = (parent, part, child, _directory_identity(os.fstat(child)))
                 parent = child
             self.fd = parent
             info = os.fstat(self.fd)
@@ -392,7 +394,8 @@ def _publish(directory, name, value, limits):
     _infrastructure(directory, limits)
     raw = _wire(value, limits)
     queue.fixed_atomic_publish(os.path.join(directory.path, name), raw, exclusive=True,
-                               staging_dir=os.path.join(directory.path, _STAGING), nonblocking=True)
+                               staging_dir=os.path.join(directory.path, _STAGING), nonblocking=True,
+                               destination_dir_fd=directory.fd)
     directory.current()
     with contextlib.closing(_File(directory, name, limits["max_document_bytes"])) as written:
         if written.raw != raw:
@@ -401,23 +404,51 @@ def _publish(directory, name, value, limits):
     _infrastructure(directory, limits)
 
 
+def _new_intent(*, ranked, expected_ranked_sha256, emitted_row_refs,
+                output_utf8, request_id, consumer, limits):
+    """Share the unchanged v1 intent and terminal-capacity admission."""
+    _limits(limits)
+    live._size({"ranked": ranked, "refs": emitted_row_refs, "id": request_id,
+                "consumer": consumer}, limits["max_document_bytes"])
+    if type(output_utf8) is not bytes or len(output_utf8) > limits["max_body_bytes"]:
+        _fail("supplied-output-byte-capacity")
+    output_utf8.decode("utf-8", "strict")
+    intent = {"schema": "sia-live-delivery-intent-v1", "id": request_id,
+              "epoch_id": ranked["epoch_id"], "consumer": consumer,
+              "ranked": ranked, "rank_sha256": expected_ranked_sha256,
+              "emitted_row_refs": emitted_row_refs, "output_scope": live.BODY_SCOPE,
+              "output_utf8_base64": base64.b64encode(output_utf8).decode("ascii"),
+              "output_bytes": len(output_utf8), "output_sha256": hashlib.sha256(output_utf8).hexdigest(),
+              "non_claims": list(NON_CLAIMS)}
+    _terminal(intent, limits)
+    return intent
+
+
+def _delivery_inputs(reservation, expected_reservation_sha256, limits):
+    """Admit the same complete reservation for short or held transactions."""
+    _limits(limits)
+    live._size(reservation, limits["max_document_bytes"])
+    live._keys(reservation, _RESERVATION, "delivery-reservation")
+    if reservation["schema"] != "sia-live-delivery-reservation-v1" \
+            or reservation["status"] != "reserved" or reservation["non_claims"] != list(NON_CLAIMS) \
+            or not live._digest(expected_reservation_sha256) \
+            or reservation["reservation_sha256"] != expected_reservation_sha256 \
+            or live._own(reservation, "reservation_sha256") != expected_reservation_sha256 \
+            or live._sha(reservation["intent"]) != reservation["intent_sha256"]:
+        _fail("independent-reservation-binding")
+    intent = copy.deepcopy(reservation["intent"])
+    body = _admit_intent(intent, limits)
+    _terminal(intent, limits)
+    return intent, body
+
+
 def reserve_delivery(*, directory, ranked, expected_ranked_sha256, emitted_row_refs,
                      output_utf8, request_id, consumer, limits):
     try:
-        _limits(limits)
-        live._size({"ranked": ranked, "refs": emitted_row_refs, "id": request_id,
-                    "consumer": consumer}, limits["max_document_bytes"])
-        if type(output_utf8) is not bytes or len(output_utf8) > limits["max_body_bytes"]:
-            _fail("supplied-output-byte-capacity")
-        output_utf8.decode("utf-8", "strict")
-        intent = {"schema": "sia-live-delivery-intent-v1", "id": request_id,
-                  "epoch_id": ranked["epoch_id"], "consumer": consumer,
-                  "ranked": ranked, "rank_sha256": expected_ranked_sha256,
-                  "emitted_row_refs": emitted_row_refs, "output_scope": live.BODY_SCOPE,
-                  "output_utf8_base64": base64.b64encode(output_utf8).decode("ascii"),
-                  "output_bytes": len(output_utf8), "output_sha256": hashlib.sha256(output_utf8).hexdigest(),
-                  "non_claims": list(NON_CLAIMS)}
-        _terminal(intent, limits)
+        intent = _new_intent(
+            ranked=ranked, expected_ranked_sha256=expected_ranked_sha256,
+            emitted_row_refs=emitted_row_refs, output_utf8=output_utf8,
+            request_id=request_id, consumer=consumer, limits=limits)
         intent = copy.deepcopy(intent)
         result = _reservation(intent)
         _wire(result, limits)
@@ -449,19 +480,7 @@ def deliver_reserved(*, directory, reservation, expected_reservation_sha256,
                      binary_sink, clock, limits):
     phase = "not-started"
     try:
-        _limits(limits)
-        live._size(reservation, limits["max_document_bytes"])
-        live._keys(reservation, _RESERVATION, "delivery-reservation")
-        if reservation["schema"] != "sia-live-delivery-reservation-v1" \
-                or reservation["status"] != "reserved" or reservation["non_claims"] != list(NON_CLAIMS) \
-                or not live._digest(expected_reservation_sha256) \
-                or reservation["reservation_sha256"] != expected_reservation_sha256 \
-                or live._own(reservation, "reservation_sha256") != expected_reservation_sha256 \
-                or live._sha(reservation["intent"]) != reservation["intent_sha256"]:
-            _fail("independent-reservation-binding")
-        intent = copy.deepcopy(reservation["intent"])
-        body = _admit_intent(intent, limits)
-        _terminal(intent, limits)
+        intent, body = _delivery_inputs(reservation, expected_reservation_sha256, limits)
         request_id = intent["id"]
         with contextlib.ExitStack() as stack:
             owned = _Directory(directory)
@@ -569,6 +588,300 @@ class _HeldDeliveryInspection:
         # Never leave a usable handle pointing at file descriptors that may
         # later be recycled for a different caller's files.
         self._closed = True
+
+
+def _native_directory_pin(value):
+    names = ("dev", "ino", "mode", "uid", "gid")
+    if type(value) is not dict or set(value) != set(names) \
+            or any(type(value[name]) is not int or not 0 <= value[name] < 1 << 64
+                   for name in names):
+        _fail("held-writer-native-directory-identity")
+    # Native stat identities are not live-loop JSON numbers. In particular,
+    # never round or stringify an inode to pass the live safe-integer bound.
+    return tuple(value[name] for name in names)
+
+
+class _HeldDeliveryWriter:
+    """One mutable journal lease; outer source authority remains a premise."""
+
+    def __init__(self, directory, epoch_id, limits, admitted_limits, limits_raw,
+                 identity, identity_pin, authority_current):
+        self._directory, self._path = directory, directory.path
+        self._epoch_id = epoch_id
+        self._original_limits, self._limits, self._limits_raw = limits, admitted_limits, limits_raw
+        self._identity, self._identity_pin = identity, identity_pin
+        self._authority_current = authority_current
+        self._closed, self._busy, self._phase = False, False, "not-started"
+        self._snapshots = contextlib.ExitStack()
+        try:
+            self._basis_current()
+            self._snapshot = _Snapshot(directory, epoch_id, self._limits, self._snapshots)
+            self.current()
+        except BaseException:
+            self._close()
+            raise
+
+    def _basis_current(self):
+        if self._closed:
+            _fail("held-writer-closed")
+        if self._directory.path != self._path \
+                or _native_directory_pin(self._identity) != self._identity_pin \
+                or _directory_identity(os.fstat(self._directory.fd)) != self._identity_pin:
+            _fail("held-writer-directory-adoption-differs")
+        if live._canonical(self._original_limits) != self._limits_raw \
+                or live._canonical(self._limits) != self._limits_raw:
+            _fail("held-writer-limits-changed")
+        self._directory.current()
+
+    def _check(self, *, entries=True):
+        self._basis_current()
+        self._snapshot.current(entries=entries)
+        if self._authority_current() is not None:
+            _fail("held-writer-authority-check-result")
+        self._basis_current()
+        self._snapshot.current(entries=entries)
+
+    def current(self):
+        phase = "not-started" if self._closed else self._phase
+        try:
+            self._check()
+        except _ERRORS as exc:
+            self._closed = True
+            _raise(exc, phase)
+        except BaseException:
+            self._closed = True
+            raise
+
+    def read(self):
+        phase = "not-started" if self._closed else self._phase
+        try:
+            self.current()
+            reader = _HeldDeliveryInspection(self._snapshot, self._epoch_id, self._limits)
+            result = reader.read()
+            expected = _wire(result, self._limits)
+            self.current()
+            if _wire(result, self._limits) != expected:
+                _fail("held-writer-read-copy-changed")
+            self._basis_current()
+            self._snapshot.current()
+            return result
+        except _ERRORS as exc:
+            self._closed = True
+            _raise(exc, phase)
+        except BaseException:
+            self._closed = True
+            raise
+
+    def _begin(self):
+        if self._closed:
+            _fail("held-writer-closed")
+        if self._busy:
+            _fail("held-writer-operation-active")
+        self._phase = "not-started"
+        self.current()
+        self._busy = True
+
+    def _request_current(self, value, raw):
+        if _wire(value, self._limits) != raw:
+            _fail("held-writer-request-changed")
+        self.current()
+        if _wire(value, self._limits) != raw:
+            _fail("held-writer-request-changed")
+        self._basis_current()
+        self._snapshot.current()
+
+    def _publish_record(self, request_id, kind, value, request, request_raw):
+        """Refresh only the exact intended addition, retaining old file joins."""
+        self._request_current(request, request_raw)
+        before = self._snapshot
+        expected = {key: {field: _wire(document, self._limits)
+                          for field, document in fields.items()}
+                    for key, fields in before.records.items()}
+        wire = _wire(value, self._limits)
+        fields = expected.setdefault(request_id, {})
+        if kind in fields and fields[kind] != wire:
+            _fail("held-writer-immutable-record-differs")
+        fields[kind] = wire
+        self._request_current(request, request_raw)
+        _publish(self._directory, request_id + "." + kind + ".json", value, self._limits)
+        # A successful own publication may change the roster, never an old
+        # file. Keep those descriptors while admitting the exact next roster.
+        self._check(entries=False)
+        fresh_stack = contextlib.ExitStack()
+        try:
+            fresh = _Snapshot(self._directory, self._epoch_id, self._limits, fresh_stack)
+            actual = {key: {field: _wire(document, self._limits)
+                            for field, document in fields.items()}
+                      for key, fields in fresh.records.items()}
+            if actual != expected:
+                _fail("held-writer-unexpected-record-progress")
+            self._check(entries=False)
+            if _wire(request, self._limits) != request_raw:
+                _fail("held-writer-request-changed")
+            fresh.current()
+            old_stack = self._snapshots
+            self._snapshot, self._snapshots = fresh, fresh_stack
+            old_stack.close()
+        except BaseException:
+            fresh_stack.close()
+            raise
+        self._request_current(request, request_raw)
+
+    def reserve(self, *, ranked, expected_ranked_sha256, emitted_row_refs,
+                output_utf8, request_id, consumer):
+        phase = "not-started"
+        try:
+            self._begin()
+            request = {"ranked": ranked, "expected_ranked_sha256": expected_ranked_sha256,
+                       "emitted_row_refs": emitted_row_refs, "request_id": request_id,
+                       "consumer": consumer}
+            raw = _wire(request, self._limits)
+            intent = _new_intent(
+                **request, output_utf8=output_utf8, limits=self._limits)
+            if intent["epoch_id"] != self._epoch_id:
+                _fail("held-writer-request-epoch")
+            intent_raw = _wire(intent, self._limits)
+            detached = copy.deepcopy(intent)
+            self._request_current(request, raw)
+            if _wire(intent, self._limits) != intent_raw or _wire(detached, self._limits) != intent_raw:
+                _fail("held-writer-intent-copy-changed")
+            prior = self._snapshot.records.get(request_id)
+            if prior is not None:
+                if not _same(prior["intent"], detached, self._limits):
+                    _fail("conflicting-request-id-reuse")
+            else:
+                self._snapshot._capacity(self._limits, addition=detached)
+            result = _reservation(detached)
+            result_raw = _wire(result, self._limits)
+            self._publish_record(request_id, "intent", detached, request, raw)
+            result = copy.deepcopy(result)
+            self._request_current(request, raw)
+            if _wire(result, self._limits) != result_raw:
+                _fail("held-writer-reservation-copy-changed")
+            self._basis_current()
+            self._snapshot.current()
+            return result
+        except _ERRORS as exc:
+            self._closed = True
+            _raise(exc, phase)
+        except BaseException:
+            self._closed = True
+            raise
+        finally:
+            self._busy = False
+
+    def deliver(self, *, reservation, expected_reservation_sha256, binary_sink, clock):
+        phase = "not-started"
+        try:
+            self._begin()
+            raw = _wire(reservation, self._limits)
+            intent, body = _delivery_inputs(reservation, expected_reservation_sha256, self._limits)
+            self._request_current(reservation, raw)
+            if intent["epoch_id"] != self._epoch_id:
+                _fail("held-writer-request-epoch")
+            request_id = intent["id"]
+            prior = self._snapshot.records.get(request_id)
+            if prior is None or not _same(prior["intent"], intent, self._limits):
+                _fail("reserved-intent-not-durably-bound")
+            if "complete" in prior:
+                retained_raw = _wire(prior["complete"], self._limits)
+                self._request_current(reservation, raw)
+                os.fsync(self._directory.fd)
+                result = copy.deepcopy(prior["complete"])
+                if _wire(result, self._limits) != retained_raw \
+                        or _wire(prior["complete"], self._limits) != retained_raw:
+                    _fail("held-writer-retained-completion-copy-changed")
+            else:
+                if "attempt" in prior:
+                    phase = self._phase = "unknown"
+                    _fail("previous-output-attempt-outcome-unknown")
+                if not callable(getattr(binary_sink, "write", None)) \
+                        or not callable(getattr(binary_sink, "flush", None)) or not callable(clock):
+                    _fail("explicit-binary-output-and-clock-required")
+                self._publish_record(request_id, "attempt", _attempt(intent), reservation, raw)
+                phase = self._phase = "unknown"
+                view = memoryview(body)
+                while view:
+                    self._request_current(reservation, raw)
+                    written = binary_sink.write(view)
+                    self._request_current(reservation, raw)
+                    if type(written) is not int or not 0 < written <= len(view):
+                        _fail("output-write-return-not-a-complete-byte-count")
+                    view = view[written:]
+                self._request_current(reservation, raw)
+                binary_sink.flush()
+                phase = self._phase = "completed-unrecorded"
+                self._request_current(reservation, raw)
+                completed_at = clock()
+                self._request_current(reservation, raw)
+                result = _completion(intent, _pure(intent, body, completed_at))
+                _wire(result, self._limits)
+                self._publish_record(request_id, "complete", result, reservation, raw)
+            result_raw = _wire(result, self._limits)
+            result = copy.deepcopy(result)
+            self._request_current(reservation, raw)
+            if _wire(result, self._limits) != result_raw:
+                _fail("held-writer-completion-copy-changed")
+            self._basis_current()
+            self._snapshot.current()
+            return result
+        except _ERRORS as exc:
+            self._closed = True
+            _raise(exc, phase)
+        except BaseException:
+            self._closed = True
+            raise
+        finally:
+            self._busy = False
+
+    def _close(self):
+        self._closed = True
+        self._snapshots.close()
+
+
+@contextlib.contextmanager
+def hold_delivery_writer(*, directory, epoch_id, limits,
+                         expected_directory_identity, authority_current):
+    """Hold one existing, independently pinned journal through output.
+
+    The caller supplies and continuously holds actual source authority. Its
+    callback must return None or raise, and is checked around each effect.
+    This primitive checks that premise; it does not authenticate an adoption
+    or decide that a source transaction is acknowledged. Incomplete journals
+    remain inspectable for exact retry; an attempted output is never repeated.
+
+    Failed mutable methods retire the handle. Reopen actual durable records
+    for retry. Normal exit revalidates; exceptional exit preserves the caller
+    exception. Only owned descriptors close; no record is removed or repaired.
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            _limits(limits)
+            if not live._token(epoch_id) or not callable(authority_current):
+                _fail("held-writer-epoch-and-authority-required")
+            pin = _native_directory_pin(expected_directory_identity)
+            limits_raw = live._canonical(limits)
+            admitted_limits = copy.deepcopy(limits)
+            if live._canonical(limits) != limits_raw \
+                    or live._canonical(admitted_limits) != limits_raw:
+                _fail("held-writer-limits-changed")
+            if authority_current() is not None:
+                _fail("held-writer-authority-check-result")
+            owned = _Directory(directory)
+            stack.callback(owned.close)
+            held = _HeldDeliveryWriter(owned, epoch_id, limits, admitted_limits, limits_raw,
+                                       expected_directory_identity, pin, authority_current)
+            stack.callback(held._close)
+        except _ERRORS as exc:
+            _raise(exc, "not-started")
+        try:
+            yield held
+        except BaseException:
+            raise
+        else:
+            held.current()
+        finally:
+            held._closed = True
 
 
 @contextlib.contextmanager

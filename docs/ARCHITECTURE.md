@@ -452,8 +452,8 @@ generations through publication; supplied-record correspondence does not
 itself prove collector execution, authenticity, freshness or acknowledgment.
 `tests/test_live_gist_binding.py` covers this separate boundary.
 
-The separate delivery-input construction is implemented but not connected to
-resident recall or source successors. `siacontrollerdeliveryinput.bind`
+The delivery-input binder is used by native v3 source capture; resident
+recall dispatch remains separate construction. `siacontrollerdeliveryinput.bind`
 requires a complete inspected epoch, actual supplied parent state, cumulative
 intake, policy, clock and independent pins. It preserves the committed
 delivery prefix byte-for-byte, appending new inspected records only when
@@ -477,6 +477,24 @@ Source authority, journal adoption and the successor WAL cut still belong
 to the separate outer integration. The inspection retains completion records,
 not complete rank intents: it does not independently reproduce historical
 ranking, prove human receipt/use, or establish a cognitive benchmark win.
+
+`siadelivery.hold_delivery_writer` adds a mutable lifetime around one existing
+private journal lock. Its mandatory native directory identity stays outside
+live JSON arithmetic; an explicit outer-authority callback must return None
+or raise. The callback is checked around record publication, writes, flush
+and completion clock acquisition. Each exact own addition admits a fresh
+complete roster while retaining the old file identities; other roster or
+record changes refuse. Publication passes the held destination descriptor
+to the existing fixed publisher, before staging or leaf effects.
+
+The held writer is not source-v3 writer authorization: the caller must still
+hold and validate the acknowledged source, original adoption and complete
+live generation. It neither creates a journal nor reconstructs missing uses.
+Read/reserve/deliver preserve the existing v1 record contracts. Completed
+retries do not emit or sample a clock; interrupted attempts remain unknown.
+A failed mutable call retires its handle, so durable retry reopens actual
+records. Normal exit revalidates, exceptional exit preserves the caller's
+exception, and only owned descriptors close. No episode or journal is deleted.
 
 `siacontrollerdeliveryepoch.prepare_epoch` now prepares source-bound journal
 storage separately from capture and output authorization. It requires an
