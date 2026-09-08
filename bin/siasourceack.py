@@ -219,9 +219,13 @@ class _ArchiveSlot:
         self.held = _HeldRaw(
             owner, source, selected, owner["MAX_STATE_JSON_BYTES"],
             allow_absent=False)
-        self.batch = _decode_batch(
-            owner, source, self.held.raw, expected_sha256)
-        self.raw = self.held.raw
+        try:
+            self.batch = _decode_batch(
+                owner, source, self.held.raw, expected_sha256)
+            self.raw = self.held.raw
+        except BaseException:
+            self.close()
+            raise
 
     def current(self):
         self.held.current()
