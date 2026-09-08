@@ -713,6 +713,79 @@ authorization uses the separate strict front door above; configured
 activation remains separate construction work, not a relaxed
 completed/readiness or writer gate.
 
++`siainstalledengine.hold_overlay_engine` supplies an additive, unreleased
+installed-artifact lifetime for explicit version, ordinary GET and singleton
+render-projection calls. The caller must already hold the actual corpus
+lease and supply complete `sia-installed-overlay-engine-expectations-v1`
+expectations, their independent `expected_expectations_sha256`, and an
+`authority_current` callback. Expected source commit, lockfile, overlay and
+artifact hashes are caller authority; a receipt cannot select its own expected runtime.
+Actual managed pin/receipt files and the ELF executable are held and checked
+against those expectations under real corpus and engine ownership. This is
+not source ACK, index freshness or controller readiness by itself.
+
+The opaque handle exposes `read`, `current`, `version(timeout=...)`,
+`get(subject=..., timeout=...)` and `project(...)`. The exact internal helper
+`_run_installed_gbrain` executes the held descriptor-backed executable through
+SIA's bounded process provider; its literal argv sites remain visible to the
+unchanged real-gbrain coverage scanner. The original executable, corpus and
+owner descriptors remain held across execution and returned-copy checks.
+Own descriptors close on normal and exceptional exits; borrowed caller
+leases are not closed. A failed handle retires without automatic repair or
+retry. Caller exceptions survive cleanup failures.
+
+Ordinary `get` fixes its argv to `get <subject> --source sia`, admits a
+canonical bounded subject and requires an explicit timeout. It creates no
+projection request scratch and does not pass `--no-migrate`. Its separately
+named `sia-installed-overlay-engine-get-transport-v1` result has status
+`captured-unadmitted-get`, exact subject/request/binding pins and unmodified
+strict-UTF-8 stdout/stderr with their byte digests. `GET_NON_CLAIMS` and
+`InstalledEngineGetRefusal` retain the ordinary-GET boundary through later
+currentness and normal-exit failures. Connection migrations and retrieval
+bookkeeping may occur; the GET transport makes no no-write assertion and
+does not establish whether either effect occurred. Captured output is not
+source-version admission, displayed-field admission or output delivery.
+
+Host-bound GET additionally requires literal `GBRAIN_BRAIN_ID=host` in the
+sterile child environment; `GBRAIN_HOME` alone is not brain selection. The
+fixed-host correction is a prerequisite for that claim, not a caller-selectable
+brain override. It fixes the brain axis without constraining trusted host
+backend configuration, remote URL/thin-client routing or ordinary GET's
+migration/bookkeeping behavior. Configured activation remains separate.
+
+Projection accepts only `get_page_render_projection`, bounded strict-UTF-8
+request bytes, their independent digest and an explicit timeout. Its params
+transport is an identity-bound regular leaf in a held private directory,
+not a kernel-sealed file. The request descriptors remain held across the
+process; changed request scratch is retained rather than removed by an
+unsafe cleanup. The existing version/projection transport schema, keys and
+statuses stay separate from GET; shared projection nonclaims describe only
+projection calls, and their exact text participates in the relevant pins.
+
+`captured-unadmitted-projection` deliberately does not authorize displayed
+memory: the caller must still validate the actual response and its source
+generation. The separately named GET render-projection operation compares
+the original full source/version/origin binding, a current source-qualified
+page/tag snapshot and the actual engine Markdown serializer. Logical
+`contentHash` equality is separate from complete displayed-field equality;
+excluded bookkeeping metadata must not disappear from the display check.
+Canonical GET Markdown is not raw source-file bytes, and no new source
+identity is manufactured to make them equal. This operation performs no
+retrieval bookkeeping or application writes; that statement excludes
+request scratch, the preceding ordinary GET and storage connection effects.
+It is CLI-only, uses the explicit no-migrate params-file route and grants
+no JACKAL status or cognitive benchmark result.
+
+These transport and receipt schemas describe the implementation contract,
+not an executed test result. Compiling a candidate and reading its version
+does not prove its held GET/projection contract. The separately selected
+compiled lane in `tests/test_gbrain_contract.py` requires external candidate
+expectations and real temporary CLI/engine operations; a skip proves nothing.
+Source/display admission, delivery composition and configured activation
+remain separate gates. No retained observation is fresh authority after its
+descriptor lifetime ends, and this context does not validate later exits of
+an enclosing caller-owned scope.
+
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;
 extracting it adds a second delegate hop in the pulse hot path, so it moves
