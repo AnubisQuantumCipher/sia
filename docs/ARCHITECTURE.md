@@ -361,6 +361,12 @@ notification. Once a complete ready generation exists, merely enabling the
 recurring controller does not put a new capture/sync/embed workload on the
 `Type=notify` startup path: readiness is published after admission, and the
 ordinary resident loop begins the successor cycle immediately afterward.
+During installation, the ready daemon observes the exact release-bound
+`managed-install/first-light.json` record and remains idle while its state is
+`installing`.  This leaves the corpus lease available for the installer's final
+public readiness attestation; the resident loop begins only after the same
+record atomically becomes `ready`.  A malformed or wrong-version record refuses
+before the systemd readiness notification.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**

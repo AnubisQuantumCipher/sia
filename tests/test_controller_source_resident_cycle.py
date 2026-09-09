@@ -505,6 +505,116 @@ class ResidentSourceCycleContract(unittest.TestCase):
         ready.assert_called_once_with()
         publish.assert_not_called()
 
+    def test_daemon_waits_for_install_completion_after_systemd_ready(self):
+        trace = []
+        memo = self._memo("completed")
+        install_states = iter((True, False))
+
+        def installation_pending():
+            value = next(install_states)
+            trace.append("installing" if value else "installed")
+            return value
+
+        def systemd_ready():
+            trace.append("READY")
+
+        def wait_once(_seconds):
+            trace.append("wait")
+
+        def pulse_once():
+            trace.append("pulse")
+            brainstem._stop = True
+            return dict(SOURCE_STATUS)
+
+        with self._source_authority(brainstem.sialib, "completed"), \
+                ExitStack() as stack:
+            stack.enter_context(mock.patch.object(brainstem, "_stop", False))
+            stack.enter_context(mock.patch.object(brainstem.signal, "signal"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_memo", return_value=memo))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_pending_failure_publication",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_require_status_memo_fields"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_cursors", return_value={}))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_recover_notify_baseline_attempt"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_source_replay_marker",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_marker"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_status_effects"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib,
+                "_require_status_sequence_not_ahead"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "ensure_dirs"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "recover_ledger_transitions",
+                return_value=([], [])))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "durable_ledger_append"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_systemd_ready", side_effect=systemd_ready))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_installation_completion_pending",
+                create=True, side_effect=installation_pending))
+            stack.enter_context(mock.patch.object(
+                brainstem.time, "sleep", side_effect=wait_once))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_reserved_pulse", side_effect=pulse_once))
+            stack.enter_context(mock.patch.object(brainstem.sialib, "log"))
+            publish = stack.enter_context(mock.patch.object(
+                brainstem, "_publish_failure"))
+
+            result = brainstem._run_owned()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            trace, ["installing", "READY", "wait", "installed", "pulse"])
+        publish.assert_not_called()
+
+    def test_install_completion_gate_is_release_bound_and_closed(self):
+        valid = (
+            (None, False),
+            ({"v": 1, "version": brainstem.sialib.VERSION,
+              "state": "installing"}, True),
+            ({"v": 1, "version": brainstem.sialib.VERSION,
+              "state": "ready"}, False),
+        )
+        for record, expected in valid:
+            with self.subTest(record=record), mock.patch.object(
+                    brainstem.sialib, "read_state_json",
+                    return_value=record) as read:
+                self.assertIs(
+                    brainstem._installation_completion_pending(), expected)
+            read.assert_called_once_with(
+                os.path.join(brainstem.sialib.STATE, "managed-install",
+                             "first-light.json"),
+                None, "first-light completion", expected_type=object)
+
+        invalid = (
+            {},
+            {"v": True, "version": brainstem.sialib.VERSION,
+             "state": "installing"},
+            {"v": 1, "version": "foreign", "state": "installing"},
+            {"v": 1, "version": brainstem.sialib.VERSION,
+             "state": "complete"},
+            {"v": 1, "version": brainstem.sialib.VERSION,
+             "state": "ready", "extra": True},
+        )
+        for record in invalid:
+            with self.subTest(record=record), mock.patch.object(
+                    brainstem.sialib, "read_state_json",
+                    return_value=record), self.assertRaisesRegex(
+                        RuntimeError,
+                        "first-light completion state is invalid"):
+                brainstem._installation_completion_pending()
+
     def test_failed_pulse_refreshes_durable_sequence_before_reporting(self):
         initial = {"pulse_seq": 7, "sync_needed": False, "dream": {}}
         durable = {"pulse_seq": 8, "sync_needed": False, "dream": {}}

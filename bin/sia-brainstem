@@ -433,6 +433,26 @@ def _systemd_ready():
     if sent != len(payload):
         raise RuntimeError("systemd readiness notification was incomplete")
 
+
+def _installation_completion_pending():
+    """Hold resident work behind an exact in-progress install generation."""
+    path = os.path.join(
+        sialib.STATE, "managed-install", "first-light.json")
+    record = sialib.read_state_json(
+        path, None, "first-light completion", expected_type=object)
+    if record is None:
+        # Pre-lifecycle installations had no completion record. Their normal
+        # startup admission remains authoritative until an upgrade publishes
+        # the current release-bound record.
+        return False
+    if type(record) is not dict or set(record) != {"v", "version", "state"} \
+            or type(record.get("v")) is not int or record["v"] != 1 \
+            or type(record.get("version")) is not str \
+            or record["version"] != sialib.VERSION \
+            or record.get("state") not in {"installing", "ready"}:
+        raise RuntimeError("first-light completion state is invalid")
+    return record["state"] == "installing"
+
 def main():
     try:
         if _restore_barrier_present():
@@ -475,6 +495,7 @@ def _run_owned(*, plugin_guard=None):
             sialib._pending_pulse_status_effects(memo)
             seq, last_dream_day = _startup_state(memo)
             sialib._require_status_sequence_not_ahead(seq)
+        installation_pending = _installation_completion_pending()
     except sialib.SourceReplayQuarantine as exc:
         detail = _durable_failure_detail(exc)
         sialib.log(f"brainstem startup source_replay_quarantine: {detail}")
@@ -500,6 +521,15 @@ def _run_owned(*, plugin_guard=None):
         sialib.log(f"brainstem startup REFUSED: {detail}")
         _publish_failure(seq, detail)
         return 1
+    waited_for_installation = installation_pending
+    if waited_for_installation:
+        sialib.log(
+            "sia-brainstem waiting for first-light installation completion")
+    while not _stop and installation_pending:
+        time.sleep(1)
+        installation_pending = _installation_completion_pending()
+    if not _stop and waited_for_installation:
+        sialib.log("sia-brainstem resident work admitted")
     plugin_removed = False
     while not _stop:
         if plugin_guard is not None \
