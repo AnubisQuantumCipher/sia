@@ -928,6 +928,24 @@ class ControllerSourceEffects(unittest.TestCase):
         self.assertIsNone(expected["corpus_generation"])
         self.assertIsNone(expected["sync_generation"])
 
+    def test_overlay_bound_v3_sync_generation_is_admitted_without_relabeling_v2(self):
+        self.start()
+        v3 = copy.deepcopy(self.sync_generation)
+        v3["schema"] = "sia-controller-source-sync-generation-v3"
+        v3["gbrain_overlay_sha256"] = "6" * 64
+        v3["gbrain_overlay_tree_oid"] = "7" * 40
+        v3["generation_sha256"] = live_tests.digest({
+            key: value for key, value in v3.items()
+            if key != "generation_sha256"})
+        with self.publication_effects(sync_generation=v3):
+            self.assertIsNone(self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status))
+        receipt = self.live.memo["controller_source_effects_committed"]
+        self.assertEqual(receipt["sync_generation"], v3)
+        self.assertEqual(receipt["sync_generation"]["schema"],
+                         "sia-controller-source-sync-generation-v3")
+
     def test_each_durable_crash_prefix_recovers_without_repeating_effects(self):
         for crash_at in ("effects-pending", "live-published"):
             with self.subTest(crash_at=crash_at), self.fresh() as case:

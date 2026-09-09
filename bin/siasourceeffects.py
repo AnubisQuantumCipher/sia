@@ -27,7 +27,7 @@ CORPUS_KEYS = frozenset({
     "before_commit_oid", "corpus_commit_oid", "corpus_tree_oid", "clean",
     "generation_sha256",
 })
-SYNC_KEYS = frozenset({
+SYNC_KEYS_V2 = frozenset({
     "schema", "source_id", "engine_version", "gbrain_commit",
     "gbrain_bun_lock_sha256", "gbrain_pin_sha256",
     "gbrain_pin_receipt_sha256", "gbrain_release_receipt_sha256",
@@ -44,6 +44,9 @@ SYNC_KEYS = frozenset({
     "projection_stderr_sha256", "projection_result_sha256",
     "projection_target_count", "projection_retrieval_bookkeeping_updated",
     "projection_operation_writes_performed", "generation_sha256",
+})
+SYNC_KEYS_V3 = SYNC_KEYS_V2 | frozenset({
+    "gbrain_overlay_sha256", "gbrain_overlay_tree_oid",
 })
 TARGET_KEYS = frozenset({
     "slug", "source_sha256", "version_sha256", "page_state",
@@ -383,9 +386,14 @@ def _target_manifest(owner, source, live, value, target_versions):
 
 def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
                      manifest_count):
-    _self_hash(source, live, value, "generation_sha256", SYNC_KEYS,
+    schema = value.get("schema") if type(value) is dict else None
+    keys = (SYNC_KEYS_V2
+            if schema == "sia-controller-source-sync-generation-v2"
+            else SYNC_KEYS_V3)
+    _self_hash(source, live, value, "generation_sha256", keys,
                "source-effects-sync-generation")
-    if value["schema"] != "sia-controller-source-sync-generation-v2" \
+    if schema not in {"sia-controller-source-sync-generation-v2",
+                      "sia-controller-source-sync-generation-v3"} \
             or value["source_id"] != owner["GBRAIN_SOURCE"] \
             or type(value["engine_version"]) is not str \
             or not value["engine_version"] \
@@ -406,8 +414,9 @@ def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
             or type(value["embedding_column"]) is not str \
             or not value["embedding_column"]:
         _refuse(source, "source-effects-sync-generation-fields")
-    for key in SYNC_KEYS - {
+    for key in keys - {
             "schema", "source_id", "engine_version", "gbrain_commit",
+            "gbrain_overlay_tree_oid",
             "sync_status", "sync_requested_commit", "status_last_commit",
             "local_path", "chunks_unembedded", "embedding_column",
             "links_stale_remaining", "unacknowledged_failures",
@@ -417,6 +426,9 @@ def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
         _hex(source, value[key], "source-effects-sync-generation-digest")
     if type(value["gbrain_commit"]) is not str \
             or re.fullmatch(r"[0-9a-f]{40}", value["gbrain_commit"]) is None \
+            or schema == "sia-controller-source-sync-generation-v3" \
+            and re.fullmatch(r"[0-9a-f]{40}",
+                             value["gbrain_overlay_tree_oid"]) is None \
             or not all(_nonnegative(owner, value[key]) for key in (
                 "chunks_unembedded", "links_stale_remaining",
                 "unacknowledged_failures", "projection_target_count")):

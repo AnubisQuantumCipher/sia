@@ -74,7 +74,7 @@ _PROJECTION_KEYS = frozenset({
     "retrieval_bookkeeping_updated", "operation_writes_performed",
     "all_match", "targets",
 })
-_GENERATION_KEYS = frozenset({
+_GENERATION_KEYS_V2 = frozenset({
     "schema", "source_id", "engine_version", "gbrain_commit",
     "gbrain_bun_lock_sha256", "gbrain_pin_sha256",
     "gbrain_pin_receipt_sha256", "gbrain_release_receipt_sha256",
@@ -91,6 +91,9 @@ _GENERATION_KEYS = frozenset({
     "projection_stderr_sha256", "projection_result_sha256",
     "projection_target_count", "projection_retrieval_bookkeeping_updated",
     "projection_operation_writes_performed", "generation_sha256",
+})
+_GENERATION_KEYS_V3 = _GENERATION_KEYS_V2 | frozenset({
+    "gbrain_overlay_sha256", "gbrain_overlay_tree_oid",
 })
 
 
@@ -247,15 +250,19 @@ class _Boundary:
                 continue
             key, separator, value = line.partition("=")
             if not separator or key not in {
-                    "commit", "version", "bun_lock_sha256", "verified"} \
+                    "commit", "version", "bun_lock_sha256",
+                    "overlay_sha256", "overlay_tree_oid", "verified"} \
                     or key in values or not value:
                 _refuse(self.source, "source-engine-pin-fields")
             values[key] = value
         if set(values) != {
-                "commit", "version", "bun_lock_sha256", "verified"} \
+                "commit", "version", "bun_lock_sha256",
+                "overlay_sha256", "overlay_tree_oid", "verified"} \
                 or _COMMIT.fullmatch(values["commit"]) is None \
                 or _VERSION.fullmatch(values["version"]) is None \
                 or _HEX.fullmatch(values["bun_lock_sha256"]) is None \
+                or _HEX.fullmatch(values["overlay_sha256"]) is None \
+                or _COMMIT.fullmatch(values["overlay_tree_oid"]) is None \
                 or _DATE.fullmatch(values["verified"]) is None:
             _refuse(self.source, "source-engine-pin-fields")
         return values
@@ -279,6 +286,8 @@ class _Boundary:
             "commit=" + self.pin_fields["commit"],
             "version=" + self.pin_fields["version"],
             "bun_lock_sha256=" + self.pin_fields["bun_lock_sha256"],
+            "overlay_sha256=" + self.pin_fields["overlay_sha256"],
+            "overlay_tree_oid=" + self.pin_fields["overlay_tree_oid"],
             "binary_sha256=" + executable_sha256,
         ], "source-engine-runtime-receipt")
         self.executable_sha256 = executable_sha256
@@ -661,12 +670,16 @@ def sync_generation(owner, *, corpus_generation, target_versions):
         projection_digests = _command_digests(
             projection_result, projection)
         body = {
-            "schema": "sia-controller-source-sync-generation-v2",
+            "schema": "sia-controller-source-sync-generation-v3",
             "source_id": owner["GBRAIN_SOURCE"],
             "engine_version": boundary.pin_fields["version"],
             "gbrain_commit": boundary.pin_fields["commit"],
             "gbrain_bun_lock_sha256":
                 boundary.pin_fields["bun_lock_sha256"],
+            "gbrain_overlay_sha256":
+                boundary.pin_fields["overlay_sha256"],
+            "gbrain_overlay_tree_oid":
+                boundary.pin_fields["overlay_tree_oid"],
             "gbrain_pin_sha256": boundary.pin_sha256,
             "gbrain_pin_receipt_sha256": boundary.pin_receipt_sha256,
             "gbrain_release_receipt_sha256":
@@ -713,7 +726,7 @@ def sync_generation(owner, *, corpus_generation, target_versions):
             "target_manifest": manifest,
             "target_manifest_sha256": manifest_sha256,
         }
-        if set(result["sync_generation"]) != _GENERATION_KEYS:
+        if set(result["sync_generation"]) != _GENERATION_KEYS_V3:
             _refuse(source, "source-engine-generation-shape")
         boundary.current()
         return result

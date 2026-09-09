@@ -35,6 +35,8 @@ COMMIT = "a" * 40
 VERSION = "0.47.6.0"
 PINNED_COMMIT = "7b7921d86141c4e4086e50828de9a867a6814247"
 LOCK_SHA256 = "d9f9ac4f848d7e3c8a92be4ede6e82285aa5677dcd3844aa600fc714ddf6d1cc"
+OVERLAY_SHA256 = "beb2dfbeacee51d321cab9f78d05ca514c6db40e7039c9d8b4e592a16a8bfc0a"
+OVERLAY_TREE_OID = "c6074727cb43987953279460f9502708dd5d1bd8"
 TARGET_KEYS = {
     "slug", "source_sha256", "version_sha256", "page_state",
     "parse_error_codes", "expected_projection_sha256",
@@ -43,7 +45,8 @@ TARGET_KEYS = {
 }
 GENERATION_KEYS = {
     "schema", "source_id", "engine_version", "gbrain_commit",
-    "gbrain_bun_lock_sha256", "gbrain_pin_sha256",
+    "gbrain_bun_lock_sha256", "gbrain_overlay_sha256",
+    "gbrain_overlay_tree_oid", "gbrain_pin_sha256",
     "gbrain_pin_receipt_sha256", "gbrain_release_receipt_sha256",
     "gbrain_executable_sha256", "version_raw_sha256",
     "sync_raw_sha256", "sync_stderr_sha256", "sync_result_sha256",
@@ -103,6 +106,8 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             f"commit={PINNED_COMMIT}\n"
             f"version={VERSION}\n"
             f"bun_lock_sha256={LOCK_SHA256}\n"
+            f"overlay_sha256={OVERLAY_SHA256}\n"
+            f"overlay_tree_oid={OVERLAY_TREE_OID}\n"
             "verified=2026-08-30\n", encoding="utf-8")
         self.pin_sha256 = hashlib.sha256(self.pin.read_bytes()).hexdigest()
         self.pin_receipt.write_text(
@@ -115,6 +120,8 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             f"commit={PINNED_COMMIT}\n"
             f"version={VERSION}\n"
             f"bun_lock_sha256={LOCK_SHA256}\n"
+            f"overlay_sha256={OVERLAY_SHA256}\n"
+            f"overlay_tree_oid={OVERLAY_TREE_OID}\n"
             f"binary_sha256={self.binary_sha256}\n", encoding="utf-8")
         self.slug = "events/2026-09-06"
         self.raw = (
@@ -300,6 +307,8 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
         self.assertEqual(set(result), {"sync_generation", "target_manifest",
                                        "target_manifest_sha256"})
         generation = result["sync_generation"]
+        self.assertEqual(
+            generation["schema"], "sia-controller-source-sync-generation-v3")
         manifest = result["target_manifest"]
         self.assertEqual(set(generation), GENERATION_KEYS)
         self.assertEqual(len(manifest), 1)
@@ -319,6 +328,9 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                          self.binary_sha256)
         self.assertEqual(generation["gbrain_commit"], PINNED_COMMIT)
         self.assertEqual(generation["gbrain_bun_lock_sha256"], LOCK_SHA256)
+        self.assertEqual(generation["gbrain_overlay_sha256"], OVERLAY_SHA256)
+        self.assertEqual(
+            generation["gbrain_overlay_tree_oid"], OVERLAY_TREE_OID)
         self.assertEqual(generation["gbrain_pin_sha256"], self.pin_sha256)
         self.assertEqual(generation["gbrain_pin_receipt_sha256"],
                          hashlib.sha256(self.pin_receipt.read_bytes()).hexdigest())
@@ -395,7 +407,9 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                             for environment in observed))
 
     def test_receipt_or_executable_drift_refuses_before_any_process(self):
-        for selected in ("pin-receipt", "runtime-receipt", "executable"):
+        for selected in (
+                "pin-receipt", "runtime-receipt", "runtime-overlay",
+                "executable"):
             with self.subTest(selected=selected):
                 with self.fresh() as case:
                     if selected == "pin-receipt":
@@ -406,6 +420,10 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                         case.release_receipt.write_text(
                             case.release_receipt.read_text(encoding="utf-8").replace(
                                 case.binary_sha256, "2" * 64), encoding="utf-8")
+                    elif selected == "runtime-overlay":
+                        case.release_receipt.write_text(
+                            case.release_receipt.read_text(encoding="utf-8").replace(
+                                OVERLAY_SHA256, "3" * 64), encoding="utf-8")
                     else:
                         case.engine_bin.write_bytes(b"\x7fELFchanged")
                     with mock.patch.object(

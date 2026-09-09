@@ -88,6 +88,10 @@ event closure it publishes the already-sealed page plans, asks
 `siasourceengine` for a receipt-bound pinned-engine generation. The engine
 phase admits closed JSON for sync, stale-link extraction, mention extraction,
 sync status, and a no-migrate projection of every changed source page. It
+emits a v3 generation that binds the installed overlay digest and post-overlay
+tree OID in addition to the source commit, lockfile, pin, receipts and ELF;
+the effects reader retains explicit v2 admission for historical pre-overlay
+generations rather than relabeling them. It
 requires the requested commit to be the indexed commit, no unembedded chunks
 or unacknowledged failures, no remaining stale links, and exact logical page
 projection matches. It explicitly records that the projection operation did

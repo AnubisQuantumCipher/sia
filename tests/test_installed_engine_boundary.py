@@ -94,10 +94,14 @@ class InstalledEngineBoundary(unittest.TestCase):
 
     def install_overlay_fixture(self):
         f = self.fixture
-        text = f.pin.read_text(encoding="utf-8")
-        text = text.replace("verified=", "overlay_sha256=" + OVERLAY_SHA + "\n"
-                            + "overlay_tree_oid=" + OVERLAY_TREE + "\nverified=")
-        f.pin.write_text(text, encoding="utf-8")
+        lines = []
+        for line in f.pin.read_text(encoding="utf-8").splitlines():
+            if line.startswith("overlay_sha256="):
+                line = "overlay_sha256=" + OVERLAY_SHA
+            elif line.startswith("overlay_tree_oid="):
+                line = "overlay_tree_oid=" + OVERLAY_TREE
+            lines.append(line)
+        f.pin.write_text("\n".join(lines) + "\n", encoding="utf-8")
         f.pin_receipt.write_text(
             "managed-by=khephri.sia\nkind=gbrain-pin\n"
             + "path=" + str(f.pin) + "\nsha256=" + sha(f.pin.read_bytes()) + "\n",
