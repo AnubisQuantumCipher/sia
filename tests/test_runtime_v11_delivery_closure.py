@@ -39,10 +39,10 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
     publish_fence = staticmethod(v10.RuntimeV10LiveLoop.publish_fence)
     fence_result = staticmethod(v10.RuntimeV10LiveLoop.fence_result)
 
-    def test_exact_current_roster_preserves_the_complete_historical_ladder(self):
+    def test_exact_v11_roster_remains_in_the_complete_historical_ladder(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[0], (
+        self.assertEqual(authority.RUNTIME_LADDER[1], (
             V11_SALT, EXPECTED_V11_RUNTIME_NAMES, V11_ADDITIONS))
         fixtures = {label: (salt, names, digest)
                     for label, salt, names, digest in release.RUNTIME_RUNG_FIXTURES}
@@ -50,7 +50,7 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
                              v10.V10_ADDITIONS),) + tuple(
             (fixtures[label][0], fixtures[label][1], v10.HISTORICAL_SELECTORS[label])
             for label in v10.HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[1:], expected_history)
+        self.assertEqual(authority.RUNTIME_LADDER[2:], expected_history)
         with tempfile.TemporaryDirectory() as runtime:
             release._plant_runtime_tree(runtime, EXPECTED_V11_RUNTIME_NAMES)
             self.assertEqual(authority.runtime_rung(runtime),
@@ -58,13 +58,13 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
             self.assertEqual(authority.runtime_tree_digest(runtime),
                              v10.reference_fixture_digest(V11_SALT, EXPECTED_V11_RUNTIME_NAMES))
 
-    def test_release_snapshot_and_stage_match_the_complete_current_roster(self):
+    def test_release_snapshot_and_stage_retain_the_complete_v11_roster(self):
         installer = release._read("install.sh")
         release_files = tuple(shlex.split(installer.split(
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
         staged = release._staged_runtime_members(installer)
         self.assertEqual(len(staged), len(set(staged)))
-        self.assertEqual(set(staged), set(EXPECTED_V11_RUNTIME_NAMES))
+        self.assertTrue(set(EXPECTED_V11_RUNTIME_NAMES).issubset(staged))
         for name in V11_ADDITIONS:
             with self.subTest(member=name):
                 self.assertEqual(staged.count(name), 1)

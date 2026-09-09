@@ -8568,7 +8568,10 @@ SIA_RELEASE_FILES=(
   bin/sialiveview.py bin/siasourcegist.py
   bin/siacontrollercandidate.py bin/siacontrollerdeliveryepoch.py
   bin/siacontrollerdeliveryinput.py bin/siacontrollerdeliverywrapper.py
-  bin/siadelivery.py
+  bin/siadelivery.py bin/siacontrollerdeliverywriter.py
+  bin/siacontrollerrecallprojection.py bin/siacontrollerrecalloutput.py
+  bin/siacontrollerrecallcli.py bin/siagetrenderadmit.py
+  bin/siainstalledengine.py bin/siainstalledexpectations.py
   bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
   bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
   bin/siaworkspace.py
@@ -9614,6 +9617,9 @@ for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     sialiveview.py siasourcegist.py \
     siacontrollercandidate.py siacontrollerdeliveryepoch.py \
     siacontrollerdeliveryinput.py siacontrollerdeliverywrapper.py siadelivery.py \
+    siacontrollerdeliverywriter.py siacontrollerrecallprojection.py \
+    siacontrollerrecalloutput.py siacontrollerrecallcli.py \
+    siagetrenderadmit.py siainstalledengine.py siainstalledexpectations.py \
     siasourcepublication.py \
     siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
     siavectorrun.py siaworkspace.py; do

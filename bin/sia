@@ -1000,6 +1000,61 @@ def cmd_ask(q, touch=True):
         return 1
 
 
+_RECALL_TIMEOUT_SECONDS = 120
+
+
+def _recall_binary_stdout():
+    sink = getattr(sys.stdout, "buffer", None)
+    if not callable(getattr(sink, "write", None)) \
+            or not callable(getattr(sink, "flush", None)):
+        raise RuntimeError("binary stdout is unavailable")
+    return sink
+
+
+def _new_delivery_request_id():
+    import uuid
+    return uuid.uuid4().hex
+
+
+def _recall_completion_clock():
+    import time
+    return int(time.time())
+
+
+def _source_recall(slug, touch, touch_result):
+    import siacontrollerrecallcli
+    try:
+        siacontrollerrecallcli.recall_from_current_source(
+            sialib.__dict__, subject=slug, timeout=_RECALL_TIMEOUT_SECONDS,
+            request_id=_new_delivery_request_id(),
+            binary_sink=_recall_binary_stdout(),
+            clock=_recall_completion_clock)
+    except siacontrollerrecallcli.ControllerRecallCliRefusal as exc:
+        if isinstance(touch_result, dict):
+            touch_result["reason"] = "source-recall-refused"
+            touch_result["output_state"] = exc.output_state
+        print("SIA recall refused: " + sialib.clip(exc.reason, 120)
+              + " (output state " + exc.output_state + ")", file=sys.stderr)
+        return 1
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError) as exc:
+        if isinstance(touch_result, dict):
+            touch_result["reason"] = "source-recall-refused"
+            touch_result["output_state"] = "not-started"
+        print("SIA recall refused: current-source-recall-unavailable "
+              "(output state not-started; " + sialib.clip(exc, 120) + ")",
+              file=sys.stderr)
+        return 1
+    if touch:
+        if not _reinforce([slug], "user-recall"):
+            if isinstance(touch_result, dict):
+                touch_result["reason"] = "touch-queue-unavailable"
+            return 0
+        if isinstance(touch_result, dict):
+            touch_result["queued"] = True
+    return 0
+
+
 def cmd_recall(slug, touch=True, touch_result=None):
     if isinstance(touch_result, dict):
         touch_result.clear()
@@ -1016,6 +1071,8 @@ def cmd_recall(slug, touch=True, touch_result=None):
         print(f"[origin:{sialib.corpus_origin(slug)}] {slug}")
         print(sialib.UNVERIFIED_JACKAL_RECALL_NOTICE)
         return 0
+    if sialib._controller_source_enabled():
+        return _source_recall(slug, touch, touch_result)
     cortex = slug == "sia/cortex"
     r = _gbrain_read(["get", slug, "--source", "sia"])
     if r.returncode == 0:

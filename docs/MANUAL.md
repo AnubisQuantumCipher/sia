@@ -1897,13 +1897,22 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v11` member set adds
+the install. The current `sia-runtime-v12` member set adds
+`siacontrollerdeliverywriter.py`, `siacontrollerrecallprojection.py`,
+`siacontrollerrecalloutput.py`, `siacontrollerrecallcli.py`,
+`siagetrenderadmit.py`, `siainstalledengine.py`, and
+`siainstalledexpectations.py` to v11. These are the source-authorized writer,
+installed-engine/GET/render boundaries, expectations observer, held recall
+projection, output compositor, and CLI compositor. Packaging them does not
+turn on `mind.controller_source`, deploy this worktree, prove human receipt,
+or establish a cognitive benchmark win.
+The v11 rung added
 `siacontrollercandidate.py`, `siacontrollerdeliveryepoch.py`,
 `siacontrollerdeliveryinput.py`, `siacontrollerdeliverywrapper.py`, and
 `siadelivery.py` to v10. These are the extracted candidate preparation and
 delivery dependencies already imported by the source-controller runtime;
-including them closes the candidate install tree without enabling output,
-adopting a journal, changing configuration, or installing anything by itself.
+including them closed the candidate install tree without enabling output or
+adopting a journal.
 The v10 rung added
 `siacognitiveregistry.py`, `siacontrolleridle.py`, `sialiveidle.py`,
 `sialiveview.py`, and `siasourcegist.py` to v9.
@@ -1911,7 +1920,7 @@ The v9 rung added `siacontrollerepoch.py` and
 `siacontrollersourcerunner.py`; the v8 rung added
 `siasourceack.py`, `siasourceeffects.py`, `siasourceengine.py`, and
 `siasourcegit.py`. The receipt reader still recognizes complete historical
-v1–v10 generations,
+v1–v11 generations,
 but it never accepts a tree that contains a later child
 under an older digest. `bin/siarelease.py:RUNTIME_LADDER` is the executable
 member-set authority. The previous tree remains at the printed backup path.

@@ -1062,6 +1062,70 @@ class HonestStatusLanguage(unittest.TestCase):
         self.assertTrue(output.getvalue().startswith(
             "[origin:model] thoughts/model\n"))
 
+    def test_enabled_source_recall_uses_closed_compositor_then_reinforces(self):
+        compositor = __import__("siacontrollerrecallcli")
+        sink = mock.Mock(write=mock.Mock(), flush=mock.Mock())
+        request_id = "a" * 32
+        touch = {}
+        completed = {"status": "service-output-completed"}
+        with mock.patch.object(sia.sialib, "page_exists", return_value=True), \
+                mock.patch.object(
+                    sia.sialib, "unverified_jackal_recall_page",
+                    return_value=False), \
+                mock.patch.object(
+                    sia.sialib, "_controller_source_enabled",
+                    return_value=True), \
+                mock.patch.object(sia, "_recall_binary_stdout", return_value=sink), \
+                mock.patch.object(
+                    sia, "_new_delivery_request_id", return_value=request_id), \
+                mock.patch.object(
+                    compositor, "recall_from_current_source",
+                    return_value=completed) as recalled, \
+                mock.patch.object(sia, "_gbrain_read",
+                                  side_effect=AssertionError("legacy fallback")), \
+                mock.patch.object(sia, "_reinforce", return_value=True) as reinforce:
+            self.assertEqual(
+                sia.cmd_recall("events/test/day", touch_result=touch), 0)
+        recalled.assert_called_once_with(
+            sia.sialib.__dict__, subject="events/test/day",
+            timeout=sia._RECALL_TIMEOUT_SECONDS, request_id=request_id,
+            binary_sink=sink, clock=sia._recall_completion_clock)
+        reinforce.assert_called_once_with(["events/test/day"], "user-recall")
+        self.assertEqual(touch, {"queued": True})
+
+    def test_enabled_source_recall_refuses_without_legacy_fallback_or_touch(self):
+        compositor = __import__("siacontrollerrecallcli")
+        refusal = compositor.ControllerRecallCliRefusal(
+            "fixture-refusal", upstream=types.SimpleNamespace(
+                output_state="unknown", reason="upstream-fixture"))
+        errors = io.StringIO()
+        touch = {}
+        with mock.patch.object(sia.sialib, "page_exists", return_value=True), \
+                mock.patch.object(
+                    sia.sialib, "unverified_jackal_recall_page",
+                    return_value=False), \
+                mock.patch.object(
+                    sia.sialib, "_controller_source_enabled",
+                    return_value=True), \
+                mock.patch.object(sia, "_recall_binary_stdout", return_value=mock.Mock()), \
+                mock.patch.object(sia, "_new_delivery_request_id", return_value="b" * 32), \
+                mock.patch.object(
+                    compositor, "recall_from_current_source",
+                    side_effect=refusal), \
+                mock.patch.object(sia, "_gbrain_read",
+                                  side_effect=AssertionError("legacy fallback")), \
+                mock.patch.object(sia, "_reinforce",
+                                  side_effect=AssertionError("refused touch")), \
+                contextlib.redirect_stderr(errors):
+            self.assertEqual(
+                sia.cmd_recall("events/test/day", touch_result=touch), 1)
+        self.assertEqual(touch, {
+            "queued": False, "reason": "source-recall-refused",
+            "output_state": "unknown",
+        })
+        self.assertIn("fixture-refusal", errors.getvalue())
+        self.assertIn("output state unknown", errors.getvalue())
+
     def test_legacy_jackal_assurance_is_suppressed_but_clean_recall_remains(self):
         with tempfile.TemporaryDirectory() as corpus:
             pages = {

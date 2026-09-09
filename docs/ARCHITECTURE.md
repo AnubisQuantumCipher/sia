@@ -289,23 +289,25 @@ moment it captures its own exports, and adding one dict entry to
 **Current — the runtime ladder is an API, not synchronized prose.** Release
 tests now pin each historical rung with an independent member fixture and
 golden digest, reject ladder declarations in either shell script, exercise the
-normal and fenced consumers through the helper CLI, and cover the current v11
+normal and fenced consumers through the helper CLI, and cover the current v12
 uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
 proves the held authority remains usable and is then closed.
 
-The cumulative `sia-runtime-v11` member set adds extracted candidate preparation
-and the epoch, input, wrapper and journal dependencies used by native source-v3
-continuation to v10. The v10 rung added the claim registry, idle input/disposition,
-live view and gist publication modules to v9. The current rung's exact
+The cumulative `sia-runtime-v12` member set adds the source-bound writer,
+installed-engine and GET/render admission boundaries, expectations observer,
+held recall projection, output compositor and CLI compositor to v11. The v11
+rung added candidate preparation and the epoch, input, wrapper and journal
+dependencies used by native source-v3 continuation to v10. The v10 rung added
+the claim registry, idle input/disposition, live view and gist publication
+modules to v9. The current rung's exact
 members and selectors are declared in `bin/siarelease.py:RUNTIME_LADDER`.
-The receipt reader continues to recognize complete historical v1–v10 trees.
-Presence of any v11 selector chooses v11 even for an incomplete tree; a
+The receipt reader continues to recognize complete historical v1–v11 trees.
+Presence of any v12 selector chooses v12 even for an incomplete tree; a
 missing peer refuses instead of validating the tree under an older salt.
 This is unreleased packaging closure, not deployment, output activation,
-automatic journal adoption, or a benchmark win. The separately implemented
-source-output writer remains outside this roster while no staged entrypoint
-imports it. Every repository-local import, including lazy imports, remains
+automatic journal adoption, or a benchmark win. Every repository-local
+import, including lazy imports, remains
 subject to the unchanged transitive runtime-closure gate.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are

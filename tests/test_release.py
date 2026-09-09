@@ -1692,6 +1692,28 @@ fenced_runtime_authorized
         self.assertTrue(expected.issubset(release_files),
                         expected - release_files)
 
+    def test_v12_recall_front_door_is_one_complete_runtime_rung(self):
+        additions = (
+            "siacontrollerdeliverywriter.py", "siacontrollerrecallprojection.py",
+            "siacontrollerrecalloutput.py", "siacontrollerrecallcli.py",
+            "siagetrenderadmit.py", "siainstalledengine.py",
+            "siainstalledexpectations.py",
+        )
+        salt, names, selectors = SIARELEASE.RUNTIME_LADDER[0]
+        self.assertEqual(salt, b"sia-runtime-v12\0")
+        self.assertEqual(selectors, additions)
+        self.assertEqual(
+            names, SIARELEASE.MODERN_V11_RUNTIME_NAMES + additions)
+        staged = _staged_runtime_members(_read("install.sh"))
+        self.assertTrue(set(additions).issubset(staged),
+                        set(additions) - set(staged))
+        installer = _read("install.sh")
+        release_files = set(shlex.split(installer.split(
+            "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
+        expected = {"bin/" + name for name in additions}
+        self.assertTrue(expected.issubset(release_files),
+                        expected - release_files)
+
     def test_runtime_fence_metadata_parser_is_strict_and_named(self):
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
