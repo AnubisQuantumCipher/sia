@@ -759,7 +759,42 @@ def run_v3(owner, *, operation, clock, journal_limits,
     admission.current()
     memo = owner["load_memo"]()
     owner["_require_status_memo_fields"](memo)
-    if _source_state(memo) != "completed":
+    state = _source_state(memo)
+    if state == "batch":
+        # A fully retained but unpublished batch cannot cross a live-policy
+        # change: its original bytes are the complete input to the downstream
+        # transition. Preserve that evidence under a distinct refusal receipt
+        # before starting a genuinely fresh capture under the checked-in
+        # policy. Same-policy retries continue through the original path.
+        pending_batch = _pending_batch(owner, memo)
+        old_policy_sha256 = pending_batch.get("epoch", {}).get(
+            "expected_live_policy_sha256")
+        replacement_policy_sha256 = (
+            siacontrollerepoch.EXPECTED_LIVE_POLICY_SHA256)
+        if old_policy_sha256 != replacement_policy_sha256:
+            admission.current()
+            receipt = owner["_supersede_controller_source_policy"](
+                memo=memo,
+                replacement_live_policy=copy.deepcopy(
+                    siacontrollerepoch.LIVE_POLICY),
+                expected_replacement_live_policy_sha256=
+                    replacement_policy_sha256)
+            if type(receipt) is not dict \
+                    or receipt.get("status") != "preserved-not-published" \
+                    or receipt.get("source_batch_sha256") \
+                       != pending_batch.get("batch_sha256") \
+                    or receipt.get("old_live_policy_sha256") \
+                       != old_policy_sha256 \
+                    or receipt.get("replacement_live_policy_sha256") \
+                       != replacement_policy_sha256:
+                _refuse("v3-policy-supersession-result")
+            admission.current()
+            memo = owner["load_memo"]()
+            owner["_require_status_memo_fields"](memo)
+            state = _source_state(memo)
+            if state != "absent":
+                _refuse("v3-policy-supersession-state")
+    if state != "completed":
         admission.current()
         result = run(owner, operation=operation)
         admission.current()

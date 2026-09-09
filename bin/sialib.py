@@ -6370,6 +6370,25 @@ def _read_pending_controller_source_batch(*, memo):
         return siasourcepublication.read_pending(globals(), memo=memo)
 
 
+def _supersede_controller_source_policy(
+        *, memo, replacement_live_policy,
+        expected_replacement_live_policy_sha256):
+    """Preserve one unpublished old-policy source batch before fresh capture."""
+    import siasourcepublication
+    with brainstem_owner(), corpus_owner():
+        return siasourcepublication.supersede_policy(
+            globals(), memo=memo,
+            replacement_live_policy=replacement_live_policy,
+            expected_replacement_live_policy_sha256=
+                expected_replacement_live_policy_sha256)
+
+
+def _controller_source_supersession_boundary(stage):
+    """Named crash-injection seam for the durable supersession sequence."""
+    if stage not in {"archive-durable", "receipt-durable", "memo-durable"}:
+        raise ValueError("controller-source supersession boundary is invalid")
+
+
 def _prepare_controller_source_live_candidate(*, memo, admitted_status):
     """Build the existing pure live input only from the retained source slot."""
     import siacontrollercandidate

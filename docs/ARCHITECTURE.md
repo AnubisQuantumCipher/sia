@@ -699,6 +699,17 @@ clock, epoch preparation or native collection. Without a WAL the runner
 prepares or observes the actual adopted epoch, reserves the sequence,
 captures native v3 input and retains it before publication and ACK.
 
+One narrower recovery state is intentionally not replayed into a changed
+meaning. If a batch is retained but no live binding or downstream effect has
+started, and its embedded live-policy pin differs from the checked-in policy,
+the v3 runner invokes the source-publication supersession transaction. That
+transaction atomically moves the unchanged batch to the private
+`controller-source-superseded/` archive, publishes a deterministic
+`preserved-not-published` receipt, and replaces the memo last. Each durability
+cut is retryable. It never acknowledges a cursor, publishes content, mutates
+origin, or treats old bytes as input to the replacement policy; fresh capture
+begins only after the old evidence is durably retained.
+
 The original resident fixtures now complete legacy-to-v3 and v3-to-v3
 cycles, including actual interruption/retry beneath a notification fence.
 Their journal remains empty and their Git/index observations remain

@@ -45,6 +45,22 @@ COMMITTED_KEYS = frozenset({
     "source_batch_sha256", "live_generation_sha256",
     "source_effects_receipt_sha256",
 })
+SUPERSESSION_NON_CLAIMS = (
+    "This receipt preserves one unpublished source batch whose pinned live policy differs from the explicitly admitted replacement policy; it does not publish, acknowledge, reinterpret or discard that batch.",
+    "The superseded batch remains immutable and digest-addressed; no source cursor, corpus page, graph, live generation, origin label or external delivery is changed by this transition.",
+    "Policy supersession permits a later fresh observation under the replacement policy; it does not claim the old observation was false, the replacement is cognitively valid, or either policy wins a held-out benchmark.",
+)
+SUPERSESSION_RECEIPT_KEYS = frozenset({
+    "schema", "status", "reason", "source_pending_receipt",
+    "source_batch_sha256", "source_batch_wire_sha256",
+    "old_live_policy_sha256", "replacement_live_policy_sha256",
+    "non_claims", "receipt_sha256",
+})
+SUPERSESSION_MARKER_KEYS = frozenset({
+    "schema", "status", "source_batch_sha256", "receipt_sha256",
+    "old_live_policy_sha256", "replacement_live_policy_sha256",
+    "non_claims",
+})
 SUCCESSOR_PENDING_KEYS = frozenset({
     "controller_source_pending", "controller_source_live_pending",
     "pulse_status_effects_pending", "controller_source_effects_pending",
@@ -415,6 +431,213 @@ def read_pending(owner, *, memo):
             _refuse(source, "source-publication-final-source-check-changed-view")
         named_current()
         return detached
+
+
+def _supersession_marker(owner, source, value):
+    if value is None:
+        return None
+    if type(value) is not dict or set(value) != SUPERSESSION_MARKER_KEYS \
+            or value.get("schema") != "sia-controller-source-supersession-marker-v1" \
+            or value.get("status") != "preserved-not-published" \
+            or any(type(value.get(key)) is not str or _HEX.fullmatch(value[key]) is None
+                   for key in ("source_batch_sha256", "receipt_sha256",
+                               "old_live_policy_sha256",
+                               "replacement_live_policy_sha256")) \
+            or value.get("non_claims") != list(SUPERSESSION_NON_CLAIMS):
+        _refuse(source, "source-supersession-prior-marker")
+    _wire(owner, source, value)
+    return value
+
+
+def _supersession_receipt(owner, source, *, pending, batch,
+                          replacement_live_policy_sha256):
+    old_pin = batch["epoch"]["expected_live_policy_sha256"]
+    body = {
+        "schema": "sia-controller-source-supersession-receipt-v1",
+        "status": "preserved-not-published",
+        "reason": "live-policy-superseded-before-publication",
+        "source_pending_receipt": copy.deepcopy(pending),
+        "source_batch_sha256": batch["batch_sha256"],
+        "source_batch_wire_sha256": pending["batch_wire_sha256"],
+        "old_live_policy_sha256": old_pin,
+        "replacement_live_policy_sha256": replacement_live_policy_sha256,
+        "non_claims": list(SUPERSESSION_NON_CLAIMS),
+    }
+    body["receipt_sha256"] = source.native_sha(owner, body)
+    if set(body) != SUPERSESSION_RECEIPT_KEYS:
+        _refuse(source, "source-supersession-receipt-shape")
+    return body
+
+
+def supersede_policy(owner, *, memo, replacement_live_policy,
+                     expected_replacement_live_policy_sha256):
+    """Preserve and retire one unpublished batch pinned to an old policy.
+
+    The fixed batch is atomically renamed to a private digest-addressed
+    archive.  A deterministic refusal receipt is published next.  The memo is
+    replaced last, so every interrupted prefix can be resumed without source
+    recollection, cursor acknowledgment, content publication or data loss.
+    """
+    import sialiveloop as live
+    import siasourcebatch as source
+
+    request = {
+        "memo": memo, "replacement_live_policy": replacement_live_policy,
+        "expected_replacement_live_policy_sha256":
+            expected_replacement_live_policy_sha256,
+    }
+    request_raw = _wire(owner, source, request)
+    if type(memo) is not dict or type(replacement_live_policy) is not dict \
+            or type(expected_replacement_live_policy_sha256) is not str \
+            or _HEX.fullmatch(expected_replacement_live_policy_sha256) is None \
+            or source._component_sha(owner, replacement_live_policy) \
+               != expected_replacement_live_policy_sha256:
+        _refuse(source, "source-supersession-replacement-policy-pin")
+    try:
+        live._policy(replacement_live_policy)
+    except (TypeError, ValueError, RuntimeError, KeyError,
+            OverflowError, RecursionError) as exc:
+        source.refuse(
+            "source-supersession-replacement-policy",
+            phase="stage", upstream=exc)
+    if _wire(owner, source, request) != request_raw:
+        _refuse(source, "source-supersession-input-changed")
+
+    with _files(owner, source) as (files, observe, _current, _named_current):
+        _authority(owner, source, memo, files["memo"].value)
+        forbidden = (SUCCESSOR_PENDING_KEYS - {"controller_source_pending"})
+        if forbidden.intersection(memo) \
+                or owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo \
+                or "controller_source_committed" in memo:
+            _refuse(source, "source-supersession-downstream-authority")
+        pending = memo.get("controller_source_pending")
+        if type(pending) is not dict or set(pending) != RECEIPT_KEYS:
+            _refuse(source, "source-supersession-pending-receipt")
+        fixed = files["batch"]
+        _supersession_marker(
+            owner, source, memo.get("controller_source_superseded"))
+
+        directory_path = source._canonical_path(
+            owner, os.path.join(os.path.dirname(fixed.path),
+                                "controller-source-superseded"))
+        batch_path = source._canonical_path(
+            owner, os.path.join(directory_path,
+                                pending["batch_sha256"] + ".batch.json"))
+        receipt_path = source._canonical_path(
+            owner, os.path.join(directory_path,
+                                pending["batch_sha256"] + ".receipt.json"))
+        owner["ensure_durable_directory"](directory_path, mode=0o700)
+        directory = source._DirectoryChain(
+            owner, directory_path, private_terminal=True)
+        try:
+            archived = source.HeldFile(
+                owner, batch_path, owner["MAX_STATE_JSON_BYTES"],
+                allow_absent=True)
+            try:
+                _private(source, archived)
+                if fixed.raw is not None and archived.raw is not None:
+                    _refuse(source, "source-supersession-archive-state-ambiguous")
+                if fixed.raw is None and archived.raw is None:
+                    _refuse(source, "source-supersession-batch-absent")
+                selected = fixed if fixed.raw is not None else archived
+                batch = selected.value
+                if type(batch) is not dict:
+                    _refuse(source, "source-supersession-batch-shape")
+                source.validate_batch(owner, batch, pending["batch_sha256"])
+                raw = _wire(owner, source, batch)
+                if raw != selected.raw \
+                        or _wire(owner, source, _receipt(owner, source, batch, raw)) \
+                           != _wire(owner, source, pending):
+                    _refuse(source, "source-supersession-pending-join")
+                old_pin = batch["epoch"].get("expected_live_policy_sha256")
+                if type(old_pin) is not str or _HEX.fullmatch(old_pin) is None \
+                        or old_pin == expected_replacement_live_policy_sha256:
+                    _refuse(source, "source-supersession-policy-not-changed")
+                receipt = _supersession_receipt(
+                    owner, source, pending=pending, batch=batch,
+                    replacement_live_policy_sha256=
+                        expected_replacement_live_policy_sha256)
+                receipt_raw = _wire(owner, source, receipt)
+                marker = {
+                    "schema": "sia-controller-source-supersession-marker-v1",
+                    "status": receipt["status"],
+                    "source_batch_sha256": receipt["source_batch_sha256"],
+                    "receipt_sha256": receipt["receipt_sha256"],
+                    "old_live_policy_sha256": receipt["old_live_policy_sha256"],
+                    "replacement_live_policy_sha256":
+                        receipt["replacement_live_policy_sha256"],
+                    "non_claims": list(SUPERSESSION_NON_CLAIMS),
+                }
+                _supersession_marker(owner, source, marker)
+                updated = copy.deepcopy(memo)
+                updated.pop("controller_source_pending")
+                updated.pop("ready", None)
+                updated["controller_source_superseded"] = marker
+                updated_raw = _wire(owner, source, updated, memo=True)
+                owner["_memo_text"](updated)
+                if _wire(owner, source, request) != request_raw:
+                    _refuse(source, "source-supersession-input-changed")
+                files["memo"].current()
+
+                if fixed.raw is not None:
+                    fixed.current()
+                    archived.named_current()
+                    try:
+                        owner["siaqueue"]._rename_noreplace(
+                            fixed.directories.fd, fixed.name,
+                            directory.fd, os.path.basename(batch_path))
+                    except (OSError, ValueError, RuntimeError) as exc:
+                        source.refuse(
+                            "source-supersession-archive-move",
+                            phase="stage", upstream=exc)
+                    os.fsync(fixed.directories.fd)
+                    os.fsync(directory.fd)
+                    archived.close()
+                    archived = source.HeldFile(
+                        owner, batch_path, owner["MAX_STATE_JSON_BYTES"],
+                        allow_absent=False)
+                    _private(source, archived)
+                    if archived.raw != raw:
+                        _refuse(source, "source-supersession-archive-bytes")
+                else:
+                    archived.current()
+                owner["_controller_source_supersession_boundary"](
+                    "archive-durable")
+
+                owner["siaqueue"].fixed_atomic_publish(
+                    receipt_path, receipt_raw, mode=0o600, exclusive=True,
+                    destination_dir_fd=directory.fd,
+                    staging_dir=owner["siaqueue"].staging_dir_for(
+                        receipt_path, authority_roots=(
+                            owner["CORPUS"], owner["STATE"], owner["SHARE"])))
+                held_receipt = observe(
+                    "supersession-receipt", receipt_path,
+                    owner["MAX_STATE_JSON_BYTES"])
+                if held_receipt.raw != receipt_raw:
+                    _refuse(source, "source-supersession-receipt-bytes")
+                archived.current()
+                files["memo"].current()
+                owner["_controller_source_supersession_boundary"](
+                    "receipt-durable")
+
+                owner["atomic_write"](
+                    owner["MEMO_PATH"], updated_raw.decode("utf-8"), mode=0o600,
+                    destination_dir_fd=files["memo"].directories.fd)
+                published = observe(
+                    "supersession-memo", owner["MEMO_PATH"],
+                    owner["MAX_MEMO_BYTES"])
+                if published.raw != updated_raw:
+                    _refuse(source, "source-supersession-memo-bytes")
+                archived.current()
+                held_receipt.current()
+                owner["_controller_source_supersession_boundary"]("memo-durable")
+                memo.clear()
+                memo.update(copy.deepcopy(updated))
+                return copy.deepcopy(receipt)
+            finally:
+                archived.close()
+        finally:
+            directory.close()
 
 
 def retain_successor(

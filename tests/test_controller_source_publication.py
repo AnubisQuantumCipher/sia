@@ -10,6 +10,7 @@ acknowledgment/archive transition is outside this increment.
 import contextlib
 import copy
 import hashlib
+import importlib
 import inspect
 import json
 from pathlib import Path
@@ -235,7 +236,171 @@ class ControllerSourcePublication(unittest.TestCase):
             self.assert_refusal(lambda: self.lib._pulse_transaction_guarded(
                 self.memo.get("pulse_seq", 0), {}, self.memo))
 
+    def test_changed_live_policy_preserves_and_retires_unpublished_batch(self):
+        """A now-impossible batch is evidence, not an eternal write lock."""
+        self.stage()
+        old_raw = self.path.read_bytes()
+        old_receipt = copy.deepcopy(self.memo["controller_source_pending"])
+        corpus_before = self.fixture.pages.snapshot()
+        cursors_before = Path(self.lib.CURSORS_PATH).read_bytes()
+        replacement = copy.deepcopy(self.batch["epoch"]["live_policy"])
+        replacement["workspace"]["max_content_bytes"] += 1
+        replacement_pin = digest(replacement)
+
+        supersede = getattr(
+            self.lib, "_supersede_controller_source_policy", None)
+        self.assertTrue(callable(supersede),
+                        "missing durable controller-source policy supersession API")
+        result = supersede(
+            memo=self.memo, replacement_live_policy=replacement,
+            expected_replacement_live_policy_sha256=replacement_pin)
+
+        self.assertEqual(result["status"], "preserved-not-published")
+        self.assertEqual(result["old_live_policy_sha256"],
+                         self.batch["epoch"]["expected_live_policy_sha256"])
+        self.assertEqual(result["replacement_live_policy_sha256"], replacement_pin)
+        self.assertFalse(self.path.exists())
+        directory = self.path.parent / "controller-source-superseded"
+        archived = directory / (self.batch["batch_sha256"] + ".batch.json")
+        receipt = directory / (self.batch["batch_sha256"] + ".receipt.json")
+        self.assertEqual(archived.read_bytes(), old_raw)
+        self.assertEqual(archived.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(receipt.is_file())
+        durable = json.loads(self.memo_path.read_bytes())
+        self.assertEqual(canonical(durable), canonical(self.memo))
+        self.assertNotIn("controller_source_pending", durable)
+        marker = durable["controller_source_superseded"]
+        self.assertEqual(marker["receipt_sha256"], result["receipt_sha256"])
+        self.assertEqual(result["source_pending_receipt"], old_receipt)
+        self.assertEqual(self.fixture.pages.snapshot(), corpus_before)
+        self.assertEqual(Path(self.lib.CURSORS_PATH).read_bytes(), cursors_before)
+        self.assert_view(self.view(), "absent")
+
+    def test_policy_supersession_recovers_each_durable_cut(self):
+        for cut in ("archive-durable", "receipt-durable"):
+            with self.subTest(cut=cut):
+                self.doCleanups()
+                self.setUp()
+                self.stage()
+                replacement = copy.deepcopy(
+                    self.batch["epoch"]["live_policy"])
+                replacement["workspace"]["max_content_bytes"] += 1
+                replacement_pin = digest(replacement)
+                fired = False
+
+                def boundary(stage):
+                    nonlocal fired
+                    if stage == cut and not fired:
+                        fired = True
+                        raise KeyboardInterrupt("fixture cut after " + stage)
+
+                with mock.patch.object(
+                        self.lib, "_controller_source_supersession_boundary",
+                        side_effect=boundary), self.assertRaises(KeyboardInterrupt):
+                    self.lib._supersede_controller_source_policy(
+                        memo=self.memo, replacement_live_policy=replacement,
+                        expected_replacement_live_policy_sha256=replacement_pin)
+                self.memo.clear()
+                self.memo.update(json.loads(self.memo_path.read_bytes()))
+                result = self.lib._supersede_controller_source_policy(
+                    memo=self.memo, replacement_live_policy=replacement,
+                    expected_replacement_live_policy_sha256=replacement_pin)
+                self.assertEqual(result["status"], "preserved-not-published")
+                self.assertNotIn("controller_source_pending", self.memo)
+                self.assertFalse(self.path.exists())
+
+    def test_v3_runner_supersedes_old_policy_before_fresh_dispatch(self):
+        self.stage()
+        runner = importlib.import_module("siacontrollersourcerunner")
+        delivery = importlib.import_module("siadelivery")
+        epoch = importlib.import_module("siacontrollerepoch")
+        loop = importlib.import_module("sialiveloop")
+        self.assertNotEqual(
+            self.batch["epoch"]["expected_live_policy_sha256"],
+            epoch.EXPECTED_LIVE_POLICY_SHA256)
+        sentinel = {"fresh": "dispatch"}
+
+        def fresh(owner, *, operation):
+            durable = owner["load_memo"]()
+            self.assertNotIn("controller_source_pending", durable)
+            self.assertIn("controller_source_superseded", durable)
+            self.assertFalse(self.path.exists())
+            self.assertIs(operation, initial)
+            return sentinel
+
+        initial = mock.Mock(side_effect=AssertionError(
+            "supersession probe must not sample the new epoch clock"))
+        limits = copy.deepcopy(delivery._LIMITS)
+        with mock.patch.object(runner, "run", side_effect=fresh) as dispatched:
+            result = self.lib._run_controller_source_transaction_v3(
+                operation=initial, clock=mock.Mock(), journal_limits=limits,
+                expected_journal_limits_sha256=loop._sha(limits),
+                expected_adoption_sha256=None)
+        self.assertIs(result, sentinel)
+        dispatched.assert_called_once()
+        initial.assert_not_called()
+
+    def test_v3_runner_keeps_same_policy_pending_transaction(self):
+        runner = importlib.import_module("siacontrollersourcerunner")
+        delivery = importlib.import_module("siadelivery")
+        epoch = importlib.import_module("siacontrollerepoch")
+        loop = importlib.import_module("sialiveloop")
+        self.fixture.policy = copy.deepcopy(epoch.LIVE_POLICY)
+        self.fixture.epoch["live_policy"] = copy.deepcopy(epoch.LIVE_POLICY)
+        self.fixture.profile["live_policy_sha256"] = \
+            epoch.EXPECTED_LIVE_POLICY_SHA256
+        self.fixture.epoch["profile"] = copy.deepcopy(self.fixture.profile)
+        self.fixture.reseal_epoch()
+        self.batch = self.fixture.capture()
+        self.stage()
+        sentinel = {"same": "policy"}
+        limits = copy.deepcopy(delivery._LIMITS)
+        forbidden = mock.Mock(side_effect=AssertionError(
+            "same-policy pending source was superseded"))
+        with mock.patch.object(runner, "run", return_value=sentinel) as dispatched, \
+                mock.patch.object(
+                    self.lib, "_supersede_controller_source_policy", forbidden):
+            result = self.lib._run_controller_source_transaction_v3(
+                operation=mock.Mock(), clock=mock.Mock(), journal_limits=limits,
+                expected_journal_limits_sha256=loop._sha(limits),
+                expected_adoption_sha256=None)
+        self.assertIs(result, sentinel)
+        dispatched.assert_called_once()
+        forbidden.assert_not_called()
+        self.assertTrue(self.path.exists())
+        self.assertIn("controller_source_pending", self.lib.load_memo())
+
+    def test_v3_runner_recovers_after_supersession_memo_cut(self):
+        self.stage()
+        runner = importlib.import_module("siacontrollersourcerunner")
+        delivery = importlib.import_module("siadelivery")
+        loop = importlib.import_module("sialiveloop")
+        limits = copy.deepcopy(delivery._LIMITS)
+
+        def boundary(stage):
+            if stage == "memo-durable":
+                raise KeyboardInterrupt("fixture cut after memo-durable")
+
+        arguments = {
+            "operation": mock.Mock(), "clock": mock.Mock(),
+            "journal_limits": limits,
+            "expected_journal_limits_sha256": loop._sha(limits),
+            "expected_adoption_sha256": None,
+        }
+        with mock.patch.object(
+                self.lib, "_controller_source_supersession_boundary",
+                side_effect=boundary), self.assertRaises(KeyboardInterrupt):
+            self.lib._run_controller_source_transaction_v3(**arguments)
+        self.memo.clear()
+        self.memo.update(self.lib.load_memo())
+        sentinel = {"recovered": "fresh"}
+        with mock.patch.object(runner, "run", return_value=sentinel) as dispatched:
+            result = self.lib._run_controller_source_transaction_v3(**arguments)
+        self.assertIs(result, sentinel)
+        dispatched.assert_called_once()
+        self.assertNotIn("controller_source_pending", self.memo)
+        self.assertIn("controller_source_superseded", self.memo)
+
 
 if __name__ == "__main__":
     unittest.main()
-
