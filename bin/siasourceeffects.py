@@ -621,14 +621,19 @@ def _binding_context(owner, source, live, memo, admitted_status,
     return batch, binding, handoff, candidate, transition
 
 
-def _initial_context(owner, source, live, memo, admitted_status):
+def _admitted_status_file(owner, source, live, admitted_status):
     status = owner["_require_status_admission_unchanged"](admitted_status)
     _status_raw, retained_status = _held_json(
         owner, source, owner["STATUS_PATH"], owner["MAX_STATE_JSON_BYTES"],
         seal_legacy_public=True)
     if not _same(live, status, retained_status):
         _refuse(source, "source-effects-admitted-status-generation")
-    status = retained_status
+    return retained_status
+
+
+def _initial_context(owner, source, live, memo, admitted_status):
+    status = _admitted_status_file(
+        owner, source, live, admitted_status)
     _raw, graph = _held_json(
         owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"],
         seal_legacy_public=True)
@@ -975,8 +980,8 @@ def _finalize(owner, source, live, memo, pending):
 
 
 def _recover_pending(owner, source, live, memo, admitted_status, pending):
-    current_status = owner["_require_status_admission_unchanged"](
-        admitted_status)
+    current_status = _admitted_status_file(
+        owner, source, live, admitted_status)
     committed = memo.get("live_loop_committed")
     # Successors retain the prior committed live generation as their parent.
     # Its presence is not completion of this pending effects publication.

@@ -1091,6 +1091,26 @@ class ControllerSourceEffects(unittest.TestCase):
                         "state_sha256", "transition_sha256", "non_claims"):
                     self.assertEqual(expected[key], pending_image[key], key)
 
+    def test_pending_recovery_reseals_legacy_public_status(self):
+        self.start()
+        with self.publication_effects(crash_at="effects-pending"), \
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "injected source-effects crash: effects-pending"):
+            self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status)
+
+        path = Path(self.live.paths["STATUS_PATH"])
+        path.chmod(0o644)
+        with self.publication_effects(recovery=True):
+            self.assertIsNone(self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status))
+
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self._assert_receipt(self._expected_receipt())
+
     def test_changed_authority_refuses_before_first_effect(self):
         cases = (
             "caller-memo", "resident-memo", "caller-status", "status",
