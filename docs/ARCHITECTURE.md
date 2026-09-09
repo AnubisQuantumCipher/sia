@@ -716,7 +716,19 @@ authorization uses the separate strict front door above. Operator opt-in and
 fresh resident observation remain separate activation work, not a relaxed
 completed/readiness or writer gate.
 
-+`siainstalledengine.hold_overlay_engine` supplies an additive, unreleased
+`siainstalledexpectations.observe_installed_expectations` supplies the
+additive, unreleased local-selection input to the installed-engine boundary.
+While the real corpus owner is held, it opens the selected pin, managed pin
+receipt, overlay runtime receipt and ELF through no-follow descriptor chains;
+requires their installed path, source, fields, digests and artifact generations
+to agree; and returns a detached
+`sia-installed-overlay-engine-expectations-v1` document plus its digest. It
+does not run the engine, read the index, observe a clock, produce output or
+authorize cognition. This is exact local receipt/artifact consistency, not
+independently authenticated build provenance: a hostile same-user process
+that coherently replaces every local file remains outside the claim.
+
+`siainstalledengine.hold_overlay_engine` supplies an additive, unreleased
 installed-artifact lifetime for explicit version, ordinary GET and singleton
 render-projection calls. The caller must already hold the actual corpus
 lease and supply complete `sia-installed-overlay-engine-expectations-v1`
