@@ -343,6 +343,43 @@ def _admit_effect_process(source, result, reason):
         _refuse(source, reason + "-process")
 
 
+def _mention_json_result(owner, source, result):
+    """Admit the pinned extractor's one documented optional JSONL prelude."""
+    reason = "source-engine-mentions"
+    if result.returncode != 0 or type(result.stdout) is not str \
+            or type(result.stderr) is not str \
+            or not result.stdout.startswith("{") \
+            or not result.stdout.endswith("}\n"):
+        _refuse(source, reason + "-process")
+    prelude = None
+    try:
+        value = owner["_strict_json_loads"](result.stdout)
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        head, separator, tail = result.stdout.partition("\n")
+        if not separator or not tail:
+            _refuse(source, reason + "-json")
+        try:
+            prelude = owner["_strict_json_loads"](head)
+            value = owner["_strict_json_loads"](tail)
+        except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+            _refuse(source, reason + "-json", upstream=exc)
+    if type(value) is not dict:
+        _refuse(source, reason + "-json")
+    if prelude is not None:
+        _closed(source, prelude, {"event", "message"},
+                "source-engine-mentions-prelude-shape")
+        if prelude != {
+                "event": "no_gazetteer",
+                "message":
+                    "no linkable entity pages found; nothing to scan"}:
+            _refuse(source, "source-engine-mentions-prelude-fields")
+        if value != {
+                "links_created": 0, "timeline_entries_created": 0,
+                "pages_processed": 0}:
+            _refuse(source, "source-engine-mentions-prelude-result")
+    return value
+
+
 def _run(owner, source, boundary, arguments, *, label, timeout):
     boundary.current()
     # This transaction is descriptor-bound; ambient database selectors,
@@ -668,8 +705,7 @@ def sync_generation(owner, *, corpus_generation, target_versions):
             "--source", "db", "--source-id", owner["GBRAIN_SOURCE"],
             "--json",
         ], label="source engine mention extraction", timeout=300)
-        mentions = _json_result(
-            owner, source, mentions_result, "source-engine-mentions")
+        mentions = _mention_json_result(owner, source, mentions_result)
         _admit_mentions(owner, source, mentions)
 
         status_result = _run(owner, source, boundary, [

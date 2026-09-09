@@ -93,7 +93,10 @@ source-scoped stale embedding as an explicit process between
 sync and extraction; the bounded human output is retained only by digest and
 the later closed status document is its authority-bearing zero-unembedded
 postcondition. This avoids treating the pinned engine's two-document
-`sync --json` cost-gate stream as one result. It emits a v4 generation that
+`sync --json` cost-gate stream as one result. Mention extraction admits either
+one closed summary or the pinned extractor's exact `no_gazetteer` JSONL prelude
+followed by an all-zero closed summary; every other multi-document stream is
+refused. It emits a v4 generation that
 binds those embed-stream digests plus the installed overlay digest and
 post-overlay tree OID in addition to the source commit, lockfile, pin,
 receipts and ELF; the effects reader retains explicit v2 and v3 admission for

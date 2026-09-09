@@ -877,7 +877,9 @@ readback, and no-migrate projection readback for every changed source page.
 The pinned embed command has no structured result surface, so its bounded
 human streams are retained only by digest; their text never becomes authority.
 The following closed sync-status document supplies the required
-zero-unembedded postcondition. Admission requires the indexed commit to equal the corpus
+zero-unembedded postcondition. Mention extraction accepts only its one closed
+summary, or the pinned engine's exact `no_gazetteer` prelude followed by an
+all-zero summary. Admission requires the indexed commit to equal the corpus
 commit, zero unembedded chunks and unacknowledged failures, zero remaining
 stale links, and exact logical projection matches. These are local publication
 witnesses, not evidence of embedding-vector values or retrieval quality. The

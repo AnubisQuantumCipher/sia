@@ -499,6 +499,52 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             self._call()
         self.assertEqual(self.calls, ["version", "sync"])
 
+    def test_no_gazetteer_mention_jsonl_prelude_is_admitted(self):
+        outputs = self._outputs()
+        outputs["mentions"] = (
+            _wire({
+                "event": "no_gazetteer",
+                "message": "no linkable entity pages found; nothing to scan",
+            }) + _wire({
+                "links_created": 0, "timeline_entries_created": 0,
+                "pages_processed": 0,
+            }),
+            outputs["mentions"][1],
+        )
+        with mock.patch.object(
+                sialib, "_run_bounded_text_process",
+                side_effect=self._runner(outputs)):
+            result = self._call()
+        self.assertEqual(result["sync_generation"]["schema"],
+                         "sia-controller-source-sync-generation-v4")
+
+    def test_mention_jsonl_accepts_no_other_prelude_or_nonzero_summary(self):
+        for selected in ("foreign-event", "nonzero-summary", "third-document"):
+            with self.subTest(selected=selected), self.fresh() as case:
+                outputs = case._outputs()
+                event = {
+                    "event": "no_gazetteer",
+                    "message":
+                        "no linkable entity pages found; nothing to scan",
+                }
+                summary = {
+                    "links_created": 0, "timeline_entries_created": 0,
+                    "pages_processed": 0,
+                }
+                if selected == "foreign-event":
+                    event["event"] = "progress"
+                elif selected == "nonzero-summary":
+                    summary["pages_processed"] = 1
+                wire = _wire(event) + _wire(summary)
+                if selected == "third-document":
+                    wire = _wire(event) + _wire(event) + _wire(summary)
+                outputs["mentions"] = (wire, "")
+                with mock.patch.object(
+                        sialib, "_run_bounded_text_process",
+                        side_effect=case._runner(outputs)), \
+                        self.assertRaises(REFUSALS):
+                    case._call()
+
     def test_named_engine_replacement_refuses_held_authority(self):
         retired = self.root / "retired-gbrain"
         swapped = False
