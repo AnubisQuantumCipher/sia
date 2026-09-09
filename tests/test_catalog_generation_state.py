@@ -687,6 +687,41 @@ class SkillCatalogContinuation(unittest.TestCase):
                     self.sialib.sense_skills(cursors)
                 self.assertEqual(cursors, before)
 
+    def test_exact_legacy_rows_reconcile_without_authorizing_removal(self):
+        self._write("omarchy", "current omarchy skill")
+        legacy_mtime = os.stat(self.root).st_mtime_ns
+        legacy = {
+            "mtime": legacy_mtime,
+            "name": "omarchy",
+            "roots": ["~/.claude/skills", "~/.agents/skills"],
+        }
+        cursors = {
+            "skills.snapshot": {
+                "diagnose-crash": {
+                    **legacy, "name": "diagnose-crash"},
+                "omarchy": copy.deepcopy(legacy),
+            },
+            "skills.partial": True,
+        }
+
+        first = self.sialib.sense_skills(cursors)
+
+        self.assertEqual(cursors["skills.snapshot"]["diagnose-crash"], {
+            "name": "diagnose-crash",
+            "name_id": hashlib.sha256(b"diagnose-crash").hexdigest(),
+            "description": "",
+            "roots": [],
+        })
+        self.assertTrue(cursors["skills.snapshot"]["omarchy"]["roots"])
+        self.assertFalse(any(event.kind == "removed" for event in first))
+
+        second = self.sialib.sense_skills(cursors)
+
+        self.assertNotIn("diagnose-crash", cursors["skills.snapshot"])
+        self.assertTrue(any(
+            event.kind == "removed" and "diagnose-crash" in event.summary
+            for event in second))
+
     def test_partial_shared_skill_preserves_unreadable_root_provenance(self):
         second_root = os.path.join(self.tmp.name, "second-skills")
         os.makedirs(os.path.join(second_root, "shared"))

@@ -3428,18 +3428,57 @@ def _skill_manifest_state_valid(value):
     return True
 
 
+def _migrated_legacy_skill_state(skill, value):
+    """Recognize the old positive-only row without inheriting its roots."""
+    if not isinstance(value, dict) \
+            or set(value) != {"mtime", "name", "roots"}:
+        return None
+    name = value.get("name")
+    roots = value.get("roots")
+    mtime = value.get("mtime")
+    name_bytes = _skill_name_bytes(name) if isinstance(name, str) else b""
+    if isinstance(mtime, bool) or not isinstance(mtime, int) or mtime < 0 \
+            or not _strict_config_string(
+                name, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
+            or not name_bytes or name_bytes in {b".", b".."} \
+            or b"/" in name_bytes or b"\0" in name_bytes \
+            or len(name_bytes) > MAX_CORPUS_COMPONENT_BYTES \
+            or sanitize_slugpart(name) != skill \
+            or not isinstance(roots, list) \
+            or len(roots) > MAX_CONFIG_TAGS \
+            or any(not _strict_config_string(
+                root, nonempty=True, limit=MAX_CONFIG_PATH_CHARS)
+                   for root in roots) \
+            or len(roots) != len(set(roots)):
+        raise ValueError("skill catalog state is invalid")
+    return {
+        "name": _skill_display_name(name),
+        "name_id": hashlib.sha256(name_bytes).hexdigest(),
+        "description": "",
+        # Legacy root strings were followed-path labels, not descriptor-bound
+        # provenance. A current scan must earn every replacement root row.
+        "roots": [],
+    }
+
+
 def _validated_skill_snapshot(value):
     """Validate the exact authoritative catalog before any scan mutates it."""
     if not isinstance(value, dict) \
             or len(value) > MAX_SKILL_SNAPSHOT_ENTRIES:
         raise ValueError("skill catalog state is invalid")
+    validated = {}
     for skill, state in value.items():
         if not isinstance(skill, str) \
                 or re.fullmatch(
                     r"[a-z0-9_][a-z0-9._-]*", skill) is None \
                 or len(skill) > MAX_SOURCE_NAME_CHARS \
-                or len(skill.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES \
-                or not isinstance(state, dict) \
+                or len(skill.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
+            raise ValueError("skill catalog state is invalid")
+        legacy = _migrated_legacy_skill_state(skill, state)
+        if legacy is not None:
+            validated[skill] = legacy
+            continue
+        if not isinstance(state, dict) \
                 or set(state) != {
                     "name", "name_id", "description", "roots"} \
                 or not _strict_config_string(
@@ -3466,7 +3505,8 @@ def _validated_skill_snapshot(value):
                     or not _skill_manifest_state_valid(row["manifest"]):
                 raise ValueError("skill catalog state is invalid")
             seen_roots.add(row["root_id"])
-    return value
+        validated[skill] = state
+    return validated
 
 
 def _validated_skill_scan(value, root_ids, prior_truncated=False,
