@@ -123,6 +123,8 @@ recovery authority for a graph that is ahead of the admitted status after a
 crash between those publications. The old pair is not relabeled as joined:
 the graph must still be independently canonical, and source effects replace it
 with a newly complete graph/status pair before writing their effects WAL.
+Unresolved predecessor errors and non-passing integrity remain visible; new
+event activity cannot relabel that state as `ok` or `thinking`.
 
 For v2, `siasourcegist` reconstructs the exact idle proposal roster and renders
 derived pages under `gists/live/`. Publication holds the corpus owner and

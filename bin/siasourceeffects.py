@@ -676,11 +676,15 @@ def _project_status(owner, source, live, admitted, binding, handoff,
     if snapshot is None or graph.get("snapshot", {}).get("complete") is not True:
         _refuse(source, "source-effects-projected-graph")
     effects = handoff["effects"]
+    verdict = admitted["integrity"]["verdict"]
+    state = ("failed" if verdict == "fail" else
+             "degraded" if admitted["errors"] or verdict != "pass" else
+             "thinking" if effects["events_pulse"] else "ok")
     status = copy.deepcopy(admitted)
     status.update({
         "version": owner["VERSION"], "ts": observed_at,
         "pulse_seq": binding["seq"],
-        "state": "thinking" if effects["events_pulse"] else "ok",
+        "state": state,
         "publication_id": binding["publication_id"],
         "graph_publication_id": snapshot["publication_id"],
         "day": effects["day"],

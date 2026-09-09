@@ -990,6 +990,26 @@ class ControllerSourceEffects(unittest.TestCase):
             "closure", "corpus", "sync", "graph", "pending",
             "live-stage", "live-publish", "receipt"])
 
+    def test_projected_status_retains_unresolved_errors_as_degraded(self):
+        self.start()
+        admitted = copy.deepcopy(self.admitted_status)
+        admitted["errors"] = {
+            "fixture": "retained unresolved failure"}
+        admitted["state"] = "degraded"
+        graph = self.live._read("GRAPH_PATH")
+        module = importlib.import_module("siasourceeffects")
+        source = importlib.import_module("siasourcebatch")
+        live = importlib.import_module("sialiveloop")
+        projected = module._project_status(
+            self.lib.__dict__, source, live,
+            admitted, self.binding, self.handoff, self.transition, graph,
+            self.live.memo["pulse_history"], STATUS_AT)
+        self.assertEqual(projected["errors"], {
+            "fixture": "retained unresolved failure"})
+        self.assertEqual(projected["state"], "degraded")
+        self.assertIsNotNone(
+            self.lib._recoverable_status_integrity(projected))
+
     def test_each_durable_crash_prefix_recovers_without_repeating_effects(self):
         for crash_at in ("effects-pending", "live-published"):
             with self.subTest(crash_at=crash_at), self.fresh() as case:

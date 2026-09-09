@@ -894,6 +894,9 @@ If a crash leaves an independently canonical complete or partial graph ahead
 of the old status, only the already-retained source/live binding and matching
 pulse-status handoff authorize recovery. SIA republishes and binds a fresh
 complete graph/status pair; it does not call the old pair joined.
+Predecessor errors remain visible in that status. New source activity cannot
+turn an unresolved error into `thinking`, or a failing integrity verdict into
+anything other than `failed`.
 
 Graph export and the projected status are then bound to the live candidate in
 a self-hashed effects WAL. The live generation is published and reread before
