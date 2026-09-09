@@ -8912,6 +8912,26 @@ class BoundedGraphProjection(unittest.TestCase):
         self.assertEqual(state["phase"], "scan")
         self.assertEqual(state["candidates"], [])
 
+    def test_stale_ready_projection_restarts_when_page_bytes_differ(self):
+        slug = "events/journal/changed-after-ready"
+        self._page(slug, body="before\n")
+        for _attempt in range(20):
+            _pages, complete, _failure = self.sialib.gbrain_all_pages(
+                batch_size=1)
+            if complete:
+                break
+        self.assertTrue(complete)
+
+        self._page(slug, body="after\n")
+        self.sialib.export_graph(require_complete=False)
+
+        graph = self._graph()
+        self.assertFalse(graph["snapshot"]["complete"])
+        self.assertIn("corpus_edges", graph["snapshot"]["failed_ops"])
+        state = self.sialib._load_graph_projection_state()
+        self.assertEqual(state["phase"], "scan")
+        self.assertEqual(state["candidates"], [])
+
     def test_projection_failure_and_metadata_state_are_bounded(self):
         state = self.sialib._fresh_graph_projection_state()
         with mock.patch.object(self.sialib, "MAX_GRAPH_SCAN_ENTRIES", 2):

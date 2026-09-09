@@ -1231,7 +1231,7 @@ def publish(owner, *, memo, admitted_status):
                 owner, source, live, observed["sync_generation"],
                 corpus_generation, target_manifest_sha256,
                 len(target_manifest))
-        owner["export_graph"]()
+        owner["_export_graph_publication"]()
         graph_generation, graph = _graph_generation(owner, source, live)
         status = _project_status(
             owner, source, live, admitted, binding, handoff, transition,

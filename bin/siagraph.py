@@ -874,7 +874,7 @@ def _iter_corpus_link_edges(canonical_slugs, rules, source_digests,
         elif not isinstance(expected_digest, str) \
                 or re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None \
                 or record["sha256"] != expected_digest:
-            raise RuntimeError(
+            raise GraphProjectionPending(
                 f"graph source changed after selection: {slug}")
         page_type = record["type"]
         if page_type == "take":
@@ -1104,6 +1104,16 @@ def export_graph(require_complete=True):
             valid_paths.append(edge)
         paths = valid_paths
         paths = _suppress_shadowed_mentions(paths)
+    except GraphProjectionPending:
+        # A ready projection can outlive a corpus writer that crashed before
+        # reaching its normal invalidation barrier.  Never keep replaying the
+        # stale digest roster: durably replace it with a fresh scan generation
+        # before publishing the partial diagnostic.  The complete-publication
+        # runner observes phase=scan and drains that generation on retry.
+        _mark_graph_projection_dirty()
+        _append_graph_failure(failed_ops, "corpus_edges")
+        paths = []
+        omitted_edges = 0
     except Exception:
         _append_graph_failure(failed_ops, "corpus_edges")
         paths = []

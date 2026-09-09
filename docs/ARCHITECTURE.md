@@ -110,6 +110,14 @@ opening the engine may maintain its own lock or WAL files. Matching these
 witnesses does not establish vector values, retrieval quality, or a cognitive
 benchmark win.
 
+Source effects use the complete graph-publication runner, not a single bounded
+scan step. If a ready graph roster's retained page digest differs from the
+current no-follow page read, graph export publishes only a partial diagnostic,
+durably replaces the stale roster with a fresh scan generation, and the runner
+drains that generation before source effects may continue. This also recovers
+an interrupted corpus writer whose ordinary pre-write invalidation did not
+survive to the later graph phase.
+
 For v2, `siasourcegist` reconstructs the exact idle proposal roster and renders
 derived pages under `gists/live/`. Publication holds the corpus owner and
 destination directory descriptors, checks the complete target roster before

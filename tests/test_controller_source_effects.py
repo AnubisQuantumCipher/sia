@@ -706,7 +706,8 @@ class ControllerSourceEffects(unittest.TestCase):
                     self.lib, SYNCER, side_effect=sync,
                     create=True) as synced, \
                 mock.patch.object(
-                    self.lib, "export_graph", side_effect=graph) as graphed, \
+                    self.lib, "_export_graph_publication",
+                    side_effect=graph) as graphed, \
                 mock.patch.object(
                     self.lib, CLOCK, side_effect=status_clock,
                     create=True) as clocked, \
@@ -748,7 +749,8 @@ class ControllerSourceEffects(unittest.TestCase):
             for name in (
                     "_publish_event_page_batch_closure", COMMITTER, SYNCER,
                     BOUNDARY,
-                    "export_graph", "_stage_live_generation",
+                    "export_graph", "_export_graph_publication",
+                    "_stage_live_generation",
                     "_publish_staged_live_generation", "export_status",
                     "atomic_write", "_write_memo", CLOCK, "corpus_commit",
                     "brain_sync"):

@@ -886,6 +886,11 @@ witnesses, not evidence of embedding-vector values or retrieval quality. The
 reported no-write projection contract is not a byte-identical-filesystem
 claim; opening PGLite may maintain its own lock or WAL files.
 
+Source effects drain the bounded graph scan to a complete generation. A stale
+ready roster whose retained page digest no longer matches current corpus bytes
+is replaced durably by a fresh scan generation; partial graph bytes remain an
+explicit diagnostic and cannot satisfy the source-effects gate.
+
 Graph export and the projected status are then bound to the live candidate in
 a self-hashed effects WAL. The live generation is published and reread before
 that WAL becomes a committed effects receipt. Even then the retained source is
