@@ -165,6 +165,13 @@ exit 0
 '''
 
 
+def _shell_function(source, name):
+    marker = name + "() {"
+    if source.count(marker) != 1:
+        raise AssertionError(f"expected one production {name} function")
+    return marker + source.split(marker, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+
+
 class ContinuityUninstall(unittest.TestCase):
     def _environment(
             self, root, *, pending_job_unit="", race_unit="",
@@ -529,12 +536,8 @@ fenced_runtime_authorized
 
     def test_release_authority_fd_survives_plugin_archive_and_closes(self):
         uninstaller = _read("uninstall.sh")
-        hold = "hold_release_authority() {" + uninstaller.split(
-            "hold_release_authority() {", 1)[1].split(
-                "\n}\n\nclose_release_authority", 1)[0] + "\n}\n"
-        close = "close_release_authority() {" + uninstaller.split(
-            "close_release_authority() {", 1)[1].split(
-                "\n}\n\nhold_release_authority", 1)[0] + "\n}\n"
+        hold = _shell_function(uninstaller, "hold_release_authority")
+        close = _shell_function(uninstaller, "close_release_authority")
         with tempfile.TemporaryDirectory() as root:
             plugin = os.path.join(root, "plugin")
             archive = os.path.join(root, "plugin-archive")

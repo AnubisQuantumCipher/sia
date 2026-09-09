@@ -864,7 +864,7 @@ class LifecycleProcessOwnershipTests(unittest.TestCase):
                 finally:
                     os.close(sentinel)
 
-    def test_release_only_owner_is_shared_without_rewriting_runtime_rungs(self):
+    def test_release_owner_is_shared_and_installed_only_in_current_rung(self):
         self.assertTrue(OWNER.is_file(), "shared release lifetime owner missing")
         for entry in ("install.sh", "uninstall.sh"):
             source = (REPO / entry).read_text(encoding="utf-8")
@@ -876,7 +876,12 @@ class LifecycleProcessOwnershipTests(unittest.TestCase):
         self.assertIn("bin/sialifetime.py", shlex.split(roster))
         authority = (REPO / "bin" / "siarelease.py").read_text(encoding="utf-8")
         ladder_section = authority.split("def validate_runtime_ladder", 1)[0]
-        self.assertNotIn('"sialifetime.py"', ladder_section)
+        historical = ladder_section.split(
+            "MODERN_V13_RUNTIME_ADDITIONS", 1)[0]
+        self.assertNotIn('"sialifetime.py"', historical)
+        self.assertIn(
+            'MODERN_V13_RUNTIME_ADDITIONS = (\n'
+            '    "sialifetime.py", "uninstall.sh",\n)', ladder_section)
 
     def test_feature_refusal_precedes_worker_launch_and_closes_opened_fds(self):
         self.assertTrue(OWNER.is_file(), "shared release lifetime owner missing")
