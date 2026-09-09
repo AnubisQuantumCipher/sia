@@ -247,6 +247,9 @@ def build_questions():
     if organ_has("codex"):
         add("codex agent sessions recorded on this machine",
             ["events/codex", "organs/codex"])
+    if organ_has("grok"):
+        add("grok agent sessions recorded on this machine",
+            ["events/grok", "organs/grok"])
     if organ_has("skills"):
         add("which agent skills were updated", ["events/skills",
                                                 "organs/skills", "skills/"])

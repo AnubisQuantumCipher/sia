@@ -1043,8 +1043,8 @@ def _recall(query, k=6):
 
 
 ORGAN_NAMES = ["jackal", "sekhmet", "custos", "aegis", "worldline",
-               "guardian", "pacman", "journal", "claude-code", "projects",
-               "notify", "agents"]
+               "guardian", "pacman", "journal", "claude-code", "grok",
+               "projects", "notify", "agents"]
 
 
 def _directory_generation_is_current(directory, generation):

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+Grok was already a documented MCP client. It was not a session organ. The
+brain advertised "agents everywhere" and then only watched Claude (base) and
+Codex (optional) on disk — the same coverage gap Codex closed, left open for
+the third named harness.
+
+- **Grok session organ (optional)** — `sense_grok` tails
+  `~/.grok/sessions/<encoded-cwd>/<session-id>/updates.jsonl` (the
+  authoritative conversation log). Sibling jsonl files in the same directory
+  are ignored, so one session is one entity. Metadata only: existence,
+  growth, resume, activity. Payloads are never opened. The organ activates
+  when `~/.grok/sessions` exists; disable with `senses.disable: ["grok"]`.
+- **Bench + takes** — `sia bench` gains a grok session probe when the organ
+  is live; `siatakes` names `grok` next to `claude-code`.
+- **Tests** — payload-unopened (and sibling jsonl is not a second entity);
+  a restored nested cwd cannot authorize prune; a yanked-then-restored cwd
+  does not false-prune; a clean paginated generation prunes stale marks by
+  durable snapshot. Facade export pin updated.
+
 ## 1.7.8 — 2026-09-03 · the audit passes, and it never had
 
 `sia judge-audit` has scored resolution 1/2 since the day it was written. The
