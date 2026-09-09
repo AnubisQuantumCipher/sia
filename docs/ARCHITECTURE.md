@@ -761,6 +761,19 @@ bookkeeping may occur; the GET transport makes no no-write assertion and
 does not establish whether either effect occurred. Captured output is not
 source-version admission, displayed-field admission or output delivery.
 
+`siacontrollerrecallcli.recall_from_current_source` supplies the additive,
+unreleased front-door composition immediately below future CLI routing. Its
+caller can select only a canonical subject, bounded timeout, request identity,
+binary sink and completion clock. Under the corpus owner it derives the
+acknowledged source-v3 batch and committed live generation, the persisted
+delivery adoption, closed journal limits, singleton literal render policy and
+the installed-engine expectations observation above, then passes those exact
+inputs to `siacontrollerrecalloutput.recall_and_deliver`. It accepts no
+caller-authored source, epoch, engine, rank or rendering authority and has no
+legacy GET fallback. This module does not itself alter configuration, route
+`sia recall`, install a runtime, queue reinforcement or establish a held-out
+cognitive win.
+
 Host-bound GET additionally requires literal `GBRAIN_BRAIN_ID=host` in the
 sterile child environment; `GBRAIN_HOME` alone is not brain selection. The
 fixed-host correction is a prerequisite for that claim, not a caller-selectable
