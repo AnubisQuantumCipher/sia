@@ -13,7 +13,7 @@ class ControllerDeliveryWriterDocumentation(unittest.TestCase):
                 "write-all-and-flush-returned",
                 "caller-supplied rows and rendered body",
                 "Incomplete journals, including intent-only",
-                "configured resident cycle remains v2"):
+                "configured resident cycle enters v3"):
             with self.subTest(phrase=phrase):
                 self.assertTrue(phrase in prose, "missing output boundary: " + phrase)
 

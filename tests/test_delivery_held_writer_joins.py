@@ -47,7 +47,9 @@ class DeliveryHeldWriterJoins(unittest.TestCase):
 
     def test_entry_identity_failure_closes_each_just_opened_directory(self):
         actual_open, actual_stat = os.open, os.fstat
-        for target in ("/", "home"):
+        parts = Path(self.journal.directory).parts
+        self.assertGreaterEqual(len(parts), 2)
+        for target in (parts[0], parts[1]):
             with self.subTest(component=target):
                 before = self.fixture.fds()
                 selected = []
