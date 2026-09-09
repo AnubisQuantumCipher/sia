@@ -674,17 +674,20 @@ def sync_generation(owner, *, corpus_generation, target_versions):
 
         sync_result = _run(owner, source, boundary, [
             "sync", "--source", owner["GBRAIN_SOURCE"], "--json",
-            "--no-pull", "--no-delegate", "--no-embed",
+            "--no-pull", "--no-delegate", "--no-embed", "--no-extract",
         ], label="source engine sync", timeout=300)
         sync = _json_result(owner, source, sync_result, "source-engine-sync")
         _admit_sync(owner, source, sync)
 
         # ``sync --json`` in the pinned engine emits a second cost-gate JSON
-        # document whenever implicit embedding is enabled.  Keep its stdout a
-        # single closed document by disabling that side effect, then drain the
-        # exact source explicitly.  The embed CLI is human-output-only, so its
-        # text is evidence by digest, not parsed authority; the closed status
-        # readback below must observe zero unembedded chunks.
+        # document whenever implicit embedding is enabled.  It can also run
+        # implicit link extraction before returning, even though this
+        # transaction has separate admitted extraction phases below.  Keep
+        # sync to one closed synchronization result by disabling both side
+        # effects, then drain the exact source explicitly.  The embed CLI is
+        # human-output-only, so its text is evidence by digest, not parsed
+        # authority; the closed status readback below must observe zero
+        # unembedded chunks and zero stale links.
         embed_result = _run(owner, source, boundary, [
             "embed", "--stale", "--source", owner["GBRAIN_SOURCE"],
             "--catch-up",

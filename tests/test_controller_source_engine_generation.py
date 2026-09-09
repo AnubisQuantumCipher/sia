@@ -256,7 +256,7 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                 name = "version"
             elif args == (
                     "sync", "--source", "sia", "--json", "--no-pull",
-                    "--no-delegate", "--no-embed"):
+                    "--no-delegate", "--no-embed", "--no-extract"):
                 name = "sync"
             elif args == (
                     "embed", "--stale", "--source", "sia", "--catch-up"):
