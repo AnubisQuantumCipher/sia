@@ -154,10 +154,22 @@ def _admission_exception_class(exc):
     if isinstance(exc, RuntimeError):
         return "runtime"
     if isinstance(exc, ValueError):
-        matched = re.fullmatch(
-            r"event page plan refused: ([a-z0-9-]+)", str(exc))
-        if matched is not None:
-            return "event-page-plan-" + matched.group(1)
+        # Preserve only the closed reason grammars owned by components in
+        # this capture pipeline.  Arbitrary upstream text remains private.
+        for message_prefix, reason_prefix in (
+                ("event page plan refused: ", "event-page-plan-"),
+                ("event live intake refused: ", "event-live-intake-"),
+                ("live-loop refused: ", "live-loop-"),
+                ("controller idle input refused: ", "controller-idle-"),
+                ("controller delivery epoch refused: ",
+                 "controller-delivery-epoch-"),
+                ("controller delivery wrapper refused: ",
+                 "controller-delivery-wrapper-"),
+                ("delivery journal refused: ", "delivery-journal-")):
+            matched = re.fullmatch(
+                re.escape(message_prefix) + r"([a-z0-9-]+)", str(exc))
+            if matched is not None:
+                return reason_prefix + matched.group(1)
         return "value"
     return "closed"
 
