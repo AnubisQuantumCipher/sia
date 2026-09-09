@@ -1158,9 +1158,13 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys", journal_
         catalog_cmd = [
             "journalctl", "-o", "json", "--output-fields=__CURSOR",
             "--no-pager", f"--cursor-file={catalog_tmp}"] + args
-        catalog_rows = _journalctl_records(
-            catalog_cmd, record_limit=MAX_STATE_JSON_BYTES,
-            output_limit=MAX_STATE_JSON_BYTES)
+        try:
+            catalog_rows = _journalctl_records(
+                catalog_cmd, record_limit=MAX_STATE_JSON_BYTES,
+                output_limit=MAX_STATE_JSON_BYTES)
+        finally:
+            if journal_context is not None:
+                journal_context.settle(scope, catalog_tmp)
         catalog = [_journal_catalog_cursor(row) for row in catalog_rows]
         if len(catalog) != len(set(catalog)):
             raise RuntimeError("journal cursor catalog repeats an entry")
@@ -1173,8 +1177,12 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys", journal_
                 journal_context.seed(scope, full_tmp)
             full_cmd = ["journalctl", "-o", "json", "--no-pager",
                         f"--cursor-file={full_tmp}"] + args
-            out, refusals, processed = _journalctl_projected_records(
-                full_cmd, catalog, scope)
+            try:
+                out, refusals, processed = _journalctl_projected_records(
+                    full_cmd, catalog, scope)
+            finally:
+                if journal_context is not None:
+                    journal_context.settle(scope, full_tmp)
 
         # The source cursor is selected from the verified catalog prefix, not
         # from either producer-owned cursor file (which may have run ahead).

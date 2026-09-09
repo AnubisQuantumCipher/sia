@@ -430,6 +430,46 @@ class JournalCaptureContext(unittest.TestCase):
             self.assert_receipt(context.result(), before)
         self.assertTrue(observed)
 
+    def test_journalctl_atomic_cursor_replacement_is_admitted_and_cleaned(self):
+        self.seed()
+        before = self.snapshot()
+        real_records = self.lib._journalctl_records
+        real_projected = self.lib._journalctl_projected_records
+        replaced = []
+
+        def replace(command):
+            cursor = next(argument.split("=", 1)[1] for argument in command
+                          if argument.startswith("--cursor-file="))
+            replacement = cursor + ".journalctl-replacement"
+            with open(replacement, "xb") as stream:
+                stream.write(b"producer-ran-ahead")
+            os.chmod(replacement, 0o644)
+            os.replace(replacement, cursor)
+            replaced.append(Path(cursor).name)
+
+        def records(command, **kwargs):
+            result = real_records(command, **kwargs)
+            replace(command)
+            return result
+
+        def projected(command, *args, **kwargs):
+            result = real_projected(command, *args, **kwargs)
+            replace(command)
+            return result
+
+        with self.owned_context() as context, self.producer(), \
+                mock.patch.object(
+                    self.lib, "_journalctl_records", side_effect=records), \
+                mock.patch.object(
+                    self.lib, "_journalctl_projected_records",
+                    side_effect=projected):
+            events = self.lib.sense_journal({}, journal_context=context)
+            self.assertTrue(events)
+            self.assert_receipt(context.result(), before)
+        self.assertEqual(replaced, [
+            "sys.catalog", "sys.full", "user.catalog", "user.full"])
+        self.assertEqual(list(self.operation.iterdir()), [])
+
     def test_named_operation_directory_replacement_refuses_without_cleaning_replacement(self):
         self.seed()
         before = self.snapshot()
@@ -546,4 +586,3 @@ class JournalCaptureContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

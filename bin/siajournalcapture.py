@@ -276,6 +276,59 @@ class JournalCaptureContext:
         os.fsync(descriptor)
         self.current()
 
+    def settle(self, scope, path):
+        """Admit and reseal one cursor file replaced by the journal producer."""
+        self._check()
+        leaf = next((name for name in _LEAVES if self.path(name) == path), None)
+        if scope not in self.active \
+                or leaf not in (scope + ".catalog", scope + ".full") \
+                or leaf not in self.scratch:
+            _refuse("operation-settle-path")
+        os = self.owner["os"]
+        self.directory.current()
+        for source in self.sources.values():
+            source.current()
+        old_descriptor, old_identity = self.scratch[leaf]
+        old = os.fstat(old_descriptor)
+        if not stat.S_ISREG(old.st_mode) or old.st_uid != os.geteuid() \
+                or (old.st_dev, old.st_ino) != old_identity:
+            _refuse("operation-settle-original")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+        replacement = None
+        try:
+            replacement = os.open(leaf, flags, dir_fd=self.directory.fd)
+            held = os.fstat(replacement)
+            named = os.stat(
+                leaf, dir_fd=self.directory.fd, follow_symlinks=False)
+            if not stat.S_ISREG(held.st_mode) or held.st_uid != os.geteuid() \
+                    or held.st_nlink != 1 \
+                    or held.st_size > self.owner["MAX_JOURNAL_CURSOR_BYTES"] \
+                    or stat.S_IMODE(held.st_mode) & 0o022 \
+                    or _generation(held) != _generation(named):
+                _refuse("operation-settle-replacement")
+            if (held.st_dev, held.st_ino) != old_identity \
+                    and old.st_nlink != 0:
+                _refuse("operation-settle-unbound-replacement")
+            os.fchmod(replacement, 0o600)
+            os.fsync(replacement)
+            held = os.fstat(replacement)
+            named = os.stat(
+                leaf, dir_fd=self.directory.fd, follow_symlinks=False)
+            if not stat.S_ISREG(held.st_mode) or held.st_uid != os.geteuid() \
+                    or held.st_nlink != 1 \
+                    or stat.S_IMODE(held.st_mode) != 0o600 \
+                    or held.st_size > self.owner["MAX_JOURNAL_CURSOR_BYTES"] \
+                    or _generation(held) != _generation(named):
+                _refuse("operation-settle-replacement-changed")
+            os.close(old_descriptor)
+            self.scratch[leaf] = (
+                replacement, (held.st_dev, held.st_ino))
+            replacement = None
+        finally:
+            if replacement is not None:
+                os.close(replacement)
+        self.current()
+
     def _wire(self, value):
         maximum = self.owner["MAX_STATE_JSON_BYTES"]
         count = _native._size(value, maximum)
