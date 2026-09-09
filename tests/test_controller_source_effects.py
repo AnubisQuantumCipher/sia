@@ -15,6 +15,7 @@ separate real-boundary lane must prove their parsers and descriptor ownership.
 import contextlib
 import copy
 import hashlib
+import importlib
 import inspect
 import json
 import os
@@ -795,6 +796,39 @@ class ControllerSourceEffects(unittest.TestCase):
             self.assertIs(parameter.default, inspect.Parameter.empty)
         self.assertEqual(
             tuple(getattr(self.lib, NON_CLAIMS_NAME, ())), NON_CLAIMS)
+
+    def test_legacy_public_graph_is_resealed_in_place_only_by_explicit_lane(self):
+        module = importlib.import_module("siasourceeffects")
+        source = importlib.import_module("siasourcebatch")
+        path = Path(self.live.paths["GRAPH_PATH"])
+        original = path.read_bytes()
+        path.chmod(0o644)
+        before = path.stat()
+
+        raw, value = module._held_json(
+            self.lib.__dict__, source, str(path),
+            self.lib.MAX_STATE_JSON_BYTES, seal_legacy_public=True)
+
+        after = path.stat()
+        self.assertEqual(raw, original)
+        self.assertEqual(value, json.loads(original))
+        self.assertEqual((after.st_dev, after.st_ino),
+                         (before.st_dev, before.st_ino))
+        self.assertEqual(stat.S_IMODE(after.st_mode), 0o600)
+
+        path.chmod(0o644)
+        with self.assertRaises(REFUSALS):
+            module._held_json(
+                self.lib.__dict__, source, str(path),
+                self.lib.MAX_STATE_JSON_BYTES)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+
+        path.chmod(0o640)
+        with self.assertRaises(REFUSALS):
+            module._held_json(
+                self.lib.__dict__, source, str(path),
+                self.lib.MAX_STATE_JSON_BYTES, seal_legacy_public=True)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
 
     def test_nonempty_full_order_and_exact_bound_receipt(self):
         self.start()

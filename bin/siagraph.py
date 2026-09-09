@@ -1167,7 +1167,7 @@ def export_graph(require_complete=True):
                           "counts_by_kind": counts,
                           "failed_ops": failed_ops,
                           "window_days": 14}}
-    atomic_write(GRAPH_PATH, json.dumps(graph))
+    atomic_write(GRAPH_PATH, json.dumps(graph), mode=0o600)
     if require_complete and not graph["snapshot"]["complete"]:
         reason = ", ".join(graph["snapshot"]["failed_ops"][:3]) \
             or "graph snapshot is partial"

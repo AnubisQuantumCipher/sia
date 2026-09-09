@@ -5748,7 +5748,8 @@ def _require_musing_graph_snapshot(value):
 def export_status(st):
     snapshot = dict(st)
     snapshot["version"] = VERSION
-    atomic_write(STATUS_PATH, json.dumps(snapshot, allow_nan=False))
+    atomic_write(
+        STATUS_PATH, json.dumps(snapshot, allow_nan=False), mode=0o600)
 
 
 def export_thoughts(store):

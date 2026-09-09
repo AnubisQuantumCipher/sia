@@ -727,6 +727,12 @@ source, binding, effects and compact live receipt identities. The dispatcher
 selects recovery from those joins; actual effects replay and source ACK
 still validate the retained artifacts. Idle effects replay uses the retained
 batch's observation clock, not a new clock or the wrapper's self-declaration.
+Historical graph/status snapshots created before private publication may be
+exact owner-held single-link files at mode `0644`. The source-effects boundary
+has one explicit migration lane for those two inputs: it reseals the same
+descriptor to `0600`, proves the named inode and bytes did not change, and
+refuses every other mode. Both publishers now request `0600` explicitly;
+candidate and generation files never enter the migration lane.
 An empty closure/gist disposition still publishes graph/status/live state
 and ACK, while its receipt retains null corpus/index generations.
 A fully acknowledged source-v3 batch must independently retain the adoption

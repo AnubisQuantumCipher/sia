@@ -429,12 +429,36 @@ def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
     return copy.deepcopy(value)
 
 
-def _held_json(owner, source, path, ceiling):
+def _held_json(owner, source, path, ceiling, *, seal_legacy_public=False):
+    if type(seal_legacy_public) is not bool:
+        _refuse(source, "source-effects-private-migration-contract")
     held = source.HeldFile(owner, path, ceiling, allow_absent=False)
     try:
-        if held.generation is None \
-                or stat.S_IMODE(held.generation["mode"]) != 0o600:
+        if held.generation is None:
             _refuse(source, "source-effects-artifact-not-private")
+        mode = stat.S_IMODE(held.generation["mode"])
+        if mode != 0o600:
+            if not seal_legacy_public or mode != 0o644:
+                _refuse(source, "source-effects-artifact-not-private")
+            before = os.fstat(held.fd)
+            stable = lambda value: (
+                value.st_dev, value.st_ino, value.st_uid, value.st_gid,
+                value.st_nlink, value.st_size, value.st_mtime_ns)
+            try:
+                os.fchmod(held.fd, 0o600)
+                after = os.fstat(held.fd)
+                named = os.stat(
+                    held.name, dir_fd=held.directories.fd,
+                    follow_symlinks=False)
+            except OSError as exc:
+                _refuse(source, "source-effects-private-migration", upstream=exc)
+            if stable(before) != stable(after) or stable(after) != stable(named) \
+                    or stat.S_IMODE(after.st_mode) != 0o600 \
+                    or stat.S_IMODE(named.st_mode) != 0o600 \
+                    or os.pread(held.fd, ceiling + 1, 0) != held.raw:
+                _refuse(source, "source-effects-private-migration-generation")
+            held.generation = source._generation(after)
+            held.current()
         raw = bytes(held.raw)
         value = copy.deepcopy(held.value)
         held.current()
@@ -446,7 +470,8 @@ def _held_json(owner, source, path, ceiling):
 
 def _graph_generation(owner, source, live):
     raw, graph = _held_json(
-        owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"])
+        owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"],
+        seal_legacy_public=True)
     snapshot = owner["_recoverable_graph_snapshot"](
         graph, observed_by=graph.get("ts"))
     if snapshot is None or graph.get("snapshot", {}).get("complete") is not True:
@@ -482,7 +507,8 @@ def _status_generation_value(owner, source, live, status):
 
 def _status_generation_file(owner, source, live):
     raw, status = _held_json(
-        owner, source, owner["STATUS_PATH"], owner["MAX_STATE_JSON_BYTES"])
+        owner, source, owner["STATUS_PATH"], owner["MAX_STATE_JSON_BYTES"],
+        seal_legacy_public=True)
     expected = _status_generation_value(owner, source, live, status)
     if expected["raw_bytes"] != len(raw) \
             or expected["raw_sha256"] \
@@ -579,7 +605,8 @@ def _binding_context(owner, source, live, memo, admitted_status,
 def _initial_context(owner, source, live, memo, admitted_status):
     status = owner["_require_status_admission_unchanged"](admitted_status)
     _raw, graph = _held_json(
-        owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"])
+        owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"],
+        seal_legacy_public=True)
     try:
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
