@@ -445,15 +445,15 @@ class ResidentSourceCycleContract(unittest.TestCase):
         ready.assert_called_once_with()
         publish.assert_not_called()
 
-    def test_daemon_ready_does_not_wait_for_a_new_configured_source_cycle(self):
+    def test_daemon_ready_does_not_wait_for_a_completed_source_cycle(self):
         trace = []
-        memo = self._memo("clean")
+        memo = self._memo("completed")
 
         def systemd_ready():
             trace.append("READY")
             brainstem._stop = True
 
-        with self._source_authority(brainstem.sialib, "clean"), \
+        with self._source_authority(brainstem.sialib, "completed"), \
                 ExitStack() as stack:
             stack.enter_context(mock.patch.object(brainstem, "_stop", False))
             stack.enter_context(mock.patch.object(brainstem.signal, "signal"))
