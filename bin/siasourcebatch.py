@@ -154,6 +154,10 @@ def _admission_exception_class(exc):
     if isinstance(exc, RuntimeError):
         return "runtime"
     if isinstance(exc, ValueError):
+        matched = re.fullmatch(
+            r"event page plan refused: ([a-z0-9-]+)", str(exc))
+        if matched is not None:
+            return "event-page-plan-" + matched.group(1)
         return "value"
     return "closed"
 

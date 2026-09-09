@@ -446,6 +446,21 @@ class ControllerSourceCaptureV3(unittest.TestCase):
                 expected_adoption_sha256=None)
         self.assertNotIn("private upstream detail", str(raised.exception))
 
+        with mock.patch.object(
+                self.source, "_DeliveryCaptureRequest",
+                side_effect=ValueError(
+                    "event page plan refused: complete-byte-capacity")), \
+                self.assertRaisesRegex(
+                    ValueError,
+                    "delivery-successor-capture-admission-"
+                    "event-page-plan-complete-byte-capacity"):
+            self.operation(
+                {}, memo=None, admitted_status=None, retained_batch=None,
+                committed=None, epoch=None, expected_epoch_sha256=None,
+                observed_at=None, journal_limits=None,
+                expected_journal_limits_sha256=None,
+                expected_adoption_sha256=None)
+
     def test_real_idle_capture_keeps_gist_origins_and_bound_empty_journal(self):
         with self.prepared() as f, self.capture_owner(f) as owner:
             before = self.images(f)
