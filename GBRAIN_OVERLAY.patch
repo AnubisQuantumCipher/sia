@@ -366,6 +366,245 @@ index 1013a99394f7aaf2a9ca31f4a93c1e4cd2627216..bb2b16bcd111f5b93aebed91ee51b38b
      return { linksCreated: 0, timelineCreated: 0, pagesProcessed: 0, staleRemaining: 0 };
    }
  
+diff --git a/src/commands/import.ts b/src/commands/import.ts
+index 8b6dfe23d5a029ce20afd64f148c6c8a94bff76c..9bf02e604c4abf3cc52ae58084f65ca8b9f90cc7 100644
+--- a/src/commands/import.ts
++++ b/src/commands/import.ts
+@@ -197,12 +197,18 @@ export async function runImport(
+      * `wiki/page1` consistently across full and incremental sync.
+      */
+     slugRoot?: string;
++    /** Internal nesting contract: emit import JSON on stderr for sync --json. */
++    jsonToStderr?: boolean;
+   } = {},
+ ): Promise<RunImportResult> {
+   const noEmbed = args.includes('--no-embed');
+   const allowNoncanonicalRoot = args.includes('--allow-noncanonical-root');
+   const fresh = args.includes('--fresh');
+-  const jsonOutput = args.includes('--json');
++  const jsonOutput = args.includes('--json') || opts.jsonToStderr === true;
++  const emitJson = (message: string): void => {
++    if (opts.jsonToStderr) console.error(message);
++    else console.log(message);
++  };
+   // #3969: opt back into per-poll ingest_log rows (default: no-op runs skip the write).
+   const logNoop = args.includes('--log-noop');
+   const includeGitignored = args.includes('--include-gitignored') || opts.includeGitignored === true;
+@@ -242,7 +248,7 @@ export async function runImport(
+     } catch (e) {
+       if (e instanceof EmbeddingCredentialError) {
+         if (jsonOutput) {
+-          console.log(JSON.stringify({ status: 'embedding_credentials_missing', diagnosis: e.diagnosis }));
++          emitJson(JSON.stringify({ status: 'embedding_credentials_missing', diagnosis: e.diagnosis }));
+         } else {
+           console.error('');
+           console.error(e.userMessage);
+@@ -689,7 +695,7 @@ export async function runImport(
+ 
+   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+   if (jsonOutput) {
+-    console.log(JSON.stringify({
++    emitJson(JSON.stringify({
+       status: 'success', duration_s: parseFloat(totalTime),
+       imported, skipped, errors, chunks: chunksCreated,
+       total_files: allFiles.length,
+diff --git a/src/commands/sync.ts b/src/commands/sync.ts
+index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee90a5ec8c 100644
+--- a/src/commands/sync.ts
++++ b/src/commands/sync.ts
+@@ -321,6 +321,8 @@ export interface SyncOpts {
+   noPull?: boolean;
+   noEmbed?: boolean;
+   noExtract?: boolean;
++  /** Internal CLI framing contract: keep human sync output off stdout. */
++  jsonOutput?: boolean;
+   /**
+    * #3969: opt back into per-poll ingest_log rows. By default a sync that
+    * landed nothing (no pages written, no chunks, no failures acknowledged)
+@@ -500,6 +502,11 @@ export interface SyncOpts {
+   onProgress?: (p: { phase: string; bankedFiles?: number }) => void;
+ }
+ 
++function syncInfo(opts: SyncOpts, message: string): void {
++  if (opts.jsonOutput) serr(message);
++  else slog(message);
++}
++
+ // The git-plumbing cluster (git(), discoverGitRoot, createSyncBaselineCommit,
+ // path-containment guards, ...) was peeled to src/core/sync-git.ts (pure
+ // move). Re-exported so existing importers keep working.
+@@ -1745,7 +1752,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       isAncestor = false;
+     }
+     if (!isAncestor) {
+-      slog(
++      syncInfo(opts,
+         `[sync] last_commit ${lastCommit.slice(0, 8)} not an ancestor of HEAD ` +
+         `(history rewritten) — diffing tree-to-tree against the orphaned bookmark; ` +
+         `advancing to HEAD on completion.`,
+@@ -1759,7 +1766,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+   }
+ 
+   if (opts.includeGitignored) {
+-    slog(
++    syncInfo(opts,
+       `[sync] --include-gitignored: running full filesystem reconcile because ` +
+       `git diff cannot report untracked ignored files.`,
+     );
+@@ -1793,12 +1800,12 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       if (pinReachable) {
+         pin = storedTarget;
+         completedPaths = await loadOpCheckpoint(engine, ckpt.paths);
+-        slog(
++        syncInfo(opts,
+           `[sync] resuming checkpoint: ${completedPaths.length} file(s) already done; ` +
+           `draining ${lastCommit.slice(0, 8)}..${pin.slice(0, 8)} (pinned target).`,
+         );
+       } else {
+-        slog(
++        syncInfo(opts,
+           `[sync] checkpoint target ${storedTarget.slice(0, 8)} no longer reachable ` +
+           `(history rewritten); restarting against HEAD.`,
+         );
+@@ -1977,7 +1984,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+   }
+ 
+   if ((versionMismatch || versionNeverSet) && lastCommit === headCommit) {
+-    slog(
++    syncInfo(opts,
+       `[sync] chunker_version gate: stored=${storedVersion ?? 'unset'}, current=${currentVersion}. ` +
+       `Forcing full re-chunk pass (git HEAD unchanged but pipeline version advanced).`,
+     );
+@@ -2132,15 +2139,15 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+ 
+   // Dry run
+   if (opts.dryRun) {
+-    slog(`Sync dry run: ${lastCommit.slice(0, 8)}..${headCommit.slice(0, 8)}`);
+-    if (filtered.added.length) slog(`  Added: ${filtered.added.join(', ')}`);
+-    if (filtered.modified.length) slog(`  Modified: ${filtered.modified.join(', ')}`);
+-    if (filtered.deleted.length) slog(`  Deleted: ${filtered.deleted.join(', ')}`);
+-    if (filtered.renamed.length) slog(`  Renamed: ${filtered.renamed.map(r => `${r.from} -> ${r.to}`).join(', ')}`);
++    syncInfo(opts, `Sync dry run: ${lastCommit.slice(0, 8)}..${headCommit.slice(0, 8)}`);
++    if (filtered.added.length) syncInfo(opts, `  Added: ${filtered.added.join(', ')}`);
++    if (filtered.modified.length) syncInfo(opts, `  Modified: ${filtered.modified.join(', ')}`);
++    if (filtered.deleted.length) syncInfo(opts, `  Deleted: ${filtered.deleted.join(', ')}`);
++    if (filtered.renamed.length) syncInfo(opts, `  Renamed: ${filtered.renamed.map(r => `${r.from} -> ${r.to}`).join(', ')}`);
+     if (malformedSkipped.length) {
+-      slog(`  Skipped (malformed filename — brackets/control chars; rename to import): ${malformedSkipped.map(sanitizePathForDisplay).join(', ')}`);
++      syncInfo(opts, `  Skipped (malformed filename — brackets/control chars; rename to import): ${malformedSkipped.map(sanitizePathForDisplay).join(', ')}`);
+     }
+-    if (totalChanges === 0) slog(`  No syncable changes.`);
++    if (totalChanges === 0) syncInfo(opts, `  No syncable changes.`);
+     return {
+       status: 'dry_run',
+       malformedSkipped: malformedSkipped.length,
+@@ -2210,14 +2217,14 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+         // an unguarded delete made a preview under a narrower strategy
+         // hard-delete previously-imported pages. A preview only reports.
+         if (opts.dryRun) {
+-          slog(`  [dry-run] would delete un-syncable page: ${slug}`);
++          syncInfo(opts, `  [dry-run] would delete un-syncable page: ${slug}`);
+         } else {
+           // #4587: soft-delete (72h recovery window) instead of hard delete.
+           // Scope falls back to DEFAULT_SOURCE_ID to preserve deletePage's
+           // old 'default' fallback; softDeletePages requires an explicit
+           // sourceId. The purge phase owns the eventual hard delete.
+           await engine.softDeletePages([slug], { sourceId: opts.sourceId ?? DEFAULT_SOURCE_ID });
+-          slog(`  Soft-deleted un-syncable page (recoverable 72h): ${slug}`);
++          syncInfo(opts, `  Soft-deleted un-syncable page (recoverable 72h): ${slug}`);
+         }
+       }
+     } catch { /* ignore */ }
+@@ -2281,7 +2288,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+ 
+   const noEmbed = opts.noEmbed || totalChanges > 100;
+   if (totalChanges > 100) {
+-    slog(`Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
++    syncInfo(opts, `Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
+   }
+ 
+   // v0.42.x (#1794): we have real work — persist the PIN now so a crash before
+@@ -3749,7 +3756,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       // stale sweep — never trust queue.add's row blind.
+       if (isLiveSweep(job)) queuedJobId = job.id;
+     } catch { /* best-effort — hint below still tells the operator */ }
+-    slog(
++    syncInfo(opts,
+       `  Large sync: deferring link/timeline extraction` +
+       (queuedJobId != null
+         ? ` — queued stale-sweep job #${queuedJobId} (source: ${opts.sourceId ?? 'default'}); a running jobs worker will consume it.`
+@@ -3765,7 +3772,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       const linksCreated = await extractLinksForSlugs(engine, gitContextRoot, pagesAffected, extractOpts);
+       const timelineCreated = await extractTimelineForSlugs(engine, gitContextRoot, pagesAffected, extractOpts);
+       if (linksCreated > 0 || timelineCreated > 0) {
+-        slog(`  Extracted: ${linksCreated} links, ${timelineCreated} timeline entries`);
++        syncInfo(opts, `  Extracted: ${linksCreated} links, ${timelineCreated} timeline entries`);
+       }
+       // v0.42.7 (#1696, CDX-6): stamp the links_extracted_at watermark for the
+       // pages we just extracted, AFTER the import set their updated_at, so
+@@ -3854,7 +3861,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       // Other errors stay best-effort — rate limits, transient network.
+     }
+   } else if (noEmbed || totalChanges > 100) {
+-    slog(`Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
++    syncInfo(opts, `Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
+   }
+ 
+   if (malformedSkipped.length > 0) {
+@@ -3927,13 +3934,13 @@ async function performFullSync(
+     if (opts.exclude && opts.exclude.length > 0) {
+       allFiles = allFiles.filter(abs => !matchesAnyGlob(relative(syncScopeRoot, abs), opts.exclude));
+     }
+-    slog(
++    syncInfo(opts,
+       `Full-sync dry run (strategy=${opts.strategy ?? 'markdown'}): ` +
+       `${allFiles.length} file(s) would be imported ` +
+       `from ${syncScopeRoot} @ ${headCommit.slice(0, 8)}.`,
+     );
+     if (dryRunMalformed.length > 0) {
+-      slog(
++      syncInfo(opts,
+         `  ${dryRunMalformed.length} file(s) would be skipped: malformed filename ` +
+         `(brackets/control chars; rename to import): ` +
+         dryRunMalformed.slice(0, 20).map(sanitizePathForDisplay).join(', ') +
+@@ -3961,7 +3968,7 @@ async function performFullSync(
+   // sync and the jobs handler.
+   const FULL_SYNC_LARGE_MARKER = Number.MAX_SAFE_INTEGER;
+   const fullConcurrency = autoConcurrency(engine, FULL_SYNC_LARGE_MARKER, opts.concurrency);
+-  slog(`Running full import of ${syncScopeRoot}${fullConcurrency > 1 ? ` (${fullConcurrency} workers)` : ''}...`);
++  syncInfo(opts, `Running full import of ${syncScopeRoot}${fullConcurrency > 1 ? ` (${fullConcurrency} workers)` : ''}...`);
+   const { runImport } = await import('./import.ts');
+   const importArgs = [syncScopeRoot];
+   if (opts.noEmbed) importArgs.push('--no-embed');
+@@ -3983,6 +3990,7 @@ async function performFullSync(
+     includeHidden: opts.includeHidden,
+     includeGitignored: opts.includeGitignored,
+     slugRoot,
++    jsonToStderr: opts.jsonOutput === true,
+     // issue #1939: performFullSync owns the failure ledger + bookmark via the
+     // shared gate below; don't let runImport double-record or write its own.
+     managedBookmark: true,
+@@ -4252,9 +4260,9 @@ async function performFullSync(
+         }
+       }
+       if (reconciledDeletes > 0) {
+-        slog(`  Reconciled ${reconciledDeletes} stale page(s) whose source file was removed (soft-deleted, recoverable 72h).`);
++        syncInfo(opts, `  Reconciled ${reconciledDeletes} stale page(s) whose source file was removed (soft-deleted, recoverable 72h).`);
+         if (malformedDeleted > 0) {
+-          slog(
++          syncInfo(opts,
+             `  (${malformedDeleted} of them had malformed bracket/control-char filenames — ` +
+             `their files may still exist on disk; rename a file to re-import its content.)`,
+           );
+@@ -5143,7 +5151,7 @@ See also:
+   const singleSourceInterrupt = new AbortController();
+   const onSingleSourceSigint = () => { try { singleSourceInterrupt.abort(new Error('SIGINT')); } catch { /* */ } };
+   const opts: SyncOpts = {
+-    repoPath, dryRun, full, noPull, noEmbed, noExtract, skipFailed, retryFailed, noSchemaPack, includeGitignored, workingTree, sourceId,
++    repoPath, dryRun, full, noPull, noEmbed, noExtract, jsonOutput: jsonOut, skipFailed, retryFailed, noSchemaPack, includeGitignored, workingTree, sourceId,
+     strategy: strategyArg, concurrency,
+     srcSubpath,
+     exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
 diff --git a/src/core/cli-flag-registry.generated.ts b/src/core/cli-flag-registry.generated.ts
 index 2e9fa035a336058fbd7338f0c93267f48e213f87..5dc761b9fa717a97ee8f261942bde9295a2dd493 100644
 --- a/src/core/cli-flag-registry.generated.ts

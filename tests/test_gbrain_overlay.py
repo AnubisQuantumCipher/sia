@@ -191,6 +191,34 @@ def _apply_arguments(fixture, target, patch=None, overlay_digest=None,
 
 
 class GbrainOverlayDeliveryContract(unittest.TestCase):
+    def test_sync_json_overlay_keeps_stdout_single_document(self):
+        overlay = _read(OVERLAY_PATH)
+        import_patch = overlay.split(
+            "diff --git a/src/commands/import.ts b/src/commands/import.ts", 1)[1].split(
+            "diff --git a/src/commands/sync.ts b/src/commands/sync.ts", 1)[0]
+        sync_patch = overlay.split(
+            "diff --git a/src/commands/sync.ts b/src/commands/sync.ts", 1)[1].split(
+            "diff --git ", 1)[0]
+
+        self.assertIn(
+            "+  const jsonOutput = args.includes('--json') || opts.jsonToStderr === true;",
+            import_patch)
+        self.assertIn(
+            "+    if (opts.jsonToStderr) console.error(message);",
+            import_patch)
+        self.assertIn(
+            "+function syncInfo(opts: SyncOpts, message: string): void {",
+            sync_patch)
+        self.assertIn("+  if (opts.jsonOutput) serr(message);", sync_patch)
+        self.assertIn("+    jsonToStderr: opts.jsonOutput === true,", sync_patch)
+        self.assertIn("+    repoPath, dryRun, full, noPull, noEmbed, noExtract, jsonOutput: jsonOut,", sync_patch)
+        self.assertIn(
+            "+    syncInfo(opts, `Text imported. Run 'gbrain embed --stale' to generate embeddings.`);",
+            sync_patch)
+        self.assertIn(
+            "+  syncInfo(opts, `Running full import of ${syncScopeRoot}",
+            sync_patch)
+
     def test_overlay_artifact_is_in_release_and_plugin_snapshots_only(self):
         installer = _installer()
         self.assertTrue(
