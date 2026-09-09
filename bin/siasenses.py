@@ -1809,6 +1809,91 @@ def sense_codex(cursors):
     return evs
 
 
+def sense_grok(cursors):
+    """Grok sessions from filesystem metadata only; payloads are unopened.
+
+    Layout: ~/.grok/sessions/<encoded-cwd>/<session-id>/updates.jsonl
+    (the authoritative conversation log). Sibling jsonl files in the same
+    directory are ignored so one session is one entity. Closes the coverage
+    gap where MCP advertised Grok but only Claude/Codex were session organs.
+    """
+    evs = []
+    sessions, state_truncated = _bounded_source_state(
+        cursors, "grok.sessions", "grok-session")
+    if state_truncated:
+        evs.append(_source_truncation_event("grok", "Grok session cursor"))
+    files, complete_snapshot, refused, snapshot_generation = \
+        _bounded_source_tree_files(
+        os.path.join(HOME, ".grok/sessions"), cursors,
+        "source.grok.tree", 2, ".jsonl")
+    for relative in refused:
+        evs.append(_source_entry_refusal_event(
+            "grok", f"Grok session path {relative}"))
+    for source in files:
+        f = source["path"]
+        if os.path.basename(f) != "updates.jsonl":
+            continue
+        sid_raw = os.path.basename(os.path.dirname(f))
+        if not sid_raw:
+            continue
+        sid = _source_entity_token(sid_raw, "grok-session")
+        st = sessions.get(sid)
+        size = source["size"]
+        if st is None and len(sessions) >= MAX_SOURCE_SCAN_ENTRIES:
+            evs.append(_source_entry_refusal_event(
+                "grok", f"Grok session {sid_raw}"))
+            continue
+        if st is None:
+            fresh = (time.time() - source["mtime"]) < 3600
+            sessions[sid] = {"size": size, "announced": fresh,
+                             "generation": 0,
+                             "snapshot_generation": snapshot_generation}
+            if fresh:
+                evs.append(Event("grok", utcnow(), "session",
+                                 f"new agent session {clip(sid_raw, 8)}…",
+                                 {"organs/grok"}, {"grok"},
+                                 occurrence=f"grok:{sid}:0:new:{size}"))
+            continue
+        previous_size = st.get("size", st.get("off", size))
+        generation = st.get("generation", 0)
+        if isinstance(generation, bool) or not isinstance(generation, int) \
+                or generation < 0:
+            raise ValueError("Grok session generation is invalid")
+        if size <= previous_size:
+            if size < previous_size:
+                generation += 1
+            was_announced = bool(st.get("announced", False))
+            st.clear()
+            st.update({"size": size,
+                       "announced": was_announced,
+                       "generation": generation,
+                       "snapshot_generation": snapshot_generation})
+            continue
+        was_announced = bool(st.get("announced"))
+        st.clear()
+        st.update({"size": size, "announced": True,
+                   "generation": generation,
+                   "snapshot_generation": snapshot_generation})
+        if not was_announced:
+            evs.append(Event("grok", utcnow(), "session",
+                             f"agent session {clip(sid_raw, 8)}… resumed",
+                             {"organs/grok"}, {"grok"},
+                             occurrence=(f"grok:{sid}:{generation}:"
+                                         f"resume:{size}")))
+        else:
+            evs.append(Event("grok", utcnow(), "activity",
+                             f"agent session {clip(sid_raw, 8)}… active",
+                             {"organs/grok"}, {"grok"},
+                             occurrence=(f"grok:{sid}:{generation}:"
+                                         f"activity:{size}")))
+    if complete_snapshot:
+        for sid in list(sessions):
+            if sessions[sid].get("snapshot_generation") \
+                    != snapshot_generation:
+                del sessions[sid]
+    return evs
+
+
 def sense_notify(cursors):
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/notifications/history")
