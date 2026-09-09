@@ -60,6 +60,8 @@ biological brain and does not establish cognition or neuroscience.
                         authenticate a completed capsule off-path
   sia backup ...        manage the replaceable recovery-repository adapter
   sia restore ...       prepare off-path recovery; live apply is ceremonial
+  sia uninstall [--purge]
+                        remove SIA through the installed sealed teardown path
 """
 
 import contextlib, fcntl, json, math, os, re, stat, subprocess, sys

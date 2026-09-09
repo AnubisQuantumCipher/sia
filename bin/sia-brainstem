@@ -13,7 +13,7 @@ exports widget snapshots. The weekly-maintenance command runs nightly at
 03:33 local under its compatibility name, ``dream``.
 """
 
-import contextlib, datetime, fcntl, os, signal, socket, stat, sys, time, uuid
+import contextlib, datetime, fcntl, json, os, signal, socket, stat, sys, time, uuid
 
 
 @contextlib.contextmanager
@@ -64,6 +64,115 @@ DREAM_RETRY_SEC = max(
 INTENTIONAL_STOP_EXIT = getattr(os, "EX_CONFIG", 78)
 
 _stop = False
+
+
+def _plugin_registration_present(home=None):
+    """Observe the exact canonical plugin manifest without following links."""
+    home = sialib.HOME if home is None else home
+    if not isinstance(home, str) or not os.path.isabs(home) \
+            or os.path.normpath(home) != home:
+        raise RuntimeError("plugin registration home is invalid")
+    directory_flags = (os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+                       | os.O_NOFOLLOW)
+    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptors = []
+    hierarchy = []
+
+    def generation(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
+                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+    try:
+        descriptor = os.open(home, directory_flags)
+        descriptors.append(descriptor)
+        for component in (".config", "omarchy", "plugins", "khephri.sia"):
+            try:
+                child = os.open(component, directory_flags,
+                                dir_fd=descriptor)
+            except FileNotFoundError:
+                return False
+            info = os.fstat(child)
+            current = os.stat(
+                component, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode) \
+                    or info.st_uid != os.geteuid() \
+                    or stat.S_IMODE(info.st_mode) & 0o022 \
+                    or generation(info) != generation(current):
+                os.close(child)
+                raise RuntimeError("plugin registration directory is unsafe")
+            hierarchy.append((descriptor, component, child, generation(info)))
+            descriptors.append(child)
+            descriptor = child
+        try:
+            manifest_fd = os.open("manifest.json", file_flags,
+                                  dir_fd=descriptor)
+        except FileNotFoundError:
+            return False
+        descriptors.append(manifest_fd)
+        before = os.fstat(manifest_fd)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) & 0o022 \
+                or not 0 < before.st_size <= sialib.MAX_CONFIG_BYTES:
+            raise RuntimeError("plugin registration manifest is unsafe")
+        raw = os.read(manifest_fd, sialib.MAX_CONFIG_BYTES + 1)
+        after = os.fstat(manifest_fd)
+        current = os.stat(
+            "manifest.json", dir_fd=descriptor, follow_symlinks=False)
+        if len(raw) != before.st_size \
+                or generation(before) != generation(after) \
+                or generation(after) != generation(current):
+            raise RuntimeError("plugin registration manifest changed")
+
+        def unique(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("duplicate plugin manifest field")
+                result[key] = value
+            return result
+
+        try:
+            manifest = json.loads(
+                raw.decode("utf-8", "strict"), object_pairs_hook=unique,
+                parse_constant=lambda _value: (_ for _ in ()).throw(
+                    ValueError("invalid plugin manifest constant")))
+        except (UnicodeError, ValueError, RecursionError) as exc:
+            raise RuntimeError("plugin registration manifest is invalid") \
+                from exc
+        for parent_fd, component, child_fd, admitted in hierarchy:
+            if generation(os.fstat(child_fd)) != admitted \
+                    or generation(os.stat(
+                        component, dir_fd=parent_fd,
+                        follow_symlinks=False)) != admitted:
+                raise RuntimeError(
+                    "plugin registration hierarchy changed")
+        return (isinstance(manifest, dict)
+                and manifest.get("id") == "khephri.sia"
+                and manifest.get("version") == sialib.VERSION)
+    except OSError as exc:
+        raise RuntimeError("plugin registration cannot be observed safely") \
+            from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+
+
+def _resident_plugin_available(observer):
+    try:
+        available = observer()
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        sialib.log(
+            "sia-brainstem REFUSED: plugin registration is unsafe or "
+            f"unreadable ({_safe_failure_detail(exc)}); run `sia uninstall`")
+        return False
+    if available is not True:
+        sialib.log(
+            "sia-brainstem stopped: Omarchy plugin registration is absent; "
+            "run `sia uninstall` (or `sia uninstall --purge`)")
+        return False
+    return True
 
 
 def _safe_failure_detail(exc):
@@ -331,14 +440,16 @@ def main():
                 "sia-brainstem REFUSED: interrupted restore barrier requires "
                 "recovery")
             return INTENTIONAL_STOP_EXIT
+        if not _resident_plugin_available(_plugin_registration_present):
+            return INTENTIONAL_STOP_EXIT
         with sialib.brainstem_owner():
-            return _run_owned()
+            return _run_owned(plugin_guard=_plugin_registration_present)
     except sialib.OwnerBusy as exc:
         sialib.log(f"sia-brainstem REFUSED: {_durable_failure_detail(exc)}")
         return 1
 
 
-def _run_owned():
+def _run_owned(*, plugin_guard=None):
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
     seq = 0
@@ -390,7 +501,12 @@ def _run_owned():
         sialib.log(f"brainstem startup REFUSED: {detail}")
         _publish_failure(seq, detail)
         return 1
+    plugin_removed = False
     while not _stop:
+        if plugin_guard is not None \
+                and not _resident_plugin_available(plugin_guard):
+            plugin_removed = True
+            break
         t0 = time.time()
         try:
             # Reserve the sequence before any effects. A crash may leave a
@@ -435,7 +551,7 @@ def _run_owned():
         sialib.log(f"brainstem halt ledger REFUSED: {detail}")
         _publish_failure(seq, detail)
         return 1
-    return 0
+    return INTENTIONAL_STOP_EXIT if plugin_removed else 0
 
 if __name__ == "__main__":
     try:

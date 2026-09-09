@@ -250,10 +250,14 @@ Three verified constraints make a naive "move the code and re-import" wrong:
    copy. Marker presence selects the newest applicable rung even for a partial
    tree, so a missing required member refuses instead of validating as an
    older runtime.
-   The authority is release-source code, not a member of the runtime it
-   authenticates; the uninstaller holds its owner-controlled source descriptor
-   across plugin archival so the final runtime check neither becomes circular
-   nor loses its helper midway through removal.
+   In v13 the authority and uninstaller are also installed runtime members.
+   The stable launcher routes the exact `sia uninstall [--purge]` grammar to
+   the flat-runtime lifetime mode before acquiring an ordinary shared launch
+   lease. That mode seals the installed lifetime authority and uninstaller,
+   then takes the exclusive release lease. The uninstaller holds its
+   owner-controlled release-authority descriptor across plugin archival, so
+   the final runtime check neither becomes circular nor loses its helper
+   midway through removal.
 
 ## Extraction progress
 
@@ -292,9 +296,13 @@ golden digest, reject ladder declarations in either shell script, exercise the
 normal and fenced consumers through the helper CLI, and cover the current v12
 uninstall fence member by member. A separate descriptor-lifetime regression
 archives the helper's containing plugin directory before the final digest and
-proves the held authority remains usable and is then closed.
+proves the held authority remains usable and is then closed. The v13 closure
+tests additionally prove the installed launcher reaches teardown before the
+shared lease, rejects any grammar beyond optional `--purge`, scrubs ambient
+release capabilities, and refuses a flat-runtime install entry.
 
-The cumulative `sia-runtime-v12` member set adds the source-bound writer,
+The cumulative `sia-runtime-v13` member set adds `sialifetime.py` and
+`uninstall.sh` to v12. The v12 set added the source-bound writer,
 installed-engine and GET/render admission boundaries, expectations observer,
 held recall projection, output compositor and CLI compositor to v11. The v11
 rung added candidate preparation and the epoch, input, wrapper and journal
@@ -302,13 +310,18 @@ dependencies used by native source-v3 continuation to v10. The v10 rung added
 the claim registry, idle input/disposition, live view and gist publication
 modules to v9. The current rung's exact
 members and selectors are declared in `bin/siarelease.py:RUNTIME_LADDER`.
-The receipt reader continues to recognize complete historical v1–v11 trees.
-Presence of any v12 selector chooses v12 even for an incomplete tree; a
+The receipt reader continues to recognize complete historical trees.
+Presence of any v13 selector chooses v13 even for an incomplete tree; a
 missing peer refuses instead of validating the tree under an older salt.
 This is unreleased packaging closure, not deployment, output activation,
 automatic journal adoption, or a benchmark win. Every repository-local
 import, including lazy imports, remains
 subject to the unchanged transitive runtime-closure gate.
+
+The resident brainstem separately observes the canonical, owner-controlled
+Omarchy plugin manifest at startup and before each pulse. Missing or unsafe
+registration causes the systemd intentional-stop exit before another pulse is
+reserved; the halt remains ledger-visible and the log names `sia uninstall`.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**

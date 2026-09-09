@@ -2496,6 +2496,101 @@ class MutationBoundaries(unittest.TestCase):
             "sia-brainstem REFUSED: interrupted restore barrier requires "
             "recovery")
 
+    def test_plugin_registration_observer_is_exact_and_link_safe(self):
+        observe = getattr(brainstem, "_plugin_registration_present", None)
+        self.assertTrue(callable(observe),
+                        "missing resident plugin-registration observer")
+        with tempfile.TemporaryDirectory(
+                prefix="sia-plugin-registration-") as home:
+            plugin = os.path.join(
+                home, ".config", "omarchy", "plugins", "khephri.sia")
+            os.makedirs(plugin, mode=0o700)
+            manifest = os.path.join(plugin, "manifest.json")
+            with open(manifest, "w", encoding="utf-8") as stream:
+                json.dump({"id": "khephri.sia",
+                           "version": brainstem.sialib.VERSION}, stream)
+            os.chmod(manifest, 0o600)
+            self.assertTrue(observe(home))
+            os.unlink(manifest)
+            self.assertFalse(observe(home))
+            os.symlink("missing", manifest)
+            with self.assertRaises(RuntimeError):
+                observe(home)
+
+    def test_plugin_registration_observer_refuses_hierarchy_swap(self):
+        with tempfile.TemporaryDirectory(
+                prefix="sia-plugin-registration-swap-") as home:
+            plugin = os.path.join(
+                home, ".config", "omarchy", "plugins", "khephri.sia")
+            os.makedirs(plugin, mode=0o700)
+            manifest = os.path.join(plugin, "manifest.json")
+            with open(manifest, "w", encoding="utf-8") as stream:
+                json.dump({"id": "khephri.sia",
+                           "version": brainstem.sialib.VERSION}, stream)
+            os.chmod(manifest, 0o600)
+            real_loads = brainstem.json.loads
+
+            def swap_after_parse(*args, **kwargs):
+                value = real_loads(*args, **kwargs)
+                os.rename(plugin, plugin + ".removed")
+                return value
+
+            with mock.patch.object(
+                    brainstem.json, "loads", side_effect=swap_after_parse), \
+                    self.assertRaises(RuntimeError):
+                brainstem._plugin_registration_present(home)
+
+    def test_missing_plugin_stops_before_brainstem_ownership(self):
+        with mock.patch.object(
+                brainstem, "_plugin_registration_present",
+                return_value=False, create=True) as registration, \
+                mock.patch.object(
+                    brainstem, "_restore_barrier_present",
+                    return_value=False) as restore, \
+                mock.patch.object(
+                    brainstem.sialib, "brainstem_owner",
+                    return_value=contextlib.nullcontext()) as owner, \
+                mock.patch.object(brainstem, "_run_owned") as run_owned, \
+                mock.patch.object(brainstem.sialib, "log") as log:
+            result = brainstem.main()
+
+        self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
+        registration.assert_called_once_with()
+        restore.assert_called_once_with()
+        owner.assert_not_called()
+        run_owned.assert_not_called()
+        self.assertIn("sia uninstall", log.call_args.args[0])
+
+    def test_plugin_removal_stops_before_the_next_resident_pulse(self):
+        registration = mock.Mock(return_value=False)
+        with mock.patch.object(brainstem, "_stop", False), \
+                mock.patch.object(brainstem.signal, "signal"), \
+                mock.patch.object(
+                    brainstem.sialib, "load_memo",
+                    return_value={"pulse_seq": 0}), \
+                mock.patch.object(
+                    brainstem.sialib, "load_cursors", return_value={}), \
+                mock.patch.object(
+                    brainstem.sialib, "_require_status_sequence_not_ahead"), \
+                mock.patch.object(brainstem.sialib, "ensure_dirs"), \
+                mock.patch.object(
+                    brainstem.sialib, "recover_ledger_transitions",
+                    return_value=(False, [])), \
+                mock.patch.object(
+                    brainstem.sialib, "durable_ledger_append") as ledger, \
+                mock.patch.object(brainstem, "_systemd_ready"), \
+                mock.patch.object(brainstem, "_reserved_pulse") as pulse, \
+                mock.patch.object(brainstem.sialib, "log") as log:
+            result = brainstem._run_owned(plugin_guard=registration)
+
+        self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
+        registration.assert_called_once_with()
+        pulse.assert_not_called()
+        self.assertEqual(
+            [call.args[0] for call in ledger.call_args_list],
+            ["BOOT:brainstem", "HALT:brainstem"])
+        self.assertIn("sia uninstall", log.call_args_list[-2].args[0])
+
     def test_daemon_in_loop_quarantine_returns_intentional_stop(self):
         quarantine = brainstem.sialib.SourceReplayQuarantine(
             "source replay quarantine")
@@ -2741,6 +2836,9 @@ class MutationBoundaries(unittest.TestCase):
                         mock.patch.object(
                             brainstem, "_restore_barrier_present",
                             return_value=False), \
+                        mock.patch.object(
+                            brainstem, "_plugin_registration_present",
+                            return_value=True), \
                         mock.patch.object(
                             brainstem.sialib, "brainstem_owner",
                             side_effect=brainstem_owner), \

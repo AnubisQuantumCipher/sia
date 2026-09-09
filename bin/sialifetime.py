@@ -548,12 +548,14 @@ def _require_caller(descriptor):
 
 
 def supervise(entry, arguments, *, setup_lease=None, caller=None,
-              setup_handoff=None):
+              setup_handoff=None, flat_source=False):
     if setup_handoff is None:
         entry = os.path.abspath(entry)
         if os.path.basename(entry) not in {"install.sh", "uninstall.sh"}:
             raise LifetimeRefusal(
                 "lifetime owner admits only release-script entries")
+        if flat_source and os.path.basename(entry) != "uninstall.sh":
+            raise LifetimeRefusal("installed lifetime permits only uninstall")
         source_root = os.path.dirname(entry)
     else:
         source_root = setup_handoff["source_root"]
@@ -572,9 +574,11 @@ def supervise(entry, arguments, *, setup_lease=None, caller=None,
                    if setup_handoff is None
                    else os.dup(setup_handoff["root_fd"]))
         root_generation = _admit_source_directory(root_fd, "release source root")
-        bin_fd = os.open("bin", DIRECTORY_FLAGS, dir_fd=root_fd)
+        bin_fd = (os.dup(root_fd) if flat_source else
+                  os.open("bin", DIRECTORY_FLAGS, dir_fd=root_fd))
         bin_generation = _admit_source_directory(
-            bin_fd, "release source bin directory")
+            bin_fd, ("installed release source root" if flat_source else
+                     "release source bin directory"))
         _features()
         if setup_lease is not None:
             descriptor = os.dup(setup_lease)
@@ -597,10 +601,14 @@ def supervise(entry, arguments, *, setup_lease=None, caller=None,
             script_fd = _snapshot_source_descriptor(
                 setup_handoff["installer_fd"], "install.sh",
                 "sia-release-script", dir_fd=root_fd)
-        if root_generation != _generation(os.fstat(root_fd)) \
-                or bin_generation != _generation(os.fstat(bin_fd)) \
-                or bin_generation != _generation(os.stat(
-                    "bin", dir_fd=root_fd, follow_symlinks=False)):
+        hierarchy_changed = (
+            root_generation != _generation(os.fstat(root_fd))
+            or bin_generation != _generation(os.fstat(bin_fd)))
+        if not flat_source:
+            hierarchy_changed = hierarchy_changed or (
+                bin_generation != _generation(os.stat(
+                    "bin", dir_fd=root_fd, follow_symlinks=False)))
+        if hierarchy_changed:
             raise LifetimeRefusal("release source hierarchy changed during admission")
         _close(bin_fd)
         bin_fd = None
@@ -860,6 +868,9 @@ def main(arguments=None):
             values[1:3] = []
         if values[:1] == ["supervise"] and len(values) >= 2:
             return supervise(values[1], values[2:], caller=caller)
+        if values[:1] == ["supervise-installed"] and len(values) >= 2:
+            return supervise(
+                values[1], values[2:], caller=caller, flat_source=True)
         if values[:1] == ["setup"] and len(values) >= 3:
             handoff = _setup_handoff(values[2])
             return supervise(

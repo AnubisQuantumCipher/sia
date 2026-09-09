@@ -39,9 +39,9 @@ class RuntimeV12RecallClosure(unittest.TestCase):
     def test_exact_current_roster_preserves_every_historical_rung(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[0], (
-            V12_SALT, EXPECTED_V12_RUNTIME_NAMES, V12_ADDITIONS))
         self.assertEqual(authority.RUNTIME_LADDER[1], (
+            V12_SALT, EXPECTED_V12_RUNTIME_NAMES, V12_ADDITIONS))
+        self.assertEqual(authority.RUNTIME_LADDER[2], (
             v11.V11_SALT, v11.EXPECTED_V11_RUNTIME_NAMES,
             v11.V11_ADDITIONS))
         fixtures = {label: (salt, names, digest)
@@ -52,7 +52,7 @@ class RuntimeV12RecallClosure(unittest.TestCase):
             (fixtures[label][0], fixtures[label][1],
              v10.HISTORICAL_SELECTORS[label])
             for label in v10.HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[2:], expected_tail)
+        self.assertEqual(authority.RUNTIME_LADDER[3:], expected_tail)
         with tempfile.TemporaryDirectory() as runtime:
             release._plant_runtime_tree(runtime, EXPECTED_V12_RUNTIME_NAMES)
             self.assertEqual(authority.runtime_rung(runtime),
@@ -68,7 +68,7 @@ class RuntimeV12RecallClosure(unittest.TestCase):
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
         staged = release._staged_runtime_members(installer)
         self.assertEqual(len(staged), len(set(staged)))
-        self.assertEqual(set(staged), set(EXPECTED_V12_RUNTIME_NAMES))
+        self.assertTrue(set(EXPECTED_V12_RUNTIME_NAMES).issubset(staged))
         for name in V12_ADDITIONS:
             with self.subTest(member=name):
                 self.assertEqual(staged.count(name), 1)

@@ -25,8 +25,16 @@ if [ "${1:-}" = --sia-release-worker ]; then
   unset sia_owner_descriptor sia_owner_admission
 else
   sia_owner_entry="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")" || exit 2
-  exec python3 -I "${sia_owner_entry%/*}/bin/sialifetime.py" \
-    supervise --caller "$PPID" "$sia_owner_entry" "$@"
+  sia_owner_root="${sia_owner_entry%/*}"
+  if [ -f "$sia_owner_root/bin/sialifetime.py" ]; then
+    exec python3 -I "$sia_owner_root/bin/sialifetime.py" \
+      supervise --caller "$PPID" "$sia_owner_entry" "$@"
+  elif [ -f "$sia_owner_root/sialifetime.py" ]; then
+    exec python3 -I "$sia_owner_root/sialifetime.py" \
+      supervise-installed --caller "$PPID" "$sia_owner_entry" "$@"
+  fi
+  echo "installed uninstall lifetime authority is missing" >&2
+  exit 2
 fi
 # END SIA RELEASE LIFETIME
 
@@ -106,7 +114,11 @@ close_release_authority() {
   fi
 }
 
-hold_release_authority "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" || exit 2
+if [ -f "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" ]; then
+  hold_release_authority "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" || exit 2
+else
+  hold_release_authority "$SIA_UNINSTALL_SOURCE/siarelease.py" || exit 2
+fi
 
 SHARE_DIR="$HOME/.local/share/sia"
 RUNTIME_BIN_DIR="$SHARE_DIR/bin"

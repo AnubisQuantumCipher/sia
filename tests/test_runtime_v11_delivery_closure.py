@@ -42,7 +42,7 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
     def test_exact_v11_roster_remains_in_the_complete_historical_ladder(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[1], (
+        self.assertEqual(authority.RUNTIME_LADDER[2], (
             V11_SALT, EXPECTED_V11_RUNTIME_NAMES, V11_ADDITIONS))
         fixtures = {label: (salt, names, digest)
                     for label, salt, names, digest in release.RUNTIME_RUNG_FIXTURES}
@@ -50,7 +50,7 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
                              v10.V10_ADDITIONS),) + tuple(
             (fixtures[label][0], fixtures[label][1], v10.HISTORICAL_SELECTORS[label])
             for label in v10.HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[2:], expected_history)
+        self.assertEqual(authority.RUNTIME_LADDER[3:], expected_history)
         with tempfile.TemporaryDirectory() as runtime:
             release._plant_runtime_tree(runtime, EXPECTED_V11_RUNTIME_NAMES)
             self.assertEqual(authority.runtime_rung(runtime),

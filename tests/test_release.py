@@ -1699,7 +1699,9 @@ fenced_runtime_authorized
             "siagetrenderadmit.py", "siainstalledengine.py",
             "siainstalledexpectations.py",
         )
-        salt, names, selectors = SIARELEASE.RUNTIME_LADDER[0]
+        salt, names, selectors = next(
+            rung for rung in SIARELEASE.RUNTIME_LADDER
+            if rung[0] == b"sia-runtime-v12\0")
         self.assertEqual(salt, b"sia-runtime-v12\0")
         self.assertEqual(selectors, additions)
         self.assertEqual(

@@ -375,19 +375,25 @@ Marketplace validation and listing are not security reviews.
 
 ## Remove
 
-Run the uninstaller from the plugin/repository directory:
+Use the installed teardown command:
 
 ```bash
-./uninstall.sh           # removes code/UI; keeps corpus, ledger, keys, queues, config
-./uninstall.sh --purge   # also attempts to erase retained SIA data and config
+sia uninstall           # removes code/UI; keeps corpus, ledger, keys, queues, config
+sia uninstall --purge   # also attempts to erase retained SIA data and config
 ```
+
+The stable `sia` launcher and sealed uninstaller are runtime members, so this
+route remains available if Omarchy has already removed the plugin checkout.
+The resident brainstem observes the canonical plugin registration before each
+pulse and stops intentionally, before more memory work, when it disappears.
+Repository checkouts also retain `./uninstall.sh` as the source-tree entry.
 
 On success, either path disables the Quickshell surface
 and archives the plugin checkout, so a later `omarchy plugin remove` is
 normally unnecessary.
 A plain `omarchy plugin remove khephri.sia` used first removes only the
-checkout; it does not uninstall SIA's resident runtime or user service, and it
-removes the normal entry point for that teardown.
+checkout; it does not uninstall SIA's resident runtime or user service. Run
+`sia uninstall` afterward to finish the retained-data teardown.
 
 Default removal preserves the data categories — corpus, ledger, signing
 identity/head, queues and state snapshots, research, private toolchain, and

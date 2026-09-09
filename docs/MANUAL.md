@@ -1547,13 +1547,15 @@ installer. On update, a plugin/runtime mismatch stays gated until **Finish
 update** completes and `sia ready` passes. Guided launch clears ambient
 installer-consent and Bash startup-file variables before crossing into the
 installer; deliberate non-default overrides remain manual `./install.sh`
-operations. For resident-runtime and UI removal
-while retaining memory data, run `./uninstall.sh` while the plugin directory
-still exists; use `./uninstall.sh --purge` only when retained data and config
-should also be erased. A successful SIA uninstall disables the QML surface and
+operations. For resident-runtime and UI removal while retaining memory data,
+run `sia uninstall`; use `sia uninstall --purge` only when retained data and
+config should also be erased. The installed command remains callable after
+the plugin checkout is removed. A successful SIA uninstall disables the QML surface and
 archives the plugin checkout, so a later `omarchy plugin remove` is normally
 unnecessary. Running plain `omarchy plugin remove khephri.sia` first removes
-the checkout but not the resident runtime or user service. If Quickshell
+the checkout but not the resident runtime or user service; the brainstem then
+stops intentionally before its next pulse, and `sia uninstall` finishes the
+teardown. If Quickshell
 retains a stale entry after uninstall, force a rescan with
 `omarchy-shell shell rescanPlugins`.
 
@@ -1689,17 +1691,25 @@ absence boundary instead of silently claiming equivalent retrieval.
 ## 10. Uninstall
 
 ```
-./uninstall.sh           # removes code/UI; keeps corpus, ledger, keys, queues, config
-./uninstall.sh --purge   # attempts to erase retained data and config too
+sia uninstall           # removes code/UI; keeps corpus, ledger, keys, queues, config
+sia uninstall --purge   # attempts to erase retained data and config too
 ```
 
-Run SIA's uninstaller before removing its plugin checkout. Omarchy has no
-remove lifecycle hook: `omarchy plugin remove khephri.sia` by itself removes
-the QML checkout but leaves the resident runtime and user service installed.
+Omarchy has no remove lifecycle hook: `omarchy plugin remove khephri.sia` by
+itself removes the QML checkout but leaves the resident runtime and user
+service installed. The stable launcher, lifetime authority, and uninstaller
+are members of the installed runtime, so `sia uninstall` remains available
+after that removal. The brainstem observes the canonical plugin registration
+at startup and before every pulse; when it disappears, the daemon records its
+halt and exits with its intentional-stop status before scheduling more work.
 The default SIA command removes that runtime and UI while retaining the data
 categories below; `--purge` additionally attempts to erase those retained data
 and config roots. A successful SIA uninstall archives the checkout itself, so
 a later Omarchy removal command is normally unnecessary.
+
+A source checkout may still use `./uninstall.sh` or
+`./uninstall.sh --purge`; both entries cross the same exclusive, sealed
+release-lifetime boundary.
 
 Default removal preserves the corpus, ledger and signing identity/head,
 queues and state snapshots, research, private toolchain, and operator config;
@@ -1897,7 +1907,9 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v12` member set adds
+the install. The current `sia-runtime-v13` member set adds the sealed
+lifetime authority and uninstaller to v12, keeping teardown callable after
+plugin-checkout removal. The v12 member set adds
 `siacontrollerdeliverywriter.py`, `siacontrollerrecallprojection.py`,
 `siacontrollerrecalloutput.py`, `siacontrollerrecallcli.py`,
 `siagetrenderadmit.py`, `siainstalledengine.py`, and

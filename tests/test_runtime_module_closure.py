@@ -37,7 +37,7 @@ def _runtime_members():
     modules = _runtime_modules()
     commands = _words(r"for runtime_command in (.*?); do", RUNTIME)
     return tuple(modules + commands + [
-        "sia-brainstem", "sia-brainstem.py", "sia-cli",
+        "sia-brainstem", "sia-brainstem.py", "sia-cli", "uninstall.sh",
     ])
 
 
@@ -103,6 +103,7 @@ class RuntimeModuleClosure(unittest.TestCase):
             "sia", "sia-brainstem", "sia-ledger", "sia-mcp",
             "sia-continuity-worker",
         ))
+        required.add("uninstall.sh")
         self.assertEqual(sorted(required - release), [])
 
     def test_latest_receipt_rung_is_exactly_the_staged_tree(self):

@@ -2351,7 +2351,7 @@ import os
 import sys
 
 path = sys.argv[1]
-source = r'''#!/usr/bin/env python3
+source = r'''#!/usr/bin/env -S python3 -I
 """Stable SIA launcher: pin one runtime generation before opening Python."""
 
 import ctypes
@@ -3582,6 +3582,33 @@ def _main():
             and not restore_worker:
         _refuse("invalid restore-worker invocation")
     runtime = os.path.join(home, ".local", "share", "sia", "bin")
+    if launcher == "sia" and sys.argv[1:2] == ["uninstall"]:
+        if sys.argv[1:] not in (["uninstall"], ["uninstall", "--purge"]):
+            print("usage: sia uninstall [--purge]", file=sys.stderr)
+            return 2
+        owner = os.path.join(runtime, "sialifetime.py")
+        entry = os.path.join(runtime, "uninstall.sh")
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not key.startswith("SIA_LIFETIME_")
+            and not key.startswith("SIA_SETUP_HANDOFF_")
+        }
+        for key in (
+                "SIA_INHERITED_LIFECYCLE_FD", "SIA_INHERITED_CORPUS_FD",
+                "SIA_LAUNCHER_ABI", "SIA_LAUNCHER_LIFECYCLE_FD",
+                "SIA_LAUNCHER_TARGET_FD", "SIA_LAUNCHER_TARGET_PATH",
+                "SIA_RESTORE_LAUNCH_ABI", "SIA_RESTORE_LIFECYCLE_FD",
+                "SIA_RESTORE_ADMIN_FD", "SIA_RESTORE_TARGET_FD",
+                "SIA_RESTORE_TARGET_PATH", "SIA_RESTORE_MASK_OWNED",
+                "SIA_RESTORE_FINALIZE_ABI",
+                "SIA_RESTORE_FINALIZE_ADMIN_FD"):
+            environment.pop(key, None)
+        environment.pop("BASH_ENV", None)
+        environment.pop("ENV", None)
+        os.execve(
+            sys.executable,
+            [sys.executable, "-I", owner, "supervise-installed", "--caller",
+             str(os.getppid()), entry, *sys.argv[2:]], environment)
     if launcher == "sia":
         target = os.path.join(runtime, "sia-cli")
     elif launcher == "sia-brainstem":
@@ -9605,6 +9632,7 @@ step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
 for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siatakes.py siabench.py siaqueue.py siacapsule.py siabackup.py \
+    sialifetime.py \
     siagraph.py siathought.py siaactivation.py siacognitivebaseline.py \
     siacognitivecommand.py siacognitivehistory.py siacognitiveselect.py \
     siacontrollerliveinput.py siacontrollerstatus.py siacoretrieval.py \
@@ -9635,6 +9663,7 @@ install -m 0755 "$SIA_STABLE_LAUNCHER" \
 install -m 0644 "$REPO/bin/sia-brainstem" \
   "$SIA_RUNTIME_STAGE/sia-brainstem.py"
 install -m 0644 "$REPO/bin/sia" "$SIA_RUNTIME_STAGE/sia-cli"
+install -m 0500 "$REPO/uninstall.sh" "$SIA_RUNTIME_STAGE/uninstall.sh"
 STAGED_RUNTIME_DIGEST="$(runtime_tree_digest "$SIA_RUNTIME_STAGE")"
 update_install_launch_fence_desired "$STAGED_RUNTIME_DIGEST"
 # The durable mode fence has excluded new opens since before engine/model

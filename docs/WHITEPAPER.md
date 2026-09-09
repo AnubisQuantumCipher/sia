@@ -975,9 +975,14 @@ approval-gated update workflow in the
 [official publishing guide](https://plugins.omarchy.org/publish.html). A
 directory listing provides discovery and manifest compatibility, not a
 security review. Likewise, Omarchy's ordinary plugin removal deletes the QML
-checkout but does not uninstall SIA's resident runtime or user service; the
-SIA uninstaller remains the resident-runtime removal boundary, with its
-separate purge mode governing attempted erasure of retained memory data.
+checkout but does not uninstall SIA's resident runtime or user service. The
+current runtime therefore retains a sealed lifetime authority and uninstaller
+behind the stable `sia uninstall [--purge]` command. The brainstem observes
+the canonical plugin registration before each pulse and takes its systemd
+intentional-stop exit, with a ledger halt, before more work when registration
+disappears. The SIA uninstaller remains the resident-runtime removal boundary,
+with its separate purge mode governing attempted erasure of retained memory
+data.
 
 ## References
 
