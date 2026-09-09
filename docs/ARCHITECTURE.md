@@ -356,6 +356,11 @@ The resident brainstem separately observes the canonical, owner-controlled
 Omarchy plugin manifest at startup and before each pulse. Missing or unsafe
 registration causes the systemd intentional-stop exit before another pulse is
 reserved; the halt remains ledger-visible and the log names `sia uninstall`.
+A retained controller-source prefix is recovered before the systemd readiness
+notification. Once a complete ready generation exists, merely enabling the
+recurring controller does not put a new capture/sync/embed workload on the
+`Type=notify` startup path: readiness is published after admission, and the
+ordinary resident loop begins the successor cycle immediately afterward.
 
 **Implemented (unreleased) — generated-entry/epoch materialization and recovery are
 child-owned.**

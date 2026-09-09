@@ -445,6 +445,66 @@ class ResidentSourceCycleContract(unittest.TestCase):
         ready.assert_called_once_with()
         publish.assert_not_called()
 
+    def test_daemon_ready_does_not_wait_for_a_new_configured_source_cycle(self):
+        trace = []
+        memo = self._memo("clean")
+
+        def systemd_ready():
+            trace.append("READY")
+            brainstem._stop = True
+
+        with self._source_authority(brainstem.sialib, "clean"), \
+                ExitStack() as stack:
+            stack.enter_context(mock.patch.object(brainstem, "_stop", False))
+            stack.enter_context(mock.patch.object(brainstem.signal, "signal"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "CONFIG",
+                {"mind": {"controller_source": True}}))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_memo", return_value=memo))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_pending_failure_publication",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_require_status_memo_fields"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_cursors", return_value={}))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_recover_notify_baseline_attempt"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_source_replay_marker",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_marker"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_status_effects"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib,
+                "_require_status_sequence_not_ahead"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_run_controller_source_cycle",
+                side_effect=AssertionError(
+                    "new source cycle ran before READY")))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "ensure_dirs"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "recover_ledger_transitions",
+                return_value=([], [])))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "durable_ledger_append"))
+            ready = stack.enter_context(mock.patch.object(
+                brainstem, "_systemd_ready", side_effect=systemd_ready))
+            stack.enter_context(mock.patch.object(brainstem.sialib, "log"))
+            publish = stack.enter_context(mock.patch.object(
+                brainstem, "_publish_failure"))
+
+            result = brainstem._run_owned()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(trace, ["READY"])
+        ready.assert_called_once_with()
+        publish.assert_not_called()
+
     def test_failed_pulse_refreshes_durable_sequence_before_reporting(self):
         initial = {"pulse_seq": 7, "sync_needed": False, "dream": {}}
         durable = {"pulse_seq": 8, "sync_needed": False, "dream": {}}

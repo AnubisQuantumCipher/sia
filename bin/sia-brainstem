@@ -456,8 +456,7 @@ def _run_owned(*, plugin_guard=None):
     last_dream_day = ""
     try:
         memo = sialib.load_memo()
-        if (sialib._controller_source_present(memo)
-                or sialib._controller_source_enabled()):
+        if sialib._controller_source_present(memo):
             _run_status = sialib._run_controller_source_cycle()
             memo = sialib.load_memo()
             seq, last_dream_day = _startup_state(memo)
