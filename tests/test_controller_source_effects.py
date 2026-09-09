@@ -832,6 +832,26 @@ class ControllerSourceEffects(unittest.TestCase):
                 self.lib.MAX_STATE_JSON_BYTES, seal_legacy_public=True)
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
 
+    def test_legacy_public_status_is_resealed_before_live_publication(self):
+        self.start()
+        path = Path(self.live.paths["STATUS_PATH"])
+        original = path.read_bytes()
+        before = path.stat()
+        path.chmod(0o644)
+
+        with self.publication_effects():
+            self.assertIsNone(self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status))
+
+        after = path.stat()
+        self.assertEqual(path.read_bytes(), json.dumps(
+            self.expected_status, sort_keys=True, allow_nan=False).encode())
+        self.assertNotEqual(path.read_bytes(), original)
+        self.assertNotEqual((after.st_dev, after.st_ino),
+                            (before.st_dev, before.st_ino))
+        self.assertEqual(stat.S_IMODE(after.st_mode), 0o600)
+
     def test_nonempty_full_order_and_exact_bound_receipt(self):
         self.start()
         with self.publication_effects() as observed:
