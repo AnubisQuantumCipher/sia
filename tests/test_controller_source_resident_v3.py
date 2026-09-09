@@ -359,6 +359,30 @@ class ControllerSourceResidentV3(unittest.TestCase):
             self.assertEqual(ack_tests._path_image(f.case.archive_path(f.retained)), parent_archive)
             self.assertEqual(f.batch["delivery_input"]["parent_source_schema"], f.retained["schema"])
 
+    def test_configured_zero_argument_cycle_runs_actual_legacy_to_v3_transaction(self):
+        with self.legacy() as f:
+            parent_archive = ack_tests._path_image(f.case.archive_path(f.retained))
+            with self.instrument(f) as trace, mock.patch.object(
+                    trace.owner.time, "time",
+                    return_value=clock_tests.SUCCESSOR_OBSERVED_AT):
+                try:
+                    status = trace.owner._run_controller_source_cycle()
+                finally:
+                    durable = trace.owner.load_memo()
+                    f.case.live.memo.clear()
+                    f.case.live.memo.update(durable)
+            self.assert_completed(f, status, trace)
+            self.assertEqual(trace.prepares, [f.adopted])
+            self.assertEqual(trace.captures, [f.batch])
+            self.assertEqual(trace.retained, [
+                self.source.native_bytes(f.case.lib.__dict__, f.batch)])
+            self.assertEqual(
+                ack_tests._path_image(f.case.archive_path(f.retained)),
+                parent_archive)
+            self.assertEqual(
+                f.batch["delivery_input"]["parent_source_schema"],
+                f.retained["schema"])
+
     def test_actual_v3_parent_runs_to_next_v3_completion_without_rebirth(self):
         with self.rollover.completed() as f:
             previous_adoption = copy.deepcopy(f.adopted)

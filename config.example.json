@@ -59,7 +59,7 @@
     }
   ],
   "mind": {
-    "_comment": "Implemented, unreleased controller-source loop: explicit opt-in to retained source transactions, workspace observations and idle gist publication. Disabled by default. This selection does not authorize cognitive names, prove a held-out win or enable the pending delivery-recall integration.",
+    "_comment": "Implemented, unreleased controller-source v3 loop: explicit opt-in to retained source transactions, workspace observations, adopted delivery history and idle gist publication. Disabled by default. This selection does not authorize cognitive names, prove a held-out win, emit recall output, or establish that the installed service is running this source tree.",
     "controller_source": false
   },
   "retrieval": {

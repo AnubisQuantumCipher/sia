@@ -10,7 +10,7 @@ class ControllerSourceResidentV3Documentation(unittest.TestCase):
         for phrase in (
                 "_run_controller_source_transaction_v3",
                 "run_v3",
-                "configured resident cycle remains v2",
+                "configured resident cycle enters v3",
                 "retired status handoff",
                 "capture-only",
                 "journal remains empty"):
@@ -18,6 +18,7 @@ class ControllerSourceResidentV3Documentation(unittest.TestCase):
                 self.assertTrue(phrase in prose, "missing resident boundary: " + phrase)
         self.assertFalse("not a completed v3 runner cycle" in prose,
                          "architecture still denies the actual resident integration")
+        self.assertNotIn("configured resident cycle remains v2", prose)
 
 
 if __name__ == "__main__":

@@ -688,10 +688,13 @@ The original resident fixtures now complete legacy-to-v3 and v3-to-v3
 cycles, including actual interruption/retry beneath a notification fence.
 Their journal remains empty and their Git/index observations remain
 controlled; they prove neither nonempty delivery consumption nor external
-engine behavior. The configured resident cycle remains v2; this additive
-entry does not activate a service, enable a writer or extend the installed
-runtime ladder. Publication retains the outer corpus lease across capture
-and fixed-slot retention.
+engine behavior. The configured resident cycle enters v3 with the existing
+closed journal limits and selects an existing original adoption only from the
+persisted epoch marker while holding brainstem and corpus ownership. The v3
+runner still validates the actual epoch and source storage independently.
+This code route does not itself edit configuration, start a service, enable a
+writer or extend the installed runtime ladder. Publication retains the outer
+corpus lease across capture and fixed-slot retention.
 
 After live publication, a retired status handoff is represented by matching
 source, binding, effects and compact live receipt identities. The dispatcher
@@ -709,8 +712,8 @@ the completed reader deliberately rejects that state. The distinct
 capture-only source reader above now supplies historical predecessor
 admission for the capture-held epoch. Its separate fenced successor storage
 path and resident dispatch are implemented above. Source-bound writer
-authorization uses the separate strict front door above; configured
-activation remains separate construction work, not a relaxed
+authorization uses the separate strict front door above. Operator opt-in and
+fresh resident observation remain separate activation work, not a relaxed
 completed/readiness or writer gate.
 
 +`siainstalledengine.hold_overlay_engine` supplies an additive, unreleased

@@ -6258,13 +6258,45 @@ def _controller_delivery_epoch_boundary(stage):
     """Named crash-injection seam; actual epoch code owns durable ordering."""
 
 
+def _configured_controller_source_adoption(memo):
+    """Select only the closed persisted epoch marker's original adoption.
+
+    The later v3 runner independently reopens and validates the epoch files.
+    This scalar selection merely prevents the configured zero-argument route
+    from silently taking an adoption out of a represented source wrapper.
+    """
+    import siacontrollerdeliveryepoch as epoch_api
+    import sialiveloop
+
+    if type(memo) is not dict:
+        raise ValueError("configured controller-source memo must be an object")
+    marker = memo.get(epoch_api._MARKER)
+    if marker is None:
+        return None
+    if type(marker) is not dict or set(marker) != epoch_api._MARKER_KEYS \
+            or marker.get("schema") != "sia-controller-delivery-epoch-marker-v1" \
+            or not sialiveloop._token(marker.get("epoch_id")) \
+            or not sialiveloop._integer(marker.get("started_at")) \
+            or not sialiveloop._digest(marker.get("birth_sha256")):
+        raise ValueError("configured controller-source epoch marker is invalid")
+    adoption = marker.get("adoption_sha256")
+    if adoption is not None and not sialiveloop._digest(adoption):
+        raise ValueError("configured controller-source adoption pin is invalid")
+    return adoption
+
+
 def _run_controller_source_cycle():
     """Run or recover one resident controller-source pulse.
 
     The clock is sampled lazily by the initial or successor builder only after
-    the runner has ruled out an already-durable prefix that can be replayed.
+    the v3 runner has ruled out an already-durable prefix that can be replayed.
+    Journal limits are the existing closed delivery limits. An existing epoch
+    contributes only its original persisted adoption pin while both resident
+    owner scopes remain held; the v3 runner validates the actual storage.
     """
     import siacontrollerepoch
+    import siadelivery
+    import sialiveloop
 
     def clock():
         return int(time.time())
@@ -6273,8 +6305,16 @@ def _run_controller_source_cycle():
         return siacontrollerepoch.build_initial(
             globals(), observed_at=clock())
 
-    return _run_controller_source_transaction_v2(
-        operation=initial, clock=clock)
+    journal_limits = copy.deepcopy(siadelivery._LIMITS)
+    expected_journal_limits_sha256 = sialiveloop._sha(journal_limits)
+    with brainstem_owner(), corpus_owner():
+        memo = load_memo()
+        expected_adoption_sha256 = _configured_controller_source_adoption(memo)
+        return _run_controller_source_transaction_v3(
+            operation=initial, clock=clock,
+            journal_limits=journal_limits,
+            expected_journal_limits_sha256=expected_journal_limits_sha256,
+            expected_adoption_sha256=expected_adoption_sha256)
 
 
 def _read_committed_controller_source_batch(*, memo, admitted_status):
