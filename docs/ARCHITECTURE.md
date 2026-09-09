@@ -86,12 +86,18 @@ The original v1 batch contract remains non-idle.
 event closure it publishes the already-sealed page plans, asks
 `siasourcegit` for a descriptor-bound clean commit/tree generation, and asks
 `siasourceengine` for a receipt-bound pinned-engine generation. The engine
-phase admits closed JSON for sync, stale-link extraction, mention extraction,
-sync status, and a no-migrate projection of every changed source page. It
-emits a v3 generation that binds the installed overlay digest and post-overlay
-tree OID in addition to the source commit, lockfile, pin, receipts and ELF;
-the effects reader retains explicit v2 admission for historical pre-overlay
-generations rather than relabeling them. It
+phase admits closed JSON for no-embed sync, stale-link extraction, mention
+extraction, sync status, and a no-migrate projection of every changed source
+page; the sync envelope must report zero inline embeddings. It runs
+source-scoped stale embedding as an explicit process between
+sync and extraction; the bounded human output is retained only by digest and
+the later closed status document is its authority-bearing zero-unembedded
+postcondition. This avoids treating the pinned engine's two-document
+`sync --json` cost-gate stream as one result. It emits a v4 generation that
+binds those embed-stream digests plus the installed overlay digest and
+post-overlay tree OID in addition to the source commit, lockfile, pin,
+receipts and ELF; the effects reader retains explicit v2 and v3 admission for
+historical generations rather than relabeling them. It
 requires the requested commit to be the indexed commit, no unembedded chunks
 or unacknowledged failures, no remaining stale links, and exact logical page
 projection matches. It explicitly records that the projection operation did

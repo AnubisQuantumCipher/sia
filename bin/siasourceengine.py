@@ -95,6 +95,9 @@ _GENERATION_KEYS_V2 = frozenset({
 _GENERATION_KEYS_V3 = _GENERATION_KEYS_V2 | frozenset({
     "gbrain_overlay_sha256", "gbrain_overlay_tree_oid",
 })
+_GENERATION_KEYS_V4 = _GENERATION_KEYS_V3 | frozenset({
+    "embed_raw_sha256", "embed_stderr_sha256",
+})
 
 
 def _refuse(source, reason, *, upstream=None):
@@ -327,6 +330,19 @@ def _json_result(owner, source, result, reason):
     return value
 
 
+def _admit_effect_process(source, result, reason):
+    """Admit a bounded mutating process only through its later readback.
+
+    The pinned engine has no structured ``embed`` result surface.  Its human
+    stdout is retained by digest but never parsed into authority; the closed
+    status document below is the postcondition that proves the source has no
+    unembedded chunks.
+    """
+    if result.returncode != 0 or type(result.stdout) is not str \
+            or type(result.stderr) is not str:
+        _refuse(source, reason + "-process")
+
+
 def _run(owner, source, boundary, arguments, *, label, timeout):
     boundary.current()
     # This transaction is descriptor-bound; ambient database selectors,
@@ -490,7 +506,8 @@ def _admit_sync(owner, source, value):
                 "synced", "first_sync", "up_to_date"} \
             or any(not _nonnegative(owner, value.get(key)) for key in (
                 "added", "modified", "deleted", "chunks_created",
-                "embedded")):
+                "embedded")) \
+            or value.get("embedded") != 0:
         _refuse(source, "source-engine-sync-fields")
 
 
@@ -620,10 +637,23 @@ def sync_generation(owner, *, corpus_generation, target_versions):
 
         sync_result = _run(owner, source, boundary, [
             "sync", "--source", owner["GBRAIN_SOURCE"], "--json",
-            "--no-pull", "--no-delegate",
+            "--no-pull", "--no-delegate", "--no-embed",
         ], label="source engine sync", timeout=300)
         sync = _json_result(owner, source, sync_result, "source-engine-sync")
         _admit_sync(owner, source, sync)
+
+        # ``sync --json`` in the pinned engine emits a second cost-gate JSON
+        # document whenever implicit embedding is enabled.  Keep its stdout a
+        # single closed document by disabling that side effect, then drain the
+        # exact source explicitly.  The embed CLI is human-output-only, so its
+        # text is evidence by digest, not parsed authority; the closed status
+        # readback below must observe zero unembedded chunks.
+        embed_result = _run(owner, source, boundary, [
+            "embed", "--stale", "--source", owner["GBRAIN_SOURCE"],
+            "--catch-up",
+        ], label="source engine embedding", timeout=300)
+        _admit_effect_process(
+            source, embed_result, "source-engine-embedding")
 
         links_result = _run(owner, source, boundary, [
             "extract", "links", "--source", "db", "--stale",
@@ -670,7 +700,7 @@ def sync_generation(owner, *, corpus_generation, target_versions):
         projection_digests = _command_digests(
             projection_result, projection)
         body = {
-            "schema": "sia-controller-source-sync-generation-v3",
+            "schema": "sia-controller-source-sync-generation-v4",
             "source_id": owner["GBRAIN_SOURCE"],
             "engine_version": boundary.pin_fields["version"],
             "gbrain_commit": boundary.pin_fields["commit"],
@@ -692,6 +722,10 @@ def sync_generation(owner, *, corpus_generation, target_versions):
             "sync_result_sha256": sync_digests["result"],
             "sync_status": sync["sync_status"],
             "sync_requested_commit": corpus["corpus_commit_oid"],
+            "embed_raw_sha256": hashlib.sha256(
+                embed_result.stdout.encode("utf-8")).hexdigest(),
+            "embed_stderr_sha256": hashlib.sha256(
+                embed_result.stderr.encode("utf-8")).hexdigest(),
             "links_raw_sha256": links_digests["raw"],
             "links_stderr_sha256": links_digests["stderr"],
             "links_result_sha256": links_digests["result"],
@@ -726,7 +760,7 @@ def sync_generation(owner, *, corpus_generation, target_versions):
             "target_manifest": manifest,
             "target_manifest_sha256": manifest_sha256,
         }
-        if set(result["sync_generation"]) != _GENERATION_KEYS_V3:
+        if set(result["sync_generation"]) != _GENERATION_KEYS_V4:
             _refuse(source, "source-engine-generation-shape")
         boundary.current()
         return result

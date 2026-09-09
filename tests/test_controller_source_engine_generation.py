@@ -51,6 +51,7 @@ GENERATION_KEYS = {
     "gbrain_executable_sha256", "version_raw_sha256",
     "sync_raw_sha256", "sync_stderr_sha256", "sync_result_sha256",
     "sync_status", "sync_requested_commit", "links_raw_sha256",
+    "embed_raw_sha256", "embed_stderr_sha256",
     "links_stderr_sha256", "links_result_sha256",
     "links_stale_remaining", "mentions_raw_sha256",
     "mentions_stderr_sha256", "mentions_result_sha256",
@@ -200,8 +201,9 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             "sync": (_wire({
                 "schema_version": 1, "source_id": "sia",
                 "sync_status": "synced", "added": 1, "modified": 0,
-                "deleted": 0, "chunks_created": 1, "embedded": 1,
+                "deleted": 0, "chunks_created": 1, "embedded": 0,
             }), "sync progress\n"),
+            "embed": ("Embedded 1 chunks across 1 pages\n", ""),
             "links": (_wire({
                 "action": "extract_stale_done", "links_created": 1,
                 "timeline_created": 1, "pages_processed": 1,
@@ -254,8 +256,11 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                 name = "version"
             elif args == (
                     "sync", "--source", "sia", "--json", "--no-pull",
-                    "--no-delegate"):
+                    "--no-delegate", "--no-embed"):
                 name = "sync"
+            elif args == (
+                    "embed", "--stale", "--source", "sia", "--catch-up"):
+                name = "embed"
             elif args == (
                     "extract", "links", "--source", "db", "--stale",
                     "--source-id", "sia", "--json"):
@@ -303,12 +308,13 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             result = self._call()
 
         self.assertEqual(self.calls, [
-            "version", "sync", "links", "mentions", "status", "projection"])
+            "version", "sync", "embed", "links", "mentions", "status",
+            "projection"])
         self.assertEqual(set(result), {"sync_generation", "target_manifest",
                                        "target_manifest_sha256"})
         generation = result["sync_generation"]
         self.assertEqual(
-            generation["schema"], "sia-controller-source-sync-generation-v3")
+            generation["schema"], "sia-controller-source-sync-generation-v4")
         manifest = result["target_manifest"]
         self.assertEqual(set(generation), GENERATION_KEYS)
         self.assertEqual(len(manifest), 1)
@@ -352,6 +358,10 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
             outputs["sync"][0].encode("utf-8")).hexdigest())
         self.assertEqual(generation["sync_stderr_sha256"], hashlib.sha256(
             outputs["sync"][1].encode("utf-8")).hexdigest())
+        self.assertEqual(generation["embed_raw_sha256"], hashlib.sha256(
+            outputs["embed"][0].encode("utf-8")).hexdigest())
+        self.assertEqual(generation["embed_stderr_sha256"], hashlib.sha256(
+            outputs["embed"][1].encode("utf-8")).hexdigest())
         self.assertTrue(self.request_paths)
         self.assertTrue(all(not os.path.exists(path)
                             for path in self.request_paths))
@@ -471,6 +481,23 @@ class ControllerSourceEngineGeneration(unittest.TestCase):
                         side_effect=case._runner(outputs)), \
                         self.assertRaises(REFUSALS):
                     case._call()
+
+    def test_embedding_process_failure_refuses_before_readback(self):
+        runner = self._runner()
+
+        def fail_embedding(command, **kwargs):
+            if tuple(command[1:]) == (
+                    "embed", "--stale", "--source", "sia", "--catch-up"):
+                return subprocess.CompletedProcess(
+                    command, 1, stdout="", stderr="embedding failed\n")
+            return runner(command, **kwargs)
+
+        with mock.patch.object(
+                sialib, "_run_bounded_text_process",
+                side_effect=fail_embedding), self.assertRaisesRegex(
+                    REFUSALS, "source-engine-embedding-process"):
+            self._call()
+        self.assertEqual(self.calls, ["version", "sync"])
 
     def test_named_engine_replacement_refuses_held_authority(self):
         retired = self.root / "retired-gbrain"

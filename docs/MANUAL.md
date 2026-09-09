@@ -871,9 +871,13 @@ canonical source batch and binds the exact live transition and status effects
 in `memo.json`; no source cursor advances at capture time. For a batch with an
 event closure, the effects phase publishes the sealed page plans, obtains a
 descriptor-bound clean Git commit/tree generation, and runs the receipt-bound
-pinned gbrain sequence: source sync, stale-link extraction, mention
-extraction, sync-status readback, and no-migrate projection readback for every
-changed source page. Admission requires the indexed commit to equal the corpus
+pinned gbrain sequence: no-embed source sync, an explicit source-scoped stale
+embedding drain, stale-link extraction, mention extraction, sync-status
+readback, and no-migrate projection readback for every changed source page.
+The pinned embed command has no structured result surface, so its bounded
+human streams are retained only by digest; their text never becomes authority.
+The following closed sync-status document supplies the required
+zero-unembedded postcondition. Admission requires the indexed commit to equal the corpus
 commit, zero unembedded chunks and unacknowledged failures, zero remaining
 stale links, and exact logical projection matches. These are local publication
 witnesses, not evidence of embedding-vector values or retrieval quality. The

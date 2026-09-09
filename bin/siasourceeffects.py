@@ -48,6 +48,9 @@ SYNC_KEYS_V2 = frozenset({
 SYNC_KEYS_V3 = SYNC_KEYS_V2 | frozenset({
     "gbrain_overlay_sha256", "gbrain_overlay_tree_oid",
 })
+SYNC_KEYS_V4 = SYNC_KEYS_V3 | frozenset({
+    "embed_raw_sha256", "embed_stderr_sha256",
+})
 TARGET_KEYS = frozenset({
     "slug", "source_sha256", "version_sha256", "page_state",
     "parse_error_codes", "expected_projection_sha256",
@@ -389,11 +392,14 @@ def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
     schema = value.get("schema") if type(value) is dict else None
     keys = (SYNC_KEYS_V2
             if schema == "sia-controller-source-sync-generation-v2"
-            else SYNC_KEYS_V3)
+            else SYNC_KEYS_V3
+            if schema == "sia-controller-source-sync-generation-v3"
+            else SYNC_KEYS_V4)
     _self_hash(source, live, value, "generation_sha256", keys,
                "source-effects-sync-generation")
     if schema not in {"sia-controller-source-sync-generation-v2",
-                      "sia-controller-source-sync-generation-v3"} \
+                      "sia-controller-source-sync-generation-v3",
+                      "sia-controller-source-sync-generation-v4"} \
             or value["source_id"] != owner["GBRAIN_SOURCE"] \
             or type(value["engine_version"]) is not str \
             or not value["engine_version"] \
@@ -426,7 +432,8 @@ def _sync_generation(owner, source, live, value, corpus, manifest_sha256,
         _hex(source, value[key], "source-effects-sync-generation-digest")
     if type(value["gbrain_commit"]) is not str \
             or re.fullmatch(r"[0-9a-f]{40}", value["gbrain_commit"]) is None \
-            or schema == "sia-controller-source-sync-generation-v3" \
+            or schema in {"sia-controller-source-sync-generation-v3",
+                          "sia-controller-source-sync-generation-v4"} \
             and re.fullmatch(r"[0-9a-f]{40}",
                              value["gbrain_overlay_tree_oid"]) is None \
             or not all(_nonnegative(owner, value[key]) for key in (
