@@ -381,6 +381,42 @@ class CapsuleBoundaryTests(unittest.TestCase):
             path, "f" * 32, "snapshot-core-bound")
         self.assertEqual(prepared["schema"], siacapsule.PREPARED_SCHEMA)
 
+    def test_freeze_preserves_directory_beyond_source_tail_bound(self):
+        packages = os.path.join(self.corpus, "packages")
+        os.mkdir(packages, 0o700)
+        names = {
+            f"package-{index:05d}.md"
+            for index in range(sialib.MAX_SOURCE_SCAN_ENTRIES + 1)
+        }
+        for name in names:
+            self._write(os.path.join(packages, name), name + "\n")
+
+        coupled = os.path.join(self.output, "coupled-source-bound")
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_DIRECTORY_ENTRY_LIMIT",
+                sialib.MAX_SOURCE_SCAN_ENTRIES):
+            with self.assertRaisesRegex(ValueError, "entry bound"):
+                siacapsule.freeze(coupled)
+        self.assertFalse(os.path.lexists(coupled))
+        self.assertFalse(any(
+            name.startswith(".sia-capsule-stage-")
+            for name in os.listdir(self.output)))
+
+        path, result = self._freeze("large-package-directory")
+        verified = siacapsule.verify(path)
+        self.assertEqual(verified["capsule_id"], result["capsule_id"])
+        with open(os.path.join(path, "manifest.json"),
+                  encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        manifest_paths = {row["path"] for row in manifest["entries"]}
+        expected_paths = {
+            "share/corpus/packages/" + name for name in names
+        }
+        self.assertTrue(expected_paths.issubset(manifest_paths))
+        for name in names:
+            self.assertTrue(os.path.isfile(os.path.join(
+                path, "payload", "share", "corpus", "packages", name)))
+
     def test_verify_rejects_tampering_and_unsigned_empty_directory(self):
         path, _result = self._freeze()
         os.mkdir(os.path.join(path, "payload", "share", "unsigned"), 0o700)
@@ -471,6 +507,17 @@ class CapsuleBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "entry bound"):
                 siacapsule.freeze(destination)
         self.assertFalse(os.path.lexists(destination))
+        self.assertFalse(any(
+            name.startswith(".sia-capsule-stage-")
+            for name in os.listdir(self.output)))
+
+        record_destination = os.path.join(
+            self.output, "bounded-record-refusal")
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_TREE_RECORD_LIMIT", 1):
+            with self.assertRaisesRegex(ValueError, "record bound"):
+                siacapsule.freeze(record_destination)
+        self.assertFalse(os.path.lexists(record_destination))
         self.assertFalse(any(
             name.startswith(".sia-capsule-stage-")
             for name in os.listdir(self.output)))

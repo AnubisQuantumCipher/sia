@@ -56,6 +56,12 @@ snapshot identity through SIA's `prepare_binding` boundary, producing a
 `sia-prepared-capsule-v1` receipt. Only that core-bound receipt can enter the
 guarded thaw path; there is intentionally no raw live-thaw CLI.
 
+Freeze and verify traverse the capsule exactly. Their per-directory fan-out
+uses the same finite envelope as the capsule's whole-tree record budget; it is
+not coupled to the smaller source-tail sampling limit used by ingestion.
+Reaching the whole-tree, depth, path-byte, or directory envelope is an honest
+refusal before publication, never permission to omit entries from a capsule.
+
 ## Why the first adapter is restic
 
 The continuity stack is deliberately small:

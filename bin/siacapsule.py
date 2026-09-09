@@ -101,13 +101,17 @@ _THAW_PHASES = frozenset({
 _INACTIVE_COMPLETE_PHASES = frozenset({
     "rolled-back", "committed", "retiring-rollback", "retiring-commit",
 })
-_CAPSULE_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
 _CAPSULE_TREE_DEPTH_LIMIT = sialib.MAX_CONFIG_TAGS
 _CAPSULE_TREE_RECORD_LIMIT = sialib.MAX_CONFIG_BYTES
+_CAPSULE_DIRECTORY_ENTRY_LIMIT = _CAPSULE_TREE_RECORD_LIMIT
 _CAPSULE_PATH_BYTE_LIMIT = sialib.MAX_CONFIG_BYTES
-# Reuse SIA's published finite scan/path ceilings.  Cleanup catalogs the whole
-# candidate before the first unlink, so an over-bound tree is preserved and
-# refused rather than partly erased.
+# Capsule traversal is an exact whole-tree operation, not a bounded source-tail
+# sample.  A directory may therefore use the capsule's existing whole-tree
+# record envelope; the shared budget below still refuses the first record past
+# that envelope before publication.
+# Cleanup may reuse SIA's published finite scan/path ceilings.  It catalogs the
+# whole candidate before the first unlink, so an over-bound tree is preserved
+# and refused rather than partly erased.
 _OPERATION_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
 # add rollback/capsule/staging prefixes around already-bounded portable roots,
 # so they need a separate finite deletion-preflight depth policy.
