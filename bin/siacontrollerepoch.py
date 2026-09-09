@@ -42,7 +42,7 @@ LIVE_POLICY = {
         "release_policy": "expire-or-explicit",
         "consumer_roster": ["resident-status", "context-selection"],
         "max_candidates": 256, "max_consumers": 16,
-        "max_content_bytes": 4096, "max_payload_bytes": 65536,
+        "max_content_bytes": 1048576, "max_payload_bytes": 65536,
         "max_broadcast_bytes": 1048576,
     },
     "coretrieval": {
@@ -77,7 +77,7 @@ LIVE_POLICY = {
         "max_content_bytes": 1048576, "max_delivery_bytes": 1048576,
     },
 }
-EXPECTED_LIVE_POLICY_SHA256 = "299d4fb5ff7ffe8d466d997780b8c67346ac4201b96dd0b3d62801ccc486e787"
+EXPECTED_LIVE_POLICY_SHA256 = "3159b33106db6f70593410a3c0c490c5d242265bfea1ad9c3ba8ec3dfd7386fa"
 
 NON_CLAIMS = (
     "This builder projects supplied active configuration and callable identities; it does not observe config-file bytes, optional-source probes, collector execution, source availability, source truth, or complete machine history.",

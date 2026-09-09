@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "bin"))
 
 OBSERVED_AT = 2000000000
-EXPECTED_POLICY_SHA256 = "299d4fb5ff7ffe8d466d997780b8c67346ac4201b96dd0b3d62801ccc486e787"
+EXPECTED_POLICY_SHA256 = "3159b33106db6f70593410a3c0c490c5d242265bfea1ad9c3ba8ec3dfd7386fa"
 POLICY = {
     "schema": "sia-live-loop-policy-v2",
     "scope": "complete-controller-observations-since-declared-epoch-v1",
@@ -55,7 +55,7 @@ POLICY = {
         "release_policy": "expire-or-explicit",
         "consumer_roster": ["resident-status", "context-selection"],
         "max_candidates": 256, "max_consumers": 16,
-        "max_content_bytes": 4096, "max_payload_bytes": 65536,
+        "max_content_bytes": 1048576, "max_payload_bytes": 65536,
         "max_broadcast_bytes": 1048576,
     },
     "coretrieval": {
@@ -248,6 +248,12 @@ class InitialControllerSourceEpoch(unittest.TestCase):
         self.component._live._policy(copy.deepcopy(self.component.LIVE_POLICY))
         self.assertEqual(self.source._component_sha(self.owner, POLICY),
                          EXPECTED_POLICY_SHA256)
+
+    def test_workspace_candidate_ceiling_matches_admitted_page_ceiling(self):
+        policy = self.component.LIVE_POLICY
+        self.assertEqual(
+            policy["workspace"]["max_content_bytes"],
+            policy["limits"]["max_content_bytes"])
 
     def test_builds_capture_ready_initial_epoch_from_exact_active_order(self):
         signature = inspect.signature(self.component.build_initial)
