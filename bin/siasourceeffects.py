@@ -626,13 +626,34 @@ def _initial_context(owner, source, live, memo, admitted_status):
     _raw, graph = _held_json(
         owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"],
         seal_legacy_public=True)
+    graph_join_error = None
     try:
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
-        _refuse(source, "source-effects-admitted-graph", upstream=exc)
+        graph_join_error = exc
     batch, binding, handoff, candidate, transition = _binding_context(
         owner, source, live, memo, status, require_handoff=True)
+    if graph_join_error is not None:
+        # A crash after graph export but before the source-effects WAL can
+        # leave the old admitted status behind a newer complete graph.  A
+        # require-complete export can likewise leave its canonical partial
+        # diagnostic ahead of that status.  The already-durable source/live
+        # binding and pulse-status handoff authorize replacing either state;
+        # they do not make the old pair a valid joined generation.  Require
+        # the graph to remain independently canonical, then publish and bind a
+        # fresh complete graph/status pair below.
+        try:
+            snapshot = owner["_recoverable_graph_snapshot"](graph)
+        except (TypeError, ValueError, RuntimeError, KeyError,
+                OverflowError, RecursionError) as exc:
+            _refuse(source, "source-effects-graph-ahead-recovery",
+                    upstream=exc)
+        if snapshot is None or type(graph.get("ts")) is not str \
+                or type(status.get("ts")) is not str \
+                or graph["ts"] <= status["ts"]:
+            _refuse(source, "source-effects-admitted-graph",
+                    upstream=graph_join_error)
     started_at = handoff["history"][0]
     prepared = owner["_prepare_controller_source_status_effects"](
         admitted_status=status, batch=batch,

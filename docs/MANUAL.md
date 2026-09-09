@@ -890,6 +890,10 @@ Source effects drain the bounded graph scan to a complete generation. A stale
 ready roster whose retained page digest no longer matches current corpus bytes
 is replaced durably by a fresh scan generation; partial graph bytes remain an
 explicit diagnostic and cannot satisfy the source-effects gate.
+If a crash leaves an independently canonical complete or partial graph ahead
+of the old status, only the already-retained source/live binding and matching
+pulse-status handoff authorize recovery. SIA republishes and binds a fresh
+complete graph/status pair; it does not call the old pair joined.
 
 Graph export and the projected status are then bound to the live candidate in
 a self-hashed effects WAL. The live generation is published and reread before

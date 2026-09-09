@@ -118,6 +118,12 @@ drains that generation before source effects may continue. This also recovers
 an interrupted corpus writer whose ordinary pre-write invalidation did not
 survive to the later graph phase.
 
+The retained source/live binding and pulse-status handoff are also the narrow
+recovery authority for a graph that is ahead of the admitted status after a
+crash between those publications. The old pair is not relabeled as joined:
+the graph must still be independently canonical, and source effects replace it
+with a newly complete graph/status pair before writing their effects WAL.
+
 For v2, `siasourcegist` reconstructs the exact idle proposal roster and renders
 derived pages under `gists/live/`. Publication holds the corpus owner and
 destination directory descriptors, checks the complete target roster before

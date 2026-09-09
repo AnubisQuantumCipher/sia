@@ -968,6 +968,28 @@ class ControllerSourceEffects(unittest.TestCase):
         self.assertEqual(receipt["sync_generation"]["schema"],
                          "sia-controller-source-sync-generation-v4")
 
+    def test_retained_status_handoff_recovers_an_individually_valid_graph_ahead(self):
+        self.start()
+        graph_ahead = self.live._read("GRAPH_PATH")
+        graph_ahead["publication_id"] = "4" * 32
+        graph_ahead["ts"] = GRAPH_AT
+        self.assertIsNotNone(
+            self.lib._recoverable_graph_snapshot(graph_ahead))
+        self.lib.atomic_write(
+            self.live.paths["GRAPH_PATH"], json.dumps(graph_ahead),
+            mode=0o600)
+        with mock.patch.object(
+                self.lib, "_live_graph_status",
+                wraps=self.lib._live_graph_status) as joined, \
+                self.publication_effects() as observed:
+            self.assertIsNone(self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status))
+        self.assertGreaterEqual(joined.call_count, 2)
+        self.assertEqual(observed["trace"], [
+            "closure", "corpus", "sync", "graph", "pending",
+            "live-stage", "live-publish", "receipt"])
+
     def test_each_durable_crash_prefix_recovers_without_repeating_effects(self):
         for crash_at in ("effects-pending", "live-published"):
             with self.subTest(crash_at=crash_at), self.fresh() as case:
