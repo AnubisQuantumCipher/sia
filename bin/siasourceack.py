@@ -81,7 +81,8 @@ def _stable_identity(info):
 class _HeldRaw:
     """One private regular file or absence under a retained parent chain."""
 
-    def __init__(self, owner, source, path, ceiling, *, allow_absent=True):
+    def __init__(self, owner, source, path, ceiling, *, allow_absent=True,
+                 allow_legacy_public=False):
         self.owner = owner
         self.source = source
         self.path = source._canonical_path(owner, path)
@@ -94,7 +95,8 @@ class _HeldRaw:
         self.generation = None
         if not self.name or self.name in (".", "..") \
                 or type(ceiling) is not int or ceiling <= 0 \
-                or type(allow_absent) is not bool:
+                or type(allow_absent) is not bool \
+                or type(allow_legacy_public) is not bool:
             self.close()
             _refuse(source, "ack-held-file-contract")
         flags = (os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -113,9 +115,11 @@ class _HeldRaw:
             _refuse(source, "ack-file-open", exc)
         try:
             info = os.fstat(self.fd)
+            mode = stat.S_IMODE(info.st_mode)
             if not stat.S_ISREG(info.st_mode) \
                     or info.st_uid != os.geteuid() or info.st_nlink != 1 \
-                    or stat.S_IMODE(info.st_mode) != 0o600 \
+                    or mode != 0o600 \
+                    and not (allow_legacy_public and mode == 0o644) \
                     or info.st_size < 0 or info.st_size > ceiling:
                 _refuse(source, "ack-unsafe-file")
             self.generation = _generation(info)
@@ -413,12 +417,18 @@ class _CursorAuthority:
         self.state_identity = state_identity
         self.main = main
         self.held = _HeldRaw(
-            owner, source, path, ceiling, allow_absent=True)
+            owner, source, path, ceiling, allow_absent=True,
+            allow_legacy_public=main and before is not None)
         try:
             if state_identity is not None \
                     and self.held.directories.generation != state_identity:
                 _refuse(source, "ack-cursor-directory-generation")
             self.state = self._classify()
+            if self.held.fd is not None \
+                    and stat.S_IMODE(self.held.generation["mode"]) == 0o644:
+                if self.state != "before":
+                    _refuse(source, "ack-unsafe-file")
+                self._seal_legacy_public_before()
         except BaseException:
             self.close()
             raise
@@ -434,8 +444,40 @@ class _CursorAuthority:
         if type(generation) is not dict or self.held.fd is None \
                 or self.held.raw != expected_raw:
             return False
-        return all(self.held.generation.get(key) == value
-                   for key, value in generation.items())
+        if all(self.held.generation.get(key) == value
+               for key, value in generation.items()):
+            return True
+        return self.main \
+            and stat.S_IMODE(generation.get("mode", -1)) == 0o644 \
+            and stat.S_IMODE(self.held.generation.get("mode", -1)) == 0o600 \
+            and all(self.held.generation.get(key) == value
+                    for key, value in generation.items()
+                    if key not in {"mode", "ctime_ns"})
+
+    def _seal_legacy_public_before(self):
+        self.held.current()
+        before = os.fstat(self.held.fd)
+        stable = lambda value: (
+            value.st_dev, value.st_ino, value.st_uid, value.st_gid,
+            value.st_nlink, value.st_size, value.st_mtime_ns)
+        try:
+            os.fchmod(self.held.fd, 0o600)
+            after = os.fstat(self.held.fd)
+            named = os.stat(
+                self.held.name, dir_fd=self.held.directories.fd,
+                follow_symlinks=False)
+        except OSError as exc:
+            _refuse(self.source, "ack-cursor-private-migration", exc)
+        if stable(before) != stable(after) or stable(after) != stable(named) \
+                or stat.S_IMODE(after.st_mode) != 0o600 \
+                or stat.S_IMODE(named.st_mode) != 0o600 \
+                or os.pread(self.held.fd, self.ceiling + 1, 0) \
+                != self.held.raw:
+            _refuse(self.source, "ack-cursor-private-migration-generation")
+        self.held.generation = _generation(after)
+        self.held.current()
+        if not self._before_matches():
+            _refuse(self.source, "ack-cursor-private-migration-generation")
 
     def _classify(self):
         if self._before_matches():

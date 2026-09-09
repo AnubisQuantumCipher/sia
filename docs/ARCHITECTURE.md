@@ -767,6 +767,10 @@ has one explicit migration lane for those two inputs: it reseals the same
 descriptor to `0600`, proves the named inode and bytes did not change, and
 refuses every other mode. Both publishers now request `0600` explicitly;
 candidate and generation files never enter the migration lane.
+The ACK boundary has a similarly narrow lane for a legacy public main cursor:
+it first matches the exact captured before-generation and bytes, reseals that
+descriptor, and admits the mode-only successor on retry. A public target or a
+cursor captured under any other mode is not migrated.
 An empty closure/gist disposition still publishes graph/status/live state
 and ACK, while its receipt retains null corpus/index generations.
 A fully acknowledged source-v3 batch must independently retain the adoption

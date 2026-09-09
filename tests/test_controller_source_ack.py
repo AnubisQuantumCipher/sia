@@ -669,6 +669,59 @@ class ControllerSourceAcknowledgment(unittest.TestCase):
             self.assertEqual(destination.read_bytes(),
                              b"unrelated durable bytes")
 
+    def test_main_cursor_reseals_exact_legacy_public_before_generation(self):
+        path = self.source.cursors_path
+        path.chmod(0o644)
+        self.start_empty()
+        proposal = self.batch["cursor_proposal"]
+        self.assertEqual(
+            stat.S_IMODE(proposal["before"]["generation"]["mode"]),
+            0o644)
+
+        self.assertIsNone(self.acknowledge())
+
+        self.assertEqual(path.read_bytes(), self.cursor_target_bytes())
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assert_final()
+
+    def test_resealed_legacy_cursor_is_an_exact_recovery_prefix(self):
+        path = self.source.cursors_path
+        path.chmod(0o644)
+        self.start_empty()
+        before = path.read_bytes()
+
+        def cut(phase):
+            if phase == "effects-receipt-archive-durable":
+                raise KeyboardInterrupt("fixture cut after cursor reseal")
+
+        with mock.patch.object(
+                self.lib, BOUNDARY, side_effect=cut, create=True), \
+                self.assertRaisesRegex(
+                    KeyboardInterrupt, "fixture cut after cursor reseal"):
+            self.acknowledge()
+
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        durable = self.live._read("MEMO_PATH")
+        self.live.memo.clear()
+        self.live.memo.update(copy.deepcopy(durable))
+
+        self.assertIsNone(self.acknowledge())
+        self.assertEqual(path.read_bytes(), self.cursor_target_bytes())
+        self.assert_final()
+
+    def test_public_target_cursor_is_not_migrated_as_a_legacy_before(self):
+        self.start_empty()
+        path = self.source.cursors_path
+        self.source.lib.save_cursors(
+            copy.deepcopy(self.batch["cursor_proposal"]["after"]))
+        path.chmod(0o644)
+
+        self.assert_refused_without_effect(self.acknowledge)
+
+        self.assertEqual(path.read_bytes(), self.cursor_target_bytes())
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+
     def test_main_cursor_same_before_bytes_new_inode_is_a_third_state(self):
         self.start_refusal_only()
         proposal = self.batch["cursor_proposal"]
