@@ -137,6 +137,27 @@ def refuse(reason, *, phase="admit", source_id=None, upstream=None):
         reason, phase=phase, source_id=source_id, upstream=upstream)
 
 
+def _admission_exception_class(exc):
+    """Return one path-free class for an otherwise closed exception."""
+    if isinstance(exc, UnicodeError):
+        return "unicode"
+    if isinstance(exc, RecursionError):
+        return "recursion"
+    if isinstance(exc, OSError):
+        return "os"
+    if isinstance(exc, KeyError):
+        return "key"
+    if isinstance(exc, AttributeError):
+        return "attribute"
+    if isinstance(exc, TypeError):
+        return "type"
+    if isinstance(exc, RuntimeError):
+        return "runtime"
+    if isinstance(exc, ValueError):
+        return "value"
+    return "closed"
+
+
 def _keys(value, expected, reason):
     if type(value) is not dict or set(value) != set(expected) \
             or any(type(key) is not str for key in value):
@@ -1950,7 +1971,8 @@ def capture_successor_v3(
         raise
     except (OSError, ValueError, RuntimeError, TypeError, KeyError,
             AttributeError, UnicodeError, RecursionError) as exc:
-        refuse("delivery-successor-capture-admission", upstream=exc)
+        refuse("delivery-successor-capture-admission-"
+               + _admission_exception_class(exc), upstream=exc)
 
 
 def _validate_file_image(owner, value, *, allow_absent):

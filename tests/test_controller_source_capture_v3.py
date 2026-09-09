@@ -431,6 +431,21 @@ class ControllerSourceCaptureV3(unittest.TestCase):
                              if name == "owner" else inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(set(self.source.BATCH_V2_KEYS) | {"delivery_input"}, BATCH_KEYS)
 
+    def test_outer_capture_refusal_exposes_only_the_exception_class(self):
+        with mock.patch.object(
+                self.source, "_DeliveryCaptureRequest",
+                side_effect=RuntimeError("private upstream detail")), \
+                self.assertRaisesRegex(
+                    ValueError,
+                    "delivery-successor-capture-admission-runtime") as raised:
+            self.operation(
+                {}, memo=None, admitted_status=None, retained_batch=None,
+                committed=None, epoch=None, expected_epoch_sha256=None,
+                observed_at=None, journal_limits=None,
+                expected_journal_limits_sha256=None,
+                expected_adoption_sha256=None)
+        self.assertNotIn("private upstream detail", str(raised.exception))
+
     def test_real_idle_capture_keeps_gist_origins_and_bound_empty_journal(self):
         with self.prepared() as f, self.capture_owner(f) as owner:
             before = self.images(f)
