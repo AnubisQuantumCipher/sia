@@ -852,6 +852,40 @@ class ControllerSourceEffects(unittest.TestCase):
                             (before.st_dev, before.st_ino))
         self.assertEqual(stat.S_IMODE(after.st_mode), 0o600)
 
+    def test_bound_source_sync_settles_its_corpus_debt_with_live_commit(self):
+        self.live.memo["sync_needed"] = True
+        self.live._write(self.live.paths["MEMO_PATH"], self.live.memo)
+        self.start()
+
+        with self.publication_effects():
+            self.assertIsNone(self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status))
+
+        self.assertNotIn("sync_needed", self.live.memo)
+        self.assertNotIn("sync_needed", self.live._read("MEMO_PATH"))
+        self._assert_receipt(self._expected_receipt())
+
+    def test_source_without_sync_cannot_settle_unrelated_corpus_debt(self):
+        self.live.memo["sync_needed"] = True
+        self.live._write(self.live.paths["MEMO_PATH"], self.live.memo)
+        self.start(empty=True)
+
+        with self.publication_effects(null=True), \
+                self.assertRaisesRegex(
+                    RuntimeError,
+                    "unrelated corpus publication debt is pending"):
+            self.publisher()(
+                memo=self.live.memo,
+                admitted_status=self.admitted_status)
+
+        durable = self.live._read("MEMO_PATH")
+        self.assertIs(durable["sync_needed"], True)
+        self.assertIn("controller_source_effects_pending", durable)
+        self.assertNotIn("live_loop_pending", durable)
+        self.assertFalse(Path(
+            self.live.paths["LIVE_CANDIDATE_PATH"]).exists())
+
     def test_nonempty_full_order_and_exact_bound_receipt(self):
         self.start()
         with self.publication_effects() as observed:

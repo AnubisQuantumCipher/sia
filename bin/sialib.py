@@ -6044,6 +6044,7 @@ _LIVE_PUBLICATION_EXPORTS = frozenset({
     "_live_replay_candidate",
     "_live_same",
     "_live_sha",
+    "_live_source_effects_paid_corpus_debt",
     "_live_status_image",
     "_live_upstream_refusal",
     "_publish_staged_live_generation",

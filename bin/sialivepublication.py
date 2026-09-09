@@ -12,6 +12,20 @@ namespace under the same lock. No lock is held across external caller code.
 import contextlib as _contextlib
 import threading as _threading
 
+_LIVE_SOURCE_EFFECTS_PENDING_KEYS = frozenset({
+    "schema", "source_batch_sha256", "source_batch_wire_sha256",
+    "source_live_publication_sha256", "event_closure_sha256",
+    "closure_result_sha256", "status_effects_sha256", "target_manifest",
+    "target_manifest_sha256", "corpus_generation", "sync_generation",
+    "graph_generation", "status_generation", "status",
+    "prepare_inputs_sha256", "state_sha256", "transition_sha256",
+    "non_claims", "pending_sha256",
+})
+_LIVE_SOURCE_EFFECTS_CONTENT_KEYS = frozenset({
+    "gist_page_plan_sha256", "gist_pages_sha256", "gist_publication",
+    "content_publication_sha256",
+})
+
 def _live_upstream_refusal(reason, exc):
     error = RuntimeError("live publication refused: " + reason)
     error.non_claims = list(LIVE_PUBLICATION_NON_CLAIMS)
@@ -372,6 +386,60 @@ def _live_controller_source_pending(memo):
     return receipt
 
 
+def _live_source_effects_paid_corpus_debt(
+        memo, candidate, source_pending, source_binding):
+    """Recognize only the source-effects WAL that paid this exact debt."""
+    pending = memo.get("controller_source_effects_pending")
+    if type(pending) is not dict or source_pending is None \
+            or source_binding is None:
+        return False
+    schema = pending.get("schema")
+    keys = (_LIVE_SOURCE_EFFECTS_PENDING_KEYS
+            if schema == "sia-controller-source-effects-pending-v1"
+            else _LIVE_SOURCE_EFFECTS_PENDING_KEYS
+            | _LIVE_SOURCE_EFFECTS_CONTENT_KEYS
+            if schema == "sia-controller-source-effects-pending-v2"
+            else None)
+    if keys is None or set(pending) != keys \
+            or pending.get("pending_sha256") \
+            != _live_own(pending, "pending_sha256") \
+            or pending.get("source_batch_sha256") \
+            != source_pending["batch_sha256"] \
+            or pending.get("source_batch_sha256") \
+            != source_binding["source_batch_sha256"] \
+            or pending.get("source_live_publication_sha256") \
+            != source_binding["publication_sha256"] \
+            or pending.get("prepare_inputs_sha256") \
+            != candidate["prepare_inputs_sha256"] \
+            or pending.get("state_sha256") \
+            != candidate["transition"]["state_sha256"] \
+            or pending.get("transition_sha256") \
+            != candidate["transition"]["transition_sha256"] \
+            or not _live_same(pending.get("status"), candidate["status"]):
+        return False
+    corpus = pending.get("corpus_generation")
+    sync = pending.get("sync_generation")
+    targets = pending.get("target_manifest")
+    if type(corpus) is not dict or type(sync) is not dict \
+            or type(targets) is not list \
+            or corpus.get("generation_sha256") \
+            != _live_own(corpus, "generation_sha256") \
+            or sync.get("generation_sha256") \
+            != _live_own(sync, "generation_sha256"):
+        return False
+    commit = corpus.get("corpus_commit_oid")
+    return type(commit) is str and bool(commit) \
+        and sync.get("sync_requested_commit") == commit \
+        and sync.get("status_last_commit") == commit \
+        and sync.get("sync_status") in {"synced", "first_sync", "up_to_date"} \
+        and sync.get("chunks_unembedded") == 0 \
+        and sync.get("links_stale_remaining") == 0 \
+        and sync.get("unacknowledged_failures") == 0 \
+        and sync.get("projection_target_count") == len(targets) \
+        and sync.get("projection_retrieval_bookkeeping_updated") is False \
+        and sync.get("projection_operation_writes_performed") is False
+
+
 def _live_authority_memo(memo, durable):
     if type(memo) is not dict or type(durable) is not dict:
         _live_refuse("durable memo is unavailable")
@@ -412,7 +480,10 @@ def _live_final_memo(memo, candidate, receipt):
         updated.pop("pulse_publication")
         updated.pop("sync_needed", None)
     elif updated.get("sync_needed", False) is not False:
-        _live_refuse("unrelated corpus publication debt is pending")
+        if not _live_source_effects_paid_corpus_debt(
+                updated, candidate, source_pending, source_binding):
+            _live_refuse("unrelated corpus publication debt is pending")
+        updated.pop("sync_needed")
     if any(key in updated for key in ("dream_publication", "consolidation_pending", "source_replay_pending",
                                       "brainstem_failure_pending")):
         _live_refuse("unrelated recovery debt is pending")

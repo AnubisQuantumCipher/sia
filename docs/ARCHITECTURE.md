@@ -143,6 +143,11 @@ generation, reopens all retained artifacts, and replaces the pending record
 with a committed effects receipt. A batch with neither an event closure nor
 gist targets still receives a graph/status/live receipt without inventing a
 corpus or engine generation.
+If corpus publication debt is present, live finalization clears it only when
+that exact source-effects WAL rejoins the retained source batch and live
+binding to self-hashed corpus and engine-sync generations for the candidate's
+commit. A source pulse with no corpus and sync generations cannot absorb debt
+from another writer; it refuses and leaves the debt visible.
 At this point the source remains deliberately unacknowledged and readiness is
 still closed.
 
