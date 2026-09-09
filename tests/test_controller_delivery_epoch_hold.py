@@ -170,6 +170,15 @@ class ControllerDeliveryEpochHold(unittest.TestCase):
             self.assertTrue(any(re.search(r"\b(no|not|never|without|cannot)\b", claim, re.I)
                                 for claim in mentions), "missing denial: " + subject)
 
+    def test_held_authority_has_a_distinct_bounded_aggregate_ceiling(self):
+        with self.prepared() as (
+                case, retained, committed, status, _generation, _root, adopted):
+            request = self.request(case, retained, committed, status, adopted)
+            with self.reader_scope(case), mock.patch.object(
+                    self.module, "MAX_HELD_AUTHORITY_BYTES", 1):
+                refusal = self.refuse(lambda: self.hold(case, request).__enter__())
+            self.assertEqual(refusal.reason, "complete-authority-byte-capacity")
+
     def test_exact_prepared_legacy_view_holds_authority_through_body_and_copy(self):
         with self.prepared() as (case, retained, committed, status, generation, root, adopted):
             request = self.request(case, retained, committed, status, adopted)

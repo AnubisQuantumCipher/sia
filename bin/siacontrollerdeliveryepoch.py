@@ -73,6 +73,14 @@ _IDENTITY_CEILING = (1 << 64) - 1
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _ERRORS = (OSError, ValueError, RuntimeError, TypeError, KeyError, IndexError,
            AttributeError, OverflowError, RecursionError)
+# A held read can retain thirteen separately bounded document images: request,
+# two memo images, status, graph, live state, live candidate, two source
+# archives, parent generation, birth, adoption and the outer held view.
+# Arithmetic evidence: status=exact, parsed=13*16777216,
+# exact=218103808. Exact rational arithmetic outside the Lean certificate
+# chain; NOT formal-bounded.
+MAX_HELD_AUTHORITY_DOCUMENTS = 13
+MAX_HELD_AUTHORITY_BYTES = 218_103_808
 
 
 class ControllerDeliveryEpochRefusal(ValueError):
@@ -96,6 +104,20 @@ def _keys(value, names, label):
 def _digest(value):
     if type(value) is not str or _DIGEST.fullmatch(value) is None:
         _refuse("digest-shape")
+
+
+def _held_authority_basis(owner):
+    if type(MAX_HELD_AUTHORITY_DOCUMENTS) is not int \
+            or MAX_HELD_AUTHORITY_DOCUMENTS <= 0 \
+            or type(MAX_HELD_AUTHORITY_BYTES) is not int \
+            or MAX_HELD_AUTHORITY_BYTES <= 0:
+        _refuse("held-authority-capacity-contract")
+    scaled = MAX_HELD_AUTHORITY_DOCUMENTS * owner["MAX_STATE_JSON_BYTES"]
+    return {
+        "max_documents": MAX_HELD_AUTHORITY_DOCUMENTS,
+        "hard_bytes": MAX_HELD_AUTHORITY_BYTES,
+        "effective_bytes": min(scaled, MAX_HELD_AUTHORITY_BYTES),
+    }
 
 
 def _raw(owner, value, *, ceiling=None):
@@ -205,9 +227,12 @@ class _Transaction:
             _refuse("epoch-root-authority-scope")
         self.capacities = {key: owner[key] for key in (
             "MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS")}
+        self.held_authority = _held_authority_basis(owner)
+        self.authority_ceiling = self.held_authority["effective_bytes"]
         self.owner_basis = source.native_bytes(owner, {
             "paths": self.paths,
             "capacities": self.capacities,
+            "held_authority": self.held_authority,
         })
         self.request = request
         self.request_raw = source.native_bytes(owner, request)
@@ -251,7 +276,7 @@ class _Transaction:
         before = 0 if previous is None or previous.raw is None else len(previous.raw)
         after = 0 if held.raw is None else len(held.raw)
         self.budget += after - before
-        if self.budget > self.owner["MAX_STATE_JSON_BYTES"]:
+        if self.budget > self.authority_ceiling:
             _refuse("complete-authority-byte-capacity")
         self.files[name] = held
         return held
@@ -268,6 +293,7 @@ class _Transaction:
             "paths": {name: owner.get(name) for name in self.paths},
             "capacities": {key: owner.get(key) for key in (
                 "MAX_STATE_JSON_BYTES", "MAX_MEMO_BYTES", "MAX_CONFIG_PATH_CHARS")},
+            "held_authority": _held_authority_basis(owner),
         }
         if source.native_bytes(owner, current_basis,
                                ceiling=self.capacities["MAX_STATE_JSON_BYTES"]) != self.owner_basis:
@@ -391,7 +417,7 @@ class _Transaction:
             generation_raw = _raw(
                 owner, generation, ceiling=self.capacities["MAX_STATE_JSON_BYTES"])
             self.budget += len(generation_raw)
-            if self.budget > self.capacities["MAX_STATE_JSON_BYTES"]:
+            if self.budget > self.authority_ceiling:
                 _refuse("complete-held-authority-byte-capacity")
             detached_generation = copy.deepcopy(generation)
             if _raw(owner, generation) != generation_raw \
@@ -460,7 +486,7 @@ class _Transaction:
                 owner, prospective, ceiling=owner["MAX_MEMO_BYTES"])))
             owner["_memo_text"](prospective)
         reserved += future_memo - len(self.files["memo"].raw)
-        if reserved > owner["MAX_STATE_JSON_BYTES"]:
+        if reserved > self.authority_ceiling:
             _refuse("complete-adoption-reservation-capacity")
         self.current()
         return birth
@@ -711,7 +737,7 @@ class _HeldEpoch:
         # before copying. Journal document limits still govern the retained
         # birth/adoption documents, not a newly invented journal record.
         self._view_raw = self._encode(view)
-        if tx.budget + len(self._view_raw) > tx.capacities["MAX_STATE_JSON_BYTES"]:
+        if tx.budget + len(self._view_raw) > tx.authority_ceiling:
             _refuse("complete-held-view-byte-capacity")
         self._view = copy.deepcopy(view)
         if self._encode(view) != self._view_raw \
