@@ -339,6 +339,7 @@ def _judge_run(prompt, timeout=900, include_label=False):
     return result((stdout or "").strip(), None)
 
 VALID_STATUS = ("open", "resolved-true", "resolved-false", "unresolvable")
+SIGNED_GRADE_STATUS = frozenset(VALID_STATUS[1:])
 _TAKE_ID_RE = re.compile(r"(?:[0-9a-f]{10}|[0-9a-f]{20})")
 _DOMAIN_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 _LEGACY_LINK_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9/._-]{0,199}")
@@ -3608,7 +3609,7 @@ def _history_authoritative_signed_grade(kind, metadata, text):
     if kind != "take" or metadata.get("status") == "invalid-record":
         return False
     import sialib
-    if metadata.get("status") in {"resolved-true", "resolved-false"} and sialib.ledger_contains(
+    if metadata.get("status") in SIGNED_GRADE_STATUS and sialib.ledger_contains(
             "GRADE:take", metadata["id"], metadata["status"], text):
         return True
     provenance = (_read_take_provenance(metadata["path"], text)
@@ -4752,7 +4753,7 @@ def _read_take_provenance(path, target):
     if not sialib.ledger_contains(
             "MIGRATE:take-origin", meta["id"], witness["migration_kind"], target):
         raise ValueError("take provenance lacks its exact signed migration")
-    observed = meta["status"] in {"resolved-true", "resolved-false"} and bool(
+    observed = meta["status"] in SIGNED_GRADE_STATUS and bool(
         sialib.ledger_contains("GRADE:take", meta["id"], meta["status"], source))
     if observed != witness["grade_observed"]:
         raise ValueError("take provenance grade witness changed")
@@ -5306,7 +5307,7 @@ def _finish_take_migration(journal_path, value, before_publish=None):
                 or witness["migration_kind"] != migration_kind \
                 or witness["grade_observed"] != signed_grade:
             raise ValueError("take migration journal disagrees with retained provenance")
-    observed_grade = after["status"] in {"resolved-true", "resolved-false"} and bool(
+    observed_grade = after["status"] in SIGNED_GRADE_STATUS and bool(
         sialib.ledger_contains("GRADE:take", after["id"], after["status"], source))
     if observed_grade != signed_grade:
         raise ValueError("take migration grade flag is not a current signed witness")
@@ -5471,8 +5472,7 @@ def migrate_legacy_take_pages(before_publish=None):
                         _history_validate_direct(existing)
                     continue
                 grade_observed = False
-                if take.get("status") in (
-                        "resolved-true", "resolved-false"):
+                if take.get("status") in SIGNED_GRADE_STATUS:
                     grade_observed = (_history_authoritative_signed_grade(
                         "take", take, source) if target is None else
                         sialib.ledger_contains("GRADE:take", take["id"], take["status"], source))

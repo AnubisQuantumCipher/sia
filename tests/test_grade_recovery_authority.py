@@ -59,6 +59,20 @@ class GradeRecoveryAuthority(unittest.TestCase):
             take, "TRUE", "retained fixture justification")
         return take, path, source, target
 
+    def _prepare_unresolvable_take(self):
+        self.lib.create_take("retain this unresolvable grade",
+                             deadline="2099-01-01")
+        take = self.lib.load_takes()[0]
+        source = Path(take["path"]).read_text(encoding="utf-8")
+        take.update({
+            "status": "unresolvable", "outcome": None, "brier": None,
+            "graded": "2026-09-02T09:15:48Z", "judge_model": "fixture",
+            "_grade_source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+        })
+        path, source, target = self.lib._render_take_page(
+            take, "UNRESOLVABLE", "retained fixture justification")
+        return take, path, source, target
+
     def _write_unprojected_take_page(self, take_id):
         source = self.page.read_text(encoding="utf-8")
         replacement_id = "f" * 20 if take_id != "f" * 20 else "e" * 20
@@ -643,6 +657,20 @@ class GradeRecoveryAuthority(unittest.TestCase):
         report = self.lib.calibration_report()["overall"]
         self.assertEqual(report["resolved"], 1)
         self.assertEqual(report["invalid_resolved"], 0)
+
+    def test_signed_unresolvable_grade_survives_authority_reconciliation(self):
+        take, path, _source, target = self._prepare_unresolvable_take()
+        self.page = Path(path)
+        self.page.write_text(target, encoding="utf-8")
+        self.signatures.append((
+            "GRADE:take", take["id"], "unresolvable", target))
+        with mock.patch.dict(sys.modules, {"sialib": self.keeper}):
+            event = self._event(
+                take, path, target, "grade", signed_grade=True)
+            self.lib._history_project_event(event)
+            self._settle_authority()
+        direct = self.lib._history_direct("take", take["id"])
+        self.assertTrue(direct["signed_grade"])
 
     def test_signed_migration_replays_after_source_page_is_replaced(self):
         value = self._stage_migration(grade_observed=True)
