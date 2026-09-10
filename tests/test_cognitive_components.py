@@ -169,6 +169,51 @@ class UsageActivationComponent(unittest.TestCase):
                 siamind.usage_activation_snapshot(node, as_of)
             self.assertEqual(node, before)
 
+    def test_v4_backfill_order_is_repaired_once_without_losing_weight(self):
+        mind = siamind._empty_mind()
+        mind["v"] = 4
+        mind["nodes"]["packages/example"] = {
+            "n": 3.0,
+            "t0": 100.0,
+            "rt": [[100.0, 1.0], [90.0, 1.0], [95.0, 1.0]],
+            "s": 30.0,
+            "last_touch": 100.0,
+            "arousal": 0.0,
+            "novelty": 0.0,
+            "pins": [],
+            "signals": {},
+        }
+
+        migrated = siamind.migrate_mind(mind, now=110.0)
+
+        self.assertEqual(migrated["v"], 5)
+        self.assertEqual(migrated["nodes"]["packages/example"]["rt"], [
+            [90.0, 1.0], [95.0, 1.0], [100.0, 1.0]])
+        self.assertEqual(
+            migrated["nodes"]["packages/example"]["t0"], 90.0)
+        self.assertEqual(
+            siamind.usage_activation_snapshot(
+                migrated["nodes"]["packages/example"], 110.0)["status"],
+            "available")
+
+    def test_current_generation_nonchronological_history_still_refuses(self):
+        mind = siamind._empty_mind()
+        mind["v"] = 5
+        mind["nodes"]["packages/example"] = {
+            "n": 2.0,
+            "t0": 90.0,
+            "rt": [[100.0, 1.0], [90.0, 1.0]],
+            "s": 30.0,
+            "last_touch": 100.0,
+            "arousal": 0.0,
+            "novelty": 0.0,
+            "pins": [],
+            "signals": {},
+        }
+
+        with self.assertRaisesRegex(ValueError, "not chronological"):
+            siamind.migrate_mind(mind, now=110.0)
+
 
 class CoreturnLearningComponent(unittest.TestCase):
     """The Hebbian-derived proxy learns only exact delivered co-returns."""

@@ -52,7 +52,7 @@ EPISODIC_DAYS = int(os.environ.get("SIA_EPISODIC_DAYS", "14"))
 WORKSPACE_K = 7       # compatibility name for the attention-window limit
 # Stability is a retrieval lens, never a deletion policy. These defaults and
 # the SM-2 constants below are the values frozen in SIA's research spec.
-MIND_VERSION = 4
+MIND_VERSION = 5
 SURPRISE_BASIS = "sia-admitted-intake-v1"
 SECONDS_PER_DAY = 86400.0
 NODE_STABILITY_DAYS = 30.0
@@ -227,7 +227,7 @@ def _edge_record(value, now):
 
 
 def migrate_mind(raw, now=None):
-    """Return an in-place, backward-compatible v4 state migration.
+    """Return an in-place, backward-compatible v5 state migration.
 
     ``now`` is injectable for replay/tests.  Unknown keys are retained so an
     older binary does not erase state belonging to a newer optional organ.
@@ -239,12 +239,13 @@ def migrate_mind(raw, now=None):
     raw_version = raw.get("v")
     if "v" in raw and (
             isinstance(raw_version, bool) or not isinstance(raw_version, int)
-            or raw_version not in {1, 2, 3, MIND_VERSION}):
+            or raw_version not in {1, 2, 3, 4, MIND_VERSION}):
         raise ValueError("mind state version is unsupported")
     # Build on a detached JSON-shaped copy and publish back only after every
     # field has passed. Callers never observe a half-migrated rejected state.
     mind = copy.deepcopy(raw)
-    familiarity_is_authoritative = raw_version == MIND_VERSION
+    familiarity_is_authoritative = raw_version in {4, MIND_VERSION}
+    legacy_usage_order = raw_version != MIND_VERSION
     if familiarity_is_authoritative:
         if "familiarity_complete" not in mind \
                 or type(mind["familiarity_complete"]) is not bool:
@@ -332,6 +333,20 @@ def migrate_mind(raw, now=None):
             if weight < 0:
                 raise ValueError("node retrieval weight must be non-negative")
             normalized_rt.append([stamp, weight])
+        if legacy_usage_order:
+            # Older backfills appended native event times after later uses.
+            # Weighted uses are compatibility policy, not evidence: preserve
+            # every retained use and restore the ordering current touch()
+            # already enforces. Creation time must cover the repaired trace.
+            normalized_rt.sort(key=lambda entry: entry[0])
+            if normalized_rt:
+                node["t0"] = min(node["t0"], normalized_rt[0][0])
+        previous = node["t0"]
+        for stamp, _weight in normalized_rt:
+            if stamp < previous or stamp > now:
+                raise ValueError(
+                    "node retrieval history is not chronological")
+            previous = stamp
         node["rt"] = normalized_rt
         node["s"] = _stability(
             node.get("s", NODE_STABILITY_DAYS), "node stability")

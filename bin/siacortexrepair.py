@@ -339,7 +339,7 @@ def _readonly_debt(core, memo, publication, *, regenerate_legacy_graph=False):
     except (ValueError, UnicodeError, RecursionError) as exc:
         raise RuntimeError("raw mind state is malformed") from exc
     if not isinstance(mind, dict) or type(mind.get("v")) is not int \
-            or mind["v"] not in {1, 2, 3, core.siamind.MIND_VERSION}:
+            or mind["v"] not in {1, 2, 3, 4, core.siamind.MIND_VERSION}:
         raise RuntimeError("raw mind state version is unsupported")
     if mind.get("event_applied") or mind.get("event_batch_applied") is not None \
             or core._pending_dream_unit(mind) is not None:
