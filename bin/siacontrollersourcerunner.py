@@ -33,11 +33,34 @@ _COMMITTED_KEYS = frozenset({
     "source_batch_sha256", "live_generation_sha256",
     "source_effects_receipt_sha256",
 })
+_V3_RECOVERY_PREFLIGHT_KEYS = frozenset({
+    "policy", "memo", "admitted_status", "retained_batch", "committed",
+    "successor_batch",
+})
+# A fixed-WAL recovery preflight retains six separately bounded documents plus
+# one structural-overhead unit. Individual state/memo ceilings remain intact.
+# Arithmetic evidence: status=exact, parsed=7*16777216, exact=117440512.
+# Exact rational arithmetic outside the Lean certificate chain; NOT
+# formal-bounded.
+MAX_V3_RECOVERY_PREFLIGHT_DOCUMENTS = 7
+MAX_V3_RECOVERY_PREFLIGHT_BYTES = 117_440_512
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _refuse(reason):
     raise RuntimeError("controller source runner refused: " + reason)
+
+
+def _v3_recovery_preflight_capacity(owner):
+    if type(MAX_V3_RECOVERY_PREFLIGHT_DOCUMENTS) is not int \
+            or MAX_V3_RECOVERY_PREFLIGHT_DOCUMENTS \
+            != len(_V3_RECOVERY_PREFLIGHT_KEYS) + 1 \
+            or type(MAX_V3_RECOVERY_PREFLIGHT_BYTES) is not int \
+            or MAX_V3_RECOVERY_PREFLIGHT_BYTES <= 0:
+        _refuse("v3 recovery preflight capacity contract changed")
+    scaled = (MAX_V3_RECOVERY_PREFLIGHT_DOCUMENTS
+              * owner["MAX_STATE_JSON_BYTES"])
+    return min(scaled, MAX_V3_RECOVERY_PREFLIGHT_BYTES)
 
 
 def _history_entry(batch):
@@ -545,6 +568,7 @@ class _RunnerV3Admission:
         if any(type(value) is not int or value <= 0 for value in self.capacities.values()) \
                 or type(self.notification_key) is not str or not self.notification_key:
             _refuse("v3-owner-contract")
+        self.recovery_capacity = _v3_recovery_preflight_capacity(owner)
         for name, value in self.paths.items():
             # Initial/pending legacy delegation does not invent an epoch
             # root. A completed rollover's actual epoch front door requires it.
@@ -577,7 +601,27 @@ class _RunnerV3Admission:
         return self.source.native_bytes(
             self.owner, value, ceiling=self.capacities["MAX_STATE_JSON_BYTES"])
 
+    def recovery_wire(self, value):
+        if type(value) is not dict \
+                or set(value) != _V3_RECOVERY_PREFLIGHT_KEYS:
+            _refuse("v3 recovery preflight shape")
+        for name, member in value.items():
+            self.source.native_bytes(
+                self.owner, member,
+                ceiling=(self.capacities["MAX_MEMO_BYTES"] if name == "memo"
+                         else self.capacities["MAX_STATE_JSON_BYTES"]))
+        try:
+            return self.source.native_bytes(
+                self.owner, value, ceiling=self.recovery_capacity)
+        except self.source.SourceBatchRefusal as exc:
+            if exc.reason == "complete-byte-capacity":
+                _refuse("v3 recovery preflight aggregate exceeds its capacity")
+            raise
+
     def basis_current(self):
+        if _v3_recovery_preflight_capacity(self.owner) \
+                != self.recovery_capacity:
+            _refuse("v3-owner-basis-changed")
         for name, expected in {**self.paths, **self.capacities,
                                "NOTIFY_BASELINE_ATTEMPT_KEY": self.notification_key}.items():
             actual = self.owner.get(name)
@@ -689,10 +733,12 @@ def _recover_v3_wal(admission, *, memo, admitted_status, retained_batch,
             batch = held.value
             # Bound the complete preflight before pure WAL replay copies any
             # history. The underlying artifact ceilings remain unchanged.
-            admission.wire({"policy": admission.admitted, "memo": memo,
-                            "admitted_status": admitted_status,
-                            "retained_batch": retained_batch, "committed": committed,
-                            "successor_batch": batch})
+            admission.recovery_wire({
+                "policy": admission.admitted, "memo": memo,
+                "admitted_status": admitted_status,
+                "retained_batch": retained_batch, "committed": committed,
+                "successor_batch": batch,
+            })
             if type(batch) is not dict or type(batch.get("batch_sha256")) is not str:
                 _refuse("v3-successor-wal-shape")
             validate_successor_wal(

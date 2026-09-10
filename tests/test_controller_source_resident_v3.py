@@ -342,6 +342,45 @@ class ControllerSourceResidentV3(unittest.TestCase):
         self.assertEqual(tuple(inspect.signature(self.runner.run).parameters), ("owner", "operation"))
         self.assertEqual(tuple(inspect.signature(self.runner.run_v2).parameters), ("owner", "operation", "clock"))
 
+    def test_wal_recovery_preflight_has_a_separate_roster_bound_capacity(self):
+        self.assertEqual(self.runner.MAX_V3_RECOVERY_PREFLIGHT_DOCUMENTS, 7)
+        self.assertEqual(
+            self.runner.MAX_V3_RECOVERY_PREFLIGHT_BYTES, 117_440_512)
+        with self.legacy() as f, self.resident_owner(f) as owner:
+            policy = {
+                "journal_limits": copy.deepcopy(self.epoch.limits),
+                "expected_journal_limits_sha256":
+                    self.live._sha(self.epoch.limits),
+                "expected_adoption_sha256": None,
+            }
+            preflight = {
+                "policy": policy,
+                "memo": copy.deepcopy(f.case.live.memo),
+                "admitted_status": copy.deepcopy(f.status),
+                "retained_batch": copy.deepcopy(f.retained),
+                "committed": copy.deepcopy(f.committed),
+                "successor_batch": copy.deepcopy(f.retained),
+            }
+            member_ceiling = max(
+                len(self.source.native_bytes(owner.__dict__, value))
+                for value in preflight.values())
+            self.assertGreater(
+                len(self.source.native_bytes(owner.__dict__, preflight)),
+                member_ceiling)
+            with mock.patch.object(owner, "MAX_STATE_JSON_BYTES", member_ceiling):
+                admission = self.runner._RunnerV3Admission(
+                    owner.__dict__, **policy)
+                admission.recovery_wire(preflight)
+
+            with mock.patch.object(
+                    self.runner, "MAX_V3_RECOVERY_PREFLIGHT_BYTES", 1), \
+                    self.assertRaisesRegex(
+                        RuntimeError,
+                        "v3 recovery preflight aggregate exceeds its capacity"):
+                admission = self.runner._RunnerV3Admission(
+                    owner.__dict__, **policy)
+                admission.recovery_wire(preflight)
+
     def test_actual_legacy_bootstrap_runs_to_v3_completion_under_one_owned_scope(self):
         with self.legacy() as f:
             parent_archive = ack_tests._path_image(f.case.archive_path(f.retained))
