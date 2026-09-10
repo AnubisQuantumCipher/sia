@@ -643,6 +643,15 @@ class McpResources(unittest.TestCase):
         self.assertNotEqual(returncode, 0)
         self.assertIn("not valid UTF-8", output)
 
+    def test_cli_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=siamcp.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        with mock.patch.object(siamcp, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            siamcp._signal_and_reap_group(process)
+        os_shim.killpg.assert_not_called()
+
     def test_cli_timeout_kills_descendant_after_parent_exits(self):
         old_sia = siamcp.SIA
         with tempfile.TemporaryDirectory() as cwd:

@@ -16,7 +16,7 @@ absence detection, redaction fail-closed, and touch-source weighting.
 """
 
 import ast, contextlib, copy, datetime, fcntl, hashlib, importlib.machinery
-import importlib.util, json, os, re, shlex, shutil, sqlite3, stat
+import importlib.util, io, json, os, re, shlex, shutil, sqlite3, stat
 import subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
@@ -1973,6 +1973,60 @@ class GbrainProcessBounds(unittest.TestCase):
     def test_invalid_utf8_is_refused_before_text_admission(self):
         with self.assertRaises(UnicodeDecodeError):
             self._run("import os; os.write(1, bytes([255]))")
+
+    def test_progress_heartbeat_is_constant_and_does_not_echo_child_output(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as cwd, \
+                contextlib.redirect_stderr(output):
+            result = self.sialib._run_bounded_text_process(
+                [sys.executable, "-c",
+                 "import sys,time; print('private corpus text'); "
+                 "print('private diagnostic', file=sys.stderr); "
+                 "time.sleep(0.05)"],
+                env=dict(os.environ), timeout=30, cwd=cwd,
+                progress_interval=0.01,
+                progress_label="fixture first light")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(
+            "SIA: fixture first light is still running\n", output.getvalue())
+        self.assertNotIn("private", output.getvalue())
+
+    def test_first_light_gbrain_requests_safe_progress_heartbeats(self):
+        completed = subprocess.CompletedProcess(
+            ["gbrain"], 0, stdout="", stderr="")
+        with mock.patch.object(
+                self.sialib, "gbrain_owner",
+                return_value=contextlib.nullcontext(9)), \
+                mock.patch.object(
+                    self.sialib, "_run_bounded_text_process",
+                    return_value=completed) as bounded:
+            self.sialib.gbrain(["sync", "--source", "sia"], timeout=1800)
+        self.assertEqual(bounded.call_args.kwargs["progress_interval"], 30)
+        self.assertEqual(
+            bounded.call_args.kwargs["progress_label"],
+            "CPU-only first-light memory indexing")
+
+    def test_progress_label_is_bounded_before_child_launch(self):
+        with tempfile.TemporaryDirectory() as cwd, mock.patch.object(
+                self.sialib.subprocess, "Popen",
+                side_effect=AssertionError("unsafe child launch")) as launch, \
+                self.assertRaisesRegex(ValueError, "progress label"):
+            self.sialib._run_bounded_text_process(
+                [sys.executable, "-c", "pass"], env=dict(os.environ),
+                timeout=30, cwd=cwd, progress_interval=0.01,
+                progress_label="x" * 201)
+        launch.assert_not_called()
+
+    def test_process_group_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=self.sialib.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        cleanup = self.sialib._siasenses._ORIGINAL_CHILD_FUNCTIONS[
+            "_signal_and_reap_process_group"]
+        with mock.patch.object(self.sialib._siasenses, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            cleanup(process, 1)
+        os_shim.killpg.assert_not_called()
 
     def test_timeout_kills_descendant_after_direct_parent_exits(self):
         with tempfile.TemporaryDirectory() as cwd:
@@ -4530,8 +4584,10 @@ class EvidenceCursorHealth(unittest.TestCase):
                 stream.write(b"oversized")
             with mock.patch.object(
                     self.sialib, "MAX_JOURNAL_CURSOR_BYTES", 4), \
-                    mock.patch.object(self.sialib.subprocess, "Popen") \
-                    as launch:
+                    mock.patch.object(
+                        self.sialib.subprocess, "Popen",
+                        side_effect=AssertionError(
+                            "bounded cursor fixture launched a child")) as launch:
                 with self.assertRaisesRegex(RuntimeError, "bounded"):
                     self.sialib._journalctl([], cursor)
                 launch.assert_not_called()
@@ -4540,7 +4596,10 @@ class EvidenceCursorHealth(unittest.TestCase):
             with open(target, "wb") as stream:
                 stream.write(b"cursor")
             os.symlink(target, cursor)
-            with mock.patch.object(self.sialib.subprocess, "Popen") as launch:
+            with mock.patch.object(
+                    self.sialib.subprocess, "Popen",
+                    side_effect=AssertionError(
+                        "no-follow cursor fixture launched a child")) as launch:
                 with self.assertRaises(OSError):
                     self.sialib._journalctl([], cursor)
                 launch.assert_not_called()

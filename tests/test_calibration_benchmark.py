@@ -662,9 +662,21 @@ class JudgeIsolation(unittest.TestCase):
             siatakes._bounded_judge_process(
                 command, "prompt", timeout=30, cwd=cwd, env=os.environ)
 
+    def test_judge_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=siatakes.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        with mock.patch.object(siatakes, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            siatakes._signal_and_reap_child_group(process)
+        os_shim.killpg.assert_not_called()
+
     def test_judge_process_refuses_oversized_prompt_before_spawn(self):
         with mock.patch.object(siatakes, "MAX_JUDGE_INPUT_BYTES", 64), \
-                mock.patch.object(siatakes.subprocess, "Popen") as popen, \
+                mock.patch.object(
+                    siatakes.subprocess, "Popen",
+                    side_effect=AssertionError(
+                        "oversized prompt fixture launched a child")) as popen, \
                 self.assertRaisesRegex(OverflowError,
                                             "judge prompt exceeded"):
             siatakes._bounded_judge_process(

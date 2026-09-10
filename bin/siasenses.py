@@ -763,13 +763,20 @@ def _journal_seed_cursor(cursor_file, tmp):
         raise RuntimeError("journal cursor changed while copied")
 
 
+def _real_process_pid(process):
+    pid = process.pid
+    if type(pid) is not int or pid <= 1:
+        raise RuntimeError("bounded subprocess lost its process identity")
+    return pid
+
+
 def _await_process_exit_unreaped(process, deadline, command, timeout):
     """Wait for leader exit through pidfd while preserving its PID/PGID."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(command, timeout)
     try:
-        pidfd = os.pidfd_open(process.pid, 0)
+        pidfd = os.pidfd_open(_real_process_pid(process), 0)
     except (AttributeError, OSError) as exc:
         raise RuntimeError(
             "bounded subprocess cannot establish a stable process identity") \
@@ -788,8 +795,9 @@ def _signal_and_reap_process_group(process, timeout):
     """Signal a still-identity-bound process group, then reap its leader."""
     if process is None:
         return None
+    pid = _real_process_pid(process)
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        os.killpg(pid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
         try:
             process.kill()

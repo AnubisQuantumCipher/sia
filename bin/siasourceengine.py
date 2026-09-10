@@ -117,7 +117,10 @@ def compatibility_gbrain(owner, args, *, timeout=120, json_out=False):
             result = owner["_run_bounded_text_process"](
                 [GBRAIN] + args, env=owner["GBRAIN_ENV"],
                 timeout=timeout, cwd=owner["CORPUS"], pass_fds=(owner_fd,),
-                label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"])
+                label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"],
+                progress_interval=(30 if timeout == 1800 else None),
+                progress_label=("CPU-only first-light memory indexing"
+                                if timeout == 1800 else None))
     except Exception as exc:
         if isinstance(exc, UnicodeError):
             reason = "gbrain output is not valid UTF-8"

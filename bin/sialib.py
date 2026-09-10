@@ -3954,17 +3954,14 @@ MAX_GBRAIN_OUTPUT_BYTES = MAX_EXTERNAL_OUTPUT_BYTES
 def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                               label="subprocess", output_limit=None,
                               isolate_process_tree=False,
-                              retain_output=True):
+                              retain_output=True, progress_interval=None,
+                              progress_label=None):
     """Run one external reader with bounded combined output and lifetime.
 
-    stdout and stderr are drained concurrently so neither pipe can deadlock the
-    other.  Every producer runs in a fresh process group.  Callers accepting an
-    operator-supplied executable can additionally request a private PID
-    namespace: its init process dying removes descendants even if one calls
-    ``setsid()`` and closes the inherited pipes.  Without that namespace, only
-    the original process group is contained. Retained text is admitted as
-    strict UTF-8; discard mode drains and counts bytes without accumulating or
-    decoding them.
+    Drain both pipes concurrently in a fresh process group. Optional PID
+    isolation also contains descendants that call ``setsid()``. Retained bytes
+    require strict UTF-8; discard mode only counts them. Progress output uses a
+    constant caller label and never echoes child output.
     """
     if not isinstance(command, (list, tuple)) or not command \
             or any(not isinstance(part, (str, bytes, os.PathLike))
@@ -3985,6 +3982,16 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
         raise ValueError("bounded subprocess isolation mode is invalid")
     if not isinstance(retain_output, bool):
         raise ValueError("bounded subprocess output-retention mode is invalid")
+    if progress_interval is not None and (
+            isinstance(progress_interval, bool)
+            or not isinstance(progress_interval, (int, float))
+            or not math.isfinite(progress_interval) or progress_interval <= 0):
+        raise ValueError("invalid progress interval")
+    if (progress_interval is None) != (progress_label is None) or (
+            progress_label is not None and (
+                len(progress_label) > MAX_SOURCE_NAME_CHARS or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9 ._-]*", progress_label))):
+        raise ValueError("invalid progress label")
     original_command = list(command)
     launch_command = original_command
     if isolate_process_tree:
@@ -4012,14 +4019,23 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ)
         deadline = time.monotonic() + timeout
+        next_progress = (time.monotonic() + progress_interval
+                         if progress_interval is not None else None)
         captured = 0
         while selector.get_map():
-            remaining = deadline - time.monotonic()
+            now = time.monotonic()
+            remaining = deadline - now
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(original_command, timeout)
-            ready = selector.select(remaining)
+            if next_progress is not None and now >= next_progress:
+                print(f"SIA: {progress_label} is still running", file=sys.stderr,
+                      flush=True)
+                next_progress = now + progress_interval
+            wait = (min(remaining, max(0, next_progress - now))
+                    if next_progress is not None else remaining)
+            ready = selector.select(wait)
             if not ready:
-                raise subprocess.TimeoutExpired(original_command, timeout)
+                continue
             for key, _events in ready:
                 stream = key.fileobj
                 budget = output_limit - captured
