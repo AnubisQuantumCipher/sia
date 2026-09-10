@@ -75,6 +75,9 @@ BUN_DIR = os.path.join(TOOLCHAIN, "bun", "bin")
 GBRAIN_ENV = dict(os.environ,
                   GBRAIN_HOME=SHARE,
                   GBRAIN_SKIP_STARTUP_HOOKS="1",
+                  # JACKAL status=exact parsed=300*1000 exact=300000;
+                  # NOT formal-bounded; no completion claim.
+                  GBRAIN_AI_EMBED_TIMEOUT_MS="300000",
                   PATH=BUN_DIR + ":" + os.environ.get("PATH", ""))
 
 # gbrain registers this corpus under one named source. Every page-addressed
@@ -651,6 +654,8 @@ _BRAINSTEM_OWNER_FD = contextvars.ContextVar(
     "sia_brainstem_owner_fd", default=None)
 _GBRAIN_OWNER_FD = contextvars.ContextVar(
     "sia_gbrain_owner_fd", default=None)
+_BRAIN_SYNC_TIMEOUT_SECONDS = contextvars.ContextVar(
+    "sia_brain_sync_timeout_seconds", default=300)
 _LIFECYCLE_READER_DEPTH = contextvars.ContextVar(
     "sia_lifecycle_reader_depth", default=0)
 _INHERITED_LIFECYCLE_FD_ENV = "SIA_INHERITED_LIFECYCLE_FD"
@@ -3940,14 +3945,6 @@ del _sialib_thought_name
 
 # ---------------------------------------------------------------- gbrain
 
-class _FailedRun:
-    returncode = -1
-    stdout = ""
-
-    def __init__(self, reason="subprocess failed/timed out"):
-        self.stderr = str(reason)[:240]
-
-
 # Alias the exact state ceiling declared above; stdout and stderr share
 # this one aggregate budget rather than receiving independent allowances.
 MAX_EXTERNAL_OUTPUT_BYTES = MAX_STATE_JSON_BYTES
@@ -4084,55 +4081,16 @@ def gbrain_owner():
             _GBRAIN_OWNER_FD.reset(token)
 
 def gbrain(args, timeout=120, json_out=False):
-    try:
-        with gbrain_owner() as owner_fd:
-            r = _run_bounded_text_process(
-                [GBRAIN] + args, env=GBRAIN_ENV, timeout=timeout, cwd=CORPUS,
-                pass_fds=(owner_fd,), label="gbrain",
-                output_limit=MAX_GBRAIN_OUTPUT_BYTES)
-    except Exception as exc:
-        if isinstance(exc, UnicodeError):
-            reason = "gbrain output is not valid UTF-8"
-        elif isinstance(exc, subprocess.TimeoutExpired):
-            reason = "gbrain subprocess timed out"
-        else:
-            reason = str(exc) or "gbrain subprocess failed"
-        r = _FailedRun(reason)
-    if json_out:
-        try:
-            return _strict_json_loads(
-                r.stdout[r.stdout.index("["):] if "[" in r.stdout
-                else r.stdout)
-        except Exception:
-            try:
-                return _strict_json_loads(r.stdout[r.stdout.index("{"):])
-            except Exception:
-                return None
-    return r
+    import siasourceengine
+    return siasourceengine.compatibility_gbrain(
+        globals(), args, timeout=timeout, json_out=json_out)
 
 
 def _gbrain_call_unlocked(op, params, timeout=120, owner_fd=None):
     """Call one gbrain operation while the caller owns the engine lease."""
-    try:
-        r = _run_bounded_text_process(
-            [GBRAIN, "call", "--source", GBRAIN_SOURCE, op,
-             json.dumps(params)],
-            env=GBRAIN_ENV, timeout=timeout, cwd=CORPUS,
-            pass_fds=((owner_fd,) if owner_fd is not None else ()),
-            label="gbrain", output_limit=MAX_GBRAIN_OUTPUT_BYTES)
-    except Exception:
-        return None
-    if r.returncode != 0:
-        return None
-    out = r.stdout
-    for opener in ("[", "{"):
-        i = out.find(opener)
-        if i >= 0:
-            try:
-                return _strict_json_loads(out[i:])
-            except Exception:
-                continue
-    return None
+    import siasourceengine
+    return siasourceengine.compatibility_gbrain_call_unlocked(
+        globals(), op, params, timeout=timeout, owner_fd=owner_fd)
 
 
 def gbrain_call(op, params, timeout=120):
@@ -4156,66 +4114,33 @@ def gbrain_all_pages(batch_size=500):
 
 def corpus_commit(msg):
     """Tri-state: 'committed' | 'clean' (nothing to commit) | 'error'."""
-    try:
-        staged = _run_bounded_text_process(
-            ["git", "add", "-A"], env=None, timeout=60, cwd=CORPUS,
-            label="git add")
-        if staged.returncode != 0:
-            return "error"
-        # After add, the cached diff exit status answers clean/dirty without
-        # materializing one path per corpus page in the resident process.
-        staged_diff = _run_bounded_text_process(
-            ["git", "diff", "--cached", "--quiet", "--no-ext-diff", "--"],
-            env=None, timeout=60, cwd=CORPUS, label="git staged diff")
-        if staged_diff.returncode == 0:
-            return "clean"
-        if staged_diff.returncode != 1:
-            return "error"
-        r = _run_bounded_text_process(
-            ["git", "-c", "user.email=sia@omarchy.local",
-             "-c", "user.name=SIA", "commit", "-q", "-m", msg],
-            env=None, timeout=60, cwd=CORPUS, label="git commit")
-        return "committed" if r.returncode == 0 else "error"
-    except Exception:
-        return "error"
+    import siasourceengine
+    return siasourceengine.compatibility_corpus_commit(globals(), msg)
 
 
 def corpus_dirty():
     """Whether the corpus has a staged, modified, deleted, or untracked page."""
-    try:
-        status = _run_bounded_text_process(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
-            env=None, timeout=60, cwd=CORPUS, label="git status")
-        return bool(status.stdout.strip()) if status.returncode == 0 else None
-    except Exception:
-        return None
+    import siasourceengine
+    return siasourceengine.compatibility_corpus_dirty(globals())
 
 
 def brain_sync():
-    args = ["sync", "--source", "sia"]
-    if os.environ.get("SIA_RESTORE_FULL_SYNC") == "1":
-        # A restored Git history may be older than, or unrelated to, the
-        # destination PGLite bookmark. Incremental sync is not a recovery
-        # proof; the restore worker requests one complete reconciliation.
-        args.append("--full")
-    r = gbrain(args, timeout=300)
-    if r.returncode != 0:
-        return False, (r.stderr or r.stdout)[-400:]
-    # sync does not run link extraction — materialize explicit corpus links
-    # first, then retain gbrain's built-in gazetteer lane for unlinked
-    # person/company/organization/entity mentions.  SIA-specific entity types
-    # are handled from explicit wikilinks by corpus_edges below; neither lane
-    # weakens or impersonates the other.
-    x = gbrain(["extract", "links", "--source", "db", "--stale", "--json"],
-               timeout=300)
-    if x.returncode != 0:
-        return False, "extract: " + (x.stderr or x.stdout)[-300:]
-    n = gbrain(["extract", "links", "--by-mention", "--ner",
-                "--source", "db", "--source-id", "sia", "--json"],
-               timeout=300)
-    if n.returncode != 0:
-        return False, "ner: " + (n.stderr or n.stdout)[-300:]
-    return True, ""
+    import siasourceengine
+    return siasourceengine.compatibility_brain_sync(
+        globals(), _BRAIN_SYNC_TIMEOUT_SECONDS.get(), gbrain)
+
+
+def first_light_brain_sync():
+    token = _BRAIN_SYNC_TIMEOUT_SECONDS.set(1800)
+    try:
+        return brain_sync()
+    finally:
+        _BRAIN_SYNC_TIMEOUT_SECONDS.reset(token)
+
+
+def publication_brain_sync(memo):
+    return (first_light_brain_sync() if _ready_receipt(memo) is None
+            else brain_sync())
 
 
 # ---------------------------------------------------------------- integrity
@@ -8452,7 +8377,7 @@ def _settle_pending_publication(memo, message, *, clear=True):
     commit = corpus_commit(message)
     if commit == "error":
         raise RuntimeError("pending corpus git commit failed")
-    synced, sync_note = brain_sync()
+    synced, sync_note = publication_brain_sync(memo)
     if not synced:
         raise RuntimeError(f"pending index sync failed: {sync_note}")
     try:
@@ -10308,7 +10233,7 @@ def _pulse_transaction_guarded(
         if commit == "error":
             synced, sync_note = False, "corpus git commit failed"
         else:
-            synced, sync_note = brain_sync()
+            synced, sync_note = publication_brain_sync(memo)
         try:
             nodes, edges, pages_total = _export_graph_publication()
         except Exception as exc:
@@ -11220,7 +11145,7 @@ def _dream_transaction_guarded(
         _settle_pending_dream_ledger(memo)
         raise RuntimeError("dream corpus git commit failed")
     try:
-        synced, sync_note = brain_sync()
+        synced, sync_note = publication_brain_sync(memo)
         nodes, edges, pages_total = _export_graph_publication()
     except Exception as exc:
         detail = _dream_diagnostic(memo, exc, 120)

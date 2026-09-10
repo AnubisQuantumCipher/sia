@@ -13,6 +13,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import tempfile
 
 
@@ -98,6 +99,124 @@ _GENERATION_KEYS_V3 = _GENERATION_KEYS_V2 | frozenset({
 _GENERATION_KEYS_V4 = _GENERATION_KEYS_V3 | frozenset({
     "embed_raw_sha256", "embed_stderr_sha256",
 })
+
+
+class _CompatibilityFailedRun:
+    returncode = -1
+    stdout = ""
+
+    def __init__(self, reason):
+        self.stderr = str(reason)[:240]
+
+
+def compatibility_gbrain(owner, args, *, timeout=120, json_out=False):
+    """Run the compatibility engine CLI through the caller's owned boundary."""
+    GBRAIN = owner["GBRAIN"]
+    try:
+        with owner["gbrain_owner"]() as owner_fd:
+            result = owner["_run_bounded_text_process"](
+                [GBRAIN] + args, env=owner["GBRAIN_ENV"],
+                timeout=timeout, cwd=owner["CORPUS"], pass_fds=(owner_fd,),
+                label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"])
+    except Exception as exc:
+        if isinstance(exc, UnicodeError):
+            reason = "gbrain output is not valid UTF-8"
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            reason = "gbrain subprocess timed out"
+        else:
+            reason = str(exc) or "gbrain subprocess failed"
+        result = _CompatibilityFailedRun(reason)
+    if not json_out:
+        return result
+    for opener in ("[", "{"):
+        try:
+            return owner["_strict_json_loads"](
+                result.stdout[result.stdout.index(opener):])
+        except Exception:
+            continue
+    return None
+
+
+def compatibility_gbrain_call_unlocked(owner, op, params, *, timeout=120,
+                                       owner_fd=None):
+    """Run one compatibility call while the parent retains the engine lease."""
+    GBRAIN = owner["GBRAIN"]
+    try:
+        result = owner["_run_bounded_text_process"](
+            [GBRAIN, "call", "--source", owner["GBRAIN_SOURCE"], op,
+             json.dumps(params)], env=owner["GBRAIN_ENV"], timeout=timeout,
+            cwd=owner["CORPUS"],
+            pass_fds=((owner_fd,) if owner_fd is not None else ()),
+            label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"])
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    for opener in ("[", "{"):
+        offset = result.stdout.find(opener)
+        if offset >= 0:
+            try:
+                return owner["_strict_json_loads"](result.stdout[offset:])
+            except Exception:
+                continue
+    return None
+
+
+def compatibility_brain_sync(owner, timeout, gbrain):
+    """Synchronize and extract through the compatibility engine front door."""
+    args = ["sync", "--source", "sia"]
+    if os.environ.get("SIA_RESTORE_FULL_SYNC") == "1":
+        args.append("--full")
+    result = gbrain(args, timeout=timeout)
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout)[-400:]
+    links = gbrain(
+        ["extract", "links", "--source", "db", "--stale", "--json"],
+        timeout=timeout)
+    if links.returncode != 0:
+        return False, "extract: " + (links.stderr or links.stdout)[-300:]
+    mentions = gbrain(
+        ["extract", "links", "--by-mention", "--ner", "--source", "db",
+         "--source-id", "sia", "--json"], timeout=timeout)
+    if mentions.returncode != 0:
+        return False, "ner: " + (mentions.stderr or mentions.stdout)[-300:]
+    return True, ""
+
+
+def compatibility_corpus_commit(owner, message):
+    """Return committed, clean, or error for one compatibility corpus."""
+    try:
+        staged = owner["_run_bounded_text_process"](
+            ["git", "add", "-A"], env=None, timeout=60,
+            cwd=owner["CORPUS"], label="git add")
+        if staged.returncode != 0:
+            return "error"
+        staged_diff = owner["_run_bounded_text_process"](
+            ["git", "diff", "--cached", "--quiet", "--no-ext-diff", "--"],
+            env=None, timeout=60, cwd=owner["CORPUS"],
+            label="git staged diff")
+        if staged_diff.returncode == 0:
+            return "clean"
+        if staged_diff.returncode != 1:
+            return "error"
+        result = owner["_run_bounded_text_process"](
+            ["git", "-c", "user.email=sia@omarchy.local", "-c",
+             "user.name=SIA", "commit", "-q", "-m", message], env=None,
+            timeout=60, cwd=owner["CORPUS"], label="git commit")
+        return "committed" if result.returncode == 0 else "error"
+    except Exception:
+        return "error"
+
+
+def compatibility_corpus_dirty(owner):
+    """Return compatibility corpus dirtiness, or None on refusal."""
+    try:
+        result = owner["_run_bounded_text_process"](
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            env=None, timeout=60, cwd=owner["CORPUS"], label="git status")
+        return bool(result.stdout.strip()) if result.returncode == 0 else None
+    except Exception:
+        return None
 
 
 def _refuse(source, reason, *, upstream=None):

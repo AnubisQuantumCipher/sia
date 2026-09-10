@@ -15,9 +15,11 @@ behavior is copied into these fixtures.
 
 import contextlib
 import fcntl
+import io
 import json
 import os
 from pathlib import Path
+import runpy
 import selectors
 import shlex
 import shutil
@@ -407,6 +409,40 @@ flock() {
 
 
 class LifecycleProcessOwnershipTests(unittest.TestCase):
+    def test_named_deadline_identifies_the_blocked_command(self):
+        namespace = runpy.run_path(OWNER)
+        runner = namespace["main"]
+        runner.__globals__["ALLOWED_DEADLINES"] = {1}
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            status = runner([
+                "run", "1", "--label", "sia ready", sys.executable,
+                "-c", "import time; time.sleep(300)",
+            ])
+        self.assertEqual(status, 124)
+        self.assertEqual(
+            error.getvalue(),
+            "sia ready exceeded its 1-second runtime deadline\n")
+
+    def test_command_label_cannot_inject_diagnostics_or_reach_the_child(self):
+        namespace = runpy.run_path(OWNER)
+        runner = namespace["main"]
+        runner.__globals__["ALLOWED_DEADLINES"] = {1}
+        with tempfile.TemporaryDirectory(
+                prefix="sia-command-label-") as temporary:
+            marker = Path(temporary) / "launched"
+            error = io.StringIO()
+            with contextlib.redirect_stderr(error):
+                status = runner([
+                    "run", "1", "--label", "sia ready\nforged",
+                    sys.executable, "-c",
+                    "from pathlib import Path; Path(" + repr(str(marker))
+                    + ").write_text('launched')",
+                ])
+            self.assertEqual(status, 2)
+            self.assertIn("bounded command label is invalid", error.getvalue())
+            self.assertFalse(marker.exists())
+
     def test_release_source_admission_rejects_group_and_world_writes(self):
         cases = (
             ("source-root-group", "root", stat.S_IWGRP,

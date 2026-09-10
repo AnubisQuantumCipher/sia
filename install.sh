@@ -11083,7 +11083,7 @@ fi
 # public readiness predicate after final service attestation, then publish the
 # release-bound record atomically.  An interrupted or refused installer leaves
 # the prior/missing record fail-closed.
-run_with_deadline 120 "$CLI_PATH" ready
+run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready
 publish_first_light_state "$BINDIR" ready
 echo "  first light: matching runtime and readiness completion published"
 

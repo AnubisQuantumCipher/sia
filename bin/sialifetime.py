@@ -33,6 +33,7 @@ import time
 MAX_SOURCE_BYTES = 16_777_216
 MAX_CAPTURE_BYTES = 1_048_576
 MAX_CONTROL_BYTES = 4_096
+MAX_COMMAND_LABEL_CHARS = 160
 ALLOWED_DEADLINES = {120, 300, 1800}
 CAPTURE_DEADLINE = 120
 LEADER_POLL_SECONDS = 15
@@ -40,6 +41,7 @@ LEADER_POLL_SECONDS = 15
 PR_SET_CHILD_SUBREAPER = 36
 PR_GET_CHILD_SUBREAPER = 37
 LEASE_NAME = re.compile(r"SIA_[A-Z_]+_FD\Z")
+COMMAND_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _./:-]*\Z")
 DIRECTORY_FLAGS = (os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW)
 SETUP_HANDOFF_ABI = "1"
 SETUP_HANDOFF_FDS = {
@@ -753,9 +755,15 @@ def supervise(entry, arguments, *, setup_lease=None, caller=None,
     return result
 
 
-def run_command(arguments, *, deadline, capture=False, pass_stdin=False, caller=None):
+def run_command(arguments, *, deadline, capture=False, pass_stdin=False,
+                caller=None, label=None):
     if deadline not in ALLOWED_DEADLINES or not arguments:
         raise LifetimeRefusal("unsupported command deadline or empty command")
+    if label is not None and (
+            not isinstance(label, str) or not label
+            or len(label) > MAX_COMMAND_LABEL_CHARS
+            or COMMAND_LABEL.fullmatch(label) is None):
+        raise LifetimeRefusal("bounded command label is invalid")
     signals = process = None
     leader_fd = parent_fd = None
     output = bytearray()
@@ -788,7 +796,10 @@ def run_command(arguments, *, deadline, capture=False, pass_stdin=False, caller=
                 remaining = end - time.monotonic()
                 if remaining <= 0:
                     returncode = 124
-                    refusal = "external command exceeded its runtime deadline"
+                    subject = label if label is not None else "external command"
+                    refusal = (
+                        f"{subject} exceeded its {deadline}-second "
+                        "runtime deadline")
                     break
                 for key, _events in selector.select(remaining):
                     if key.data == "leader":
@@ -886,7 +897,16 @@ def main(arguments=None):
             lease(int(values[1], 10), "release", values[2])
             return 0
         if values[:1] == ["run"] and len(values) >= 3:
-            return run_command(values[2:], deadline=int(values[1], 10), caller=caller)
+            commands = values[2:]
+            label = None
+            if commands[:1] == ["--label"]:
+                if len(commands) < 3:
+                    raise LifetimeRefusal("incomplete bounded command label")
+                label = commands[1]
+                commands = commands[2:]
+            return run_command(
+                commands, deadline=int(values[1], 10), caller=caller,
+                label=label)
         if values[:1] == ["capture"]:
             commands = values[1:]
             pass_stdin = commands[:1] == ["--stdin"]

@@ -240,7 +240,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         first_runtime_step = installer.index(
             'step "1/9 private restic + bun + pinned gbrain')
         final_ready = installer.rindex(
-            'run_with_deadline 120 "$CLI_PATH" ready')
+            'run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready')
         completion = installer.rindex(
             'publish_first_light_state "$BINDIR" ready')
         self.assertLess(installing, first_runtime_step)
@@ -249,6 +249,36 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn(
             "stat.S_IMODE(published.st_mode) != 0o600", installer)
         self.assertIn("remove_first_light_completion", _read("uninstall.sh"))
+
+    def test_cpu_only_first_light_has_distinct_bounded_sync_deadlines(self):
+        sialib = _load_sialib()
+        self.assertEqual(
+            sialib.GBRAIN_ENV["GBRAIN_AI_EMBED_TIMEOUT_MS"], "300000")
+        calls = []
+
+        def gbrain(arguments, timeout=120):
+            calls.append((arguments, timeout))
+            return subprocess.CompletedProcess(
+                arguments, 0, stdout="", stderr="")
+
+        with mock.patch.object(sialib, "gbrain", side_effect=gbrain):
+            self.assertEqual(sialib.brain_sync(), (True, ""))
+            steady = list(calls)
+            calls.clear()
+            self.assertEqual(sialib.first_light_brain_sync(), (True, ""))
+            first_light = list(calls)
+
+        self.assertEqual([timeout for _arguments, timeout in steady],
+                         [300, 300, 300])
+        self.assertEqual([timeout for _arguments, timeout in first_light],
+                         [1800, 1800, 1800])
+
+        installer = _read("install.sh")
+        self.assertIn(
+            'run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready',
+            installer)
+        pulse = _read("bin/sialib.py").split("def pulse(", 1)[1]
+        self.assertIn("publication_brain_sync(memo)", pulse)
 
     def _status_change_observation(self, body):
         node = shutil.which("node")
