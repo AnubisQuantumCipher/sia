@@ -502,7 +502,7 @@ def _live_refusal_result(reason, *, refusal=None):
 def _read_live_view_result():
     import sialiveview
     try:
-        return sialiveview.read_view(sialib.__dict__)
+        return sialiveview.read_cached_view(sialib.__dict__)
     except sialiveview.LiveViewRefusal as exc:
         return _live_refusal_result(exc.reason, refusal=exc)
     except (OSError, RuntimeError, TypeError, ValueError, KeyError,
@@ -608,9 +608,34 @@ def cmd_live(args):
     return 1 if value["status"] == "refused" else 0
 
 
+@contextlib.contextmanager
+def _corpus_owner_nowait():
+    """Join an inherited owner or acquire the resident transaction immediately."""
+    if sialib._CORPUS_OWNER_DEPTH.get() \
+            or sialib._validated_inherited_corpus_fd() is not None:
+        with sialib.corpus_owner() as owner_fd:
+            yield owner_fd
+        return
+    with sialib._owner_lease(
+            sialib.CORPUS_OWNER_LOCK, "SIA corpus transaction",
+            blocking=False) as owner_fd:
+        depth_token = sialib._CORPUS_OWNER_DEPTH.set(1)
+        fd_token = sialib._CORPUS_OWNER_FD.set(owner_fd)
+        try:
+            yield owner_fd
+        finally:
+            sialib._CORPUS_OWNER_FD.reset(fd_token)
+            sialib._CORPUS_OWNER_DEPTH.reset(depth_token)
+
+
 def cmd_status():
-    with sialib.corpus_owner():
-        return _cmd_status_owned()
+    try:
+        with _corpus_owner_nowait():
+            return _cmd_status_owned()
+    except sialib.OwnerBusy:
+        print("SIA · resident pulse in progress · readiness check deferred")
+        selected = _print_live_summary()
+        return 1 if selected["status"] == "refused" else 0
 
 
 def _cmd_status_owned():
@@ -1328,9 +1353,12 @@ def _cmd_pulse_owned():
     # and prevents an old publication callback from rolling pulse_seq back.
     with sialib.corpus_owner():
         memo = sialib.load_memo()
-        if (sialib._controller_source_present(memo)
-                or sialib._controller_source_enabled()):
+        source_cycle = (sialib._controller_source_present(memo)
+                        or sialib._controller_source_enabled())
+        if source_cycle:
             st = sialib._run_controller_source_cycle()
+            import sialiveview
+            sialiveview.publish_cache(sialib.__dict__)
         else:
             sialib._settle_pending_brainstem_failure_publication(memo)
             sialib._require_status_memo_fields(memo)
@@ -2317,7 +2345,7 @@ def cmd_intend(argv):
 
 
 READINESS_GATED_COMMANDS = frozenset({
-    "ask", "query", "recall", "memory", "rehearse", "think", "graph",
+    "ask", "query", "recall", "memory", "rehearse", "graph",
     "ponder", "deep", "takes", "grade", "calibration", "bench",
     "judge-audit", "context", "intend",
 })

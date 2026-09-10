@@ -181,6 +181,15 @@ It excludes corpus bodies and broadcast payload text. `sia status` and
 `sia think` include the same source-authorized summary; `sia think` also
 keeps its recent generated-entry listing.
 
+The resident publishes this source-authorized display snapshot only after the
+complete pulse is acknowledged. Readers validate that retained snapshot
+without acquiring the long-running corpus writer lease, so `sia live`, `sia
+think`, the bar and the cockpit remain responsive while the successor pulse is
+working. `sia status` attempts its complete readiness join without waiting; if
+the resident owns the transaction, it labels readiness as deferred and shows
+the same last acknowledged workspace. The cache is a display projection, not
+transaction authority, and a missing or invalid cache produces a named refusal.
+
 The bar tooltip and cockpit's retained workspace card share the same
 read-only `sia live --json` consumer. They join the response to the resident
 publication identity and clock, show actual policy capacity and source
@@ -200,10 +209,11 @@ belongs to the retained pulse. A gist proposal and its page-publication
 receipt are shown separately. These are `computed-unverified` software
 observations, with no cognitive or held-out retrieval claim.
 
-The reader requires an acknowledged source transaction and revalidates its
-batch, effects receipt, live generation and status. Without that authority,
-or while its transaction is pending, it returns a named refusal; compatibility
-status and old workspace fields do not fill the gap. Source-controller
+The publisher requires an acknowledged source transaction and revalidates its
+batch, effects receipt, live generation and status. Without that authority it
+does not publish. A successor transaction may be pending while readers keep
+showing the distinctly identified last acknowledged projection; compatibility
+status and old workspace fields never fill a missing cache. Source-controller
 activation remains an explicit `mind.controller_source: true` configuration
 selection. This implementation is unreleased; installing the runtime and
 activating its controller are separate deployment steps.

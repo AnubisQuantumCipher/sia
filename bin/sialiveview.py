@@ -14,6 +14,7 @@ import contextlib
 import copy
 import hashlib
 import json
+import os
 import re
 
 import sialiveloop as live
@@ -25,12 +26,14 @@ import siasourceeffects as effects
 # An independently declared display envelope within the existing single
 # state-artifact ceiling. Exceeding it refuses the whole view, without a tail.
 MAX_VIEW_BYTES = 16_777_216
+CACHE_BASENAME = "live-view.json"
 NON_CLAIMS = (
     "This view reports retained computed-unverified component observations from one acknowledged local source transaction; it is not JACKAL assurance, biological cognition, cognitive authorization or a held-out retrieval win.",
     "The as_of value is the retained controller observation clock, not a fresh measurement of the machine or proof that the displayed workspace is still active now.",
     "Selection-time activation and admission explain a held workspace separately from the current pulse's activation; inspection does not select, broadcast, execute or acknowledge a consumer.",
     "Gist proposals and retained page-publication receipts remain distinct; a receipt establishes only its declared local publication boundary, not successful later recall or biological consolidation.",
-    "Full source, effects, live, status and readiness joins are revalidated under the corpus owner; represented identities do not establish source truth, complete machine history or protection against hostile same-user mutation.",
+    "The published source, effects, live and status joins were revalidated under the corpus owner; represented identities do not establish source truth, complete machine history or protection against hostile same-user mutation.",
+    "A cached view is the last acknowledged complete generation, not an observation of an in-progress pulse; cache readers do not acquire the resident writer lease.",
     "The display omits corpus bodies and broadcast payload text. All source, component, publication, origin and delivery nonclaims remain controlling.",
 )
 _REASON = re.compile(r"[a-z][a-z0-9-]*\Z")
@@ -42,6 +45,31 @@ _OWNER_CALLS = (
 _PROPOSAL_FIELDS = (
     "subject", "origin", "source_sha256", "content_sha256", "version_sha256",
 )
+_VIEW_FIELDS = {
+    "schema", "status", "origin", "as_of", "publication", "workspace",
+    "encoding", "admission", "activation", "coretrieval", "idle",
+    "non_claims", "upstream_non_claims", "view_sha256",
+}
+_PUBLICATION_FIELDS = {
+    "publication_id", "pulse_seq", "status_timestamp", "epoch_id",
+    "state_sha256", "transition_sha256", "generation_sha256",
+    "source_batch_sha256", "source_effects_receipt_sha256", "policy_sha256",
+}
+_WORKSPACE_FIELDS = {
+    "component", "status", "observed_at", "transition", "release_reason",
+    "slots", "candidates", "payload_sha256", "phase", "capacity",
+    "ignition_threshold", "ignited_at", "expires_at", "selected_sources",
+    "selection", "broadcast_identities",
+}
+_IDLE_FIELDS = {
+    "requested", "availability", "binding_status", "binding_sha256",
+    "gist_artifact_sha256", "proposed_pages", "gist_publication_status",
+    "gist_publication",
+}
+_FORBIDDEN_CACHE_FIELDS = {
+    "content", "chunk_text", "payload_json", "artifact_json",
+    "raw_utf8_base64", "output_utf8_base64",
+}
 
 
 class LiveViewRefusal(ValueError):
@@ -72,6 +100,111 @@ def _owner(owner):
             or any(type(owner.get(name)) is not int or owner[name] <= 0
                    for name in ("MAX_MEMO_BYTES", "MAX_STATE_JSON_BYTES")):
         _refuse("owner-contract")
+
+
+def _cache_path(owner):
+    state = owner.get("STATE") if type(owner) is dict else None
+    if type(state) is not str or not os.path.isabs(state) \
+            or os.path.normpath(state) != state or state == os.path.sep \
+            or "\x00" in state:
+        _refuse("cache-owner-contract")
+    return os.path.join(state, CACHE_BASENAME)
+
+
+def _contains_forbidden_cache_field(value):
+    if type(value) is dict:
+        if _FORBIDDEN_CACHE_FIELDS.intersection(value):
+            return True
+        return any(_contains_forbidden_cache_field(item)
+                   for item in value.values())
+    if type(value) is list:
+        return any(_contains_forbidden_cache_field(item) for item in value)
+    return False
+
+
+def _validate_cached_view(owner, value):
+    if type(value) is not dict or set(value) != _VIEW_FIELDS \
+            or value.get("schema") != "sia-controller-live-view-v1" \
+            or value.get("status") != "available" \
+            or value.get("origin") != "derived" \
+            or type(value.get("as_of")) is not int \
+            or value.get("non_claims") != list(NON_CLAIMS) \
+            or type(value.get("upstream_non_claims")) is not dict \
+            or _contains_forbidden_cache_field(value):
+        _refuse("cached-view-contract")
+    publication = value.get("publication")
+    workspace = value.get("workspace")
+    idle = value.get("idle")
+    if type(publication) is not dict or set(publication) != _PUBLICATION_FIELDS \
+            or type(workspace) is not dict or set(workspace) != _WORKSPACE_FIELDS \
+            or type(idle) is not dict or set(idle) != _IDLE_FIELDS \
+            or any(type(value.get(field)) is not dict for field in (
+                "encoding", "activation", "coretrieval")) \
+            or type(value.get("admission")) is not list \
+            or type(workspace.get("slots")) is not list \
+            or type(workspace.get("selected_sources")) is not list \
+            or type(workspace.get("broadcast_identities")) is not dict \
+            or type(idle.get("proposed_pages")) is not list:
+        _refuse("cached-view-contract")
+    if any(not live._digest(publication.get(field)) for field in (
+            "state_sha256", "transition_sha256", "generation_sha256",
+            "source_batch_sha256", "source_effects_receipt_sha256",
+            "policy_sha256")) \
+            or type(publication.get("pulse_seq")) is not int \
+            or publication["pulse_seq"] < 0 \
+            or any(type(publication.get(field)) is not str
+                   or not publication[field] for field in (
+                       "publication_id", "status_timestamp", "epoch_id")):
+        _refuse("cached-view-identity")
+    expected = hashlib.sha256(_raw(
+        owner, {key: item for key, item in value.items()
+                if key != "view_sha256"}, display=True)).hexdigest()
+    if not live._digest(value.get("view_sha256")) \
+            or value["view_sha256"] != expected:
+        _refuse("cached-view-digest")
+    _raw(owner, value, display=True)
+    return value
+
+
+def read_cached_view(owner):
+    """Read the last source-authorized complete view without the writer lease."""
+    try:
+        _owner(owner)
+        value = owner["read_state_json"](
+            _cache_path(owner), None, "retained live view", expected_type=dict)
+        if value is None:
+            _refuse("live-view-cache-unavailable")
+        original = _raw(owner, value, display=True)
+        detached = copy.deepcopy(_validate_cached_view(owner, value))
+        if _raw(owner, detached, display=True) != original:
+            _refuse("cached-view-detachment-changed")
+        return detached
+    except LiveViewRefusal:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError) as exc:
+        _refuse("cached-view-refusal", upstream=exc)
+
+
+def publish_cache(owner):
+    """Publish one fully rejoined view for nonblocking resident inspection."""
+    try:
+        _owner(owner)
+        if not callable(owner.get("atomic_write")):
+            _refuse("cache-owner-contract")
+        value = read_view(owner)
+        raw = _raw(owner, _validate_cached_view(owner, value), display=True)
+        owner["atomic_write"](
+            _cache_path(owner), raw.decode("utf-8") + "\n", mode=0o600)
+        retained = read_cached_view(owner)
+        if _raw(owner, retained, display=True) != raw:
+            _refuse("cached-view-publication-changed")
+        return retained
+    except LiveViewRefusal:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError) as exc:
+        _refuse("cached-view-publication-refusal", upstream=exc)
 
 
 def _raw(owner, value, *, display=False):

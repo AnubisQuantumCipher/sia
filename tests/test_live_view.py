@@ -107,6 +107,51 @@ class SourceAuthorizedLiveView(unittest.TestCase):
         with self.assertRaises(module.LiveViewRefusal):
             module.read_view(None)
 
+    def test_published_cache_is_identical_and_reads_without_corpus_owner(self):
+        module = self.module()
+        self.assertTrue(callable(getattr(module, "publish_cache", None)),
+                        "missing source-authorized live-view cache publisher")
+        self.assertTrue(callable(getattr(module, "read_cached_view", None)),
+                        "missing nonblocking live-view cache reader")
+        with self.completed() as case:
+            expected = module.read_view(case.lib.__dict__)
+            published = module.publish_cache(case.lib.__dict__)
+            self.assertEqual(published, expected)
+            with mock.patch.object(
+                    case.lib, "corpus_owner", side_effect=AssertionError(
+                        "cached live view reacquired the resident writer lease")):
+                self.assertEqual(module.read_cached_view(case.lib.__dict__), expected)
+
+    def test_cached_view_digest_corruption_refuses_without_source_fallback(self):
+        module = self.module()
+        with self.completed() as case:
+            value = module.publish_cache(case.lib.__dict__)
+            value["publication"]["pulse_seq"] += 1
+            cache = Path(case.lib.STATE) / module.CACHE_BASENAME
+            case.live._write(str(cache), value)
+            with mock.patch.object(
+                    module, "read_view", side_effect=AssertionError(
+                        "invalid cache fell back to the source transaction")), \
+                    self.assertRaises(module.LiveViewRefusal) as raised:
+                module.read_cached_view(case.lib.__dict__)
+            self.assertEqual(raised.exception.reason, "cached-view-digest")
+
+    def test_failed_cache_replacement_preserves_prior_complete_view(self):
+        module = self.module()
+        with self.completed() as case:
+            expected = module.publish_cache(case.lib.__dict__)
+            cache = Path(case.lib.STATE) / module.CACHE_BASENAME
+            before = ack_tests._path_image(cache)
+            with mock.patch.object(
+                    case.lib, "atomic_write", side_effect=OSError(
+                        "fixture publication failure")), \
+                    self.assertRaises(module.LiveViewRefusal) as raised:
+                module.publish_cache(case.lib.__dict__)
+            self.assertEqual(
+                raised.exception.reason, "cached-view-publication-refusal")
+            self.assertEqual(ack_tests._path_image(cache), before)
+            self.assertEqual(module.read_cached_view(case.lib.__dict__), expected)
+
     def test_completed_view_rejoins_source_effects_live_status_without_resident_lease(self):
         module = self.module()
         with self.completed() as case:

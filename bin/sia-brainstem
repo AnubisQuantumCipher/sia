@@ -380,6 +380,12 @@ def _reserved_pulse():
             seq, admitted_status=admitted_status)
 
 
+def _refresh_live_view_cache():
+    """Publish the just-acknowledged source view for lease-free observers."""
+    import sialiveview
+    return sialiveview.publish_cache(sialib.__dict__)
+
+
 def _startup_state(memo):
     if not isinstance(memo, dict):
         raise ValueError("brainstem memo must be an object")
@@ -541,6 +547,13 @@ def _run_owned(*, plugin_guard=None):
             # Reserve the sequence before any effects. A crash may leave a
             # gap, but it can never cause a signed/publication sequence reuse.
             st = _reserved_pulse()
+            try:
+                if sialib._controller_source_enabled():
+                    _refresh_live_view_cache()
+            except Exception as exc:
+                sialib.log(
+                    "live view cache REFUSED: "
+                    + _safe_failure_detail(exc))
             durable_memo = sialib.load_memo()
             seq, _durable_last_dream_day = _startup_state(durable_memo)
             if st["events_pulse"] or st["errors"]:

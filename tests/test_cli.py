@@ -1193,7 +1193,7 @@ class HonestStatusLanguage(unittest.TestCase):
         output = io.StringIO()
         with mock.patch.object(
                 sia.sialib, "read_state_json",
-                side_effect=(status, _current_graph_fixture())), \
+                side_effect=(status, _current_graph_fixture(), None)), \
                 mock.patch.object(sia.sialib, "memory_readiness",
                                   return_value=(True, "")), \
                 contextlib.redirect_stdout(output):
@@ -1206,7 +1206,7 @@ class HonestStatusLanguage(unittest.TestCase):
         output = io.StringIO()
         with mock.patch.object(
                 sia.sialib, "read_state_json",
-                side_effect=(status, _current_graph_fixture())), \
+                side_effect=(status, _current_graph_fixture(), None)), \
                 mock.patch.object(
                     sia.sialib, "memory_readiness",
                     return_value=(False, "signed ledger unavailable")), \
@@ -1246,7 +1246,7 @@ class HonestStatusLanguage(unittest.TestCase):
             with self.subTest(last=last), \
                     mock.patch.object(
                         sia.sialib, "read_state_json",
-                        side_effect=(status, _current_graph_fixture())), \
+                        side_effect=(status, _current_graph_fixture(), None)), \
                     mock.patch.object(
                         sia.sialib, "memory_readiness",
                         return_value=(False, "signed ledger unavailable")), \

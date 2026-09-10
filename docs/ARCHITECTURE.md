@@ -203,16 +203,20 @@ receipts. The transaction is cooperative same-user coordination, not a
 hostile same-user sandbox, source-truth attestation, delivery proof, or
 biological-cognition claim.
 
-The implemented, unreleased `sialiveview.read_view` front door holds the corpus
+The implemented, unreleased `sialiveview.read_view` publisher holds the corpus
 owner and revalidates completed-source authority, its archived effects receipt
-and the committed live generation. It returns a separate bounded display
-envelope, leaving compatibility status schemas unchanged. The view carries
+and the committed live generation. After a successful resident pulse it
+atomically retains that bounded display envelope outside the transaction
+authority. `read_cached_view` validates and returns that last acknowledged
+envelope without waiting for the next pulse's writer lease. The view carries
 retained workspace selection reasons, activation, encoding, co-retrieval and
 idle/gist dispositions, while omitting corpus bodies and broadcast text.
 `sia live [--json]`, `sia status` and `sia think` consume this view. Inspection
 does not collect, publish, recompute activation or advance workspace expiry;
 its `as_of` clock belongs to the acknowledged pulse. Missing or pending source
-completion refuses the view. These interfaces do not establish deployment,
+completion refuses publication; an in-progress successor leaves the explicitly
+identified last complete view readable. A missing or invalid cache refuses the
+reader rather than falling back to compatibility status. These interfaces do not establish deployment,
 biological cognition or a benchmark win. Controller activation remains an
 explicit `mind.controller_source` selection.
 

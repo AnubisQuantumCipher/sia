@@ -106,6 +106,17 @@ def _direct_call_lines(function, name):
 
 
 class ResidentSourceCycleContract(unittest.TestCase):
+    def test_resident_refreshes_nonblocking_live_view_after_success(self):
+        refresh = getattr(brainstem, "_refresh_live_view_cache", None)
+        self.assertTrue(callable(refresh),
+                        "resident has no live-view cache refresh boundary")
+        import sialiveview
+        expected = {"status": "available"}
+        with mock.patch.object(
+                sialiveview, "publish_cache", return_value=expected) as publish:
+            self.assertEqual(refresh(), expected)
+        publish.assert_called_once_with(brainstem.sialib.__dict__)
+
     def _memo(self, source_kind):
         memo = {"pulse_seq": 7, "sync_needed": False, "dream": {}}
         authority_key = SOURCE_MEMO_AUTHORITIES.get(source_kind)
@@ -160,6 +171,7 @@ class ResidentSourceCycleContract(unittest.TestCase):
                         sia.sialib._controller_source_present(memo))
 
     def test_manual_pulse_dispatches_prefix_and_fixed_orphan_before_legacy(self):
+        import sialiveview
         for source_kind in ("prefix", "orphan"):
             with self.subTest(source_kind=source_kind):
                 with self._source_authority(
@@ -174,9 +186,13 @@ class ResidentSourceCycleContract(unittest.TestCase):
                             sia.sialib, "_run_controller_source_cycle",
                             create=True,
                             return_value=dict(SOURCE_STATUS)) as cycle, \
+                        mock.patch.object(
+                            sialiveview, "publish_cache",
+                            return_value={"status": "available"}) as refresh, \
                         contextlib.redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(sia._cmd_pulse_owned(), 0)
                 cycle.assert_called_once_with()
+                refresh.assert_called_once_with(sia.sialib.__dict__)
                 rendered = json.loads(output.getvalue())
                 self.assertEqual(rendered, {
                     key: SOURCE_STATUS[key] for key in
@@ -288,6 +304,7 @@ class ResidentSourceCycleContract(unittest.TestCase):
                     expected_seq, admitted_status=admitted)
 
     def test_explicit_config_activates_clean_manual_source_cycle(self):
+        import sialiveview
         with self._source_authority(sia.sialib, "clean") as memo, \
                 self._generic_sentinels(sia.sialib), \
                 mock.patch.object(
@@ -302,10 +319,14 @@ class ResidentSourceCycleContract(unittest.TestCase):
                 mock.patch.object(
                     sia.sialib, "_run_controller_source_cycle",
                     return_value=dict(SOURCE_STATUS)) as cycle, \
+                mock.patch.object(
+                    sialiveview, "publish_cache",
+                    return_value={"status": "available"}) as refresh, \
                 mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(sia._cmd_pulse_owned(), 0)
         cycle.assert_called_once_with()
+        refresh.assert_called_once_with(sia.sialib.__dict__)
 
     def test_explicit_config_activates_clean_daemon_source_cycle(self):
         with self._source_authority(brainstem.sialib, "clean") as memo, \
@@ -751,6 +772,9 @@ class ResidentSourceCycleContract(unittest.TestCase):
                 brainstem, "_stop", False))
             stack.enter_context(mock.patch.object(
                 brainstem.signal, "signal"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "CONFIG",
+                {"mind": {"controller_source": True}}))
             load_memo = stack.enter_context(mock.patch.object(
                 brainstem.sialib, "load_memo",
                 side_effect=(initial, durable)))
@@ -783,6 +807,9 @@ class ResidentSourceCycleContract(unittest.TestCase):
                 brainstem, "_systemd_ready"))
             pulse = stack.enter_context(mock.patch.object(
                 brainstem, "_reserved_pulse", side_effect=one_cycle))
+            refresh = stack.enter_context(mock.patch.object(
+                brainstem, "_refresh_live_view_cache",
+                return_value={"status": "available"}))
             stack.enter_context(mock.patch.object(
                 brainstem, "_durable_dream_day", return_value=""))
             stack.enter_context(mock.patch.object(
@@ -796,6 +823,7 @@ class ResidentSourceCycleContract(unittest.TestCase):
                 brainstem, "_publish_failure"))
             self.assertEqual(brainstem._run_owned(), 1)
         pulse.assert_called_once_with()
+        refresh.assert_called_once_with()
         self.assertGreaterEqual(load_memo.call_count, 2)
         publish.assert_called_once_with(
             durable["pulse_seq"], "halt refused")

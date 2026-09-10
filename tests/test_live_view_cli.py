@@ -67,10 +67,20 @@ class LiveViewCli(unittest.TestCase):
             result = operation()
         return result, output.getvalue(), errors.getvalue()
 
+    def publish_cache(self, case):
+        # The shared completed() fixture forbids every writer after ACK. The
+        # cache publisher itself is exercised by test_live_view; CLI tests
+        # seed those exact admitted bytes without crossing an ACK boundary.
+        value = self.view.read_view(case.lib.__dict__)
+        case.live._write(
+            str(Path(case.lib.STATE) / self.view.CACHE_BASENAME), value)
+        return value
+
     def test_live_json_keeps_lifecycle_lease_without_general_readiness_gate(self):
         with self.completed() as case:
             events = []
             active = []
+            self.publish_cache(case)
 
             @contextlib.contextmanager
             def lifecycle():
@@ -82,7 +92,7 @@ class LiveViewCli(unittest.TestCase):
                     active.pop()
                     events.append("lifecycle-exit")
 
-            original = self.view.read_view
+            original = self.view.read_cached_view
 
             def inspect(owner):
                 self.assertTrue(active, "source inspection must hold lifecycle ownership")
@@ -91,7 +101,7 @@ class LiveViewCli(unittest.TestCase):
                 return original(owner)
 
             with mock.patch.object(case.lib, "_lifecycle_reader", lifecycle), \
-                    mock.patch.object(self.view, "read_view", side_effect=inspect), \
+                    mock.patch.object(self.view, "read_cached_view", side_effect=inspect), \
                     mock.patch.object(case.lib, "memory_readiness", side_effect=AssertionError(
                         "live inspection is recovery-readable")):
                 result, text, errors = self.invoke(["live", "--json"])
@@ -100,11 +110,12 @@ class LiveViewCli(unittest.TestCase):
             self.assertEqual(json.loads(text)["status"], "available")
             self.assertNotIn("live", self.cli.READINESS_GATED_COMMANDS)
             self.assertIn("ask", self.cli.READINESS_GATED_COMMANDS)
-            self.assertIn("think", self.cli.READINESS_GATED_COMMANDS)
+            self.assertNotIn("think", self.cli.READINESS_GATED_COMMANDS)
 
     def test_live_json_returns_the_exact_revalidated_view_without_extra_stdout(self):
         with self.completed() as case:
             expected = self.view.read_view(case.lib.__dict__)
+            self.publish_cache(case)
             before = self.fixture.images(case)
             with mock.patch.object(case.lib, "_lifecycle_reader", contextlib.nullcontext):
                 result, text, errors = self.invoke(["live", "--json"])
@@ -113,12 +124,30 @@ class LiveViewCli(unittest.TestCase):
             self.assertEqual(errors, "")
             self.assertEqual(self.fixture.images(case), before)
 
+    def test_live_json_reads_published_cache_without_corpus_owner(self):
+        self.assertTrue(callable(getattr(self.view, "publish_cache", None)),
+                        "missing source-authorized live-view cache publisher")
+        self.assertTrue(callable(getattr(self.view, "read_cached_view", None)),
+                        "missing nonblocking live-view cache reader")
+        with self.completed() as case:
+            expected = self.publish_cache(case)
+            with mock.patch.object(
+                    case.lib, "corpus_owner", side_effect=AssertionError(
+                        "live JSON reacquired the resident writer lease")), \
+                    mock.patch.object(
+                        self.view, "read_view", side_effect=AssertionError(
+                            "live JSON bypassed the published view cache")):
+                result, text, errors = self.invoke(["live", "--json"])
+            self.assertEqual(result, 0, text + errors)
+            self.assertEqual(json.loads(text), expected)
+            self.assertEqual(errors, "")
+
     def test_live_unknown_duplicate_and_extra_arguments_refuse_before_source_read(self):
         for arguments in (["live", "--unknown"], ["live", "--json", "--json"],
                           ["live", "--json", "extra"], ["live", "--unsafe"]):
             with self.subTest(arguments=arguments), \
                     mock.patch.object(self.cli.sialib, "_lifecycle_reader", contextlib.nullcontext), \
-                    mock.patch.object(self.view, "read_view", side_effect=AssertionError(
+                    mock.patch.object(self.view, "read_cached_view", side_effect=AssertionError(
                         "invalid arguments reached source inspection")):
                 result, text, _errors = self.invoke(arguments)
             self.assertEqual(result, 2)
@@ -127,7 +156,7 @@ class LiveViewCli(unittest.TestCase):
     def test_live_json_refusal_remains_machine_readable_and_carries_boundary(self):
         refusal = self.view.LiveViewRefusal("fixture-source-authority-refused")
         with mock.patch.object(self.cli.sialib, "_lifecycle_reader", contextlib.nullcontext), \
-                mock.patch.object(self.view, "read_view", side_effect=refusal):
+                mock.patch.object(self.view, "read_cached_view", side_effect=refusal):
             result, text, _errors = self.invoke(["live", "--json"])
         self.assertEqual(result, 1)
         value = json.loads(text)
@@ -141,7 +170,7 @@ class LiveViewCli(unittest.TestCase):
     def test_live_json_lifecycle_refusal_is_closed_and_does_not_expose_exception_text(self):
         private = "private-fixture-path-and-secret-shaped-error"
         with mock.patch.object(self.cli.sialib, "_lifecycle_reader", side_effect=RuntimeError(private)), \
-                mock.patch.object(self.view, "read_view", side_effect=AssertionError(
+                mock.patch.object(self.view, "read_cached_view", side_effect=AssertionError(
                     "failed lifecycle reached source inspection")):
             result, text, errors = self.invoke(["live", "--json"])
         self.assertEqual(result, 1)
@@ -168,10 +197,26 @@ class LiveViewCli(unittest.TestCase):
         with self.completed() as case, \
                 mock.patch.object(case.lib, "memory_readiness", return_value=(True, "")):
             expected = self.view.read_view(case.lib.__dict__)
+            self.publish_cache(case)
             result, text, errors = self.render(self.cli.cmd_status)
             self.assertEqual(result, 0, text + errors)
             self.assert_workspace_text(text, expected)
             self.assertIn("readiness READY", text)
+
+    def test_status_during_resident_pulse_returns_cached_workspace_without_waiting(self):
+        with self.completed() as case:
+            expected = self.publish_cache(case)
+            with mock.patch.object(
+                    self.cli, "_corpus_owner_nowait",
+                    side_effect=case.lib.OwnerBusy("fixture resident pulse")), \
+                    mock.patch.object(
+                        case.lib, "corpus_owner", side_effect=AssertionError(
+                            "busy status waited for the resident writer lease")):
+                result, text, errors = self.render(self.cli.cmd_status)
+            self.assertEqual(result, 0, text + errors)
+            self.assertIn("resident pulse in progress", text)
+            self.assertIn("readiness check deferred", text)
+            self.assert_workspace_text(text, expected)
 
     def test_think_includes_same_workspace_and_keeps_generated_entry_origin(self):
         thought = {"ts": "2026-09-06T12:00:03Z", "kind": "note",
@@ -179,6 +224,7 @@ class LiveViewCli(unittest.TestCase):
         with self.completed() as case, \
                 mock.patch.object(case.lib, "load_thoughts", return_value={"thoughts": [thought]}):
             expected = self.view.read_view(case.lib.__dict__)
+            self.publish_cache(case)
             result, text, errors = self.render(self.cli.cmd_think)
             self.assertEqual(result, 0, text + errors)
             self.assert_workspace_text(text, expected)
