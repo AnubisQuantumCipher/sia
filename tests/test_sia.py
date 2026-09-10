@@ -501,6 +501,51 @@ class SourceReplayJournal(unittest.TestCase):
                     self.sialib._pending_source_replay_marker(
                         {"source_replay_pending": malformed})
 
+    def test_source_replay_clock_preserves_post_drain_subsecond_time(self):
+        policy_at = self.when.timestamp() + 0.75
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=policy_at)
+
+        clock, day = self.sialib._source_replay_clock(marker)
+
+        self.assertEqual(marker["v"], 2)
+        self.assertEqual(marker["policy_at"], policy_at)
+        self.assertEqual(clock, policy_at)
+        self.assertEqual(day, "2026-08-30")
+
+    def test_legacy_source_replay_clock_remains_accepted(self):
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=self.when.timestamp() + 0.75)
+        policy_at = marker.pop("policy_at")
+        marker["v"] = 1
+
+        validated = self.sialib._pending_source_replay_marker(
+            {"source_replay_pending": marker})
+        clock, day = self.sialib._source_replay_clock(validated)
+
+        self.assertEqual(clock, int(policy_at))
+        self.assertEqual(day, "2026-08-30")
+
+    def test_post_drain_fractional_recall_does_not_break_source_policy(self):
+        base = self.when.timestamp()
+        mind = self.sialib.siamind._empty_mind()
+        self.sialib.siamind.touch(
+            mind, "organs/recalled", base + 0.5, src="user-ask")
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=base + 0.75)
+        policy_at, policy_day = self.sialib._source_replay_clock(marker)
+
+        result = self.sialib._event_cognitive_transition(
+            mind, [(self._event(), "events/custom/2026-08-30")],
+            policy_at, policy_day, marker["id"])
+
+        self.assertFalse(result["already_applied"])
+        self.assertEqual(result["memory_state"]["v"],
+                         self.sialib.siamind.MIND_VERSION)
+
     def test_marker_preserves_duplicate_filtered_cognitive_admission(self):
         with tempfile.TemporaryDirectory() as state, mock.patch.object(
                 self.sialib, "MEMO_PATH", os.path.join(state, "memo.json")):

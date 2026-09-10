@@ -7568,10 +7568,15 @@ def _pending_source_replay_marker(memo):
     marker = memo.get("source_replay_pending")
     if marker is None:
         return None
-    if not isinstance(marker, dict) or set(marker) != {
-            "v", "id", "started_at", "started_seq", "sources", "events",
-            "effects", "cognitive_ids"} \
-            or not _exact_int(marker.get("v"), 1) \
+    version = marker.get("v") if isinstance(marker, dict) else None
+    expected_fields = {
+        "v", "id", "started_at", "started_seq", "sources", "events",
+        "effects", "cognitive_ids"}
+    if version == 2:
+        expected_fields.add("policy_at")
+    if not isinstance(marker, dict) or set(marker) != expected_fields \
+            or not isinstance(version, int) or isinstance(version, bool) \
+            or version not in {1, 2} \
             or not isinstance(marker.get("id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}", marker["id"]) is None \
             or isinstance(marker.get("started_seq"), bool) \
@@ -7600,6 +7605,15 @@ def _pending_source_replay_marker(memo):
         if _canonical_utc_timestamp(marker["started_at"]) \
                 != marker["started_at"]:
             raise ValueError
+        if version == 2:
+            policy_at = marker.get("policy_at")
+            if isinstance(policy_at, bool) \
+                    or not isinstance(policy_at, (int, float)) \
+                    or not math.isfinite(policy_at) \
+                    or iso(datetime.datetime.fromtimestamp(
+                        policy_at, datetime.timezone.utc)) \
+                    != marker["started_at"]:
+                raise ValueError
         if _canonical_pulse_effects(
                 effects["day"], effects["events_pulse"],
                 effects["organs"]) != effects:
@@ -7738,11 +7752,18 @@ def _source_replay_clock(marker):
         raise RuntimeError("source replay clock is invalid")
     value = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
         tzinfo=datetime.timezone.utc)
-    return value.timestamp(), value.strftime("%Y-%m-%d")
+    policy_at = (marker.get("policy_at")
+                 if marker.get("v") == 2 else value.timestamp())
+    if isinstance(policy_at, bool) \
+            or not isinstance(policy_at, (int, float)) \
+            or not math.isfinite(policy_at):
+        raise RuntimeError("source replay clock is invalid")
+    return float(policy_at), value.strftime("%Y-%m-%d")
 
 
 def _source_replay_marker_value(
-        memo, seq, sources, events, effects, cognitive_ids=None):
+        memo, seq, sources, events, effects, cognitive_ids=None, *,
+        policy_at=None):
     if not isinstance(seq, int) or isinstance(seq, bool) \
             or not 0 <= seq <= MAX_JSON_SAFE_INTEGER:
         raise ValueError("source replay sequence is invalid")
@@ -7780,7 +7801,19 @@ def _source_replay_marker_value(
     if not set(cognitive_ids).issubset(records):
         raise ValueError("source policy admission is invalid")
     if marker is None:
-        marker = {"v": 1, "id": uuid.uuid4().hex, "started_at": iso(),
+        policy_at = time.time() if policy_at is None else policy_at
+        if isinstance(policy_at, bool) \
+                or not isinstance(policy_at, (int, float)) \
+                or not math.isfinite(policy_at):
+            raise ValueError("source replay policy time is invalid")
+        policy_at = float(policy_at)
+        try:
+            started_at = iso(datetime.datetime.fromtimestamp(
+                policy_at, datetime.timezone.utc))
+        except (OverflowError, OSError, ValueError) as exc:
+            raise ValueError("source replay policy time is invalid") from exc
+        marker = {"v": 2, "id": uuid.uuid4().hex,
+                  "started_at": started_at, "policy_at": policy_at,
                   "started_seq": seq, "sources": sources,
                   "events": list(records.values()), "effects": effects,
                   "cognitive_ids": cognitive_ids}
@@ -9833,16 +9866,6 @@ def _pulse_transaction_guarded(
             cognitive_ids = [
                 event_memory_identity(event)
                 for event, _slug in planned_cognitive_events]
-            prepared_source = _source_replay_marker_value(
-                memo, seq, event_sources, events,
-                source_effects or _canonical_pulse_effects(
-                    day, planned_events_pulse, planned_organs),
-                cognitive_ids)
-            if prepared_source is None:
-                raise RuntimeError("event pulse has no source replay identity")
-            source_batch_identity = prepared_source["id"]
-            cognitive_now_ts, cognitive_day = _source_replay_clock(
-                prepared_source)
 
             # Recovery unpins have their own journaled lane and are allowed to
             # reduce protected state even while a source batch is pending.
@@ -9852,11 +9875,27 @@ def _pulse_transaction_guarded(
             if unpin_refused:
                 errors["recovery_unpin"] = (
                     f"{unpin_refused} recovery unpin records refused")
-            _touches, touch_refused = _drain_ordinary_touches(
-                prepared_event_mind, now_ts)
-            if touch_refused:
-                errors["touch_queue_capacity"] = (
-                    f"{touch_refused} touch/pin records refused")
+            if source_marker is None:
+                _touches, touch_refused = _drain_ordinary_touches(
+                    prepared_event_mind, time.time())
+                if touch_refused:
+                    errors["touch_queue_capacity"] = (
+                        f"{touch_refused} touch/pin records refused")
+            # Freeze the policy clock only after the ordinary recall
+            # generation has been claimed and persisted. Its subsecond value
+            # is part of a new marker; an older durable replay keeps its own
+            # exact clock and defers unrelated recalls to the next pulse.
+            prepared_source = _source_replay_marker_value(
+                memo, seq, event_sources, events,
+                source_effects or _canonical_pulse_effects(
+                    day, planned_events_pulse, planned_organs),
+                cognitive_ids,
+                policy_at=(time.time() if source_marker is None else None))
+            if prepared_source is None:
+                raise RuntimeError("event pulse has no source replay identity")
+            source_batch_identity = prepared_source["id"]
+            cognitive_now_ts, cognitive_day = _source_replay_clock(
+                prepared_source)
             graph_before_source = _require_recoverable_graph_snapshot(
                 read_json(GRAPH_PATH, {}))
             siamind.sync_graph_state(
