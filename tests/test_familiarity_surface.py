@@ -86,7 +86,7 @@ class FamiliarityCliSurface(unittest.TestCase):
                 return_value=contextlib.nullcontext()), \
                 mock.patch.object(
                     sia.sialib, "read_state_json",
-                    side_effect=(status, _current_graph_fixture())), \
+                    side_effect=(status, _current_graph_fixture(), None)), \
                 mock.patch.object(
                     sia.sialib, "_recoverable_status_integrity",
                     return_value="pass"), \
