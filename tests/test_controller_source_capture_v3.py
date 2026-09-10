@@ -431,6 +431,35 @@ class ControllerSourceCaptureV3(unittest.TestCase):
                              if name == "owner" else inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(set(self.source.BATCH_V2_KEYS) | {"delivery_input"}, BATCH_KEYS)
 
+    def test_delivery_request_has_a_separate_roster_bound_aggregate_capacity(self):
+        self.assertEqual(self.source.MAX_DELIVERY_CAPTURE_REQUEST_DOCUMENTS, 11)
+        self.assertEqual(
+            self.source.MAX_DELIVERY_CAPTURE_REQUEST_BYTES, 184_549_376)
+        with self.prepared() as f, self.capture_owner(f) as owner:
+            member_ceiling = max(
+                len(self.source.native_bytes(owner.__dict__, value))
+                for value in f.request.values())
+            complete_bytes = len(self.source.native_bytes(
+                owner.__dict__, f.request))
+            self.assertGreater(complete_bytes, member_ceiling)
+            with mock.patch.object(owner, "MAX_STATE_JSON_BYTES", member_ceiling):
+                admitted = self.source._DeliveryCaptureRequest(
+                    owner.__dict__, f.request)
+                admitted.inputs_current()
+
+            forbidden = mock.Mock(side_effect=AssertionError(
+                "aggregate-capacity refusal reached copy or acquisition"))
+            with mock.patch.object(
+                    self.source, "MAX_DELIVERY_CAPTURE_REQUEST_BYTES", 1), \
+                    mock.patch.object(copy, "deepcopy", forbidden), \
+                    mock.patch.object(owner, "brainstem_owner", forbidden), \
+                    mock.patch.object(owner, "corpus_owner", forbidden), \
+                    self.assertRaisesRegex(
+                        self.source.SourceBatchRefusal,
+                        "delivery-capture-complete-byte-capacity"):
+                self.source._DeliveryCaptureRequest(owner.__dict__, f.request)
+            forbidden.assert_not_called()
+
     def test_outer_capture_refusal_exposes_only_the_exception_class(self):
         with mock.patch.object(
                 self.source, "_DeliveryCaptureRequest",
@@ -578,13 +607,14 @@ class ControllerSourceCaptureV3(unittest.TestCase):
                     self.operation(owner.__dict__, **request)
                 self.assertEqual(self.images(f), before)
 
-    def test_complete_request_is_bounded_before_copy_or_additional_acquisition(self):
+    def test_each_request_member_is_bounded_before_copy_or_additional_acquisition(self):
         with self.prepared() as f, self.capture_owner(f) as owner:
             before = self.images(f)
-            ceiling = len(self.source.native_bytes(owner.__dict__, f.request["epoch"]))
-            self.assertGreater(len(self.source.native_bytes(owner.__dict__, f.request)), ceiling)
+            ceiling = max(
+                len(self.source.native_bytes(owner.__dict__, value))
+                for value in f.request.values()) - 1
             forbidden = mock.Mock(side_effect=AssertionError(
-                "oversized complete source-v3 request reached copy/acquisition"))
+                "oversized source-v3 request member reached copy/acquisition"))
             with self.no_effects(f, owner), mock.patch.object(
                     owner, "MAX_STATE_JSON_BYTES", ceiling), mock.patch.object(
                     copy, "deepcopy", forbidden), mock.patch.object(

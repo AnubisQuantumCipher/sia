@@ -61,6 +61,19 @@ BATCH_KEYS = frozenset({
 })
 BATCH_V2_KEYS = BATCH_KEYS | frozenset({"idle_input"})
 BATCH_V3_KEYS = BATCH_V2_KEYS | frozenset({"delivery_input"})
+_DELIVERY_CAPTURE_REQUEST_KEYS = frozenset({
+    "memo", "admitted_status", "retained_batch", "committed", "epoch",
+    "expected_epoch_sha256", "observed_at", "journal_limits",
+    "expected_journal_limits_sha256", "expected_adoption_sha256",
+})
+# A source-v3 delivery capture request has ten separately bounded fields plus
+# one structural-overhead unit. The aggregate is not one state document, while
+# each member remains subject to its original state/memo ceiling.
+# Arithmetic evidence: status=exact, parsed=11*16777216, exact=184549376.
+# Exact rational arithmetic outside the Lean certificate chain; NOT
+# formal-bounded.
+MAX_DELIVERY_CAPTURE_REQUEST_DOCUMENTS = 11
+MAX_DELIVERY_CAPTURE_REQUEST_BYTES = 184_549_376
 CONFIG_RECEIPT_KEYS = frozenset({
     "schema", "scope", "observed_at", "config_file", "decoded_config",
     "active_config", "runtime_selection", "configuration_sha256",
@@ -135,6 +148,18 @@ def refuse(reason, *, phase="admit", source_id=None, upstream=None):
         source_id = None
     raise SourceBatchRefusal(
         reason, phase=phase, source_id=source_id, upstream=upstream)
+
+
+def _delivery_capture_request_capacity(owner):
+    if type(MAX_DELIVERY_CAPTURE_REQUEST_DOCUMENTS) is not int \
+            or MAX_DELIVERY_CAPTURE_REQUEST_DOCUMENTS \
+            != len(_DELIVERY_CAPTURE_REQUEST_KEYS) + 1 \
+            or type(MAX_DELIVERY_CAPTURE_REQUEST_BYTES) is not int \
+            or MAX_DELIVERY_CAPTURE_REQUEST_BYTES <= 0:
+        refuse("delivery-capture-capacity-contract")
+    scaled = (MAX_DELIVERY_CAPTURE_REQUEST_DOCUMENTS
+              * owner["MAX_STATE_JSON_BYTES"])
+    return min(scaled, MAX_DELIVERY_CAPTURE_REQUEST_BYTES)
 
 
 def _admission_exception_class(exc):
@@ -1535,6 +1560,8 @@ class _DeliveryCaptureRequest:
         self.owner, self.request = owner, request
         if type(owner) is not dict:
             refuse("delivery-capture-owner-contract")
+        _keys(request, _DELIVERY_CAPTURE_REQUEST_KEYS,
+              "delivery-capture-request")
         self.paths = {name: owner.get(name) for name in (
             "HOME", "CORPUS", "STATE", "SHARE", "CONFIG_PATH", "CURSORS_PATH",
             "MEMO_PATH", "STATUS_PATH", "GRAPH_PATH", "LIVE_CANDIDATE_PATH",
@@ -1553,15 +1580,21 @@ class _DeliveryCaptureRequest:
                for value in self.capacities.values()) \
                 or type(self.notification_key) is not str or not self.notification_key:
             refuse("delivery-capture-owner-contract")
+        self.request_capacity = _delivery_capture_request_capacity(owner)
+        for name, value in request.items():
+            native_bytes(
+                owner, value,
+                ceiling=(self.capacities["MAX_MEMO_BYTES"] if name == "memo"
+                         else self.capacities["MAX_STATE_JSON_BYTES"]))
         for path in self.paths.values():
             _canonical_path(owner, path)
         self.basis_current()
-        self.original_raw = self.wire(request)
+        self.original_raw = self.wire(request, complete_request=True)
         self.expected_raw = self.original_raw
         self.basis_current()
         self.memo_raw = self.wire(request["memo"], memo=True)
         self.basis_current()
-        if self.wire(request) != self.original_raw:
+        if self.wire(request, complete_request=True) != self.original_raw:
             refuse("delivery-capture-request-changed")
         _successor_memo(owner, request["memo"], request["committed"])
         _hex(request["expected_adoption_sha256"], "delivery-adoption-pin")
@@ -1576,7 +1609,7 @@ class _DeliveryCaptureRequest:
             request["expected_epoch_sha256"], request["observed_at"])
         _notification_marker(owner, request["memo"])
         self.basis_current()
-        if self.wire(request) != self.original_raw:
+        if self.wire(request, complete_request=True) != self.original_raw:
             refuse("delivery-capture-request-changed")
         self.admitted = owner["copy"].deepcopy(request)
         self.held_epoch = self.held_journal = None
@@ -1585,11 +1618,21 @@ class _DeliveryCaptureRequest:
         self.collected = False
         self.inputs_current()
 
-    def wire(self, value, *, memo=False):
-        return native_bytes(self.owner, value, ceiling=self.capacities[
-            "MAX_MEMO_BYTES" if memo else "MAX_STATE_JSON_BYTES"])
+    def wire(self, value, *, memo=False, complete_request=False):
+        ceiling = (self.request_capacity if complete_request else
+                   self.capacities[
+                       "MAX_MEMO_BYTES" if memo else "MAX_STATE_JSON_BYTES"])
+        try:
+            return native_bytes(self.owner, value, ceiling=ceiling)
+        except SourceBatchRefusal as exc:
+            if complete_request and exc.reason == "complete-byte-capacity":
+                refuse("delivery-capture-complete-byte-capacity", upstream=exc)
+            raise
 
     def basis_current(self):
+        if _delivery_capture_request_capacity(self.owner) \
+                != self.request_capacity:
+            refuse("delivery-capture-owner-basis-changed")
         for name, expected in {**self.paths, **self.capacities,
                                "NOTIFY_BASELINE_ATTEMPT_KEY": self.notification_key}.items():
             actual = self.owner.get(name)
@@ -1598,8 +1641,9 @@ class _DeliveryCaptureRequest:
 
     def inputs_current(self):
         self.basis_current()
-        if self.wire(self.request) != self.expected_raw \
-                or self.wire(self.admitted) != self.original_raw \
+        if self.wire(self.request, complete_request=True) != self.expected_raw \
+                or self.wire(self.admitted, complete_request=True) \
+                != self.original_raw \
                 or self.wire(self.request["memo"], memo=True) != self.memo_raw:
             refuse("delivery-capture-request-changed")
         self.basis_current()
@@ -1642,7 +1686,7 @@ class _DeliveryCaptureRequest:
         if self.collected:
             refuse("delivery-capture-duplicate-collection")
         self.basis_current()
-        if self.wire(self.admitted) != self.original_raw:
+        if self.wire(self.admitted, complete_request=True) != self.original_raw:
             refuse("delivery-capture-request-changed")
         transitions = files.notification_refreshes
         actual_marker = _notification_marker(self.owner, self.request["memo"])
@@ -1658,10 +1702,11 @@ class _DeliveryCaptureRequest:
                 refuse("delivery-capture-notification-transition")
             expected_memo = {**original_memo, self.notification_key: actual_marker}
             expected_request = {**self.admitted, "memo": expected_memo}
-            updated_raw = self.wire(expected_request)
+            updated_raw = self.wire(expected_request, complete_request=True)
             updated_memo_raw = self.wire(expected_memo, memo=True)
             if transitions[0][1] != updated_memo_raw \
-                    or self.wire(self.request) != updated_raw \
+                    or self.wire(self.request, complete_request=True) \
+                    != updated_raw \
                     or self.wire(files.files["memo"].value, memo=True) != updated_memo_raw:
                 refuse("delivery-capture-notification-transition")
             self.expected_raw, self.memo_raw = updated_raw, updated_memo_raw
