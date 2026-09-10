@@ -2132,7 +2132,6 @@ def write_dataset(bundle, out_dir, corpus=None):
     out_dir = os.path.realpath(os.path.expanduser(out_dir))
     if _inside(out_dir, corpus):
         raise ValueError("refusing answer-key output inside indexed corpus")
-    os.makedirs(out_dir, exist_ok=True)
     questions = "".join(_canonical({
         "schema": DATASET_SCHEMA,
         "dataset_id": bundle["manifest"]["dataset_id"],
@@ -2197,6 +2196,22 @@ def write_dataset(bundle, out_dir, corpus=None):
                 ensure_ascii=False, allow_nan=False) + "\n"
         except siacognitivehistory.HistoryRefusal as exc:
             raise BenchmarkRefusal(str(exc)) from exc
+    if "live_history" in bundle:
+        if "cognitive_history" not in bundle:
+            raise BenchmarkRefusal(
+                "live history export requires signed cognitive history")
+        import sialiveloop
+        capture = bundle["live_history"]
+        try:
+            admitted = sialiveloop.admit_history_capture(
+                capture,
+                expected_capture_sha256=capture["capture_sha256"])
+            artifacts["live-history.json"] = json.dumps(
+                admitted, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False) + "\n"
+        except (sialiveloop.LiveLoopRefusal, KeyError, TypeError) as exc:
+            raise BenchmarkRefusal(
+                "live history capture refused") from exc
     encoded_sizes = [len(value.encode("utf-8"))
                      for value in artifacts.values()]
     if any(size > MAX_BENCH_FILE_BYTES for size in encoded_sizes) \
@@ -2213,6 +2228,9 @@ def write_dataset(bundle, out_dir, corpus=None):
     if "cognitive-history.json" in artifacts:
         _atomic_text(os.path.join(out_dir, "cognitive-history.json"),
                      artifacts["cognitive-history.json"], 0o600)
+    if "live-history.json" in artifacts:
+        _atomic_text(os.path.join(out_dir, "live-history.json"),
+                     artifacts["live-history.json"], 0o600)
     return manifest
 
 
@@ -2824,6 +2842,9 @@ def main(argv=None):
     gen_p.add_argument(
         "--cognitive-history", action="store_true",
         help="also export the lossless owner-private verified history capture")
+    gen_p.add_argument(
+        "--live-history", action="store_true",
+        help="also export the admitted owner-private controller-use history")
     score_p = sub.add_parser("score", help="normalized-score JSONL {id, answer} predictions")
     score_p.add_argument("--dataset", required=True)
     score_p.add_argument("--answers", required=True)
@@ -2840,11 +2861,18 @@ def main(argv=None):
             run(getattr(args, "chains", None))
             return 0
         if args.command == "generate":
+            if args.live_history and not args.cognitive_history:
+                raise BenchmarkRefusal(
+                    "live history export requires --cognitive-history")
             with sialib.corpus_owner():
                 bundle = (build_ledger_dataset(
                     chain_names=args.chains, cognitive_history=True)
                     if args.cognitive_history else
                     build_ledger_dataset(chain_names=args.chains))
+                if args.live_history:
+                    import sialiveview
+                    bundle["live_history"] = \
+                        sialiveview.read_history_capture(sialib.__dict__)
                 manifest = write_dataset(bundle, args.out)
             summary = {"dataset_id": manifest["dataset_id"],
                        "questions": manifest["question_count"],
@@ -2856,6 +2884,12 @@ def main(argv=None):
                 summary.update({
                     "cognitive_history": "cognitive-history.json (mode 0600)",
                     "capture_sha256": bundle["cognitive_history"]["capture_sha256"],
+                })
+            if args.live_history:
+                summary.update({
+                    "live_history": "live-history.json (mode 0600)",
+                    "live_capture_sha256":
+                        bundle["live_history"]["capture_sha256"],
                 })
             print(json.dumps(summary, indent=2))
             return 0

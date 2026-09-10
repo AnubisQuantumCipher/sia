@@ -7040,12 +7040,12 @@ def _event_cognitive_transition(
             event.ts.timestamp())
         safety = bool(event.tags & siamind.SAFETY_TAGS)
         siamind.touch(
-            mind, day_slug, event.ts.timestamp(), src="organ",
+            mind, day_slug, now_ts, src="organ",
             arousal=arousal, novelty_score=score, pin=safety)
         for link in event.links:
-            siamind.touch(mind, link, event.ts.timestamp(), src="organ")
+            siamind.touch(mind, link, now_ts, src="organ")
             siamind.hebb(
-                mind, day_slug, link, ts=event.ts.timestamp(),
+                mind, day_slug, link, ts=now_ts,
                 arousal=arousal, novelty_score=score, pin=safety)
         if score >= 0.6 and novelty_emitted < 2:
             novelty_emitted += 1

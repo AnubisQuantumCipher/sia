@@ -235,6 +235,8 @@ sia memory                          # stability, pins, and reviews due
 sia memory --pin organs/journal     # protect/qualify a page for rehearsal
 sia calibration                     # population-aware descriptive scorecard
 sia bench generate --out /tmp/sia-qa  # signed-ledger QA + private MCP eval
+sia bench generate --cognitive-history --live-history --out /tmp/sia-history
+                                     # private signed + controller-use captures
 sia backup status                   # continuity adapter and verified-copy state
 sia backup schedule                 # authenticated automatic-timer state
 ```

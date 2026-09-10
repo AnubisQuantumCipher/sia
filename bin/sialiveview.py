@@ -347,67 +347,103 @@ def _project(*, completed, status, generation, receipt):
     }
 
 
+@contextlib.contextmanager
+def _source_authority(owner):
+    """Hold and rejoin the complete acknowledged source generation."""
+    _owner(owner)
+    with owner["corpus_owner"]():
+        memo = owner["load_memo"]()
+        marker = memo.get("controller_source_committed") \
+            if type(memo) is dict else None
+        if marker is None:
+            _refuse("source-completion-unavailable")
+        if type(marker) is not dict \
+                or set(marker) != acknowledgment._COMMITTED_KEYS \
+                or any(not live._digest(value) for value in marker.values()):
+            _refuse("source-completion-invalid")
+        if acknowledgment._PENDING_ONLY.intersection(memo):
+            _refuse("source-completion-pending")
+        owner["_load_live_publication"]()
+        status = _status(owner)
+        completed = acknowledgment.read_completed(
+            owner, memo=memo, admitted_status=status)
+        generation = _generation(owner, memo, status, completed)
+        receipt_sha256 = \
+            completed["committed"]["source_effects_receipt_sha256"]
+        with contextlib.closing(acknowledgment._EffectsArchiveSlot(
+                owner, source, receipt_sha256, required=True)) as archive:
+            receipt = effects.validate_archived_receipt(
+                owner, raw=archive.raw, retained_batch=completed["batch"],
+                memo=memo, admitted_status=status,
+                expected_receipt_sha256=receipt_sha256)
+            values = {
+                "memo": memo, "status": status, "completed": completed,
+                "generation": generation, "receipt": receipt,
+            }
+            originals = {
+                key: _raw(owner, value) for key, value in values.items()}
+            yield values
+            for key, value in values.items():
+                if _raw(owner, value) != originals[key]:
+                    _refuse("projection-input-changed")
+
+            # Rejoin the named retained artifacts after projection. A stale
+            # copied generation or archive cannot inherit the first read's
+            # authority even though the corpus owner remained held.
+            if _raw(owner, owner["load_memo"]()) != originals["memo"] \
+                    or _raw(owner, _status(owner)) != originals["status"]:
+                _refuse("view-authority-changed")
+            current = acknowledgment.read_completed(
+                owner, memo=memo, admitted_status=status)
+            if _raw(owner, current) != originals["completed"] \
+                    or _raw(owner, _generation(
+                        owner, memo, status, current)) \
+                    != originals["generation"]:
+                _refuse("view-generation-changed")
+            archive.current()
+
+
 def read_view(owner):
     """Return one bounded detached source-authorized view or refuse wholly."""
     try:
-        _owner(owner)
-        with owner["corpus_owner"]():
-            memo = owner["load_memo"]()
-            marker = memo.get("controller_source_committed") if type(memo) is dict else None
-            if marker is None:
-                _refuse("source-completion-unavailable")
-            if type(marker) is not dict or set(marker) != acknowledgment._COMMITTED_KEYS \
-                    or any(not live._digest(value) for value in marker.values()):
-                _refuse("source-completion-invalid")
-            if acknowledgment._PENDING_ONLY.intersection(memo):
-                _refuse("source-completion-pending")
-            owner["_load_live_publication"]()
-            status = _status(owner)
-            completed = acknowledgment.read_completed(
-                owner, memo=memo, admitted_status=status)
-            generation = _generation(owner, memo, status, completed)
-            receipt_sha256 = completed["committed"]["source_effects_receipt_sha256"]
-            with contextlib.closing(acknowledgment._EffectsArchiveSlot(
-                    owner, source, receipt_sha256, required=True)) as archive:
-                receipt = effects.validate_archived_receipt(
-                    owner, raw=archive.raw, retained_batch=completed["batch"],
-                    memo=memo, admitted_status=status,
-                    expected_receipt_sha256=receipt_sha256)
-                originals = {
-                    key: _raw(owner, value) for key, value in (
-                        ("memo", memo), ("status", status),
-                        ("completed", completed), ("generation", generation),
-                        ("receipt", receipt))}
-                result = _project(
-                    completed=completed, status=status,
-                    generation=generation, receipt=receipt)
-                result["view_sha256"] = hashlib.sha256(
-                    _raw(owner, result, display=True)).hexdigest()
-                raw_result = _raw(owner, result, display=True)
-                detached = copy.deepcopy(result)
-                if _raw(owner, detached, display=True) != raw_result:
-                    _refuse("view-detachment-changed")
-                for key, value in (("memo", memo), ("status", status),
-                                   ("completed", completed), ("generation", generation),
-                                   ("receipt", receipt)):
-                    if _raw(owner, value) != originals[key]:
-                        _refuse("projection-input-changed")
+        with _source_authority(owner) as values:
+            completed = values["completed"]
+            status = values["status"]
+            generation = values["generation"]
+            receipt = values["receipt"]
+            result = _project(
+                completed=completed, status=status,
+                generation=generation, receipt=receipt)
+            result["view_sha256"] = hashlib.sha256(
+                _raw(owner, result, display=True)).hexdigest()
+            raw_result = _raw(owner, result, display=True)
+            detached = copy.deepcopy(result)
+            if _raw(owner, detached, display=True) != raw_result:
+                _refuse("view-detachment-changed")
+            return detached
+    except LiveViewRefusal:
+        raise
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError,
+            AttributeError, OverflowError, RecursionError) as exc:
+        _refuse("source-or-representation-refusal", upstream=exc)
 
-                # The projection and final copy are inside the same transaction
-                # owner, but still rejoin the named retained artifacts. A stale
-                # copied generation or archive replaced during projection does
-                # not inherit the first read's authority.
-                if _raw(owner, owner["load_memo"]()) != originals["memo"] \
-                        or _raw(owner, _status(owner)) != originals["status"]:
-                    _refuse("view-authority-changed")
-                current = acknowledgment.read_completed(
-                    owner, memo=memo, admitted_status=status)
-                if _raw(owner, current) != originals["completed"] \
-                        or _raw(owner, _generation(owner, memo, status, current)) \
-                        != originals["generation"]:
-                    _refuse("view-generation-changed")
-                archive.current()
-                return detached
+
+def read_history_capture(owner):
+    """Return the exact admitted private history from one authorized generation."""
+    try:
+        with _source_authority(owner) as values:
+            transition = values["generation"]["transition"]
+            capture = transition["history_capture"]
+            expected = transition["history_capture_sha256"]
+            admitted = live.admit_history_capture(
+                capture, expected_capture_sha256=expected)
+            original = _raw(owner, capture)
+            if _raw(owner, admitted) != original:
+                _refuse("history-capture-admission-changed")
+            detached = copy.deepcopy(admitted)
+            if _raw(owner, detached) != original:
+                _refuse("history-capture-detachment-changed")
+            return detached
     except LiveViewRefusal:
         raise
     except (OSError, RuntimeError, TypeError, ValueError, KeyError,

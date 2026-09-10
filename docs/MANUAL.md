@@ -588,6 +588,7 @@ sia bench                              # held-out retrieval + abstention run
 sia bench run --chain sia --chain custos
 sia bench generate --out /tmp/sia-qa  # question file + private answer key
 sia bench generate --chain sia --out /tmp/sia-qa
+sia bench generate --cognitive-history --live-history --out /tmp/sia-history
 sia bench score --dataset /tmp/sia-qa --answers predictions.jsonl
 sia bench legacy                       # older hand-authored corpus probes
 ```
@@ -596,6 +597,12 @@ sia bench legacy                       # older hand-authored corpus probes
 available configured chain and preserves any rejection as a named diagnostic.
 The default run writes its Markdown report to
 `~/.local/share/sia/research/ledger-bench-YYYY-MM-DD.md` after printing it.
+
+`--cognitive-history` adds an owner-private, lossless capture of the verified
+signed-ledger projection. `--live-history` additionally exports the exact
+admitted controller intake, deliveries, typed uses, and policy from the same
+source-authorized live generation. The latter requires the former; both files
+are mode 0600 experiment inputs, not benchmark results or cognitive claims.
 
 The generator opens ledger, verifier, and declared-input files without
 following symlinks and pins the original descriptors for parent-side

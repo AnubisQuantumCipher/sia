@@ -529,6 +529,34 @@ class SourceReplayJournal(unittest.TestCase):
             mind["nodes"]["events/custom/2026-08-30"]["n"], touches)
         self.assertEqual(mind["event_batch_applied"], identity)
 
+    def test_native_event_time_after_controller_frame_is_not_a_usage_time(self):
+        """A long capture may finish after its one pinned controller clock.
+
+        Native event chronology remains novelty/source metadata.  Perception
+        admission is the use, so every legacy usage/co-return touch from this
+        transaction must use the controller frame instead of manufacturing a
+        future use that makes its own activation snapshot invalid.
+        """
+        mind = self.sialib.siamind._empty_mind()
+        observed_at = self.when.timestamp()
+        later = self.sialib.Event(
+            "custom", self.when + datetime.timedelta(seconds=30),
+            "event", "captured after the controller frame",
+            {"organs/custom"}, {"custom"},
+            occurrence="custom:demo:0:later")
+
+        result = self.sialib._event_cognitive_transition(
+            mind, [(later, "events/custom/2026-08-30")],
+            observed_at, "2026-08-30", "e" * 32)
+
+        self.assertFalse(result["already_applied"])
+        for slug in ("events/custom/2026-08-30", "organs/custom"):
+            self.assertEqual(mind["nodes"][slug]["rt"], [[observed_at, 1.0]])
+        self.assertEqual(
+            mind["edges"][
+                "events/custom/2026-08-30|organs/custom"]["last_touch"],
+            observed_at)
+
     def test_event_transition_does_not_regress_familiarity_watermarks(self):
         mind = self.sialib.siamind._empty_mind()
         entity = "organs/custom"
