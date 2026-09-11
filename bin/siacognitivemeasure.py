@@ -525,3 +525,74 @@ def prepare_measurement(*, capture, expected_capture_sha256, selection_policy, e
                         baseline, expected_baseline_sha256, expected_parameter_freeze_sha256=None):
     """Replay pinned observations and return exact-expression requests without executing them."""
     return _guard(_prepare, locals())
+
+
+def _prepare_live_history(kw):
+    import sialiveloop as live
+
+    # A separate explicit operation, not a fallback from a refused proxy arm.
+    # Keep both the complete aggregate and each existing artifact's ceiling.
+    live._size(kw, live.MAX_INPUT_BYTES)
+    _bounded_inputs(kw.values())
+    detached = copy.deepcopy(kw)
+    plan = prepare_measurement(**detached["replay_inputs"])
+    capture = live.admit_history_capture(detached["live_capture"],
+        expected_capture_sha256=detached["expected_live_capture_sha256"])
+    baseline = plan["baseline"]
+    if plan["split"] == "heldout" and baseline["parameter_freeze"]["parameters"].get(
+            "live_history_capture_sha256") != capture["capture_sha256"]:
+        _fail("heldout freeze does not bind the live history capture")
+    versions = {}
+    for page in capture["intake"]["pages"]:
+        key = (page["subject"], page["content_sha256"], page["origin"])
+        if key in versions:
+            _fail("live history has ambiguous source versions for the same full page")
+        versions[key] = page
+    pages = {page["slug"]: page for page in baseline["pages"]}
+    queries = []
+    for query, result in zip(baseline["queries"], baseline["observation"]["query"]["payload"]["results"], strict=True):
+        candidates, rows = [], []
+        for index, raw in enumerate(result["rows"]):
+            # prepare_measurement replay already checked the complete chunk
+            # roster, raw model/index/config bindings and full-page identity.
+            page = pages[raw["slug"]]
+            version = versions.get((page["slug"], page["text_sha256"], page["origin"]))
+            ref = "row-" + str(index)
+            rows.append({"row_ref": ref, "raw_row": raw, "origin": page["origin"],
+                         "page_text_sha256": page["text_sha256"],
+                         "availability": "exact-version-not-captured", "history": None})
+            if version is not None:
+                candidates.append({"row_ref": ref, **{key: version[key] for key in
+                    ("subject", "content_sha256", "source_sha256", "origin")}})
+        projection = live.project_history_traces(capture=capture,
+            expected_capture_sha256=capture["capture_sha256"], candidates=candidates,
+            expected_candidates_sha256=live._sha(candidates))
+        histories = {row["candidate"]["row_ref"]: row for row in projection["rows"]}
+        for row in rows:
+            history = histories.get(row["row_ref"])
+            if history is not None:
+                row.update(availability=history["availability"], history=history)
+        queries.append({"id": query["id"], "text": query["text"], "rows": rows,
+                        "projection_sha256": projection["projection_sha256"],
+                        "projection_non_claims": projection["non_claims"]})
+    return _finish({
+        "schema": "sia-cognitive-live-history-plan-v1", "status": "computed-unverified",
+        "baseline_sha256": plan["baseline_sha256"], "measurement_plan_sha256": plan["plan_sha256"],
+        "live_capture_sha256": capture["capture_sha256"], "split": plan["split"],
+        "epoch_id": capture["epoch_id"], "scope": capture["scope"],
+        "started_at": capture["intake"]["started_at"], "observed_at": capture["observed_at"],
+        "queries": queries,
+        "source_non_claims": {"measurement": plan["non_claims"],
+                              "sources": plan["source_non_claims"], "live": capture["non_claims"]},
+        "non_claims": [
+            "Raw chunks, page bytes and origins are replay-bound; source-version provenance comes from the independently pinned controller capture.",
+            "Unmatched candidates remain in raw order with unavailable history; no answer keys, classes or target sequences enter the projected query packet.",
+            "Controller-epoch completeness is not complete machine history, human use, or historical source authentication.",
+            "This is a data binding, not a reranking, executed JACKAL metric, held-out independence proof, latency comparison or cognitive win.",
+        ],
+    }, "plan_sha256")
+
+
+def prepare_live_history(*, replay_inputs, live_capture, expected_live_capture_sha256):
+    """Replay raw-vector source bindings before attaching exact-version uses."""
+    return _guard(_prepare_live_history, locals())
