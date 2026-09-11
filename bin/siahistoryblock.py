@@ -148,9 +148,35 @@ def prepare_captured(owner, *, batch, expected_batch_sha256,
     Archive retention and committed authority must be established separately.
     An immediate parent must match the source epoch's explicit predecessor.
     """
+    return _prepare_captured(owner, batch=batch, expected_batch_sha256=expected_batch_sha256,
+                             parent=parent, expected_parent_sha256=expected_parent_sha256)
+
+
+def prepare_checkpoint_capture(owner, *, batch, expected_batch_sha256,
+                               parent, expected_parent_sha256):
+    """Extract a fully validated compact capture with a mandatory predecessor.
+
+    This preserves the current raw return/closure entry for durable chain
+    retention. It does not retain the capture archive, admit its root, publish
+    a live generation or advance source authority. The parent is an explicit
+    represented premise, not an inferred or newly fabricated genesis.
+    """
+    return _prepare_captured(owner, batch=batch, expected_batch_sha256=expected_batch_sha256,
+                             parent=parent, expected_parent_sha256=expected_parent_sha256, checkpoint=True)
+
+
+def _prepare_captured(owner, *, batch, expected_batch_sha256,
+                      parent, expected_parent_sha256, checkpoint=False):
     batch_raw = _wire(batch)
     parent_raw = _wire(parent)
-    source.validate_batch(owner, batch, expected_batch_sha256)
+    if checkpoint:
+        import siasourcecheckpoint
+        if parent is None or type(batch) is not dict \
+                or batch.get("schema") != "sia-controller-source-checkpoint-capture-v3":
+            _refuse("checkpoint-capture-and-parent-required")
+        siasourcecheckpoint.validate_capture(owner, batch, expected_batch_sha256)
+    else:
+        source.validate_batch(owner, batch, expected_batch_sha256)
     if parent is not None:
         _pin(parent_raw, expected_parent_sha256)
         _parent(parent)
