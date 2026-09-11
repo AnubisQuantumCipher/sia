@@ -262,6 +262,9 @@ class _Transaction:
             _refuse("memo-authority")
         self.observe("source-slot", self.paths["CONTROLLER_SOURCE_BATCH_PATH"],
                      owner["MAX_STATE_JSON_BYTES"])
+        self.admit_source_slot()
+
+    def admit_source_slot(self):
         if self.files["source-slot"].raw is not None:
             _refuse("successor-wal-must-be-recovered-first")
 
@@ -974,6 +977,90 @@ def hold_capturable_epoch(
         except BaseException:
             raise
         else:
+            held.current()
+        finally:
+            held._retire()
+
+
+class _CheckpointWALSlot:
+    def __init__(self, *args, checkpoint_batch, expected_checkpoint_batch_sha256, **kwargs):
+        self.checkpoint_batch = checkpoint_batch
+        self.checkpoint_pin = expected_checkpoint_batch_sha256
+        self.checkpoint_raw = None
+        super().__init__(*args, **kwargs)
+
+    def admit_source_slot(self):
+        import siasourcecheckpoint
+        raw = source.native_bytes(self.owner, self.checkpoint_batch)
+        siasourcecheckpoint.validate_capture(self.owner, self.checkpoint_batch, self.checkpoint_pin)
+        if self.checkpoint_batch["schema"] != "sia-controller-source-checkpoint-capture-v3" \
+                or self.files["source-slot"].raw != raw \
+                or not _same(self.owner, self.checkpoint_batch["epoch"]["predecessor"], self.admitted["committed"]) \
+                or not _same(self.owner, self.checkpoint_batch["notification_baseline_attempt"],
+                             source._notification_marker(self.owner, self.memo)):
+            _refuse("checkpoint-wal-source-binding")
+        self.checkpoint_raw = raw
+
+    def inputs_current(self):
+        super().inputs_current()
+        if self.checkpoint_raw is not None and (
+                source.native_bytes(self.owner, self.checkpoint_batch) != self.checkpoint_raw \
+                or self.checkpoint_batch["batch_sha256"] != self.checkpoint_pin):
+            _refuse("checkpoint-wal-input-changed")
+
+
+class _CheckpointWALTransaction(_CheckpointWALSlot, _Transaction):
+    pass
+
+
+class _CheckpointWALCaptureTransaction(_CheckpointWALSlot, _CaptureTransaction):
+    pass
+
+
+@contextlib.contextmanager
+def hold_checkpoint_wal_epoch(owner, *, memo, admitted_status, retained_batch, committed,
+                              journal_limits, expected_journal_limits_sha256, expected_adoption_sha256,
+                              checkpoint_batch, expected_checkpoint_batch_sha256,
+                              notification_baseline_attempt, expected_notification_baseline_attempt_sha256):
+    """Observe only an exact validated compact WAL under its actual predecessor.
+
+    Ordinary holds retain their absent-slot contract. This recovery-only hold
+    neither adopts that WAL nor permits output, clears a fence or repairs data.
+    The original request, held-authority and artifact ceilings still apply.
+    """
+    with contextlib.ExitStack() as stack:
+        _digest(expected_adoption_sha256)
+        _require_entered_corpus(owner)
+        stack.enter_context(owner["corpus_owner"]())
+        request = dict(admitted_status=admitted_status, retained_batch=retained_batch, committed=committed,
+                       journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
+                       expected_adoption_sha256=expected_adoption_sha256)
+        options = dict(checkpoint_batch=checkpoint_batch, expected_checkpoint_batch_sha256=expected_checkpoint_batch_sha256)
+        if notification_baseline_attempt is None:
+            if expected_notification_baseline_attempt_sha256 is not None:
+                _refuse("checkpoint-wal-absent-fence-pin")
+            tx = _CheckpointWALTransaction(owner, memo, request, stack, readonly=True, **options)
+            held_type = _HeldEpoch
+        else:
+            request.update(notification_baseline_attempt=notification_baseline_attempt,
+                           expected_notification_baseline_attempt_sha256=expected_notification_baseline_attempt_sha256)
+            tx = _CheckpointWALCaptureTransaction(owner, memo, request, stack, **options)
+            held_type = _HeldCapturableEpoch
+        expected_birth = tx.parent()
+        marker = memo.get(_MARKER)
+        _keys(marker, _MARKER_KEYS, "epoch-marker")
+        if marker["adoption_sha256"] != tx.external:
+            _refuse("external-adoption-marker-pin")
+        tx.directories_for(must_exist=True, persist=False)
+        if tx.files["birth"].raw is None:
+            _refuse("retained-birth-document-missing")
+        birth = tx.files["birth"].value
+        _validate_birth(tx, birth, expected_birth)
+        _validate_marker(tx, marker, birth)
+        held = held_type(tx, _finish(tx, birth))
+        try:
+            held.current()
+            yield held
             held.current()
         finally:
             held._retire()

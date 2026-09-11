@@ -183,10 +183,19 @@ class _HeldRootPreparation:
         return result
 
 
-@contextlib.contextmanager
 def hold_root_preparation(owner, *, memo, admitted_status, directory, expected_manifest_sha256,
                           expected_root_sha256, journal_limits, expected_journal_limits_sha256,
                           expected_adoption_sha256):
+    return _hold_root_preparation(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256,
+        journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
+        expected_adoption_sha256=expected_adoption_sha256)
+
+
+@contextlib.contextmanager
+def _hold_root_preparation(owner, *, memo, admitted_status, directory, expected_manifest_sha256,
+                           expected_root_sha256, journal_limits, expected_journal_limits_sha256,
+                           expected_adoption_sha256, allow_fixed=False):
     """Hold genuine source/root/epoch/journal joins until the caller exits.
 
     No artifacts are adopted or written. The yielded handle expires on exit;
@@ -226,7 +235,14 @@ def hold_root_preparation(owner, *, memo, admitted_status, directory, expected_m
 
         def read_source():
             inputs_current()
-            source._durable_successor_authority(owner, files, memo, committed)
+            if allow_fixed and files.files["batch"].raw is not None:
+                source._successor_memo(owner, memo, committed)
+                source._successor_memo(owner, files.files["memo"].value, committed)
+                if source.native_bytes(owner, files.files["memo"].value, ceiling=owner["MAX_MEMO_BYTES"]) != originals["memo"] \
+                        or files.files["batch"].raw != checkpoint._wire(owner, batch):
+                    source.refuse("checkpoint-authority-fixed-retry-differs")
+            else:
+                source._durable_successor_authority(owner, files, memo, committed)
             if marker is None:
                 actual = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
                 status = "available"
@@ -263,6 +279,11 @@ def hold_root_preparation(owner, *, memo, admitted_status, directory, expected_m
         epoch_context = epochs.hold_epoch(owner, **arguments) if marker is None else epochs.hold_capturable_epoch(
             owner, **arguments, notification_baseline_attempt=marker,
             expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
+        if allow_fixed and files.files["batch"].raw is not None:
+            epoch_context = epochs.hold_checkpoint_wal_epoch(owner, **arguments,
+                checkpoint_batch=batch, expected_checkpoint_batch_sha256=batch["batch_sha256"],
+                notification_baseline_attempt=marker,
+                expected_notification_baseline_attempt_sha256=None if marker is None else source.native_sha(owner, marker))
         delivery_stack = stack.enter_context(contextlib.ExitStack())
         epoch = delivery_stack.enter_context(epoch_context)
         epoch_view = epoch.read()
