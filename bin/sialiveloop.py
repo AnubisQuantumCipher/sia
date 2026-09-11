@@ -183,16 +183,22 @@ def _size(value, ceiling):
             if _count_ascii_json_string(item, add):
                 return
             add(len('""'))
-            for char in item:
-                point = ord(char)
-                if 0xD800 <= point <= 0xDFFF:
+            # A Unicode page must not force a Python call per codepoint on
+            # every replay. Encode only bounded slices, never the complete
+            # unchecked document. Strict UTF-8 encoding rejects surrogates.
+            for offset in range(0, len(item), 4096):
+                chunk = item[offset:offset + 4096]
+                try:
+                    encoded = chunk.encode('utf-8')
+                except UnicodeEncodeError:
                     _fail("unpaired-surrogate")
-                if char in '"\\\b\f\n\r\t':
-                    add(len("\\n"))
-                elif point < 0x20:
-                    add(len("\\u0000"))
-                else:
-                    add(len(char.encode("utf-8")))
+                add(len(encoded))
+                if _JSON_ASCII_ESCAPABLE.search(chunk) is not None:
+                    for character in _JSON_SHORT_ESCAPES:
+                        add(chunk.count(character))
+                    for character in _JSON_LONG_ASCII_ESCAPES:
+                        # Same JSON escape overhead as the ASCII lane above.
+                        add(5 * chunk.count(character))
         elif kind is bool:
             add(len("true" if item else "false"))
         elif item is None:
