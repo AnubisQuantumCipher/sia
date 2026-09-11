@@ -1613,9 +1613,7 @@ class _DeliveryCaptureRequest:
         if _live._sha(request["journal_limits"]) \
                 != request["expected_journal_limits_sha256"]:
             refuse("delivery-journal-limits-pin")
-        _validate_successor_request(
-            owner, request["retained_batch"], request["committed"], request["epoch"],
-            request["expected_epoch_sha256"], request["observed_at"])
+        self.validate_source_request()
         _notification_marker(owner, request["memo"])
         self.basis_current()
         if self.wire(request, complete_request=True) != self.original_raw:
@@ -1626,6 +1624,12 @@ class _DeliveryCaptureRequest:
         self.epoch_view_raw = self.journal_view_raw = None
         self.collected = False
         self.inputs_current()
+
+    def validate_source_request(self):
+        request = self.request
+        _validate_successor_request(
+            self.owner, request["retained_batch"], request["committed"], request["epoch"],
+            request["expected_epoch_sha256"], request["observed_at"])
 
     def wire(self, value, *, memo=False, complete_request=False):
         ceiling = (self.request_capacity if complete_request else
@@ -1723,7 +1727,6 @@ class _DeliveryCaptureRequest:
         self.collected = True
 
     def bind(self, stack, result):
-        import siacontrollerdeliverywrapper
         import siadelivery
         self.inputs_current()
         if not self.collected or self.held_epoch is not None:
@@ -1740,19 +1743,25 @@ class _DeliveryCaptureRequest:
         self.journal_view = self.held_journal.read()
         self.journal_view_raw = self.wire(self.journal_view)
         self.current()
-        projection = result["intake_projection"]
-        wrapped = siacontrollerdeliverywrapper.build(
-            self.owner, parent_source_schema=self.admitted["retained_batch"]["schema"],
+        wrapped = self.wrap(result)
+        self.current()
+        return wrapped
+
+    def wrapper_arguments(self, result, projection_sha256):
+        return dict(parent_source_schema=self.admitted["retained_batch"]["schema"],
             epoch_view=self.epoch_view,
             expected_epoch_view_sha256=native_sha(self.owner, self.epoch_view),
             expected_adoption_sha256=self.admitted["expected_adoption_sha256"],
             journal=self.journal_view, expected_journal_sha256=_live._sha(self.journal_view),
             epoch=result["epoch"], expected_epoch_sha256=result["epoch_sha256"],
-            projection=projection, expected_projection_sha256=projection["projection_sha256"],
+            projection=result["intake_projection"], expected_projection_sha256=projection_sha256,
             observed_at=result["observed_at"],
             notification_baseline_attempt=result["notification_baseline_attempt"])
-        self.current()
-        return wrapped
+
+    def wrap(self, result):
+        import siacontrollerdeliverywrapper
+        return siacontrollerdeliverywrapper.build(
+            self.owner, **self.wrapper_arguments(result, result["intake_projection"]["projection_sha256"]))
 
     def current(self):
         self.inputs_current()
@@ -1772,7 +1781,7 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
                     observed_at, authority, successor=False, delivery=None, checkpoint=None, checkpoint_idle=False):
     if type(checkpoint_idle) is not bool or checkpoint_idle and checkpoint is None:
         refuse("checkpoint-idle-without-checkpoint")
-    if checkpoint is not None and (successor or delivery is not None):
+    if checkpoint is not None and (successor or delivery is not None and not checkpoint_idle):
         refuse("checkpoint-capture-is-not-controller-publication")
     checkpoint_raw = None if checkpoint is None else native_bytes(owner, checkpoint)
     epoch_raw = native_bytes(owner, epoch)
@@ -1880,7 +1889,11 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
                     current()
                     _epoch_current(owner, epoch, epoch_raw)
             if delivery is not None:
-                result["schema"] = "sia-controller-source-batch-v3"
+                if checkpoint is None:
+                    result["schema"] = "sia-controller-source-batch-v3"
+                else:
+                    result["schema"] = "sia-controller-source-checkpoint-capture-v3"
+                    result["non_claims"] = list(siasourcecheckpoint.CAPTURE_DELIVERY_NON_CLAIMS)
                 result["delivery_input"] = delivery.bind(delivery_holds, result)
             _json_size(owner, result, owner["MAX_STATE_JSON_BYTES"],
                        ascii_only=True)
