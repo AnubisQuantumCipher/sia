@@ -1,0 +1,154 @@
+"""Durable, unactivated preparation of an actual root-bound compact pulse.
+
+Every artifact retains its original single-document ceiling. The manifest is
+published last, exclusively, after descriptor-held readback of every member.
+No source fixed slot, cursor, active head or corpus page is advanced. Capture
+may perform the existing collector notification-baseline fence write; package
+retention does not otherwise modify the memo or acknowledge that fence.
+"""
+
+import contextlib
+import hashlib
+import json
+import os
+
+import siacontrollerliveinput as inputs
+import siahistoryblock as blocks
+import siahistoryblockstore as store
+import sialiveloop as live
+import siaqueue as queue
+import siasourceack as ack
+import siasourcebatch as source
+import siasourcecheckpoint as checkpoint
+
+
+NON_CLAIMS = (
+    "This manifest records preparation and retained artifact bytes, not source adoption, cursor acknowledgment, corpus publication, live readiness or a cognitive win.",
+    "The actual root capture and predecessor are checked under ordinary owner scopes; source truth, complete machine history and hostile same-user safety are not established.",
+    "All referenced root, capture, checkpoint, history-block and live nonclaims remain controlling. Original archives remain required.",
+    "Failures may leave exact unactivated artifacts. Manifest absence is not permission to delete them; recovery must independently admit all references and current authority.",
+    "Publisher fsync and descriptor checks do not establish storage hardware reliability or protect against mutation after return.",
+)
+
+
+def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha256,
+                 observed_at, journal_limits, expected_journal_limits_sha256,
+                 expected_adoption_sha256):
+    """Capture, execute the pure pulse, and retain its unactivated package."""
+    owner_references = dict(owner)
+    with owner["brainstem_owner"](), owner["corpus_owner"](), contextlib.ExitStack() as stack:
+        batch = checkpoint.capture_root_delivery(
+            owner, memo=memo, admitted_status=admitted_status, directory=directory,
+            expected_root_sha256=expected_root_sha256, observed_at=observed_at,
+            journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
+            expected_adoption_sha256=expected_adoption_sha256)
+        raw_batch = checkpoint._wire(owner, batch)
+        memo_raw, status_raw = checkpoint._wire(owner, memo), checkpoint._wire(owner, admitted_status)
+        limit = min(owner["MAX_STATE_JSON_BYTES"], blocks.MAX_DOCUMENT_BYTES)
+        directory_hold = source._DirectoryChain(owner, directory, private_terminal=True)
+        stack.callback(directory_hold.close)
+        files = source._CaptureFiles(owner)
+        stack.callback(files.close)
+        held = []
+
+        def observe(name, *, required=True):
+            value = ack._HeldRaw(owner, source, os.path.join(directory, name), limit, allow_absent=not required)
+            stack.callback(value.close)
+            return value
+
+        root_file = observe("root-" + expected_root_sha256 + ".json")
+        blocks._pin(root_file.raw, expected_root_sha256)
+        root = json.loads(root_file.raw)
+        parent_pin = root["final_entry_block_sha256"]
+        blocks._pin(checkpoint._wire(owner, root), expected_root_sha256)
+        parent_file = observe(store._name(parent_pin))
+        parent = store._decode(parent_file, parent_pin)
+        held.extend((root_file, parent_file))
+        predecessor = batch["epoch"]["predecessor"]
+        if root["committed"] != predecessor or root["epoch_id"] != batch["epoch"]["epoch_id"]:
+            source.refuse("checkpoint-transaction-root-binding")
+
+        def current():
+            if any(owner.get(name) is not value for name, value in owner_references.items()) \
+                    or checkpoint._wire(owner, memo) != memo_raw \
+                    or checkpoint._wire(owner, admitted_status) != status_raw \
+                    or checkpoint._wire(owner, batch) != raw_batch:
+                source.refuse("checkpoint-transaction-input-changed")
+            source._durable_successor_authority(owner, files, memo, predecessor)
+            marker = source._notification_marker(owner, memo)
+            if marker is None:
+                view = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+                expected_status = "available"
+            else:
+                view = ack.read_capturable_predecessor(
+                    owner, memo=memo, admitted_status=admitted_status, committed=predecessor,
+                    notification_baseline_attempt=marker,
+                    expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
+                expected_status = "capturable-not-ready"
+            if view.get("status") != expected_status or view.get("committed") != predecessor:
+                source.refuse("checkpoint-transaction-predecessor-changed")
+            for value in held:
+                value.current()
+            files.current()
+            directory_hold.current()
+
+        current()
+        generation = batch["delivery_input"]["epoch_view"]["parent_generation"]
+        request = inputs.prepare_inputs_checkpoint(
+            owner, batch=batch, previous_generation=generation,
+            expected_previous_generation_sha256=generation["generation_sha256"])
+        transition = live.prepare_pulse(**request)
+        candidate = {"prepare_inputs": request, "expected_prepare_inputs_sha256": live._sha(request)}
+        block = blocks.prepare_checkpoint_capture(
+            owner, batch=batch, expected_batch_sha256=batch["batch_sha256"],
+            parent=parent, expected_parent_sha256=parent_pin)
+        artifacts = {"capture": batch, "checkpoint": batch["intake_projection"]["checkpoint"],
+                     "candidate": candidate, "transition": transition, "block": block}
+        # Admit every complete member before any new publication.
+        raws = {name: checkpoint._wire(owner, value) for name, value in artifacts.items()}
+        pins = {name: hashlib.sha256(raw).hexdigest() for name, raw in raws.items()}
+        manifest = {"schema": "sia-checkpoint-transaction-preparation-v1", "status": "retained-not-activated",
+                    "root_sha256": expected_root_sha256, "predecessor": predecessor,
+                    "source_batch_sha256": batch["batch_sha256"], "artifacts": pins,
+                    "non_claims": list(NON_CLAIMS)}
+        manifest_raw = checkpoint._wire(owner, manifest)
+        manifest_pin = hashlib.sha256(manifest_raw).hexdigest()
+
+        def images_current():
+            current()
+            if any(checkpoint._wire(owner, artifacts[name]) != raw for name, raw in raws.items()) \
+                    or checkpoint._wire(owner, manifest) != manifest_raw:
+                source.refuse("checkpoint-transaction-artifact-changed")
+
+        def publish(name, raw):
+            prior = observe(name, required=False)
+            if prior.raw is not None and prior.raw != raw:
+                source.refuse("checkpoint-transaction-existing-image-differs")
+            images_current()
+            prior.current()
+            queue.fixed_atomic_publish(os.path.join(directory, name), raw, mode=0o600,
+                exclusive=True, destination_dir_fd=directory_hold.fd,
+                staging_dir=os.path.join(directory, ".checkpoint-transaction-staging"))
+            actual = observe(name)
+            if actual.raw != raw or not os.path.samestat(
+                    os.fstat(actual.directories.fd), os.fstat(prior.directories.fd)):
+                source.refuse("checkpoint-transaction-published-image-differs")
+            held.append(actual)
+            images_current()
+
+        images_current()
+        # Use the existing block publisher so future links find the same chain.
+        store.retain(directory=directory, block=block, expected_block_sha256=pins["block"])
+        actual_block = observe(store._name(pins["block"]))
+        if actual_block.raw != raws["block"]:
+            source.refuse("checkpoint-transaction-block-differs")
+        held.append(actual_block)
+        for name in ("capture", "checkpoint", "candidate", "transition"):
+            publish(name + "-" + pins[name] + ".json", raws[name])
+        publish("transaction-" + manifest_pin + ".json", manifest_raw)
+        result = {"manifest": json.loads(manifest_raw), "manifest_sha256": manifest_pin}
+        if checkpoint._wire(owner, result["manifest"]) != manifest_raw:
+            source.refuse("checkpoint-transaction-result-changed")
+        images_current()
+        files.named_current()
+        return result
