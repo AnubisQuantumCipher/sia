@@ -129,6 +129,34 @@ def _token(value, maximum=activation.MAX_USE_ID_BYTES, pattern=_TOKEN):
         and pattern.fullmatch(value) is not None
 
 
+_JSON_SHORT_ESCAPES = '"\\\b\f\n\r\t'
+_JSON_LONG_ASCII_ESCAPES = tuple(
+    chr(point) for point in range(0x20)
+    if chr(point) not in _JSON_SHORT_ESCAPES)
+
+
+def _count_ascii_json_string(item, add, *, ascii_only=False):
+    """Count ASCII with C string scans and no encoded-string allocation.
+
+    Each character contributes its original byte first, then escape overhead.
+    Every addition still passes through the caller's complete-document cap.
+    Non-ASCII returns to the caller's original Unicode validation path.
+    """
+    if not item.isascii():
+        return False
+    add(len('""'))
+    add(len(item))
+    for character in _JSON_SHORT_ESCAPES:
+        add(item.count(character))
+    for character in _JSON_LONG_ASCII_ESCAPES:
+        # JACKAL status=exact parsed=6-1 exact=5; no formal certificate.
+        add(5 * item.count(character))
+    if ascii_only:
+        # Python's ensure_ascii serializer also escapes DEL.
+        add(5 * item.count('\x7f'))
+    return True
+
+
 def _size(value, ceiling):
     """Exact canonical JSON size before copying, hashing or JSON allocation.
 
@@ -149,6 +177,8 @@ def _size(value, ceiling):
             _fail("complete-json-depth")
         kind = type(item)
         if kind is str:
+            if _count_ascii_json_string(item, add):
+                return
             add(len('""'))
             for char in item:
                 point = ord(char)

@@ -243,6 +243,8 @@ def _json_size(owner, value, ceiling, *, ascii_only):
                 refuse("nonfinite-json-number")
             add(len(repr(item)))
         elif kind is str:
+            if _live._count_ascii_json_string(item, add, ascii_only=ascii_only):
+                return
             add(2)
             for character in item:
                 point = ord(character)
@@ -252,7 +254,7 @@ def _json_size(owner, value, ceiling, *, ascii_only):
                     add(2)
                 elif point < 0x20:
                     add(6)
-                elif ascii_only and point >= 0x80:
+                elif ascii_only and point >= 0x7F:
                     add(6 if point <= 0xFFFF else 12)
                 else:
                     add(len(character.encode("utf-8")))
