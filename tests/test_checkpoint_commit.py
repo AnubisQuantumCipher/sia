@@ -12,6 +12,15 @@ from tests import test_checkpoint_adoption as fixtures
 
 
 class CheckpointCommit(unittest.TestCase):
+    def test_compact_driver_completes_adopted_transaction_and_retries(self):
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
+    def test_compact_driver_recovers_after_source_archive_move(self):
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.interrupt_driver = True
+        self.exercise(synchronize=True)
+
     def test_actual_git_cut_retry_and_false_generation_refusal(self):
         self.exercise(synchronize=False)
 
@@ -113,8 +122,9 @@ class CheckpointCommit(unittest.TestCase):
             adoption.adopt_root(vars(owner), **request)
             args = {k: v for k, v in request.items() if k not in {
                 "journal_limits", "expected_journal_limits_sha256", "expected_adoption_sha256"}}
-            adoption.stage_live_binding(vars(owner), **args)
-            adoption.stage_status_effects(vars(owner), **args, started_at=f.status["ts"])
+            if not hasattr(self, "driver_api"):
+                adoption.stage_live_binding(vars(owner), **args)
+                adoption.stage_status_effects(vars(owner), **args, started_at=f.status["ts"])
             args.pop("seq")
             before = copy.deepcopy(args["memo"])
             with mock.patch.object(owner, "GIT", "/usr/bin/git"):
@@ -158,6 +168,9 @@ class CheckpointCommit(unittest.TestCase):
             return result
 
         with mock.patch.object(owner, "_controller_source_sync_generation", side_effect=observed):
+            if hasattr(self, "driver_api"):
+                self.driver_case(f, owner, args)
+                return
             if hasattr(self, "stage_api"):
                 self.stage_case(f, owner, args, before)
                 return
@@ -172,6 +185,41 @@ class CheckpointCommit(unittest.TestCase):
                 content.synchronize(vars(owner), **args)
         self.assertEqual(args["memo"], before)
         self.assertEqual(owner.load_memo(), before)
+
+    def driver_case(self, f, owner, args):
+        from tests import test_controller_source_effects as effects_fixture
+        graph = f.case.effects._new_graph()
+        graph["publication_id"] = "4" * 32
+        def export():
+            owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(graph), mode=0o600)
+        request = {key: value for key, value in args.items() if key not in {"memo", "admitted_status"}}
+        request["started_at"] = f.status["ts"]
+        with mock.patch.object(owner, "_export_graph_publication", side_effect=export), \
+                mock.patch.object(owner, "_controller_source_effects_observed_at", return_value=effects_fixture.STATUS_AT):
+            if getattr(self, "interrupt_driver", False):
+                def interrupted(name):
+                    if name == "archive-durable":
+                        raise OSError("controlled driver archived-source interruption")
+                with mock.patch.object(owner, "_controller_source_ack_boundary", side_effect=interrupted):
+                    with self.assertRaisesRegex(OSError, "controlled driver archived-source interruption"):
+                        self.driver_api.complete_adopted(vars(owner), **request)
+                self.assertFalse(Path(owner.CONTROLLER_SOURCE_BATCH_PATH).exists())
+                self.assertNotIn("ready", owner.load_memo())
+            view = self.driver_api.complete_adopted(vars(owner), **request)
+        memo = owner.load_memo()
+        self.assertEqual(view["status"], "available")
+        self.assertIn("ready", memo)
+        self.assertFalse(Path(owner.CONTROLLER_SOURCE_BATCH_PATH).exists())
+        self.assertFalse(self.driver_api.ack._PENDING_ONLY.intersection(memo))
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("driver retry wrote")), \
+                mock.patch.object(owner, "_controller_source_sync_generation", side_effect=AssertionError("driver retry synchronized")), \
+                mock.patch.object(owner, "_export_graph_publication", side_effect=AssertionError("driver retry exported")):
+            retried = self.driver_api.complete_adopted(vars(owner), **request)
+        self.assertEqual(retried, view)
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("invalid retry wrote")):
+            with self.assertRaises(ValueError) as refused:
+                self.driver_api.complete_adopted(vars(owner), **{**request, "started_at": "different"})
+        self.assertEqual(refused.exception.reason, "checkpoint-runner-completed-start-differs")
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture
