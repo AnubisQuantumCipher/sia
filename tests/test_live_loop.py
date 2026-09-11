@@ -461,6 +461,111 @@ class LiveLoopPureIntegration(unittest.TestCase):
         with self.assertRaises(module.LiveLoopRefusal):
             module.admit_history_capture(captured, expected_capture_sha256="0" * 64)
 
+    def _history_projection_fixture(self):
+        module = self._module()
+        self._inputs()
+        first = self._prepare(module)
+        record = self._delivery(module, self._rank(module, first))
+        capture = self._prepare(module, **self._resume(first, observed_at=DELIVERED_AT),
+                                **self._with_delivery(record))["history_capture"]
+        candidates = [{"row_ref": "candidate-" + page["subject"],
+                       **{key: page[key] for key in
+                          ("subject", "origin", "source_sha256", "content_sha256")}}
+                      for page in capture["intake"]["pages"]]
+        return module, capture, candidates
+
+    def _project_history(self, module, capture, candidates, **overrides):
+        return module.project_history_traces(**{
+            "capture": capture, "expected_capture_sha256": capture["capture_sha256"],
+            "candidates": candidates, "expected_candidates_sha256": digest(candidates),
+            **overrides})
+
+    def test_history_projection_preserves_typed_uses_and_exact_version_identity(self):
+        module, capture, candidates = self._history_projection_fixture()
+        before = copy.deepcopy((capture, candidates))
+        result = self._project_history(module, capture, candidates)
+        self.assertEqual((capture, candidates), before)
+        self.assertEqual(result["schema"], "sia-live-history-projection-v1")
+        self.assertEqual(result["status"], "computed-unverified")
+        self.assertEqual(result["scope"], SCOPE)
+        self.assertEqual(result["observed_at"], capture["observed_at"])
+        self.assertEqual(result["capture_sha256"], capture["capture_sha256"])
+        self.assertEqual(result["candidates_sha256"], digest(candidates))
+        self.assertEqual(result["projection_sha256"], own_digest(result, "projection_sha256"))
+        self.assertEqual(result["source_non_claims"], NON_CLAIMS)
+        for row, candidate in zip(result["rows"], candidates, strict=True):
+            self.assertEqual(row["candidate"], candidate)
+            version = version_digest(candidate)
+            self.assertEqual(row["version_sha256"], version)
+            self.assertEqual(row["availability"], "complete-within-controller-epoch")
+            expected = [use for use in capture["uses"] if use["version_sha256"] == version]
+            self.assertEqual(row["uses"], expected)
+            self.assertEqual(row["trace"], {"v": 1, "subject": version, "complete": True,
+                "uses": [{"id": use["id"], "timestamp": use["timestamp"]} for use in expected]})
+        self.assertIn("service-output-completed", {use["kind"] for use in capture["uses"]})
+        result["rows"][0]["candidate"]["origin"] = "derived"
+        self.assertEqual((capture, candidates), before)
+
+    def test_history_projection_never_joins_by_slug_or_invents_empty_complete_history(self):
+        module, capture, candidates = self._history_projection_fixture()
+        for field, value in (("content_sha256", "0" * 64), ("source_sha256", "0" * 64),
+                             ("origin", "legacy-unlabeled"), ("subject", "absent/page")):
+            changed = copy.deepcopy(candidates)
+            changed[0][field] = value
+            with self.subTest(field=field):
+                row = self._project_history(module, capture, changed)["rows"][0]
+                self.assertEqual(row["availability"], "exact-version-not-captured")
+                self.assertIsNone(row["trace"])
+                self.assertEqual(row["uses"], [])
+
+    def test_history_projection_reconstructs_uses_and_requires_external_pins(self):
+        module, capture, candidates = self._history_projection_fixture()
+        for field in ("expected_capture_sha256", "expected_candidates_sha256"):
+            with self.subTest(field=field), self.assertRaises(module.LiveLoopRefusal):
+                self._project_history(module, capture, candidates, **{field: "0" * 64})
+        capture["uses"] = []
+        capture["capture_sha256"] = own_digest(capture, "capture_sha256")
+        with self.assertRaises(module.LiveLoopRefusal):
+            self._project_history(module, capture, candidates)
+
+    def test_history_projection_retains_old_versions_without_inheriting_their_uses(self):
+        module, capture, candidates = self._history_projection_fixture()
+        changed = copy.deepcopy(capture["intake"]["pages"][0])
+        old_version = changed["version_sha256"]
+        changed["content"] += "\nAdditive synthetic page revision.\n"
+        changed["content_sha256"] = bytes_digest(changed["content"].encode())
+        changed["version_sha256"] = version_digest(changed)
+        capture["intake"]["pages"].append(changed)
+        capture["intake"]["current_versions"] = [
+            changed["version_sha256"] if version == old_version else version
+            for version in capture["intake"]["current_versions"]]
+        capture["capture_sha256"] = own_digest(capture, "capture_sha256")
+        newer = {**candidates[0], "row_ref": "new-version", "content_sha256": changed["content_sha256"]}
+        duplicate_chunk = {**candidates[0], "row_ref": "another-chunk"}
+        result = self._project_history(module, capture, [candidates[0], newer, duplicate_chunk])
+        old, new, duplicate = result["rows"]
+        self.assertTrue(old["uses"])
+        self.assertEqual(old["uses"], duplicate["uses"])
+        self.assertEqual(old["trace"], duplicate["trace"])
+        self.assertEqual(new["availability"], "complete-within-controller-epoch")
+        self.assertEqual(new["uses"], [])
+        self.assertEqual(new["trace"]["uses"], [])
+        self.assertNotEqual(old["trace"]["subject"], new["trace"]["subject"])
+
+    def test_history_projection_closed_candidates_and_budget_precede_hash_or_replay(self):
+        module, capture, candidates = self._history_projection_fixture()
+        for changed in ([candidates[0], candidates[0]],
+                        [{**candidates[0], "answer_key": "forbidden"}],
+                        [{**candidates[0], "row_ref": ""}]):
+            with self.subTest(candidate=changed), self.assertRaises(module.LiveLoopRefusal):
+                self._project_history(module, capture, changed)
+        with mock.patch.object(module, "MAX_INPUT_BYTES", 1), \
+                mock.patch.object(module, "_sha", side_effect=AssertionError("hash before budget")), \
+                mock.patch.object(module, "admit_history_capture", side_effect=AssertionError("replay before budget")):
+            with self.assertRaises(module.LiveLoopRefusal):
+                module.project_history_traces(capture=capture, expected_capture_sha256="0" * 64,
+                    candidates=candidates, expected_candidates_sha256="0" * 64)
+
     def test_empty_initial_epoch_is_explicitly_complete_without_fabricated_uses_or_payload(self):
         module = self._module()
         self._inputs()

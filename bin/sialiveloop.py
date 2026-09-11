@@ -954,6 +954,74 @@ def complete_delivery(*, ranked, expected_ranked_sha256, emitted_row_refs, outpu
         raise _upstream(exc) from exc
 
 
+def project_history_traces(*, capture, expected_capture_sha256,
+                           candidates, expected_candidates_sha256):
+    """Target-blind exact-version bridge for captured benchmark candidates.
+
+    Candidates contain only row_ref, subject, origin, source_sha256 and the
+    FULL PAGE content_sha256, never a chunk hash or an answer key. Their
+    linkage to a descriptor-bound engine snapshot remains the caller's
+    obligation. Historical retained versions are eligible, not only current
+    versions; trace subjects are version digests to prevent cross-version
+    aggregation. Duplicate chunks may reference the same version but are
+    not additional uses. This operation neither ranks nor grades results.
+    """
+    try:
+        _size([capture, candidates], MAX_INPUT_BYTES)
+        _keys(capture, _CAPTURE_KEYS, "history-capture")
+        _budget(capture["policy"], [capture, candidates])
+        if type(candidates) is not list or len(candidates) > capture["policy"]["limits"]["max_rows"]:
+            _fail("history-candidate-capacity")
+        seen = set()
+        for candidate in candidates:
+            _keys(candidate, {"row_ref", "subject", "origin", "source_sha256", "content_sha256"},
+                  "history-candidate")
+            if not _token(candidate["row_ref"], activation.MAX_SUBJECT_BYTES) \
+                    or candidate["row_ref"] in seen \
+                    or not _token(candidate["subject"], activation.MAX_SUBJECT_BYTES, _SUBJECT) \
+                    or type(candidate["origin"]) is not str or candidate["origin"] not in _ORIGINS \
+                    or not _digest(candidate["source_sha256"]) or not _digest(candidate["content_sha256"]):
+                _fail("history-candidate-identity")
+            seen.add(candidate["row_ref"])
+        _pin(candidates, expected_candidates_sha256)
+        admitted = admit_history_capture(capture, expected_capture_sha256=expected_capture_sha256)
+        versions = {page["version_sha256"] for page in admitted["intake"]["pages"]}
+        by_version = {}
+        for use in admitted["uses"]:
+            by_version.setdefault(use["version_sha256"], []).append(use)
+        rows = []
+        for candidate in candidates:
+            version = _version(candidate)
+            available = version in versions
+            uses = by_version.get(version, []) if available else []
+            rows.append({"candidate": candidate, "version_sha256": version,
+                         "availability": "complete-within-controller-epoch" if available
+                         else "exact-version-not-captured", "uses": uses,
+                         "trace": {"v": 1, "subject": version, "complete": True,
+                                   "uses": [{"id": use["id"], "timestamp": use["timestamp"]}
+                                            for use in uses]} if available else None})
+        result = {"schema": "sia-live-history-projection-v1", "status": "computed-unverified",
+                  "epoch_id": admitted["epoch_id"], "scope": admitted["scope"],
+                  "started_at": admitted["intake"]["started_at"], "observed_at": admitted["observed_at"],
+                  "capture_sha256": expected_capture_sha256,
+                  "candidates_sha256": expected_candidates_sha256, "rows": rows,
+                  "source_non_claims": admitted["non_claims"],
+                  "non_claims": [
+                      "Candidate full-page identities are caller premises, not proof of linkage to a raw-vector runner or index snapshot.",
+                      "Exact-version traces cover the declared controller epoch only; unmatched versions are unavailable, not empty complete histories.",
+                      "Typed encoding and service-output times are not native event clocks or proof of human use; repeated candidate rows add no uses.",
+                      "This target-blind projection does not establish ranking quality, held-out independence, JACKAL assurance, or a cognitive win.",
+                  ]}
+        # Include the final digest field in the reservation before copying or
+        # serializing potentially repeated per-row histories.
+        _size({**result, "projection_sha256": "0" * 64},
+              admitted["policy"]["limits"]["max_output_bytes"])
+        result["projection_sha256"] = _sha(result)
+        return copy.deepcopy(result)
+    except (ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
+        raise _upstream(exc) from exc
+
+
 def admit_history_capture(capture, *, expected_capture_sha256):
     """Reconstruct typed uses; state linkage does not replay workspace history."""
     try:
