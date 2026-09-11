@@ -146,7 +146,13 @@ def _shape(owner, request):
         _refuse("history-epoch-or-clock")
     _source_nc(owner, history["non_claims"])
     _list(history["entries"], owner["MAX_SOURCE_REPLAY_EVENTS"], "history-entry-capacity", nonempty=True)
-    previous, batches, total_events = history["started_at"], set(), 0
+    _entries_shape(owner, request, history, source_ids, previous=history["started_at"])
+
+
+def _entries_shape(owner, request, history, source_ids, *, previous):
+    """Validate represented entries, without asserting a complete history."""
+    observed_at = request["observed_at"]
+    batches, total_events = set(), 0
     for entry in history["entries"]:
         _keys(entry, {"source_returns", "expected_source_returns_sha256", "event_batches"}, "entry-shape")
         returns = entry["source_returns"]
@@ -195,6 +201,7 @@ def _shape(owner, request):
             pages._member_structure(owner, batch["members"])
     if previous != observed_at:
         _refuse("final-controller-clock")
+    return batches, total_events
 
 
 def _bindings(request):
@@ -231,7 +238,7 @@ def _result(request, intake, associations):
             "non_claims": list(NON_CLAIMS), "projection_sha256": "0" * 64}
 
 
-def _reserve(owner, request):
+def _reservation(owner, request):
     """Reserve full variable output before decoding, copying or hashing.
 
     An unescaped content placeholder reserves the JSON maximum per raw byte;
@@ -287,8 +294,13 @@ def _reserve(owner, request):
         _refuse("complete-version-or-observation-capacity")
     intake["pages"] = list(versions.values())
     intake["current_versions"] = ["0" * 64 for _subject in subjects]
-    limit = min(owner["MAX_STATE_JSON_BYTES"], policy["limits"]["max_output_bytes"])
-    if pages._size(_result(request, intake, associations), limit) + content_reserve > limit:
+    return _result(request, intake, associations), content_reserve
+
+
+def _reserve(owner, request):
+    skeleton, content_reserve = _reservation(owner, request)
+    limit = min(owner["MAX_STATE_JSON_BYTES"], request["live_policy"]["limits"]["max_output_bytes"])
+    if pages._size(skeleton, limit) + content_reserve > limit:
         _refuse("complete-output-capacity")
 
 
