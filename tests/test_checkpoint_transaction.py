@@ -34,10 +34,12 @@ class CheckpointTransaction(unittest.TestCase):
     def test_manifest_interruption_does_not_adopt_retained_members(self):
         self.exercise(interrupt=True)
 
-    def exercise(self, *, interrupt=False):
+    def exercise(self, *, interrupt=False, fenced=False):
         fixture = self.case.case
-        with fixture.prepared(nonidle=True) as f, tempfile.TemporaryDirectory(prefix="sia-checkpoint-transaction-") as directory:
+        with fixture.prepared(nonidle=not fenced) as f, tempfile.TemporaryDirectory(prefix="sia-checkpoint-transaction-") as directory:
             root = roots.prepare(vars(f.case.lib), memo=f.case.live.memo, admitted_status=f.status, directory=directory)
+            if fenced:
+                f.case.lib._mark_notify_baseline_attempt(f.case.live.memo)
             before = copy.deepcopy(f.case.live.memo)
             with fixture.capture_owner(f) as owner:
                 owner._load_live_publication()

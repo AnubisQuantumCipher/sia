@@ -8,6 +8,7 @@ retention does not otherwise modify the memo or acknowledge that fence.
 """
 
 import contextlib
+import copy
 import hashlib
 import json
 import os
@@ -37,6 +38,15 @@ _ARTIFACTS = ("capture", "checkpoint", "candidate", "transition", "block")
 
 
 def read_prepared(owner, *, directory, expected_manifest_sha256, expected_root_sha256):
+    """Return a detached replayed package, not authority surviving this read."""
+    with _hold_prepared(owner, directory=directory, expected_manifest_sha256=expected_manifest_sha256,
+                        expected_root_sha256=expected_root_sha256) as (view, current):
+        current()
+        return view
+
+
+@contextlib.contextmanager
+def _hold_prepared(owner, *, directory, expected_manifest_sha256, expected_root_sha256):
     """Read and replay the closed package under held descriptors, without writes.
 
     Output is a closed compound view, not another single-artifact envelope:
@@ -128,11 +138,172 @@ def read_prepared(owner, *, directory, expected_manifest_sha256, expected_root_s
                   "manifest_sha256": expected_manifest_sha256, "manifest": detached["manifest"],
                   "root": detached["root"], "parent": detached["parent"],
                   "artifacts": {name: detached[name] for name in _ARTIFACTS}, "non_claims": list(READ_NON_CLAIMS)}
-        if any(checkpoint._wire(owner, values[name]) != raw or checkpoint._wire(owner, detached[name]) != raw
-               for name, raw in raw_slots.items()):
-            source.refuse("checkpoint-transaction-reader-image-changed")
-        current()
+        def images_current():
+            source._keys(result, {"schema", "status", "manifest_sha256", "manifest", "root", "parent", "artifacts", "non_claims"},
+                         "checkpoint-transaction-view")
+            source._keys(result["artifacts"], set(_ARTIFACTS), "checkpoint-transaction-view-artifacts")
+            if result["schema"] != "sia-checkpoint-transaction-view-v1" \
+                    or result["status"] != "verified-retained-not-authorized" \
+                    or result["manifest_sha256"] != expected_manifest_sha256 \
+                    or result["non_claims"] != list(READ_NON_CLAIMS):
+                source.refuse("checkpoint-transaction-reader-view-changed")
+            for name, raw in raw_slots.items():
+                selected = result["artifacts"][name] if name in _ARTIFACTS else result[name]
+                if checkpoint._wire(owner, values[name]) != raw or checkpoint._wire(owner, selected) != raw:
+                    source.refuse("checkpoint-transaction-reader-image-changed")
+            current()
+
+        images_current()
+        yield result, images_current
+        images_current()
+
+
+class _HeldRootPreparation:
+    def __init__(self, owner, view, guard):
+        self._owner = owner
+        self._view, self._guard, self._closed = view, guard, False
+
+    def current(self):
+        if self._closed:
+            source.refuse("checkpoint-preparation-hold-closed")
+        self._guard()
+
+    def read(self):
+        self.current()
+        expected = {name: checkpoint._wire(self._owner, value)
+                    for name, value in self._view.items() if name != "artifacts"}
+        artifacts = {name: checkpoint._wire(self._owner, self._view["artifacts"][name]) for name in _ARTIFACTS}
+        result = copy.deepcopy(self._view)
+        source._keys(result, set(expected) | {"artifacts"}, "checkpoint-held-view")
+        source._keys(result["artifacts"], set(_ARTIFACTS), "checkpoint-held-view-artifacts")
+        if any(checkpoint._wire(self._owner, result[name]) != raw for name, raw in expected.items()) \
+                or any(checkpoint._wire(self._owner, result["artifacts"][name]) != raw for name, raw in artifacts.items()):
+            source.refuse("checkpoint-held-view-copy-changed")
+        self.current()
         return result
+
+
+@contextlib.contextmanager
+def hold_root_preparation(owner, *, memo, admitted_status, directory, expected_manifest_sha256,
+                          expected_root_sha256, journal_limits, expected_journal_limits_sha256,
+                          expected_adoption_sha256):
+    """Hold genuine source/root/epoch/journal joins until the caller exits.
+
+    No artifacts are adopted or written. The yielded handle expires on exit;
+    its copied read view never becomes a portable publication permit.
+    """
+    import siacontrollerdeliveryepoch as epochs
+    import siadelivery
+
+    references = dict(owner)
+    supplied = dict(memo=memo, admitted_status=admitted_status, directory=directory,
+                    expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256,
+                    journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
+                    expected_adoption_sha256=expected_adoption_sha256)
+    originals = {name: source.native_bytes(owner, value, ceiling=owner["MAX_MEMO_BYTES"] if name == "memo"
+                                         else owner["MAX_STATE_JSON_BYTES"]) for name, value in supplied.items()}
+
+    def inputs_current():
+        if any(owner.get(name) is not value for name, value in references.items()) \
+                or any(source.native_bytes(owner, value, ceiling=owner["MAX_MEMO_BYTES"] if name == "memo"
+                                           else owner["MAX_STATE_JSON_BYTES"]) != originals[name]
+                       for name, value in supplied.items()):
+            source.refuse("checkpoint-authority-input-changed")
+
+    inputs_current()
+    with owner["brainstem_owner"](), owner["corpus_owner"](), contextlib.ExitStack() as stack:
+        package_stack = stack.enter_context(contextlib.ExitStack())
+        view, package_current = package_stack.enter_context(_hold_prepared(
+            owner, directory=directory, expected_manifest_sha256=expected_manifest_sha256,
+            expected_root_sha256=expected_root_sha256))
+        files = source._CaptureFiles(owner)
+        stack.callback(files.close)
+        batch, root = view["artifacts"]["capture"], view["root"]
+        committed = view["manifest"]["predecessor"]
+        marker = source._notification_marker(owner, memo)
+        if checkpoint._wire(owner, marker) != checkpoint._wire(owner, batch["notification_baseline_attempt"]):
+            source.refuse("checkpoint-authority-fence-changed")
+
+        def read_source():
+            inputs_current()
+            source._durable_successor_authority(owner, files, memo, committed)
+            if marker is None:
+                actual = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+                status = "available"
+            else:
+                actual = ack.read_capturable_predecessor(
+                    owner, memo=memo, admitted_status=admitted_status, committed=committed,
+                    notification_baseline_attempt=marker,
+                    expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
+                status = "capturable-not-ready"
+            if actual.get("status") != status or actual.get("committed") != committed:
+                source.refuse("checkpoint-authority-predecessor-changed")
+            inputs_current()
+            return actual["batch"]
+
+        retained = read_source()
+        retained_raw = checkpoint._wire(owner, retained)
+        parent = blocks.prepare_captured(owner, batch=retained,
+            expected_batch_sha256=committed["source_batch_sha256"], parent=None, expected_parent_sha256=None)
+        if checkpoint._wire(owner, parent) != checkpoint._wire(owner, view["parent"]) \
+                or root["legacy_epoch_sha256"] != retained["epoch_sha256"] \
+                or root["legacy_history_sha256"] != retained["epoch"]["expected_history_sha256"]:
+            source.refuse("checkpoint-authority-root-ancestry")
+        history = json.loads(checkpoint._wire(owner, retained["epoch"]["history"]))
+        history["entries"].append(parent["entry"])
+        bootstrap = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
+                     "observed_at": retained["observed_at"], **{name: retained["epoch"][name] for name in checkpoint._DOC_KEYS}}
+        expected_parent = checkpoint.checkpoints.bootstrap_episodes(owner, request=bootstrap,
+            expected_request_sha256=hashlib.sha256(checkpoint._wire(owner, bootstrap)).hexdigest())
+        if checkpoint._wire(owner, expected_parent) != checkpoint._wire(owner, batch["parent_checkpoint"]):
+            source.refuse("checkpoint-authority-bootstrap-differs")
+        arguments = dict(memo=memo, admitted_status=admitted_status, retained_batch=retained, committed=committed,
+                         journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
+                         expected_adoption_sha256=expected_adoption_sha256)
+        epoch_context = epochs.hold_epoch(owner, **arguments) if marker is None else epochs.hold_capturable_epoch(
+            owner, **arguments, notification_baseline_attempt=marker,
+            expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
+        delivery_stack = stack.enter_context(contextlib.ExitStack())
+        epoch = delivery_stack.enter_context(epoch_context)
+        epoch_view = epoch.read()
+        journal = delivery_stack.enter_context(siadelivery.hold_deliveries(
+            directory=epoch_view["records_directory"], epoch_id=batch["epoch"]["epoch_id"], limits=journal_limits))
+
+        def current():
+            inputs_current()
+            package_current()
+            if checkpoint._wire(owner, read_source()) != retained_raw \
+                    or checkpoint._wire(owner, retained) != retained_raw:
+                source.refuse("checkpoint-authority-source-image-changed")
+            epoch.current()
+            journal.current()
+            if journal.directory_identity() != epoch_view["records_identity"] \
+                    or checkpoint._wire(owner, epoch.read()) != checkpoint._wire(owner, batch["delivery_input"]["epoch_view"]) \
+                    or checkpoint._wire(owner, journal.read()) != checkpoint._wire(owner, batch["delivery_input"]["journal"]):
+                source.refuse("checkpoint-authority-delivery-changed")
+            files.current()
+            package_current()
+            inputs_current()
+
+        held = _HeldRootPreparation(owner, view, current)
+        try:
+            held.current()
+            yield held
+            held.current()
+            # Normal delivery exit callbacks precede the final source sweep.
+            # Do not call the now-closed epoch or journal handles afterward.
+            delivery_stack.close()
+            # Package exit may also run image checks and callbacks. Source
+            # descriptors stay open until both subordinate scopes have exited.
+            package_stack.close()
+            inputs_current()
+            if checkpoint._wire(owner, read_source()) != retained_raw:
+                source.refuse("checkpoint-authority-source-changed-on-exit")
+            files.current()
+            inputs_current()
+            files.named_current()
+        finally:
+            held._closed = True
 
 
 def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha256,
