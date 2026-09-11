@@ -89,8 +89,8 @@ def _source_nc(owner, value):
         _refuse("source-nonclaims")
 
 
-def _shape(owner, request):
-    """Complete roster/shape/policy gates; no Event, copy, decoder or hash."""
+def _context_shape(owner, request):
+    """Shared context gates; this does not admit a history or a delta."""
     policy = request["live_policy"]
     live._policy(policy)
     _mixed_size(owner, request, min(owner["MAX_STATE_JSON_BYTES"],
@@ -131,6 +131,13 @@ def _shape(owner, request):
         _refuse("profile-contract")
     _source_nc(owner, profile["non_claims"])
     live.encoding._roster([profile["context"]], policy["encoding"]["max_contexts"], "contexts")
+    return source_ids, policy
+
+
+def _shape(owner, request):
+    """Complete roster/shape/policy gates; no Event, copy, decoder or hash."""
+    source_ids, policy = _context_shape(owner, request)
+    observed_at = request["observed_at"]
     history = request["history"]
     _keys(history, {"schema", "epoch_id", "started_at", "complete", "entries", "non_claims"}, "history-shape")
     if history["schema"] != "sia-controller-event-history-v1" or history["complete"] is not True \
