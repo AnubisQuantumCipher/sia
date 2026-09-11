@@ -43,6 +43,12 @@ _KEYS = {
     "journal", "expected_journal_sha256", "binding",
     "expected_binding_sha256", "non_claims", "input_sha256",
 }
+_CHECKPOINT_SCHEMA = "sia-controller-checkpoint-delivery-input-v1"
+_CHECKPOINT_PINS = {"checkpoint_epoch_sha256", "checkpoint_projection_sha256", "parent_checkpoint_sha256"}
+CHECKPOINT_NON_CLAIMS = NON_CLAIMS + (
+    "The compact epoch, parent checkpoint and delta projection are explicitly bound; no complete raw history or legacy projection is fabricated here.",
+    "Checkpoint consistency is not replay of the captured source delta, authentication of its root, or actual predecessor/journal authority. Those outer checks remain mandatory.",
+)
 _VIEW_KEYS = {
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
@@ -166,10 +172,12 @@ def _owner_basis(owner):
 class _Admission:
     """Bound every original occurrence before any deepcopy or binder call."""
 
+    _references = _OWNER_REFERENCES
+
     def __init__(self, owner, supplied):
         basis = _owner_basis(owner)
         self.original_owner, self.supplied = owner, supplied
-        self.references = {name: owner[name] for name in _OWNER_REFERENCES}
+        self.references = {name: owner[name] for name in self._references}
         self.owner = {**self.references, **basis["capacities"]}
         self.original = source.native_bytes(self.owner, {
             "owner_basis": basis, "request": supplied})
@@ -191,6 +199,15 @@ class _Admission:
                       {"owner_basis": self.basis, "request": self.admitted}):
             if source.native_bytes(self.owner, value) != self.original:
                 _refuse("input-or-owner-changed")
+
+
+class _CheckpointAdmission(_Admission):
+    _references = _OWNER_REFERENCES + ("_event_from_replay_record", "_event_replay_record")
+
+    def __init__(self, owner, supplied):
+        if type(owner) is not dict or any(not callable(owner.get(name)) for name in self._references[-2:]):
+            _refuse("checkpoint-event-operation-contract")
+        super().__init__(owner, supplied)
 
 
 class PreparationAdmissionV1:
@@ -288,7 +305,7 @@ def _receipt(value):
         _pin(value["parent_generation_sha256"])
 
 
-def _generation(owner, view, epoch, observed_at):
+def _generation(owner, view, epoch, observed_at, *, checkpoint=False):
     committed = view["parent_committed"]
     _keys(committed, source._COMMITTED_KEYS, "represented-source-commit")
     for value in committed.values():
@@ -313,9 +330,10 @@ def _generation(owner, view, epoch, observed_at):
             or not _same(owner, generation["non_claims"], owner["LIVE_PUBLICATION_NON_CLAIMS"]):
         _refuse("represented-live-generation-binding")
     predecessor = epoch["predecessor"]
-    if predecessor is None or not _same(owner, predecessor, {
+    expected_predecessor = committed if checkpoint else {
             "source_batch_sha256": committed["source_batch_sha256"],
-            "live_generation_sha256": generation["generation_sha256"]}):
+            "live_generation_sha256": generation["generation_sha256"]}
+    if predecessor is None or not _same(owner, predecessor, expected_predecessor):
         _refuse("successor-parent-binding")
     transition = generation["transition"]
     _keys(transition, _TRANSITION_KEYS, "represented-live-transition")
@@ -522,30 +540,133 @@ def _make(owner, request):
     generation = _generation(owner, request["epoch_view"], request["epoch"], request["observed_at"])
     birth = _adoption(owner, request, generation)
     _projection(owner, request)
+    return _make_delivery(owner, request, generation, birth, request["projection"], _SCHEMA, NON_CLAIMS, {})
+
+
+def _make_delivery(owner, request, generation, birth, projection, schema, non_claims, extra):
     _journal(owner, request, birth, generation)
     value = binding_api.bind(
         journal=request["journal"], expected_journal_sha256=request["expected_journal_sha256"],
         previous_state=generation["transition"]["state"],
         expected_previous_state_sha256=generation["state_sha256"],
-        intake=request["projection"]["intake"],
-        expected_intake_sha256=request["projection"]["intake_sha256"],
+        intake=projection["intake"],
+        expected_intake_sha256=projection["intake_sha256"],
         policy=request["epoch"]["live_policy"],
         expected_policy_sha256=request["epoch"]["expected_live_policy_sha256"],
         observed_at=request["observed_at"])
     # Do not trust a returned self-hash or status label as an envelope check.
     source.native_bytes(owner, value)
-    _binding(owner, value, request, generation)
+    _binding(owner, value, {**request, "projection": projection}, generation)
     result = {
-        "schema": _SCHEMA, "status": "bound-not-consumed",
+        "schema": schema, "status": "bound-not-consumed",
         **{name: request[name] for name in (
             "parent_source_schema", "epoch_view", "expected_epoch_view_sha256",
             "expected_adoption_sha256", "journal", "expected_journal_sha256")},
         "binding": value, "expected_binding_sha256": value["binding_sha256"],
-        "non_claims": list(NON_CLAIMS),
+        "non_claims": list(non_claims), **extra,
     }
     source.native_bytes(owner, {**result, "input_sha256": "0" * 64})
     result["input_sha256"] = source.native_sha(owner, result)
     return result
+
+
+def _make_checkpoint(owner, request):
+    import siaeventcheckpoint as checkpoints
+    import siasourcecheckpoint as compact
+
+    if type(request["parent_source_schema"]) is not str or request["parent_source_schema"] not in _PARENT_SCHEMAS:
+        _refuse("parent-source-schema")
+    if not live._integer(request["observed_at"]):
+        _refuse("explicit-controller-clock")
+    checkpoints.blocks._pin(source.native_bytes(owner, request["epoch_view"]), request["expected_epoch_view_sha256"])
+    checkpoints.blocks._pin(source.native_bytes(owner, request["epoch"]), request["expected_epoch_sha256"])
+    epoch, projection = request["epoch"], request["projection"]
+    _keys(epoch, compact._KEYS, "checkpoint-epoch-shape")
+    parent = checkpoints.admit(owner, checkpoint=request["parent_checkpoint"],
+                               expected_checkpoint_sha256=epoch["checkpoint_sha256"])
+    compact._validate(owner, epoch, parent, request["observed_at"])
+    checkpoints.blocks._pin(source.native_bytes(owner, projection), request["expected_projection_sha256"])
+    _keys(projection, {"schema", "status", "checkpoint", "checkpoint_sha256", "parent_checkpoint_sha256",
+                       "delta_sha256", "associations", "non_claims"}, "checkpoint-projection-shape")
+    advanced = checkpoints.admit(owner, checkpoint=projection["checkpoint"],
+                                 expected_checkpoint_sha256=projection["checkpoint_sha256"])
+    if projection["schema"] != "sia-event-delta-projection-v1" or projection["status"] != "prepared-not-authorized" \
+            or projection["non_claims"] != list(checkpoints.PROJECTION_NON_CLAIMS) \
+            or type(projection["associations"]) is not list \
+            or advanced["schema"] != parent["schema"] \
+            or advanced["parent_checkpoint_sha256"] != epoch["checkpoint_sha256"] \
+            or projection["parent_checkpoint_sha256"] != epoch["checkpoint_sha256"] \
+            or advanced["last_delta_sha256"] != projection["delta_sha256"] \
+            or advanced["observed_at"] != request["observed_at"] \
+            or not _same(owner, advanced["context"], parent["context"]):
+        _refuse("checkpoint-delta-projection-binding")
+    _fence(owner, request["epoch_view"], request["notification_baseline_attempt"])
+    generation = _generation(owner, request["epoch_view"], epoch, request["observed_at"], checkpoint=True)
+    if not _same(owner, parent["intake"], generation["transition"]["state"]["intake"]):
+        _refuse("checkpoint-parent-intake-binding")
+    birth = _adoption(owner, request, generation)
+    # Only the typed intake enters the genuine binder. This view has no
+    # legacy projection schema, bindings or fabricated complete history.
+    intake = {"intake": advanced["intake"], "intake_sha256": live._sha(advanced["intake"])}
+    return _make_delivery(owner, request, generation, birth, intake, _CHECKPOINT_SCHEMA, CHECKPOINT_NON_CLAIMS,
+                          {"checkpoint_epoch_sha256": request["expected_epoch_sha256"],
+                           "checkpoint_projection_sha256": request["expected_projection_sha256"],
+                           "parent_checkpoint_sha256": epoch["checkpoint_sha256"]})
+
+
+def build_checkpoint(owner, *, parent_source_schema, epoch_view,
+                     expected_epoch_view_sha256, expected_adoption_sha256,
+                     journal, expected_journal_sha256, epoch, expected_epoch_sha256,
+                     projection, expected_projection_sha256, parent_checkpoint,
+                     observed_at, notification_baseline_attempt):
+    """Build a separately versioned inert wrapper without acquiring authority."""
+    try:
+        request = {key: value for key, value in locals().items() if key != "owner"}
+        admitted = _CheckpointAdmission(owner, request)
+        result = _make_checkpoint(admitted.owner, admitted.admitted)
+        raw = source.native_bytes(admitted.owner, result)
+        admitted.current()
+        detached = copy.deepcopy(result)
+        if source.native_bytes(admitted.owner, result) != raw or source.native_bytes(admitted.owner, detached) != raw:
+            _refuse("checkpoint-wrapper-copy-changed")
+        admitted.current()
+        return detached
+    except ControllerDeliveryWrapperRefusal:
+        raise
+    except _ERRORS as exc:
+        raise ControllerDeliveryWrapperRefusal("checkpoint-wrapper-domain-refused", upstream=exc) from exc
+
+
+def validate_checkpoint(owner, *, delivery_input, expected_input_sha256,
+                        epoch, expected_epoch_sha256, projection, expected_projection_sha256,
+                        parent_checkpoint, observed_at, notification_baseline_attempt):
+    """Replay the complete compact wrapper, not its external source ancestry."""
+    try:
+        request = {key: value for key, value in locals().items() if key != "owner"}
+        admitted = _CheckpointAdmission(owner, request)
+        value = admitted.admitted["delivery_input"]
+        _keys(value, _KEYS | _CHECKPOINT_PINS, "checkpoint-delivery-input")
+        _pin(expected_input_sha256)
+        if value["schema"] != _CHECKPOINT_SCHEMA or value["status"] != "bound-not-consumed" \
+                or not _same(admitted.owner, value["non_claims"], list(CHECKPOINT_NON_CLAIMS)) \
+                or value["input_sha256"] != expected_input_sha256 \
+                or _own(admitted.owner, value, "input_sha256") != expected_input_sha256:
+            _refuse("checkpoint-delivery-input-contract-or-pin")
+        supplied = {key: admitted.admitted[key] for key in (
+            "epoch", "expected_epoch_sha256", "projection", "expected_projection_sha256",
+            "parent_checkpoint", "observed_at", "notification_baseline_attempt")}
+        supplied.update({key: value[key] for key in (
+            "parent_source_schema", "epoch_view", "expected_epoch_view_sha256",
+            "expected_adoption_sha256", "journal", "expected_journal_sha256")})
+        expected = _make_checkpoint(admitted.owner, supplied)
+        if not _same(admitted.owner, expected, value):
+            _refuse("checkpoint-wrapper-replay-differs")
+        admitted.current()
+        return None
+    except ControllerDeliveryWrapperRefusal:
+        raise
+    except _ERRORS as exc:
+        raise ControllerDeliveryWrapperRefusal("checkpoint-wrapper-domain-refused", upstream=exc) from exc
 
 
 def build(owner, *, parent_source_schema, epoch_view,
