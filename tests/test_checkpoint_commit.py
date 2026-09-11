@@ -48,6 +48,17 @@ class CheckpointCommit(unittest.TestCase):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.exercise(synchronize=True)
 
+    def test_compact_successor_live_publication_and_retry(self):
+        self.live_api = importlib.import_module("siacheckpointlive")
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
+    def test_compact_successor_recovers_each_durable_live_boundary(self):
+        self.interrupt_live = True
+        self.live_api = importlib.import_module("siacheckpointlive")
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
     def test_compact_effects_reload_after_durable_interruption(self):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.interrupt_effects = True
@@ -199,6 +210,9 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "current graph generation"):
                 owner._read_committed_live_generation(memo=args["memo"], admitted_status=args["admitted_status"])
             self.assertEqual(pending["source_batch_sha256"], before["controller_source_pending"]["batch_sha256"])
+            if getattr(self, "live_api", None) is not None:
+                self.publish_case(owner, args, pending)
+                return
             if getattr(self, "read_parent_live", False):
                 self.historical_case(owner, args, old_live)
                 return
@@ -272,6 +286,72 @@ class CheckpointCommit(unittest.TestCase):
             with siacheckpointparent.hold_live(vars(owner), **inputs):
                 pass
         self.assertEqual(refused.exception.reason, "checkpoint-parent-live-archive-bytes")
+
+    def publish_case(self, owner, args, pending):
+        before = copy.deepcopy(args["memo"])
+        if getattr(self, "interrupt_live", False):
+            paths = {"candidate": owner.LIVE_CANDIDATE_PATH, "generation": owner.LIVE_STATE_PATH,
+                "status": owner.STATUS_PATH, "memo": owner.MEMO_PATH}
+            originals = {key: Path(path).read_bytes() for key, path in paths.items()}
+            for boundary in ("candidate", "stage_memo", "generation", "status", "final_memo"):
+                with self.subTest(boundary=boundary):
+                    for key, path in paths.items():
+                        owner.atomic_write(path, originals[key].decode("utf-8"), mode=0o600)
+                    args["memo"] = owner.load_memo()
+                    args["admitted_status"] = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+                    write = owner.atomic_write
+                    def interrupted(path, text, **kw):
+                        result = write(path, text, **kw)
+                        name = next((key for key, value in paths.items() if value == path), None)
+                        if name == "memo":
+                            name = "stage_memo" if "live_loop_pending" in owner.json.loads(text) else "final_memo"
+                        if name == boundary:
+                            raise OSError("controlled durable live interruption")
+                        return result
+                    with mock.patch.object(owner, "atomic_write", side_effect=interrupted):
+                        with self.assertRaisesRegex(OSError, "controlled durable live interruption"):
+                            self.live_api.publish(vars(owner), **args)
+                    args["memo"] = owner.load_memo()
+                    args["admitted_status"] = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+                    self.assertNotIn("ready", args["memo"])
+                    self.assertEqual(self.live_api.publish(vars(owner), **args), boundary != "final_memo")
+        else:
+            self.assertTrue(self.live_api.publish(vars(owner), **args))
+        self.assertEqual(owner.load_memo(), args["memo"])
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        self.assertEqual(status, pending["status"])
+        view = owner._read_committed_live_generation(memo=args["memo"], admitted_status=status)
+        self.assertEqual(view["status"], "available")
+        self.assertEqual(view["generation"]["state_sha256"], pending["state_sha256"])
+        for key in ("controller_source_pending", "controller_source_live_pending", "controller_source_effects_pending"):
+            self.assertEqual(args["memo"][key], before[key])
+        self.assertNotIn("ready", args["memo"])
+        self.assertNotIn("live_loop_pending", args["memo"])
+        self.assertNotIn("pulse_status_effects_pending", args["memo"])
+        args["admitted_status"] = status
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("live retry wrote")), \
+                mock.patch.object(owner, "export_status", side_effect=AssertionError("live retry exported")):
+            self.assertFalse(self.live_api.publish(vars(owner), **args))
+        altered = copy.deepcopy(view["generation"])
+        def booleanize(value):
+            if not isinstance(value, (dict, list)):
+                return False
+            for key, item in (value.items() if isinstance(value, dict) else enumerate(value)):
+                if type(item) is int and item in (0, 1):
+                    value[key] = bool(item)
+                    return True
+                if booleanize(item):
+                    return True
+            return False
+        self.assertTrue(booleanize(altered))
+        owner.atomic_write(owner.LIVE_STATE_PATH, owner.json.dumps(altered), mode=0o600)
+        with self.assertRaises(ValueError) as refused:
+            self.live_api.publish(vars(owner), **args)
+        self.assertEqual(refused.exception.reason, "checkpoint-live-publication-phase-differs")
+        owner.atomic_write(owner.LIVE_STATE_PATH, "{}", mode=0o600)
+        with self.assertRaises(ValueError) as refused:
+            self.live_api.publish(vars(owner), **args)
+        self.assertEqual(refused.exception.reason, "checkpoint-live-publication-phase-differs")
 
     def check_pending(self, owner, args, indexed):
         adoption, effects = content.adoption, content.effects

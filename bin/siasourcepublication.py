@@ -1219,6 +1219,14 @@ def recover_capturable_successor(
 
 def _live_binding_marker(owner, source, *, memo, batch, receipt,
                          admitted_status, seq, candidate, transition):
+    return _live_binding_marker_parent(owner, source, memo=memo, batch=batch, receipt=receipt,
+        admitted_status=admitted_status, seq=seq, candidate=candidate, transition=transition,
+        parent=memo.get("live_loop_committed"))
+
+
+def _live_binding_marker_parent(owner, source, *, memo, batch, receipt,
+                                admitted_status, seq, candidate, transition, parent):
+    """Pure marker reconstruction with an explicitly admitted historical parent."""
     import sialiveloop as live
 
     if not owner["_nonnegative_status_integer"](seq) \
@@ -1246,7 +1254,6 @@ def _live_binding_marker(owner, source, *, memo, batch, receipt,
                 if key != "transition_sha256"}):
         _refuse(source, "source-live-binding-transition-pin")
 
-    parent = memo.get("live_loop_committed")
     if parent is None:
         parent_generation_sha256 = parent_state_sha256 = None
     else:
