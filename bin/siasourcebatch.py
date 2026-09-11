@@ -1769,7 +1769,10 @@ class _DeliveryCaptureRequest:
 
 
 def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
-                    observed_at, authority, successor=False, delivery=None):
+                    observed_at, authority, successor=False, delivery=None, checkpoint=None):
+    if checkpoint is not None and (successor or delivery is not None):
+        refuse("checkpoint-capture-is-not-controller-publication")
+    checkpoint_raw = None if checkpoint is None else native_bytes(owner, checkpoint)
     epoch_raw = native_bytes(owner, epoch)
     admitted_epoch = owner["copy"].deepcopy(epoch)
     if native_bytes(owner, admitted_epoch) != epoch_raw \
@@ -1781,6 +1784,8 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
         def current():
             files.current()
             authority(files)
+            if checkpoint is not None and native_bytes(owner, checkpoint) != checkpoint_raw:
+                refuse("capture-checkpoint-changed")
             if delivery is not None:
                 delivery.current()
 
@@ -1816,8 +1821,14 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
                 collected["runs"])
             closure = _plan_events(
                 owner, collected, runtime, files, epoch, epoch_raw)
-            projection = _intake_projection(
-                owner, admitted_epoch, returns, closure, observed_at)
+            if checkpoint is None:
+                projection = _intake_projection(
+                    owner, admitted_epoch, returns, closure, observed_at)
+            else:
+                import siasourcecheckpoint
+                projection = siasourcecheckpoint.project_capture_entry(
+                    owner, epoch=admitted_epoch, expected_epoch_sha256=expected_epoch_sha256,
+                    checkpoint=checkpoint, returns=returns, closure=closure, observed_at=observed_at)
             runtime.current()
             current()
             _epoch_current(owner, epoch, epoch_raw)
@@ -1840,6 +1851,10 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
                 "non_claims": list(NON_CLAIMS),
                 "batch_sha256": "0" * 64,
             }
+            if checkpoint is not None:
+                result["schema"] = "sia-controller-source-checkpoint-capture-v1"
+                result["parent_checkpoint"] = owner["copy"].deepcopy(checkpoint)
+                result["non_claims"] = list(siasourcecheckpoint.CAPTURE_NON_CLAIMS)
             if successor:
                 result["schema"] = "sia-controller-source-batch-v2"
                 result["idle_input"] = None
@@ -1865,7 +1880,10 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
             runtime.current()
             current()
             _epoch_current(owner, epoch, epoch_raw)
-            validate_batch(owner, result, result["batch_sha256"])
+            if checkpoint is None:
+                validate_batch(owner, result, result["batch_sha256"])
+            else:
+                siasourcecheckpoint.validate_capture(owner, result, result["batch_sha256"])
             result_raw = native_bytes(owner, result)
             runtime.current()
             current()
@@ -2377,6 +2395,12 @@ def validate_batch(owner, batch, expected_batch_sha256):
     _validate_epoch(
         owner, batch["epoch"], batch["epoch_sha256"],
         batch["observed_at"], initial=False)
+    event_batches = _validate_observation(owner, batch)
+    return _validate_batch_completion(owner, batch, event_batches, successor, delivery)
+
+
+def _validate_observation(owner, batch):
+    """Shared exact collector/cursor/plan contract, not continuation authority."""
     _validate_configuration_receipt(
         owner, batch["configuration_receipt"], batch["epoch"])
     if batch["configuration_receipt"]["observed_at"] \
@@ -2429,8 +2453,12 @@ def validate_batch(owner, batch, expected_batch_sha256):
             raise
         except (TypeError, ValueError, RuntimeError) as exc:
             refuse("notification-baseline-marker", upstream=exc)
-    event_batches = _validate_closure(owner, batch["event_closure"], returns)
+    return _validate_closure(owner, batch["event_closure"], returns)
+
+
+def _validate_batch_completion(owner, batch, event_batches, successor, delivery):
     _validate_retained_projection(owner, batch, event_batches)
+    returns = batch["source_returns"]
     if successor:
         if batch["epoch"]["predecessor"] is None:
             refuse("idle-successor-predecessor-required")

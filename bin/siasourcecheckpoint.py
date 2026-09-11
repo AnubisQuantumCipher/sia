@@ -7,6 +7,8 @@ source capture and publication readers intentionally do not admit this schema.
 
 import hashlib
 import json
+import contextlib
+import os
 
 import siaeventcheckpoint as checkpoints
 import siasourcebatch as source
@@ -21,6 +23,11 @@ _DOC_KEYS = set(checkpoints._CONTEXT_KEYS) - {"expected_history_sha256"}
 _KEYS = _DOC_KEYS | {"schema", "epoch_id", "started_at", "observed_at", "predecessor",
                      "root_sha256", "checkpoint_sha256", "non_claims"}
 _COMMIT_KEYS = {"source_batch_sha256", "live_generation_sha256", "source_effects_receipt_sha256"}
+CAPTURE_NON_CLAIMS = NON_CLAIMS + (
+    "Capture acquires actual declared collectors under ordinary owner and descriptor checks; supplied event truth and complete raw machine history are not established.",
+    "This capture omits controller delivery and idle processing and cannot be consumed as a legacy or publishable controller batch. No cursor acknowledgment, page publication, live generation or readiness is authorized.",
+    "The retained root and legacy archive remain required for bootstrap ancestry. The embedded parent checkpoint is a replay result, not permission to replace source authority.",
+)
 
 
 def _wire(owner, value):
@@ -101,3 +108,116 @@ def project(owner, *, epoch, expected_epoch_sha256, checkpoint, entry, expected_
             or _wire(owner, result) != result_raw or _wire(owner, detached) != result_raw:
         source.refuse("checkpoint-source-projection-changed")
     return detached
+
+
+def project_capture_entry(owner, *, epoch, expected_epoch_sha256, checkpoint, returns, closure, observed_at):
+    entry = {"source_returns": returns, "expected_source_returns_sha256": returns["returns_sha256"],
+             "event_batches": source._validate_closure(owner, closure, returns)}
+    return project(owner, epoch=epoch, expected_epoch_sha256=expected_epoch_sha256, checkpoint=checkpoint,
+                   entry=entry, expected_entry_sha256=hashlib.sha256(_wire(owner, entry)).hexdigest(),
+                   observed_at=observed_at)
+
+
+def validate_capture(owner, batch, expected_batch_sha256):
+    """Pure retained-image validation; do not authenticate its root or archive."""
+    raw = _wire(owner, batch)
+    source._keys(batch, source.BATCH_KEYS | {"parent_checkpoint"}, "checkpoint-capture-shape")
+    if batch["schema"] != "sia-controller-source-checkpoint-capture-v1" \
+            or batch["status"] != "captured-not-published" \
+            or batch["non_claims"] != list(CAPTURE_NON_CLAIMS) \
+            or type(batch["batch_id"]) is not str or source._OPERATION.fullmatch(batch["batch_id"]) is None:
+        source.refuse("checkpoint-capture-contract")
+    source._hex(expected_batch_sha256, "checkpoint-capture-pin")
+    if batch["batch_sha256"] != expected_batch_sha256 \
+            or source.native_sha(owner, {key: value for key, value in batch.items() if key != "batch_sha256"}) \
+            != expected_batch_sha256:
+        source.refuse("checkpoint-capture-pin")
+    checkpoints.blocks._pin(_wire(owner, batch["epoch"]), batch["epoch_sha256"])
+    source._keys(batch["epoch"], _KEYS, "checkpoint-epoch-shape")
+    parent = checkpoints.admit(owner, checkpoint=batch["parent_checkpoint"],
+                               expected_checkpoint_sha256=batch["epoch"]["checkpoint_sha256"])
+    _validate(owner, batch["epoch"], parent, batch["observed_at"])
+    source._validate_observation(owner, batch)
+    projected = project_capture_entry(
+        owner, epoch=batch["epoch"], expected_epoch_sha256=batch["epoch_sha256"], checkpoint=parent,
+        returns=batch["source_returns"], closure=batch["event_closure"], observed_at=batch["observed_at"])
+    if _wire(owner, projected) != _wire(owner, batch["intake_projection"]):
+        source.refuse("checkpoint-capture-projection-binding")
+    if _wire(owner, batch) != raw:
+        source.refuse("checkpoint-capture-image-changed")
+
+
+def capture_root(owner, *, memo, admitted_status, directory, expected_root_sha256, observed_at):
+    """Capture actual collectors after read-only acknowledged-root bootstrap.
+
+    The existing root and final-entry block must already be retained. This
+    entry point writes neither seed nor active head. It is not yet a resident
+    controller transaction: delivery/idle capture and publication are separate
+    required integration work, not inferred from this returned observation.
+    """
+    import siahistoryroot as roots
+    import siasourceack as ack
+
+    source._hex(expected_root_sha256, "checkpoint-root-pin")
+    memo_raw, status_raw = _wire(owner, memo), _wire(owner, admitted_status)
+    limit = min(owner["MAX_STATE_JSON_BYTES"], checkpoints.blocks.MAX_DOCUMENT_BYTES)
+    with owner["brainstem_owner"](), owner["corpus_owner"](), contextlib.ExitStack() as stack:
+        directory_hold = source._DirectoryChain(owner, directory, private_terminal=True)
+        stack.callback(directory_hold.close)
+
+        def hold(name, pin):
+            held = ack._HeldRaw(owner, source, os.path.join(directory, name), limit, allow_absent=False)
+            stack.callback(held.close)
+            checkpoints.blocks._pin(held.raw, pin)
+            return held
+
+        root_file = hold("root-" + expected_root_sha256 + ".json", expected_root_sha256)
+        view = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+        if view.get("status") != "available" or view.get("committed") != memo.get("controller_source_committed"):
+            source.refuse("checkpoint-source-authority")
+        prior, committed = view["batch"], view["committed"]
+        prior_raw, committed_raw = _wire(owner, prior), _wire(owner, committed)
+        block = checkpoints.blocks.prepare_captured(
+            owner, batch=prior, expected_batch_sha256=committed["source_batch_sha256"],
+            parent=None, expected_parent_sha256=None)
+        block_raw = _wire(owner, block)
+        block_pin = hashlib.sha256(block_raw).hexdigest()
+        expected_root = {"schema": "sia-source-history-root-v1", "status": "root-retained-not-activated",
+                         "epoch_id": prior["epoch"]["epoch_id"], "committed": committed,
+                         "legacy_epoch_sha256": prior["epoch_sha256"],
+                         "legacy_history_sha256": prior["epoch"]["expected_history_sha256"],
+                         "final_entry_block_sha256": block_pin, "non_claims": list(roots.NON_CLAIMS)}
+        if _wire(owner, expected_root) != root_file.raw:
+            source.refuse("checkpoint-root-source-binding")
+        block_file = hold(block_pin + ".json", block_pin)
+        if block_file.raw != block_raw:
+            source.refuse("checkpoint-root-entry-binding")
+        history = json.loads(_wire(owner, prior["epoch"]["history"]))
+        history["entries"].append(json.loads(_wire(owner, block["entry"])))
+        request = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
+                   "observed_at": prior["observed_at"], **{key: prior["epoch"][key] for key in _DOC_KEYS}}
+        request_raw = _wire(owner, request)
+        checkpoint = checkpoints.bootstrap_incremental(
+            owner, request=request, expected_request_sha256=hashlib.sha256(request_raw).hexdigest())
+        if _wire(owner, checkpoint["intake"]) != _wire(owner, prior["intake_projection"]["intake"]) \
+                or _wire(owner, checkpoint["source_non_claims"]) != _wire(owner, prior["intake_projection"]["source_non_claims"]):
+            source.refuse("checkpoint-source-intake-fidelity")
+        epoch = prepare_epoch(owner, checkpoint=checkpoint,
+                              expected_checkpoint_sha256=hashlib.sha256(_wire(owner, checkpoint)).hexdigest(),
+                              committed=committed, root_sha256=expected_root_sha256, observed_at=observed_at)
+
+        def current(files):
+            if _wire(owner, memo) != memo_raw or _wire(owner, admitted_status) != status_raw:
+                source.refuse("checkpoint-capture-authority-changed")
+            source._durable_successor_authority(owner, files, memo, committed)
+            present = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+            if present.get("status") != "available" or _wire(owner, present.get("batch")) != prior_raw \
+                    or _wire(owner, present.get("committed")) != committed_raw:
+                source.refuse("checkpoint-capture-source-changed")
+            root_file.current()
+            block_file.current()
+            directory_hold.current()
+
+        return source._capture_locked(
+            owner, memo=memo, epoch=epoch, expected_epoch_sha256=hashlib.sha256(_wire(owner, epoch)).hexdigest(),
+            observed_at=observed_at, authority=current, checkpoint=checkpoint)
