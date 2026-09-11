@@ -88,6 +88,68 @@ def publish_pages(owner, *, memo, admitted_status, directory,
         return detached
 
 
+def synchronize(owner, *, memo, admitted_status, directory,
+                expected_manifest_sha256, expected_root_sha256):
+    """Commit compact pages and synchronize their exact targets via gbrain.
+
+    The existing engine helper owns receipt/descriptor/process admission and
+    synchronization. Its returned generation must join the actual corpus cut
+    and complete target manifest; no row or receipt is fabricated here.
+    """
+    source, live = adoption.source, adoption.transaction.live
+    args = dict(memo=memo, admitted_status=admitted_status, directory=directory,
+                expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256)
+    references = dict(owner)
+    memo_raw, status_raw = adoption._wire(owner, memo, memo=True), adoption._wire(owner, admitted_status)
+    with owner["brainstem_owner"](), owner["corpus_owner"](), adoption.publication._files(owner, source) as (files, observe, current, named_current):
+        committed = commit_pages(owner, **args)
+        committed_raw = adoption._wire(owner, committed)
+
+        def unchanged():
+            if any(owner.get(name) is not value for name, value in references.items()) \
+                    or adoption._wire(owner, memo, memo=True) != memo_raw \
+                    or adoption._wire(owner, admitted_status) != status_raw \
+                    or adoption._wire(owner, committed) != committed_raw:
+                source.refuse("checkpoint-content-sync-input-changed")
+            current()
+
+        unchanged()
+        corpus = committed["corpus_generation"]
+        targets = committed["pages"]["target_versions"]
+        manifest, generation = [], None
+        if corpus is not None:
+            observed = owner["_controller_source_sync_generation"](
+                corpus_generation=corpus, target_versions=targets)
+            if type(observed) is not dict or set(observed) != {
+                    "sync_generation", "target_manifest", "target_manifest_sha256"}:
+                source.refuse("checkpoint-content-sync-result-shape")
+            manifest = effects._target_manifest(owner, source, live, observed["target_manifest"], targets)
+            manifest_pin = live._sha(manifest)
+            if observed["target_manifest_sha256"] != manifest_pin:
+                source.refuse("checkpoint-content-sync-manifest-differs")
+            generation = effects._sync_generation(owner, source, live,
+                observed["sync_generation"], corpus, manifest_pin, len(manifest))
+        elif targets:
+            source.refuse("checkpoint-content-sync-corpus-missing")
+        unchanged()
+        adoption.read_pending(owner, **args)
+        result = {"schema": "sia-checkpoint-index-publication-v1",
+            "status": "no-content-to-index" if generation is None else "content-index-synchronized-not-live",
+            "committed": committed, "sync_generation": generation,
+            "target_manifest": manifest, "target_manifest_sha256": live._sha(manifest),
+            "non_claims": [
+                "Content/index synchronization is not graph/status/live publication, source acknowledgment, current readiness or observed recall delivery.",
+                "The original engine receipt, process and target-projection boundaries remain controlling; no cognitive benchmark win is established.",
+                "An empty content set does not establish index synchronization; no engine call occurs for that case."]}
+        raw = adoption._wire(owner, result)
+        detached = copy.deepcopy(result)
+        if adoption._wire(owner, detached) != raw:
+            source.refuse("checkpoint-content-sync-result-copy-differs")
+        unchanged()
+        named_current()
+        return detached
+
+
 def commit_pages(owner, *, memo, admitted_status, directory,
                  expected_manifest_sha256, expected_root_sha256):
     """Publish/replay exact compact pages and obtain the original clean Git cut.
