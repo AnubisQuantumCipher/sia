@@ -527,13 +527,25 @@ def prepare_measurement(*, capture, expected_capture_sha256, selection_policy, e
     return _guard(_prepare, locals())
 
 
-def _prepare_live_history(kw):
+def _live_input_envelope(kw, *, comparison, compound):
     import sialiveloop as live
+    if not compound:
+        live._size(kw, live.MAX_INPUT_BYTES)
+        _bounded_inputs(kw.values())
+        return
+    import siacognitiveenvelope as envelope
+    replay = {key: None for key in (*_SOURCE_KEYS, "protocol", "expected_protocol_sha256",
+                                    "baseline", "expected_baseline_sha256", "expected_parameter_freeze_sha256")}
+    layout = {"replay_inputs": replay, "live_capture": None, "expected_live_capture_sha256": None}
+    if comparison:
+        layout.update(ranking_policy=None, expected_ranking_policy_sha256=None)
+    envelope.admit_compound(envelope=kw, layout=layout,
+        max_input_bytes=envelope.MAX_INPUT_BYTES, max_document_bytes=MAX_ARTIFACT_BYTES)
 
-    # A separate explicit operation, not a fallback from a refused proxy arm.
-    # Keep both the complete aggregate and each existing artifact's ceiling.
-    live._size(kw, live.MAX_INPUT_BYTES)
-    _bounded_inputs(kw.values())
+
+def _prepare_live_history(kw, *, compound=False):
+    import sialiveloop as live
+    _live_input_envelope(kw, comparison=False, compound=compound)
     detached = copy.deepcopy(kw)
     plan = prepare_measurement(**detached["replay_inputs"])
     capture = live.admit_history_capture(detached["live_capture"],
@@ -576,7 +588,8 @@ def _prepare_live_history(kw):
                         "projection_sha256": projection["projection_sha256"],
                         "projection_non_claims": projection["non_claims"]})
     return _finish({
-        "schema": "sia-cognitive-live-history-plan-v1", "status": "computed-unverified",
+        "schema": "sia-cognitive-live-history-plan-v2" if compound else "sia-cognitive-live-history-plan-v1",
+        "status": "computed-unverified",
         "baseline_sha256": plan["baseline_sha256"], "measurement_plan_sha256": plan["plan_sha256"],
         "live_capture_sha256": capture["capture_sha256"], "split": plan["split"],
         "epoch_id": capture["epoch_id"], "scope": capture["scope"],
@@ -596,6 +609,11 @@ def _prepare_live_history(kw):
 def prepare_live_history(*, replay_inputs, live_capture, expected_live_capture_sha256):
     """Replay raw-vector source bindings before attaching exact-version uses."""
     return _guard(_prepare_live_history, locals())
+
+
+def prepare_live_history_v2(*, replay_inputs, live_capture, expected_live_capture_sha256):
+    """Explicit closed compound inputs; original single-document limits remain."""
+    return _guard(lambda kw: _prepare_live_history(kw, compound=True), locals())
 
 
 def _live_rank_traces(rows, observed_at, activation_policy):
@@ -641,11 +659,10 @@ def _rank_live_query(*, rows, observed_at, activation_policy):
     return {"order": [next(slots[row["origin"]])["row_ref"] for row in rows], "activation": ranked}
 
 
-def _prepare_live_comparison(kw):
+def _prepare_live_comparison(kw, *, compound=False):
     import sialiveloop as live
 
-    live._size(kw, live.MAX_INPUT_BYTES)
-    _bounded_inputs(kw.values())
+    _live_input_envelope(kw, comparison=True, compound=compound)
     policy = kw["ranking_policy"]
     _keys(policy, {"schema", "observed_at", "activation_policy", "activation_policy_sha256",
                    "ordering", "unavailable"}, "live ranking policy")
@@ -660,7 +677,8 @@ def _prepare_live_comparison(kw):
     detached = copy.deepcopy(kw)
     policy = detached["ranking_policy"]
     raw = prepare_measurement(**detached["replay_inputs"])
-    source = prepare_live_history(**{key: detached[key] for key in
+    history = prepare_live_history_v2 if compound else prepare_live_history
+    source = history(**{key: detached[key] for key in
         ("replay_inputs", "live_capture", "expected_live_capture_sha256")})
     if policy["observed_at"] < source["observed_at"]:
         _fail("ranking clock precedes complete captured history")
@@ -709,7 +727,8 @@ def _prepare_live_comparison(kw):
             _fail("live comparison changed original raw measurement")
         arms.append({"name": name, "query_orders": orders[name], "queries": queries,
                      "classes": classes, "jackal_requests": requests})
-    return _finish({"schema": "sia-cognitive-live-comparison-v1", "status": "prepared-for-jackal",
+    return _finish({"schema": "sia-cognitive-live-comparison-v2" if compound else "sia-cognitive-live-comparison-v1",
+        "status": "prepared-for-jackal",
         "arithmetic_status": "not-evaluated", "measurement_plan": raw, "live_history": source,
         "ranking_policy": policy, "ranking_policy_sha256": detached["expected_ranking_policy_sha256"],
         "activation": activation, "arms": arms, "non_claims": [
@@ -726,3 +745,9 @@ def prepare_live_comparison(*, replay_inputs, live_capture, expected_live_captur
                             ranking_policy, expected_ranking_policy_sha256):
     """Prepare raw/live-use metric requests without rewriting the observation."""
     return _guard(_prepare_live_comparison, locals())
+
+
+def prepare_live_comparison_v2(*, replay_inputs, live_capture, expected_live_capture_sha256,
+                               ranking_policy, expected_ranking_policy_sha256):
+    """Explicit compound input envelope; no automatic retry or output-cap change."""
+    return _guard(lambda kw: _prepare_live_comparison(kw, compound=True), locals())

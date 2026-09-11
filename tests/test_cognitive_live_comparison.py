@@ -137,3 +137,34 @@ class CognitiveLiveComparison(unittest.TestCase):
             with self.assertRaisesRegex(measurement.MeasurementRefusal, "heldout freeze.*ranking"):
                 self.call(replay_inputs=replay, ranking_policy=changed,
                           expected_ranking_policy_sha256=live_tests.digest(changed))
+
+    def test_explicit_compound_version_matches_v1_semantics_and_keeps_closed_slots(self):
+        kw = {"replay_inputs": self.fixture.replay, "live_capture": self.fixture.capture,
+              "expected_live_capture_sha256": self.fixture.capture["capture_sha256"],
+              "ranking_policy": self.policy, "expected_ranking_policy_sha256": live_tests.digest(self.policy)}
+        original = self.call()
+        with self.fixture.fixture.fixture._pure():
+            result = measurement.prepare_live_comparison_v2(**kw)
+        self.assertEqual(result["schema"], "sia-cognitive-live-comparison-v2")
+        for field in ("arms", "activation", "measurement_plan", "ranking_policy", "non_claims"):
+            self.assertEqual(result[field], original[field])
+        extra = copy.deepcopy(kw)
+        extra["replay_inputs"]["extra_source"] = "unadmitted"
+        with mock.patch.object(measurement, "prepare_measurement", side_effect=AssertionError("early replay")):
+            with self.assertRaises(measurement.MeasurementRefusal):
+                measurement.prepare_live_comparison_v2(**extra)
+
+    def test_compound_resource_boundary_keeps_single_document_and_legacy_limits(self):
+        # Deliberately chosen synthetic strings test representation admission
+        # only; they are not semantically valid captures or machine evidence.
+        kw = {"replay_inputs": copy.deepcopy(self.fixture.replay),
+              "live_capture": self.fixture.capture,
+              "expected_live_capture_sha256": self.fixture.capture["capture_sha256"]}
+        kw["replay_inputs"]["capture"] = "x" * 9000000
+        kw["replay_inputs"]["selection"] = "y" * 9000000
+        with self.assertRaises(ValueError):
+            measurement._live_input_envelope(kw, comparison=False, compound=False)
+        measurement._live_input_envelope(kw, comparison=False, compound=True)
+        kw["replay_inputs"]["capture"] = "x" * 17000000
+        with self.assertRaises(ValueError):
+            measurement._live_input_envelope(kw, comparison=False, compound=True)
