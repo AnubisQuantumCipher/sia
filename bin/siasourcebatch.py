@@ -574,22 +574,11 @@ def _component_pin(owner, value, expected, reason):
         refuse(reason)
 
 
-def _validate_epoch(owner, epoch, expected_epoch_sha256, observed_at,
-                    *, initial):
-    _keys(epoch, EPOCH_KEYS, "epoch-shape")
-    _hex(expected_epoch_sha256, "epoch-pin")
-    if native_sha(owner, epoch) != expected_epoch_sha256:
-        refuse("epoch-pin")
-    if epoch["schema"] != "sia-controller-source-epoch-v1" \
-            or not _live._token(epoch["epoch_id"]) \
-            or type(epoch["started_at"]) is not int \
-            or type(observed_at) is not int \
-            or epoch["started_at"] > observed_at:
-        refuse("epoch-identity-or-clock")
-    if not _same_native(owner, epoch["non_claims"], list(NON_CLAIMS)):
-        refuse("batch-nonclaims")
-
-    documents = ("configuration", "source_catalog", "profile", "history")
+def _validate_epoch_context(owner, epoch, *, include_history=False):
+    """Shared source selection/policy contract, not epoch or source authority."""
+    documents = ("configuration", "source_catalog", "profile")
+    if include_history:
+        documents += ("history",)
     for name in documents:
         _component_pin(
             owner, epoch[name], epoch["expected_" + name + "_sha256"],
@@ -672,6 +661,24 @@ def _validate_epoch(owner, epoch, expected_epoch_sha256, observed_at,
             != epoch["expected_live_policy_sha256"]:
         refuse("profile-contract")
     _source_nonclaims(owner, profile["non_claims"])
+    return expected_ids
+
+
+def _validate_epoch(owner, epoch, expected_epoch_sha256, observed_at,
+                    *, initial):
+    _keys(epoch, EPOCH_KEYS, "epoch-shape")
+    _hex(expected_epoch_sha256, "epoch-pin")
+    if native_sha(owner, epoch) != expected_epoch_sha256:
+        refuse("epoch-pin")
+    if epoch["schema"] != "sia-controller-source-epoch-v1" \
+            or not _live._token(epoch["epoch_id"]) \
+            or type(epoch["started_at"]) is not int \
+            or type(observed_at) is not int \
+            or epoch["started_at"] > observed_at:
+        refuse("epoch-identity-or-clock")
+    if not _same_native(owner, epoch["non_claims"], list(NON_CLAIMS)):
+        refuse("batch-nonclaims")
+    expected_ids = _validate_epoch_context(owner, epoch, include_history=True)
 
     history = epoch["history"]
     _keys(history, {"schema", "epoch_id", "started_at", "complete",
