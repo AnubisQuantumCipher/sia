@@ -596,3 +596,133 @@ def _prepare_live_history(kw):
 def prepare_live_history(*, replay_inputs, live_capture, expected_live_capture_sha256):
     """Replay raw-vector source bindings before attaching exact-version uses."""
     return _guard(_prepare_live_history, locals())
+
+
+def _live_rank_traces(rows, observed_at, activation_policy):
+    import sialiveloop as live
+
+    live._size(rows, live.activation.MAX_INPUT_BYTES)
+    if type(rows) is not list or len(rows) > activation_policy["max_candidates"]:
+        _fail("complete live candidate roster exceeds activation capacity")
+    refs, traces = set(), {}
+    for row in rows:
+        _keys(row, {"row_ref", "origin", "trace"}, "live rank input")
+        if not live._token(row["row_ref"], live.activation.MAX_SUBJECT_BYTES) \
+                or row["row_ref"] in refs or type(row["origin"]) is not str or row["origin"] not in live._ORIGINS:
+            _fail("live rank reference or origin is invalid")
+        refs.add(row["row_ref"])
+        trace = row["trace"]
+        if trace is None:
+            continue
+        live.activation._trace(trace, observed_at, activation_policy)
+        subject = trace["subject"]
+        if subject in traces and not _same(trace, traces[subject]):
+            _fail("duplicate version has conflicting live traces")
+        traces[subject] = trace
+    values = list(traces.values())
+    live.activation._validate_set(values, observed_at, activation_policy)
+    return values
+
+
+def _rank_live_query(*, rows, observed_at, activation_policy):
+    """Rank-only worker: no query, answers, classes, target coverage or metrics."""
+    import sialiveloop as live
+
+    traces = _live_rank_traces(rows, observed_at, activation_policy)
+    ranked = live.activation.rank_traces(traces, observed_at=observed_at, policy=activation_policy)
+    scores = {item["subject"]: item["score"] for item in ranked["activations"]}
+
+    def key(row):
+        score = None if row["trace"] is None else scores[row["trace"]["subject"]]
+        return score is None, -score if score is not None else 0
+
+    slots = {origin: iter(sorted((row for row in rows if row["origin"] == origin), key=key))
+             for origin in live._ORIGINS}
+    return {"order": [next(slots[row["origin"]])["row_ref"] for row in rows], "activation": ranked}
+
+
+def _prepare_live_comparison(kw):
+    import sialiveloop as live
+
+    live._size(kw, live.MAX_INPUT_BYTES)
+    _bounded_inputs(kw.values())
+    policy = kw["ranking_policy"]
+    _keys(policy, {"schema", "observed_at", "activation_policy", "activation_policy_sha256",
+                   "ordering", "unavailable"}, "live ranking policy")
+    _pin(policy, kw["expected_ranking_policy_sha256"])
+    if policy["schema"] != "sia-cognitive-live-ranking-policy-v1" \
+            or policy["ordering"] != "origin-slot-preserving-activation-v1" \
+            or policy["unavailable"] != "last-within-origin-stable-v1" \
+            or not live._integer(policy["observed_at"]):
+        _fail("live ranking policy is unsupported")
+    live.activation._policy(policy["activation_policy"])
+    _pin(policy["activation_policy"], policy["activation_policy_sha256"])
+    detached = copy.deepcopy(kw)
+    policy = detached["ranking_policy"]
+    raw = prepare_measurement(**detached["replay_inputs"])
+    source = prepare_live_history(**{key: detached[key] for key in
+        ("replay_inputs", "live_capture", "expected_live_capture_sha256")})
+    if policy["observed_at"] < source["observed_at"]:
+        _fail("ranking clock precedes complete captured history")
+    if raw["split"] == "heldout" and raw["baseline"]["parameter_freeze"]["parameters"].get(
+            "live_ranking_policy_sha256") != detached["expected_ranking_policy_sha256"]:
+        _fail("heldout freeze does not bind the live ranking policy")
+    live._size({"measurement_plan": raw, "live_history": source}, live.MAX_OUTPUT_BYTES)
+    prepared = []
+    for query, measured in zip(source["queries"], raw["queries"], strict=True):
+        if query["id"] != measured["id"] or len(query["rows"]) != len(measured["row_coverage"]):
+            _fail("live query and raw coverage rosters differ")
+        rows = [{"row_ref": row["row_ref"], "origin": row["origin"],
+                 "trace": None if row["history"] is None else row["history"]["trace"]}
+                for row in query["rows"]]
+        # Every query's complete trace population admits before the first
+        # worker computes a score. Duplicate chunks never duplicate uses.
+        _live_rank_traces(rows, policy["observed_at"], policy["activation_policy"])
+        prepared.append((query["id"], rows, measured["row_coverage"]))
+    orders, coverage, activation = {"raw-original": [], "live-use": []}, {"raw-original": {}, "live-use": {}}, []
+    for identifier, rows, hits in prepared:
+        input_sha256 = _sha(_canonical(rows))
+        ranked = _rank_live_query(rows=rows, observed_at=policy["observed_at"],
+                                  activation_policy=policy["activation_policy"])
+        _pin(rows, input_sha256)
+        refs = [row["row_ref"] for row in rows]
+        order = ranked["order"]
+        if type(order) is not list or any(type(ref) is not str for ref in order) \
+                or len(order) != len(refs) or set(order) != set(refs):
+            _fail("live order is not a complete raw-reference bijection")
+        origins = {row["row_ref"]: row["origin"] for row in rows}
+        if [origins[ref] for ref in order] != [row["origin"] for row in rows]:
+            _fail("live order changed an origin slot")
+        by_ref = dict(zip(refs, hits, strict=True))
+        for name, sequence in (("raw-original", refs), ("live-use", order)):
+            orders[name].append({"id": identifier, "order": sequence})
+            coverage[name][identifier] = [{**by_ref[ref], "rank": rank}
+                for rank, ref in enumerate(sequence, 1)]
+        activation.append({"id": identifier, "receipt": ranked["activation"]})
+    arms = []
+    for name in ("raw-original", "live-use"):
+        queries, classes, requests = _summarize_coverage(raw["protocol"], raw["baseline"]["queries"], coverage[name])
+        if not _same(classes, raw["classes"]):
+            _fail("live comparison changed measured class membership")
+        if name == "raw-original" and any(not _same(value, raw[field]) for field, value in
+                (("queries", queries), ("classes", classes), ("jackal_requests", requests))):
+            _fail("live comparison changed original raw measurement")
+        arms.append({"name": name, "query_orders": orders[name], "queries": queries,
+                     "classes": classes, "jackal_requests": requests})
+    return _finish({"schema": "sia-cognitive-live-comparison-v1", "status": "prepared-for-jackal",
+        "arithmetic_status": "not-evaluated", "measurement_plan": raw, "live_history": source,
+        "ranking_policy": policy, "ranking_policy_sha256": detached["expected_ranking_policy_sha256"],
+        "activation": activation, "arms": arms, "non_claims": [
+            "Activation is computed-unverified software output; metric expressions require JACKAL execution and do not establish a win.",
+            "Origin-slot preservation and unavailable-last ordering are engineering policies, not a biological law.",
+            "Ranking sees only version-use traces and row origins; the separately replayed target grader preserves every query and denominator.",
+            "Raw rows, scores, latency observations and origins remain unchanged; no rerank latency was measured or inferred.",
+            "Externally pinned held-out policies do not independently prove tuning chronology, independent samples or statistical power.",
+            "All retained measurement, source, live-history and activation nonclaims remain controlling.",
+        ]}, "comparison_sha256")
+
+
+def prepare_live_comparison(*, replay_inputs, live_capture, expected_live_capture_sha256,
+                            ranking_policy, expected_ranking_policy_sha256):
+    """Prepare raw/live-use metric requests without rewriting the observation."""
+    return _guard(_prepare_live_comparison, locals())
