@@ -28,6 +28,19 @@ class CheckpointCommit(unittest.TestCase):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.exercise(synchronize=True)
 
+    def test_parent_live_artifacts_retained_before_graph_advance(self):
+        import siacheckpointparent
+        self.assertTrue(callable(getattr(siacheckpointparent, "retain_live", None)), "missing parent live retention")
+        self.check_parent_live = True
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
+    def test_parent_live_retention_recovers_after_partial_copy(self):
+        self.check_parent_live = True
+        self.interrupt_parent_live = True
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
     def test_compact_effects_reload_after_durable_interruption(self):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.interrupt_effects = True
@@ -122,13 +135,34 @@ class CheckpointCommit(unittest.TestCase):
         graph = f.case.effects._new_graph()
         graph["publication_id"] = "4" * 32
         old_graph_raw = Path(owner.GRAPH_PATH).read_bytes()
+        old_live = {name: Path(path).read_bytes() for name, path in {
+            "status": owner.STATUS_PATH, "candidate": owner.LIVE_CANDIDATE_PATH,
+            "generation": owner.LIVE_STATE_PATH}.items()}
         def export():
+            if getattr(self, "check_parent_live", False):
+                for name, raw in old_live.items():
+                    saved_live = list(Path(args["directory"]).glob("parent-" + name + "-*.json"))
+                    self.assertEqual(len(saved_live), 1)
+                    self.assertEqual(saved_live[0].read_bytes(), raw)
             owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(graph), mode=0o600)
             if getattr(self, "interrupt_graph", False):
                 self.interrupt_graph = False
                 raise OSError("controlled graph-before-memo interruption")
         with mock.patch.object(owner, "_export_graph_publication", side_effect=export), \
                 mock.patch.object(owner, "_controller_source_effects_observed_at", return_value=effects_fixture.STATUS_AT):
+            if getattr(self, "interrupt_parent_live", False):
+                publish = owner.siaqueue.fixed_atomic_publish
+                def partial(path, *pos, **kw):
+                    result = publish(path, *pos, **kw)
+                    if Path(path).name.startswith("parent-status-"):
+                        raise OSError("controlled parent-live partial copy")
+                    return result
+                with mock.patch.object(owner.siaqueue, "fixed_atomic_publish", side_effect=partial):
+                    with self.assertRaisesRegex(OSError, "controlled parent-live partial copy"):
+                        self.stage_api.stage(vars(owner), **args)
+                self.assertEqual(args["memo"], before)
+                self.assertEqual(owner.load_memo(), before)
+                self.assertEqual(Path(owner.GRAPH_PATH).read_bytes(), old_graph_raw)
             if getattr(self, "interrupt_graph", False):
                 with self.assertRaisesRegex(OSError, "controlled graph-before-memo interruption"):
                     self.stage_api.stage(vars(owner), **args)
@@ -158,6 +192,19 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "current graph generation"):
                 owner._read_committed_live_generation(memo=args["memo"], admitted_status=args["admitted_status"])
             self.assertEqual(pending["source_batch_sha256"], before["controller_source_pending"]["batch_sha256"])
+            if getattr(self, "check_parent_live", False):
+                import siacheckpointparent
+                view = content.adoption.read_pending(vars(owner), **args)
+                committed = view["package"]["artifacts"]["capture"]["epoch"]["predecessor"]
+                retained_args = dict(directory=args["directory"], committed=committed,
+                    memo=args["memo"], admitted_status=args["admitted_status"])
+                with mock.patch.object(owner.siaqueue, "fixed_atomic_publish", side_effect=AssertionError("retention retry wrote")):
+                    self.assertFalse(siacheckpointparent.retain_live(vars(owner), **retained_args))
+                saved_candidate = next(Path(args["directory"]).glob("parent-candidate-*.json"))
+                owner.atomic_write(str(saved_candidate), "{}", mode=0o600)
+                with self.assertRaises(ValueError) as refused:
+                    siacheckpointparent.retain_live(vars(owner), **retained_args)
+                self.assertEqual(refused.exception.reason, "checkpoint-parent-live-retained-differs")
             with mock.patch.object(owner, "_controller_source_sync_generation", side_effect=AssertionError("retry synchronized")), \
                     mock.patch.object(owner, "_export_graph_publication", side_effect=AssertionError("retry exported")), \
                     mock.patch.object(owner, "atomic_write", side_effect=AssertionError("retry wrote")):

@@ -58,6 +58,8 @@ def stage(owner, *, memo, admitted_status, directory, expected_manifest_sha256, 
         owner["_require_status_admission_unchanged"](admitted_status)
         import siacheckpointparent
         siacheckpointparent.retain_graph(owner, directory=directory, committed=batch["epoch"]["predecessor"])
+        siacheckpointparent.retain_live(owner, directory=directory, committed=batch["epoch"]["predecessor"],
+            memo=memo, admitted_status=admitted_status)
         owner["_export_graph_publication"]()
         graph_generation, graph = effects._graph_generation(owner, source, live)
         status = effects._project_status(owner, source, live, admitted_status, binding, handoff,

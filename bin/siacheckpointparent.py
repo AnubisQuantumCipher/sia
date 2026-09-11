@@ -1,6 +1,7 @@
 """Retain an actual predecessor graph before replacing the current graph."""
 
 import contextlib
+import hashlib
 import os
 
 import siasourceack as ack
@@ -70,3 +71,78 @@ def retain_graph(owner, *, directory, committed):
         if saved.raw != raw or not os.path.samestat(parent_identity, os.fstat(saved.directories.fd)):
             source.refuse("checkpoint-parent-graph-retention-differs")
     return True
+
+
+def retain_live(owner, *, directory, committed, memo, admitted_status):
+    """Save exact parent status/candidate/generation before successor writes.
+
+    The caller holds the owner leases. The actual archived source/effects
+    receipt and current live files must still join to the acknowledged parent.
+    Existing retained bytes are compared, never replaced. This is retention,
+    not an admission of archived files after current live authority advances.
+    """
+    references = dict(owner)
+    inputs = {"committed": committed, "memo": memo, "status": admitted_status}
+    originals = {name: source.native_bytes(owner, value,
+        ceiling=owner["MAX_MEMO_BYTES"] if name == "memo" else owner["MAX_STATE_JSON_BYTES"])
+        for name, value in inputs.items()}
+    with hold_graph(owner, directory=directory, committed=committed) as (graph, _expected):
+        with ack._historical_predecessor(owner, source, effects, memo, admitted_status, committed,
+                **({} if graph.raw is None else {"graph_artifact": graph})) as parent:
+            with owner["_live_files"]() as (files, current, _write):
+                generation = parent[3]
+                if files["generation"].value != generation \
+                        or owner["_live_replay_candidate"](files["candidate"].value) != generation \
+                        or files["status"].value != admitted_status:
+                    source.refuse("checkpoint-parent-live-current-differs")
+
+                def unchanged():
+                    if any(owner.get(name) is not value for name, value in references.items()) \
+                            or any(source.native_bytes(owner, value,
+                                ceiling=owner["MAX_MEMO_BYTES"] if name == "memo" else owner["MAX_STATE_JSON_BYTES"])
+                                != originals[name] for name, value in inputs.items()):
+                        source.refuse("checkpoint-parent-live-input-changed")
+                    current()
+
+                plans = []
+                # Preflight every destination before any additive copy.
+                for name, pin in (("status", generation["status_sha256"]),
+                                  ("candidate", generation["candidate_sha256"]),
+                                  ("generation", generation["generation_sha256"])):
+                    source._hex(pin, "checkpoint-parent-live-pin")
+                    path = os.path.join(directory, "parent-" + name + "-" + pin + ".json")
+                    original = files[name]
+                    raw = os.pread(original.fd, original.ceiling + 1, 0)
+                    if len(raw) > original.ceiling or hashlib.sha256(raw).hexdigest() != original.wire_sha256:
+                        source.refuse("checkpoint-parent-live-source-bytes-differ")
+                    original.current()
+                    with contextlib.closing(ack._HeldRaw(owner, source, path, owner["MAX_STATE_JSON_BYTES"])) as saved:
+                        if saved.raw is not None and saved.raw != raw:
+                            source.refuse("checkpoint-parent-live-retained-differs")
+                        plans.append((path, raw, saved.raw is None, os.fstat(saved.directories.fd)))
+                        saved.current()
+                changed = False
+                for path, raw, absent, identity in plans:
+                    unchanged()
+                    if absent:
+                        owner["siaqueue"].fixed_atomic_publish(path, raw, mode=0o600, exclusive=True,
+                            staging_dir=owner["siaqueue"].staging_dir_for(path,
+                                authority_roots=(owner["CORPUS"], owner["STATE"], owner["SHARE"])))
+                        changed = True
+                    with contextlib.closing(ack._HeldRaw(owner, source, path, owner["MAX_STATE_JSON_BYTES"], allow_absent=False)) as saved:
+                        if saved.raw != raw or not os.path.samestat(identity, os.fstat(saved.directories.fd)):
+                            source.refuse("checkpoint-parent-live-retention-differs")
+                        saved.current()
+                unchanged()
+                with contextlib.ExitStack() as sweep:
+                    retained = []
+                    for path, raw, _absent, identity in plans:
+                        saved = ack._HeldRaw(owner, source, path, owner["MAX_STATE_JSON_BYTES"], allow_absent=False)
+                        sweep.callback(saved.close)
+                        if saved.raw != raw or not os.path.samestat(identity, os.fstat(saved.directories.fd)):
+                            source.refuse("checkpoint-parent-live-retention-differs")
+                        retained.append(saved)
+                    for saved in retained:
+                        saved.current()
+                    unchanged()
+    return changed
