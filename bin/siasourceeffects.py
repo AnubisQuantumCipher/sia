@@ -1144,7 +1144,7 @@ def committed_receipt(owner, *, memo, admitted_status, retained_batch=None):
     return copy.deepcopy(receipt)
 
 
-def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt_sha256):
+def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt_sha256, checkpoint=False):
     """Shared canonical receipt/source binding, without current-file claims."""
     import siasourcebatch as source
     import sialiveloop as live
@@ -1164,7 +1164,7 @@ def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt
         _refuse(source, "source-effects-archive-json", upstream=exc)
     _self_hash(
         source, live, receipt, "receipt_sha256",
-        _effect_keys(retained_batch, RECEIPT_KEYS),
+        RECEIPT_KEYS | CONTENT_FIELDS if checkpoint else _effect_keys(retained_batch, RECEIPT_KEYS),
         "source-effects-archive-receipt")
     if receipt["receipt_sha256"] != expected_receipt_sha256:
         _refuse(source, "source-effects-archive-identity")
@@ -1172,8 +1172,11 @@ def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt
         owner, receipt, ceiling=owner["MAX_MEMO_BYTES"])
     if canonical != raw:
         _refuse(source, "source-effects-archive-not-canonical")
-    source.validate_batch(
-        owner, retained_batch, receipt["source_batch_sha256"])
+    if checkpoint:
+        import siasourcecheckpoint
+        siasourcecheckpoint.validate_capture(owner, retained_batch, receipt["source_batch_sha256"])
+    else:
+        source.validate_batch(owner, retained_batch, receipt["source_batch_sha256"])
     batch_raw = source.native_bytes(owner, retained_batch)
     if receipt["source_batch_wire_sha256"] \
             != owner["hashlib"].sha256(batch_raw).hexdigest():
@@ -1189,12 +1192,42 @@ def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt
         "state_sha256": receipt["state_sha256"],
         "transition_sha256": receipt["transition_sha256"],
     }
+    if checkpoint:
+        binding["parent_generation_sha256"] = retained_batch["delivery_input"]["epoch_view"]["parent_generation"]["generation_sha256"]
     return receipt, binding
 
 
 def validate_archived_receipt(
         owner, *, raw, retained_batch, memo, admitted_status,
         expected_receipt_sha256, graph_artifact=None):
+    return _validate_archived_receipt(owner, raw=raw, retained_batch=retained_batch,
+        memo=memo, admitted_status=admitted_status, expected_receipt_sha256=expected_receipt_sha256,
+        graph_artifact=graph_artifact, checkpoint=False)
+
+
+def validate_checkpoint_archived_receipt(owner, *, raw, retained_batch, memo, admitted_status, expected_receipt_sha256):
+    """Explicit compact-capture receipt admission against actual current files."""
+    return _validate_archived_receipt(owner, raw=raw, retained_batch=retained_batch,
+        memo=memo, admitted_status=admitted_status, expected_receipt_sha256=expected_receipt_sha256,
+        graph_artifact=None, checkpoint=True)
+
+
+def checkpoint_committed_receipt(owner, *, memo, admitted_status, retained_batch):
+    """Admit an actual finalized compact effects memo before source ACK."""
+    import siasourcebatch as source
+    value = memo.get("controller_source_effects_committed")
+    if type(value) is not dict or "controller_source_effects_pending" in memo:
+        _refuse(source, "checkpoint-effects-committed-authority")
+    binding = owner["_controller_source_live_binding_marker"](memo)
+    if binding is None or value.get("source_live_publication_sha256") != binding["publication_sha256"]:
+        _refuse(source, "checkpoint-effects-committed-binding")
+    return validate_checkpoint_archived_receipt(owner, raw=source.native_bytes(owner, value, ceiling=owner["MAX_MEMO_BYTES"]),
+        retained_batch=retained_batch, memo=memo, admitted_status=admitted_status,
+        expected_receipt_sha256=value["receipt_sha256"])
+
+
+def _validate_archived_receipt(owner, *, raw, retained_batch, memo, admitted_status,
+                              expected_receipt_sha256, graph_artifact, checkpoint):
     """Rejoin a canonical archived receipt to current status/live authority.
 
     An explicit held graph binds historical graph bytes to the same receipt;
@@ -1205,14 +1238,14 @@ def validate_archived_receipt(
     if type(memo) is not dict:
         _refuse(source, "source-effects-archive-authority")
     receipt, binding = _archived_receipt_components(owner, raw=raw,
-        retained_batch=retained_batch, expected_receipt_sha256=expected_receipt_sha256)
+        retained_batch=retained_batch, expected_receipt_sha256=expected_receipt_sha256, checkpoint=checkpoint)
     status = owner["_require_status_admission_unchanged"](
         admitted_status)
     status_generation, retained_status = _status_generation_file(
         owner, source, live)
     _receipt_shape(
         owner, source, live, receipt, retained_batch, binding,
-        retained_status=retained_status)
+        retained_status=retained_status, checkpoint=checkpoint)
     if graph_artifact is None:
         graph_generation, graph = _graph_generation(owner, source, live)
     else:

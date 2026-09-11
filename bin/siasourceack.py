@@ -184,21 +184,25 @@ def _private_archive_directory(owner, source, path, *, required):
     return chain
 
 
-def _decode_batch(owner, source, raw, expected_sha256):
+def _decode_batch(owner, source, raw, expected_sha256, *, checkpoint=False):
     try:
         batch = owner["_strict_json_loads"](
             raw.decode("utf-8", errors="strict"))
     except (UnicodeError, ValueError, RecursionError) as exc:
         _refuse(source, "ack-archive-json", exc)
-    source.validate_batch(owner, batch, expected_sha256)
+    if checkpoint:
+        import siasourcecheckpoint
+        siasourcecheckpoint.validate_capture(owner, batch, expected_sha256)
+    else:
+        source.validate_batch(owner, batch, expected_sha256)
     if source.native_bytes(owner, batch) != raw:
         _refuse(source, "ack-source-batch-not-canonical")
     return batch
 
 
 class _ArchiveSlot:
-    def __init__(self, owner, source, expected_sha256, *, archive_only=False):
-        if type(archive_only) is not bool:
+    def __init__(self, owner, source, expected_sha256, *, archive_only=False, checkpoint=False):
+        if type(archive_only) is not bool or type(checkpoint) is not bool:
             _refuse(source, "ack-archive-selection-contract")
         self.owner = owner
         self.source = source
@@ -239,7 +243,7 @@ class _ArchiveSlot:
             allow_absent=False)
         try:
             self.batch = _decode_batch(
-                owner, source, self.held.raw, expected_sha256)
+                owner, source, self.held.raw, expected_sha256, checkpoint=checkpoint)
             self.raw = self.held.raw
         except BaseException:
             self.close()
@@ -585,7 +589,7 @@ def _committed_shape(source, committed):
 
 @contextlib.contextmanager
 def _historical_predecessor(owner, source, effects, memo, admitted_status,
-                            committed, *, graph_artifact=None):
+                            committed, *, graph_artifact=None, checkpoint=False):
     """Hold historical archive/effects/live joins without claiming ready.
 
     Entry-point policy decides which complete memo authority is allowed.
@@ -595,7 +599,7 @@ def _historical_predecessor(owner, source, effects, memo, admitted_status,
     _committed_shape(source, committed)
     archive = _ArchiveSlot(
         owner, source, committed["source_batch_sha256"],
-        archive_only=True)
+        archive_only=True, checkpoint=checkpoint)
     effects_archive = None
     try:
         effects_archive = _EffectsArchiveSlot(
@@ -605,7 +609,8 @@ def _historical_predecessor(owner, source, effects, memo, admitted_status,
             _refuse(source, "ack-completed-source-not-retired")
         status = owner["_require_status_admission_unchanged"](
             admitted_status)
-        receipt = effects.validate_archived_receipt(
+        validator = effects.validate_checkpoint_archived_receipt if checkpoint else effects.validate_archived_receipt
+        receipt = validator(
             owner, raw=effects_archive.raw, retained_batch=archive.batch,
             memo=memo, admitted_status=status,
             expected_receipt_sha256=
@@ -646,13 +651,13 @@ def _historical_ready_receipt(owner, source, memo, status, generation):
 
 
 def _completed(owner, source, effects, live, memo, admitted_status,
-               committed):
+               committed, *, checkpoint=False):
     _committed_shape(source, committed)
     if _PENDING_ONLY.intersection(memo) \
             or owner["NOTIFY_BASELINE_ATTEMPT_KEY"] in memo:
         _refuse(source, "ack-completed-has-pending-authority")
     with _historical_predecessor(
-            owner, source, effects, memo, admitted_status, committed) as (
+            owner, source, effects, memo, admitted_status, committed, checkpoint=checkpoint) as (
             archive, effects_archive, status, generation):
         _historical_ready_receipt(owner, source, memo, status, generation)
         durable = owner["load_memo"]()
@@ -677,6 +682,15 @@ def _completed(owner, source, effects, live, memo, admitted_status,
 
 
 def acknowledge(owner, *, memo, admitted_status):
+    return _acknowledge(owner, memo=memo, admitted_status=admitted_status, checkpoint=False)
+
+
+def acknowledge_checkpoint(owner, *, memo, admitted_status):
+    """ACK an explicitly validated compact capture using the original write order."""
+    return _acknowledge(owner, memo=memo, admitted_status=admitted_status, checkpoint=True)
+
+
+def _acknowledge(owner, *, memo, admitted_status, checkpoint):
     """Retire one exact fully published source generation, or recover it."""
     import siasourcebatch as source
     import siasourceeffects as effects
@@ -693,7 +707,7 @@ def acknowledge(owner, *, memo, admitted_status):
     committed = memo.get("controller_source_committed")
     if committed is not None:
         _completed(
-            owner, source, effects, live, memo, admitted_status, committed)
+            owner, source, effects, live, memo, admitted_status, committed, checkpoint=checkpoint)
         # The shipped v1 acknowledgment is intentionally effectless and
         # returns None on a completed retry.  The additive reader below owns
         # the detached completed view needed by recurring rollover.
@@ -704,7 +718,7 @@ def acknowledge(owner, *, memo, admitted_status):
             or _HEX.fullmatch(pending["batch_sha256"]) is None:
         _refuse(source, "ack-source-pending-authority")
 
-    archive = _ArchiveSlot(owner, source, pending["batch_sha256"])
+    archive = _ArchiveSlot(owner, source, pending["batch_sha256"], checkpoint=checkpoint)
     effects_archive = None
     main = None
     journals = []
@@ -714,7 +728,8 @@ def acknowledge(owner, *, memo, admitted_status):
             owner, source, batch, archive.raw)
         if not _same(owner, source, pending, expected_pending):
             _refuse(source, "ack-source-pending-receipt")
-        receipt = effects.committed_receipt(
+        receipt_reader = effects.checkpoint_committed_receipt if checkpoint else effects.committed_receipt
+        receipt = receipt_reader(
             owner, memo=memo, admitted_status=admitted_status,
             retained_batch=batch)
         binding = owner["_controller_source_live_binding_marker"](memo)
@@ -754,7 +769,8 @@ def acknowledge(owner, *, memo, admitted_status):
         _memo_current(owner, source, memo, original, admitted_status)
 
         effects_archive.publish()
-        retained_receipt = effects.validate_archived_receipt(
+        validator = effects.validate_checkpoint_archived_receipt if checkpoint else effects.validate_archived_receipt
+        retained_receipt = validator(
             owner, raw=effects_archive.raw, retained_batch=batch,
             memo=memo, admitted_status=status,
             expected_receipt_sha256=receipt["receipt_sha256"])
@@ -839,6 +855,15 @@ def acknowledge(owner, *, memo, admitted_status):
 
 
 def read_completed(owner, *, memo, admitted_status):
+    return _read_completed(owner, memo=memo, admitted_status=admitted_status, checkpoint=False)
+
+
+def read_checkpoint_completed(owner, *, memo, admitted_status):
+    """Read an acknowledged compact source through its exact archive pins."""
+    return _read_completed(owner, memo=memo, admitted_status=admitted_status, checkpoint=True)
+
+
+def _read_completed(owner, *, memo, admitted_status, checkpoint):
     """Return one fully revalidated, detached completed predecessor view.
 
     Selection is by the digest-named immutable archive.  A different batch in
@@ -860,7 +885,7 @@ def read_completed(owner, *, memo, admitted_status):
     if committed is None:
         _refuse(source, "ack-completed-authority-absent")
     result = _completed(
-        owner, source, effects, live, memo, admitted_status, committed)
+        owner, source, effects, live, memo, admitted_status, committed, checkpoint=checkpoint)
     if not _same(owner, source, original, memo, memo=True) \
             or result.get("committed") != committed:
         _refuse(source, "ack-completed-authority-changed")

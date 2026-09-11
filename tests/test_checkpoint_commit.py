@@ -66,6 +66,24 @@ class CheckpointCommit(unittest.TestCase):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.exercise(synchronize=True)
 
+    def test_compact_source_acknowledgment_and_completed_retry(self):
+        import siasourceack
+        self.assertTrue(callable(getattr(siasourceack, "acknowledge_checkpoint", None)), "missing compact source acknowledgment")
+        self.ack_api = siasourceack
+        self.finalize_effects = True
+        self.live_api = importlib.import_module("siacheckpointlive")
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
+    def test_compact_source_ack_recovers_each_durable_boundary(self):
+        import siasourceack
+        self.ack_api = siasourceack
+        self.interrupt_ack = True
+        self.finalize_effects = True
+        self.live_api = importlib.import_module("siacheckpointlive")
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
     def test_compact_effects_reload_after_durable_interruption(self):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.interrupt_effects = True
@@ -360,6 +378,9 @@ class CheckpointCommit(unittest.TestCase):
             with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("effects retry wrote")):
                 self.assertFalse(self.live_api.finalize(vars(owner), **args))
                 self.assertFalse(self.live_api.publish(vars(owner), **args))
+            if getattr(self, "ack_api", None) is not None:
+                self.ack_case(owner, args, receipt)
+                return
             corrupted = copy.deepcopy(args["memo"])
             altered_receipt = corrupted["controller_source_effects_committed"]
             altered_receipt["state_sha256"] = "0" * 64
@@ -386,10 +407,46 @@ class CheckpointCommit(unittest.TestCase):
         with self.assertRaises(ValueError) as refused:
             self.live_api.publish(vars(owner), **args)
         self.assertEqual(refused.exception.reason, "checkpoint-live-publication-phase-differs")
+
         owner.atomic_write(owner.LIVE_STATE_PATH, "{}", mode=0o600)
         with self.assertRaises(ValueError) as refused:
             self.live_api.publish(vars(owner), **args)
         self.assertEqual(refused.exception.reason, "checkpoint-live-publication-phase-differs")
+
+    def ack_case(self, owner, args, receipt):
+        before = copy.deepcopy(args["memo"])
+        if getattr(self, "interrupt_ack", False):
+            batch = owner.json.loads(Path(owner.CONTROLLER_SOURCE_BATCH_PATH).read_bytes())
+            boundaries = ["effects-receipt-archive-durable", "archive-durable", "refusals-durable"]
+            boundaries.extend("journal-" + row["scope"] + "-durable"
+                for proposal in batch["journal_proposals"] for row in proposal["cursors"])
+            boundaries.extend(("cursor-state-durable", "memo-durable"))
+            for boundary in boundaries:
+                with self.subTest(boundary=boundary):
+                    def interrupted(name):
+                        if name == boundary:
+                            raise OSError("controlled durable ACK interruption")
+                    with mock.patch.object(owner, "_controller_source_ack_boundary", side_effect=interrupted):
+                        with self.assertRaisesRegex(OSError, "controlled durable ACK interruption"):
+                            self.ack_api.acknowledge_checkpoint(vars(owner), memo=args["memo"], admitted_status=args["admitted_status"])
+                    args["memo"] = owner.load_memo()
+                    if boundary != "memo-durable":
+                        self.assertNotIn("ready", args["memo"])
+        else:
+            self.ack_api.acknowledge_checkpoint(vars(owner), memo=args["memo"], admitted_status=args["admitted_status"])
+        self.assertEqual(owner.load_memo(), args["memo"])
+        self.assertFalse(Path(owner.CONTROLLER_SOURCE_BATCH_PATH).exists())
+        self.assertEqual(args["memo"]["controller_source_committed"]["source_batch_sha256"], receipt["source_batch_sha256"])
+        self.assertEqual(args["memo"]["controller_source_committed"]["source_effects_receipt_sha256"], receipt["receipt_sha256"])
+        self.assertEqual(args["memo"]["live_loop_committed"], before["live_loop_committed"])
+        self.assertIn("ready", args["memo"])
+        self.assertFalse(self.ack_api._PENDING_ONLY.intersection(args["memo"]))
+        with mock.patch.object(owner, "_write_memo", side_effect=AssertionError("ACK retry wrote")), \
+                mock.patch.object(owner, "atomic_write", side_effect=AssertionError("ACK retry wrote")):
+            self.ack_api.acknowledge_checkpoint(vars(owner), memo=args["memo"], admitted_status=args["admitted_status"])
+            view = self.ack_api.read_checkpoint_completed(vars(owner), memo=args["memo"], admitted_status=args["admitted_status"])
+        self.assertEqual(view["status"], "available")
+        self.assertEqual(view["batch"]["batch_sha256"], receipt["source_batch_sha256"])
 
     def check_pending(self, owner, args, indexed):
         adoption, effects = content.adoption, content.effects
