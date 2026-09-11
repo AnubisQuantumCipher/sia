@@ -34,6 +34,23 @@ def _parent_join(owner, package, historical):
 
 
 def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256, expected_root_sha256):
+    return _publish(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256,
+        finalize_effects=False)
+
+
+def finalize(owner, *, memo, admitted_status, directory, expected_manifest_sha256, expected_root_sha256):
+    """Publish/recover live effects and retain their exact committed receipt.
+
+    This does not acknowledge source cursors, clear notification fences or
+    publish readiness. A finalized retry validates actual files without writes.
+    """
+    return _publish(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256,
+        finalize_effects=True)
+
+
+def _publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256, expected_root_sha256, finalize_effects):
     """Recover the original live publisher from actual compact effects authority.
 
     Source slot, notification fence and effects WAL remain unacknowledged.
@@ -62,21 +79,28 @@ def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256
                 batch=batch, receipt=source_receipt, admitted_status=historical["status"],
                 seq=memo.get("pulse_seq"), candidate=artifacts["candidate"], transition=artifacts["transition"],
                 parent=parent_receipt)
-            pending = memo.get("controller_source_effects_pending")
-            if type(pending) is not dict:
+            committed_effects = memo.get("controller_source_effects_committed")
+            retained_pending = memo.get("controller_source_effects_pending")
+            if (retained_pending is None) == (committed_effects is None):
+                source.refuse("checkpoint-live-effects-phase")
+            supplied = retained_pending if committed_effects is None else committed_effects
+            if type(supplied) is not dict:
                 source.refuse("checkpoint-live-effects-missing")
-            pending_raw = adoption._wire(owner, pending)
+            projected_status = supplied["status"] if committed_effects is None else admitted_status
             prepared, handoff = adoption._status_handoff(owner, memo, historical["status"], artifacts,
-                pending["status"]["history"][-1][0])
+                projected_status["history"][-1][0])
             closure = batch["event_closure"]
             reconstructed = effects.prepare_checkpoint_pending(owner, admitted_status=historical["status"],
                 batch=batch, binding=binding, handoff=handoff, candidate=artifacts["candidate"], transition=artifacts["transition"],
                 closure_result=None if closure is None else effects._closure_publication_result(closure),
-                **{key: pending[key] for key in ("target_manifest", "corpus_generation", "sync_generation",
-                    "graph_generation", "status_generation", "status")},
-                content_fields={key: pending[key] for key in effects.CONTENT_FIELDS})
-            if adoption._wire(owner, reconstructed) != pending_raw:
+                **{key: supplied[key] for key in ("target_manifest", "corpus_generation", "sync_generation",
+                    "graph_generation", "status_generation")}, status=projected_status,
+                content_fields={key: supplied[key] for key in effects.CONTENT_FIELDS})
+            if retained_pending is not None and not same(reconstructed, retained_pending):
                 source.refuse("checkpoint-live-effects-replay-differs")
+            pending = reconstructed
+            pending_raw = adoption._wire(owner, pending)
+            committed_raw = None if committed_effects is None else adoption._wire(owner, committed_effects)
             inputs = artifacts["candidate"]["prepare_inputs"]
             candidate = {"schema": "sia-live-publication-candidate-v1", "prepare_inputs": inputs,
                 "prepare_inputs_sha256": artifacts["candidate"]["expected_prepare_inputs_sha256"],
@@ -92,11 +116,15 @@ def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256
                         or adoption._wire(owner, admitted_status) != status_raw \
                         or files["batch"].raw != raw or not same(memo.get("controller_source_pending"), source_receipt) \
                         or not same(memo.get("controller_source_live_pending"), binding) \
-                        or adoption._wire(owner, memo.get("controller_source_effects_pending")) != pending_raw \
+                        or (committed_raw is None and ("controller_source_effects_committed" in memo
+                            or adoption._wire(owner, memo.get("controller_source_effects_pending")) != pending_raw)) \
+                        or (committed_raw is not None and ("controller_source_effects_pending" in memo
+                            or adoption._wire(owner, memo.get("controller_source_effects_committed")) != committed_raw)) \
                         or not same(memo.get("pulse_history"), prepared["history"]) \
                         or "ready" in memo or "controller_source_committed" in memo \
                         or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending",
-                            "controller_source_effects_pending", "pulse_status_effects_pending", "live_loop_pending"}).intersection(memo) \
+                            "controller_source_effects_pending", "controller_source_effects_committed",
+                            "pulse_status_effects_pending", "live_loop_pending"}).intersection(memo) \
                         or not same(source._notification_marker(owner, memo), batch["notification_baseline_attempt"]):
                     source.refuse("checkpoint-live-source-authority-differs")
                 if adoption._wire(owner, files["memo"].value, memo=True) != adoption._wire(owner, memo, memo=True):
@@ -112,6 +140,8 @@ def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256
                 with owner["_live_files"]() as (live_files, live_current, _write):
                     actual = {key: live_files[key].value for key in ("candidate", "generation", "status")}
                     done = same(memo.get("live_loop_committed"), receipt)
+                    if committed_effects is not None and not done:
+                        source.refuse("checkpoint-live-effects-before-live")
                     if done:
                         valid = "live_loop_pending" not in memo and "pulse_status_effects_pending" not in memo \
                             and all(same(actual[key], value) for key, value in (
@@ -131,10 +161,43 @@ def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256
                     live_current()
                 return done
 
+            def finish_effects():
+                nonlocal committed_effects, committed_raw
+                if not phase():
+                    source.refuse("checkpoint-live-finalize-before-live")
+                observed = effects._live_generation(owner, source, transaction.live, memo, pending["status"], expected_binding=pending)
+                expected = effects._receipt_from_pending(owner, source, transaction.live, pending, observed)
+                effects._receipt_shape(owner, source, transaction.live, expected, batch, binding,
+                    retained_status=pending["status"], checkpoint=True)
+                if committed_effects is not None:
+                    if not same(committed_effects, expected):
+                        source.refuse("checkpoint-live-effects-receipt-differs")
+                    return False
+                if not finalize_effects:
+                    return False
+                updated = copy.deepcopy(memo)
+                updated.pop("controller_source_effects_pending")
+                updated["controller_source_effects_committed"] = expected
+                encoded = adoption._wire(owner, updated, memo=True)
+                owner["_memo_text"](updated)
+                authority()
+                parent_identity = files["memo"].parent_identity
+                owner["atomic_write"](owner["MEMO_PATH"], encoded.decode("utf-8"), mode=0o600)
+                written = observe("memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+                if written.parent_identity != parent_identity or written.raw != encoded:
+                    source.refuse("checkpoint-live-effects-memo-differs")
+                memo.clear()
+                memo.update(updated)
+                committed_effects = expected
+                committed_raw = adoption._wire(owner, expected)
+                phase()
+                return True
+
             owner["_require_status_admission_unchanged"](admitted_status)
             if phase():
+                changed = finish_effects()
                 named_current()
-                return False
+                return changed
             staged = copy.deepcopy(memo)
             staged["live_loop_pending"] = receipt
             final = owner["_live_final_memo"](staged, candidate, receipt)
@@ -157,6 +220,7 @@ def publish(owner, *, memo, admitted_status, directory, expected_manifest_sha256
             observed = effects._live_generation(owner, source, transaction.live, memo, pending["status"], expected_binding=pending)
             if observed["generation_sha256"] != generation["generation_sha256"]:
                 source.refuse("checkpoint-live-final-generation-differs")
+            finish_effects()
             named_current()
         authority()
         named_current()

@@ -910,17 +910,17 @@ def _receipt_from_pending(owner, source, live, pending, live_generation):
 
 
 def _receipt_shape(owner, source, live, value, batch, binding,
-                   *, retained_status=None):
+                   *, retained_status=None, checkpoint=False):
     _self_hash(source, live, value, "receipt_sha256",
-               _effect_keys(batch, RECEIPT_KEYS),
+               RECEIPT_KEYS | CONTENT_FIELDS if checkpoint else _effect_keys(batch, RECEIPT_KEYS),
                "source-effects-receipt")
     closure = batch["event_closure"]
-    target_versions = _content_targets(owner, source, live, value, batch, binding)
+    target_versions = _content_targets(owner, source, live, value, batch, binding, checkpoint=checkpoint)
     has_content = closure is not None or bool(target_versions)
     expected_status = _committed_status(
         None if closure is None else closure["closure_sha256"],
         value.get("gist_publication"))
-    schema = ("sia-controller-source-effects-committed-v2" if _v2(batch)
+    schema = ("sia-controller-source-effects-committed-v2" if checkpoint or _v2(batch)
               else "sia-controller-source-effects-committed-v1")
     if value["schema"] != schema \
             or value["status"] != expected_status \

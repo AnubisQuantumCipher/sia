@@ -59,6 +59,13 @@ class CheckpointCommit(unittest.TestCase):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.exercise(synchronize=True)
 
+    def test_compact_effects_finalize_and_durable_retry(self):
+        self.live_api = importlib.import_module("siacheckpointlive")
+        self.assertTrue(callable(getattr(self.live_api, "finalize", None)), "missing compact effects finalization")
+        self.finalize_effects = True
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
     def test_compact_effects_reload_after_durable_interruption(self):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.interrupt_effects = True
@@ -332,6 +339,37 @@ class CheckpointCommit(unittest.TestCase):
         with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("live retry wrote")), \
                 mock.patch.object(owner, "export_status", side_effect=AssertionError("live retry exported")):
             self.assertFalse(self.live_api.publish(vars(owner), **args))
+        if getattr(self, "finalize_effects", False):
+            original = copy.deepcopy(args["memo"])
+            write = owner.atomic_write
+            def interrupted(path, text, **kw):
+                result = write(path, text, **kw)
+                if path == owner.MEMO_PATH:
+                    raise OSError("controlled durable effects finalization")
+                return result
+            with mock.patch.object(owner, "atomic_write", side_effect=interrupted):
+                with self.assertRaisesRegex(OSError, "controlled durable effects finalization"):
+                    self.live_api.finalize(vars(owner), **args)
+            self.assertEqual(args["memo"], original)
+            args["memo"] = owner.load_memo()
+            receipt = args["memo"]["controller_source_effects_committed"]
+            self.assertNotIn("controller_source_effects_pending", args["memo"])
+            self.assertNotIn("ready", args["memo"])
+            self.assertEqual(receipt["state_sha256"], pending["state_sha256"])
+            self.assertEqual(receipt["source_batch_sha256"], pending["source_batch_sha256"])
+            with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("effects retry wrote")):
+                self.assertFalse(self.live_api.finalize(vars(owner), **args))
+                self.assertFalse(self.live_api.publish(vars(owner), **args))
+            corrupted = copy.deepcopy(args["memo"])
+            altered_receipt = corrupted["controller_source_effects_committed"]
+            altered_receipt["state_sha256"] = "0" * 64
+            altered_receipt["receipt_sha256"] = owner._live_own(altered_receipt, "receipt_sha256")
+            owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(corrupted), mode=0o600)
+            args["memo"] = owner.load_memo()
+            with self.assertRaises(ValueError) as refused:
+                self.live_api.finalize(vars(owner), **args)
+            self.assertEqual(refused.exception.reason, "checkpoint-live-effects-receipt-differs")
+            return
         altered = copy.deepcopy(view["generation"])
         def booleanize(value):
             if not isinstance(value, (dict, list)):
