@@ -341,8 +341,14 @@ def _attempt_dream(now, last_dream_day):
         memo = sialib.load_memo()
         if (sialib._controller_source_present(memo)
                 or sialib._controller_source_enabled()):
-            raise RuntimeError(
-                "legacy dream refused while controller-source authority is active")
+            # Empty source successors capture and publish their own bounded
+            # replay/gist inputs. Do not start a competing legacy workflow,
+            # invent a completed day, or mistake that ownership for failure.
+            sialib.log(
+                "scheduled maintenance deferred to controller idle pulses; "
+                "no legacy run or completion claimed")
+            return (_durable_dream_day(last_dream_day),
+                    time.monotonic() + DREAM_RETRY_SEC)
         sialib.dream()
         return _durable_dream_day(last_dream_day), 0.0
     except Exception as exc:

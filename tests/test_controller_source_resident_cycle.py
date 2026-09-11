@@ -757,6 +757,49 @@ class ResidentSourceCycleContract(unittest.TestCase):
                         pass
                 dream.assert_not_called()
 
+    def test_scheduled_controller_idle_deferral_is_not_failure_or_completion(self):
+        now = datetime.datetime(2026, 9, 6).replace(
+            hour=brainstem.DREAM_HOUR, minute=brainstem.DREAM_MIN)
+        for source_kind in (*SOURCE_AUTHORITY_KINDS, "configured"):
+            with self.subTest(source_kind=source_kind), ExitStack() as stack:
+                memo = stack.enter_context(self._source_authority(
+                    brainstem.sialib, source_kind))
+                stack.enter_context(mock.patch.object(
+                    brainstem.sialib, "load_memo", return_value=memo))
+                stack.enter_context(mock.patch.object(
+                    brainstem.sialib, "_controller_source_enabled",
+                    return_value=source_kind == "configured"))
+                dream = stack.enter_context(mock.patch.object(
+                    brainstem.sialib, "dream"))
+                write = stack.enter_context(mock.patch.object(
+                    brainstem.sialib, "_write_memo"))
+                pulse = stack.enter_context(mock.patch.object(
+                    brainstem, "_reserved_pulse"))
+                failure = stack.enter_context(mock.patch.object(
+                    brainstem, "_durable_failure_detail"))
+                log = stack.enter_context(mock.patch.object(
+                    brainstem.sialib, "log"))
+                stack.enter_context(mock.patch.object(
+                    brainstem, "_durable_dream_day", return_value="prior"))
+                stack.enter_context(mock.patch.object(
+                    brainstem.time, "monotonic", return_value=0.0))
+                last_day, next_attempt = brainstem._attempt_dream(now, "prior")
+                self.assertEqual(last_day, "prior")
+                self.assertEqual(next_attempt, brainstem.DREAM_RETRY_SEC)
+                dream.assert_not_called()
+                write.assert_not_called()
+                pulse.assert_not_called()
+                failure.assert_not_called()
+                messages = [call.args[0] for call in log.call_args_list]
+                self.assertIn(
+                    "scheduled maintenance deferred to controller idle pulses; "
+                    "no legacy run or completion claimed", messages)
+                self.assertFalse(any("FAILED" in row for row in messages))
+                self.assertFalse(brainstem._dream_due(
+                    now, last_day, next_attempt, monotonic_now=0.0))
+                self.assertTrue(brainstem._dream_due(
+                    now, last_day, next_attempt, monotonic_now=next_attempt))
+
     def test_daemon_loop_refreshes_sequence_from_durable_memo(self):
         initial = {"pulse_seq": 7, "sync_needed": False, "dream": {}}
         durable = {"pulse_seq": 12, "sync_needed": False, "dream": {}}
