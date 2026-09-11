@@ -41,7 +41,7 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
                         or _wire(owner, files["memo"].value, memo=True) != memo_raw or files["batch"].raw != raw \
                         or memo.get("controller_source_pending") != receipt \
                         or "controller_source_committed" in memo or "ready" in memo \
-                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending"}).intersection(memo) \
+                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending", "pulse_status_effects_pending"}).intersection(memo) \
                         or transaction.checkpoint._wire(owner, source._notification_marker(owner, memo)) \
                         != transaction.checkpoint._wire(owner, batch["notification_baseline_attempt"]):
                     source.refuse("checkpoint-adopted-authority-differs")
@@ -54,6 +54,15 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
                         transition=view["artifacts"]["transition"])
                     if _wire(owner, memo["controller_source_live_pending"]) != _wire(owner, expected):
                         source.refuse("checkpoint-adopted-live-binding-differs")
+                if "pulse_status_effects_pending" in memo:
+                    retained = owner["_pending_pulse_status_effects"](memo)
+                    if retained is None or "controller_source_live_pending" not in memo:
+                        source.refuse("checkpoint-adopted-status-binding-missing")
+                    prepared, handoff = _status_handoff(owner, memo, admitted_status,
+                        view["artifacts"], retained["history"][0])
+                    if _wire(owner, retained) != _wire(owner, handoff) \
+                            or _wire(owner, memo.get("pulse_history")) != _wire(owner, prepared["history"]):
+                        source.refuse("checkpoint-adopted-status-handoff-differs")
 
             authority()
             committed = batch["epoch"]["predecessor"]
@@ -175,6 +184,42 @@ def stage_live_binding(owner, *, memo, admitted_status, directory,
     publishes the pulse, effects, pages, readiness or a source acknowledgment.
     A crash after memo replacement is recovered using the actual reloaded memo.
     """
+    return _stage_pending_marker(owner, memo=memo, admitted_status=admitted_status,
+        directory=directory, expected_manifest_sha256=expected_manifest_sha256,
+        expected_root_sha256=expected_root_sha256, seq=seq)
+
+
+def _status_handoff(owner, memo, admitted_status, artifacts, started_at):
+    import siacontrollerstatus
+    binding = memo.get("controller_source_live_pending")
+    if type(binding) is not dict:
+        source.refuse("checkpoint-status-live-binding-missing")
+    batch, transition = artifacts["capture"], artifacts["transition"]
+    prepared = siacontrollerstatus.prepare_checkpoint(owner, admitted_status=admitted_status,
+        batch=batch, expected_batch_sha256=batch["batch_sha256"], source_live_pending=binding,
+        candidate=artifacts["candidate"], transition=transition,
+        expected_transition_sha256=transition["transition_sha256"], started_at=started_at)
+    handoff = {"v": 1, "publication_id": binding["publication_id"],
+               "effects": copy.deepcopy(prepared["effects"]), "history": copy.deepcopy(prepared["history"][-1])}
+    return prepared, handoff
+
+
+def stage_status_effects(owner, *, memo, admitted_status, directory,
+                         expected_manifest_sha256, expected_root_sha256, seq, started_at):
+    """Persist exact compact pulse counters/history before any closure effect.
+
+    The original generic status handoff remains pending, not published. Retry
+    requires its exact start-time premise and full reconstructed history.
+    """
+    if type(started_at) is not str:
+        source.refuse("checkpoint-status-started-at")
+    return _stage_pending_marker(owner, memo=memo, admitted_status=admitted_status,
+        directory=directory, expected_manifest_sha256=expected_manifest_sha256,
+        expected_root_sha256=expected_root_sha256, seq=seq, started_at=started_at)
+
+
+def _stage_pending_marker(owner, *, memo, admitted_status, directory,
+                          expected_manifest_sha256, expected_root_sha256, seq, started_at=None):
     if type(seq) is not int or seq < 0 or seq > owner["MAX_JSON_SAFE_INTEGER"] or memo.get("pulse_seq") != seq:
         source.refuse("checkpoint-live-binding-sequence")
     references = dict(owner)
@@ -197,11 +242,24 @@ def stage_live_binding(owner, *, memo, admitted_status, directory,
             batch=artifacts["capture"], receipt=view["receipt"], admitted_status=admitted_status,
             seq=seq, candidate=artifacts["candidate"], transition=artifacts["transition"])
         updated = copy.deepcopy(memo)
-        updated["controller_source_live_pending"] = marker
+        key = "controller_source_live_pending"
+        if started_at is None:
+            updated[key] = marker
+        else:
+            key = "pulse_status_effects_pending"
+            prepared, handoff = _status_handoff(owner, memo, admitted_status, artifacts, started_at)
+            if key in memo:
+                if _wire(owner, memo[key]) != _wire(owner, handoff) \
+                        or _wire(owner, memo.get("pulse_history")) != _wire(owner, prepared["history"]):
+                    source.refuse("checkpoint-status-retry-differs")
+            elif memo.get("pulse_history") != admitted_status["history"]:
+                source.refuse("checkpoint-status-history-authority")
+            updated["pulse_history"] = copy.deepcopy(prepared["history"])
+            updated[key] = handoff
         updated_raw = _wire(owner, updated, memo=True)
         owner["_memo_text"](updated)
         unchanged()
-        if "controller_source_live_pending" in memo:
+        if key in memo:
             named_current()
             return False
         # Rejoin the actual retained package immediately before memo mutation;
