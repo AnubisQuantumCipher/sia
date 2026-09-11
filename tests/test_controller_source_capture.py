@@ -628,4 +628,3 @@ class ControllerSourceCapture(unittest.TestCase):
             self.assert_named_refusal(self.capture)
         self.assertTrue(reached)
         self.assert_inert(before)
-

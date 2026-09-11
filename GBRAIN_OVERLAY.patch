@@ -5,7 +5,7 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 @@ -457,6 +457,24 @@ async function main() {
    const { cliOpts, rest: args } = parseGlobalFlags(rawArgs);
    setCliOptions(cliOpts);
- 
+
 +  let command = args[0];
 +  const subArgs = args.slice(1);
 +  const preparedCall = command === 'call' && !hasHelpFlag(subArgs)
@@ -30,7 +30,7 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 @@ -471,8 +489,6 @@ async function main() {
      }
    }
- 
+
 -  let command = args[0];
 -
    if (!command || command === '--help' || command === '-h') {
@@ -39,25 +39,25 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 @@ -501,8 +517,6 @@ async function main() {
      maybeEmitBackupNag(command, { quiet: getCliOptions().quiet === true });
    }
- 
+
 -  const subArgs = args.slice(1);
 -
    // DX alias: `ask` is a natural-language alias for `query`
    if (command === 'ask') {
      command = 'query';
 @@ -629,7 +643,7 @@ async function main() {
- 
+
    // CLI-only commands
    if (CLI_ONLY.has(command)) {
 -    await handleCliOnly(command, subArgs);
 +    await handleCliOnly(command, subArgs, preparedCall);
      return;
    }
- 
+
 @@ -2003,7 +2017,11 @@ function refuseThinClient(command: string, mcpUrl: string): never {
    process.exit(1);
  }
- 
+
 -async function handleCliOnly(command: string, args: string[]) {
 +async function handleCliOnly(command: string, args: string[], preparedCall?: import('./commands/call.ts').PreparedCall) {
 +  if (command === 'call' && preparedCall?.noMigrate) {
@@ -90,7 +90,7 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 @@ -3594,7 +3614,7 @@ async function connectMountEngine(brainId: string): Promise<BrainEngine> {
    return handle.engine;
  }
- 
+
 -async function connectEngine(opts?: { probeOnly?: boolean }): Promise<BrainEngine> {
 +async function connectEngine(opts?: { probeOnly?: boolean; forceHost?: boolean }): Promise<BrainEngine> {
    // Brain axis: resolve WHICH DATABASE this invocation targets before touching
@@ -105,11 +105,11 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 +    ? 'host'
 +    : resolveBrainId(getCliOptions().brain);
    if (brainId !== 'host') return connectMountEngine(brainId);
- 
+
    const config = loadConfig();
 @@ -3628,11 +3650,12 @@ async function connectEngine(opts?: { probeOnly?: boolean }): Promise<BrainEngin
    configureGateway(buildGatewayConfig(config));
- 
+
    const { createEngine } = await import('./core/engine-factory.ts');
 -  const engine = await createEngine(toEngineConfig(config));
 +  const engineConfig = { ...toEngineConfig(config), probe_only: opts?.probeOnly === true };
@@ -119,7 +119,7 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
    const { connectWithRetry } = await import('./core/db.ts');
 -  await connectWithRetry(engine, toEngineConfig(config), { noRetry });
 +  await connectWithRetry(engine, engineConfig, { noRetry });
- 
+
    // v0.30.1 (Codex X1 / C2): probeOnly skips both hasPendingMigrations() probe
    // AND initSchema(). Used by `get_health` MCP op + `gbrain upgrade --status`
 @@ -3927,7 +3950,7 @@ ADMIN
@@ -130,7 +130,7 @@ index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737
 +  call [flags] <tool> ['<json>']     Raw tool invocation (--source; verifier: --no-migrate --params-file)
    version                            Version info
    --tools-json                       Tool discovery (JSON)
- 
+
 diff --git a/src/commands/call.ts b/src/commands/call.ts
 index b4900d9c8091ade6f93ff0a336a5a62cde6e74c1..16b2e71f279766361fdc7b00b29af1b7359f8616 100644
 --- a/src/commands/call.ts
@@ -141,7 +141,7 @@ index b4900d9c8091ade6f93ff0a336a5a62cde6e74c1..16b2e71f279766361fdc7b00b29af1b7
  import { writeStdoutFinal } from '../core/cli-force-exit.ts';
 +import { closeSync, constants, fstatSync, openSync, readSync, type BigIntStats } from 'fs';
 +import { validatePageProjectionRequest } from '../core/page-projection.ts';
- 
+
 -/**
 - * `gbrain call <tool> <json>` — trusted local op-dispatch surface.
 - *
@@ -281,7 +281,7 @@ index b4900d9c8091ade6f93ff0a336a5a62cde6e74c1..16b2e71f279766361fdc7b00b29af1b7
 +    if (arg.startsWith('--')) throw new Error(`unknown flag ${arg} for 'gbrain call'`);
 +    positional.push(arg);
    }
- 
+
 -  const tool = rest[0];
 -  const jsonStr = rest[1];
 -
@@ -317,7 +317,7 @@ index b4900d9c8091ade6f93ff0a336a5a62cde6e74c1..16b2e71f279766361fdc7b00b29af1b7
    }
 +  return { tool, params: parsed as Record<string, unknown>, explicitSource, noMigrate: false };
 +}
- 
+
 -  const params = jsonStr ? JSON.parse(jsonStr) : {};
 +/**
 + * `gbrain call <tool> <json>` — trusted local op-dispatch surface.
@@ -365,7 +365,7 @@ index 1013a99394f7aaf2a9ca31f4a93c1e4cd2627216..bb2b16bcd111f5b93aebed91ee51b38b
 +    if (jsonMode) process.stdout.write(JSON.stringify({ action: 'extract_stale_done', links_created: 0, timeline_created: 0, pages_processed: 0, stale_remaining: 0, budget_hit: false, skipped_missing_target: 0, skipped_cross_source: 0 }) + '\n'); else console.log('No stale pages — extraction is up to date.');
      return { linksCreated: 0, timelineCreated: 0, pagesProcessed: 0, staleRemaining: 0 };
    }
- 
+
 diff --git a/src/commands/import.ts b/src/commands/import.ts
 index 8b6dfe23d5a029ce20afd64f148c6c8a94bff76c..9bf02e604c4abf3cc52ae58084f65ca8b9f90cc7 100644
 --- a/src/commands/import.ts
@@ -400,7 +400,7 @@ index 8b6dfe23d5a029ce20afd64f148c6c8a94bff76c..9bf02e604c4abf3cc52ae58084f65ca8
            console.error('');
            console.error(e.userMessage);
 @@ -689,7 +695,7 @@ export async function runImport(
- 
+
    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
    if (jsonOutput) {
 -    console.log(JSON.stringify({
@@ -424,7 +424,7 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
 @@ -500,6 +502,11 @@ export interface SyncOpts {
    onProgress?: (p: { phase: string; bankedFiles?: number }) => void;
  }
- 
+
 +function syncInfo(opts: SyncOpts, message: string): void {
 +  if (opts.jsonOutput) serr(message);
 +  else slog(message);
@@ -444,7 +444,7 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
          `advancing to HEAD on completion.`,
 @@ -1759,7 +1766,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
    }
- 
+
    if (opts.includeGitignored) {
 -    slog(
 +    syncInfo(opts,
@@ -468,7 +468,7 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
          );
 @@ -1977,7 +1984,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
    }
- 
+
    if ((versionMismatch || versionNeverSet) && lastCommit === headCommit) {
 -    slog(
 +    syncInfo(opts,
@@ -476,7 +476,7 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
        `Forcing full re-chunk pass (git HEAD unchanged but pipeline version advanced).`,
      );
 @@ -2132,15 +2139,15 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
- 
+
    // Dry run
    if (opts.dryRun) {
 -    slog(`Sync dry run: ${lastCommit.slice(0, 8)}..${headCommit.slice(0, 8)}`);
@@ -516,13 +516,13 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
        }
      } catch { /* ignore */ }
 @@ -2281,7 +2288,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
- 
+
    const noEmbed = opts.noEmbed || totalChanges > 100;
    if (totalChanges > 100) {
 -    slog(`Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
 +    syncInfo(opts, `Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
    }
- 
+
    // v0.42.x (#1794): we have real work — persist the PIN now so a crash before
 @@ -3749,7 +3756,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
        // stale sweep — never trust queue.add's row blind.
@@ -549,7 +549,7 @@ index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee
 -    slog(`Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
 +    syncInfo(opts, `Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
    }
- 
+
    if (malformedSkipped.length > 0) {
 @@ -3927,13 +3934,13 @@ async function performFullSync(
      if (opts.exclude && opts.exclude.length > 0) {
@@ -625,7 +625,7 @@ index 34c87357ad570be867086475c0d4de8b2a90e067..6f028f1b6823c2aeaea474d030845a1b
 @@ -333,18 +333,20 @@ export async function connect(config: EngineConfig): Promise<boolean> {
    }
  }
- 
+
 -export async function disconnect(): Promise<void> {
 +export async function disconnect(opts: { audit?: boolean } = {}): Promise<void> {
    // v0.41.25.0 (#1570) — instrument every disconnect call site so v0.41.26
@@ -683,7 +683,7 @@ index 3c827f2d2ebb9578f07dbfc4253f02775ad8f694..2f994e64f22bd31045081e28923c0e10
 @@ -259,6 +260,21 @@ const get_page: Operation = {
    cliHints: { name: 'get', positional: ['slug'] },
  };
- 
+
 +const get_page_projection: Operation = {
 +  name: 'get_page_projection',
 +  description: `Trusted-local post-sync verifier for 1-${PAGE_PROJECTION_MAX_TARGETS} exact pages in one concrete source. It parses each caller-supplied raw Markdown target with gbrain's canonical parser, compares its logical content digest with the current indexed projection and stored content_hash, and returns one closed result row per target plus all_match. Missing/deleted/invalid/mismatched targets remain in the result with projection_match=false. This operation performs no retrieval bookkeeping or application writes. Invoke only through the dedicated sealed-manifest projection call on the brain host.`,
@@ -705,7 +705,7 @@ index 3c827f2d2ebb9578f07dbfc4253f02775ad8f694..2f994e64f22bd31045081e28923c0e10
 @@ -1440,10 +1456,10 @@ const capture: Operation = {
    },
  };
- 
+
 -// (Page CRUD quartet first, then the v0.26.5 destructive-guard ops:
 +// (Page CRUD + projection verifier first, then the destructive-guard ops:
  // page-level soft-delete recovery + admin purge, then capture.)
@@ -740,7 +740,7 @@ index 6d2a69d303f19a6c83f3c812e4ad441bea0b7be6..7316aa3ef0094a279ab57432032ca2a7
    // stdio is remote:true, so it is gate-subject like every other agent caller.
 @@ -102,7 +103,8 @@ async function visibleOpsForCaller(
    const scopes = ctx.auth?.scopes && ctx.auth.scopes.length > 0 ? ctx.auth.scopes : null;
- 
+
    return filterOpsForSurface(operations, ceiling).filter(op =>
 -    (canSeeLocalOnly || !op.localOnly)
 +    (ctx.remote === false || !op.cliOnly)
@@ -1135,7 +1135,7 @@ index 3347e06b2b1f38affa25e2066c4bd20e40f26932..61a5fffae5934b9f2bd5f7b80cb30c4d
 @@ -528,14 +528,11 @@ export async function dispatchToolCall(
      return unknownToolEnvelope(name, opts.allowedOps);
    }
- 
+
 -  // localOnly backstop at the SHARED layer (WP1/D7): localOnly ops reach the
 -  // operator's filesystem, so they dispatch only on the local stdio pipe.
 -  // Any non-stdio transport — both HTTP servers, and any future caller that
@@ -1151,7 +1151,7 @@ index 3347e06b2b1f38affa25e2066c4bd20e40f26932..61a5fffae5934b9f2bd5f7b80cb30c4d
 +  if (op.cliOnly || (op.localOnly && opts.transport !== 'stdio')) {
      return unknownToolEnvelope(name, opts.allowedOps);
    }
- 
+
 diff --git a/src/mcp/server.ts b/src/mcp/server.ts
 index c8ed3381a02024462dba5c5dcacad1754d822071..1ead3a94d1855f21cdb987d70644a8e714df832f 100644
 --- a/src/mcp/server.ts
@@ -1202,7 +1202,7 @@ index c8ed3381a02024462dba5c5dcacad1754d822071..1ead3a94d1855f21cdb987d70644a8e7
 +  if (gateDisabled.size === 0) return mcpOps;
 +  return mcpOps.filter(op => !gateDisabled.has(op.name));
  }
- 
+
  // ─── #4409: in-flight stdio RPC tracking ────────────────────────────────
 @@ -145,14 +145,15 @@ export async function startMcpServer(engine: BrainEngine, opts: { surface?: McpS
    // to pre-surface behavior), 'starter' (WP4 daily-driver set), or 'verbs'
@@ -1222,6 +1222,6 @@ index c8ed3381a02024462dba5c5dcacad1754d822071..1ead3a94d1855f21cdb987d70644a8e7
 +  const mcpOps = operations.filter(op => !op.cliOnly);
 +  const surfacedOps = filterOpsForSurface(mcpOps, surface);
 +  const allowedOps = surface === 'full' ? undefined : allowedOpNames(mcpOps, surface);
- 
+
    // WP3: strict-params schema emission, resolved ONCE at startup from the
    // FILE config plane only — stdio has no per-request list cycle, so a

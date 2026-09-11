@@ -88,4 +88,3 @@ class ControllerSourceInitialHistory(unittest.TestCase):
                 error = case.assert_named_refusal(case.capture, phase="admit")
             self.assertEqual(error.reason, "unbound-prior-source-history")
             case.assert_inert(before)
-

@@ -117,4 +117,3 @@ class ControllerSourcePublicationBoundary(unittest.TestCase):
                 else:
                     self.assertEqual(case.lib._read_pending_controller_source_batch(
                         memo=case.memo)["status"], "pending")
-

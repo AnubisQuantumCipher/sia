@@ -373,4 +373,3 @@ class ControllerSourceConfiguration(unittest.TestCase):
                             result = case.capture()
                             self.assert_receipt(case, result["configuration_receipt"])
                     self.assertTrue(reached, "actual complete source-batch " + boundary + " boundary was not exercised")
-

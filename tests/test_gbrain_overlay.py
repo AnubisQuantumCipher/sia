@@ -191,6 +191,12 @@ def _apply_arguments(fixture, target, patch=None, overlay_digest=None,
 
 
 class GbrainOverlayDeliveryContract(unittest.TestCase):
+    def test_overlay_artifact_has_no_trailing_whitespace(self):
+        # Empty context lines may omit the unified-diff space marker. Keep
+        # the artifact itself admissible to the committed-tree CI gate.
+        for number, line in enumerate(_read(OVERLAY_PATH).splitlines(), 1):
+            self.assertEqual(line, line.rstrip(), f"overlay line {number}")
+
     def test_sync_json_overlay_keeps_stdout_single_document(self):
         overlay = _read(OVERLAY_PATH)
         import_patch = overlay.split(
