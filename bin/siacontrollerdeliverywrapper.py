@@ -193,6 +193,60 @@ class _Admission:
                 _refuse("input-or-owner-changed")
 
 
+class PreparationAdmissionV1:
+    """Explicit compound preparation contract; never an _Admission fallback.
+
+    The closed slot roster bounds the aggregate without serializing another
+    copy of the complete batch and parent into one single-artifact envelope.
+    Every slot, including all nested occurrences, retains the original native
+    byte limit. No slots are copied until all originals have passed that cap.
+    This representation admission grants no storage or publication authority;
+    callers must still validate the batch and full independent parent identity.
+    """
+
+    schema = "sia-live-preparation-compound-v1"
+    _fields = ("batch", "previous_generation",
+               "expected_previous_generation_sha256")
+
+    def __init__(self, owner, supplied):
+        basis = _owner_basis(owner)
+        self.original_owner, self.supplied = owner, supplied
+        self.references = {name: owner[name] for name in _OWNER_REFERENCES}
+        self.owner = {**self.references, **basis["capacities"]}
+        self._limit = self.owner["MAX_STATE_JSON_BYTES"]
+        self.original = self._slots(basis, supplied)
+        self.basis = copy.deepcopy(basis)
+        self.admitted = copy.deepcopy(supplied)
+        self.owner.update({
+            "_SENSE_ORGAN": self.basis["source_organs"],
+            "LIVE_PUBLICATION_NON_CLAIMS": self.basis["live_publication_non_claims"],
+            "NOTIFY_BASELINE_ATTEMPT_KEY": self.basis["notification_key"],
+        })
+        self.current()
+
+    def _slots(self, basis, request):
+        _keys(request, self._fields, "preparation-compound-v1")
+        if type(request["batch"]) is not dict \
+                or type(request["previous_generation"]) is not dict:
+            _refuse("preparation-compound-v1-artifact-shape")
+        _pin(request["expected_previous_generation_sha256"])
+        return (source.native_bytes(self.owner, basis),
+                *(source.native_bytes(self.owner, request[key])
+                  for key in self._fields))
+
+    def current(self):
+        if self.owner.get("MAX_STATE_JSON_BYTES") != self._limit:
+            _refuse("input-or-owner-changed")
+        if any(self.original_owner.get(name) is not value
+               or self.owner.get(name) is not value
+               for name, value in self.references.items()):
+            _refuse("owner-pure-operation-changed")
+        for owner, request in ((self.original_owner, self.supplied),
+                               (self.owner, self.admitted)):
+            if self._slots(_owner_basis(owner), request) != self.original:
+                _refuse("input-or-owner-changed")
+
+
 def _fence(owner, view, marker):
     if marker is None:
         _keys(view, _VIEW_KEYS, "held-view")
