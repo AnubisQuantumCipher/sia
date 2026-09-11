@@ -262,12 +262,12 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
                          self.source.native_bytes(f.case.lib.__dict__, f.batch))
         return receipt
 
-    def test_real_sialib_candidate_dispatches_full_read_parent_to_v3_adapter(self):
+    def test_real_sialib_candidate_dispatches_full_read_parent_to_v4_adapter(self):
         with self.pending(nonidle=True) as f:
             before = self.capture_fixture.images(f)
             original_batch = copy.deepcopy(f.batch)
             reader = f.case.lib._read_committed_live_generation
-            adapter = self.adapter.prepare_inputs_v3
+            adapter = self.adapter.prepare_inputs_v4
             reads, calls = [], []
 
             def read_parent(**kwargs):
@@ -293,7 +293,7 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
 
             with self.no_recapture(f), mock.patch.object(
                     f.case.lib, "_read_committed_live_generation", side_effect=read_parent), \
-                    mock.patch.object(self.adapter, "prepare_inputs_v3", side_effect=adapt):
+                    mock.patch.object(self.adapter, "prepare_inputs_v4", side_effect=adapt):
                 candidate = f.case.producer._prepare_candidate(parent=True, admitted_status=f.status)
             self.assertTrue(calls)
             self.assertEqual(set(candidate), producer_tests.RESULT_KEYS)
@@ -315,7 +315,7 @@ class ControllerSourceV3LiveEffects(unittest.TestCase):
                 absent = self.capture_fixture.images(f)
                 adapter_called = self.forbidden("adapter before missing actual parent refusal")
                 with self.no_recapture(f), mock.patch.object(
-                        self.adapter, "prepare_inputs_v3", adapter_called), self.assertRaises(REFUSALS):
+                        self.adapter, "prepare_inputs_v4", adapter_called), self.assertRaises(REFUSALS):
                     f.case.producer._prepare_candidate(parent=True, admitted_status=f.status)
                 adapter_called.assert_not_called()
                 self.assertEqual(self.capture_fixture.images(f), absent)

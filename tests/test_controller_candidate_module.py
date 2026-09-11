@@ -74,7 +74,7 @@ class ControllerCandidateModule(unittest.TestCase):
         # child while leaving the file-size regression in the original core.
         self.assertFalse(any(
             isinstance(node, ast.Attribute) and node.attr in {
-                "prepare_inputs", "prepare_inputs_v3", "prepare_pulse"}
+                "prepare_inputs", "prepare_inputs_v3", "prepare_inputs_v4", "prepare_pulse"}
             for node in ast.walk(facade)))
 
     def test_actual_retained_batch_builds_inside_existing_owner_scopes_and_keeps_its_result(self):

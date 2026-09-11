@@ -136,7 +136,7 @@ def _marker(owner, source, live, batch, raw, admitted_status,
         # This pure replay treats the separately supplied marker as a
         # premise. Current storage authority belongs to the durable handoff
         # caller, which independently reads and joins the full generation.
-        expected_inputs = siacontrollerliveinput.prepare_inputs_v3(
+        expected_inputs = siacontrollerliveinput.prepare_inputs_v4(
             owner, batch=batch,
             previous_generation=batch["delivery_input"]["epoch_view"]["parent_generation"],
             expected_previous_generation_sha256=marker["parent_generation_sha256"])

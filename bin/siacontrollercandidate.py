@@ -60,7 +60,7 @@ def prepare(owner, *, memo, admitted_status):
                 phase="live-prepare")
     try:
         if batch.get("schema") == "sia-controller-source-batch-v3":
-            prepare_inputs = siacontrollerliveinput.prepare_inputs_v3(
+            prepare_inputs = siacontrollerliveinput.prepare_inputs_v4(
                 owner, batch=batch, previous_generation=generation,
                 expected_previous_generation_sha256=generation_sha256)
         else:

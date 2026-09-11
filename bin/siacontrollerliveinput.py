@@ -8,6 +8,8 @@ does not guess that a truncated or empty history is an incremental delta.
 The legacy entrypoint copies delivery history exactly from the committed
 parent. The additive v3 entrypoint uses the complete source-bound delivery
 envelope and requires the caller's independently admitted full generation.
+The v4 preparation entrypoint selects the separately versioned fixed-slot
+admission envelope without changing source-v3 semantics or single-artifact caps.
 Neither entrypoint acquires output receipts or executes the planned pulse.
 """
 
@@ -214,6 +216,30 @@ def prepare_inputs_v3(owner, *, batch, previous_generation,
     output, and represented replay never establishes current authority.
     """
     import siacontrollerdeliverywrapper as wrapper
+    return _prepare_inputs_v3(
+        owner, batch=batch, previous_generation=previous_generation,
+        expected_previous_generation_sha256=expected_previous_generation_sha256,
+        admission_type=wrapper._Admission)
+
+
+def prepare_inputs_v4(owner, *, batch, previous_generation,
+                      expected_previous_generation_sha256):
+    """Explicit compound admission with unchanged v3 source/parent semantics.
+
+    This entrypoint never retries a refused v3 preparation. The fixed-slot
+    contract preserves each artifact ceiling; all source, full-parent, idle,
+    intake and prepared-output validation below remains shared with v3.
+    No represented result establishes current publication authority.
+    """
+    import siacontrollerdeliverywrapper as wrapper
+    return _prepare_inputs_v3(
+        owner, batch=batch, previous_generation=previous_generation,
+        expected_previous_generation_sha256=expected_previous_generation_sha256,
+        admission_type=wrapper.PreparationAdmissionV1)
+
+
+def _prepare_inputs_v3(owner, *, batch, previous_generation,
+                       expected_previous_generation_sha256, admission_type):
     import siasourcebatch as source
 
     try:
@@ -221,10 +247,11 @@ def prepare_inputs_v3(owner, *, batch, previous_generation,
             "batch": batch, "previous_generation": previous_generation,
             "expected_previous_generation_sha256": expected_previous_generation_sha256,
         }
-        # The wrapper's native admission bounds the whole original request
-        # and pins its owner basis before any copy. Filesystem identities in
-        # the source envelope must never enter the live serializer.
-        admission = wrapper._Admission(owner, request)
+        # The explicitly selected native contract bounds all original inputs
+        # and pins the owner basis before copying: aggregate in v3, closed
+        # per-artifact slots in v4. Native filesystem identities never enter
+        # the live serializer.
+        admission = admission_type(owner, request)
         retained = admission.admitted["batch"]
         generation = admission.admitted["previous_generation"]
         pin = admission.admitted["expected_previous_generation_sha256"]
