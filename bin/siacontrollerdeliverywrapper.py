@@ -222,13 +222,14 @@ class PreparationAdmissionV1:
     """
 
     schema = "sia-live-preparation-compound-v1"
+    _references = _OWNER_REFERENCES
     _fields = ("batch", "previous_generation",
                "expected_previous_generation_sha256")
 
     def __init__(self, owner, supplied):
         basis = _owner_basis(owner)
         self.original_owner, self.supplied = owner, supplied
-        self.references = {name: owner[name] for name in _OWNER_REFERENCES}
+        self.references = {name: owner[name] for name in self._references}
         self.owner = {**self.references, **basis["capacities"]}
         self._limit = self.owner["MAX_STATE_JSON_BYTES"]
         self.original = self._slots(basis, supplied)
@@ -262,6 +263,17 @@ class PreparationAdmissionV1:
                                (self.owner, self.admitted)):
             if self._slots(_owner_basis(owner), request) != self.original:
                 _refuse("input-or-owner-changed")
+
+
+class CheckpointPreparationAdmissionV1(PreparationAdmissionV1):
+    """Same closed slots and caps, with checkpoint event operations pinned."""
+
+    _references = _CheckpointAdmission._references
+
+    def __init__(self, owner, supplied):
+        if type(owner) is not dict or any(not callable(owner.get(name)) for name in self._references[-2:]):
+            _refuse("checkpoint-event-operation-contract")
+        super().__init__(owner, supplied)
 
 
 def _fence(owner, view, marker):

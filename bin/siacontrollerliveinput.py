@@ -10,7 +10,9 @@ parent. The additive v3 entrypoint uses the complete source-bound delivery
 envelope and requires the caller's independently admitted full generation.
 The v4 preparation entrypoint selects the separately versioned fixed-slot
 admission envelope without changing source-v3 semantics or single-artifact caps.
-Neither entrypoint acquires output receipts or executes the planned pulse.
+The checkpoint entrypoint explicitly validates compact capture/delta bindings
+before extracting its cumulative intake; it does not authenticate durable roots.
+None of these entrypoints acquires output receipts or executes the planned pulse.
 """
 
 import copy
@@ -93,14 +95,15 @@ def compose(*, frame, previous_state):
     return detached
 
 
-def _idle_inputs(batch, basis, *, allow_v3=False):
+def _idle_inputs(batch, basis, *, allow_v3=False, allow_checkpoint=False):
     """Share retained idle semantics without relabeling a source schema."""
     idle, gist_inputs = False, None
     if batch.get("schema") == "sia-controller-source-batch-v1":
         if "idle_input" in batch:
             _refuse("legacy-idle-input")
     elif batch.get("schema") == "sia-controller-source-batch-v2" \
-            or allow_v3 and batch.get("schema") == "sia-controller-source-batch-v3":
+            or allow_v3 and batch.get("schema") == "sia-controller-source-batch-v3" \
+            or allow_checkpoint and batch.get("schema") == "sia-controller-source-checkpoint-capture-v3":
         returns = batch.get("source_returns")
         if type(returns) is not dict or type(returns.get("runs")) is not list \
                 or not returns["runs"] or "idle_input" not in batch \
@@ -238,8 +241,24 @@ def prepare_inputs_v4(owner, *, batch, previous_generation,
         admission_type=wrapper.PreparationAdmissionV1)
 
 
+def prepare_inputs_checkpoint(owner, *, batch, previous_generation,
+                              expected_previous_generation_sha256):
+    """Prepare the real pulse request from a validated compact capture.
+
+    The full parent generation and its independent pin remain caller premises.
+    This pure operation replays source/delta/delivery bindings, not durable
+    root authority, and neither publishes nor acknowledges the capture.
+    Each original artifact retains the explicit fixed-slot admission ceiling.
+    """
+    import siacontrollerdeliverywrapper as wrapper
+    return _prepare_inputs_v3(
+        owner, batch=batch, previous_generation=previous_generation,
+        expected_previous_generation_sha256=expected_previous_generation_sha256,
+        admission_type=wrapper.CheckpointPreparationAdmissionV1, checkpoint=True)
+
+
 def _prepare_inputs_v3(owner, *, batch, previous_generation,
-                       expected_previous_generation_sha256, admission_type):
+                       expected_previous_generation_sha256, admission_type, checkpoint=False):
     import siasourcebatch as source
 
     try:
@@ -255,11 +274,16 @@ def _prepare_inputs_v3(owner, *, batch, previous_generation,
         retained = admission.admitted["batch"]
         generation = admission.admitted["previous_generation"]
         pin = admission.admitted["expected_previous_generation_sha256"]
+        schema = "sia-controller-source-checkpoint-capture-v3" if checkpoint else "sia-controller-source-batch-v3"
         if type(retained) is not dict \
-                or retained.get("schema") != "sia-controller-source-batch-v3" \
+                or retained.get("schema") != schema \
                 or type(generation) is not dict or not live._digest(pin):
             _refuse("v3-source-and-full-parent-required")
-        source.validate_batch(owner, retained, retained.get("batch_sha256"))
+        if checkpoint:
+            import siasourcecheckpoint
+            siasourcecheckpoint.validate_capture(owner, retained, retained.get("batch_sha256"))
+        else:
+            source.validate_batch(owner, retained, retained.get("batch_sha256"))
         admission.current()
         view = retained["delivery_input"]["epoch_view"]
         if generation.get("generation_sha256") != pin \
@@ -271,15 +295,17 @@ def _prepare_inputs_v3(owner, *, batch, previous_generation,
         previous_state = generation["transition"]["state"]
         binding = retained["delivery_input"]["binding"]
         projection, epoch = retained["intake_projection"], retained["epoch"]
+        frame = projection["checkpoint"]["intake"] if checkpoint else projection["intake"]
+        frame_pin = live._sha(frame) if checkpoint else projection["intake_sha256"]
         basis = {
-            "intake": projection["intake"],
-            "intake_sha256": projection["intake_sha256"],
+            "intake": frame,
+            "intake_sha256": frame_pin,
             "policy": epoch["live_policy"],
             "policy_sha256": epoch["expected_live_policy_sha256"],
             "observed_at": retained["observed_at"],
         }
-        idle, gist_inputs = _idle_inputs(retained, basis, allow_v3=True)
-        intake = compose(frame=projection["intake"], previous_state=previous_state)
+        idle, gist_inputs = _idle_inputs(retained, basis, allow_v3=not checkpoint, allow_checkpoint=checkpoint)
+        intake = compose(frame=frame, previous_state=previous_state)
         result = {
             "intake": intake, "expected_intake_sha256": live._sha(intake),
             "deliveries": copy.deepcopy(binding["deliveries"]),
