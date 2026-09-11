@@ -41,11 +41,19 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
                         or _wire(owner, files["memo"].value, memo=True) != memo_raw or files["batch"].raw != raw \
                         or memo.get("controller_source_pending") != receipt \
                         or "controller_source_committed" in memo or "ready" in memo \
-                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending"}).intersection(memo) \
+                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending"}).intersection(memo) \
                         or transaction.checkpoint._wire(owner, source._notification_marker(owner, memo)) \
                         != transaction.checkpoint._wire(owner, batch["notification_baseline_attempt"]):
                     source.refuse("checkpoint-adopted-authority-differs")
                 current()
+
+                if "controller_source_live_pending" in memo:
+                    expected = publication._live_binding_marker(owner, source, memo=memo,
+                        batch=batch, receipt=receipt, admitted_status=admitted_status,
+                        seq=memo.get("pulse_seq"), candidate=view["artifacts"]["candidate"],
+                        transition=view["artifacts"]["transition"])
+                    if _wire(owner, memo["controller_source_live_pending"]) != _wire(owner, expected):
+                        source.refuse("checkpoint-adopted-live-binding-differs")
 
             authority()
             committed = batch["epoch"]["predecessor"]
@@ -157,3 +165,64 @@ def adopt_root(owner, *, memo, admitted_status, directory, expected_manifest_sha
             memo.update(updated)
             named_current()
             return True
+
+
+def stage_live_binding(owner, *, memo, admitted_status, directory,
+                       expected_manifest_sha256, expected_root_sha256, seq):
+    """Durably bind an adopted compact source to its replay-verified live pulse.
+
+    Only the original generic source/live pending marker is written. Nothing
+    publishes the pulse, effects, pages, readiness or a source acknowledgment.
+    A crash after memo replacement is recovered using the actual reloaded memo.
+    """
+    if type(seq) is not int or seq < 0 or seq > owner["MAX_JSON_SAFE_INTEGER"] or memo.get("pulse_seq") != seq:
+        source.refuse("checkpoint-live-binding-sequence")
+    references = dict(owner)
+    original_memo, original_status = _wire(owner, memo, memo=True), _wire(owner, admitted_status)
+    args = dict(memo=memo, admitted_status=admitted_status, directory=directory,
+                expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256)
+    with owner["brainstem_owner"](), owner["corpus_owner"](), publication._files(owner, source) as (files, observe, current, named_current):
+        def unchanged():
+            if any(owner.get(name) is not value for name, value in references.items()) \
+                    or _wire(owner, memo, memo=True) != original_memo \
+                    or _wire(owner, admitted_status) != original_status:
+                source.refuse("checkpoint-live-binding-input-changed")
+            owner["_require_status_admission_unchanged"](admitted_status)
+            current()
+
+        unchanged()
+        view = read_pending(owner, **args)
+        artifacts = view["package"]["artifacts"]
+        marker = publication._live_binding_marker(owner, source, memo=memo,
+            batch=artifacts["capture"], receipt=view["receipt"], admitted_status=admitted_status,
+            seq=seq, candidate=artifacts["candidate"], transition=artifacts["transition"])
+        updated = copy.deepcopy(memo)
+        updated["controller_source_live_pending"] = marker
+        updated_raw = _wire(owner, updated, memo=True)
+        owner["_memo_text"](updated)
+        unchanged()
+        if "controller_source_live_pending" in memo:
+            named_current()
+            return False
+        # Rejoin the actual retained package immediately before memo mutation;
+        # the outer ordinary leases stay held across both observations.
+        verified = read_pending(owner, **args)
+        if _wire(owner, verified["package"]["manifest"]) != _wire(owner, view["package"]["manifest"]) \
+                or _wire(owner, updated, memo=True) != updated_raw:
+            source.refuse("checkpoint-live-binding-image-changed")
+        unchanged()
+        parent = files["memo"].parent_identity
+        owner["atomic_write"](owner["MEMO_PATH"], updated_raw.decode("utf-8"), mode=0o600)
+        actual = observe("memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if actual.parent_identity != parent or actual.raw != updated_raw:
+            source.refuse("checkpoint-live-binding-memo-image-differs")
+        unchanged()
+        read_pending(owner, **{**args, "memo": updated})
+        unchanged()
+        if _wire(owner, updated, memo=True) != updated_raw:
+            source.refuse("checkpoint-live-binding-image-changed")
+        named_current()
+        memo.clear()
+        memo.update(updated)
+        named_current()
+        return True
