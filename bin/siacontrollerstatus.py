@@ -64,7 +64,7 @@ def _receipt(owner, source, batch, raw):
 
 def _marker(owner, source, live, batch, raw, admitted_status,
             source_live_pending, candidate, transition,
-            expected_transition_sha256):
+            expected_transition_sha256, *, checkpoint=False):
     import siacontrollerliveinput
 
     validation_memo = {
@@ -132,7 +132,12 @@ def _marker(owner, source, live, batch, raw, admitted_status,
     if (marker["parent_generation_sha256"] is None) \
             != (previous_sha256 is None):
         _refuse("parent-generation-pin")
-    if batch["schema"] == "sia-controller-source-batch-v3":
+    if checkpoint:
+        expected_inputs = siacontrollerliveinput.prepare_inputs_checkpoint(
+            owner, batch=batch,
+            previous_generation=batch["delivery_input"]["epoch_view"]["parent_generation"],
+            expected_previous_generation_sha256=marker["parent_generation_sha256"])
+    elif batch["schema"] == "sia-controller-source-batch-v3":
         # This pure replay treats the separately supplied marker as a
         # premise. Current storage authority belongs to the durable handoff
         # caller, which independently reads and joins the full generation.
@@ -178,6 +183,30 @@ def prepare(owner, *, admitted_status, batch, expected_batch_sha256,
             source_live_pending, candidate, transition,
             expected_transition_sha256, started_at):
     """Return detached pulse effects/history/workspace or refuse wholly."""
+    return _prepare(owner, admitted_status=admitted_status, batch=batch,
+        expected_batch_sha256=expected_batch_sha256, source_live_pending=source_live_pending,
+        candidate=candidate, transition=transition,
+        expected_transition_sha256=expected_transition_sha256, started_at=started_at)
+
+
+def prepare_checkpoint(owner, *, admitted_status, batch, expected_batch_sha256,
+                       source_live_pending, candidate, transition,
+                       expected_transition_sha256, started_at):
+    """Project a fully validated compact capture; not durable authority.
+
+    Original counters, append-only admission semantics, workspace projection,
+    time rules and bounds are shared. Legacy prepare keeps its batch contract.
+    """
+    return _prepare(owner, admitted_status=admitted_status, batch=batch,
+        expected_batch_sha256=expected_batch_sha256, source_live_pending=source_live_pending,
+        candidate=candidate, transition=transition,
+        expected_transition_sha256=expected_transition_sha256, started_at=started_at,
+        checkpoint=True)
+
+
+def _prepare(owner, *, admitted_status, batch, expected_batch_sha256,
+             source_live_pending, candidate, transition,
+             expected_transition_sha256, started_at, checkpoint=False):
     import siasourcebatch as source
     import sialiveloop as live
 
@@ -217,7 +246,13 @@ def prepare(owner, *, admitted_status, batch, expected_batch_sha256,
         source_live_pending = admitted_values["source_live_pending"]
         candidate = admitted_values["candidate"]
         transition = admitted_values["transition"]
-        source.validate_batch(owner, batch, expected_batch_sha256)
+        if checkpoint:
+            import siasourcecheckpoint
+            if batch.get("schema") != "sia-controller-source-checkpoint-capture-v3":
+                _refuse("checkpoint-capture-schema")
+            siasourcecheckpoint.validate_capture(owner, batch, expected_batch_sha256)
+        else:
+            source.validate_batch(owner, batch, expected_batch_sha256)
         if owner["_recoverable_status_integrity"](admitted_status) is None \
                 or admitted_status.get("version") != owner["VERSION"]:
             _refuse("admitted-status")
@@ -228,7 +263,7 @@ def prepare(owner, *, admitted_status, batch, expected_batch_sha256,
         _marker(
             owner, source, live, batch, raw, admitted_status,
             source_live_pending, candidate, transition,
-            expected_transition_sha256)
+            expected_transition_sha256, checkpoint=checkpoint)
         records, admissions = _events(batch)
 
         day = started_at[:10]
