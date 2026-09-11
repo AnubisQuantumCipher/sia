@@ -21,6 +21,26 @@ import siasourcebatch as source
 class AsciiJsonBudget(unittest.TestCase):
     owner = {"json": json, "math": math}
 
+    def test_plain_ascii_avoids_escape_counting_without_bypassing_budget(self):
+        class ForbiddenEscapeWalk:
+            def __iter__(self):
+                raise AssertionError('plain ASCII entered escape counting')
+
+        value = {'publication_id': 'abc123', 'status': 'available',
+                 'rows': ['ordinary text', '', 'x' * 10000]}
+        for ascii_only in (False, True):
+            expected = len(json.dumps(value, sort_keys=True, separators=(',', ':'),
+                                      ensure_ascii=ascii_only).encode())
+            with mock.patch.object(live, '_JSON_SHORT_ESCAPES', ForbiddenEscapeWalk()):
+                self.assertEqual(source._json_size(
+                    self.owner, value, expected, ascii_only=ascii_only), expected)
+                with self.assertRaises(source.SourceBatchRefusal):
+                    source._json_size(self.owner, value, expected - 1,
+                                      ascii_only=ascii_only)
+                self.assertEqual(live._size(value, expected), expected)
+                with self.assertRaises(live.LiveLoopRefusal):
+                    live._size(value, expected - 1)
+
     def test_ascii_payloads_do_not_enter_per_character_python_path(self):
         value = {"document": "".join(map(chr, range(128))) * 100,
                  "nested": ["ordinary text", "\\\"quoted\\\"", "line\nline"]}

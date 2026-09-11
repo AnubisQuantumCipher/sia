@@ -130,6 +130,7 @@ def _token(value, maximum=activation.MAX_USE_ID_BYTES, pattern=_TOKEN):
 
 
 _JSON_SHORT_ESCAPES = '"\\\b\f\n\r\t'
+_JSON_ASCII_ESCAPABLE = re.compile(r'["\\\x00-\x1f\x7f]')
 _JSON_LONG_ASCII_ESCAPES = tuple(
     chr(point) for point in range(0x20)
     if chr(point) not in _JSON_SHORT_ESCAPES)
@@ -146,6 +147,8 @@ def _count_ascii_json_string(item, add, *, ascii_only=False):
         return False
     add(len('""'))
     add(len(item))
+    if _JSON_ASCII_ESCAPABLE.search(item) is None:
+        return True
     for character in _JSON_SHORT_ESCAPES:
         add(item.count(character))
     for character in _JSON_LONG_ASCII_ESCAPES:
