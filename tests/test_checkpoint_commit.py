@@ -41,6 +41,13 @@ class CheckpointCommit(unittest.TestCase):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.exercise(synchronize=True)
 
+    def test_historical_parent_reader_survives_current_live_file_replacement(self):
+        import siacheckpointparent
+        self.assertTrue(callable(getattr(siacheckpointparent, "hold_live", None)), "missing retained parent reader")
+        self.read_parent_live = True
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
     def test_compact_effects_reload_after_durable_interruption(self):
         self.stage_api = importlib.import_module("siacheckpointeffects")
         self.interrupt_effects = True
@@ -192,6 +199,9 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "current graph generation"):
                 owner._read_committed_live_generation(memo=args["memo"], admitted_status=args["admitted_status"])
             self.assertEqual(pending["source_batch_sha256"], before["controller_source_pending"]["batch_sha256"])
+            if getattr(self, "read_parent_live", False):
+                self.historical_case(owner, args, old_live)
+                return
             if getattr(self, "check_parent_live", False):
                 import siacheckpointparent
                 view = content.adoption.read_pending(vars(owner), **args)
@@ -222,6 +232,46 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaises(ValueError) as refused:
                 self.stage_api.stage(vars(owner), **args)
             self.assertEqual(refused.exception.reason, "checkpoint-parent-graph-generation")
+
+    def historical_case(self, owner, args, old_live):
+        import siacheckpointparent
+        view = content.adoption.read_pending(vars(owner), **args)
+        committed = view["package"]["artifacts"]["capture"]["epoch"]["predecessor"]
+        inputs = dict(directory=args["directory"], committed=committed)
+        paths = {"status": owner.STATUS_PATH, "candidate": owner.LIVE_CANDIDATE_PATH,
+                 "generation": owner.LIVE_STATE_PATH, "graph": owner.GRAPH_PATH}
+        for path in paths.values():
+            owner.atomic_write(path, "{}", mode=0o600)
+        before_memo = owner.load_memo()
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("historical reader wrote")):
+            with siacheckpointparent.hold_live(vars(owner), **inputs) as historical:
+                self.assertEqual(historical["status"], owner.json.loads(old_live["status"]))
+                self.assertEqual(historical["generation"], owner.json.loads(old_live["generation"]))
+                self.assertEqual(historical["candidate"], owner.json.loads(old_live["candidate"]))
+                self.assertEqual(historical["authority"], "historical-parent-not-current-readiness")
+        self.assertEqual(owner.load_memo(), before_memo)
+        with self.assertRaises(RuntimeError):
+            owner._read_committed_live_generation(memo=args["memo"], admitted_status=args["admitted_status"])
+        altered = copy.deepcopy(committed)
+        altered["live_generation_sha256"] = "0" * 64
+        with self.assertRaises(ValueError) as refused:
+            with siacheckpointparent.hold_live(vars(owner), **{**inputs, "committed": altered}):
+                pass
+        self.assertEqual(refused.exception.reason, "checkpoint-parent-live-archive-identity")
+        with self.assertRaises(ValueError) as refused:
+            with siacheckpointparent.hold_live(vars(owner), **inputs) as historical:
+                historical["generation"]["publication_id"] = "0" * 32
+        self.assertEqual(refused.exception.reason, "checkpoint-parent-live-archive-output-changed")
+        saved = next(Path(args["directory"]).glob("parent-candidate-*.json"))
+        with self.assertRaises(ValueError) as refused:
+            with siacheckpointparent.hold_live(vars(owner), **inputs):
+                owner.atomic_write(str(saved), old_live["candidate"].decode("utf-8") + " ", mode=0o600)
+        self.assertEqual(refused.exception.reason, "ack-file-generation-changed")
+        owner.atomic_write(str(saved), old_live["candidate"].decode("utf-8") + " ", mode=0o600)
+        with self.assertRaises(ValueError) as refused:
+            with siacheckpointparent.hold_live(vars(owner), **inputs):
+                pass
+        self.assertEqual(refused.exception.reason, "checkpoint-parent-live-archive-bytes")
 
     def check_pending(self, owner, args, indexed):
         adoption, effects = content.adoption, content.effects

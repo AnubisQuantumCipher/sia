@@ -1144,18 +1144,8 @@ def committed_receipt(owner, *, memo, admitted_status, retained_batch=None):
     return copy.deepcopy(receipt)
 
 
-def validate_archived_receipt(
-        owner, *, raw, retained_batch, memo, admitted_status,
-        expected_receipt_sha256, graph_artifact=None):
-    """Re-admit one canonical retained receipt after its memo compaction.
-
-    The original live-binding marker is deliberately retired by ACK.  The
-    immutable receipt retains every binding field used by ``_receipt_shape``;
-    this reader reconstructs only that validation view, then rejoins it to the
-    retained batch and the currently admitted graph, status and live files.
-    An explicit held graph artifact instead binds the graph bytes to this
-    exact receipt; status and live artifacts remain current and unchanged.
-    """
+def _archived_receipt_components(owner, *, raw, retained_batch, expected_receipt_sha256):
+    """Shared canonical receipt/source binding, without current-file claims."""
     import siasourcebatch as source
     import sialiveloop as live
 
@@ -1165,7 +1155,7 @@ def validate_archived_receipt(
     if type(expected_receipt_sha256) is not str \
             or _HEX.fullmatch(expected_receipt_sha256) is None:
         _refuse(source, "source-effects-archive-digest")
-    if type(memo) is not dict or type(retained_batch) is not dict:
+    if type(retained_batch) is not dict:
         _refuse(source, "source-effects-archive-authority")
     try:
         receipt = owner["_strict_json_loads"](
@@ -1199,6 +1189,23 @@ def validate_archived_receipt(
         "state_sha256": receipt["state_sha256"],
         "transition_sha256": receipt["transition_sha256"],
     }
+    return receipt, binding
+
+
+def validate_archived_receipt(
+        owner, *, raw, retained_batch, memo, admitted_status,
+        expected_receipt_sha256, graph_artifact=None):
+    """Rejoin a canonical archived receipt to current status/live authority.
+
+    An explicit held graph binds historical graph bytes to the same receipt;
+    status and live artifacts still must be current and unchanged.
+    """
+    import siasourcebatch as source
+    import sialiveloop as live
+    if type(memo) is not dict:
+        _refuse(source, "source-effects-archive-authority")
+    receipt, binding = _archived_receipt_components(owner, raw=raw,
+        retained_batch=retained_batch, expected_receipt_sha256=expected_receipt_sha256)
     status = owner["_require_status_admission_unchanged"](
         admitted_status)
     status_generation, retained_status = _status_generation_file(

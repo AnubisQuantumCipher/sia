@@ -1,6 +1,7 @@
 """Retain an actual predecessor graph before replacing the current graph."""
 
 import contextlib
+import copy
 import hashlib
 import os
 
@@ -8,6 +9,84 @@ import siasourceack as ack
 import siasourcebatch as source
 import siasourceeffects as effects
 import sialiveloop as live
+
+
+@contextlib.contextmanager
+def hold_live(owner, *, directory, committed):
+    """Hold archived parent evidence, never current readiness or source ACK.
+
+    The caller supplies an independently admitted predecessor identity. All
+    archive bytes are selected by that identity and its actual effects receipt.
+    No current memo, status, graph or live file is substituted or rewritten.
+    """
+    owner["_load_live_publication"]()
+    references = dict(owner)
+    committed_raw = source.native_bytes(owner, committed)
+    ack._committed_shape(source, committed)
+    with contextlib.ExitStack() as stack:
+        archive = ack._ArchiveSlot(owner, source, committed["source_batch_sha256"], archive_only=True)
+        stack.callback(archive.close)
+        if archive.state != "archive":
+            source.refuse("checkpoint-parent-source-not-archived")
+        receipt_file = ack._EffectsArchiveSlot(owner, source, committed["source_effects_receipt_sha256"], required=True)
+        stack.callback(receipt_file.close)
+        receipt, binding = effects._archived_receipt_components(owner, raw=receipt_file.raw,
+            retained_batch=archive.batch, expected_receipt_sha256=committed["source_effects_receipt_sha256"])
+        expected_live = receipt["live_generation"]
+        if receipt["source_batch_sha256"] != committed["source_batch_sha256"] \
+                or expected_live["generation_sha256"] != committed["live_generation_sha256"]:
+            source.refuse("checkpoint-parent-live-archive-identity")
+        graph_file, _expected = stack.enter_context(hold_graph(owner, directory=directory, committed=committed))
+        if graph_file.raw is None:
+            source.refuse("checkpoint-parent-graph-required")
+        graph = owner["_strict_json_loads"](graph_file.raw)
+        values, held = {}, []
+        for name, pin, raw_pin in (
+                ("status", expected_live["status_sha256"], receipt["status_generation"]["raw_sha256"]),
+                ("candidate", expected_live["candidate_sha256"], expected_live["candidate_raw_sha256"]),
+                ("generation", expected_live["generation_sha256"], expected_live["generation_raw_sha256"])):
+            source._hex(pin, "checkpoint-parent-live-pin")
+            path = os.path.join(directory, "parent-" + name + "-" + pin + ".json")
+            artifact = ack._HeldRaw(owner, source, path, owner["MAX_STATE_JSON_BYTES"], allow_absent=False)
+            stack.callback(artifact.close)
+            if hashlib.sha256(artifact.raw).hexdigest() != raw_pin:
+                source.refuse("checkpoint-parent-live-archive-bytes")
+            values[name] = owner["_strict_json_loads"](artifact.raw)
+            held.append(artifact)
+        status, candidate, generation = (values[name] for name in ("status", "candidate", "generation"))
+        effects._receipt_shape(owner, source, live, receipt, archive.batch, binding, retained_status=status)
+        if effects._status_generation_value(owner, source, live, status) != receipt["status_generation"] \
+                or owner["_live_replay_candidate"](candidate) != generation \
+                or candidate["status"] != status \
+                or any(generation[key] != expected_live[key] for key in (
+                    "publication_id", "candidate_sha256", "generation_sha256", "status_sha256")) \
+                or candidate["prepare_inputs_sha256"] != receipt["prepare_inputs_sha256"] \
+                or any(generation[key] != receipt[key] for key in ("state_sha256", "transition_sha256")):
+            source.refuse("checkpoint-parent-live-archive-replay")
+        owner["_live_graph_status"](status, graph)
+
+        def current():
+            if any(owner.get(name) is not value for name, value in references.items()) \
+                    or source.native_bytes(owner, committed) != committed_raw:
+                source.refuse("checkpoint-parent-live-archive-input-changed")
+            archive.current()
+            receipt_file.current()
+            graph_file.current()
+            for artifact in held:
+                artifact.current()
+
+        result = copy.deepcopy({"authority": "historical-parent-not-current-readiness",
+            "status": status, "candidate": candidate, "generation": generation,
+            "graph": graph, "receipt": receipt, "batch": archive.batch})
+        # Each original artifact remains independently capped; the held view
+        # is not a new serialized aggregate envelope or a readiness receipt.
+        originals = {name: source.native_bytes(owner, value) for name, value in result.items()}
+        current()
+        yield result
+        if set(result) != set(originals) \
+                or any(source.native_bytes(owner, value) != originals[name] for name, value in result.items()):
+            source.refuse("checkpoint-parent-live-archive-output-changed")
+        current()
 
 
 @contextlib.contextmanager
