@@ -55,6 +55,78 @@ class CheckpointDelta(unittest.TestCase):
         self.assertEqual(api.admit(self.owner, checkpoint=advanced,
                                    expected_checkpoint_sha256=digest(advanced)), advanced)
 
+    def test_delta_projection_retains_only_current_exact_associations(self):
+        checkpoint, delta, request = self.inputs()
+        expected = self.case.project(request)
+        with mock.patch.object(api.replay, "prepare", side_effect=AssertionError("whole-history replay")):
+            result = api.project_delta(
+                self.owner, checkpoint=checkpoint, expected_checkpoint_sha256=digest(checkpoint),
+                delta=delta, expected_delta_sha256=digest(delta))
+        self.assertEqual(result["schema"], "sia-event-delta-projection-v1")
+        self.assertEqual(result["status"], "prepared-not-authorized")
+        self.assertEqual(result["checkpoint"], self.advance(checkpoint, delta))
+        self.assertEqual(result["checkpoint_sha256"], digest(result["checkpoint"]))
+        self.assertEqual(result["parent_checkpoint_sha256"], digest(checkpoint))
+        self.assertEqual(result["delta_sha256"], digest(delta))
+        self.assertEqual(result["checkpoint"]["intake"], expected["intake"])
+        self.assertEqual(result["associations"], [
+            row for row in expected["associations"]
+            if row["source_returns_sha256"] == delta["entry"]["expected_source_returns_sha256"]])
+        self.assertEqual([row["status"] for row in result["associations"]],
+                         ["already-observed", "first-observation"])
+        self.assertNotIn("history", result)
+        self.assertEqual(result["non_claims"], list(api.PROJECTION_NON_CLAIMS))
+
+    def test_projection_empty_delta_keeps_checkpoint_without_associations(self):
+        checkpoint, delta, request = self.inputs()
+        delta["entry"] = self.case.entry({}, stamp=delta["observed_at"], batch_id="empty-projection")
+        result = api.project_delta(
+            self.owner, checkpoint=checkpoint, expected_checkpoint_sha256=digest(checkpoint),
+            delta=delta, expected_delta_sha256=digest(delta))
+        self.assertEqual(result["associations"], [])
+        self.assertEqual(result["checkpoint"]["intake"], checkpoint["intake"])
+
+    def test_projection_reserves_its_envelope_before_fold(self):
+        checkpoint, delta, request = self.inputs()
+        original = api.replay._reservation
+
+        def enlarged(*args):
+            skeleton, content = original(*args)
+            skeleton["associations"] = "x" * api.blocks.MAX_DOCUMENT_BYTES
+            return skeleton, content
+
+        with mock.patch.object(api.replay, "_reservation", side_effect=enlarged), \
+                mock.patch.object(api.replay, "_fold_entry", side_effect=AssertionError("oversized fold")):
+            with self.assertRaises(ValueError):
+                api.project_delta(
+                    self.owner, checkpoint=checkpoint, expected_checkpoint_sha256=digest(checkpoint),
+                    delta=delta, expected_delta_sha256=digest(delta))
+
+    def test_projection_changed_detached_associations_refuse(self):
+        checkpoint, delta, request = self.inputs()
+        original = api.json.loads
+
+        def changed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if isinstance(result, dict) and result.get("schema") == "sia-event-delta-projection-v1":
+                result["associations"].clear()
+            return result
+
+        with mock.patch.object(api.json, "loads", side_effect=changed):
+            with self.assertRaises(ValueError) as caught:
+                api.project_delta(
+                    self.owner, checkpoint=checkpoint, expected_checkpoint_sha256=digest(checkpoint),
+                    delta=delta, expected_delta_sha256=digest(delta))
+        self.assertIn("checkpoint-delta-input-or-output-changed", str(caught.exception))
+
+    def test_projection_wrong_pin_refuses_before_fold(self):
+        checkpoint, delta, request = self.inputs()
+        with mock.patch.object(api.replay, "_fold_entry", side_effect=AssertionError("unbound fold")):
+            with self.assertRaises(ValueError):
+                api.project_delta(
+                    self.owner, checkpoint=checkpoint, expected_checkpoint_sha256=digest(checkpoint),
+                    delta=delta, expected_delta_sha256="a" * 64)
+
     def test_repeat_keeps_first_clock_and_version(self):
         checkpoint, delta, request = self.inputs(append=False)
         advanced = self.advance(checkpoint, delta)

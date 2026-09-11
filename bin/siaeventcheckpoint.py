@@ -29,6 +29,10 @@ INCREMENTAL_NON_CLAIMS = NON_CLAIMS + (
     "The prefix-history pin names the bootstrap prefix; subsequent steps are bound by parent-checkpoint and delta digests, not relabeled as that original whole history.",
     "Cumulative returned-event and unique batch limits remain across steps. No prior event, page version or observation is evicted by advancement.",
 )
+PROJECTION_NON_CLAIMS = INCREMENTAL_NON_CLAIMS + (
+    "Associations cover only the supplied delta, including repeated returns; they are not relabeled as a complete-history association roster.",
+    "This result is not a legacy full-history projection and does not authorize resident capture, delivery, cursor changes or publication.",
+)
 _V2_EXTRA = {"parent_checkpoint_sha256", "last_delta_sha256", "total_returned_events"}
 _DOCS = ("configuration", "source_catalog", "profile", "live_policy")
 _CONTEXT_KEYS = (set(_DOCS) | {"expected_" + name + "_sha256" for name in _DOCS}
@@ -188,6 +192,30 @@ def bootstrap_incremental(owner, *, request, expected_request_sha256):
 
 
 def advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_delta_sha256):
+    """Advance a checkpoint without retaining the current association roster."""
+    return _advance(owner, checkpoint=checkpoint, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                    delta=delta, expected_delta_sha256=expected_delta_sha256, projection=False)
+
+
+def project_delta(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_delta_sha256):
+    """Return the exact next checkpoint and this entry's capture associations.
+
+    This separately versioned result embeds no raw prefix or historical
+    association roster. It cannot be passed as a legacy complete projection.
+    The whole result, not merely its checkpoint, keeps the original cap.
+    """
+    return _advance(owner, checkpoint=checkpoint, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                    delta=delta, expected_delta_sha256=expected_delta_sha256, projection=True)
+
+
+def _projection(checkpoint, associations, checkpoint_sha256, parent, delta):
+    return {"schema": "sia-event-delta-projection-v1", "status": "prepared-not-authorized",
+            "checkpoint": checkpoint, "checkpoint_sha256": checkpoint_sha256,
+            "parent_checkpoint_sha256": parent, "delta_sha256": delta,
+            "associations": associations, "non_claims": list(PROJECTION_NON_CLAIMS)}
+
+
+def _advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_delta_sha256, projection):
     """Advance one pinned v2 checkpoint without decoding its raw prefix.
 
     Fixed input slots and output each keep their original document cap.
@@ -247,6 +275,12 @@ def advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_de
     reserved = (blocks.source._json_size(owner, {**current, **updates, "first_associations": reserve_first},
                                         limit, ascii_only=True)
                 + blocks.source._json_size(owner, skeleton, limit, ascii_only=True) + content_reserve)
+    if projection:
+        # Existing reservation already includes the entire new association
+        # skeleton. Add the enclosing contract before the semantic fold.
+        reserved += blocks.source._json_size(
+            owner, _projection({}, [], "0" * 64, expected_checkpoint_sha256, expected_delta_sha256),
+            limit, ascii_only=True)
     if reserved > limit:
         blocks._refuse("checkpoint-output-reservation")
     if _wire(owner, checkpoint) != original or _wire(owner, delta) != delta_raw \
@@ -267,12 +301,16 @@ def advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_de
         {"source_id": key[0], "event_id": key[1], "semantic_id": semantic,
          "observation_id": observation["id"]}
         for key, (semantic, observation) in first.items()]
-    result_raw = _wire(owner, current)
+    checkpoint_raw = _wire(owner, current)
+    result = (_projection(current, associations, blocks.hashlib.sha256(checkpoint_raw).hexdigest(),
+                          expected_checkpoint_sha256, expected_delta_sha256) if projection else current)
+    result_raw = _wire(owner, result)
     if len(result_raw) > reserved:
         blocks._refuse("checkpoint-reservation-mismatch")
     _validate(owner, current)
     detached = json.loads(result_raw)
-    if _wire(owner, current) != result_raw or _wire(owner, detached) != result_raw \
+    if _wire(owner, current) != checkpoint_raw or _wire(owner, result) != result_raw \
+            or _wire(owner, detached) != result_raw \
             or _wire(owner, checkpoint) != original or _wire(owner, delta) != delta_raw \
             or _wire(owner, selected) != delta_raw:
         blocks._refuse("checkpoint-delta-input-or-output-changed")
