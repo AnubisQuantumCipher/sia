@@ -29,6 +29,110 @@ NON_CLAIMS = (
     "Failures may leave exact unactivated artifacts. Manifest absence is not permission to delete them; recovery must independently admit all references and current authority.",
     "Publisher fsync and descriptor checks do not establish storage hardware reliability or protect against mutation after return.",
 )
+READ_NON_CLAIMS = NON_CLAIMS + (
+    "This read verifies retained representations and deterministic replay only. It does not authenticate the manifest's preparation claim or acquire current source, journal or publication authority.",
+    "The externally supplied manifest and root pins are caller premises. A recovered package must be independently joined to current authority before any adoption or effects.",
+)
+_ARTIFACTS = ("capture", "checkpoint", "candidate", "transition", "block")
+
+
+def read_prepared(owner, *, directory, expected_manifest_sha256, expected_root_sha256):
+    """Read and replay the closed package under held descriptors, without writes.
+
+    Output is a closed compound view, not another single-artifact envelope:
+    manifest, root, parent and each named artifact retain their original cap.
+    No caller-selected extra slots or transitive history are acquired.
+    """
+    references = dict(owner)
+    source._hex(expected_manifest_sha256, "checkpoint-transaction-manifest-pin")
+    source._hex(expected_root_sha256, "checkpoint-transaction-root-pin")
+    limit = min(owner["MAX_STATE_JSON_BYTES"], blocks.MAX_DOCUMENT_BYTES)
+    with contextlib.ExitStack() as stack:
+        directory_hold = source._DirectoryChain(owner, directory, private_terminal=True)
+        stack.callback(directory_hold.close)
+        held, raw_slots, values = [], {}, {}
+
+        def current():
+            if any(owner.get(name) is not value for name, value in references.items()):
+                source.refuse("checkpoint-transaction-reader-owner-changed")
+            for value in held:
+                value.current()
+            directory_hold.current()
+
+        def read(slot, name, pin):
+            source._hex(pin, "checkpoint-transaction-member-pin")
+            current()
+            actual = ack._HeldRaw(owner, source, os.path.join(directory, name), limit, allow_absent=False)
+            stack.callback(actual.close)
+            held.append(actual)
+            blocks._pin(actual.raw, pin)
+            value = json.loads(actual.raw)
+            if checkpoint._wire(owner, value) != actual.raw:
+                source.refuse("checkpoint-transaction-member-canonical-image")
+            raw_slots[slot], values[slot] = actual.raw, value
+            current()
+            return value
+
+        manifest = read("manifest", "transaction-" + expected_manifest_sha256 + ".json", expected_manifest_sha256)
+        source._keys(manifest, {"schema", "status", "root_sha256", "predecessor", "source_batch_sha256", "artifacts", "non_claims"},
+                     "checkpoint-transaction-manifest")
+        source._keys(manifest["artifacts"], set(_ARTIFACTS), "checkpoint-transaction-artifacts")
+        if manifest["schema"] != "sia-checkpoint-transaction-preparation-v1" \
+                or manifest["status"] != "retained-not-activated" \
+                or manifest["non_claims"] != list(NON_CLAIMS) \
+                or manifest["root_sha256"] != expected_root_sha256:
+            source.refuse("checkpoint-transaction-manifest-contract")
+        root = read("root", "root-" + expected_root_sha256 + ".json", expected_root_sha256)
+        import siahistoryroot
+        source._keys(root, {"schema", "status", "epoch_id", "committed", "legacy_epoch_sha256", "legacy_history_sha256",
+                           "final_entry_block_sha256", "non_claims"}, "checkpoint-transaction-root")
+        if root["schema"] != "sia-source-history-root-v1" or root["status"] != "root-retained-not-activated" \
+                or root["non_claims"] != list(siahistoryroot.NON_CLAIMS) \
+                or checkpoint._wire(owner, root["committed"]) != checkpoint._wire(owner, manifest["predecessor"]):
+            source.refuse("checkpoint-transaction-root-contract")
+        for key in ("legacy_epoch_sha256", "legacy_history_sha256", "final_entry_block_sha256"):
+            source._hex(root[key], "checkpoint-transaction-root-reference")
+        parent = read("parent", store._name(root["final_entry_block_sha256"]), root["final_entry_block_sha256"])
+        blocks._parent(parent)
+        artifacts = {}
+        for name in _ARTIFACTS:
+            pin = manifest["artifacts"][name]
+            source._hex(pin, "checkpoint-transaction-member-pin")
+            filename = store._name(pin) if name == "block" else name + "-" + pin + ".json"
+            artifacts[name] = read(name, filename, pin)
+        batch = artifacts["capture"]
+        checkpoint.validate_capture(owner, batch, manifest["source_batch_sha256"])
+        if batch["schema"] != "sia-controller-source-checkpoint-capture-v3" \
+                or batch["epoch"]["root_sha256"] != expected_root_sha256 \
+                or batch["epoch"]["epoch_id"] != root["epoch_id"] \
+                or checkpoint._wire(owner, batch["epoch"]["predecessor"]) != checkpoint._wire(owner, manifest["predecessor"]) \
+                or checkpoint._wire(owner, batch["intake_projection"]["checkpoint"]) != raw_slots["checkpoint"]:
+            source.refuse("checkpoint-transaction-capture-binding")
+        expected_block = blocks.prepare_checkpoint_capture(
+            owner, batch=batch, expected_batch_sha256=manifest["source_batch_sha256"],
+            parent=parent, expected_parent_sha256=root["final_entry_block_sha256"])
+        if checkpoint._wire(owner, expected_block) != raw_slots["block"]:
+            source.refuse("checkpoint-transaction-block-replay")
+        generation = batch["delivery_input"]["epoch_view"]["parent_generation"]
+        request = inputs.prepare_inputs_checkpoint(
+            owner, batch=batch, previous_generation=generation,
+            expected_previous_generation_sha256=generation["generation_sha256"])
+        candidate = {"prepare_inputs": request, "expected_prepare_inputs_sha256": live._sha(request)}
+        if checkpoint._wire(owner, candidate) != raw_slots["candidate"]:
+            source.refuse("checkpoint-transaction-candidate-replay")
+        transition = live.prepare_pulse(**request)
+        if checkpoint._wire(owner, transition) != raw_slots["transition"]:
+            source.refuse("checkpoint-transaction-transition-replay")
+        detached = {name: json.loads(raw) for name, raw in raw_slots.items()}
+        result = {"schema": "sia-checkpoint-transaction-view-v1", "status": "verified-retained-not-authorized",
+                  "manifest_sha256": expected_manifest_sha256, "manifest": detached["manifest"],
+                  "root": detached["root"], "parent": detached["parent"],
+                  "artifacts": {name: detached[name] for name in _ARTIFACTS}, "non_claims": list(READ_NON_CLAIMS)}
+        if any(checkpoint._wire(owner, values[name]) != raw or checkpoint._wire(owner, detached[name]) != raw
+               for name, raw in raw_slots.items()):
+            source.refuse("checkpoint-transaction-reader-image-changed")
+        current()
+        return result
 
 
 def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha256,
