@@ -410,80 +410,91 @@ def _member(owner, plan, images):
         _refuse("complete-target-page-roster")
 
 
+def _fold_entry(owner, request, entry, intake, associations, versions, current, first):
+    """Apply one already-admitted entry to private replay accumulators.
+
+    This is a shared semantic kernel, not an admission or checkpoint API.
+    The caller must validate shapes/pins, reserve output capacity and own a
+    detached accumulator. Failure may leave that private accumulator partial;
+    it must never be published. No earlier entry is decoded by this kernel.
+    """
+    catalog = request["source_catalog"]["sources"]
+    returns, grouped, admissions = entry["source_returns"], {}, {}
+    for source, run in zip(catalog, returns["runs"]):
+        for record in run["events"]:
+            event = owner["_event_from_replay_record"](record)
+            if event.organ != source["organ"] \
+                    or not _same(owner, owner["_event_replay_record"](event), record):
+                _refuse("collector-event-binding")
+            grouped.setdefault((event.organ, record["ts"][:10]), []).append(record)
+    actual_groups, organs = set(), []
+    for row in entry["event_batches"]:
+        batch = row["batch"]
+        members = pages._member_structure(owner, batch["members"])
+        body = pages._batch_body(owner, members)
+        if not _same(owner, body, {key: value for key, value in batch.items() if key != "batch_sha256"}) \
+                or _sha(owner, body) != row["expected_batch_sha256"]:
+            _refuse("batch-original-body-or-pin")
+        pages._member_pins(owner, batch["members"], [plan["plan_sha256"] for plan in batch["members"]])
+        images = pages._union_images(owner, members)
+        organs.append(batch["organ"])
+        for plan in members:
+            key = (plan["organ"], plan["date"])
+            if key in actual_groups or key not in grouped or not _same(owner, grouped[key], plan["input_records"]):
+                _refuse("complete-duplicate-return-plan-join")
+            actual_groups.add(key)
+            _member(owner, plan, images)
+            for admitted in plan["admissions"]:
+                admissions[(plan["organ"], plan["date"], admitted["event_id"])] = {
+                    "event_batch_sha256": row["expected_batch_sha256"], "plan_sha256": plan["plan_sha256"],
+                    **{key: admitted[key] for key in ("slug", "version_sha256", "disposition")}}
+        for image in images.values():
+            slug = image["page"]["slug"]
+            if slug in current and (image["before"] is None
+                                    or versions[current[slug]]["content"].encode("utf-8") != image["before"]):
+                _refuse("unexplained-page-version-change")
+            for raw in (image["before"], image["raw"]):
+                if raw is None:
+                    continue
+                version = owner["_corpus_page_version_from_bytes"](slug=slug, raw=raw)
+                pin = version["version_sha256"]
+                if pin in versions and not _same(owner, version, versions[pin]):
+                    _refuse("page-version-collision")
+                if pin not in versions:
+                    versions[pin] = version
+                current[slug] = pin
+    if actual_groups != set(grouped) or organs != sorted(set(organs)):
+        _refuse("complete-event-batch-roster")
+    for run in returns["runs"]:
+        for position, record in enumerate(run["events"]):
+            key = (run["source_id"], record["event_id"])
+            admitted = admissions[(record["organ"], record["ts"][:10], record["event_id"])]
+            if key not in first:
+                identifier = _sha(owner, {"schema": "sia-controller-event-association-v1",
+                                          "epoch_id": intake["epoch_id"], "source_id": key[0], "event_id": key[1]})
+                observation = {"id": identifier, "timestamp": returns["observed_at"],
+                               "version_sha256": admitted["version_sha256"], "symbol": key[0],
+                               "context": request["profile"]["context"], "native_timestamp": record["ts"]}
+                first[key] = (record["semantic_id"], observation)
+                intake["observations"].append(observation)
+                status = "first-observation"
+            else:
+                semantic, observation = first[key]
+                if semantic != record["semantic_id"]:
+                    _refuse("repeated-source-association-conflict")
+                status = "already-observed"
+            associations.append({"source_returns_sha256": entry["expected_source_returns_sha256"],
+                                 "source_id": key[0], "return_index": position, "event_id": key[1],
+                                 "semantic_id": record["semantic_id"], "admission": admitted,
+                                 "observation_id": observation["id"],
+                                 "observation_version_sha256": observation["version_sha256"],
+                                 "observation_timestamp": observation["timestamp"], "status": status})
+
+
 def _project(owner, request):
     intake, associations, versions, current, first = _intake(request), [], {}, {}, {}
-    catalog = request["source_catalog"]["sources"]
     for entry in request["history"]["entries"]:
-        returns, grouped, admissions = entry["source_returns"], {}, {}
-        for source, run in zip(catalog, returns["runs"]):
-            for record in run["events"]:
-                event = owner["_event_from_replay_record"](record)
-                if event.organ != source["organ"] \
-                        or not _same(owner, owner["_event_replay_record"](event), record):
-                    _refuse("collector-event-binding")
-                grouped.setdefault((event.organ, record["ts"][:10]), []).append(record)
-        actual_groups, organs = set(), []
-        for row in entry["event_batches"]:
-            batch = row["batch"]
-            members = pages._member_structure(owner, batch["members"])
-            body = pages._batch_body(owner, members)
-            if not _same(owner, body, {key: value for key, value in batch.items() if key != "batch_sha256"}) \
-                    or _sha(owner, body) != row["expected_batch_sha256"]:
-                _refuse("batch-original-body-or-pin")
-            pages._member_pins(owner, batch["members"], [plan["plan_sha256"] for plan in batch["members"]])
-            images = pages._union_images(owner, members)
-            organs.append(batch["organ"])
-            for plan in members:
-                key = (plan["organ"], plan["date"])
-                if key in actual_groups or key not in grouped or not _same(owner, grouped[key], plan["input_records"]):
-                    _refuse("complete-duplicate-return-plan-join")
-                actual_groups.add(key)
-                _member(owner, plan, images)
-                for admitted in plan["admissions"]:
-                    admissions[(plan["organ"], plan["date"], admitted["event_id"])] = {
-                        "event_batch_sha256": row["expected_batch_sha256"], "plan_sha256": plan["plan_sha256"],
-                        **{key: admitted[key] for key in ("slug", "version_sha256", "disposition")}}
-            for image in images.values():
-                slug = image["page"]["slug"]
-                if slug in current and (image["before"] is None
-                                        or versions[current[slug]]["content"].encode("utf-8") != image["before"]):
-                    _refuse("unexplained-page-version-change")
-                for raw in (image["before"], image["raw"]):
-                    if raw is None:
-                        continue
-                    version = owner["_corpus_page_version_from_bytes"](slug=slug, raw=raw)
-                    pin = version["version_sha256"]
-                    if pin in versions and not _same(owner, version, versions[pin]):
-                        _refuse("page-version-collision")
-                    if pin not in versions:
-                        versions[pin] = version
-                    current[slug] = pin
-        if actual_groups != set(grouped) or organs != sorted(set(organs)):
-            _refuse("complete-event-batch-roster")
-        for run in returns["runs"]:
-            for position, record in enumerate(run["events"]):
-                key = (run["source_id"], record["event_id"])
-                admitted = admissions[(record["organ"], record["ts"][:10], record["event_id"])]
-                if key not in first:
-                    identifier = _sha(owner, {"schema": "sia-controller-event-association-v1",
-                                              "epoch_id": intake["epoch_id"], "source_id": key[0], "event_id": key[1]})
-                    observation = {"id": identifier, "timestamp": returns["observed_at"],
-                                   "version_sha256": admitted["version_sha256"], "symbol": key[0],
-                                   "context": request["profile"]["context"], "native_timestamp": record["ts"]}
-                    first[key] = (record["semantic_id"], observation)
-                    intake["observations"].append(observation)
-                    status = "first-observation"
-                else:
-                    semantic, observation = first[key]
-                    if semantic != record["semantic_id"]:
-                        _refuse("repeated-source-association-conflict")
-                    status = "already-observed"
-                associations.append({"source_returns_sha256": entry["expected_source_returns_sha256"],
-                                     "source_id": key[0], "return_index": position, "event_id": key[1],
-                                     "semantic_id": record["semantic_id"], "admission": admitted,
-                                     "observation_id": observation["id"],
-                                     "observation_version_sha256": observation["version_sha256"],
-                                     "observation_timestamp": observation["timestamp"], "status": status})
+        _fold_entry(owner, request, entry, intake, associations, versions, current, first)
     intake["pages"], intake["current_versions"] = list(versions.values()), list(current.values())
     return _result(request, intake, associations)
 
