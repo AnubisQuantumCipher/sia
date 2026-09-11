@@ -28,6 +28,11 @@ CAPTURE_NON_CLAIMS = NON_CLAIMS + (
     "This capture omits controller delivery and idle processing and cannot be consumed as a legacy or publishable controller batch. No cursor acknowledgment, page publication, live generation or readiness is authorized.",
     "The retained root and legacy archive remain required for bootstrap ancestry. The embedded parent checkpoint is a replay result, not permission to replace source authority.",
 )
+CAPTURE_IDLE_NON_CLAIMS = NON_CLAIMS + (
+    "Actual declared collectors and, only on empty returns, native idle history are acquired under ordinary owner and descriptor checks. These are local observations, not complete raw machine history or source truth.",
+    "This capture retains episode-bound idle input but omits controller delivery processing. It is not a publishable controller transaction, source acknowledgment, gist publication, readiness or cognitive authorization.",
+    "The retained root and original archive remain required for ancestry. The embedded checkpoint preserves first event records; it is not permission to replace source authority.",
+)
 
 
 def _wire(owner, value):
@@ -51,7 +56,7 @@ def _validate(owner, epoch, checkpoint, observed_at):
     for value in epoch["predecessor"].values():
         source._hex(value, "checkpoint-predecessor-pin")
     checkpoints.blocks._pin(_wire(owner, checkpoint), epoch["checkpoint_sha256"])
-    if checkpoint["schema"] != "sia-event-replay-checkpoint-v2":
+    if checkpoint["schema"] not in {"sia-event-replay-checkpoint-v2", "sia-event-replay-checkpoint-v3"}:
         source.refuse("checkpoint-incremental-accounting-required")
     source._validate_epoch_context(owner, epoch)
     for name in _DOC_KEYS:
@@ -121,10 +126,11 @@ def project_capture_entry(owner, *, epoch, expected_epoch_sha256, checkpoint, re
 def validate_capture(owner, batch, expected_batch_sha256):
     """Pure retained-image validation; do not authenticate its root or archive."""
     raw = _wire(owner, batch)
-    source._keys(batch, source.BATCH_KEYS | {"parent_checkpoint"}, "checkpoint-capture-shape")
-    if batch["schema"] != "sia-controller-source-checkpoint-capture-v1" \
+    with_idle = type(batch) is dict and batch.get("schema") == "sia-controller-source-checkpoint-capture-v2"
+    source._keys(batch, source.BATCH_KEYS | {"parent_checkpoint"} | ({"idle_input"} if with_idle else set()), "checkpoint-capture-shape")
+    if batch["schema"] not in {"sia-controller-source-checkpoint-capture-v1", "sia-controller-source-checkpoint-capture-v2"} \
             or batch["status"] != "captured-not-published" \
-            or batch["non_claims"] != list(CAPTURE_NON_CLAIMS) \
+            or batch["non_claims"] != list(CAPTURE_IDLE_NON_CLAIMS if with_idle else CAPTURE_NON_CLAIMS) \
             or type(batch["batch_id"]) is not str or source._OPERATION.fullmatch(batch["batch_id"]) is None:
         source.refuse("checkpoint-capture-contract")
     source._hex(expected_batch_sha256, "checkpoint-capture-pin")
@@ -143,17 +149,40 @@ def validate_capture(owner, batch, expected_batch_sha256):
         returns=batch["source_returns"], closure=batch["event_closure"], observed_at=batch["observed_at"])
     if _wire(owner, projected) != _wire(owner, batch["intake_projection"]):
         source.refuse("checkpoint-capture-projection-binding")
+    if with_idle:
+        if parent["schema"] != "sia-event-replay-checkpoint-v3":
+            source.refuse("checkpoint-idle-episode-records-required")
+        if any(run["events"] for run in batch["source_returns"]["runs"]):
+            if batch["idle_input"] is not None:
+                source.refuse("idle-input-on-nonempty-source-batch")
+        else:
+            import siacontrolleridle
+            siacontrolleridle.validate_checkpoint(owner, epoch=batch["epoch"], projection=projected,
+                                                 observed_at=batch["observed_at"], idle_input=batch["idle_input"])
     if _wire(owner, batch) != raw:
         source.refuse("checkpoint-capture-image-changed")
 
 
 def capture_root(owner, *, memo, admitted_status, directory, expected_root_sha256, observed_at):
+    """Capture root-bound collector observations without delivery or idle."""
+    return _capture_root(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+                         expected_root_sha256=expected_root_sha256, observed_at=observed_at, with_idle=False)
+
+
+def capture_root_idle(owner, *, memo, admitted_status, directory, expected_root_sha256, observed_at):
+    """Capture root-bound sources and empty-pulse idle input, never delivery."""
+    return _capture_root(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+                         expected_root_sha256=expected_root_sha256, observed_at=observed_at, with_idle=True)
+
+
+def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha256, observed_at, with_idle):
     """Capture actual collectors after read-only acknowledged-root bootstrap.
 
     The existing root and final-entry block must already be retained. This
     entry point writes neither seed nor active head. It is not yet a resident
-    controller transaction: delivery/idle capture and publication are separate
-    required integration work, not inferred from this returned observation.
+    controller transaction: delivery processing and publication remain
+    required integration work. The explicit idle variant adds episode-bound
+    idle input, not durable consolidation.
     """
     import siahistoryroot as roots
     import siasourceack as ack
@@ -202,6 +231,8 @@ def capture_root(owner, *, memo, admitted_status, directory, expected_root_sha25
         if _wire(owner, checkpoint["intake"]) != _wire(owner, prior["intake_projection"]["intake"]) \
                 or _wire(owner, checkpoint["source_non_claims"]) != _wire(owner, prior["intake_projection"]["source_non_claims"]):
             source.refuse("checkpoint-source-intake-fidelity")
+        if with_idle:
+            checkpoint = checkpoints._with_episodes(owner, checkpoint, request, hashlib.sha256(request_raw).hexdigest())
         epoch = prepare_epoch(owner, checkpoint=checkpoint,
                               expected_checkpoint_sha256=hashlib.sha256(_wire(owner, checkpoint)).hexdigest(),
                               committed=committed, root_sha256=expected_root_sha256, observed_at=observed_at)
@@ -220,4 +251,4 @@ def capture_root(owner, *, memo, admitted_status, directory, expected_root_sha25
 
         return source._capture_locked(
             owner, memo=memo, epoch=epoch, expected_epoch_sha256=hashlib.sha256(_wire(owner, epoch)).hexdigest(),
-            observed_at=observed_at, authority=current, checkpoint=checkpoint)
+            observed_at=observed_at, authority=current, checkpoint=checkpoint, checkpoint_idle=with_idle)

@@ -1769,7 +1769,9 @@ class _DeliveryCaptureRequest:
 
 
 def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
-                    observed_at, authority, successor=False, delivery=None, checkpoint=None):
+                    observed_at, authority, successor=False, delivery=None, checkpoint=None, checkpoint_idle=False):
+    if type(checkpoint_idle) is not bool or checkpoint_idle and checkpoint is None:
+        refuse("checkpoint-idle-without-checkpoint")
     if checkpoint is not None and (successor or delivery is not None):
         refuse("checkpoint-capture-is-not-controller-publication")
     checkpoint_raw = None if checkpoint is None else native_bytes(owner, checkpoint)
@@ -1855,6 +1857,17 @@ def _capture_locked(owner, *, memo, epoch, expected_epoch_sha256,
                 result["schema"] = "sia-controller-source-checkpoint-capture-v1"
                 result["parent_checkpoint"] = owner["copy"].deepcopy(checkpoint)
                 result["non_claims"] = list(siasourcecheckpoint.CAPTURE_NON_CLAIMS)
+                if checkpoint_idle:
+                    result["schema"] = "sia-controller-source-checkpoint-capture-v2"
+                    result["non_claims"] = list(siasourcecheckpoint.CAPTURE_IDLE_NON_CLAIMS)
+                    result["idle_input"] = None
+                    if all(not run["events"] for run in returns["runs"]):
+                        import siacontrolleridle
+                        result["idle_input"] = siacontrolleridle.capture_checkpoint(
+                            owner, epoch=admitted_epoch, projection=projection, observed_at=observed_at)
+                        runtime.current()
+                        current()
+                        _epoch_current(owner, epoch, epoch_raw)
             if successor:
                 result["schema"] = "sia-controller-source-batch-v2"
                 result["idle_input"] = None

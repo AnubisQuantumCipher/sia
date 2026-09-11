@@ -33,6 +33,10 @@ PROJECTION_NON_CLAIMS = INCREMENTAL_NON_CLAIMS + (
     "Associations cover only the supplied delta, including repeated returns; they are not relabeled as a complete-history association roster.",
     "This result is not a legacy full-history projection and does not authorize resident capture, delivery, cursor changes or publication.",
 )
+EPISODE_NON_CLAIMS = INCREMENTAL_NON_CLAIMS + (
+    "Each observation retains its first complete normalized event record from admitted replay. Records are not reconstructed from page text or replaced on repeated return.",
+    "Retained event records do not establish native occurrence witnesses, idle processing, gist publication or complete raw machine history.",
+)
 _V2_EXTRA = {"parent_checkpoint_sha256", "last_delta_sha256", "total_returned_events"}
 _DOCS = ("configuration", "source_catalog", "profile", "live_policy")
 _CONTEXT_KEYS = (set(_DOCS) | {"expected_" + name + "_sha256" for name in _DOCS}
@@ -47,11 +51,13 @@ def _wire(owner, value):
 
 
 def _validate(owner, value):
-    incremental = type(value) is dict and value.get("schema") == "sia-event-replay-checkpoint-v2"
-    replay._keys(value, _KEYS | _V2_EXTRA if incremental else _KEYS, "checkpoint-shape")
-    if value["schema"] not in {"sia-event-replay-checkpoint-v1", "sia-event-replay-checkpoint-v2"} \
+    episodes = type(value) is dict and value.get("schema") == "sia-event-replay-checkpoint-v3"
+    incremental = episodes or type(value) is dict and value.get("schema") == "sia-event-replay-checkpoint-v2"
+    expected_keys = (_KEYS | _V2_EXTRA if incremental else _KEYS) | ({"episode_records"} if episodes else set())
+    replay._keys(value, expected_keys, "checkpoint-shape")
+    if value["schema"] not in {"sia-event-replay-checkpoint-v1", "sia-event-replay-checkpoint-v2", "sia-event-replay-checkpoint-v3"} \
             or value["status"] != "prepared-not-authorized" \
-            or value["non_claims"] != list(INCREMENTAL_NON_CLAIMS if incremental else NON_CLAIMS):
+            or value["non_claims"] != list(EPISODE_NON_CLAIMS if episodes else INCREMENTAL_NON_CLAIMS if incremental else NON_CLAIMS):
         blocks._refuse("checkpoint-contract")
     context = value["context"]
     replay._keys(context, _CONTEXT_KEYS, "checkpoint-context-shape")
@@ -94,6 +100,22 @@ def _validate(owner, value):
         identifiers.append(identifier)
     if identifiers != [row["id"] for row in intake["observations"]]:
         blocks._refuse("checkpoint-first-order")
+    if episodes:
+        rows = value["episode_records"]
+        if type(rows) is not list or len(rows) != len(index):
+            blocks._refuse("checkpoint-episode-roster")
+        for row, first in zip(rows, index):
+            replay._keys(row, {"observation_id", "source_id", "event_record", "native_occurrence"},
+                         "checkpoint-episode-shape")
+            if row["observation_id"] != first["observation_id"] or row["source_id"] != first["source_id"] \
+                    or row["native_occurrence"] is not None:
+                blocks._refuse("checkpoint-episode-identity")
+            record = row["event_record"]
+            event = owner["_event_from_replay_record"](record)
+            if record["event_id"] != first["event_id"] or record["semantic_id"] != first["semantic_id"] \
+                    or record["ts"] != observed[first["observation_id"]]["native_timestamp"] \
+                    or not replay._same(owner, record, owner["_event_replay_record"](event)):
+                blocks._refuse("checkpoint-episode-record-binding")
     if incremental:
         parent, delta = value["parent_checkpoint_sha256"], value["last_delta_sha256"]
         if (parent is None) != (delta is None) \
@@ -191,6 +213,55 @@ def bootstrap_incremental(owner, *, request, expected_request_sha256):
     return detached
 
 
+def _episode_records(owner, epoch_id, entries, retained=()):
+    """Extend first-record order from entries already admitted by replay."""
+    result = list(retained)
+    seen = {(row["source_id"], row["event_record"]["event_id"]) for row in result}
+    for entry in entries:
+        for run in entry["source_returns"]["runs"]:
+            for record in run["events"]:
+                key = (run["source_id"], record["event_id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                identity = replay._sha(owner, {"schema": "sia-controller-event-association-v1",
+                                               "epoch_id": epoch_id, "source_id": key[0], "event_id": key[1]})
+                result.append({"observation_id": identity, "source_id": key[0],
+                               "event_record": record, "native_occurrence": None})
+    return result
+
+
+def _with_episodes(owner, checkpoint, request, expected_request_sha256):
+    """Attach records to this call's fully replayed bootstrap, never a delta.
+
+    Private shared bootstrap tail: callers must have run bootstrap_incremental
+    on exactly the pinned request. This is not a public checkpoint upgrader.
+    """
+    raw, checkpoint_raw = _wire(owner, request), _wire(owner, checkpoint)
+    blocks._pin(raw, expected_request_sha256)
+    if checkpoint["schema"] != "sia-event-replay-checkpoint-v2" \
+            or checkpoint["parent_checkpoint_sha256"] is not None \
+            or checkpoint["last_delta_sha256"] is not None \
+            or checkpoint["observed_at"] != request["observed_at"] \
+            or checkpoint["context"] != {key: request[key] for key in _CONTEXT_KEYS}:
+        blocks._refuse("checkpoint-episode-bootstrap-binding")
+    result = {**checkpoint, "schema": "sia-event-replay-checkpoint-v3", "non_claims": list(EPISODE_NON_CLAIMS),
+              "episode_records": _episode_records(owner, checkpoint["intake"]["epoch_id"], request["history"]["entries"])}
+    result_raw = _wire(owner, result)
+    _validate(owner, result)
+    detached = json.loads(result_raw)
+    if _wire(owner, request) != raw or _wire(owner, checkpoint) != checkpoint_raw \
+            or _wire(owner, result) != result_raw or _wire(owner, detached) != result_raw:
+        blocks._refuse("checkpoint-episode-bootstrap-changed")
+    return detached
+
+
+def bootstrap_episodes(owner, *, request, expected_request_sha256):
+    """Bootstrap v3 first-event records from original complete source replay."""
+    checkpoint = bootstrap_incremental(owner, request=request, expected_request_sha256=expected_request_sha256)
+    return _with_episodes(owner, checkpoint, request, expected_request_sha256)
+
+
 def advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_delta_sha256):
     """Advance a checkpoint without retaining the current association roster."""
     return _advance(owner, checkpoint=checkpoint, expected_checkpoint_sha256=expected_checkpoint_sha256,
@@ -216,7 +287,7 @@ def _projection(checkpoint, associations, checkpoint_sha256, parent, delta):
 
 
 def _advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_delta_sha256, projection):
-    """Advance one pinned v2 checkpoint without decoding its raw prefix.
+    """Advance one pinned incremental checkpoint without decoding its raw prefix.
 
     Fixed input slots and output each keep their original document cap.
     Output reservation conservatively counts the prior checkpoint plus the
@@ -227,7 +298,7 @@ def _advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_d
     delta_raw = _wire(owner, delta)
     blocks._pin(delta_raw, expected_delta_sha256)
     current = admit(owner, checkpoint=checkpoint, expected_checkpoint_sha256=expected_checkpoint_sha256)
-    if current["schema"] != "sia-event-replay-checkpoint-v2":
+    if current["schema"] not in {"sia-event-replay-checkpoint-v2", "sia-event-replay-checkpoint-v3"}:
         blocks._refuse("incremental-accounting-required")
     replay._keys(delta, {"schema", "parent_checkpoint_sha256", "entry", "observed_at", "non_claims"},
                  "checkpoint-delta-shape")
@@ -265,6 +336,9 @@ def _advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_d
                "seen_batch_ids": current["seen_batch_ids"] + [returns["batch_id"]],
                "source_non_claims": new_claims, "parent_checkpoint_sha256": expected_checkpoint_sha256,
                "last_delta_sha256": expected_delta_sha256}
+    if current["schema"] == "sia-event-replay-checkpoint-v3":
+        updates["episode_records"] = _episode_records(
+            owner, current["intake"]["epoch_id"], [entry], current["episode_records"])
     reserve_first = current["first_associations"] + [
         {"source_id": run["source_id"], "event_id": record["event_id"],
          "semantic_id": record["semantic_id"], "observation_id": "0" * 64}

@@ -104,18 +104,19 @@ def _native_records(owner, captured):
     return indexed
 
 
-def _wrapper(owner, *, epoch, projection, observed_at, captured):
+def _wrapper(owner, *, epoch, projection, observed_at, captured, episode_records=None):
     """Build the only episode/replay wrapper authorized by retained inputs."""
     import siasourcebatch as source
     source._json_size(owner, {
         "epoch": epoch, "projection": projection, "capture": captured,
+        **({"episode_records": episode_records} if episode_records is not None else {}),
     }, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
     names = _names(epoch)
     if not names:
         _refuse("idle-native-source-roster-empty")
     if [row["chain"] for row in captured["chains"]] != sorted(names):
         _refuse("idle-native-source-roster-binding")
-    episodes = _episode_records(epoch, projection)
+    episodes = (_episode_records(epoch, projection) if episode_records is None else copy.deepcopy(episode_records))
     natives = _native_records(owner, captured)
     steps = []
     for episode in episodes:
@@ -168,7 +169,7 @@ def _wrapper(owner, *, epoch, projection, observed_at, captured):
     return result
 
 
-def _without_native(owner, *, epoch, projection, observed_at):
+def _without_native(owner, *, epoch, projection, observed_at, episode_records=None):
     import sialiveidle
     if _names(epoch):
         _refuse("idle-supported-native-source-selected")
@@ -180,7 +181,7 @@ def _without_native(owner, *, epoch, projection, observed_at):
         "observed_at": observed_at,
         "live_policy_sha256": epoch["expected_live_policy_sha256"],
         "source_ids": projection["intake"]["symbols"],
-        "episodes": _episode_records(epoch, projection),
+        "episodes": (_episode_records(epoch, projection) if episode_records is None else copy.deepcopy(episode_records)),
         "non_claims": list(sialiveidle.NON_CLAIMS),
     }
     result = {
@@ -199,8 +200,13 @@ def _without_native(owner, *, epoch, projection, observed_at):
 
 def capture(owner, *, epoch, projection, observed_at):
     """Acquire native history once and return detached pinned idle inputs."""
+    return _capture(owner, epoch=epoch, projection=projection, observed_at=observed_at)
+
+
+def _capture(owner, *, epoch, projection, observed_at, episode_records=None):
     request = {"epoch": epoch, "projection": projection,
-               "observed_at": observed_at}
+               "observed_at": observed_at,
+               **({"episode_records": episode_records} if episode_records is not None else {})}
     import siasourcebatch as source
     original = source.native_bytes(owner, request)
     names = _names(epoch)
@@ -213,10 +219,10 @@ def capture(owner, *, epoch, projection, observed_at):
             corpus=owner["CORPUS"], chain_registry=registry, chain_names=names)
         result = _wrapper(
             owner, epoch=epoch, projection=projection,
-            observed_at=observed_at, captured=captured)
+            observed_at=observed_at, captured=captured, episode_records=episode_records)
     else:
         result = _without_native(
-            owner, epoch=epoch, projection=projection, observed_at=observed_at)
+            owner, epoch=epoch, projection=projection, observed_at=observed_at, episode_records=episode_records)
     raw = live._canonical(result, owner["MAX_STATE_JSON_BYTES"])
     detached = copy.deepcopy(result)
     if source.native_bytes(owner, request) != original \
@@ -228,10 +234,15 @@ def capture(owner, *, epoch, projection, observed_at):
 
 def validate(owner, *, epoch, projection, observed_at, idle_input):
     """Reconstruct from pinned capture bytes, with no source acquisition."""
+    return _validate(owner, epoch=epoch, projection=projection, observed_at=observed_at, idle_input=idle_input)
+
+
+def _validate(owner, *, epoch, projection, observed_at, idle_input, episode_records=None):
     import siasourcebatch as source
     source._json_size(owner, {
         "epoch": epoch, "projection": projection,
         "observed_at": observed_at, "idle_input": idle_input,
+        **({"episode_records": episode_records} if episode_records is not None else {}),
     }, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
     original = live._canonical(idle_input, owner["MAX_STATE_JSON_BYTES"])
     if _names(epoch):
@@ -241,10 +252,70 @@ def validate(owner, *, epoch, projection, observed_at, idle_input):
             _refuse("idle-input-shape")
         expected = _wrapper(
             owner, epoch=epoch, projection=projection, observed_at=observed_at,
-            captured=idle_input["gist_inputs"]["capture"])
+            captured=idle_input["gist_inputs"]["capture"], episode_records=episode_records)
     else:
         expected = _without_native(
-            owner, epoch=epoch, projection=projection, observed_at=observed_at)
+            owner, epoch=epoch, projection=projection, observed_at=observed_at, episode_records=episode_records)
     if live._canonical(expected, owner["MAX_STATE_JSON_BYTES"]) != original \
             or live._canonical(idle_input, owner["MAX_STATE_JSON_BYTES"]) != original:
         _refuse("idle-input-binding")
+
+
+def _checkpoint_basis(owner, epoch, projection, observed_at):
+    """Admit represented v3 records, not root ancestry or source authority."""
+    import siaeventcheckpoint as checkpoints
+    import siasourcecheckpoint as source_checkpoint
+    source = source_checkpoint.source
+    source._keys(epoch, source_checkpoint._KEYS, "checkpoint-epoch-shape")
+    source._keys(projection, {"schema", "status", "checkpoint", "checkpoint_sha256",
+                             "parent_checkpoint_sha256", "delta_sha256", "associations", "non_claims"},
+                 "checkpoint-idle-projection-shape")
+    checkpoint = checkpoints.admit(owner, checkpoint=projection["checkpoint"],
+                                    expected_checkpoint_sha256=projection["checkpoint_sha256"])
+    if checkpoint["schema"] != "sia-event-replay-checkpoint-v3" \
+            or epoch["schema"] != "sia-controller-source-checkpoint-epoch-v1" \
+            or epoch["non_claims"] != list(source_checkpoint.NON_CLAIMS) \
+            or projection["schema"] != "sia-event-delta-projection-v1" \
+            or projection["status"] != "prepared-not-authorized" \
+            or projection["non_claims"] != list(checkpoints.PROJECTION_NON_CLAIMS) \
+            or type(observed_at) is not int or type(epoch["observed_at"]) is not int \
+            or epoch["observed_at"] != observed_at or checkpoint["observed_at"] != observed_at \
+            or epoch["epoch_id"] != checkpoint["intake"]["epoch_id"] \
+            or type(epoch["started_at"]) is not int or epoch["started_at"] != checkpoint["intake"]["started_at"] \
+            or epoch["checkpoint_sha256"] != checkpoint["parent_checkpoint_sha256"] \
+            or projection["parent_checkpoint_sha256"] != checkpoint["parent_checkpoint_sha256"] \
+            or projection["delta_sha256"] != checkpoint["last_delta_sha256"]:
+        _refuse("checkpoint-idle-basis-binding")
+    source._hex(epoch["root_sha256"], "checkpoint-root-pin")
+    source._keys(epoch["predecessor"], source_checkpoint._COMMIT_KEYS, "checkpoint-predecessor-shape")
+    for value in epoch["predecessor"].values():
+        source._hex(value, "checkpoint-predecessor-pin")
+    source._validate_epoch_context(owner, epoch)
+    for name in source_checkpoint._DOC_KEYS:
+        if source.native_bytes(owner, epoch[name]) != source.native_bytes(owner, checkpoint["context"][name]):
+            _refuse("checkpoint-idle-context-binding")
+    # A private intake view, not a fabricated legacy history/projection.
+    view = {"intake": checkpoint["intake"], "intake_sha256": live._sha(checkpoint["intake"])}
+    return view, checkpoint["episode_records"]
+
+
+def capture_checkpoint(owner, *, epoch, projection, observed_at):
+    import siasourcebatch as source
+    request = {"epoch": epoch, "projection": projection, "observed_at": observed_at}
+    raw = source.native_bytes(owner, request)
+    view, episodes = _checkpoint_basis(owner, epoch, projection, observed_at)
+    result = _capture(owner, epoch=epoch, projection=view, observed_at=observed_at, episode_records=episodes)
+    if source.native_bytes(owner, request) != raw:
+        _refuse("checkpoint-idle-capture-input-changed")
+    return result
+
+
+def validate_checkpoint(owner, *, epoch, projection, observed_at, idle_input):
+    import siasourcebatch as source
+    request = {"epoch": epoch, "projection": projection, "observed_at": observed_at, "idle_input": idle_input}
+    raw = source.native_bytes(owner, request)
+    view, episodes = _checkpoint_basis(owner, epoch, projection, observed_at)
+    _validate(owner, epoch=epoch, projection=view, observed_at=observed_at,
+              idle_input=idle_input, episode_records=episodes)
+    if source.native_bytes(owner, request) != raw:
+        _refuse("checkpoint-idle-validation-input-changed")
