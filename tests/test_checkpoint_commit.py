@@ -1,6 +1,8 @@
 """Real Git commit of compact pages, with unchanged source authority."""
 
 import copy
+import importlib
+from pathlib import Path
 import subprocess
 import unittest
 from unittest import mock
@@ -20,6 +22,20 @@ class CheckpointCommit(unittest.TestCase):
     def test_compact_effects_pending_binds_content_status_and_live_pulse(self):
         self.assertTrue(callable(getattr(content.effects, "prepare_checkpoint_pending", None)), "missing compact effects pending preparation")
         self.effects_pending = True
+        self.exercise(synchronize=True)
+
+    def test_durable_compact_effects_stage_and_retry(self):
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.exercise(synchronize=True)
+
+    def test_compact_effects_reload_after_durable_interruption(self):
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.interrupt_effects = True
+        self.exercise(synchronize=True)
+
+    def test_compact_effects_retry_after_graph_advance_before_memo(self):
+        self.stage_api = importlib.import_module("siacheckpointeffects")
+        self.interrupt_graph = True
         self.exercise(synchronize=True)
 
     def exercise(self, *, synchronize):
@@ -86,6 +102,9 @@ class CheckpointCommit(unittest.TestCase):
             return result
 
         with mock.patch.object(owner, "_controller_source_sync_generation", side_effect=observed):
+            if hasattr(self, "stage_api"):
+                self.stage_case(f, owner, args, before)
+                return
             result = content.synchronize(vars(owner), **args)
             self.assertEqual(result["status"], "content-index-synchronized-not-live")
             self.assertEqual(result["sync_generation"]["status_last_commit"], git("rev-parse", "HEAD"))
@@ -97,6 +116,65 @@ class CheckpointCommit(unittest.TestCase):
                 content.synchronize(vars(owner), **args)
         self.assertEqual(args["memo"], before)
         self.assertEqual(owner.load_memo(), before)
+
+    def stage_case(self, f, owner, args, before):
+        from tests import test_controller_source_effects as effects_fixture
+        graph = f.case.effects._new_graph()
+        graph["publication_id"] = "4" * 32
+        old_graph_raw = Path(owner.GRAPH_PATH).read_bytes()
+        def export():
+            owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(graph), mode=0o600)
+            if getattr(self, "interrupt_graph", False):
+                self.interrupt_graph = False
+                raise OSError("controlled graph-before-memo interruption")
+        with mock.patch.object(owner, "_export_graph_publication", side_effect=export), \
+                mock.patch.object(owner, "_controller_source_effects_observed_at", return_value=effects_fixture.STATUS_AT):
+            if getattr(self, "interrupt_graph", False):
+                with self.assertRaisesRegex(OSError, "controlled graph-before-memo interruption"):
+                    self.stage_api.stage(vars(owner), **args)
+                self.assertEqual(args["memo"], before)
+                self.assertEqual(owner.load_memo(), before)
+            if getattr(self, "interrupt_effects", False):
+                write = owner.atomic_write
+                def interrupted(path, *pos, **kw):
+                    result = write(path, *pos, **kw)
+                    if path == owner.MEMO_PATH:
+                        raise OSError("controlled durable effects interruption")
+                    return result
+                with mock.patch.object(owner, "atomic_write", side_effect=interrupted):
+                    with self.assertRaisesRegex(OSError, "controlled durable effects interruption"):
+                        self.stage_api.stage(vars(owner), **args)
+                self.assertEqual(args["memo"], before)
+                args["memo"] = owner.load_memo()
+            else:
+                self.assertTrue(self.stage_api.stage(vars(owner), **args))
+            self.assertEqual(owner.load_memo(), args["memo"])
+            self.assertEqual(args["memo"]["live_loop_committed"], before["live_loop_committed"])
+            self.assertNotIn("ready", args["memo"])
+            pending = args["memo"]["controller_source_effects_pending"]
+            saved = list(Path(args["directory"]).glob("parent-graph-*.json"))
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0].read_bytes(), old_graph_raw)
+            with self.assertRaisesRegex(RuntimeError, "current graph generation"):
+                owner._read_committed_live_generation(memo=args["memo"], admitted_status=args["admitted_status"])
+            self.assertEqual(pending["source_batch_sha256"], before["controller_source_pending"]["batch_sha256"])
+            with mock.patch.object(owner, "_controller_source_sync_generation", side_effect=AssertionError("retry synchronized")), \
+                    mock.patch.object(owner, "_export_graph_publication", side_effect=AssertionError("retry exported")), \
+                    mock.patch.object(owner, "atomic_write", side_effect=AssertionError("retry wrote")):
+                self.assertFalse(self.stage_api.stage(vars(owner), **args))
+            altered = copy.deepcopy(graph)
+            altered["publication_id"] = "0" * 32
+            owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(altered), mode=0o600)
+            with self.assertRaises(ValueError) as refused:
+                self.stage_api.stage(vars(owner), **args)
+            self.assertEqual(refused.exception.reason, "checkpoint-effects-pending-graph-differs")
+            owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(graph), mode=0o600)
+            corrupt_parent = owner.json.loads(old_graph_raw)
+            corrupt_parent["publication_id"] = "5" * 32
+            owner.atomic_write(str(saved[0]), owner.json.dumps(corrupt_parent), mode=0o600)
+            with self.assertRaises(ValueError) as refused:
+                self.stage_api.stage(vars(owner), **args)
+            self.assertEqual(refused.exception.reason, "checkpoint-parent-graph-generation")
 
     def check_pending(self, owner, args, indexed):
         adoption, effects = content.adoption, content.effects

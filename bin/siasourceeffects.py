@@ -501,6 +501,10 @@ def _graph_generation(owner, source, live):
     raw, graph = _held_json(
         owner, source, owner["GRAPH_PATH"], owner["MAX_STATE_JSON_BYTES"],
         seal_legacy_public=True)
+    return _graph_generation_value(owner, source, live, raw, graph)
+
+
+def _graph_generation_value(owner, source, live, raw, graph):
     snapshot = owner["_recoverable_graph_snapshot"](
         graph, observed_by=graph.get("ts"))
     if snapshot is None or graph.get("snapshot", {}).get("complete") is not True:
@@ -547,10 +551,12 @@ def _status_generation_file(owner, source, live):
 
 
 def _live_generation(owner, source, live, memo, admitted_status,
-                     *, expected_binding=None):
+                     *, expected_binding=None, graph_artifact=None):
     try:
-        view = owner["_read_committed_live_generation"](
-            memo=memo, admitted_status=admitted_status)
+        view = owner["_read_committed_live_generation" if graph_artifact is None
+                     else "_read_historical_live_generation"](
+            memo=memo, admitted_status=admitted_status,
+            **({} if graph_artifact is None else {"graph_artifact": graph_artifact}))
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
         _refuse(source, "source-effects-live-generation", upstream=exc)
@@ -1140,13 +1146,15 @@ def committed_receipt(owner, *, memo, admitted_status, retained_batch=None):
 
 def validate_archived_receipt(
         owner, *, raw, retained_batch, memo, admitted_status,
-        expected_receipt_sha256):
+        expected_receipt_sha256, graph_artifact=None):
     """Re-admit one canonical retained receipt after its memo compaction.
 
     The original live-binding marker is deliberately retired by ACK.  The
     immutable receipt retains every binding field used by ``_receipt_shape``;
     this reader reconstructs only that validation view, then rejoins it to the
     retained batch and the currently admitted graph, status and live files.
+    An explicit held graph artifact instead binds the graph bytes to this
+    exact receipt; status and live artifacts remain current and unchanged.
     """
     import siasourcebatch as source
     import sialiveloop as live
@@ -1198,7 +1206,16 @@ def validate_archived_receipt(
     _receipt_shape(
         owner, source, live, receipt, retained_batch, binding,
         retained_status=retained_status)
-    graph_generation, graph = _graph_generation(owner, source, live)
+    if graph_artifact is None:
+        graph_generation, graph = _graph_generation(owner, source, live)
+    else:
+        import siasourceack
+        if type(graph_artifact) is not siasourceack._HeldRaw or graph_artifact.raw is None:
+            _refuse(source, "source-effects-archive-graph-descriptor")
+        graph_artifact.current()
+        graph_raw = graph_artifact.raw
+        graph = owner["_strict_json_loads"](graph_raw.decode("utf-8", errors="strict"))
+        graph_generation, graph = _graph_generation_value(owner, source, live, graph_raw, graph)
     if not _same(live, status, retained_status) \
             or receipt["status_generation"] != status_generation \
             or receipt["graph_generation"] != graph_generation:
@@ -1210,8 +1227,10 @@ def validate_archived_receipt(
         _refuse(source, "source-effects-archive-status-graph", upstream=exc)
     if receipt["live_generation"] \
             != _live_generation(owner, source, live, memo, status,
-                                expected_binding=receipt):
+                                expected_binding=receipt, graph_artifact=graph_artifact):
         _refuse(source, "source-effects-archive-live")
+    if graph_artifact is not None:
+        graph_artifact.current()
     return copy.deepcopy(receipt)
 
 

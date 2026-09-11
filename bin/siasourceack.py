@@ -585,7 +585,7 @@ def _committed_shape(source, committed):
 
 @contextlib.contextmanager
 def _historical_predecessor(owner, source, effects, memo, admitted_status,
-                            committed):
+                            committed, *, graph_artifact=None):
     """Hold historical archive/effects/live joins without claiming ready.
 
     Entry-point policy decides which complete memo authority is allowed.
@@ -609,9 +609,12 @@ def _historical_predecessor(owner, source, effects, memo, admitted_status,
             owner, raw=effects_archive.raw, retained_batch=archive.batch,
             memo=memo, admitted_status=status,
             expected_receipt_sha256=
-                committed["source_effects_receipt_sha256"])
-        view = owner["_read_committed_live_generation"](
-            memo=memo, admitted_status=status)
+                committed["source_effects_receipt_sha256"],
+            **({} if graph_artifact is None else {"graph_artifact": graph_artifact}))
+        view = owner["_read_committed_live_generation" if graph_artifact is None
+                     else "_read_historical_live_generation"](
+            memo=memo, admitted_status=status,
+            **({} if graph_artifact is None else {"graph_artifact": graph_artifact}))
         generation = view.get("generation")
         if view.get("status") != "available" \
                 or type(generation) is not dict \

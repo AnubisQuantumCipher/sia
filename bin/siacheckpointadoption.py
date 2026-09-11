@@ -41,7 +41,7 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
                         or _wire(owner, files["memo"].value, memo=True) != memo_raw or files["batch"].raw != raw \
                         or memo.get("controller_source_pending") != receipt \
                         or "controller_source_committed" in memo or "ready" in memo \
-                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending", "pulse_status_effects_pending"}).intersection(memo) \
+                        or (source._SUCCESSOR_PENDING_KEYS - {"controller_source_pending", "controller_source_live_pending", "pulse_status_effects_pending", "controller_source_effects_pending"}).intersection(memo) \
                         or transaction.checkpoint._wire(owner, source._notification_marker(owner, memo)) \
                         != transaction.checkpoint._wire(owner, batch["notification_baseline_attempt"]):
                     source.refuse("checkpoint-adopted-authority-differs")
@@ -63,11 +63,19 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
                     if _wire(owner, retained) != _wire(owner, handoff) \
                             or _wire(owner, memo.get("pulse_history")) != _wire(owner, prepared["history"]):
                         source.refuse("checkpoint-adopted-status-handoff-differs")
+                if "controller_source_effects_pending" in memo:
+                    import siacheckpointeffects
+                    siacheckpointeffects.validate_pending(owner, memo=memo, admitted_status=admitted_status,
+                        artifacts=view["artifacts"], pending=memo["controller_source_effects_pending"])
 
             authority()
             committed = batch["epoch"]["predecessor"]
+            import siacheckpointparent
+            parent_graph, _expected_graph = stack.enter_context(siacheckpointparent.hold_graph(
+                owner, directory=directory, committed=committed))
             historical = stack.enter_context(transaction.ack._historical_predecessor(
-                owner, source, effects, memo, admitted_status, committed))
+                owner, source, effects, memo, admitted_status, committed,
+                **({} if parent_graph.raw is None else {"graph_artifact": parent_graph})))
             archive, effects_archive, _status, generation = historical
             if _wire(owner, generation) != _wire(owner, batch["delivery_input"]["epoch_view"]["parent_generation"]) \
                     or archive.batch["epoch_sha256"] != view["root"]["legacy_epoch_sha256"] \

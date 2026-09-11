@@ -3901,6 +3901,8 @@ retain_unowned_cli_before_fence
             "_live_upstream_refusal",
             "_publish_staged_live_generation",
             "_read_committed_live_generation",
+            "_read_historical_live_generation",
+            "_read_live_generation_against_graph",
             "_recover_pending_live_generation",
             "_stage_live_generation",
         ),

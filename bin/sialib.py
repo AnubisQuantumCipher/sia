@@ -5990,6 +5990,8 @@ _LIVE_PUBLICATION_EXPORTS = frozenset({
     "_live_upstream_refusal",
     "_publish_staged_live_generation",
     "_read_committed_live_generation",
+    "_read_historical_live_generation",
+    "_read_live_generation_against_graph",
     "_recover_pending_live_generation",
     "_stage_live_generation",
 })
@@ -6043,6 +6045,20 @@ def _publish_staged_live_generation(*, memo):
 def _read_committed_live_generation(*, memo, admitted_status):
     return _load_live_publication().invoke(globals(), "_read_committed_live_generation",
         memo=memo, admitted_status=admitted_status)
+
+
+def _read_historical_live_generation(*, memo, admitted_status, graph_artifact):
+    return _load_live_publication().invoke(globals(), "_read_historical_live_generation",
+        memo=memo, admitted_status=admitted_status, graph_artifact=graph_artifact)
+
+
+def _historical_live_graph_value(*, graph_artifact):
+    """Keep core descriptor admission on the owner side of the child facade."""
+    import siasourceack
+    if type(graph_artifact) is not siasourceack._HeldRaw or graph_artifact.raw is None:
+        _live_refuse("historical graph requires a held regular file")
+    graph_artifact.current()
+    return _strict_json_loads(graph_artifact.raw.decode("utf-8", errors="strict"))
 
 
 def _live_root_absent_before_owner(memo):

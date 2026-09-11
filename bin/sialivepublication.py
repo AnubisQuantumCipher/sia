@@ -614,6 +614,27 @@ def _publish_staged_live_generation(*, memo):
 
 
 def _read_committed_live_generation(*, memo, admitted_status):
+    return _read_live_generation_against_graph(
+        memo=memo, admitted_status=admitted_status, graph_artifact=None)
+
+
+def _read_historical_live_generation(*, memo, admitted_status, graph_artifact):
+    if graph_artifact is None:
+        _live_refuse("historical graph artifact is required")
+    return _read_live_generation_against_graph(
+        memo=memo, admitted_status=admitted_status, graph_artifact=graph_artifact)
+
+
+def _read_live_generation_against_graph(*, memo, admitted_status, graph_artifact):
+    """Read current memo/status/live bytes, optionally against a held old graph.
+
+    Historical callers must independently bind that graph to their archived
+    effects receipt. This optional join never establishes current readiness;
+    the default path still requires the current graph generation.
+    """
+    historical_graph = None
+    if graph_artifact is not None:
+        historical_graph = _historical_live_graph_value(graph_artifact=graph_artifact)
     with corpus_owner(), _live_files() as (files, current, _write):
         durable = files["memo"].value
         if type(memo) is not dict or type(durable) is not dict:
@@ -642,7 +663,7 @@ def _read_committed_live_generation(*, memo, admitted_status):
                 if not _live_same(committed, _live_receipt(expected)) or not _live_same(generation, expected) \
                         or not _live_same(admitted_status, candidate["status"]):
                     _live_refuse("committed generation or frozen status binding differs")
-                _live_graph_status(admitted_status, files["graph"].value)
+                _live_graph_status(admitted_status, files["graph"].value if graph_artifact is None else historical_graph)
                 state, value = "available", expected
         result = copy.deepcopy({"schema": "sia-live-generation-view-v1", "status": state,
                                  "generation": value, "non_claims": list(LIVE_PUBLICATION_NON_CLAIMS)})
@@ -651,6 +672,8 @@ def _read_committed_live_generation(*, memo, admitted_status):
                 or not _live_same(admitted_status, files["status"].value):
             _live_refuse("reader inputs changed during final copy")
         current()
+        if graph_artifact is not None:
+            graph_artifact.current()
         return result
 
 
