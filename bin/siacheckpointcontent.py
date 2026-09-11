@@ -86,3 +86,54 @@ def publish_pages(owner, *, memo, admitted_status, directory,
         current()
         named_current()
         return detached
+
+
+def commit_pages(owner, *, memo, admitted_status, directory,
+                 expected_manifest_sha256, expected_root_sha256):
+    """Publish/replay exact compact pages and obtain the original clean Git cut.
+
+    No caller-supplied page receipt is accepted as permission to commit. Empty
+    content performs no Git commit. The nested page receipt keeps its narrower
+    claims; this outer result additionally records a validated corpus cut.
+    """
+    source, live = adoption.source, adoption.transaction.live
+    args = dict(memo=memo, admitted_status=admitted_status, directory=directory,
+                expected_manifest_sha256=expected_manifest_sha256, expected_root_sha256=expected_root_sha256)
+    references = dict(owner)
+    memo_raw, status_raw = adoption._wire(owner, memo, memo=True), adoption._wire(owner, admitted_status)
+    with owner["brainstem_owner"](), owner["corpus_owner"](), adoption.publication._files(owner, source) as (files, observe, current, named_current):
+        pages = publish_pages(owner, **args)
+        pages_raw = adoption._wire(owner, pages)
+
+        def unchanged():
+            if any(owner.get(name) is not value for name, value in references.items()) \
+                    or adoption._wire(owner, memo, memo=True) != memo_raw \
+                    or adoption._wire(owner, admitted_status) != status_raw \
+                    or adoption._wire(owner, pages) != pages_raw:
+                source.refuse("checkpoint-content-commit-input-changed")
+            current()
+
+        unchanged()
+        adoption.read_pending(owner, **args)
+        generation = None
+        if pages["target_versions"]:
+            generation = owner["_controller_source_corpus_commit_generation_v2"](
+                source_batch_sha256=pages["source_batch_sha256"],
+                content_publication_sha256=pages["content_publication_sha256"])
+            generation = effects._corpus_generation(owner, source, live, generation)
+        unchanged()
+        adoption.read_pending(owner, **args)
+        result = {"schema": "sia-checkpoint-corpus-publication-v1",
+            "status": "no-pages-to-commit" if generation is None else "pages-committed-not-indexed",
+            "pages": pages, "corpus_generation": generation,
+            "non_claims": [
+                "A clean corpus Git cut is not index synchronization, graph/status/live publication, source acknowledgment or readiness.",
+                "The nested page receipt retains its original content/origin and historical-capture boundaries; no cognitive win is established.",
+                "Retry may observe a different before-commit field while retaining the same resulting clean commit; byte-identical receipts are not promised."]}
+        raw = adoption._wire(owner, result)
+        detached = copy.deepcopy(result)
+        if adoption._wire(owner, detached) != raw:
+            source.refuse("checkpoint-content-commit-result-copy-differs")
+        unchanged()
+        named_current()
+        return detached
