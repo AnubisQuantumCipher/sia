@@ -17,6 +17,11 @@ class CheckpointCommit(unittest.TestCase):
         self.assertTrue(callable(getattr(content, "synchronize", None)), "missing compact index synchronization")
         self.exercise(synchronize=True)
 
+    def test_compact_effects_pending_binds_content_status_and_live_pulse(self):
+        self.assertTrue(callable(getattr(content.effects, "prepare_checkpoint_pending", None)), "missing compact effects pending preparation")
+        self.effects_pending = True
+        self.exercise(synchronize=True)
+
     def exercise(self, *, synchronize):
         self.assertTrue(callable(getattr(content, "commit_pages", None)), "missing compact corpus commit")
         case = fixtures.CheckpointAdoption(methodName="runTest")
@@ -85,8 +90,46 @@ class CheckpointCommit(unittest.TestCase):
             self.assertEqual(result["status"], "content-index-synchronized-not-live")
             self.assertEqual(result["sync_generation"]["status_last_commit"], git("rev-parse", "HEAD"))
             self.assertTrue(result["target_manifest"])
+            if getattr(self, "effects_pending", False):
+                self.check_pending(owner, args, result)
             malformed.append(True)
             with self.assertRaises(ValueError):
                 content.synchronize(vars(owner), **args)
         self.assertEqual(args["memo"], before)
         self.assertEqual(owner.load_memo(), before)
+
+    def check_pending(self, owner, args, indexed):
+        adoption, effects = content.adoption, content.effects
+        live, source = adoption.transaction.live, adoption.source
+        view = adoption.read_pending(vars(owner), **args)
+        artifacts = view["package"]["artifacts"]
+        batch, transition = artifacts["capture"], artifacts["transition"]
+        binding = args["memo"]["controller_source_live_pending"]
+        handoff = args["memo"]["pulse_status_effects_pending"]
+        graph_generation, graph = effects._graph_generation(vars(owner), source, live)
+        status = effects._project_status(vars(owner), source, live, args["admitted_status"],
+            binding, handoff, transition, graph, args["memo"]["pulse_history"], args["admitted_status"]["ts"])
+        pages = indexed["committed"]["pages"]
+        gist = pages["gist_publication"]
+        supplied = dict(admitted_status=args["admitted_status"], batch=batch, binding=binding, handoff=handoff, candidate=artifacts["candidate"],
+            transition=transition, closure_result=pages["closure_result"], target_manifest=indexed["target_manifest"],
+            corpus_generation=indexed["committed"]["corpus_generation"], sync_generation=indexed["sync_generation"],
+            graph_generation=graph_generation, status_generation=effects._status_generation_value(vars(owner), source, live, status),
+            status=status, content_fields={"gist_page_plan_sha256": gist["plan_sha256"],
+                "gist_pages_sha256": gist["gist_pages_sha256"], "gist_publication": gist,
+                "content_publication_sha256": pages["content_publication_sha256"]})
+        pending = effects.prepare_checkpoint_pending(vars(owner), **supplied)
+        self.assertEqual(pending["schema"], "sia-controller-source-effects-pending-v2")
+        self.assertEqual(pending["source_batch_sha256"], batch["batch_sha256"])
+        self.assertEqual(pending["transition_sha256"], transition["transition_sha256"])
+        self.assertEqual(pending["gist_publication"], gist)
+        altered = copy.deepcopy(status)
+        altered["workspace"] = []
+        altered["publication_id"] = "0" * 32
+        with self.assertRaises(ValueError):
+            effects.prepare_checkpoint_pending(vars(owner), **{**supplied, "status": altered})
+        truncated = copy.deepcopy(status)
+        truncated["history"] = [truncated["history"][-1]]
+        with self.assertRaises(ValueError):
+            effects.prepare_checkpoint_pending(vars(owner), **{**supplied, "status": truncated,
+                "status_generation": effects._status_generation_value(vars(owner), source, live, truncated)})

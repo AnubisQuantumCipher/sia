@@ -130,9 +130,19 @@ def _content_identity(live, closure, closure_result_sha256,
     })
 
 
-def _retained_gist_plan(owner, source, live, batch, binding):
+def _retained_gist_plan(owner, source, live, batch, binding, *, checkpoint=False):
     """Reconstruct only the retained idle proposal, with no source acquisition."""
     import siasourcegist
+    if checkpoint:
+        import siacontrollerliveinput
+        inputs = siacontrollerliveinput.prepare_inputs_checkpoint(owner, batch=batch,
+            previous_generation=batch["delivery_input"]["epoch_view"]["parent_generation"],
+            expected_previous_generation_sha256=binding["parent_generation_sha256"])
+        transition = live.prepare_pulse(**inputs)
+        if transition["transition_sha256"] != binding["transition_sha256"]:
+            _refuse(source, "checkpoint-effects-gist-transition")
+        return siasourcegist.prepare(owner, transition=transition,
+                                    expected_transition_sha256=binding["transition_sha256"])
     intake = batch["intake_projection"]["intake"]
     wrapper = batch["idle_input"]
     _idle, pages = live._idle(
@@ -145,13 +155,13 @@ def _retained_gist_plan(owner, source, live, batch, binding):
         transition_sha256=binding["transition_sha256"])
 
 
-def _content_targets(owner, source, live, value, batch, binding):
+def _content_targets(owner, source, live, value, batch, binding, *, checkpoint=False):
     """Bind every v2 content witness to the exact captured idle replay."""
     targets = _target_versions(owner, source, batch["event_closure"])
-    if not _v2(batch):
+    if not (_v2(batch) or checkpoint):
         return targets
     import siasourcegist
-    plan = _retained_gist_plan(owner, source, live, batch, binding)
+    plan = _retained_gist_plan(owner, source, live, batch, binding, checkpoint=checkpoint)
     receipt = siasourcegist.publication_receipt(
         owner, plan=plan, expected_plan_sha256=plan["plan_sha256"])
     if value["gist_page_plan_sha256"] != plan["plan_sha256"] \
@@ -713,10 +723,53 @@ def _project_status(owner, source, live, admitted, binding, handoff,
     return status
 
 
+def prepare_checkpoint_pending(owner, *, admitted_status, batch, binding, handoff,
+                               candidate, transition, closure_result, target_manifest,
+                               corpus_generation, sync_generation, graph_generation,
+                               status_generation, status, content_fields):
+    """Build the original content-effects envelope for an explicit compact pulse.
+
+    This is pure represented validation, not durable storage authority. The
+    caller must hold and join the actual source/content/graph/status files.
+    Legacy pending validation retains its original source contracts.
+    """
+    inputs = {name: value for name, value in locals().items() if name != "owner"}
+    references = dict(owner)
+    import siasourcebatch as source
+    import siasourcecheckpoint
+    import siacontrollerstatus
+    import sialiveloop as live
+    originals = {name: source.native_bytes(owner, value) for name, value in inputs.items()}
+    if batch.get("schema") != "sia-controller-source-checkpoint-capture-v3":
+        _refuse(source, "checkpoint-effects-source-schema")
+    siasourcecheckpoint.validate_capture(owner, batch, binding["source_batch_sha256"])
+    prepared = siacontrollerstatus.prepare_checkpoint(owner, admitted_status=admitted_status,
+        batch=batch, expected_batch_sha256=binding["source_batch_sha256"],
+        source_live_pending=binding, candidate=candidate, transition=transition,
+        expected_transition_sha256=binding["transition_sha256"], started_at=handoff["history"][0])
+    expected_handoff = {"v": 1, "publication_id": binding["publication_id"],
+                        "effects": prepared["effects"], "history": prepared["history"][-1]}
+    if not _same(live, handoff, expected_handoff) \
+            or not _same(live, status.get("history"), prepared["history"]) \
+            or not _same(live, status.get("workspace"), prepared["workspace"]):
+        _refuse(source, "checkpoint-effects-status-replay")
+    result = _pending_value(owner, source, live, batch=batch, binding=binding, handoff=handoff,
+        candidate=candidate, transition=transition, closure_result=closure_result,
+        target_manifest=target_manifest, corpus_generation=corpus_generation,
+        sync_generation=sync_generation, graph_generation=graph_generation,
+        status_generation=status_generation, status=status, content_fields=content_fields,
+        checkpoint=True)
+    if any(owner.get(name) is not value for name, value in references.items()) \
+            or any(source.native_bytes(owner, value) != originals[name] for name, value in inputs.items()):
+        _refuse(source, "checkpoint-effects-input-changed")
+    source.native_bytes(owner, result)
+    return result
+
+
 def _pending_value(owner, source, live, *, batch, binding, handoff,
                    candidate, transition, closure_result, target_manifest,
                    corpus_generation, sync_generation, graph_generation,
-                   status_generation, status, content_fields=None):
+                   status_generation, status, content_fields=None, checkpoint=False):
     closure = batch["event_closure"]
     body = {
         "schema": "sia-controller-source-effects-pending-v1",
@@ -740,7 +793,7 @@ def _pending_value(owner, source, live, *, batch, binding, handoff,
         "transition_sha256": binding["transition_sha256"],
         "non_claims": list(NON_CLAIMS),
     }
-    if _v2(batch):
+    if _v2(batch) or checkpoint:
         if type(content_fields) is not dict \
                 or set(content_fields) != CONTENT_FIELDS:
             _refuse(source, "source-effects-content-fields")
@@ -749,15 +802,15 @@ def _pending_value(owner, source, live, *, batch, binding, handoff,
     elif content_fields is not None:
         _refuse(source, "source-effects-v1-content-fields")
     value = {**body, "pending_sha256": _sha(live, body)}
-    _pending_shape(owner, source, live, value, batch, binding)
+    _pending_shape(owner, source, live, value, batch, binding, checkpoint=checkpoint)
     return value
 
 
-def _pending_shape(owner, source, live, value, batch, binding):
+def _pending_shape(owner, source, live, value, batch, binding, *, checkpoint=False):
     _self_hash(source, live, value, "pending_sha256",
-               _effect_keys(batch, PENDING_KEYS),
+               PENDING_KEYS | CONTENT_FIELDS if checkpoint else _effect_keys(batch, PENDING_KEYS),
                "source-effects-pending")
-    schema = ("sia-controller-source-effects-pending-v2" if _v2(batch)
+    schema = ("sia-controller-source-effects-pending-v2" if _v2(batch) or checkpoint
               else "sia-controller-source-effects-pending-v1")
     if value["schema"] != schema \
             or value["non_claims"] != list(NON_CLAIMS) \
@@ -773,7 +826,7 @@ def _pending_shape(owner, source, live, value, batch, binding):
         _refuse(source, "source-effects-pending-binding")
     closure = batch["event_closure"]
     closure_sha256 = None if closure is None else closure["closure_sha256"]
-    target_versions = _content_targets(owner, source, live, value, batch, binding)
+    target_versions = _content_targets(owner, source, live, value, batch, binding, checkpoint=checkpoint)
     has_content = closure is not None or bool(target_versions)
     if value["event_closure_sha256"] != closure_sha256 \
             or (closure is None) != (value["closure_result_sha256"] is None) \
