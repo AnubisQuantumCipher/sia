@@ -758,7 +758,7 @@ def _validate_event_replay_key(day_slug, event_id):
             or re.fullmatch(
                 r"events/[a-z0-9][a-z0-9._-]{0,199}/"
                 r"\d{4}-\d{2}-\d{2}"
-                r"(?:-part-[2-9][0-9]*)?", day_slug) is None \
+                r"(?:-part-(?:[2-9]|[1-9][0-9]+))?", day_slug) is None \
             or not isinstance(event_id, str) \
             or re.fullmatch(r"[0-9a-f]{64}", event_id) is None:
         raise ValueError("event replay identity is invalid")

@@ -2831,7 +2831,7 @@ EVENT_MARKER_RE = re.compile(
 EVENT_SOURCE_RE = re.compile(
     r"^events/(?P<organ>[a-z0-9][a-z0-9._-]{0,199})/"
     r"(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})"
-    r"(?:-part-(?P<part>[2-9][0-9]*))?\.md$")
+    r"(?:-part-(?P<part>(?:[2-9]|[1-9][0-9]+)))?\.md$")
 
 
 class ConsolidationCapacityError(RuntimeError):
@@ -2975,7 +2975,7 @@ def _event_day_shards(organ, date):
                                      + "-part-")
         and entry["name"].endswith(".md")]
     part_re = re.compile(
-        rf"^{re.escape(base_path[:-3])}-part-([2-9][0-9]*)\.md$")
+        rf"^{re.escape(base_path[:-3])}-part-((?:[2-9]|[1-9][0-9]+))\.md$")
     parts = []
     for path in candidates:
         match = part_re.fullmatch(path)
@@ -3212,7 +3212,7 @@ def _other_event_occurrences(organ, wanted, excluded):
     found = {}
     page_re = re.compile(
         rf"^events/{re.escape(organ)}/[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
-        r"(?:-part-[2-9][0-9]*)?$")
+        r"(?:-part-(?:[2-9]|[1-9][0-9]+))?$")
     for path in sorted(paths):
         slug = os.path.relpath(path, CORPUS)[:-3]
         if slug in excluded or page_re.fullmatch(slug) is None:
