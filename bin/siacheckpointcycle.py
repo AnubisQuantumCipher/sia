@@ -38,6 +38,7 @@ import siasourcebatch as source
 
 
 NON_CLAIMS = (
+    "Selecting the epoch marker's recorded adoption is a scalar read of a represented value. It does not reopen or validate the epoch files; the v3 runner does that independently.",
     "Routing one pulse is not scheduling, activation, installation or readiness. The caller decided a pulse is due; this only chooses which lane owns it.",
     "A compact lane is entered from durable state that already names a package or a chain, or by bootstrapping an eligible controller that is already enabled, already adopted and independently acknowledged. Bootstrapping grants nothing: it adds no operator choice, creates and reads no configuration, and carries only the authority already established.",
     "Eligibility is not readiness. Declining to bootstrap leaves the legacy lane exactly as it was, and the absence of a package, a chain and an eligible controller is not evidence that no compact chain could exist.",
@@ -67,6 +68,35 @@ def _owned(owner, directory, configured_directory):
 def _status(owner, memo):
     owner["_require_status_memo_fields"](memo)
     return runner._admit_status(owner, memo)
+
+
+def configured_adoption(memo):
+    """Select only the closed persisted epoch marker's original adoption.
+
+    Moved here from the resident wrapper, which keeps the facade name and
+    delegates. The v3 runner independently reopens and validates the epoch
+    files; this scalar selection merely prevents the configured
+    zero-argument route from silently taking an adoption out of a
+    represented source wrapper.
+    """
+    import siacontrollerdeliveryepoch as epoch_api
+    import sialiveloop
+
+    if type(memo) is not dict:
+        raise ValueError("configured controller-source memo must be an object")
+    marker = memo.get(epoch_api._MARKER)
+    if marker is None:
+        return None
+    if type(marker) is not dict or set(marker) != epoch_api._MARKER_KEYS \
+            or marker.get("schema") != "sia-controller-delivery-epoch-marker-v1" \
+            or not sialiveloop._token(marker.get("epoch_id")) \
+            or not sialiveloop._integer(marker.get("started_at")) \
+            or not sialiveloop._digest(marker.get("birth_sha256")):
+        raise ValueError("configured controller-source epoch marker is invalid")
+    adoption = marker.get("adoption_sha256")
+    if adoption is not None and not sialiveloop._digest(adoption):
+        raise ValueError("configured controller-source adoption pin is invalid")
+    return adoption
 
 
 def recover(owner, *, memo, configured_directory, journal_limits,
@@ -109,6 +139,43 @@ def chain_pending(owner, *, memo):
     chain could exist, only that this memo names none.
     """
     return dispatch.select_chain(owner, memo=memo) is not None
+
+
+def route(owner, *, memo, configured_directory, clock, journal_limits,
+          expected_journal_limits_sha256, expected_adoption_sha256):
+    """Take this pulse for the compact lane, or return None for the legacy one.
+
+    The whole ordering lives here rather than at the call site, so the
+    resident wrapper cannot drift from it.
+
+    Recovery first: the package is already captured, so it samples no
+    clock, runs no collector and reserves no sequence, reusing the one the
+    marker bound. It goes through the adopting entry because a marker is
+    written before adoption, so a legitimate crash can leave a
+    recorded-but-unadopted package.
+
+    Then continuation, which captures and therefore reserves a sequence
+    and samples the clock — but only once it is certain there is a chain
+    to continue, never to discover whether there is one. The clock stays a
+    lazy closure, as on the legacy lane.
+
+    Then bootstrap, which may start a chain for an already enabled,
+    already adopted and independently acknowledged controller. It returns
+    None whenever the legacy lane should keep the pulse, so the
+    no-adoption, initial and pending routes are reached exactly as before.
+    """
+    premises = dict(journal_limits=journal_limits,
+        expected_journal_limits_sha256=expected_journal_limits_sha256,
+        expected_adoption_sha256=expected_adoption_sha256)
+    recovered = recover(owner, memo=memo,
+        configured_directory=configured_directory, **premises)
+    if recovered is not None:
+        return recovered
+    if chain_pending(owner, memo=memo):
+        return advance(owner, memo=memo, clock=clock,
+            configured_directory=configured_directory, **premises)
+    return bootstrap(owner, memo=memo, clock=clock,
+        configured_directory=configured_directory, **premises)
 
 
 def advance(owner, *, memo, configured_directory, clock, journal_limits,
