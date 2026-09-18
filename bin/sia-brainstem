@@ -465,6 +465,21 @@ def _installation_completion_pending():
         raise RuntimeError("first-light completion state is invalid")
     return record["state"] == "installing"
 
+
+def _cycle_retry_wait_seconds(cycle_seconds, interval):
+    """Seconds to sleep before the next resident cycle starts.
+
+    A cycle that finished inside the configured interval keeps the existing
+    start-to-start schedule: the remaining interval. A cycle that overran
+    the interval waits the full configured interval before its retry,
+    instead of retrying almost immediately, so a slow cycle cannot make the
+    daemon run back-to-back. Both branches keep the existing 5s safety
+    floor — including when the configured interval itself is below 5s.
+    """
+    chosen = interval if cycle_seconds > interval else interval - cycle_seconds
+    return max(5.0, chosen)
+
+
 def main():
     try:
         if _restore_barrier_present():
@@ -548,7 +563,7 @@ def _run_owned(*, plugin_guard=None):
                 and not _resident_plugin_available(plugin_guard):
             plugin_removed = True
             break
-        t0 = time.time()
+        t0 = time.monotonic()
         try:
             # Reserve the sequence before any effects. A crash may leave a
             # gap, but it can never cause a signed/publication sequence reuse.
@@ -585,8 +600,16 @@ def _run_owned(*, plugin_guard=None):
         if _dream_due(now, last_dream_day, next_dream_attempt):
             last_dream_day, next_dream_attempt = _attempt_dream(
                 now, last_dream_day)
-        elapsed = time.time() - t0
-        for _ in range(int(max(5.0, PULSE_SEC - elapsed))):
+        # cycle_seconds spans this whole iteration (collection, dream/cache
+        # work, logging) — it is not a pure per-pulse model/collector
+        # latency measurement.
+        cycle_seconds = time.monotonic() - t0
+        overrun = cycle_seconds > PULSE_SEC
+        wait_seconds = _cycle_retry_wait_seconds(cycle_seconds, PULSE_SEC)
+        sialib.log(
+            f"cycle {seq}: {cycle_seconds:.3f}s"
+            + (f" OVERRUN, waiting {wait_seconds:.3f}s" if overrun else ""))
+        for _ in range(int(wait_seconds)):
             if _stop:
                 break
             time.sleep(1)

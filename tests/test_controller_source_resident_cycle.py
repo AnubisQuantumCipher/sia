@@ -713,6 +713,186 @@ class ResidentSourceCycleContract(unittest.TestCase):
             f"pulse {durable['pulse_seq']} FAILED: {detail}",
             [call.args[0] for call in log.call_args_list if call.args])
 
+    def _run_one_cycle(self, *, reserved_pulse, monotonic_values,
+                       pulse_sec=30, sleep_side_effect=None):
+        """Drive exactly one resident cycle with a controlled clock.
+
+        Reuses the same full startup/collaborator stub set as
+        test_failed_pulse_refreshes_durable_sequence_before_reporting; the
+        addition is a controlled time.monotonic() sequence, an injected
+        _reserved_pulse behavior, and a time.sleep() guard so the new
+        duration/overrun log and retry wait can be observed with no real
+        sleep. Returns (exit_code, log_mock, sleep_mock).
+        """
+        memo = {"pulse_seq": 8, "sync_needed": False, "dream": {}}
+        if sleep_side_effect is None:
+            def sleep_side_effect(_seconds):
+                raise AssertionError("cycle test performed a real sleep")
+
+        with ExitStack() as stack:
+            stack.enter_context(self._source_authority(
+                brainstem.sialib, "clean"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_stop", False))
+            stack.enter_context(mock.patch.object(
+                brainstem, "PULSE_SEC", pulse_sec))
+            stack.enter_context(mock.patch.object(
+                brainstem.time, "monotonic", side_effect=monotonic_values))
+            stack.enter_context(mock.patch.object(
+                brainstem.signal, "signal"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "CONFIG", {}))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_memo", return_value=dict(memo)))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_pending_failure_publication",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_require_status_memo_fields"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "load_cursors", return_value={}))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_recover_notify_baseline_attempt"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_source_replay_marker",
+                return_value=None))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_marker"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_pending_pulse_status_effects"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_require_status_sequence_not_ahead"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "ensure_dirs"))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "recover_ledger_transitions",
+                return_value=([], [])))
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "durable_ledger_append"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_systemd_ready"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_reserved_pulse", side_effect=reserved_pulse))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_safe_failure_detail",
+                return_value="fixture failure"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_durable_dream_day", return_value=""))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_dream_due", return_value=False))
+            log = stack.enter_context(mock.patch.object(
+                brainstem.sialib, "log"))
+            stack.enter_context(mock.patch.object(
+                brainstem, "_publish_failure"))
+            sleeper = stack.enter_context(mock.patch.object(
+                brainstem.time, "sleep", side_effect=sleep_side_effect))
+            exit_code = brainstem._run_owned()
+        return exit_code, log, sleeper
+
+    @staticmethod
+    def _logged(log):
+        return [call.args[0] for call in log.call_args_list if call.args]
+
+    def test_normal_cycle_logs_duration_and_keeps_start_to_start_schedule(self):
+        # JACKAL: 105.0-100.0 -> exact 5; 30-5.0 -> exact 25 (max(5.0, 25.0) = 25.0).
+        self.assertEqual(
+            brainstem._cycle_retry_wait_seconds(5.0, 30), 25.0)
+
+        def normal_pulse():
+            brainstem._stop = True
+            return {"events_pulse": 0, "state": "ok", "errors": {}}
+
+        exit_code, log, sleeper = self._run_one_cycle(
+            reserved_pulse=normal_pulse, monotonic_values=[100.0, 105.0],
+            pulse_sec=30)
+
+        self.assertEqual(exit_code, 0)
+        sleeper.assert_not_called()
+        messages = self._logged(log)
+        self.assertTrue(any(
+            message.startswith("cycle 8: 5.000s")
+            and "OVERRUN" not in message
+            for message in messages), messages)
+
+    def test_overrun_cycle_waits_full_configured_interval_not_the_floor(self):
+        # JACKAL: 140.0-100.0 -> exact 40 (40 > 30, so the wait is the
+        # configured interval itself, not max(5.0, 30-40)).
+        self.assertEqual(
+            brainstem._cycle_retry_wait_seconds(40.0, 30), 30.0)
+
+        def overrun_pulse():
+            brainstem._stop = True
+            return {"events_pulse": 0, "state": "ok", "errors": {}}
+
+        exit_code, log, sleeper = self._run_one_cycle(
+            reserved_pulse=overrun_pulse, monotonic_values=[100.0, 140.0],
+            pulse_sec=30)
+
+        self.assertEqual(exit_code, 0)
+        sleeper.assert_not_called()
+        messages = self._logged(log)
+        self.assertTrue(any(
+            message == "cycle 8: 40.000s OVERRUN, waiting 30.000s"
+            for message in messages), messages)
+
+    def test_small_configured_interval_overrun_still_keeps_the_safety_floor(self):
+        # A 2s configured interval is below the 5s floor. On overrun the
+        # chosen delay is the interval itself (2), then floored: max(5.0, 2)
+        # = 5.0 — the floor must win, not the smaller configured interval.
+        self.assertEqual(
+            brainstem._cycle_retry_wait_seconds(3.0, 2), 5.0)
+
+        def overrun_pulse():
+            brainstem._stop = True
+            return {"events_pulse": 0, "state": "ok", "errors": {}}
+
+        exit_code, log, sleeper = self._run_one_cycle(
+            reserved_pulse=overrun_pulse, monotonic_values=[100.0, 103.0],
+            pulse_sec=2)
+
+        self.assertEqual(exit_code, 0)
+        sleeper.assert_not_called()
+        messages = self._logged(log)
+        self.assertTrue(any(
+            message == "cycle 8: 3.000s OVERRUN, waiting 5.000s"
+            for message in messages), messages)
+
+    def test_failed_cycle_still_logs_duration_and_overrun_state(self):
+        def failed_overrun_pulse():
+            brainstem._stop = True
+            raise RuntimeError("fixture failure")
+
+        exit_code, log, sleeper = self._run_one_cycle(
+            reserved_pulse=failed_overrun_pulse,
+            monotonic_values=[100.0, 140.0], pulse_sec=30)
+
+        self.assertEqual(exit_code, 0)
+        sleeper.assert_not_called()
+        messages = self._logged(log)
+        self.assertTrue(any(
+            message == "pulse 8 FAILED: fixture failure"
+            for message in messages), messages)
+        self.assertTrue(any(
+            message.startswith("cycle 8: 40.000s OVERRUN")
+            for message in messages), messages)
+
+    def test_stop_signal_during_wait_ends_it_before_the_full_interval(self):
+        def normal_pulse():
+            return {"events_pulse": 0, "state": "ok", "errors": {}}
+
+        def sleep_then_stop(_seconds):
+            brainstem._stop = True
+
+        exit_code, log, sleeper = self._run_one_cycle(
+            reserved_pulse=normal_pulse, monotonic_values=[100.0, 105.0],
+            pulse_sec=30, sleep_side_effect=sleep_then_stop)
+
+        self.assertEqual(exit_code, 0)
+        # The computed wait is 25s (see the normal-cycle case above); an
+        # interrupting stop must end the per-second wait loop immediately
+        # rather than completing all 25 checks.
+        self.assertEqual(sleeper.call_count, 1)
+
     def test_manual_legacy_dream_never_runs_under_source_authority(self):
         for source_kind in SOURCE_AUTHORITY_KINDS:
             with self.subTest(source_kind=source_kind):

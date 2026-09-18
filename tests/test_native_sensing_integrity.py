@@ -60,6 +60,29 @@ class NativeKeeperAdmission(unittest.TestCase):
         self.assertIn("INSTALL:runtime fixture ready", events[0].summary)
         self.assertEqual(self.core.sense_sia(cursor), [])
 
+    def test_periodic_rows_yield_no_event_but_lifecycle_rows_still_project(self):
+        # setUp already appended one INSTALL:runtime row. A pulse-period row
+        # is the same kind of row bin/sialib.py appends every resident
+        # cycle ("PULSE:ingest"); a following lifecycle row is the same
+        # kind sia-brainstem appends at startup ("BOOT:brainstem").
+        self._keeper(
+            "append", self.temp.name, "PULSE:ingest", "43", "events",
+            hashlib.sha256(b"").hexdigest(), "0")
+        self._keeper(
+            "append", self.temp.name, "BOOT:brainstem", "1.0.0",
+            "pulse=60s", hashlib.sha256(b"").hexdigest(), "0")
+
+        cursor = {"sia.lines": 0}
+        events = self.core.sense_sia(cursor)
+
+        # The periodic row is read and verified but never becomes a corpus
+        # event; the lifecycle row after it still does, on the same cursor.
+        self.assertEqual(
+            [event.kind for event in events], ["install", "boot"])
+        # The cursor advanced past the filtered row too — not stuck behind
+        # it and not left to be silently re-read next time.
+        self.assertEqual(self.core.sense_sia(cursor), [])
+
     def test_changed_keeper_sidecar_refuses_success_before_projection(self):
         cursor = {"sia.lines": 0}
         prior = copy.deepcopy(cursor)
