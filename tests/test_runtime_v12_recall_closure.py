@@ -39,9 +39,14 @@ class RuntimeV12RecallClosure(unittest.TestCase):
     def test_exact_current_roster_preserves_every_historical_rung(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[1], (
+        # Located by salt, as the v9 and v10 closures already do: a fixed
+        # index asserts how many newer rungs exist, which is not what
+        # "preserves every historical rung" means.
+        v12_index = next(index for index, rung in enumerate(authority.RUNTIME_LADDER)
+                         if rung[0] == V12_SALT)
+        self.assertEqual(authority.RUNTIME_LADDER[v12_index], (
             V12_SALT, EXPECTED_V12_RUNTIME_NAMES, V12_ADDITIONS))
-        self.assertEqual(authority.RUNTIME_LADDER[2], (
+        self.assertEqual(authority.RUNTIME_LADDER[v12_index + 1], (
             v11.V11_SALT, v11.EXPECTED_V11_RUNTIME_NAMES,
             v11.V11_ADDITIONS))
         fixtures = {label: (salt, names, digest)
@@ -52,7 +57,7 @@ class RuntimeV12RecallClosure(unittest.TestCase):
             (fixtures[label][0], fixtures[label][1],
              v10.HISTORICAL_SELECTORS[label])
             for label in v10.HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[3:], expected_tail)
+        self.assertEqual(authority.RUNTIME_LADDER[v12_index + 2:], expected_tail)
         with tempfile.TemporaryDirectory() as runtime:
             release._plant_runtime_tree(runtime, EXPECTED_V12_RUNTIME_NAMES)
             self.assertEqual(authority.runtime_rung(runtime),

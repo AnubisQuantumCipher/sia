@@ -30,11 +30,20 @@ class RuntimeV13PersistentUninstall(unittest.TestCase):
     fence_result = staticmethod(v12.RuntimeV12RecallClosure.fence_result)
 
     def test_current_runtime_and_installer_ship_the_teardown_authority(self):
+        # v13 is no longer the newest rung, so it is located by salt and
+        # its relationship to v12 is asserted rather than an absolute
+        # position. The exactness this test owns is v13's own roster and
+        # additions, and that the installer still stages them; that the
+        # staged tree equals the CURRENT rung exactly is owned by
+        # test_latest_receipt_rung_is_exactly_the_staged_tree and is not
+        # relaxed here.
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[0], (
+        v13_index = next(index for index, rung in enumerate(authority.RUNTIME_LADDER)
+                         if rung[0] == V13_SALT)
+        self.assertEqual(authority.RUNTIME_LADDER[v13_index], (
             V13_SALT, EXPECTED_V13_RUNTIME_NAMES, V13_ADDITIONS))
-        self.assertEqual(authority.RUNTIME_LADDER[1], (
+        self.assertEqual(authority.RUNTIME_LADDER[v13_index + 1], (
             v12.V12_SALT, v12.EXPECTED_V12_RUNTIME_NAMES,
             v12.V12_ADDITIONS))
         installer = release._read("install.sh")
@@ -42,7 +51,7 @@ class RuntimeV13PersistentUninstall(unittest.TestCase):
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
         staged = release._staged_runtime_members(installer)
         self.assertEqual(len(staged), len(set(staged)))
-        self.assertEqual(set(staged), set(EXPECTED_V13_RUNTIME_NAMES))
+        self.assertLessEqual(set(EXPECTED_V13_RUNTIME_NAMES), set(staged))
         self.assertEqual(release_files.count("bin/sialifetime.py"), 1)
         self.assertEqual(release_files.count("uninstall.sh"), 1)
 

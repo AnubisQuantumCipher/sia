@@ -42,7 +42,12 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
     def test_exact_v11_roster_remains_in_the_complete_historical_ladder(self):
         authority = release.SIARELEASE
         authority.validate_runtime_ladder()
-        self.assertEqual(authority.RUNTIME_LADDER[2], (
+        # Locate the rung by its salt, as the v9 and v10 closures already
+        # do. A fixed index asserts how many newer rungs exist, which is
+        # not what "remains in the complete historical ladder" means.
+        v11_index = next(index for index, rung in enumerate(authority.RUNTIME_LADDER)
+                         if rung[0] == V11_SALT)
+        self.assertEqual(authority.RUNTIME_LADDER[v11_index], (
             V11_SALT, EXPECTED_V11_RUNTIME_NAMES, V11_ADDITIONS))
         fixtures = {label: (salt, names, digest)
                     for label, salt, names, digest in release.RUNTIME_RUNG_FIXTURES}
@@ -50,7 +55,7 @@ class RuntimeV11DeliveryClosure(unittest.TestCase):
                              v10.V10_ADDITIONS),) + tuple(
             (fixtures[label][0], fixtures[label][1], v10.HISTORICAL_SELECTORS[label])
             for label in v10.HISTORICAL_LABELS)
-        self.assertEqual(authority.RUNTIME_LADDER[3:], expected_history)
+        self.assertEqual(authority.RUNTIME_LADDER[v11_index + 1:], expected_history)
         with tempfile.TemporaryDirectory() as runtime:
             release._plant_runtime_tree(runtime, EXPECTED_V11_RUNTIME_NAMES)
             self.assertEqual(authority.runtime_rung(runtime),
