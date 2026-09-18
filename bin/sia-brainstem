@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """sia-brainstem — the resident daemon of SIA, the Omarchy Brain.
 
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
+
 The lifetime resident lease refuses a second brainstem. Each whole pulse or
 dream also takes SIA's corpus transaction lease, while every PGLite operation
 shares the separate cross-process gbrain lease with the CLI, MCP surface, and
 benchmark. A pulse tails the box's evidence streams into the corpus, syncs the
-brain, verifies the signed chains, thinks, and exports widget snapshots.
-Dreams nightly at 03:33 local.
+local index, verifies the signed chains, creates deterministic entries, and
+exports widget snapshots. The weekly-maintenance command runs nightly at
+03:33 local under its compatibility name, ``dream``.
 """
 
-import contextlib, datetime, fcntl, os, signal, socket, stat, sys, time
+import contextlib, datetime, fcntl, json, os, signal, socket, stat, sys, time, uuid
 
 
 @contextlib.contextmanager
@@ -54,8 +58,145 @@ PULSE_SEC = int(os.environ.get("SIA_PULSE_SEC", "60"))
 DREAM_HOUR, DREAM_MIN = 3, 33
 DREAM_RETRY_SEC = max(
     1, int(os.environ.get("SIA_DREAM_RETRY_SEC", "3600")))
+# EX_CONFIG is reserved here for durable operator-action barriers. The unit
+# pins the same status in RestartPreventExitStatus so Type=notify cannot turn
+# a deliberate pre-READY stop into a restart loop.
+INTENTIONAL_STOP_EXIT = getattr(os, "EX_CONFIG", 78)
 
 _stop = False
+
+
+def _plugin_registration_present(home=None):
+    """Observe the exact canonical plugin manifest without following links."""
+    home = sialib.HOME if home is None else home
+    if not isinstance(home, str) or not os.path.isabs(home) \
+            or os.path.normpath(home) != home:
+        raise RuntimeError("plugin registration home is invalid")
+    directory_flags = (os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+                       | os.O_NOFOLLOW)
+    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptors = []
+    hierarchy = []
+
+    def generation(value):
+        return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
+                value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+    try:
+        descriptor = os.open(home, directory_flags)
+        descriptors.append(descriptor)
+        for component in (".config", "omarchy", "plugins", "khephri.sia"):
+            try:
+                child = os.open(component, directory_flags,
+                                dir_fd=descriptor)
+            except FileNotFoundError:
+                return False
+            info = os.fstat(child)
+            current = os.stat(
+                component, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode) \
+                    or info.st_uid != os.geteuid() \
+                    or stat.S_IMODE(info.st_mode) & 0o022 \
+                    or generation(info) != generation(current):
+                os.close(child)
+                raise RuntimeError("plugin registration directory is unsafe")
+            hierarchy.append((descriptor, component, child, generation(info)))
+            descriptors.append(child)
+            descriptor = child
+        try:
+            manifest_fd = os.open("manifest.json", file_flags,
+                                  dir_fd=descriptor)
+        except FileNotFoundError:
+            return False
+        descriptors.append(manifest_fd)
+        before = os.fstat(manifest_fd)
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_uid != os.geteuid() or before.st_nlink != 1 \
+                or stat.S_IMODE(before.st_mode) & 0o022 \
+                or not 0 < before.st_size <= sialib.MAX_CONFIG_BYTES:
+            raise RuntimeError("plugin registration manifest is unsafe")
+        raw = os.read(manifest_fd, sialib.MAX_CONFIG_BYTES + 1)
+        after = os.fstat(manifest_fd)
+        current = os.stat(
+            "manifest.json", dir_fd=descriptor, follow_symlinks=False)
+        if len(raw) != before.st_size \
+                or generation(before) != generation(after) \
+                or generation(after) != generation(current):
+            raise RuntimeError("plugin registration manifest changed")
+
+        def unique(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("duplicate plugin manifest field")
+                result[key] = value
+            return result
+
+        try:
+            manifest = json.loads(
+                raw.decode("utf-8", "strict"), object_pairs_hook=unique,
+                parse_constant=lambda _value: (_ for _ in ()).throw(
+                    ValueError("invalid plugin manifest constant")))
+        except (UnicodeError, ValueError, RecursionError) as exc:
+            raise RuntimeError("plugin registration manifest is invalid") \
+                from exc
+        for parent_fd, component, child_fd, admitted in hierarchy:
+            if generation(os.fstat(child_fd)) != admitted \
+                    or generation(os.stat(
+                        component, dir_fd=parent_fd,
+                        follow_symlinks=False)) != admitted:
+                raise RuntimeError(
+                    "plugin registration hierarchy changed")
+        return (isinstance(manifest, dict)
+                and manifest.get("id") == "khephri.sia"
+                and manifest.get("version") == sialib.VERSION)
+    except OSError as exc:
+        raise RuntimeError("plugin registration cannot be observed safely") \
+            from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+
+
+def _resident_plugin_available(observer):
+    try:
+        available = observer()
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        sialib.log(
+            "sia-brainstem REFUSED: plugin registration is unsafe or "
+            f"unreadable ({_safe_failure_detail(exc)}); run `sia uninstall`")
+        return False
+    if available is not True:
+        sialib.log(
+            "sia-brainstem stopped: Omarchy plugin registration is absent; "
+            "run `sia uninstall` (or `sia uninstall --purge`)")
+        return False
+    return True
+
+
+def _safe_failure_detail(exc):
+    return sialib.clip(sialib.inert_summary(
+        sialib.redact(str(exc), "status-error")), 160)
+
+
+def _checkpoint_failure_detail():
+    if not sialib.REDACTIONS:
+        return True
+    try:
+        with sialib.corpus_owner():
+            memo = sialib.load_memo()
+            sialib._checkpoint_status_error_redactions(memo)
+        return True
+    except Exception:
+        return False
+
+
+def _durable_failure_detail(exc):
+    detail = _safe_failure_detail(exc)
+    if sialib.REDACTIONS and not _checkpoint_failure_detail():
+        return "diagnostic detail suppressed; redaction accounting refused"
+    return detail
 
 
 def _restore_barrier_present():
@@ -78,19 +219,113 @@ def _on_term(signum, frame):
 def _publish_failure(seq, exc):
     """Keep SOURCE HEALTH truthful when a pulse cannot safely start."""
     try:
-        status = sialib.read_json(sialib.STATUS_PATH, {})
-        if not isinstance(status, dict):
-            status = {}
-        errors = status.get("errors", {})
-        if not isinstance(errors, dict):
-            errors = {}
-        errors["brainstem"] = sialib.clip(str(exc), 160)
-        status.update({"v": 1, "version": sialib.VERSION,
-                       "ts": sialib.iso(), "state": "failed",
-                       "pulse_seq": seq, "errors": errors})
-        sialib.export_status(status)
+        with sialib.corpus_owner():
+            _publish_failure_owned(seq, exc)
     except Exception as status_exc:
-        sialib.log(f"SOURCE HEALTH export FAILED: {status_exc!r}")
+        detail = _durable_failure_detail(status_exc)
+        sialib.log(f"SOURCE HEALTH export FAILED: {detail}")
+
+
+def _publish_failure_owned(seq, exc):
+    memo = sialib.load_memo()
+    if (sialib._controller_source_present(memo)
+            or sialib._controller_source_enabled()):
+        sialib.log(
+            "SOURCE HEALTH export REFUSED: controller-source transaction "
+            "retains publication authority")
+        return False
+    pending = _pending_failure_publication(memo)
+    if pending is not None:
+        _finish_failure_publication(memo, pending)
+        return
+    status = sialib.read_json(sialib.STATUS_PATH, {})
+    if sialib._recoverable_status_integrity(status) is None:
+        sialib.log(
+            "SOURCE HEALTH export REFUSED: no complete current status")
+        return
+    try:
+        graph_generation = sialib._recoverable_graph_snapshot(
+            sialib.read_json(sialib.GRAPH_PATH, {}))
+    except Exception:
+        graph_generation = None
+    graph_error = None
+    if graph_generation is None:
+        graph_error = "resident graph snapshot is invalid"
+    elif status["graph_publication_id"] \
+            != graph_generation["publication_id"] \
+            or status["graph_nodes"] != graph_generation["nodes"] \
+            or status["graph_edges"] != graph_generation["edges"] \
+            or status["pages"] != graph_generation["pages"]:
+        graph_error = "resident status/graph generation mismatch"
+    if graph_error is not None:
+        graph_generation = {
+            "publication_id": "", "nodes": 0, "edges": 0, "pages": 0}
+    errors = status.get("errors", {})
+    errors = dict(errors)
+    if graph_error is not None:
+        errors["graph_snapshot"] = graph_error
+    errors["brainstem"] = str(exc)
+    errors = sialib._redacted_status_errors(errors)
+    retained_seq = status["pulse_seq"]
+    # A caller's next-loop counter is only a proposal until the memo write
+    # reserves it. Publish at the durable allocator when that field can be
+    # read safely, but never roll a previously admitted status back if the
+    # two resident files are already inconsistent.
+    seq = retained_seq
+    try:
+        durable_seq = memo.get("pulse_seq") \
+            if isinstance(memo, dict) else None
+        if not isinstance(durable_seq, bool) \
+                and isinstance(durable_seq, int) \
+                and 0 <= durable_seq <= sialib.MAX_JSON_SAFE_INTEGER:
+            seq = max(retained_seq, durable_seq)
+    except Exception:
+        pass
+    status.update({"v": 1, "version": sialib.VERSION,
+                   "ts": sialib.iso(), "state": "failed",
+                   "pulse_seq": seq,
+                   "publication_id": uuid.uuid4().hex,
+                   "graph_publication_id":
+                       graph_generation["publication_id"],
+                   "graph_nodes": graph_generation["nodes"],
+                   "graph_edges": graph_generation["edges"],
+                   "pages": graph_generation["pages"],
+                   "errors": errors})
+    target_redactions = sialib._projected_pulse_redactions(memo)
+    try:
+        pulse_marker = sialib._pending_pulse_marker(memo)
+    except RuntimeError:
+        # This publication is also the visible failure boundary for a
+        # malformed pulse marker; do not let that same corrupt journal
+        # suppress SOURCE HEALTH. It remains in the memo for repair.
+        pulse_marker = None
+    if pulse_marker is not None:
+        sialib._mark_pulse_publication(
+            memo, pulse_marker["seq"], pulse_marker.get("effects"),
+            target_redactions)
+    status["redactions"] = target_redactions
+    if sialib._recoverable_status_integrity(status) is None:
+        raise RuntimeError("failure status projection is invalid")
+    updated = dict(memo, redactions=target_redactions,
+                   brainstem_failure_pending={"v": 2,
+                                              "producer_version":
+                                              sialib.VERSION,
+                                              "status": status})
+    updated.pop("ready", None)
+    sialib._write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    sialib.REDACTIONS.clear()
+    _finish_failure_publication(
+        memo, _pending_failure_publication(memo))
+
+
+def _pending_failure_publication(memo):
+    return sialib._pending_brainstem_failure_publication(memo)
+
+
+def _finish_failure_publication(memo, marker):
+    return sialib._finish_brainstem_failure_publication(memo, marker)
 
 
 def _dream_due(now, last_dream_day, next_attempt, monotonic_now=None):
@@ -101,26 +336,54 @@ def _dream_due(now, last_dream_day, next_attempt, monotonic_now=None):
 
 
 def _attempt_dream(now, last_dream_day):
-    sialib.log("dreaming…")
+    sialib.log("scheduled maintenance starting…")
     try:
+        memo = sialib.load_memo()
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            raise RuntimeError(
+                "legacy dream refused while controller-source authority is active")
         sialib.dream()
         return _durable_dream_day(last_dream_day), 0.0
     except Exception as exc:
         next_attempt = time.monotonic() + DREAM_RETRY_SEC
-        sialib.log(f"dream FAILED: {exc!r}; retry is rate-limited")
+        detail = _durable_failure_detail(exc)
+        sialib.log(f"scheduled maintenance FAILED: {detail}; retry is rate-limited")
         return _durable_dream_day(last_dream_day), next_attempt
 
 
-def _reserved_pulse(seq):
+def _reserved_pulse():
     """Allocate a sequence and pulse under one corpus/memo transaction."""
     with sialib.corpus_owner():
         memo = sialib.load_memo()
+        if (sialib._controller_source_present(memo)
+                or sialib._controller_source_enabled()):
+            return sialib._run_controller_source_cycle()
+        pending_failure = _pending_failure_publication(memo)
+        if pending_failure is not None:
+            _finish_failure_publication(memo, pending_failure)
+        sialib._require_status_memo_fields(memo)
+        cursors = sialib.load_cursors()
+        sialib._recover_notify_baseline_attempt(memo, cursors)
+        source_marker = sialib._pending_source_replay_marker(memo)
+        if source_marker is not None:
+            sialib._authorize_pending_source_replay(
+                source_marker, cursors)
+        sialib._pending_pulse_marker(memo)
+        sialib._pending_pulse_status_effects(memo)
         current, _last_dream_day = _startup_state(memo)
-        if seq <= current:
-            raise ValueError("brainstem pulse sequence was reused or rolled back")
+        admitted_status = sialib._require_status_sequence_not_ahead(current)
+        seq = current + 1
         memo["pulse_seq"] = seq
         sialib._write_memo(memo)
-        return sialib._pulse_transaction(seq)
+        return sialib._pulse_transaction(
+            seq, admitted_status=admitted_status)
+
+
+def _refresh_live_view_cache():
+    """Publish the just-acknowledged source view for lease-free observers."""
+    import sialiveview
+    return sialiveview.publish_cache(sialib.__dict__)
 
 
 def _startup_state(memo):
@@ -129,6 +392,8 @@ def _startup_state(memo):
     seq = memo.get("pulse_seq", 0)
     if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
         raise ValueError("brainstem pulse sequence is invalid")
+    if seq >= sialib.MAX_JSON_SAFE_INTEGER:
+        raise ValueError("brainstem pulse sequence is exhausted")
     if not isinstance(memo.get("sync_needed", False), bool):
         raise ValueError("brainstem sync-needed state is invalid")
     dream = memo.get("dream", {})
@@ -153,7 +418,8 @@ def _durable_dream_day(fallback):
         _seq, persisted = _startup_state(sialib.load_memo())
         return persisted
     except Exception as exc:
-        sialib.log(f"dream schedule refresh refused: {exc!r}")
+        detail = _durable_failure_detail(exc)
+        sialib.log(f"dream schedule refresh refused: {detail}")
         return fallback
 
 
@@ -173,35 +439,81 @@ def _systemd_ready():
     if sent != len(payload):
         raise RuntimeError("systemd readiness notification was incomplete")
 
+
+def _installation_completion_pending():
+    """Hold resident work behind an exact in-progress install generation."""
+    path = os.path.join(
+        sialib.STATE, "managed-install", "first-light.json")
+    record = sialib.read_state_json(
+        path, None, "first-light completion", expected_type=object)
+    if record is None:
+        # Pre-lifecycle installations had no completion record. Their normal
+        # startup admission remains authoritative until an upgrade publishes
+        # the current release-bound record.
+        return False
+    if type(record) is not dict or set(record) != {"v", "version", "state"} \
+            or type(record.get("v")) is not int or record["v"] != 1 \
+            or type(record.get("version")) is not str \
+            or record["version"] != sialib.VERSION \
+            or record.get("state") not in {"installing", "ready"}:
+        raise RuntimeError("first-light completion state is invalid")
+    return record["state"] == "installing"
+
 def main():
     try:
         if _restore_barrier_present():
             sialib.log(
                 "sia-brainstem REFUSED: interrupted restore barrier requires "
                 "recovery")
-            # A clean stop avoids Restart=on-failure looping behind a durable
-            # barrier. The operator-visible continuity status remains blocked.
-            return 0
+            return INTENTIONAL_STOP_EXIT
+        if not _resident_plugin_available(_plugin_registration_present):
+            return INTENTIONAL_STOP_EXIT
         with sialib.brainstem_owner():
-            return _run_owned()
+            return _run_owned(plugin_guard=_plugin_registration_present)
     except sialib.OwnerBusy as exc:
-        sialib.log(f"sia-brainstem REFUSED: {exc}")
+        sialib.log(f"sia-brainstem REFUSED: {_durable_failure_detail(exc)}")
         return 1
 
 
-def _run_owned():
+def _run_owned(*, plugin_guard=None):
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
-    sialib.ensure_dirs()
-    sialib.log(f"sia-brainstem {sialib.VERSION} waking up "
-               f"(pulse {PULSE_SEC}s, brain {sialib.SHARE})")
+    seq = 0
+    last_dream_day = ""
     try:
         memo = sialib.load_memo()
-        seq, last_dream_day = _startup_state(memo)
+        if sialib._controller_source_ack_pending(memo):
+            _run_status = sialib._run_controller_source_cycle()
+            memo = sialib.load_memo()
+            seq, last_dream_day = _startup_state(memo)
+        else:
+            pending_failure = _pending_failure_publication(memo)
+            if pending_failure is not None:
+                _finish_failure_publication(memo, pending_failure)
+            sialib._require_status_memo_fields(memo)
+            cursors = sialib.load_cursors()
+            sialib._recover_notify_baseline_attempt(memo, cursors)
+            source_marker = sialib._pending_source_replay_marker(memo)
+            if source_marker is not None:
+                sialib._authorize_pending_source_replay(
+                    source_marker, cursors)
+            sialib._pending_pulse_marker(memo)
+            sialib._pending_pulse_status_effects(memo)
+            seq, last_dream_day = _startup_state(memo)
+            sialib._require_status_sequence_not_ahead(seq)
+        installation_pending = _installation_completion_pending()
+    except sialib.SourceReplayQuarantine as exc:
+        detail = _durable_failure_detail(exc)
+        sialib.log(f"brainstem startup source_replay_quarantine: {detail}")
+        return INTENTIONAL_STOP_EXIT
     except Exception as exc:
-        sialib.log(f"brainstem startup REFUSED: {exc!r}")
-        _publish_failure(0, exc)
+        detail = _safe_failure_detail(exc)
+        sialib.log(f"brainstem startup REFUSED: {detail}")
+        _publish_failure(0, detail)
         return 1
+    sialib.ensure_dirs()
+    sialib.log(f"sia-brainstem {sialib.VERSION} starting "
+               f"(pulse {PULSE_SEC}s, store {sialib.SHARE})")
     next_dream_attempt = 0.0
     try:
         _recovered, recovery_errors = sialib.recover_ledger_transitions()
@@ -211,23 +523,57 @@ def _run_owned():
             "BOOT:brainstem", sialib.VERSION, f"pulse={PULSE_SEC}s")
         _systemd_ready()
     except Exception as exc:
-        sialib.log(f"brainstem startup REFUSED: {exc!r}")
-        _publish_failure(seq, exc)
+        detail = _safe_failure_detail(exc)
+        sialib.log(f"brainstem startup REFUSED: {detail}")
+        _publish_failure(seq, detail)
         return 1
+    waited_for_installation = installation_pending
+    if waited_for_installation:
+        sialib.log(
+            "sia-brainstem waiting for first-light installation completion")
+    while not _stop and installation_pending:
+        time.sleep(1)
+        installation_pending = _installation_completion_pending()
+    if not _stop and waited_for_installation:
+        sialib.log("sia-brainstem resident work admitted")
+    plugin_removed = False
     while not _stop:
-        seq += 1
+        if plugin_guard is not None \
+                and not _resident_plugin_available(plugin_guard):
+            plugin_removed = True
+            break
         t0 = time.time()
         try:
             # Reserve the sequence before any effects. A crash may leave a
             # gap, but it can never cause a signed/publication sequence reuse.
-            st = _reserved_pulse(seq)
+            st = _reserved_pulse()
+            try:
+                if sialib._controller_source_enabled():
+                    _refresh_live_view_cache()
+            except Exception as exc:
+                sialib.log(
+                    "live view cache REFUSED: "
+                    + _safe_failure_detail(exc))
+            durable_memo = sialib.load_memo()
+            seq, _durable_last_dream_day = _startup_state(durable_memo)
             if st["events_pulse"] or st["errors"]:
                 sialib.log(f"pulse {seq}: {st['events_pulse']} events, "
                            f"state {st['state']}"
                            + (f", errors {list(st['errors'])}" if st["errors"] else ""))
+        except sialib.SourceReplayQuarantine as e:
+            detail = _durable_failure_detail(e)
+            sialib.log(
+                f"pulse {seq} source_replay_quarantine: {detail}")
+            return INTENTIONAL_STOP_EXIT
         except Exception as e:
-            sialib.log(f"pulse {seq} FAILED: {e!r}")
-            _publish_failure(seq, e)
+            try:
+                durable_memo = sialib.load_memo()
+                seq, _durable_last_dream_day = _startup_state(durable_memo)
+            except Exception:
+                pass
+            detail = _safe_failure_detail(e)
+            sialib.log(f"pulse {seq} FAILED: {detail}")
+            _publish_failure(seq, detail)
         last_dream_day = _durable_dream_day(last_dream_day)
         now = datetime.datetime.now()
         if _dream_due(now, last_dream_day, next_dream_attempt):
@@ -238,15 +584,16 @@ def _run_owned():
             if _stop:
                 break
             time.sleep(1)
-    sialib.log("sia-brainstem going quiet")
+    sialib.log("sia-brainstem stopped")
     try:
         sialib.durable_ledger_append(
             "HALT:brainstem", sialib.VERSION, "clean")
     except Exception as exc:
-        sialib.log(f"brainstem halt ledger REFUSED: {exc!r}")
-        _publish_failure(seq, exc)
+        detail = _safe_failure_detail(exc)
+        sialib.log(f"brainstem halt ledger REFUSED: {detail}")
+        _publish_failure(seq, detail)
         return 1
-    return 0
+    return INTENTIONAL_STOP_EXIT if plugin_removed else 0
 
 if __name__ == "__main__":
     try:

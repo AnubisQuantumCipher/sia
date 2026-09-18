@@ -26,7 +26,7 @@ invitations for the lanes they know best:
   this side, closed in the same release; and the review lane is standing for
   the remaining extractions on their own timeline.
 - **[@webdevtodayjason](https://github.com/webdevtodayjason)** — the Obsidian
-  organ and its records-not-content contract, which exists because of their
+  source adapter and its records-not-content contract, which exists because of their
   proposal and working sidecar reference
   ([#1](https://github.com/AnubisQuantumCipher/sia/issues/1)).
 

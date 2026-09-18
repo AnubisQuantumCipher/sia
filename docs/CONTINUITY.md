@@ -1,24 +1,27 @@
 # SIA continuity
 
-SIA continuity is the backup and clean-machine recovery boundary for the
-Omarchy Brain. The brain owns a storage-independent freeze/thaw contract:
-freeze creates a signed portable capsule from documented authoritative roots;
-verify authenticates and inspects it off-path; thaw applies it only under the
-brain's lifecycle and receipt invariants. Repository adapters operate outside
-that contract.
+**Describes SIA v1.7.8 · 2026-09-04**
 
-Throughout this document, **SIA means the Omarchy Brain**, never a similarly
-named storage network. Repository and storage products keep their own names
-and remain outside the brain's identity.
+SIA continuity is the backup and clean-machine recovery boundary for SIA, the
+Omarchy Brain. “Brain” is a product metaphor for auditable local machine memory;
+it is not a biological brain and does not establish cognition or neuroscience.
+SIA exposes a storage-independent freeze/thaw contract: freeze creates a signed
+portable capsule from documented authoritative roots; verify authenticates and
+inspects it off-path; thaw applies it only under SIA's lifecycle and receipt
+invariants. Repository adapters operate outside that contract.
+
+Throughout this document, **SIA means this local machine-memory system**, never
+a similarly named storage network. Repository and storage products keep their
+own names and remain outside SIA's identity.
 
 The CLI is the canonical continuity interface. The cockpit is a thin client
 over the same request and status protocol: it may show state and request a
 backup, but it does not own freeze, verification, lifecycle, or restore
 semantics.
 
-## Stable brain interface
+## Stable SIA interface
 
-The brain-native interface has no repository credentials, schedules, or
+The SIA-owned interface has no repository credentials, schedules, or
 storage-provider behavior:
 
 ```text
@@ -52,6 +55,12 @@ Core verification returns authenticated capsule facts under the
 snapshot identity through SIA's `prepare_binding` boundary, producing a
 `sia-prepared-capsule-v1` receipt. Only that core-bound receipt can enter the
 guarded thaw path; there is intentionally no raw live-thaw CLI.
+
+Freeze and verify traverse the capsule exactly. Their per-directory fan-out
+uses the same finite envelope as the capsule's whole-tree record budget; it is
+not coupled to the smaller source-tail sampling limit used by ingestion.
+Reaching the whole-tree, depth, path-byte, or directory envelope is an honest
+refusal before publication, never permission to omit entries from a capsule.
 
 ## Why the first adapter is restic
 
@@ -150,8 +159,8 @@ command refuses; the cockpit reports schedule status unavailable rather than
 claiming automatic protection from a stale repository result. **RECOVERY
 READY** and **AUTOMATIC BACKUP ON** are deliberately separate claims.
 
-SIA never automatically applies a snapshot to the live brain, forgets,
-prunes, or deletes repository snapshots. The weekly job restores only into a
+SIA never automatically applies a snapshot to the live corpus or prunes or
+deletes repository snapshots. The weekly job restores only into a
 private off-path verification stage. Manual `sia backup now`—shown as **Make
 extra copy now** in the cockpit—is optional. It uploads and immediately runs
 the exact round-trip verification path, which is useful when a new recovery
@@ -164,11 +173,19 @@ ready verified copy.
 The overall `verified` / **RECOVERY READY** state describes repository-copy
 health, not the outcome of the most recent operation. It requires a concrete
 `latest` row whose capsule round trip is verified, whose readiness is `ready`,
-and whose SIA signing identity matches the configured brain binding. A restore
-can independently finish with a correlated `operation.phase` of `verified`;
+and whose SIA signing identity matches the configured signing-identity binding.
+A restore can independently finish with a correlated `operation.phase` of `verified`;
 that reports the live restore outcome but does not invent a healthy repository
 copy. If no ready identity-matching copy remains, the overall state stays
 `recovery-only`, `failed`, or `blocked` even after a successful restore.
+
+In the status document, `latest` is the current repository-protection row, not
+a claim that no newer repository snapshot exists. An hourly upload awaiting
+the weekly round-trip check does not displace an older protecting row. The
+cockpit therefore calls this a recovery copy and reports its own timestamp; it
+does not label the retained row "newest." The `latest` argument accepted by
+`sia restore prepare` is a separate selector for the newest snapshot matching
+the currently bound identity.
 
 ## Set up a new repository
 
@@ -196,11 +213,11 @@ authority; an ordinary remote snapshot must never contain it.
 Setup binds continuity state to both the authenticated restic repository
 configuration identity and the intended SIA capsule-signing public identity.
 Every repository operation rechecks the repository identity. Uploaded
-snapshots carry the brain identity as selection metadata, but that metadata is
-only a hint until an off-path capsule signature verifies to the same public
+snapshots carry the SIA signing identity as selection metadata, but that
+metadata is only a hint until an off-path capsule signature verifies to the same public
 identity. An untagged or foreign-identity capsule may be listed for explicit
 inspection or deliberate recovery, but it cannot become the default healthy
-copy or turn the cockpit green. A clean-machine identity transplant remains an
+copy or turn the cockpit green. Clean-machine identity restoration remains an
 explicit restore ceremony using the separately held offline identity; it is
 not silently normalized into routine backup health.
 
@@ -286,7 +303,7 @@ that exact id. Do not weaken the filter or guess from a shortened ambiguous id.
 
 Prepare a snapshot off-path. Preparation downloads it, checks the repository
 authentication, validates the closed capsule schema and every payload digest,
-and publishes a prepared-restore receipt without changing the live brain.
+and publishes a prepared-restore receipt without changing the live SIA corpus.
 
 Before restic may materialize snapshot payload bytes, SIA reads the snapshot's
 metadata listing and admits only relative capsule paths, supported regular-file
@@ -340,7 +357,7 @@ printf '%s\n' \
 ```
 
 Restore always stages and re-verifies the capsule before live mutation. It
-then takes the exclusive lifecycle and brain-owner leases, writes a durable
+then takes the exclusive lifecycle and corpus-owner leases, writes a durable
 rollback journal and boot barrier, preserves the target root inode and exact
 receipt bytes, authenticates the installed `.gbrain` substrate, publishes only
 the rebuilt PGLite projection through gbrain, and records the adoption
@@ -353,8 +370,9 @@ id, readiness, and ledger-verification fields—as restore success. A core thaw
 result is not yet green: the stable supervisor must restart and attest the
 resident brainstem, then freshly recheck readiness, the signed ledger, and the
 exact adoption row. The corpus-owner lease spans that observation, the resident
-PID recheck, recovery-debt retirement, and terminal publication so those facts
-cannot be assembled from different corpus generations. The effective
+PID recheck, a durable non-green completion record, recovery-debt retirement,
+and the final terminal publication so those facts cannot be assembled from
+different corpus generations. The effective
 `sia-brainstem.service` fragment and managed receipt are re-attested before
 restart; while the restore gate is active, only SIA's exact runtime barrier
 drop-in is permitted, and the service is not started until that drop-in is
@@ -381,7 +399,7 @@ Restore has three durable recovery layers under
 The supervisor or runtime-gate artifacts can exist even when a crash occurred
 after apply acceptance but before core thaw created its barrier. Conversely, a
 core barrier means live adoption reached the phase that requires capsule-core
-recovery. Any one of the three is recovery debt: normal brain and continuity
+recovery. Any one of the three is recovery debt: normal SIA and continuity
 operations refuse rather than guessing that the generation is usable. Do not
 delete any of them, the target corpus receipt, rollback journal/capsule, or
 retained operation material. Run:
@@ -401,11 +419,20 @@ new confirmation document.
 
 The brainstem is restarted only after core debt is resolved. The supervisor
 then binds a fresh health/ledger/adoption observation to the exact resident
-PID and one corpus generation. It retires the accepted request and every
-restore-owned supervisor/runtime debt before publishing terminal status; green
-is the final durable write, never a promise made while a fail-closed barrier is
-still active. If retirement fails or the process crashes first, recovery debt
-and a non-green status remain.
+PID and one corpus generation. It first publishes that completed proof as a
+non-green record, then retires the accepted request and every restore-owned
+supervisor/runtime debt, and only then publishes terminal readiness; green is
+the final durable write, never a promise made while fail-closed authority is
+still active. If supervisor retirement becomes visible but its directory-sync
+reports failure, the visible status remains non-green and the stable launcher
+re-arms the runtime-mask gate even though the supervisor name may be absent. If
+the later final-status replacement becomes visible before its directory-sync
+reports success, the backend replaces it with a non-green recovery record
+before reporting failure. The stable launcher then recreates the exact
+captured restart-failed supervisor authority when its name
+is absent, replays the non-green downgrade, and only then re-arms the runtime
+gate. An active restore gate therefore cannot coexist with an actionable
+terminal readiness record.
 Follow with `sia ready`, `sia ledger`, and `sia restore status`.
 
 ## Threat boundary

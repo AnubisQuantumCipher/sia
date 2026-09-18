@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Crash, corruption, and no-clobber tests for sia-ledger genesis."""
 
+try:
+    import sia_test_home  # test-only import-time path isolation
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore
+
 import contextlib
 import importlib.machinery
 import importlib.util

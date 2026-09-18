@@ -2,16 +2,22 @@
 """sia-mcp — MCP stdio server exposing SIA, the Omarchy Brain, to any
 agent harness (Claude Code, Codex, Grok, OMP, anything MCP-capable).
 
-Architecture contract: this server NEVER opens the brain's database.
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
+
+Architecture contract: this server NEVER opens the local memory index.
 Reads shell out to the `sia` CLI (which retries around the daemon's
 brief ownership lease); writes go to serialized filesystem queues
-(notes, take proposals, recall touches). The brainstem materializes agent
+(notes, take proposals, recall touches). The ``sia-brainstem`` service materializes agent
 notes and remains the PGLite writer; agents are queue clients. Model-origin content is
 labeled and weighted below evidence by construction.
 """
 
 import datetime, json, math, os, re, selectors, signal, subprocess, sys, time
 import urllib.parse
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import siaqueue
 
 HOME = os.path.expanduser("~")
 SIA = os.path.join(HOME, ".local/bin/sia")
@@ -22,7 +28,7 @@ LEGACY_PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26",
                     "2024-11-05")
 SUPPORTED_PROTOCOLS = (MODERN_PROTOCOL,) + LEGACY_PROTOCOLS
 BATCH_PROTOCOLS = ("2025-03-26",)
-SERVER_INFO = {"name": "sia", "title": "SIA — the Omarchy Brain",
+SERVER_INFO = {"name": "sia", "title": "SIA — local machine memory",
                "version": SERVER_VERSION}
 SERVER_INSTRUCTIONS = (
     "Recall before re-deriving machine history. Carry origin labels and the "
@@ -42,13 +48,20 @@ TEXT_OUTPUT_SCHEMA = {
 }
 
 
+def _real_child_pid(process):
+    pid = process.pid
+    if type(pid) is not int or pid <= 1:
+        raise RuntimeError("sia child process identity is invalid")
+    return pid
+
+
 def _await_exit_unreaped(process, deadline, command, timeout):
     """Wait through pidfd so the leader remains the stable PGID owner."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(command, timeout)
     try:
-        pidfd = os.pidfd_open(process.pid, 0)
+        pidfd = os.pidfd_open(_real_child_pid(process), 0)
     except (AttributeError, OSError) as exc:
         raise RuntimeError(
             "cannot establish stable sia child process identity") from exc
@@ -66,8 +79,9 @@ def _signal_and_reap_group(process):
     """Terminate the identity-bound group before reaping its leader."""
     if process is None:
         return None
+    pid = _real_child_pid(process)
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        os.killpg(pid, signal.SIGKILL)
     except OSError:
         try:
             process.kill()
@@ -190,11 +204,11 @@ def run_sia(args, timeout=240):
 TOOLS = [
     _tool("ask", "Ask SIA",
      "Semantic recall over the machine's memory (evidence "
-        "ledgers, events, thoughts). Results are labeled by origin class "
+        "ledgers, events, generated entries). Results are labeled by origin class "
         "(evidence/derived/model) and every answer ends with a truth-"
         "boundary line (sense freshness, chain state, recall mode). "
-        "Absence of recall is not evidence of absence. Recalling "
-        "strengthens the returned memories.",
+        "Absence of recall is not evidence of absence. Successful recall "
+        "queues usage and co-return updates for the returned records.",
      {"question": {"type": "string", "minLength": 1,
                    "maxLength": 500,
                    "description": "Question to answer from SIA memory."}},
@@ -202,7 +216,7 @@ TOOLS = [
     _tool("search", "Search SIA Without Reinforcement",
      "Read-only semantic search over SIA memory. It returns the same "
         "origin labels and truth boundary as sia.ask but does not queue "
-        "recall/reconsolidation touches; use it for audits and evaluations.",
+        "recall-reinforcement touches; use it for audits and evaluations.",
      {"question": {"type": "string", "minLength": 1,
                    "maxLength": 500,
                    "description": "Question to search in SIA memory."}},
@@ -215,11 +229,11 @@ TOOLS = [
                "description": "Corpus slug returned by SIA recall."}},
      ["slug"], read_only=True, idempotent=True),
     _tool("status", "Read SIA Status",
-     "One-screen state of the brain: pulse, memories, "
-        "per-organ activity today, signed-chain verdicts, latest thought.",
+     "One-screen local-memory state: pulse, pages, "
+        "per-source activity today, signed-chain verdicts, latest generated entry.",
      read_only=True, idempotent=True),
-    _tool("think", "Read SIA Thoughts",
-     "The brain's recent thoughts. Deterministic generator entries cite "
+    _tool("think", "Read SIA Generated Entries",
+     "Recent generated entries. Deterministic entries cite "
         "evidence; ✦/⚖ are labeled model-assisted and ✉ notes are "
         "labeled model-origin prose; pre-origin records carry an explicit "
         "legacy-unlabeled boundary.",
@@ -288,18 +302,18 @@ def _canonical_tool_name(name):
 
 RESOURCES = [
     {"uri": "sia://status", "name": "SIA status",
-     "description": "Current brain pulse, source health, signed-chain "
+     "description": "Current memory-service pulse, source health, signed-chain "
                     "verdicts, and truth-boundary state.",
      "mimeType": "text/plain"},
-    {"uri": "sia://thoughts", "name": "SIA thoughts",
-     "description": "Recent evidence-derived generator thoughts plus "
-                    "clearly labeled model-origin thoughts and explicit "
+    {"uri": "sia://thoughts", "name": "SIA generated entries",
+     "description": "Recent evidence-derived generated entries plus "
+                    "clearly labeled model-origin entries and explicit "
                     "legacy-unlabeled records.",
      "mimeType": "text/plain"},
     {"uri": "sia://calibration", "name": "SIA calibration",
      "description": "Population-aware prediction calibration scorecard.",
      "mimeType": "text/plain"},
-    {"uri": "sia://cortex", "name": "SIA cortex",
+    {"uri": "sia://cortex", "name": "SIA root memory",
      "description": "The root memory page describing this SIA instance.",
      "mimeType": "text/markdown"},
 ]
@@ -911,7 +925,7 @@ def main():
         if not line:
             continue
         try:
-            payload = json.loads(line)
+            payload = siaqueue.strict_json_loads(line)
         # The stdlib parser can also reject a deeply nested value or an
         # integer token beyond Python's configured digit ceiling.  Both are
         # malformed protocol input, not reasons to terminate the server.

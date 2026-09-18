@@ -4,6 +4,39 @@
 # state snapshots, and operator configuration are retained.
 
 set -uo pipefail
+# BEGIN SIA RELEASE LIFETIME
+if [ "${1:-}" = --sia-release-worker ]; then
+  [ "$#" -ge 5 ] || { echo "incomplete release ownership" >&2; exit 2; }
+  shift
+  sia_owner_control="$1" sia_owner_source="$2" sia_owner_script="$3"
+  sia_owner_root="$4"
+  shift 4
+  for sia_owner_descriptor in "$sia_owner_control" "$sia_owner_source" \
+      "$sia_owner_script" "$sia_owner_root"; do
+    case "$sia_owner_descriptor" in
+      ""|*[!0-9]*) echo "invalid release ownership descriptor" >&2; exit 2 ;;
+    esac
+  done
+  sia_owner_admission="$(python3 -I "/proc/self/fd/$sia_owner_source" admit \
+    "$sia_owner_control" "$sia_owner_source" "$sia_owner_script" \
+    "$sia_owner_root" "$$")" || exit 2
+  eval "$sia_owner_admission"
+  unset sia_owner_control sia_owner_source sia_owner_script sia_owner_root
+  unset sia_owner_descriptor sia_owner_admission
+else
+  sia_owner_entry="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")" || exit 2
+  sia_owner_root="${sia_owner_entry%/*}"
+  if [ -f "$sia_owner_root/bin/sialifetime.py" ]; then
+    exec python3 -I "$sia_owner_root/bin/sialifetime.py" \
+      supervise --caller "$PPID" "$sia_owner_entry" "$@"
+  elif [ -f "$sia_owner_root/sialifetime.py" ]; then
+    exec python3 -I "$sia_owner_root/sialifetime.py" \
+      supervise-installed --caller "$PPID" "$sia_owner_entry" "$@"
+  fi
+  echo "installed uninstall lifetime authority is missing" >&2
+  exit 2
+fi
+# END SIA RELEASE LIFETIME
 
 case "${HOME:-}" in
   ""|/) echo "refusing uninstall with an unsafe HOME" >&2; exit 2 ;;
@@ -45,6 +78,47 @@ case "${1:-}" in
   --purge) PURGE=1 ;;
   *) echo "usage: ./uninstall.sh [--purge]" >&2; exit 2 ;;
 esac
+
+SIA_UNINSTALL_SOURCE="$SIA_LIFETIME_SOURCE_ROOT"
+SIA_RELEASE_AUTHORITY=""
+SIA_RELEASE_AUTHORITY_FD=""
+
+hold_release_authority() {
+  local source="$1"
+  if ! exec {SIA_RELEASE_AUTHORITY_FD}< "$source"; then
+    echo "refusing uninstall because its release authority is missing" >&2
+    return 1
+  fi
+  if ! python3 - "$SIA_RELEASE_AUTHORITY_FD" <<'PY'
+import os
+import stat
+import sys
+
+info = os.fstat(int(sys.argv[1]))
+if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+        or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o022:
+    raise SystemExit("release authority is not owner-controlled")
+PY
+  then
+    eval "exec ${SIA_RELEASE_AUTHORITY_FD}>&-"
+    SIA_RELEASE_AUTHORITY_FD=""
+    return 1
+  fi
+  SIA_RELEASE_AUTHORITY="/proc/self/fd/$SIA_RELEASE_AUTHORITY_FD"
+}
+
+close_release_authority() {
+  if [ -n "$SIA_RELEASE_AUTHORITY_FD" ]; then
+    eval "exec ${SIA_RELEASE_AUTHORITY_FD}>&-"
+    SIA_RELEASE_AUTHORITY_FD=""
+  fi
+}
+
+if [ -f "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" ]; then
+  hold_release_authority "$SIA_UNINSTALL_SOURCE/bin/siarelease.py" || exit 2
+else
+  hold_release_authority "$SIA_UNINSTALL_SOURCE/siarelease.py" || exit 2
+fi
 
 SHARE_DIR="$HOME/.local/share/sia"
 RUNTIME_BIN_DIR="$SHARE_DIR/bin"
@@ -136,17 +210,21 @@ SIA_GBRAIN_LOCK_FD=""
 sia_uninstall_cleanup() {
   local status=$? lock_variable lock_descriptor barrier_state
   trap - EXIT
+  trap '' INT TERM HUP
+  lifetime_quiesce cleanup || exit 2
   set +e
   for lock_variable in SIA_GBRAIN_LOCK_FD SIA_CORPUS_LOCK_FD \
       SIA_BRAINSTEM_LOCK_FD; do
     lock_descriptor="${!lock_variable}"
     if [ -n "$lock_descriptor" ]; then
+      lifetime_release "$lock_variable" || exit 2
       flock -u "$lock_descriptor" >/dev/null 2>&1 || true
       eval "exec ${lock_descriptor}>&-"
       printf -v "$lock_variable" '%s' ""
     fi
   done
   if [ -n "$SIA_UNINSTALL_LOCK_FD" ]; then
+    lifetime_release SIA_UNINSTALL_LOCK_FD || exit 2
     flock -u "$SIA_UNINSTALL_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_UNINSTALL_LOCK_FD}>&-"
     SIA_UNINSTALL_LOCK_FD=""
@@ -176,223 +254,15 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # front door streams a status=exact 1048576-byte ceiling, rejects NUL/non-UTF-8,
 # and kills an overflowing producer before Bash materializes its response.
 bounded_command_capture() {
-  python3 - "$@" 3<&0 <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-MAX_CAPTURE_BYTES = 1_048_576
-MAX_RUNTIME_SECONDS = 120
-LEADER_POLL_SECONDS = 15
-arguments = sys.argv[1:]
-if arguments[:1] == ["--stdin"]:
-    child_stdin = 3
-    arguments = arguments[1:]
-else:
-    child_stdin = subprocess.DEVNULL
-if not arguments:
-    raise SystemExit("missing bounded inspector command")
-try:
-    process = subprocess.Popen(arguments, stdin=child_stdin,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT,
-                               start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded inspector: {error}", file=sys.stderr)
-    raise SystemExit(127)
-chunks = []
-total = 0
-deadline = time.monotonic() + MAX_RUNTIME_SECONDS
-selector = selectors.DefaultSelector()
-os.set_blocking(process.stdout.fileno(), False)
-selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ, "leader")
-
-
-def leader_exited():
-    # A registered pidfd is itself the non-reaping exit notification. Avoid a
-    # second waitid(P_PIDFD) syscall; the selector branch below observes it.
-    if pidfd is not None:
-        return False
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-failure_code = None
-failure_message = None
-leader_done = False
-stdout_open = True
-try:
-    while True:
-        if leader_exited():
-            leader_done = True
-            break
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            failure_code = 124
-            failure_message = "external inspector exceeded its runtime deadline"
-            break
-        wait_time = remaining if pidfd is not None else min(
-            remaining, LEADER_POLL_SECONDS)
-        for key, _ in selector.select(wait_time):
-            if key.data == "leader":
-                leader_done = True
-                continue
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                continue
-            if not chunk:
-                selector.unregister(process.stdout)
-                stdout_open = False
-                continue
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-        if failure_code is not None or leader_done:
-            break
-finally:
-    # Keep the leader unreaped until this signal. Its PID therefore still pins
-    # the process-group identity and cannot be recycled under killpg().
-    kill_group()
-    status = process.wait()
-    if stdout_open and total <= MAX_CAPTURE_BYTES:
-        while True:
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-    selector.close()
-    process.stdout.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if failure_code is not None:
-    print(failure_message, file=sys.stderr)
-    raise SystemExit(failure_code)
-content = b"".join(chunks)
-if b"\0" in content:
-    print("external inspector emitted NUL", file=sys.stderr)
-    raise SystemExit(125)
-try:
-    text = content.decode("utf-8", "strict")
-except UnicodeError:
-    print("external inspector emitted non-UTF-8 output", file=sys.stderr)
-    raise SystemExit(125)
-sys.stdout.write(text)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" capture --caller "$BASHPID" "$@"
 }
 
 # Status=exact deadline constants: parsed=2*60 exact=120,
-# parsed=5*60 exact=300, parsed=30*60 exact=1800, and parsed=15 exact=15.
-# These are operational ceilings, not claims that a command will finish.
+# parsed=5*60 exact=300, and parsed=30*60 exact=1800.
+# The accepted set is 120, 300, and 1800 seconds; capture uses 120. These are
+# operational ceilings, not claims that a command will finish.
 run_with_deadline() {
-  python3 - "$@" <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-ALLOWED_DEADLINES = {120, 300, 1800}
-LEADER_POLL_SECONDS = 15
-try:
-    deadline = int(sys.argv[1], 10)
-except (IndexError, ValueError):
-    raise SystemExit("invalid command deadline")
-if deadline not in ALLOWED_DEADLINES or len(sys.argv) < 3:
-    raise SystemExit("unsupported command deadline")
-try:
-    process = subprocess.Popen(sys.argv[2:], start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded command: {error}", file=sys.stderr)
-    raise SystemExit(127)
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-selector = selectors.DefaultSelector()
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ)
-
-
-def leader_exited():
-    if pidfd is not None:
-        return bool(selector.select(0))
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-timed_out = False
-end = time.monotonic() + deadline
-try:
-    while not leader_exited():
-        remaining = end - time.monotonic()
-        if remaining <= 0:
-            timed_out = True
-            break
-        if pidfd is not None:
-            selector.select(remaining)
-        else:
-            time.sleep(min(remaining, LEADER_POLL_SECONDS))
-finally:
-    # Polling a pidfd never reaps; the fallback WNOWAIT check also preserves
-    # the leader's PID/PGID until every descendant has received SIGKILL.
-    kill_group()
-    status = process.wait()
-    selector.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if timed_out:
-    print(f"command exceeded its {deadline}-second runtime deadline",
-          file=sys.stderr)
-    raise SystemExit(124)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" run --caller "$BASHPID" "$@"
 }
 
 # Byte-exact lifecycle authority verifier.  It keeps receipt/marker bytes out
@@ -2801,6 +2671,7 @@ acquire_owner_lock() {
     failed "$label is busy"
     return 1
   fi
+  lifetime_register "$variable" "$descriptor" || return 1
   printf -v "$variable" '%s' "$descriptor"
 }
 
@@ -2838,6 +2709,7 @@ flock -n "$SIA_UNINSTALL_ADMIN_LOCK_FD" || {
   echo "another SIA install or uninstall is active" >&2
   exit 1
 }
+lifetime_register SIA_UNINSTALL_ADMIN_LOCK_FD "$SIA_UNINSTALL_ADMIN_LOCK_FD" || exit 2
 if [ -e "$RESTORE_BARRIER" ] || [ -L "$RESTORE_BARRIER" ] \
     || [ -e "$RESTORE_MASK_DEBT" ] || [ -L "$RESTORE_MASK_DEBT" ] \
     || [ -e "$RESTORE_SUPERVISOR_DEBT" ] \
@@ -2993,6 +2865,7 @@ acquire_uninstall_lifecycle() {
     echo "waiting within a bounded window for active SIA clients"
     for ((attempt = 1; attempt <= SIA_LIFECYCLE_ACQUIRE_ATTEMPTS; attempt++)); do
       if flock -n "$SIA_UNINSTALL_LOCK_FD"; then
+        lifetime_register SIA_UNINSTALL_LOCK_FD "$SIA_UNINSTALL_LOCK_FD" || return 1
         # Legacy runtimes may not have held this lease; quiesce the exact
         # receipt-bound unit after acquisition as well as between retries.
         if [ "$UNIT_OWNED" -eq 1 ]; then
@@ -3027,6 +2900,7 @@ acquire_uninstall_lifecycle() {
       echo "unsafe or unowned active SIA process prevents uninstall" >&2
       return 1
     }
+    lifetime_register SIA_UNINSTALL_LOCK_FD "$SIA_UNINSTALL_LOCK_FD" || return 1
   fi
 }
 
@@ -3318,73 +3192,7 @@ remove_first_light_completion() {
   remove_managed_metadata "$FIRST_LIGHT_COMPLETION" "$expected"
 }
 runtime_tree_digest() {
-  python3 - "$1" <<'PY'
-import hashlib
-import os
-import stat
-import sys
-
-root = sys.argv[1]
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern = any(os.path.lexists(os.path.join(root, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(root, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-if v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-for name in names:
-    path = os.path.join(root, name)
-    descriptor = os.open(path, flags)
-    member = hashlib.sha256()
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid:
-            raise SystemExit(1)
-        while True:
-            chunk = os.read(descriptor, 1_048_576)
-            if not chunk:
-                break
-            member.update(chunk)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(current.st_mode) or current.st_uid != uid \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise SystemExit(1)
-    finally:
-        os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member.digest())
-print(digest.hexdigest())
-PY
+  python3 "$SIA_RELEASE_AUTHORITY" runtime-tree-digest "$1"
 }
 runtime_receipt_valid() {
   local digest
@@ -3488,148 +3296,9 @@ PY
 }
 
 fenced_runtime_authorized() {
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$LIFECYCLE_TOMBSTONE" \
-      "$RUNTIME_RECEIPT" "$RUNTIME_BIN_DIR" <<'PY'
-import hashlib
-import json
-import os
-import re
-import stat
-import sys
-
-journal, tombstone, receipt, runtime = sys.argv[1:]
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-def read_owned(path, limit):
-    descriptor = os.open(path, flags)
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid \
-                or before.st_size > limit:
-            raise RuntimeError("unsafe managed metadata")
-        chunks = []
-        remaining = limit + 1
-        while remaining:
-            chunk = os.read(descriptor, min(remaining, 1_048_576))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        content = b"".join(chunks)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if len(content) != before.st_size or len(content) > limit \
-                or not stat.S_ISREG(current.st_mode) \
-                or current.st_uid != uid or b"\0" in content \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise RuntimeError("managed metadata changed while reading")
-        return content
-    finally:
-        os.close(descriptor)
-
-try:
-    payload = json.loads(read_owned(journal, 1_048_576))
-    marker = os.lstat(tombstone)
-    contents = read_owned(receipt, 65_536).decode("utf-8")
-    runtime_info = os.lstat(runtime)
-except (FileNotFoundError, OSError, RuntimeError, UnicodeError,
-        ValueError, json.JSONDecodeError):
-    raise SystemExit(1)
-if not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
-        or not stat.S_ISDIR(runtime_info.st_mode) \
-        or runtime_info.st_uid != uid \
-        or not isinstance(payload, dict) \
-        or payload.get("schema") != "sia-launch-fence-v1" \
-        or set(payload) != {"schema", "runtime_before_digest",
-                            "runtime_digest", "cli_digest", "entries"} \
-        or not isinstance(payload["entries"], list):
-    raise SystemExit(1)
-before_digest = payload["runtime_before_digest"]
-if not isinstance(before_digest, str) \
-        or re.fullmatch(r"[0-9a-f]{64}", before_digest) is None:
-    raise SystemExit(1)
-expected = (f"managed-by=khephri.sia\nkind=runtime\npath={runtime}\n"
-            f"sha256={before_digest}\n")
-if contents != expected:
-    raise SystemExit(1)
-entries = {}
-for entry in payload["entries"]:
-    if not isinstance(entry, dict) \
-            or set(entry) != {"path", "device", "inode", "mode", "sha256"} \
-            or not isinstance(entry["path"], str) \
-            or entry["path"] in entries \
-            or any(isinstance(entry[key], bool)
-                   or not isinstance(entry[key], int) or entry[key] < 0
-                   for key in ("device", "inode", "mode")) \
-            or entry["mode"] > 0o7777 \
-            or re.fullmatch(r"[0-9a-f]{64}",
-                            str(entry.get("sha256", ""))) is None:
-        raise SystemExit(1)
-    entries[entry["path"]] = entry
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern = any(os.path.lexists(os.path.join(runtime, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(runtime, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(runtime, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(runtime, "siagraph.py"))
-if v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-for name in names:
-    path = os.path.join(runtime, name)
-    info = os.lstat(path)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
-        raise SystemExit(1)
-    if stat.S_IMODE(info.st_mode) == 0:
-        entry = entries.get(path)
-        if entry is None or (info.st_dev, info.st_ino) != (
-                entry["device"], entry["inode"]):
-            raise SystemExit(1)
-        member_digest = bytes.fromhex(entry["sha256"])
-    else:
-        descriptor = os.open(path, flags)
-        try:
-            held = os.fstat(descriptor)
-            if not stat.S_ISREG(held.st_mode) or held.st_uid != uid \
-                    or (held.st_dev, held.st_ino) != (
-                        info.st_dev, info.st_ino):
-                raise SystemExit(1)
-            member = hashlib.sha256()
-            while chunk := os.read(descriptor, 1_048_576):
-                member.update(chunk)
-            member_digest = member.digest()
-        finally:
-            os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member_digest)
-if digest.hexdigest() != before_digest:
-    raise SystemExit(1)
-PY
+  python3 "$SIA_RELEASE_AUTHORITY" runtime-authorize-fence \
+    "$LAUNCH_FENCE_JOURNAL" "$LIFECYCLE_TOMBSTONE" \
+    "$RUNTIME_RECEIPT" "$RUNTIME_BIN_DIR"
 }
 
 capture_runtime_removal_authority() {
@@ -5117,12 +4786,15 @@ for lock_variable in SIA_GBRAIN_LOCK_FD SIA_CORPUS_LOCK_FD \
     SIA_BRAINSTEM_LOCK_FD; do
   lock_descriptor="${!lock_variable}"
   if [ -n "$lock_descriptor" ]; then
+    lifetime_release "$lock_variable" || exit 2
     flock -u "$lock_descriptor" || true
     eval "exec ${lock_descriptor}>&-"
+    printf -v "$lock_variable" '%s' ""
   fi
 done
 
 if [ -n "$SIA_UNINSTALL_LOCK_FD" ]; then
+  lifetime_release SIA_UNINSTALL_LOCK_FD || exit 2
   flock -u "$SIA_UNINSTALL_LOCK_FD" || true
   eval "exec ${SIA_UNINSTALL_LOCK_FD}>&-"
   SIA_UNINSTALL_LOCK_FD=""
@@ -5154,6 +4826,8 @@ elif [ "$SIA_BRAINSTEM_RETIRED_BARRIER_PRESENT" -eq 1 ]; then
     echo "retired sia-brainstem barrier recovery copy retained because uninstall has failures" >&2
   fi
 fi
+
+close_release_authority
 
 if [ -n "$PLUGIN_BACKUP" ]; then
   echo "previous plugin tree retained at $PLUGIN_BACKUP"

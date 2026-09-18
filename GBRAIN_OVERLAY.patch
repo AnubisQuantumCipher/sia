@@ -1,0 +1,1227 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index c0900721afa3a31c3ca22ee33b9eaaf6f1f39d77..49de894d5982ee1688ff341baf775737700251e6 100755
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -457,6 +457,24 @@ async function main() {
+   const { cliOpts, rest: args } = parseGlobalFlags(rawArgs);
+   setCliOptions(cliOpts);
+ 
++  let command = args[0];
++  const subArgs = args.slice(1);
++  const preparedCall = command === 'call' && !hasHelpFlag(subArgs)
++    ? (await import('./commands/call.ts')).prepareCall(subArgs)
++    : undefined;
++  if (preparedCall?.noMigrate) {
++    process.env.GBRAIN_SKIP_STARTUP_HOOKS = '1';
++    const selectedBrain = cliOpts.brain ?? process.env.GBRAIN_BRAIN_ID;
++    if (selectedBrain && selectedBrain !== 'host') {
++      throw new Error('get_page_projection is bound to the host brain');
++    }
++    if (process.env.GBRAIN_GUARDRAILS_MODULE?.trim()) {
++      throw new Error(
++        'get_page_projection requires GBRAIN_GUARDRAILS_MODULE to be unset',
++      );
++    }
++  }
++
+   // #3688: operator-configured guardrail providers load before ANY command
+   // dispatch. Fail-closed by design: when GBRAIN_GUARDRAILS_MODULE is set but
+   // broken, abort rather than silently run without the operator's firewall.
+@@ -471,8 +489,6 @@ async function main() {
+     }
+   }
+ 
+-  let command = args[0];
+-
+   if (!command || command === '--help' || command === '-h') {
+     printHelp();
+     return;
+@@ -501,8 +517,6 @@ async function main() {
+     maybeEmitBackupNag(command, { quiet: getCliOptions().quiet === true });
+   }
+ 
+-  const subArgs = args.slice(1);
+-
+   // DX alias: `ask` is a natural-language alias for `query`
+   if (command === 'ask') {
+     command = 'query';
+@@ -629,7 +643,7 @@ async function main() {
+ 
+   // CLI-only commands
+   if (CLI_ONLY.has(command)) {
+-    await handleCliOnly(command, subArgs);
++    await handleCliOnly(command, subArgs, preparedCall);
+     return;
+   }
+ 
+@@ -2003,7 +2017,11 @@ function refuseThinClient(command: string, mcpUrl: string): never {
+   process.exit(1);
+ }
+ 
+-async function handleCliOnly(command: string, args: string[]) {
++async function handleCliOnly(command: string, args: string[], preparedCall?: import('./commands/call.ts').PreparedCall) {
++  if (command === 'call' && preparedCall?.noMigrate) {
++    const cfg = loadConfig();
++    if (cfg && isThinClient(cfg)) throw new Error('get_page_projection must run on the brain host; it is not exposed over MCP.');
++  }
+   // Thin-client guard: refuse DB-bound commands cleanly with a pinpoint
+   // hint instead of letting them fail later inside connectEngine or
+   // mid-handler. v0.31.1 routes through `refuseThinClient` so every
+@@ -2902,7 +2920,9 @@ async function handleCliOnly(command: string, args: string[]) {
+   // TODOS 1050, out of scope). Kill switch: GBRAIN_SERVE_DEGRADED=0.
+   let engine: BrainEngine;
+   try {
+-    engine = await connectEngine();
++    engine = await connectEngine(
++      preparedCall?.noMigrate ? { probeOnly: true, forceHost: true } : undefined,
++    );
+   } catch (serveConnectError) {
+     // Gate on the engine of the RESOLVED brain, not the host config —
+     // connectEngine routes mounts FIRST, so a PGLite mount's failure on a
+@@ -3006,7 +3026,7 @@ async function handleCliOnly(command: string, args: string[]) {
+       }
+       case 'call': {
+         const { runCall } = await import('./commands/call.ts');
+-        await runCall(engine, args);
++        await runCall(engine, args, undefined, preparedCall);
+         break;
+       }
+       case 'sweep': {
+@@ -3594,7 +3614,7 @@ async function connectMountEngine(brainId: string): Promise<BrainEngine> {
+   return handle.engine;
+ }
+ 
+-async function connectEngine(opts?: { probeOnly?: boolean }): Promise<BrainEngine> {
++async function connectEngine(opts?: { probeOnly?: boolean; forceHost?: boolean }): Promise<BrainEngine> {
+   // Brain axis: resolve WHICH DATABASE this invocation targets before touching
+   // the host engine. --brain (global flag) / GBRAIN_BRAIN_ID / .gbrain-mount /
+   // mount-path-prefix resolve via the canonical 6-tier chain — the mirror of
+@@ -3602,7 +3622,9 @@ async function connectEngine(opts?: { probeOnly?: boolean }): Promise<BrainEngin
+   // every local CLI command routes through (shared ops, CLI-only commands,
+   // and the search-dashboard path), so routing lands here once.
+   const { resolveBrainId } = await import('./core/brain-resolver.ts');
+-  const brainId = resolveBrainId(getCliOptions().brain);
++  const brainId = opts?.forceHost === true
++    ? 'host'
++    : resolveBrainId(getCliOptions().brain);
+   if (brainId !== 'host') return connectMountEngine(brainId);
+ 
+   const config = loadConfig();
+@@ -3628,11 +3650,12 @@ async function connectEngine(opts?: { probeOnly?: boolean }): Promise<BrainEngin
+   configureGateway(buildGatewayConfig(config));
+ 
+   const { createEngine } = await import('./core/engine-factory.ts');
+-  const engine = await createEngine(toEngineConfig(config));
++  const engineConfig = { ...toEngineConfig(config), probe_only: opts?.probeOnly === true };
++  const engine = await createEngine(engineConfig);
+   const noRetry = process.argv.includes('--no-retry-connect') ||
+                   process.env.GBRAIN_NO_RETRY_CONNECT === '1';
+   const { connectWithRetry } = await import('./core/db.ts');
+-  await connectWithRetry(engine, toEngineConfig(config), { noRetry });
++  await connectWithRetry(engine, engineConfig, { noRetry });
+ 
+   // v0.30.1 (Codex X1 / C2): probeOnly skips both hasPendingMigrations() probe
+   // AND initSchema(). Used by `get_health` MCP op + `gbrain upgrade --status`
+@@ -3927,7 +3950,7 @@ ADMIN
+                                      rescope-client, revoke-client, permissions, test, ...)
+   watch [--json]                     Push-based context: pipe conversation turns in,
+                                      volunteered brain pages stream out (#2095)
+-  call <tool> '<json>'               Raw tool invocation
++  call [flags] <tool> ['<json>']     Raw tool invocation (--source; verifier: --no-migrate --params-file)
+   version                            Version info
+   --tools-json                       Tool discovery (JSON)
+ 
+diff --git a/src/commands/call.ts b/src/commands/call.ts
+index b4900d9c8091ade6f93ff0a336a5a62cde6e74c1..16b2e71f279766361fdc7b00b29af1b7359f8616 100644
+--- a/src/commands/call.ts
++++ b/src/commands/call.ts
+@@ -3,55 +3,168 @@ import { handleToolCall } from '../mcp/server.ts';
+ import { resolveSourceWithTier, localFederatedSourceIds } from '../core/source-resolver.ts';
+ import { bigintToStringReplacer } from '../cli.ts';
+ import { writeStdoutFinal } from '../core/cli-force-exit.ts';
++import { closeSync, constants, fstatSync, openSync, readSync, type BigIntStats } from 'fs';
++import { validatePageProjectionRequest } from '../core/page-projection.ts';
+ 
+-/**
+- * `gbrain call <tool> <json>` — trusted local op-dispatch surface.
+- *
+- * v0.31.8 (D22): grammar accepts an optional `--source <id>` flag before the
+- * tool name. The flag is the highest-priority tier in resolveSourceId()'s
+- * 6-tier chain (--source > GBRAIN_SOURCE > .gbrain-source dotfile > path-match
+- * > brain default > 'default'). Without --source, the chain still resolves —
+- * env / dotfile / path-match all work.
+- */
+-export async function runCall(
+-  engine: BrainEngine,
+-  args: string[],
+-  // Test seam — production always uses the awaited-delivery writer (#3423).
+-  out: (payload: string) => Promise<void> = writeStdoutFinal,
+-) {
+-  // Parse --source <id> from anywhere in args (must come before tool/json
+-  // tokens to keep the existing `gbrain call <tool> <json>` shape readable,
+-  // but the parser is positional-tolerant for ergonomics).
++export const CALL_PARAMS_FILE_MAX_BYTES = 33_554_432; // 32 MiB
++const PAGE_PROJECTION_TOOL = 'get_page_projection';
++
++export interface PreparedCall {
++  tool: string;
++  params: Record<string, unknown>;
++  explicitSource: string | null;
++  noMigrate: boolean;
++}
++
++function sameFileGeneration(
++  a: BigIntStats,
++  b: BigIntStats,
++): boolean {
++  return a.dev === b.dev
++    && a.ino === b.ino
++    && a.size === b.size
++    && a.mtimeNs === b.mtimeNs
++    && a.ctimeNs === b.ctimeNs;
++}
++
++/** Open once, reject symlinks/non-regular files, bound every read, and pin the inode generation. */
++export function readBoundedParamsFile(path: string): unknown {
++  if (!path) throw new Error('--params-file requires a non-empty path');
++  if (typeof constants.O_NOFOLLOW !== 'number') {
++    throw new Error('--params-file is unsupported: this platform cannot guarantee no-follow opens');
++  }
++  let fd: number;
++  try {
++    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
++  } catch (error) {
++    throw new Error(`Unable to open --params-file as a no-follow local file: ${(error as Error).message}`);
++  }
++  try {
++    const before = fstatSync(fd, { bigint: true });
++    if (!before.isFile()) throw new Error('--params-file must name a regular file');
++    if (before.size > BigInt(CALL_PARAMS_FILE_MAX_BYTES)) {
++      throw new Error(`--params-file exceeds the ${CALL_PARAMS_FILE_MAX_BYTES}-byte limit`);
++    }
++    const expectedSize = Number(before.size);
++    const buffer = Buffer.alloc(expectedSize + 1);
++    let bytesRead = 0;
++    while (bytesRead < buffer.length) {
++      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
++      if (count === 0) break;
++      bytesRead += count;
++    }
++    const after = fstatSync(fd, { bigint: true });
++    if (!sameFileGeneration(before, after) || bytesRead !== expectedSize) {
++      throw new Error('--params-file changed while it was being read; retry with a sealed file');
++    }
++    let text: string;
++    try {
++      text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
++    } catch {
++      throw new Error('--params-file must contain valid UTF-8');
++    }
++    try {
++      return JSON.parse(text);
++    } catch (error) {
++      throw new Error(`--params-file must contain valid JSON: ${(error as Error).message}`);
++    }
++  } finally {
++    closeSync(fd);
++  }
++}
++
++/** Strict, engine-free call grammar. Safe to execute before startup hooks and DB connection. */
++export function prepareCall(args: string[]): PreparedCall {
+   let explicitSource: string | null = null;
+-  const rest: string[] = [];
++  let paramsFile: string | null = null;
++  let noMigrate = false;
++  const positional: string[] = [];
+   for (let i = 0; i < args.length; i++) {
+-    const a = args[i];
+-    if (a === '--source') {
+-      const next = args[i + 1];
+-      if (!next || next.startsWith('--')) {
+-        console.error('--source requires an id (e.g. --source jarvis-memory)');
+-        process.exit(1);
++    const arg = args[i];
++    if (arg === '--source' || arg === '--params-file') {
++      const value = args[++i];
++      if (!value || value.startsWith('--')) throw new Error(`${arg} requires a non-empty value`);
++      if (arg === '--source') {
++        if (explicitSource !== null) throw new Error('--source may be passed only once');
++        explicitSource = value;
++      } else {
++        if (paramsFile !== null) throw new Error('--params-file may be passed only once');
++        paramsFile = value;
++      }
++      continue;
++    }
++    if (arg.startsWith('--source=') || arg.startsWith('--params-file=')) {
++      const sourceFlag = arg.startsWith('--source=');
++      const name = sourceFlag ? '--source' : '--params-file';
++      const value = arg.slice(name.length + 1);
++      if (!value) throw new Error(`${name} requires a non-empty value`);
++      if (sourceFlag) {
++        if (explicitSource !== null) throw new Error('--source may be passed only once');
++        explicitSource = value;
++      } else {
++        if (paramsFile !== null) throw new Error('--params-file may be passed only once');
++        paramsFile = value;
+       }
+-      explicitSource = next;
+-      i++;
+       continue;
+     }
+-    if (a.startsWith('--source=')) {
+-      explicitSource = a.slice('--source='.length);
++    if (arg === '--no-migrate') {
++      if (noMigrate) throw new Error('--no-migrate may be passed only once');
++      noMigrate = true;
+       continue;
+     }
+-    rest.push(a);
++    if (arg.startsWith('--')) throw new Error(`unknown flag ${arg} for 'gbrain call'`);
++    positional.push(arg);
+   }
+ 
+-  const tool = rest[0];
+-  const jsonStr = rest[1];
+-
++  const tool = positional[0];
+   if (!tool) {
+-    console.error("Usage: gbrain call [--source <id>] <tool> '<json>'");
+-    process.exit(1);
++    throw new Error("Usage: gbrain call [--source <id>] <tool> '<json>'");
++  }
++  if (positional.length > 2) throw new Error('gbrain call accepts at most one JSON argument');
++
++  if (tool === PAGE_PROJECTION_TOOL) {
++    if (!noMigrate) throw new Error(`${PAGE_PROJECTION_TOOL} requires --no-migrate`);
++    if (!explicitSource) throw new Error(`${PAGE_PROJECTION_TOOL} requires an explicit non-empty --source`);
++    if (!paramsFile) throw new Error(`${PAGE_PROJECTION_TOOL} requires --params-file`);
++    if (positional.length !== 1) throw new Error(`${PAGE_PROJECTION_TOOL} accepts parameters only through --params-file`);
++    const request = validatePageProjectionRequest(readBoundedParamsFile(paramsFile));
++    if (request.source_id !== explicitSource) {
++      throw new Error(`--source '${explicitSource}' does not match params-file source_id '${request.source_id}'`);
++    }
++    const params: Record<string, unknown> = {
++      source_id: request.source_id,
++      targets: request.targets,
++    };
++    return { tool, params, explicitSource, noMigrate: true };
++  }
++  if (noMigrate) throw new Error(`--no-migrate is allowed only with ${PAGE_PROJECTION_TOOL}`);
++  if (paramsFile) throw new Error(`--params-file is allowed only with ${PAGE_PROJECTION_TOOL}`);
++  let parsed: unknown = {};
++  if (positional[1]) parsed = JSON.parse(positional[1]);
++  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
++    throw new Error('gbrain call parameters must be a JSON object');
+   }
++  return { tool, params: parsed as Record<string, unknown>, explicitSource, noMigrate: false };
++}
+ 
+-  const params = jsonStr ? JSON.parse(jsonStr) : {};
++/**
++ * `gbrain call <tool> <json>` — trusted local op-dispatch surface.
++ *
++ * Grammar accepts optional `--source <id>` before the tool name. Source is
++ * the highest-priority tier in resolveSourceId()'s
++ * 6-tier chain (--source > GBRAIN_SOURCE > .gbrain-source dotfile > path-match
++ * > brain default > 'default'). The dedicated projection verifier additionally
++ * requires `--no-migrate --params-file`; prepareCall binds that pair before
++ * startup hooks or engine connection.
++ */
++export async function runCall(
++  engine: BrainEngine,
++  args: string[],
++  // Test seam — production always uses the awaited-delivery writer (#3423).
++  out: (payload: string) => Promise<void> = writeStdoutFinal,
++  prepared?: PreparedCall,
++) {
++  const call = prepared ?? prepareCall(args);
+   // Resolve through the canonical 6-tier chain. resolveSourceWithTier()
+   // throws if an explicit/env/dotfile id refers to a non-registered source.
+   // #3874: mirror cli.ts's makeContext — when the source resolved via a
+@@ -59,10 +172,10 @@ export async function runCall(
+   // `config.federated = true` source (#2561 parity). Without this,
+   // `gbrain call query ...` silently saw a narrower brain than
+   // `gbrain query ...`.
+-  const resolved = await resolveSourceWithTier(engine, explicitSource);
++  const resolved = await resolveSourceWithTier(engine, call.explicitSource);
+   const sourceId = resolved.source_id;
+   const localFederated = await localFederatedSourceIds(engine, resolved.source_id, resolved.tier);
+-  const result = await handleToolCall(engine, tool, params, {
++  const result = await handleToolCall(engine, call.tool, call.params, {
+     sourceId,
+     ...(localFederated ? { localFederatedSourceIds: localFederated } : {}),
+   });
+diff --git a/src/commands/extract.ts b/src/commands/extract.ts
+index 1013a99394f7aaf2a9ca31f4a93c1e4cd2627216..bb2b16bcd111f5b93aebed91ee51b38bed6de535 100644
+--- a/src/commands/extract.ts
++++ b/src/commands/extract.ts
+@@ -2004,7 +2004,7 @@ export async function extractStaleFromDB(
+     return { linksCreated: 0, timelineCreated: 0, pagesProcessed: 0, staleRemaining: totalStale };
+   }
+   if (totalStale === 0) {
+-    if (!jsonMode) console.log('No stale pages — extraction is up to date.');
++    if (jsonMode) process.stdout.write(JSON.stringify({ action: 'extract_stale_done', links_created: 0, timeline_created: 0, pages_processed: 0, stale_remaining: 0, budget_hit: false, skipped_missing_target: 0, skipped_cross_source: 0 }) + '\n'); else console.log('No stale pages — extraction is up to date.');
+     return { linksCreated: 0, timelineCreated: 0, pagesProcessed: 0, staleRemaining: 0 };
+   }
+ 
+diff --git a/src/commands/import.ts b/src/commands/import.ts
+index 8b6dfe23d5a029ce20afd64f148c6c8a94bff76c..9bf02e604c4abf3cc52ae58084f65ca8b9f90cc7 100644
+--- a/src/commands/import.ts
++++ b/src/commands/import.ts
+@@ -197,12 +197,18 @@ export async function runImport(
+      * `wiki/page1` consistently across full and incremental sync.
+      */
+     slugRoot?: string;
++    /** Internal nesting contract: emit import JSON on stderr for sync --json. */
++    jsonToStderr?: boolean;
+   } = {},
+ ): Promise<RunImportResult> {
+   const noEmbed = args.includes('--no-embed');
+   const allowNoncanonicalRoot = args.includes('--allow-noncanonical-root');
+   const fresh = args.includes('--fresh');
+-  const jsonOutput = args.includes('--json');
++  const jsonOutput = args.includes('--json') || opts.jsonToStderr === true;
++  const emitJson = (message: string): void => {
++    if (opts.jsonToStderr) console.error(message);
++    else console.log(message);
++  };
+   // #3969: opt back into per-poll ingest_log rows (default: no-op runs skip the write).
+   const logNoop = args.includes('--log-noop');
+   const includeGitignored = args.includes('--include-gitignored') || opts.includeGitignored === true;
+@@ -242,7 +248,7 @@ export async function runImport(
+     } catch (e) {
+       if (e instanceof EmbeddingCredentialError) {
+         if (jsonOutput) {
+-          console.log(JSON.stringify({ status: 'embedding_credentials_missing', diagnosis: e.diagnosis }));
++          emitJson(JSON.stringify({ status: 'embedding_credentials_missing', diagnosis: e.diagnosis }));
+         } else {
+           console.error('');
+           console.error(e.userMessage);
+@@ -689,7 +695,7 @@ export async function runImport(
+ 
+   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+   if (jsonOutput) {
+-    console.log(JSON.stringify({
++    emitJson(JSON.stringify({
+       status: 'success', duration_s: parseFloat(totalTime),
+       imported, skipped, errors, chunks: chunksCreated,
+       total_files: allFiles.length,
+diff --git a/src/commands/sync.ts b/src/commands/sync.ts
+index bf68d64a0da0e65fedaee769397bb1084cae3542..5ec18465cdc612099afe4e8b65fb94ee90a5ec8c 100644
+--- a/src/commands/sync.ts
++++ b/src/commands/sync.ts
+@@ -321,6 +321,8 @@ export interface SyncOpts {
+   noPull?: boolean;
+   noEmbed?: boolean;
+   noExtract?: boolean;
++  /** Internal CLI framing contract: keep human sync output off stdout. */
++  jsonOutput?: boolean;
+   /**
+    * #3969: opt back into per-poll ingest_log rows. By default a sync that
+    * landed nothing (no pages written, no chunks, no failures acknowledged)
+@@ -500,6 +502,11 @@ export interface SyncOpts {
+   onProgress?: (p: { phase: string; bankedFiles?: number }) => void;
+ }
+ 
++function syncInfo(opts: SyncOpts, message: string): void {
++  if (opts.jsonOutput) serr(message);
++  else slog(message);
++}
++
+ // The git-plumbing cluster (git(), discoverGitRoot, createSyncBaselineCommit,
+ // path-containment guards, ...) was peeled to src/core/sync-git.ts (pure
+ // move). Re-exported so existing importers keep working.
+@@ -1745,7 +1752,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       isAncestor = false;
+     }
+     if (!isAncestor) {
+-      slog(
++      syncInfo(opts,
+         `[sync] last_commit ${lastCommit.slice(0, 8)} not an ancestor of HEAD ` +
+         `(history rewritten) — diffing tree-to-tree against the orphaned bookmark; ` +
+         `advancing to HEAD on completion.`,
+@@ -1759,7 +1766,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+   }
+ 
+   if (opts.includeGitignored) {
+-    slog(
++    syncInfo(opts,
+       `[sync] --include-gitignored: running full filesystem reconcile because ` +
+       `git diff cannot report untracked ignored files.`,
+     );
+@@ -1793,12 +1800,12 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       if (pinReachable) {
+         pin = storedTarget;
+         completedPaths = await loadOpCheckpoint(engine, ckpt.paths);
+-        slog(
++        syncInfo(opts,
+           `[sync] resuming checkpoint: ${completedPaths.length} file(s) already done; ` +
+           `draining ${lastCommit.slice(0, 8)}..${pin.slice(0, 8)} (pinned target).`,
+         );
+       } else {
+-        slog(
++        syncInfo(opts,
+           `[sync] checkpoint target ${storedTarget.slice(0, 8)} no longer reachable ` +
+           `(history rewritten); restarting against HEAD.`,
+         );
+@@ -1977,7 +1984,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+   }
+ 
+   if ((versionMismatch || versionNeverSet) && lastCommit === headCommit) {
+-    slog(
++    syncInfo(opts,
+       `[sync] chunker_version gate: stored=${storedVersion ?? 'unset'}, current=${currentVersion}. ` +
+       `Forcing full re-chunk pass (git HEAD unchanged but pipeline version advanced).`,
+     );
+@@ -2132,15 +2139,15 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+ 
+   // Dry run
+   if (opts.dryRun) {
+-    slog(`Sync dry run: ${lastCommit.slice(0, 8)}..${headCommit.slice(0, 8)}`);
+-    if (filtered.added.length) slog(`  Added: ${filtered.added.join(', ')}`);
+-    if (filtered.modified.length) slog(`  Modified: ${filtered.modified.join(', ')}`);
+-    if (filtered.deleted.length) slog(`  Deleted: ${filtered.deleted.join(', ')}`);
+-    if (filtered.renamed.length) slog(`  Renamed: ${filtered.renamed.map(r => `${r.from} -> ${r.to}`).join(', ')}`);
++    syncInfo(opts, `Sync dry run: ${lastCommit.slice(0, 8)}..${headCommit.slice(0, 8)}`);
++    if (filtered.added.length) syncInfo(opts, `  Added: ${filtered.added.join(', ')}`);
++    if (filtered.modified.length) syncInfo(opts, `  Modified: ${filtered.modified.join(', ')}`);
++    if (filtered.deleted.length) syncInfo(opts, `  Deleted: ${filtered.deleted.join(', ')}`);
++    if (filtered.renamed.length) syncInfo(opts, `  Renamed: ${filtered.renamed.map(r => `${r.from} -> ${r.to}`).join(', ')}`);
+     if (malformedSkipped.length) {
+-      slog(`  Skipped (malformed filename — brackets/control chars; rename to import): ${malformedSkipped.map(sanitizePathForDisplay).join(', ')}`);
++      syncInfo(opts, `  Skipped (malformed filename — brackets/control chars; rename to import): ${malformedSkipped.map(sanitizePathForDisplay).join(', ')}`);
+     }
+-    if (totalChanges === 0) slog(`  No syncable changes.`);
++    if (totalChanges === 0) syncInfo(opts, `  No syncable changes.`);
+     return {
+       status: 'dry_run',
+       malformedSkipped: malformedSkipped.length,
+@@ -2210,14 +2217,14 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+         // an unguarded delete made a preview under a narrower strategy
+         // hard-delete previously-imported pages. A preview only reports.
+         if (opts.dryRun) {
+-          slog(`  [dry-run] would delete un-syncable page: ${slug}`);
++          syncInfo(opts, `  [dry-run] would delete un-syncable page: ${slug}`);
+         } else {
+           // #4587: soft-delete (72h recovery window) instead of hard delete.
+           // Scope falls back to DEFAULT_SOURCE_ID to preserve deletePage's
+           // old 'default' fallback; softDeletePages requires an explicit
+           // sourceId. The purge phase owns the eventual hard delete.
+           await engine.softDeletePages([slug], { sourceId: opts.sourceId ?? DEFAULT_SOURCE_ID });
+-          slog(`  Soft-deleted un-syncable page (recoverable 72h): ${slug}`);
++          syncInfo(opts, `  Soft-deleted un-syncable page (recoverable 72h): ${slug}`);
+         }
+       }
+     } catch { /* ignore */ }
+@@ -2281,7 +2288,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+ 
+   const noEmbed = opts.noEmbed || totalChanges > 100;
+   if (totalChanges > 100) {
+-    slog(`Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
++    syncInfo(opts, `Large sync (${totalChanges} files). Importing text, deferring embeddings.`);
+   }
+ 
+   // v0.42.x (#1794): we have real work — persist the PIN now so a crash before
+@@ -3749,7 +3756,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       // stale sweep — never trust queue.add's row blind.
+       if (isLiveSweep(job)) queuedJobId = job.id;
+     } catch { /* best-effort — hint below still tells the operator */ }
+-    slog(
++    syncInfo(opts,
+       `  Large sync: deferring link/timeline extraction` +
+       (queuedJobId != null
+         ? ` — queued stale-sweep job #${queuedJobId} (source: ${opts.sourceId ?? 'default'}); a running jobs worker will consume it.`
+@@ -3765,7 +3772,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       const linksCreated = await extractLinksForSlugs(engine, gitContextRoot, pagesAffected, extractOpts);
+       const timelineCreated = await extractTimelineForSlugs(engine, gitContextRoot, pagesAffected, extractOpts);
+       if (linksCreated > 0 || timelineCreated > 0) {
+-        slog(`  Extracted: ${linksCreated} links, ${timelineCreated} timeline entries`);
++        syncInfo(opts, `  Extracted: ${linksCreated} links, ${timelineCreated} timeline entries`);
+       }
+       // v0.42.7 (#1696, CDX-6): stamp the links_extracted_at watermark for the
+       // pages we just extracted, AFTER the import set their updated_at, so
+@@ -3854,7 +3861,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
+       // Other errors stay best-effort — rate limits, transient network.
+     }
+   } else if (noEmbed || totalChanges > 100) {
+-    slog(`Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
++    syncInfo(opts, `Text imported. Run 'gbrain embed --stale' to generate embeddings.`);
+   }
+ 
+   if (malformedSkipped.length > 0) {
+@@ -3927,13 +3934,13 @@ async function performFullSync(
+     if (opts.exclude && opts.exclude.length > 0) {
+       allFiles = allFiles.filter(abs => !matchesAnyGlob(relative(syncScopeRoot, abs), opts.exclude));
+     }
+-    slog(
++    syncInfo(opts,
+       `Full-sync dry run (strategy=${opts.strategy ?? 'markdown'}): ` +
+       `${allFiles.length} file(s) would be imported ` +
+       `from ${syncScopeRoot} @ ${headCommit.slice(0, 8)}.`,
+     );
+     if (dryRunMalformed.length > 0) {
+-      slog(
++      syncInfo(opts,
+         `  ${dryRunMalformed.length} file(s) would be skipped: malformed filename ` +
+         `(brackets/control chars; rename to import): ` +
+         dryRunMalformed.slice(0, 20).map(sanitizePathForDisplay).join(', ') +
+@@ -3961,7 +3968,7 @@ async function performFullSync(
+   // sync and the jobs handler.
+   const FULL_SYNC_LARGE_MARKER = Number.MAX_SAFE_INTEGER;
+   const fullConcurrency = autoConcurrency(engine, FULL_SYNC_LARGE_MARKER, opts.concurrency);
+-  slog(`Running full import of ${syncScopeRoot}${fullConcurrency > 1 ? ` (${fullConcurrency} workers)` : ''}...`);
++  syncInfo(opts, `Running full import of ${syncScopeRoot}${fullConcurrency > 1 ? ` (${fullConcurrency} workers)` : ''}...`);
+   const { runImport } = await import('./import.ts');
+   const importArgs = [syncScopeRoot];
+   if (opts.noEmbed) importArgs.push('--no-embed');
+@@ -3983,6 +3990,7 @@ async function performFullSync(
+     includeHidden: opts.includeHidden,
+     includeGitignored: opts.includeGitignored,
+     slugRoot,
++    jsonToStderr: opts.jsonOutput === true,
+     // issue #1939: performFullSync owns the failure ledger + bookmark via the
+     // shared gate below; don't let runImport double-record or write its own.
+     managedBookmark: true,
+@@ -4252,9 +4260,9 @@ async function performFullSync(
+         }
+       }
+       if (reconciledDeletes > 0) {
+-        slog(`  Reconciled ${reconciledDeletes} stale page(s) whose source file was removed (soft-deleted, recoverable 72h).`);
++        syncInfo(opts, `  Reconciled ${reconciledDeletes} stale page(s) whose source file was removed (soft-deleted, recoverable 72h).`);
+         if (malformedDeleted > 0) {
+-          slog(
++          syncInfo(opts,
+             `  (${malformedDeleted} of them had malformed bracket/control-char filenames — ` +
+             `their files may still exist on disk; rename a file to re-import its content.)`,
+           );
+@@ -5143,7 +5151,7 @@ See also:
+   const singleSourceInterrupt = new AbortController();
+   const onSingleSourceSigint = () => { try { singleSourceInterrupt.abort(new Error('SIGINT')); } catch { /* */ } };
+   const opts: SyncOpts = {
+-    repoPath, dryRun, full, noPull, noEmbed, noExtract, skipFailed, retryFailed, noSchemaPack, includeGitignored, workingTree, sourceId,
++    repoPath, dryRun, full, noPull, noEmbed, noExtract, jsonOutput: jsonOut, skipFailed, retryFailed, noSchemaPack, includeGitignored, workingTree, sourceId,
+     strategy: strategyArg, concurrency,
+     srcSubpath,
+     exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
+diff --git a/src/core/cli-flag-registry.generated.ts b/src/core/cli-flag-registry.generated.ts
+index 2e9fa035a336058fbd7338f0c93267f48e213f87..5dc761b9fa717a97ee8f261942bde9295a2dd493 100644
+--- a/src/core/cli-flag-registry.generated.ts
++++ b/src/core/cli-flag-registry.generated.ts
+@@ -28,7 +28,7 @@ export const CLI_FLAG_REGISTRY: Record<string, readonly string[]> = {
+   'brainstorm': ['--all', '--brain', '--chunker-debug', '--code', '--compile', '--exclude', '--fast', '--file', '--fix', '--force', '--force-rechunk', '--force-resume', '--from-pages', '--full', '--help', '--http', '--json', '--judge-model', '--lang', '--limit', '--list-runs', '--markdown', '--max-cost', '--max-far-set', '--max-ideas-per-judge-call', '--model', '--no-embed', '--no-embedding', '--no-save', '--path', '--resume', '--retry-failed', '--retry-judge', '--save', '--source', '--stale', '--strict-budget', '--surface', '--timeout', '--token-ttl', '--yes'],
+   'cache': ['--brain', '--exclude', '--fast', '--force', '--from-pages', '--help', '--http', '--json', '--no-embedding', '--source', '--surface', '--token-ttl', '--yes'],
+   'calibration': ['--ab', '--access', '--all', '--allow-empty', '--apply', '--asof', '--auto', '--bound-max-concurrent', '--bound-slug-prefixes', '--bound-source', '--bound-tools', '--brain', '--budget-usd-per-day', '--by-mention', '--content', '--date', '--days', '--dry-run', '--entities', '--explain', '--federated', '--file', '--follow', '--full', '--help', '--holder', '--http', '--image', '--json', '--key-prefix', '--kind', '--lang', '--limit', '--markdown', '--max-usd', '--mode', '--multimodal', '--near-symbol', '--no-federated', '--offset', '--page', '--path', '--phase', '--progress-interval', '--progress-json', '--quiet', '--recency', '--regenerate', '--repo', '--restore-only', '--salience', '--save', '--scrub-gstack', '--session', '--session-id', '--since', '--slug', '--slugs', '--source', '--source-guard', '--stale', '--stale-ok', '--stats', '--stdin', '--surface', '--symbol-kind', '--thin', '--trusted-extraction', '--types', '--undo-wave', '--url', '--walk-depth', '--with-calibration', '--with-db', '--yes'],
+-  'call': ['--account', '--aliases', '--all', '--all-sources', '--allow-docker', '--anchor', '--apply', '--apply-rewrites', '--as-context', '--auto-fix', '--background', '--brain', '--budget', '--by-mention', '--catch-up', '--check', '--concurrency', '--confirm-destructive', '--content', '--cost-estimate', '--count', '--days', '--depth', '--dim', '--dir', '--direction', '--enable-dcr', '--enable-dcr-insecure', '--explain', '--fast', '--federated', '--file', '--fix', '--follow', '--force', '--from', '--from-meetings', '--grant-types', '--grep', '--hard-deadline', '--help', '--http', '--image', '--include-expired', '--include-frontmatter', '--infer-dates', '--install', '--interval', '--json', '--key', '--kind', '--lang', '--limit', '--link-source', '--link-type', '--llm', '--migrate-only', '--missing-path', '--multimodal', '--ner', '--no-embed', '--no-expand', '--no-federated', '--no-hard-deadline', '--no-migrate', '--no-retry-connect', '--no-save', '--older-than', '--once', '--page', '--param', '--params', '--password', '--path', '--pglite', '--port', '--prefer-postgres', '--probe', '--probe-pglite', '--progress-interval', '--progress-json', '--public-url', '--qrels', '--queue', '--quiet', '--reenrich-after', '--refresh-cache', '--remediate', '--remediation-plan', '--repo', '--reset', '--restore-only', '--save', '--scopes', '--session', '--sigma', '--since', '--slug', '--slug-prefix', '--source', '--source-guard', '--source-id', '--stale', '--status', '--stdin', '--strategy', '--suites', '--supabase', '--supersessions', '--surface', '--symbol-kind', '--synthesize', '--tag', '--take', '--target', '--timeout', '--to', '--today', '--token', '--token-ttl', '--tools-json', '--top', '--type', '--undo', '--uninstall', '--url', '--version', '--watch', '--with-calibration', '--workers', '--yes'],
++  'call': ['--account', '--aliases', '--all', '--all-sources', '--allow-docker', '--anchor', '--apply', '--apply-rewrites', '--as-context', '--auto-fix', '--background', '--brain', '--budget', '--by-mention', '--catch-up', '--check', '--concurrency', '--confirm-destructive', '--content', '--cost-estimate', '--count', '--days', '--depth', '--dim', '--dir', '--direction', '--enable-dcr', '--enable-dcr-insecure', '--explain', '--fast', '--federated', '--file', '--fix', '--follow', '--force', '--from', '--from-meetings', '--grant-types', '--grep', '--hard-deadline', '--help', '--http', '--image', '--include-expired', '--include-frontmatter', '--infer-dates', '--install', '--interval', '--json', '--key', '--kind', '--lang', '--limit', '--link-source', '--link-type', '--llm', '--migrate-only', '--missing-path', '--multimodal', '--ner', '--no-embed', '--no-expand', '--no-federated', '--no-hard-deadline', '--no-migrate', '--no-retry-connect', '--no-save', '--older-than', '--once', '--page', '--param', '--params', '--params-file', '--password', '--path', '--pglite', '--port', '--prefer-postgres', '--probe', '--probe-pglite', '--progress-interval', '--progress-json', '--public-url', '--qrels', '--queue', '--quiet', '--reenrich-after', '--refresh-cache', '--remediate', '--remediation-plan', '--repo', '--reset', '--restore-only', '--save', '--scopes', '--session', '--sigma', '--since', '--slug', '--slug-prefix', '--source', '--source-guard', '--source-id', '--stale', '--status', '--stdin', '--strategy', '--suites', '--supabase', '--supersessions', '--surface', '--symbol-kind', '--synthesize', '--tag', '--take', '--target', '--timeout', '--to', '--today', '--token', '--token-ttl', '--tools-json', '--top', '--type', '--undo', '--uninstall', '--url', '--version', '--watch', '--with-calibration', '--workers', '--yes'],
+   'capture': ['--access', '--all', '--allow-empty', '--apply', '--asof', '--auto', '--bound-max-concurrent', '--bound-slug-prefixes', '--bound-source', '--bound-tools', '--brain', '--budget-usd-per-day', '--by-mention', '--content', '--date', '--days', '--depth', '--entities', '--exclude', '--fast', '--federated', '--file', '--follow', '--force', '--from-pages', '--full', '--help', '--http', '--image', '--json', '--kind', '--limit', '--max-usd', '--mcp-only', '--mode', '--multimodal', '--near-symbol', '--no-embedding', '--no-federated', '--offset', '--page', '--path', '--progress-interval', '--progress-json', '--quiet', '--recency', '--repo', '--restore-only', '--salience', '--save', '--scopes', '--session', '--session-id', '--since', '--slug', '--slugs', '--source', '--source-guard', '--stale-ok', '--stats', '--stdin', '--surface', '--timeout', '--token-ttl', '--trusted-extraction', '--type', '--types', '--url', '--walk-depth', '--what', '--where', '--who', '--with-db', '--yes'],
+   'check-backlinks': ['--background', '--brain', '--brain-wide-max-cost-usd', '--check', '--dir', '--dry-run', '--explain', '--follow', '--help', '--include-frontmatter', '--json', '--progress-interval', '--progress-json', '--quiet', '--remediate', '--source', '--stale', '--timeout', '--type'],
+   'check-resolvable': ['--brain', '--dry-run', '--fix', '--help', '--json', '--skills-dir', '--source', '--strict', '--verbose'],
+diff --git a/src/core/db.ts b/src/core/db.ts
+index 34c87357ad570be867086475c0d4de8b2a90e067..6f028f1b6823c2aeaea474d030845a1b161e7078 100644
+--- a/src/core/db.ts
++++ b/src/core/db.ts
+@@ -333,18 +333,20 @@ export async function connect(config: EngineConfig): Promise<boolean> {
+   }
+ }
+ 
+-export async function disconnect(): Promise<void> {
++export async function disconnect(opts: { audit?: boolean } = {}): Promise<void> {
+   // v0.41.25.0 (#1570) — instrument every disconnect call site so v0.41.26
+   // can identify the caller that's nulling the module singleton mid-cycle.
+   // Best-effort: audit failure must never block the actual disconnect.
+   // The audit module is lazy-imported to keep db.ts cold-path-free for
+   // tools that import db without ever calling disconnect.
+-  try {
+-    const { logDbDisconnect } = await import('./audit/db-disconnect-audit.ts');
+-    // db.ts is always the module-singleton path by construction; no
+-    // instance-pool callers go through here.
+-    logDbDisconnect('postgres', 'module');
+-  } catch { /* best-effort; never block disconnect on audit failure */ }
++  if (opts.audit !== false) {
++    try {
++      const { logDbDisconnect } = await import('./audit/db-disconnect-audit.ts');
++      // db.ts is always the module-singleton path by construction; no
++      // instance-pool callers go through here.
++      logDbDisconnect('postgres', 'module');
++    } catch { /* best-effort; never block disconnect on audit failure */ }
++  }
+   // #1471 (codex #6): snapshot + null the singleton BEFORE awaiting end(), so a
+   // concurrent module connect() can't observe a non-null `sql` mid-teardown and
+   // join a pool that's already closing. Mirrors the v0.41.8.0 PGLite-disconnect
+diff --git a/src/core/ops/contract.ts b/src/core/ops/contract.ts
+index 6d9575dd6ba2ef0186a47922d0a6c384efbab603..c226a59be22fdb111cb7e5c49b3c9747db31e54f 100644
+--- a/src/core/ops/contract.ts
++++ b/src/core/ops/contract.ts
+@@ -459,6 +459,13 @@ export interface Operation {
+    */
+   scope?: 'read' | 'write' | 'admin' | 'sources_admin' | 'users_admin' | 'agent';
+   localOnly?: boolean;
++  /**
++   * Trusted local CLI-only operation. Unlike localOnly, which permits the
++   * local stdio MCP transport, cliOnly operations are absent and
++   * undispatchable on every MCP transport. They may be reached only through
++   * an explicit CLI command path that supplies OperationContext.remote=false.
++   */
++  cliOnly?: boolean;
+   /**
+    * WP1 honest catalog: the op is callable by remote callers only when this
+    * config gate resolves true (dual-plane, DB > file > absent=false). Network
+diff --git a/src/core/ops/pages.ts b/src/core/ops/pages.ts
+index 3c827f2d2ebb9578f07dbfc4253f02775ad8f694..2f994e64f22bd31045081e28923c0e103d656454 100644
+--- a/src/core/ops/pages.ts
++++ b/src/core/ops/pages.ts
+@@ -12,6 +12,7 @@ import { clampSearchLimit } from '../engine.ts';
+ import type { Page, PageType } from '../types.ts';
+ import { importFromContent } from '../import-file.ts';
+ import { serializePageToMarkdown } from '../markdown.ts';
++import { handlePageProjection, PAGE_PROJECTION_MAX_TARGETS } from '../page-projection.ts';
+ import { writePageThrough, deletePageThrough, resolvePageWriteTarget, type WriteThroughResult } from '../write-through.ts';
+ import { extractPageLinks, isAutoLinkEnabled, isAutoTimelineEnabled, isGlobalBasenameEnabled, parseTimelineEntries, makeResolver, type UnresolvedFrontmatterRef } from '../link-extraction.ts';
+ // #3190: pack-aware link typing on the put_page auto-link path.
+@@ -259,6 +260,21 @@ const get_page: Operation = {
+   cliHints: { name: 'get', positional: ['slug'] },
+ };
+ 
++const get_page_projection: Operation = {
++  name: 'get_page_projection',
++  description: `Trusted-local post-sync verifier for 1-${PAGE_PROJECTION_MAX_TARGETS} exact pages in one concrete source. It parses each caller-supplied raw Markdown target with gbrain's canonical parser, compares its logical content digest with the current indexed projection and stored content_hash, and returns one closed result row per target plus all_match. Missing/deleted/invalid/mismatched targets remain in the result with projection_match=false. This operation performs no retrieval bookkeeping or application writes. Invoke only through the dedicated sealed-manifest projection call on the brain host.`,
++  params: {
++    source_id: { type: 'string', required: true, description: 'Concrete source id. Must match the trusted local call context; __all__ is rejected.' },
++    targets: { type: 'array', required: true, items: { type: 'object' }, description: `Unique target objects (1-${PAGE_PROJECTION_MAX_TARGETS}), each with exactly slug and raw_markdown. The dedicated CLI reads these from a sealed manifest.` },
++  },
++  scope: 'read',
++  localOnly: true,
++  cliOnly: true,
++  area: 'pages',
++  annotations: { title: 'Verify current page projections', readOnlyHint: true, destructiveHint: false, idempotentHint: true },
++  handler: handlePageProjection,
++};
++
+ /**
+  * #4039: OpenAI deep-research adapter. ChatGPT's deep research mode requires
+  * an MCP server to expose a `search`/`fetch` PAIR with a fixed contract:
+@@ -1440,10 +1456,10 @@ const capture: Operation = {
+   },
+ };
+ 
+-// (Page CRUD quartet first, then the v0.26.5 destructive-guard ops:
++// (Page CRUD + projection verifier first, then the destructive-guard ops:
+ // page-level soft-delete recovery + admin purge, then capture.)
+ export const pagesOperations: Operation[] = [
+-  get_page, put_page, delete_page, list_pages,
++  get_page, get_page_projection, put_page, delete_page, list_pages,
+   restore_page, purge_deleted_pages, capture,
+   fetch_page,
+ ];
+diff --git a/src/core/ops/request-tools.ts b/src/core/ops/request-tools.ts
+index 6d2a69d303f19a6c83f3c812e4ad441bea0b7be6..7316aa3ef0094a279ab57432032ca2a76e82d1aa 100644
+--- a/src/core/ops/request-tools.ts
++++ b/src/core/ops/request-tools.ts
+@@ -59,6 +59,7 @@ function firstSentenceOf(description: string): string {
+  * trusted local CLI keep them — D7), minus ops outside the caller's scopes
+  * (agent-callable carve-out per FOV-4), minus bound-client-fenced ops (same
+  * predicate as tools/list, ENG-3), minus publish-gated ops whose gate is off.
++ * cliOnly ops are additionally restricted to trusted direct CLI callers.
+  * Two DISTINCT caller axes here: localOnly visibility is the transport-
+  * LOCALITY axis (stdio pipe or trusted local CLI can call localOnly ops, D7),
+  * while publish gates are the owner-CONSENT axis and exempt ONLY
+@@ -77,8 +78,8 @@ async function visibleOpsForCaller(
+   // runs, operations.ts has finished evaluating.
+   const { operations } = await import('../operations.ts');
+   const { filterOpsForSurface } = await import('../../mcp/surface.ts');
+-  // Locality axis: the stdio pipe or the local CLI (remote strictly false)
+-  // CAN call localOnly ops, so hiding those would make the catalog dishonest.
++  // Locality axis: stdio or local CLI can call localOnly; only the latter can
++  // call cliOnly, so the predicates below keep both catalogs honest.
+   const canSeeLocalOnly = ctx.transport === 'stdio' || ctx.remote === false;
+   // Consent axis: publish-gate enforcement exempts ONLY remote === false —
+   // stdio is remote:true, so it is gate-subject like every other agent caller.
+@@ -102,7 +103,8 @@ async function visibleOpsForCaller(
+   const scopes = ctx.auth?.scopes && ctx.auth.scopes.length > 0 ? ctx.auth.scopes : null;
+ 
+   return filterOpsForSurface(operations, ceiling).filter(op =>
+-    (canSeeLocalOnly || !op.localOnly)
++    (ctx.remote === false || !op.cliOnly)
++    && (canSeeLocalOnly || !op.localOnly)
+     && (scopes === null
+       || hasScope(scopes, op.scope ?? 'read')
+       || (op.agentCallable === true && hasScope(scopes, 'agent')))
+diff --git a/src/core/page-projection.ts b/src/core/page-projection.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad0884f1946029af49fd442a66f6ef802e192539
+--- /dev/null
++++ b/src/core/page-projection.ts
+@@ -0,0 +1,303 @@
++/**
++ * Trusted-local, read-only page projection verifier.
++ *
++ * This is intentionally separate from the ordinary retrieval path: it uses
++ * one source-scoped SELECT and never calls getPage/getTags, retrieval
++ * bookkeeping, caches, telemetry, or mutation helpers.
++ */
++
++import { MAX_FILE_SIZE } from './import-file.ts';
++import { parseMarkdown } from './markdown.ts';
++import { contentHash } from './utils.ts';
++import { OperationError } from './ops/contract.ts';
++import type { OperationContext } from './ops/contract.ts';
++import { parseSourceIdParam, validatePageSlug } from './ops/context.ts';
++
++/** Matches SIA's admitted maximum closure roster; independent of search caps. */
++export const PAGE_PROJECTION_MAX_TARGETS = 4096;
++
++export interface PageProjectionTarget {
++  slug: string;
++  raw_markdown: string;
++}
++
++export interface PageProjectionRequest {
++  source_id: string;
++  targets: PageProjectionTarget[];
++}
++
++interface ProjectionRow {
++  source_id: string;
++  slug: string;
++  type: string;
++  title: string;
++  compiled_truth: string;
++  timeline: string | null;
++  frontmatter: Record<string, unknown> | string | null;
++  content_hash: string | null;
++  tags: string[] | null;
++}
++
++interface ParsedProjection {
++  parse_error_codes: string[];
++  digest: string | null;
++  frontmatter: Record<string, unknown> | null;
++}
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
++  const proto = Object.getPrototypeOf(value);
++  return proto === Object.prototype || proto === null;
++}
++
++function rejectUnknownKeys(
++  value: Record<string, unknown>,
++  allowed: ReadonlySet<string>,
++  label: string,
++): void {
++  const unknown = Object.keys(value).filter(key => !allowed.has(key));
++  if (unknown.length > 0) {
++    throw new OperationError(
++      'invalid_params',
++      `${label} contains unknown field(s): ${unknown.sort().join(', ')}`,
++    );
++  }
++}
++
++/**
++ * JSONB does not preserve object-key order, while the historical contentHash
++ * formula hashes JSON.stringify output. Reorder the DB value against the raw
++ * parsed template recursively so semantically identical frontmatter gets the
++ * same projection digest; added/missing/different values still hash apart.
++ */
++function alignJsonObjectOrder(actual: unknown, template: unknown): unknown {
++  if (Array.isArray(actual) && Array.isArray(template)) {
++    return actual.map((value, index) => alignJsonObjectOrder(value, template[index]));
++  }
++  if (!isRecord(actual) || !isRecord(template)) return actual;
++  const aligned: Record<string, unknown> = Object.create(null);
++  for (const key of Object.keys(template)) {
++    if (Object.prototype.hasOwnProperty.call(actual, key)) {
++      aligned[key] = alignJsonObjectOrder(actual[key], template[key]);
++    }
++  }
++  for (const key of Object.keys(actual).filter(key => !(key in aligned)).sort()) {
++    aligned[key] = actual[key];
++  }
++  return aligned;
++}
++
++function normalizeDbFrontmatter(value: ProjectionRow['frontmatter']): Record<string, unknown> | null {
++  if (isRecord(value)) return value;
++  if (typeof value !== 'string') return value === null ? {} : null;
++  try {
++    const parsed: unknown = JSON.parse(value);
++    return isRecord(parsed) ? parsed : null;
++  } catch {
++    return null;
++  }
++}
++
++function currentProjectionDigest(
++  row: ProjectionRow,
++  expectedFrontmatter: Record<string, unknown> | null,
++): string | null {
++  const frontmatter = normalizeDbFrontmatter(row.frontmatter);
++  if (frontmatter === null
++      || typeof row.title !== 'string'
++      || typeof row.type !== 'string'
++      || typeof row.compiled_truth !== 'string'
++      || (row.timeline !== null && typeof row.timeline !== 'string')
++      || !Array.isArray(row.tags)
++      || row.tags.some(tag => typeof tag !== 'string')) {
++    return null;
++  }
++  return contentHash({
++    title: row.title,
++    type: row.type,
++    compiled_truth: row.compiled_truth,
++    timeline: row.timeline ?? '',
++    frontmatter: alignJsonObjectOrder(
++      frontmatter,
++      expectedFrontmatter ?? {},
++    ) as Record<string, unknown>,
++    tags: row.tags,
++  });
++}
++
++/**
++ * Validate and copy the closed request shape. This helper is deliberately
++ * engine-free so the CLI can reject an oversized/invalid manifest before it
++ * opens a database connection.
++ */
++export function validatePageProjectionRequest(
++  raw: unknown,
++): PageProjectionRequest {
++  if (!isRecord(raw)) {
++    throw new OperationError('invalid_params', 'get_page_projection parameters must be a JSON object.');
++  }
++  rejectUnknownKeys(raw, new Set(['source_id', 'targets']), 'get_page_projection request');
++
++  const sourceId = parseSourceIdParam(raw.source_id, 'get_page_projection');
++  if (!sourceId) {
++    throw new OperationError('invalid_params', 'get_page_projection requires source_id.');
++  }
++  if (!Array.isArray(raw.targets)
++      || raw.targets.length === 0
++      || raw.targets.length > PAGE_PROJECTION_MAX_TARGETS) {
++    throw new OperationError(
++      'invalid_params',
++      `get_page_projection requires 1-${PAGE_PROJECTION_MAX_TARGETS} targets.`,
++    );
++  }
++
++  const seen = new Set<string>();
++  const targets = raw.targets.map((candidate, index): PageProjectionTarget => {
++    if (!isRecord(candidate)) {
++      throw new OperationError('invalid_params', `get_page_projection target ${index} must be an object.`);
++    }
++    rejectUnknownKeys(candidate, new Set(['slug', 'raw_markdown']), `get_page_projection target ${index}`);
++    const { slug, raw_markdown: markdown } = candidate;
++    if (typeof slug !== 'string') {
++      throw new OperationError('invalid_params', `get_page_projection target ${index} slug must be a string.`);
++    }
++    validatePageSlug(slug);
++    if (seen.has(slug)) {
++      throw new OperationError('invalid_params', `get_page_projection target slug must be unique: ${slug}`);
++    }
++    seen.add(slug);
++    if (typeof markdown !== 'string') {
++      throw new OperationError('invalid_params', `get_page_projection target ${index} raw_markdown must be a string.`);
++    }
++    // JSON permits lone UTF-16 surrogates even though they are not valid
++    // Unicode scalar values. Reject them rather than hash replacement bytes.
++    if (Buffer.from(markdown, 'utf8').toString('utf8') !== markdown) {
++      throw new OperationError('invalid_params', `get_page_projection target ${index} raw_markdown is not valid UTF-8 text.`);
++    }
++    const byteLength = Buffer.byteLength(markdown, 'utf8');
++    if (byteLength > MAX_FILE_SIZE) {
++      throw new OperationError(
++        'invalid_params',
++        `get_page_projection target ${index} raw_markdown is too large (${byteLength} bytes, max ${MAX_FILE_SIZE}).`,
++      );
++    }
++    return { slug, raw_markdown: markdown };
++  });
++  return { source_id: sourceId, targets };
++}
++
++function parseExpectedProjection(target: PageProjectionTarget, current?: ProjectionRow): ParsedProjection {
++  try {
++    const parsed = parseMarkdown(target.raw_markdown, `${target.slug}.md`, {
++      validate: true,
++      expectedSlug: target.slug,
++    });
++    const parseErrorCodes = (parsed.errors ?? []).map(error => error.code);
++    if (parseErrorCodes.length > 0) {
++      return { parse_error_codes: parseErrorCodes, digest: null, frontmatter: null };
++    }
++    // Sync preserves a stored type when existing markdown omits an explicit
++    // `type:`. Mirror that rule so this verifier hashes the same projection.
++    if (parsed.typeExplicit !== true && current) parsed.type = current.type;
++    return {
++      parse_error_codes: [],
++      frontmatter: parsed.frontmatter,
++      digest: contentHash({
++        title: parsed.title,
++        type: parsed.type,
++        compiled_truth: parsed.compiled_truth,
++        timeline: parsed.timeline,
++        frontmatter: parsed.frontmatter,
++        tags: parsed.tags,
++      }),
++    };
++  } catch {
++    // The result roster stays closed even if a future parser begins throwing
++    // for a malformed document instead of returning validation errors.
++    return { parse_error_codes: ['PARSER_EXCEPTION'], digest: null, frontmatter: null };
++  }
++}
++
++export async function handlePageProjection(
++  ctx: OperationContext,
++  raw: Record<string, unknown>,
++): Promise<Record<string, unknown>> {
++  if (ctx.remote !== false) {
++    throw new OperationError(
++      'permission_denied',
++      'get_page_projection is restricted to the trusted local CLI.',
++      'Run it through the dedicated sealed-manifest projection call on the brain host.',
++    );
++  }
++  const request = validatePageProjectionRequest(raw);
++  if (request.source_id !== ctx.sourceId) {
++    throw new OperationError(
++      'permission_denied',
++      `source_id '${request.source_id}' does not match the trusted local call context.`,
++      `Pass --source ${request.source_id} before get_page_projection.`,
++    );
++  }
++
++  // One statement gives every page and its ordered tag projection the same
++  // database snapshot. Soft-deleted rows intentionally look like misses.
++  const rows = await ctx.engine.executeRaw<ProjectionRow>(
++    `SELECT p.source_id, p.slug, p.type, p.title, p.compiled_truth,
++            p.timeline, p.frontmatter, p.content_hash,
++            ARRAY(SELECT t.tag FROM tags t WHERE t.page_id = p.id ORDER BY t.tag) AS tags
++       FROM pages p
++      WHERE p.source_id = $1
++        AND p.slug = ANY($2::text[])
++        AND p.deleted_at IS NULL
++      ORDER BY p.slug`,
++    [request.source_id, request.targets.map(target => target.slug)],
++  );
++  const requestedSlugs = new Set(request.targets.map(target => target.slug));
++  const bySlug = new Map(rows
++    .filter(row => row.source_id === request.source_id && requestedSlugs.has(row.slug))
++    .map(row => [row.slug, row]));
++
++  const targets = request.targets.map(target => {
++    const current = bySlug.get(target.slug);
++    const expected = parseExpectedProjection(target, current);
++    if (!current) {
++      return {
++        slug: target.slug,
++        page_state: 'missing_or_deleted',
++        parse_error_codes: expected.parse_error_codes,
++        expected_projection_sha256: expected.digest,
++        current_projection_sha256: null,
++        current_content_hash: null,
++        current_content_hash_match: false,
++        projection_match: false,
++      };
++    }
++    const currentProjection = currentProjectionDigest(current, expected.frontmatter);
++    const currentContentHash = typeof current.content_hash === 'string'
++      ? current.content_hash
++      : null;
++    const currentContentHashMatch = currentProjection !== null
++      && currentContentHash === currentProjection;
++    return {
++      slug: target.slug,
++      page_state: 'live',
++      parse_error_codes: expected.parse_error_codes,
++      expected_projection_sha256: expected.digest,
++      current_projection_sha256: currentProjection,
++      current_content_hash: currentContentHash,
++      current_content_hash_match: currentContentHashMatch,
++      projection_match: expected.digest !== null
++        && expected.digest === currentProjection
++        && currentContentHashMatch,
++    };
++  });
++
++  return {
++    schema_version: 1,
++    source_id: request.source_id,
++    target_count: targets.length,
++    retrieval_bookkeeping_updated: false,
++    operation_writes_performed: false,
++    all_match: targets.every(target => target.projection_match),
++    targets,
++  };
++}
+diff --git a/src/core/pglite-engine.ts b/src/core/pglite-engine.ts
+index 604ab487589d45428048c10b2d0413505d39fd8e..7634401f8adff9fb2e416b031569a88ec1c89688 100644
+--- a/src/core/pglite-engine.ts
++++ b/src/core/pglite-engine.ts
+@@ -771,7 +771,7 @@ export class PGLiteEngine implements BrainEngine {
+       // attempt (red-team: episodes otherwise stayed open forever — doctor
+       // kept reporting corruption-likely and a weeks-stale episode backup
+       // could be reused over much newer data). Cheap no-op without a sidecar.
+-      if (dataDir) closeRepairEpisodeIfOpen(dataDir);
++      if (dataDir && config.probe_only !== true) closeRepairEpisodeIfOpen(dataDir);
+     } catch (err) {
+       // v0.13.1: any PGLite.create() failure becomes actionable. v0.41.8.0
+       // (#1340): the previous error hint hardcoded the macOS 26.3 link, but
+@@ -788,7 +788,7 @@ export class PGLiteEngine implements BrainEngine {
+       // shutdown — repairable in place. The seam NEVER throws (its failure
+       // modes fold into `ctx`), so every non-repaired path still funnels
+       // through the single lock-release-then-throw site below.
+-      if (verdict === 'wasm-abort') {
++      if (verdict === 'wasm-abort' && config.probe_only !== true) {
+         if (!dataDir) {
+           ctx = { repair: 'in-memory' };
+         } else {
+diff --git a/src/core/postgres-engine.ts b/src/core/postgres-engine.ts
+index 0fa370eed1f74bb9b88d6b2b92ae56cea2ad3b24..dbde357e237f150ba31297279c3c3c47039d4e21 100644
+--- a/src/core/postgres-engine.ts
++++ b/src/core/postgres-engine.ts
+@@ -376,9 +376,9 @@ export class PostgresEngine implements BrainEngine {
+     // the actual disconnect. Logged BEFORE the early-return branches so
+     // even a no-op disconnect (engine that was never connected) is
+     // recorded — that case may itself be a caller-side bug worth seeing.
+-    try {
+-      logDbDisconnect('postgres', this._connectionStyle ?? 'unknown');
+-    } catch { /* best-effort; never block disconnect on audit failure */ }
++    if (this._savedConfig?.probe_only !== true) {
++      try { logDbDisconnect('postgres', this._connectionStyle ?? 'unknown'); } catch { /* best-effort */ }
++    }
+     // #4143 engine parity with PGLiteEngine.disconnect(): settle in-flight
+     // background-work statements before pool teardown. Mode 'disconnect' —
+     // residual telemetry buffers are dropped on BOTH engines (symmetric lossy
+@@ -407,7 +407,7 @@ export class PostgresEngine implements BrainEngine {
+       // down. A borrower clears its own markers WITHOUT calling db.disconnect(),
+       // so a probe engine's teardown can't clobber the owner's live connection.
+       if (this._ownsModuleSingleton) {
+-        await db.disconnect();
++        await db.disconnect({ audit: this._savedConfig?.probe_only !== true });
+         this._ownsModuleSingleton = false;
+       }
+       this._connectionStyle = null;
+diff --git a/src/core/types.ts b/src/core/types.ts
+index bc49172e14b3d0cfb1b6832a8a989aff21bc5fe7..283dd8f2f5ff85a6ddfeb213c96f4f147c3ee03a 100644
+--- a/src/core/types.ts
++++ b/src/core/types.ts
+@@ -1940,8 +1940,8 @@ export interface EngineConfig {
+   database_url?: string;
+   database_path?: string;
+   engine?: 'postgres' | 'pglite';
++  probe_only?: boolean; // internal observational connect: suppress repair/audit lifecycle writes
+ }
+-
+ // Errors
+ export class GBrainError extends Error {
+   constructor(
+diff --git a/src/mcp/dispatch.ts b/src/mcp/dispatch.ts
+index 3347e06b2b1f38affa25e2066c4bd20e40f26932..61a5fffae5934b9f2bd5f7b80cb30c4d2ec1827e 100644
+--- a/src/mcp/dispatch.ts
++++ b/src/mcp/dispatch.ts
+@@ -413,7 +413,7 @@ export function requestLogStatusForResult(result: ToolResult): RequestLogStatus
+  */
+ function unknownToolEnvelope(name: string, allowedOps?: ReadonlySet<string>): ToolResult {
+   const candidates = operations
+-    .filter(op => !op.localOnly && !op.publishGateKey && (allowedOps ? allowedOps.has(op.name) : true))
++    .filter(op => !op.cliOnly && !op.localOnly && !op.publishGateKey && (allowedOps ? allowedOps.has(op.name) : true))
+     .map(op => op.name);
+   const nearest = suggestNearest(name, candidates);
+   const envelope = {
+@@ -528,14 +528,11 @@ export async function dispatchToolCall(
+     return unknownToolEnvelope(name, opts.allowedOps);
+   }
+ 
+-  // localOnly backstop at the SHARED layer (WP1/D7): localOnly ops reach the
+-  // operator's filesystem, so they dispatch only on the local stdio pipe.
+-  // Any non-stdio transport — both HTTP servers, and any future caller that
+-  // forgets to mark its transport — is denied fail-closed. Same envelope as
+-  // a nonexistent op so the catalog doesn't leak which names exist. The
+-  // serve-http path also filters these at list time; the legacy bearer
+-  // transport at surface 'full' had no gate at all before this line.
+-  if (op.localOnly && opts.transport !== 'stdio') {
++  // localOnly backstop at the SHARED layer (WP1/D7): those ops dispatch only
++  // on local stdio. cliOnly is stricter and dispatches on no MCP transport.
++  // Any denied form gets the same envelope as a nonexistent op so the catalog
++  // cannot leak names; list paths filter these capabilities independently.
++  if (op.cliOnly || (op.localOnly && opts.transport !== 'stdio')) {
+     return unknownToolEnvelope(name, opts.allowedOps);
+   }
+ 
+diff --git a/src/mcp/server.ts b/src/mcp/server.ts
+index c8ed3381a02024462dba5c5dcacad1754d822071..1ead3a94d1855f21cdb987d70644a8e714df832f 100644
+--- a/src/mcp/server.ts
++++ b/src/mcp/server.ts
+@@ -72,35 +72,35 @@ export async function resolveMcpStdioSourceScope(
+  * the gate enforcement (assertPublishEnabled, the advisor inline gate) exempts
+  * only ctx.remote === false — so listing gate-off ops here was the exact
+  * listed-but-denied class the honest-catalog wave exists to kill, surviving on
+- * the default transport. localOnly ops STAY listed: locality is the transport
+- * axis (stdio IS the local pipe, D7); publish gates are the owner-consent
+- * axis. Deliberately uncached (publish-gates.ts doctrine: the per-request read
+- * is what makes a config flip take effect without a restart; tools/list is
+- * rare). Fail-closed: a resolver failure hides every gated op rather than
+- * re-creating the listed-but-denied complaint.
++ * the default transport. localOnly ops STAY listed because stdio is local;
++ * cliOnly ops do not — they require the trusted owner CLI context, not an
++ * agent-facing pipe. Publish gates are the separate owner-consent axis.
++ * Deliberately uncached so a config flip takes effect without restart.
++ * Fail-closed: a resolver failure hides every gated op.
+  */
+ export async function stdioVisibleTools(
+   engine: BrainEngine,
+   surfacedOps: Operation[],
+ ): Promise<Operation[]> {
+-  if (!surfacedOps.some(op => op.publishGateKey)) return surfacedOps;
++  const mcpOps = surfacedOps.filter(op => !op.cliOnly);
++  if (!mcpOps.some(op => op.publishGateKey)) return mcpOps;
+   // Degraded serve (db-availability 4c): fail-closed WITHOUT touching the
+   // engine. The gate read below can hit engine.getConfig, which on the
+   // degraded wrapper would burn the one lazy reconnect attempt — and stall
+   // the client's INITIAL tools/list handshake behind the reconnect's wait
+   // cap. Recovery re-sends tools/list_changed, so the full catalog returns.
+   if (isEngineDegraded(engine)) {
+-    const hidden = new Set(surfacedOps.filter(o => o.publishGateKey).map(o => o.name));
+-    return surfacedOps.filter(op => !hidden.has(op.name));
++    const hidden = new Set(mcpOps.filter(o => o.publishGateKey).map(o => o.name));
++    return mcpOps.filter(op => !hidden.has(op.name));
+   }
+   let gateDisabled: ReadonlySet<string>;
+   try {
+     gateDisabled = await disabledOpsForPublishGates(engine, loadConfig());
+   } catch {
+-    gateDisabled = new Set(surfacedOps.filter(o => o.publishGateKey).map(o => o.name));
++    gateDisabled = new Set(mcpOps.filter(o => o.publishGateKey).map(o => o.name));
+   }
+-  if (gateDisabled.size === 0) return surfacedOps;
+-  return surfacedOps.filter(op => !gateDisabled.has(op.name));
++  if (gateDisabled.size === 0) return mcpOps;
++  return mcpOps.filter(op => !gateDisabled.has(op.name));
+ }
+ 
+ // ─── #4409: in-flight stdio RPC tracking ────────────────────────────────
+@@ -145,14 +145,15 @@ export async function startMcpServer(engine: BrainEngine, opts: { surface?: McpS
+   // to pre-surface behavior), 'starter' (WP4 daily-driver set), or 'verbs'
+   // (exactly the 7 protocol verbs). Enforced BOTH on the advertised list and
+   // in dispatch (fail-closed [c2]). WP4: the GBRAIN_MCP_FORCE_SURFACE kill
+-  // switch min()s in (narrow-only, FOV-6a). Note stdio keeps localOnly ops
+-  // on every surface tier that includes them — it IS the local surface (D7,
+-  // the transport-LOCALITY axis). Publish gates are the separate owner-
++  // switch min()s in (narrow-only, FOV-6a). stdio keeps localOnly ops except
++  // cliOnly operations, which are not an MCP surface. It IS the local surface
++  // (D7, the transport-LOCALITY axis). Publish gates are the separate owner-
+   // CONSENT axis keyed on ctx.remote === false only, and stdio dispatches
+   // remote:true — so gate-off ops are subtracted per tools/list below.
+   const surface: McpSurface = clampSurface(opts.surface ?? 'full');
+-  const surfacedOps = filterOpsForSurface(operations, surface);
+-  const allowedOps = surface === 'full' ? undefined : allowedOpNames(operations, surface);
++  const mcpOps = operations.filter(op => !op.cliOnly);
++  const surfacedOps = filterOpsForSurface(mcpOps, surface);
++  const allowedOps = surface === 'full' ? undefined : allowedOpNames(mcpOps, surface);
+ 
+   // WP3: strict-params schema emission, resolved ONCE at startup from the
+   // FILE config plane only — stdio has no per-request list cycle, so a
