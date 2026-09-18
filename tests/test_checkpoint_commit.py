@@ -418,6 +418,20 @@ class CheckpointCommit(unittest.TestCase):
         with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("retired dispatch wrote")):
             self.assertIsNone(api.dispatch(vars(owner)))
         self.assertIsNone(api.select(vars(owner), memo=memo))
+        # Bootstrap continuation: dispatch retired the package marker, so
+        # the pointer it created from the pinned package and the actual
+        # acknowledgment is now the only durable record of where this chain
+        # lives. The acknowledged batch keeps a root pin and carries neither
+        # the directory nor the head. Nothing in this test seeded it.
+        pointer = api.select_chain(vars(owner), memo=memo)
+        self.assertIsNotNone(pointer,
+            "dispatch dropped the last directory/head pointer")
+        self.assertEqual(pointer["status"], "continued")
+        self.assertEqual(pointer["directory"], selected["directory"])
+        self.assertEqual(pointer["root_sha256"], selected["root_sha256"])
+        # A root-only package has no head document; the root is the head.
+        self.assertEqual(pointer["head_sha256"], selected["root_sha256"])
+        self.assertEqual(pointer["next_generation"], 1)
         if getattr(self, "check_successor", False):
             self.successor_case(owner, selected)
 
@@ -537,6 +551,120 @@ class CheckpointCommit(unittest.TestCase):
         self.assertEqual(refused.exception.reason, "successor-durable-memo-differs")
         self.capture_successor(owner, memo, committed, root, root_pin, view, forged_head)
 
+    def next_cycle_from_pointer(self, owner, args):
+        """A further cycle driven only by the reloaded pointer and durable state.
+
+        This is the decisive repeated-continuation step. Nothing here reads a
+        fixture variable for the chain: the directory, the bootstrap root and
+        the head to extend all come off the pointer the previous dispatch
+        left behind, and the predecessor comes from the durable memo. A real
+        pulse has exactly this much and no more.
+        """
+        import siacheckpointadoption as adoption
+        import siacheckpointparent as parents
+        import siahistoryroot as roots
+        import siacheckpointtransaction as transaction
+
+        dispatcher = self.dispatch_api
+        memo = owner.load_memo()
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        pointer = dispatcher.select_chain(vars(owner), memo=memo)
+        self.assertEqual(pointer["status"], "continued")
+        directory = pointer["directory"]
+        committed = memo["controller_source_committed"]
+
+        # Retain the parent this cycle will build on, then create the next
+        # head from the pointer's input head plus the actual current ACK.
+        retained = dict(directory=directory, committed=committed)
+        parents.retain_graph(vars(owner), **retained)
+        self.assertTrue(parents.retain_checkpoint_live(vars(owner), **retained,
+            memo=memo, admitted_status=status))
+        built = roots.prepare_successor(vars(owner), memo=memo,
+            admitted_status=status, directory=directory,
+            expected_root_sha256=pointer["root_sha256"],
+            expected_head_sha256=pointer["head_sha256"])
+        head = built["successor_sha256"]
+        self.assertNotEqual(head, pointer["head_sha256"])
+        self.assertEqual(built["successor"]["parent_sha256"], pointer["head_sha256"])
+        self.assertEqual(built["successor"]["generation"], pointer["next_generation"])
+
+        # The continued pointer advances exactly one real link.
+        self.assertTrue(dispatcher.record_chain(vars(owner), memo=memo,
+            directory=directory, expected_root_sha256=pointer["root_sha256"],
+            expected_head_sha256=head))
+        selected = dispatcher.select_chain(vars(owner), memo=owner.load_memo())
+        self.assertEqual(selected["status"], "selected-not-captured")
+        self.assertEqual(selected["head_sha256"], head)
+
+        memo = owner.load_memo()
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        package = transaction.prepare_successor(vars(owner), memo=memo,
+            admitted_status=status, directory=directory,
+            expected_root_sha256=pointer["root_sha256"],
+            expected_head_sha256=head, observed_at=args["observed_at"] + 4,
+            **self.premises)
+        self.assertEqual(package["manifest"]["head_sha256"], head)
+        self.assertEqual(package["manifest"]["predecessor"], committed)
+
+        pins = dict(directory=directory,
+            expected_manifest_sha256=package["manifest_sha256"],
+            expected_root_sha256=pointer["root_sha256"])
+        memo = owner.load_memo()
+        self.assertTrue(dispatcher.record(vars(owner), memo=memo, **pins,
+            started_at=status["ts"], seq=memo["pulse_seq"]))
+        self.assertTrue(adoption.adopt_root(vars(owner), memo=memo,
+            admitted_status=status, **pins, seq=memo["pulse_seq"], **self.premises))
+        view = dispatcher.dispatch(vars(owner))
+        self.assertEqual(view["status"], "available")
+
+        durable = owner.load_memo()
+        third = durable["controller_source_committed"]
+        self.assertNotEqual(third["source_batch_sha256"], committed["source_batch_sha256"])
+        self.assertEqual(third["source_batch_sha256"],
+            package["manifest"]["source_batch_sha256"])
+        # And the pointer is ready for the cycle after this one.
+        final = dispatcher.select_chain(vars(owner), memo=durable)
+        self.assertEqual(final["status"], "continued")
+        self.assertEqual(final["head_sha256"], head)
+        self.assertEqual(final["next_generation"], pointer["next_generation"] + 1)
+        self.assertIsNone(dispatcher.select(vars(owner), memo=durable))
+
+    def dispatch_crash_windows(self, owner, api):
+        """Both orderings around the pointer advance stay recoverable."""
+        actual_write = owner.atomic_write
+
+        def fail_when(predicate, message):
+            def write(path, text, *rest, **options):
+                if path == owner.MEMO_PATH and predicate(owner.json.loads(text)):
+                    raise OSError(message)
+                return actual_write(path, text, *rest, **options)
+            return write
+
+        # Crash before the pointer moves: the package marker survives, the
+        # pointer is untouched, and a retry completes idempotently.
+        before = owner.load_memo()
+        with mock.patch.object(owner, "atomic_write", side_effect=fail_when(
+                lambda value: value.get(api._CHAIN, {}).get("status") == "continued",
+                "controlled crash before pointer advance")):
+            with self.assertRaisesRegex(OSError, "before pointer advance"):
+                api.dispatch(vars(owner))
+        interrupted = owner.load_memo()
+        self.assertIn(api._MARKER, interrupted)
+        self.assertEqual(interrupted.get(api._CHAIN), before.get(api._CHAIN))
+
+        # Crash after the pointer moved but before the package marker went:
+        # the pointer is already continued and the retry finishes.
+        with mock.patch.object(owner, "atomic_write", side_effect=fail_when(
+                lambda value: api._MARKER not in value,
+                "controlled crash before marker retirement")):
+            with self.assertRaisesRegex(OSError, "before marker retirement"):
+                api.dispatch(vars(owner))
+        midway = owner.load_memo()
+        self.assertIn(api._MARKER, midway)
+        self.assertEqual(api.select_chain(vars(owner), memo=midway)["status"],
+            "continued")
+        return api.dispatch(vars(owner))
+
     def fenced_successor_acknowledgment(self, owner, args, root_pin):
         """Capture, prepare, adopt and acknowledge a successor under a real fence.
 
@@ -556,6 +684,19 @@ class CheckpointCommit(unittest.TestCase):
 
         memo = owner.load_memo()
         first = copy.deepcopy(memo["controller_source_committed"])
+        # This branch returns before record_chain_selection, so the durable
+        # pointer is still the bootstrap one naming the root as its head,
+        # while the package about to be prepared names the successor head.
+        # Record the real selection for that head first. The join is not
+        # relaxed to accommodate the fixture; the fixture is corrected.
+        dispatcher = self.dispatch_api
+        self.assertTrue(dispatcher.record_chain(vars(owner), memo=memo,
+            directory=args["directory"], expected_root_sha256=root_pin,
+            expected_head_sha256=args["expected_head_sha256"]))
+        selected = dispatcher.select_chain(vars(owner), memo=owner.load_memo())
+        self.assertEqual(selected["status"], "selected-not-captured")
+        self.assertEqual(selected["head_sha256"], args["expected_head_sha256"])
+        memo = owner.load_memo()
         marker = owner._mark_notify_baseline_attempt(memo)
         self.assertIsNotNone(marker)
         self.assertEqual(owner.load_memo(), memo)
@@ -593,20 +734,31 @@ class CheckpointCommit(unittest.TestCase):
         self.assertEqual(
             owner._notify_recover_interrupted_baseline(copy.deepcopy(after)), after)
 
-        pins = dict(directory=args["directory"],
+        dispatcher = self.dispatch_api
+        pointer = dispatcher.select_chain(vars(owner), memo=owner.load_memo())
+        pins = dict(directory=pointer["directory"],
             expected_manifest_sha256=package["manifest_sha256"],
-            expected_root_sha256=root_pin)
+            expected_root_sha256=pointer["root_sha256"])
+        self.assertEqual(pointer["root_sha256"], root_pin)
         memo = owner.load_memo()
         self.assertIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, memo)
         status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        # Through the pulse entries, so the pointer advance runs beneath the
+        # fence too rather than being skipped by a direct completion call.
         with mock.patch.object(owner, "SENSES", senses):
+            self.assertTrue(dispatcher.record(vars(owner), memo=memo,
+                **pins, started_at=status["ts"], seq=memo["pulse_seq"]))
             self.assertTrue(adoption.adopt_root(vars(owner), memo=memo,
                 admitted_status=status, **pins, seq=memo["pulse_seq"], **self.premises))
-            view = runner.complete_adopted(vars(owner), **pins, started_at=status["ts"])
+            view = dispatcher.dispatch(vars(owner))
         self.assertEqual(view["status"], "available")
         durable = owner.load_memo()
         # Acknowledgment retired the fence; the fixture never cleared it.
         self.assertNotIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, durable)
+        # The pointer advanced under the fence and the package marker went.
+        self.assertEqual(
+            dispatcher.select_chain(vars(owner), memo=durable)["status"], "continued")
+        self.assertIsNone(dispatcher.select(vars(owner), memo=durable))
         second = durable["controller_source_committed"]
         self.assertNotEqual(second["source_batch_sha256"], first["source_batch_sha256"])
         self.assertEqual(second["source_batch_sha256"], batch_pin)
@@ -668,9 +820,16 @@ class CheckpointCommit(unittest.TestCase):
         self.assertNotIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, owner.load_memo())
         memo = owner.load_memo()
         status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
-        request = dict(memo=memo, admitted_status=status, directory=args["directory"],
-            expected_root_sha256=args["expected_root_sha256"],
-            expected_head_sha256=args["expected_head_sha256"],
+        # Everything this pulse needs comes off the retained pointer, not
+        # off fixture variables: a real next pulse holds no such state.
+        pointer = self.dispatch_api.select_chain(vars(owner), memo=memo)
+        self.assertEqual(pointer["directory"], args["directory"])
+        self.assertEqual(pointer["root_sha256"], args["expected_root_sha256"])
+        self.assertEqual(pointer["head_sha256"], args["expected_head_sha256"])
+        request = dict(memo=memo, admitted_status=status,
+            directory=pointer["directory"],
+            expected_root_sha256=pointer["root_sha256"],
+            expected_head_sha256=pointer["head_sha256"],
             observed_at=args["observed_at"] + 2, **self.premises)
         package = api.prepare_successor(vars(owner), **request)
         manifest = package["manifest"]
@@ -711,13 +870,31 @@ class CheckpointCommit(unittest.TestCase):
         memo = owner.load_memo()
         status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
         first = copy.deepcopy(memo["controller_source_committed"])
-        pins = dict(directory=args["directory"],
+        dispatcher = self.dispatch_api
+        pointer = dispatcher.select_chain(vars(owner), memo=memo)
+        pins = dict(directory=pointer["directory"],
             expected_manifest_sha256=package["manifest_sha256"],
-            expected_root_sha256=args["expected_root_sha256"])
+            expected_root_sha256=pointer["root_sha256"])
+        # Go through the same entries a pulse uses. complete_adopted on its
+        # own would skip the pointer advance and its crash windows outright.
+        self.assertTrue(dispatcher.record(vars(owner), memo=memo,
+            **pins, started_at=status["ts"], seq=memo["pulse_seq"]))
         self.assertTrue(adoption.adopt_root(vars(owner), memo=memo,
             admitted_status=status, **pins, seq=memo["pulse_seq"], **self.premises))
-        view = runner.complete_adopted(vars(owner), **pins, started_at=status["ts"])
+        view = self.dispatch_crash_windows(owner, dispatcher)
         self.assertEqual(view["status"], "available")
+        advanced = dispatcher.select_chain(vars(owner), memo=owner.load_memo())
+        # The pointer is now continued and still names the chain. Its head
+        # stays this package's INPUT head by contract: the acknowledged
+        # link has no successor document yet, and the next pulse builds one
+        # from this head plus the actual current acknowledgment. A pointer
+        # naming a head the chain has not produced would pin a file that
+        # does not exist.
+        self.assertEqual(advanced["status"], "continued")
+        self.assertEqual(advanced["head_sha256"], pointer["head_sha256"])
+        self.assertEqual(advanced["directory"], pointer["directory"])
+        self.assertEqual(advanced["root_sha256"], pointer["root_sha256"])
+        self.assertIsNone(dispatcher.select(vars(owner), memo=owner.load_memo()))
         second = owner.load_memo()["controller_source_committed"]
         # The chain actually advanced: a different, compact predecessor.
         self.assertNotEqual(second["source_batch_sha256"], first["source_batch_sha256"])
@@ -725,6 +902,9 @@ class CheckpointCommit(unittest.TestCase):
             package["manifest"]["source_batch_sha256"])
         self.assertEqual(view["batch"]["schema"],
             "sia-controller-source-checkpoint-capture-v3")
+        # Only once every assertion about this link has been made does the
+        # next cycle run; it moves the durable state on by a further link.
+        self.next_cycle_from_pointer(owner, args)
 
     def record_chain_selection(self, owner, args):
         """Pin the chain head before any capture can raise a fence."""
@@ -738,8 +918,12 @@ class CheckpointCommit(unittest.TestCase):
         pins = dict(directory=args["directory"],
             expected_root_sha256=args["expected_root_sha256"],
             expected_head_sha256=args["expected_head_sha256"])
-        self.assertIsNone(api.select_chain(vars(owner), memo=memo))
-        self.assertIsNone(api.reopen_chain(vars(owner), memo=memo))
+        # The bootstrap pointer is already here, continued, naming the
+        # root as its own head. This pulse advances it by one real link.
+        bootstrap = api.select_chain(vars(owner), memo=memo)
+        self.assertEqual(bootstrap["status"], "continued")
+        self.assertEqual(bootstrap["head_sha256"], args["expected_root_sha256"])
+        self.assertIsNotNone(api.reopen_chain(vars(owner), memo=memo))
         self.assertTrue(api.record_chain(vars(owner), memo=memo, **pins))
         self.assertFalse(api.record_chain(vars(owner), memo=memo, **pins))
         with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("chain retry wrote")):
@@ -759,6 +943,19 @@ class CheckpointCommit(unittest.TestCase):
         with self.assertRaises(ValueError):
             api.record_chain(vars(owner), memo=owner.load_memo(),
                 **{**pins, "expected_head_sha256": "0" * 64})
+        # And a continued pointer only advances one real link: a head whose
+        # own parent pin is not the pointer's head is refused.
+        durable = owner.load_memo()
+        rewound = copy.deepcopy(durable)
+        rewound[api._CHAIN] = api._build_chain(vars(owner),
+            directory=bootstrap["directory"], root_sha256=bootstrap["root_sha256"],
+            head_sha256="1" * 64, next_generation=bootstrap["next_generation"],
+            committed=bootstrap["committed"], status="continued")
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(rewound), mode=0o600)
+        with self.assertRaises(ValueError) as refused:
+            api.record_chain(vars(owner), memo=owner.load_memo(), **pins)
+        self.assertEqual(refused.exception.reason, "checkpoint-chain-progression-differs")
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(durable), mode=0o600)
         # Reopening consults no source authority, so it works under a fence.
         reopened = api.reopen_chain(vars(owner), memo=owner.load_memo())
         self.assertEqual(reopened["selection"], selection)

@@ -237,8 +237,103 @@ def dispatch(owner):
             started_at=marker["started_at"])
         if view["batch"]["batch_sha256"] != batch_sha256:
             source.refuse("checkpoint-dispatch-completed-batch-differs")
+        # Order matters and is not interchangeable. The pointer is created
+        # or advanced first; only then is the package marker dropped. A
+        # crash after the marker went but before the pointer moved could
+        # never remake the join, and would leave nothing naming the
+        # directory or head.
+        _advance_chain(owner, marker)
         _retire(owner, marker)
         return view
+
+
+def _advance_chain(owner, package):
+    """Create or advance the continuation pointer for an acknowledged package.
+
+    Called only after complete_adopted returned a validated view, so the
+    acknowledgment is established by the caller rather than assumed here.
+
+    The join is against the retained package re-read by pin, never against
+    this dispatcher's own marker. The pointer is created on bootstrap and
+    transitioned on continuation, never dropped: the acknowledged batch
+    carries a root pin but neither the directory nor the head, so this is
+    the only durable record of where the chain lives. Its head is never
+    discovered by scanning the directory.
+
+    The head recorded here stays the package's input head by design. The
+    acknowledged link has no successor document yet; the next pulse builds
+    one from this head and the actual current acknowledgment. Advancing the
+    recorded head to something the chain has not produced would be a pin
+    for a document that does not exist.
+    """
+    import siahistoryroot as roots
+
+    memo = owner["load_memo"]()
+    selection = select_chain(owner, memo=memo)
+    view = transaction.read_prepared(owner, directory=package["directory"],
+        expected_manifest_sha256=package["manifest_sha256"],
+        expected_root_sha256=package["root_sha256"])
+    manifest = view["manifest"]
+    if manifest["source_batch_sha256"] != package["source_batch_sha256"]:
+        source.refuse("checkpoint-chain-package-differs")
+    # A root-only package has no head document of its own; the bootstrap
+    # root is the head, which the chain reader already admits at
+    # generation zero.
+    head_sha256 = manifest.get("head_sha256", package["root_sha256"])
+    # Re-admit both chain documents by pin instead of deriving a generation
+    # arithmetically from a marker.
+    chain = roots.read_successor(owner, directory=package["directory"],
+        expected_root_sha256=package["root_sha256"],
+        expected_head_sha256=head_sha256)
+    pointer = _build_chain(owner, directory=package["directory"],
+        root_sha256=package["root_sha256"], head_sha256=head_sha256,
+        next_generation=chain["next_generation"],
+        committed=manifest["predecessor"], status=_CHAIN_CONTINUED)
+    if selection is not None:
+        if package["directory"] != selection["directory"] \
+                or package["root_sha256"] != selection["root_sha256"] \
+                or head_sha256 != selection["head_sha256"] \
+                or _wire(owner, manifest["predecessor"]) \
+                != _wire(owner, selection["committed"]):
+            source.refuse("checkpoint-chain-package-differs")
+        if selection["status"] == _CHAIN_CONTINUED:
+            if _wire(owner, selection) != _wire(owner, pointer):
+                source.refuse("checkpoint-chain-package-differs")
+            return False
+    return _write_chain(owner, selection, pointer)
+
+
+def _write_chain(owner, expected, pointer):
+    """Durably replace or create the pointer, under the ordinary checks."""
+    references = dict(owner)
+    with publication._files(owner, source) as (files, observe, current, named_current):
+        memo = files["memo"].value
+        if type(memo) is not dict:
+            source.refuse("checkpoint-dispatch-memo-shape")
+        # Key membership, not .get(): a present-but-null pointer is
+        # malformed and must refuse, never be treated as absent and
+        # silently overwritten.
+        present = _CHAIN in memo
+        if present != (expected is not None):
+            source.refuse("checkpoint-chain-pointer-differs")
+        if present and _wire(owner, _validate_chain(owner, memo[_CHAIN])) \
+                != _wire(owner, expected):
+            source.refuse("checkpoint-chain-pointer-differs")
+        updated = copy.deepcopy(memo)
+        updated[_CHAIN] = copy.deepcopy(pointer)
+        updated_raw = _wire(owner, updated, memo=True)
+        owner["_memo_text"](updated)
+        if any(owner.get(name) is not value for name, value in references.items()):
+            source.refuse("checkpoint-dispatch-input-changed")
+        current()
+        parent = files["memo"].parent_identity
+        owner["atomic_write"](owner["MEMO_PATH"],
+            updated_raw.decode("utf-8"), mode=0o600)
+        actual = observe("memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+        if actual.parent_identity != parent or actual.raw != updated_raw:
+            source.refuse("checkpoint-dispatch-memo-image-differs")
+        named_current()
+        return True
 
 
 def _retire(owner, marker):
@@ -274,6 +369,7 @@ def _retire(owner, marker):
 
 CHAIN_NON_CLAIMS = (
     "The chain selection records which retained root and head a pulse committed to extend, before any capture could raise a notification fence. It is not capture, preparation, adoption, publication, acknowledgment or readiness.",
+    "Its head is the head a package was or will be built ON, the input to that link. It is never a head produced by a completed package, and a continued pointer does not assert that a successor document exists for the most recently acknowledged transaction.",
     "Its pins are premises for a later independent reopen by pin. They do not authenticate the chain documents, and no pin is ever discovered by scanning the directory for plausible file names.",
     "Selection does not choose among candidate chains, replace the bootstrap root, re-bootstrap ancestry, start a timer, install a unit or activate a service.",
     "Retirement records only that this selection is superseded by a prepared package. It is not proof that the capture, its effects or its acknowledgment succeeded.",
@@ -281,6 +377,19 @@ CHAIN_NON_CLAIMS = (
 
 _CHAIN_SCHEMA = "sia-checkpoint-chain-selection-v1"
 _CHAIN_STATUS = "selected-not-captured"
+# The same pointer, after its package was acknowledged. It is not retired,
+# because it is the only durable carrier of the directory and head: the
+# acknowledged batch keeps a root pin and neither of those.
+#
+# Read head_sha256 on a continued pointer carefully. It is the head the
+# last package was built ON — that package's INPUT head — and deliberately
+# not a head the package produced. No successor document exists for the
+# newly acknowledged link yet: the next pulse creates it by calling
+# prepare_successor with this input head plus the actual current
+# acknowledgment. So a continued pointer is "where the chain resumes
+# from", never "the chain's completed head".
+_CHAIN_CONTINUED = "continued"
+_CHAIN_STATES = frozenset({_CHAIN_STATUS, _CHAIN_CONTINUED})
 _CHAIN = "controller_checkpoint_chain"
 _CHAIN_KEYS = frozenset({
     "schema", "status", "directory", "root_sha256", "head_sha256",
@@ -296,7 +405,9 @@ def _chain_digest(marker):
 def _validate_chain(owner, marker):
     """Admit a represented chain selection, or refuse; never repair one."""
     if type(marker) is not dict or set(marker) != _CHAIN_KEYS \
-            or marker["schema"] != _CHAIN_SCHEMA or marker["status"] != _CHAIN_STATUS \
+            or marker["schema"] != _CHAIN_SCHEMA \
+            or type(marker["status"]) is not str \
+            or marker["status"] not in _CHAIN_STATES \
             or type(marker["next_generation"]) is not int \
             or type(marker["next_generation"]) is bool \
             or marker["next_generation"] < 1 \
@@ -319,6 +430,23 @@ def _validate_chain(owner, marker):
     if marker["marker_sha256"] != _chain_digest(marker):
         source.refuse("checkpoint-chain-marker-digest")
     return copy.deepcopy(marker)
+
+
+def _build_chain(owner, *, directory, root_sha256, head_sha256,
+                 next_generation, committed, status):
+    """One pointer shape, shared by bootstrap creation and continuation."""
+    marker = {
+        "schema": _CHAIN_SCHEMA,
+        "status": status,
+        "directory": directory,
+        "root_sha256": root_sha256,
+        "head_sha256": head_sha256,
+        "next_generation": next_generation,
+        "committed": copy.deepcopy(committed),
+        "non_claims": list(CHAIN_NON_CLAIMS),
+    }
+    marker["marker_sha256"] = _chain_digest(marker)
+    return _validate_chain(owner, marker)
 
 
 def select_chain(owner, *, memo):
@@ -361,18 +489,10 @@ def record_chain(owner, *, memo, directory, expected_root_sha256, expected_head_
         view = roots.read_successor(owner, directory=directory,
             expected_root_sha256=expected_root_sha256,
             expected_head_sha256=expected_head_sha256)
-        marker = {
-            "schema": _CHAIN_SCHEMA,
-            "status": _CHAIN_STATUS,
-            "directory": directory,
-            "root_sha256": expected_root_sha256,
-            "head_sha256": expected_head_sha256,
-            "next_generation": view["next_generation"],
-            "committed": copy.deepcopy(committed),
-            "non_claims": list(CHAIN_NON_CLAIMS),
-        }
-        marker["marker_sha256"] = _chain_digest(marker)
-        marker = _validate_chain(owner, marker)
+        marker = _build_chain(owner, directory=directory,
+            root_sha256=expected_root_sha256, head_sha256=expected_head_sha256,
+            next_generation=view["next_generation"], committed=committed,
+            status=_CHAIN_STATUS)
         with publication._files(owner, source) as (files, observe, current, named_current):
             def unchanged():
                 if any(owner.get(name) is not value
@@ -385,10 +505,21 @@ def record_chain(owner, *, memo, directory, expected_root_sha256, expected_head_
             if _wire(owner, files["memo"].value, memo=True) != original_memo:
                 source.refuse("checkpoint-dispatch-memo-authority")
             if _CHAIN in memo:
-                if _wire(owner, _validate_chain(owner, memo[_CHAIN])) != _wire(owner, marker):
-                    source.refuse("checkpoint-chain-marker-differs")
-                named_current()
-                return False
+                existing = _validate_chain(owner, memo[_CHAIN])
+                if existing["status"] != _CHAIN_CONTINUED:
+                    # Still in flight: identical is idempotent, different is
+                    # refused rather than replaced.
+                    if _wire(owner, existing) != _wire(owner, marker):
+                        source.refuse("checkpoint-chain-marker-differs")
+                    named_current()
+                    return False
+                # Continued: the chain may move forward exactly one real
+                # link, proved on the head document's own parent pin rather
+                # than on any marker.
+                if existing["directory"] != directory \
+                        or existing["root_sha256"] != expected_root_sha256 \
+                        or view["head"].get("parent_sha256") != existing["head_sha256"]:
+                    source.refuse("checkpoint-chain-progression-differs")
             updated = copy.deepcopy(memo)
             updated[_CHAIN] = marker
             updated_raw = _wire(owner, updated, memo=True)
