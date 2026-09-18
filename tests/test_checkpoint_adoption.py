@@ -21,11 +21,16 @@ class CheckpointAdoption(unittest.TestCase):
         self.addCleanup(self.case.doCleanups)
 
     @contextlib.contextmanager
-    def prepared(self, *, fenced=False):
+    def prepared(self, *, fenced=False, notifications=False):
         fixture = self.case.case.case
-        with fixture.prepared(nonidle=not fenced) as f, tempfile.TemporaryDirectory(prefix="sia-checkpoint-adoption-") as directory:
+        # With notifications the epoch actually declares sense_notify, so a
+        # later capture runs the real collector and its interrupted-baseline
+        # recovery rather than a stand-in. The fence is then left to the
+        # caller to raise with the production writer at the point it wants.
+        options = dict(notifications=True) if notifications else dict(nonidle=not fenced)
+        with fixture.prepared(**options) as f, tempfile.TemporaryDirectory(prefix="sia-checkpoint-adoption-") as directory:
             root = roots.prepare(vars(f.case.lib), memo=f.case.live.memo, admitted_status=f.status, directory=directory)
-            if fenced:
+            if fenced and not notifications:
                 f.case.lib._mark_notify_baseline_attempt(f.case.live.memo)
             with fixture.capture_owner(f) as owner:
                 owner._load_live_publication()

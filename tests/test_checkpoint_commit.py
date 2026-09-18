@@ -44,6 +44,17 @@ class CheckpointCommit(unittest.TestCase):
         self.driver_api = importlib.import_module("siacheckpointrunner")
         self.exercise(synchronize=True)
 
+    def test_fenced_successor_reaches_acknowledgment_and_clears_the_fence(self):
+        import siahistoryroot
+        self.assertTrue(callable(getattr(siahistoryroot, "prepare_successor", None)),
+            "missing compact successor chain link")
+        self.notifications = True
+        self.fenced_successor_ack = True
+        self.check_successor = True
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
     def test_dispatch_recovers_after_marker_written_before_adoption(self):
         self.dispatch_api = importlib.import_module("siacheckpointdispatch")
         self.recover_before_adoption = True
@@ -143,7 +154,8 @@ class CheckpointCommit(unittest.TestCase):
         case = fixtures.CheckpointAdoption(methodName="runTest")
         case.setUp()
         self.addCleanup(case.doCleanups)
-        with case.prepared() as (f, owner, package, request):
+        with case.prepared(
+                notifications=getattr(self, "notifications", False)) as (f, owner, package, request):
             def git(*args):
                 return subprocess.run(["/usr/bin/git", *args], cwd=owner.CORPUS,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -151,7 +163,10 @@ class CheckpointCommit(unittest.TestCase):
 
             git("init", "-q", "-b", "fixture")
             git("add", "-A")
-            git("-c", "user.email=sia@omarchy.local", "-c", "user.name=SIA", "commit", "-q", "-m", "fixture parent")
+            # --allow-empty: the notifications epoch stages no corpus pages of
+            # its own, and this parent commit only establishes a base oid.
+            git("-c", "user.email=sia@omarchy.local", "-c", "user.name=SIA",
+                "commit", "-q", "--allow-empty", "-m", "fixture parent")
             parent = git("rev-parse", "HEAD")
             adoption = case.api
             if hasattr(self, "dispatch_api"):
@@ -522,6 +537,83 @@ class CheckpointCommit(unittest.TestCase):
         self.assertEqual(refused.exception.reason, "successor-durable-memo-differs")
         self.capture_successor(owner, memo, committed, root, root_pin, view, forged_head)
 
+    def fenced_successor_acknowledgment(self, owner, args, root_pin):
+        """Capture, prepare, adopt and acknowledge a successor under a real fence.
+
+        The epoch here actually declares sense_notify, so raising the fence
+        with the production writer puts the next capture on the real
+        interrupted-baseline recovery path: the collector's trial cursor
+        goes through _notify_recover_interrupted_baseline, the cursor
+        proposal it commits carries valid notify replay authority, and the
+        original acknowledgment accepts it and retires the fence itself.
+
+        Nothing here mocks _notify_cursor_checkpoint_safe, manufactures
+        readiness, or clears the fence to make acknowledgment pass.
+        """
+        import siacheckpointadoption as adoption
+        import siacheckpointrunner as runner
+        import siacheckpointtransaction as transaction
+
+        memo = owner.load_memo()
+        first = copy.deepcopy(memo["controller_source_committed"])
+        marker = owner._mark_notify_baseline_attempt(memo)
+        self.assertIsNotNone(marker)
+        self.assertEqual(owner.load_memo(), memo)
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        request = dict(memo=memo, admitted_status=status,
+            directory=args["directory"], expected_root_sha256=root_pin,
+            expected_head_sha256=args["expected_head_sha256"],
+            observed_at=args["observed_at"] + 3, **self.premises)
+        senses = [owner.sense_notify, owner.sense_custom]
+        with mock.patch.object(owner, "SENSES", senses):
+            package = transaction.prepare_successor(vars(owner), **request)
+        batch_pin = package["manifest"]["source_batch_sha256"]
+        self.assertEqual(package["manifest"]["schema"],
+            "sia-checkpoint-transaction-preparation-v2")
+        prepared = transaction.read_prepared(vars(owner), directory=args["directory"],
+            expected_manifest_sha256=package["manifest_sha256"],
+            expected_root_sha256=root_pin)
+        capture = prepared["artifacts"]["capture"]
+        self.assertEqual(capture["notification_baseline_attempt"], marker)
+        # The real notification collector ran, not a stand-in.
+        self.assertIn("sense_notify",
+            [run["source_id"] for run in capture["source_returns"]["runs"]])
+        after = capture["cursor_proposal"]["after"]
+        # The committed cursor carries real notify replay authority, which is
+        # why acknowledgment can accept a capture taken under a fence.
+        self.assertTrue(owner._notify_cursor_checkpoint_safe(after))
+        # Scope, stated rather than implied: the baseline here is already
+        # exact, carried from this epoch's earlier notification collection,
+        # so _notify_recover_interrupted_baseline returned it unchanged. This
+        # covers "fence outstanding, cursor already checkpoint-safe". It does
+        # NOT cover the interrupted-first-baseline crash, where recovery must
+        # manufacture the opaque baseline; that path has no compact-successor
+        # coverage yet.
+        self.assertEqual(after["notify.baseline"]["kind"], "exact")
+        self.assertEqual(
+            owner._notify_recover_interrupted_baseline(copy.deepcopy(after)), after)
+
+        pins = dict(directory=args["directory"],
+            expected_manifest_sha256=package["manifest_sha256"],
+            expected_root_sha256=root_pin)
+        memo = owner.load_memo()
+        self.assertIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, memo)
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        with mock.patch.object(owner, "SENSES", senses):
+            self.assertTrue(adoption.adopt_root(vars(owner), memo=memo,
+                admitted_status=status, **pins, seq=memo["pulse_seq"], **self.premises))
+            view = runner.complete_adopted(vars(owner), **pins, started_at=status["ts"])
+        self.assertEqual(view["status"], "available")
+        durable = owner.load_memo()
+        # Acknowledgment retired the fence; the fixture never cleared it.
+        self.assertNotIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, durable)
+        second = durable["controller_source_committed"]
+        self.assertNotEqual(second["source_batch_sha256"], first["source_batch_sha256"])
+        self.assertEqual(second["source_batch_sha256"], batch_pin)
+        self.assertEqual(view["batch"]["schema"],
+            "sia-controller-source-checkpoint-capture-v3")
+        self.assertEqual(view["batch"]["notification_baseline_attempt"], marker)
+
     def capture_successor(self, owner, memo, committed, root, root_pin, view, forged_head):
         """Capture the pulse after the acknowledged compact predecessor."""
         import siasourcecheckpoint as api
@@ -535,6 +627,9 @@ class CheckpointCommit(unittest.TestCase):
             expected_head_sha256=view["successor_sha256"],
             observed_at=view["batch"]["observed_at"] + 1, **self.premises)
         args["directory"] = self.successor_directory
+        if getattr(self, "fenced_successor_ack", False):
+            self.fenced_successor_acknowledgment(owner, args, root_pin)
+            return
         batch = api.capture_successor_delivery(vars(owner), **args)
         epoch = batch["epoch"]
         self.assertEqual(batch["schema"], "sia-controller-source-checkpoint-capture-v3")
@@ -563,6 +658,14 @@ class CheckpointCommit(unittest.TestCase):
         import siacheckpointtransaction as api
         self.assertTrue(callable(getattr(api, "prepare_successor", None)),
             "missing compact successor package preparation")
+        # The fenced coverage above deliberately left an outstanding baseline
+        # attempt. Acknowledgment legitimately refuses beneath one with
+        # ack-notification-checkpoint, and that rule is not weakened here:
+        # the fixture retires its own fence with the production clearer and
+        # then runs the ordinary unfenced lifecycle.
+        retiring = owner.load_memo()
+        self.assertTrue(owner._clear_notify_baseline_attempt(retiring))
+        self.assertNotIn(owner.NOTIFY_BASELINE_ATTEMPT_KEY, owner.load_memo())
         memo = owner.load_memo()
         status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
         request = dict(memo=memo, admitted_status=status, directory=args["directory"],
@@ -594,6 +697,34 @@ class CheckpointCommit(unittest.TestCase):
             api.read_prepared(vars(owner), directory=args["directory"],
                 expected_manifest_sha256=package["manifest_sha256"],
                 expected_root_sha256=args["expected_head_sha256"])
+        self.acknowledge_second_link(owner, args, package)
+
+    def acknowledge_second_link(self, owner, args, package):
+        """Drive the successor package to a second acknowledged link.
+
+        This is the acceptance test for compact-to-compact continuation: not
+        a marker scan, but one more transaction actually adopted, published
+        and acknowledged on top of the first.
+        """
+        import siacheckpointadoption as adoption
+        import siacheckpointrunner as runner
+        memo = owner.load_memo()
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        first = copy.deepcopy(memo["controller_source_committed"])
+        pins = dict(directory=args["directory"],
+            expected_manifest_sha256=package["manifest_sha256"],
+            expected_root_sha256=args["expected_root_sha256"])
+        self.assertTrue(adoption.adopt_root(vars(owner), memo=memo,
+            admitted_status=status, **pins, seq=memo["pulse_seq"], **self.premises))
+        view = runner.complete_adopted(vars(owner), **pins, started_at=status["ts"])
+        self.assertEqual(view["status"], "available")
+        second = owner.load_memo()["controller_source_committed"]
+        # The chain actually advanced: a different, compact predecessor.
+        self.assertNotEqual(second["source_batch_sha256"], first["source_batch_sha256"])
+        self.assertEqual(second["source_batch_sha256"],
+            package["manifest"]["source_batch_sha256"])
+        self.assertEqual(view["batch"]["schema"],
+            "sia-controller-source-checkpoint-capture-v3")
 
     def record_chain_selection(self, owner, args):
         """Pin the chain head before any capture can raise a fence."""

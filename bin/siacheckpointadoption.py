@@ -70,30 +70,52 @@ def read_pending(owner, *, memo, admitted_status, directory, expected_manifest_s
 
             authority()
             committed = batch["epoch"]["predecessor"]
+            successor = "head" in view
             import siacheckpointparent
             parent_graph, _expected_graph = stack.enter_context(siacheckpointparent.hold_graph(
                 owner, directory=directory, committed=committed))
             historical = stack.enter_context(transaction.ack._historical_predecessor(
-                owner, source, effects, memo, admitted_status, committed,
+                owner, source, effects, memo, admitted_status, committed, checkpoint=successor,
                 **({} if parent_graph.raw is None else {"graph_artifact": parent_graph})))
             archive, effects_archive, _status, generation = historical
-            if _wire(owner, generation) != _wire(owner, batch["delivery_input"]["epoch_view"]["parent_generation"]) \
-                    or archive.batch["epoch_sha256"] != view["root"]["legacy_epoch_sha256"] \
-                    or archive.batch["epoch"]["expected_history_sha256"] != view["root"]["legacy_history_sha256"]:
+            if _wire(owner, generation) != _wire(owner, batch["delivery_input"]["epoch_view"]["parent_generation"]):
                 source.refuse("checkpoint-adopted-parent-differs")
-            parent = transaction.blocks.prepare_captured(owner, batch=archive.batch,
-                expected_batch_sha256=committed["source_batch_sha256"], parent=None, expected_parent_sha256=None)
-            if _wire(owner, parent) != _wire(owner, view["parent"]):
-                source.refuse("checkpoint-adopted-root-entry-differs")
-            # Reconstruct the retained checkpoint from actual raw ancestry,
-            # not merely from a self-consistent package supplied on disk.
-            history = copy.deepcopy(archive.batch["epoch"]["history"])
-            history["entries"].append(parent["entry"])
-            request = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
-                "observed_at": archive.batch["observed_at"],
-                **{key: archive.batch["epoch"][key] for key in transaction.checkpoint._DOC_KEYS}}
-            checkpoint = transaction.checkpoint.checkpoints.bootstrap_episodes(owner, request=request,
-                expected_request_sha256=hashlib.sha256(_wire(owner, request)).hexdigest())
+            if successor:
+                head = view["head"]
+                grandparent_pin = view["parent"]["parent_sha256"]
+                if grandparent_pin is None \
+                        or archive.batch["epoch"]["root_sha256"] != view["manifest"]["root_sha256"] \
+                        or archive.batch["intake_projection"]["checkpoint_sha256"] != head["checkpoint_sha256"]:
+                    source.refuse("checkpoint-adopted-parent-differs")
+                grandparent = transaction.store.read(
+                    directory=directory, expected_block_sha256=grandparent_pin)
+                parent = transaction.blocks.prepare_checkpoint_capture(owner, batch=archive.batch,
+                    expected_batch_sha256=committed["source_batch_sha256"],
+                    parent=grandparent, expected_parent_sha256=grandparent_pin)
+                if _wire(owner, parent) != _wire(owner, view["parent"]):
+                    source.refuse("checkpoint-adopted-root-entry-differs")
+                # The predecessor's own projected checkpoint, admitted by the
+                # head's pin: one link, not a replay of the whole ancestry.
+                checkpoint = transaction.checkpoint.checkpoints.admit(owner,
+                    checkpoint=archive.batch["intake_projection"]["checkpoint"],
+                    expected_checkpoint_sha256=head["checkpoint_sha256"])
+            else:
+                if archive.batch["epoch_sha256"] != view["root"]["legacy_epoch_sha256"] \
+                        or archive.batch["epoch"]["expected_history_sha256"] != view["root"]["legacy_history_sha256"]:
+                    source.refuse("checkpoint-adopted-parent-differs")
+                parent = transaction.blocks.prepare_captured(owner, batch=archive.batch,
+                    expected_batch_sha256=committed["source_batch_sha256"], parent=None, expected_parent_sha256=None)
+                if _wire(owner, parent) != _wire(owner, view["parent"]):
+                    source.refuse("checkpoint-adopted-root-entry-differs")
+                # Reconstruct the retained checkpoint from actual raw ancestry,
+                # not merely from a self-consistent package supplied on disk.
+                history = copy.deepcopy(archive.batch["epoch"]["history"])
+                history["entries"].append(parent["entry"])
+                request = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
+                    "observed_at": archive.batch["observed_at"],
+                    **{key: archive.batch["epoch"][key] for key in transaction.checkpoint._DOC_KEYS}}
+                checkpoint = transaction.checkpoint.checkpoints.bootstrap_episodes(owner, request=request,
+                    expected_request_sha256=hashlib.sha256(_wire(owner, request)).hexdigest())
             if _wire(owner, checkpoint) != _wire(owner, batch["parent_checkpoint"]):
                 source.refuse("checkpoint-adopted-bootstrap-differs")
             result = {"schema": "sia-checkpoint-adoption-view-v1", "status": "pending-not-published",

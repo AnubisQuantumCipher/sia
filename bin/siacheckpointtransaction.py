@@ -264,6 +264,10 @@ def _hold_root_preparation(owner, *, memo, admitted_status, directory, expected_
         files = source._CaptureFiles(owner)
         stack.callback(files.close)
         batch, root = view["artifacts"]["capture"], view["root"]
+        # Derived from the package, not a caller argument: the manifest is
+        # already pinned, so its head pin is pinned with it.
+        successor = "head" in view
+        head = view["head"] if successor else root
         committed = view["manifest"]["predecessor"]
         marker = source._notification_marker(owner, memo)
         if checkpoint._wire(owner, marker) != checkpoint._wire(owner, batch["notification_baseline_attempt"]):
@@ -280,10 +284,14 @@ def _hold_root_preparation(owner, *, memo, admitted_status, directory, expected_
             else:
                 source._durable_successor_authority(owner, files, memo, committed)
             if marker is None:
-                actual = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+                actual = (ack.read_checkpoint_completed if successor
+                          else ack.read_completed)(
+                    owner, memo=memo, admitted_status=admitted_status)
                 status = "available"
             else:
-                actual = ack.read_capturable_predecessor(
+                read = ack.read_capturable_checkpoint_predecessor if successor \
+                    else ack.read_capturable_predecessor
+                actual = read(
                     owner, memo=memo, admitted_status=admitted_status, committed=committed,
                     notification_baseline_attempt=marker,
                     expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
@@ -295,18 +303,41 @@ def _hold_root_preparation(owner, *, memo, admitted_status, directory, expected_
 
         retained = read_source()
         retained_raw = checkpoint._wire(owner, retained)
-        parent = blocks.prepare_captured(owner, batch=retained,
-            expected_batch_sha256=committed["source_batch_sha256"], parent=None, expected_parent_sha256=None)
-        if checkpoint._wire(owner, parent) != checkpoint._wire(owner, view["parent"]) \
-                or root["legacy_epoch_sha256"] != retained["epoch_sha256"] \
-                or root["legacy_history_sha256"] != retained["epoch"]["expected_history_sha256"]:
-            source.refuse("checkpoint-authority-root-ancestry")
-        history = json.loads(checkpoint._wire(owner, retained["epoch"]["history"]))
-        history["entries"].append(parent["entry"])
-        bootstrap = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
-                     "observed_at": retained["observed_at"], **{name: retained["epoch"][name] for name in checkpoint._DOC_KEYS}}
-        expected_parent = checkpoint.checkpoints.bootstrap_episodes(owner, request=bootstrap,
-            expected_request_sha256=hashlib.sha256(checkpoint._wire(owner, bootstrap)).hexdigest())
+        if successor:
+            # Rebuild the head's entry from the live archived predecessor and
+            # its one pinned grandparent: constant depth, and the whole
+            # canonical entry rather than declared digests alone.
+            grandparent_pin = view["parent"]["parent_sha256"]
+            if grandparent_pin is None:
+                source.refuse("checkpoint-authority-root-ancestry")
+            grandparent = store.read(directory=directory, expected_block_sha256=grandparent_pin)
+            parent = blocks.prepare_checkpoint_capture(owner, batch=retained,
+                expected_batch_sha256=committed["source_batch_sha256"],
+                parent=grandparent, expected_parent_sha256=grandparent_pin)
+            if checkpoint._wire(owner, parent) != checkpoint._wire(owner, view["parent"]) \
+                    or retained["epoch"]["root_sha256"] != expected_root_sha256 \
+                    or retained["epoch"]["epoch_id"] != root["epoch_id"] \
+                    or retained["intake_projection"]["checkpoint_sha256"] != head["checkpoint_sha256"]:
+                source.refuse("checkpoint-authority-root-ancestry")
+            # The predecessor already projected this checkpoint and the head
+            # pinned it. Admit that result instead of rebootstrapping the
+            # whole history on every pulse.
+            expected_parent = checkpoint.checkpoints.admit(owner,
+                checkpoint=retained["intake_projection"]["checkpoint"],
+                expected_checkpoint_sha256=head["checkpoint_sha256"])
+        else:
+            parent = blocks.prepare_captured(owner, batch=retained,
+                expected_batch_sha256=committed["source_batch_sha256"], parent=None, expected_parent_sha256=None)
+            if checkpoint._wire(owner, parent) != checkpoint._wire(owner, view["parent"]) \
+                    or root["legacy_epoch_sha256"] != retained["epoch_sha256"] \
+                    or root["legacy_history_sha256"] != retained["epoch"]["expected_history_sha256"]:
+                source.refuse("checkpoint-authority-root-ancestry")
+            history = json.loads(checkpoint._wire(owner, retained["epoch"]["history"]))
+            history["entries"].append(parent["entry"])
+            bootstrap = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
+                         "observed_at": retained["observed_at"], **{name: retained["epoch"][name] for name in checkpoint._DOC_KEYS}}
+            expected_parent = checkpoint.checkpoints.bootstrap_episodes(owner, request=bootstrap,
+                expected_request_sha256=hashlib.sha256(checkpoint._wire(owner, bootstrap)).hexdigest())
         if checkpoint._wire(owner, expected_parent) != checkpoint._wire(owner, batch["parent_checkpoint"]):
             source.refuse("checkpoint-authority-bootstrap-differs")
         arguments = dict(memo=memo, admitted_status=admitted_status, retained_batch=retained, committed=committed,

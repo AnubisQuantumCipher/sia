@@ -58,7 +58,11 @@ def stage(owner, *, memo, admitted_status, directory, expected_manifest_sha256, 
         owner["_require_status_admission_unchanged"](admitted_status)
         import siacheckpointparent
         siacheckpointparent.retain_graph(owner, directory=directory, committed=batch["epoch"]["predecessor"])
-        siacheckpointparent.retain_live(owner, directory=directory, committed=batch["epoch"]["predecessor"],
+        # A successor's predecessor is itself a compact capture, which the
+        # legacy parent retainer refuses by design.
+        retain = siacheckpointparent.retain_checkpoint_live \
+            if "head" in view["package"] else siacheckpointparent.retain_live
+        retain(owner, directory=directory, committed=batch["epoch"]["predecessor"],
             memo=memo, admitted_status=admitted_status)
         owner["_export_graph_publication"]()
         graph_generation, graph = effects._graph_generation(owner, source, live)
