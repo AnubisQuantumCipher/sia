@@ -21,6 +21,14 @@ class CheckpointCommit(unittest.TestCase):
         self.interrupt_driver = True
         self.exercise(synchronize=True)
 
+    def test_acknowledged_compact_parent_retention_and_historical_read(self):
+        import siacheckpointparent
+        self.assertTrue(callable(getattr(siacheckpointparent, "retain_checkpoint_live", None)),
+            "missing acknowledged compact parent retention")
+        self.check_compact_parent = True
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
     def test_actual_git_cut_retry_and_false_generation_refusal(self):
         self.exercise(synchronize=False)
 
@@ -220,6 +228,30 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaises(ValueError) as refused:
                 self.driver_api.complete_adopted(vars(owner), **{**request, "started_at": "different"})
         self.assertEqual(refused.exception.reason, "checkpoint-runner-completed-start-differs")
+        if getattr(self, "check_compact_parent", False):
+            import siacheckpointparent as parents
+            committed = memo["controller_source_committed"]
+            status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+            retained = dict(directory=args["directory"], committed=committed)
+            parents.retain_graph(vars(owner), **retained)
+            self.assertTrue(parents.retain_checkpoint_live(vars(owner), **retained,
+                memo=memo, admitted_status=status))
+            with mock.patch.object(owner.siaqueue, "fixed_atomic_publish", side_effect=AssertionError("parent retry wrote")):
+                self.assertFalse(parents.retain_checkpoint_live(vars(owner), **retained,
+                    memo=memo, admitted_status=status))
+            for path in (owner.STATUS_PATH, owner.GRAPH_PATH, owner.LIVE_CANDIDATE_PATH, owner.LIVE_STATE_PATH):
+                owner.atomic_write(path, "{}", mode=0o600)
+            with parents.hold_checkpoint_live(vars(owner), **retained) as historical:
+                self.assertEqual(historical["authority"], "historical-parent-not-current-readiness")
+                self.assertEqual(historical["batch"], view["batch"])
+                self.assertEqual(historical["status"], status)
+            with self.assertRaises(ValueError):
+                with parents.hold_live(vars(owner), **retained):
+                    self.fail("legacy parent reader admitted compact source")
+            wrong = {**committed, "live_generation_sha256": "0" * 64}
+            with self.assertRaises(ValueError):
+                with parents.hold_checkpoint_live(vars(owner), **{**retained, "committed": wrong}):
+                    self.fail("compact parent reader admitted wrong predecessor")
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture

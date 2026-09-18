@@ -1205,11 +1205,12 @@ def validate_archived_receipt(
         graph_artifact=graph_artifact, checkpoint=False)
 
 
-def validate_checkpoint_archived_receipt(owner, *, raw, retained_batch, memo, admitted_status, expected_receipt_sha256):
-    """Explicit compact-capture receipt admission against actual current files."""
+def validate_checkpoint_archived_receipt(owner, *, raw, retained_batch, memo, admitted_status,
+                                        expected_receipt_sha256, graph_artifact=None):
+    """Admit compact effects against current files or an explicit held graph."""
     return _validate_archived_receipt(owner, raw=raw, retained_batch=retained_batch,
         memo=memo, admitted_status=admitted_status, expected_receipt_sha256=expected_receipt_sha256,
-        graph_artifact=None, checkpoint=True)
+        graph_artifact=graph_artifact, checkpoint=True)
 
 
 def checkpoint_committed_receipt(owner, *, memo, admitted_status, retained_batch):

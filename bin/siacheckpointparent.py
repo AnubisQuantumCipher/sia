@@ -11,8 +11,17 @@ import siasourceeffects as effects
 import sialiveloop as live
 
 
-@contextlib.contextmanager
 def hold_live(owner, *, directory, committed):
+    return _hold_live(owner, directory=directory, committed=committed, checkpoint=False)
+
+
+def hold_checkpoint_live(owner, *, directory, committed):
+    """Hold an acknowledged compact parent, with full compact effects replay."""
+    return _hold_live(owner, directory=directory, committed=committed, checkpoint=True)
+
+
+@contextlib.contextmanager
+def _hold_live(owner, *, directory, committed, checkpoint):
     """Hold archived parent evidence, never current readiness or source ACK.
 
     The caller supplies an independently admitted predecessor identity. All
@@ -24,14 +33,14 @@ def hold_live(owner, *, directory, committed):
     committed_raw = source.native_bytes(owner, committed)
     ack._committed_shape(source, committed)
     with contextlib.ExitStack() as stack:
-        archive = ack._ArchiveSlot(owner, source, committed["source_batch_sha256"], archive_only=True)
+        archive = ack._ArchiveSlot(owner, source, committed["source_batch_sha256"], archive_only=True, checkpoint=checkpoint)
         stack.callback(archive.close)
         if archive.state != "archive":
             source.refuse("checkpoint-parent-source-not-archived")
         receipt_file = ack._EffectsArchiveSlot(owner, source, committed["source_effects_receipt_sha256"], required=True)
         stack.callback(receipt_file.close)
         receipt, binding = effects._archived_receipt_components(owner, raw=receipt_file.raw,
-            retained_batch=archive.batch, expected_receipt_sha256=committed["source_effects_receipt_sha256"])
+            retained_batch=archive.batch, expected_receipt_sha256=committed["source_effects_receipt_sha256"], checkpoint=checkpoint)
         expected_live = receipt["live_generation"]
         if receipt["source_batch_sha256"] != committed["source_batch_sha256"] \
                 or expected_live["generation_sha256"] != committed["live_generation_sha256"]:
@@ -54,7 +63,7 @@ def hold_live(owner, *, directory, committed):
             values[name] = owner["_strict_json_loads"](artifact.raw)
             held.append(artifact)
         status, candidate, generation = (values[name] for name in ("status", "candidate", "generation"))
-        effects._receipt_shape(owner, source, live, receipt, archive.batch, binding, retained_status=status)
+        effects._receipt_shape(owner, source, live, receipt, archive.batch, binding, retained_status=status, checkpoint=checkpoint)
         if effects._status_generation_value(owner, source, live, status) != receipt["status_generation"] \
                 or owner["_live_replay_candidate"](candidate) != generation \
                 or candidate["status"] != status \
@@ -153,6 +162,17 @@ def retain_graph(owner, *, directory, committed):
 
 
 def retain_live(owner, *, directory, committed, memo, admitted_status):
+    return _retain_live(owner, directory=directory, committed=committed,
+        memo=memo, admitted_status=admitted_status, checkpoint=False)
+
+
+def retain_checkpoint_live(owner, *, directory, committed, memo, admitted_status):
+    """Retain current receipt-matching compact parent bytes, without replacing."""
+    return _retain_live(owner, directory=directory, committed=committed,
+        memo=memo, admitted_status=admitted_status, checkpoint=True)
+
+
+def _retain_live(owner, *, directory, committed, memo, admitted_status, checkpoint):
     """Save exact parent status/candidate/generation before successor writes.
 
     The caller holds the owner leases. The actual archived source/effects
@@ -167,6 +187,7 @@ def retain_live(owner, *, directory, committed, memo, admitted_status):
         for name, value in inputs.items()}
     with hold_graph(owner, directory=directory, committed=committed) as (graph, _expected):
         with ack._historical_predecessor(owner, source, effects, memo, admitted_status, committed,
+                checkpoint=checkpoint,
                 **({} if graph.raw is None else {"graph_artifact": graph})) as parent:
             with owner["_live_files"]() as (files, current, _write):
                 generation = parent[3]
