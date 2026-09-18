@@ -35,6 +35,13 @@ READ_NON_CLAIMS = NON_CLAIMS + (
     "The externally supplied manifest and root pins are caller premises. A recovered package must be independently joined to current authority before any adoption or effects.",
 )
 _ARTIFACTS = ("capture", "checkpoint", "candidate", "transition", "block")
+_MANIFEST_KEYS = {"schema", "status", "root_sha256", "predecessor",
+                  "source_batch_sha256", "artifacts", "non_claims"}
+_SUCCESSOR_SCHEMA = "sia-checkpoint-transaction-preparation-v2"
+SUCCESSOR_NON_CLAIMS = NON_CLAIMS + (
+    "This package continues an already acknowledged compact predecessor. It names the original bootstrap root and one retained head; it does not replace that root, rebootstrap ancestry, or re-audit the legacy archive those pins reference.",
+    "The parent checkpoint is the predecessor's own projected result admitted by pin. Its correctness rests on that retained projection and the head that pinned it, not on a fresh replay of complete history.",
+)
 
 
 def read_prepared(owner, *, directory, expected_manifest_sha256, expected_root_sha256):
@@ -84,12 +91,13 @@ def _hold_prepared(owner, *, directory, expected_manifest_sha256, expected_root_
             return value
 
         manifest = read("manifest", "transaction-" + expected_manifest_sha256 + ".json", expected_manifest_sha256)
-        source._keys(manifest, {"schema", "status", "root_sha256", "predecessor", "source_batch_sha256", "artifacts", "non_claims"},
+        successor = type(manifest) is dict and manifest.get("schema") == _SUCCESSOR_SCHEMA
+        source._keys(manifest, _MANIFEST_KEYS | ({"head_sha256", "next_generation"} if successor else set()),
                      "checkpoint-transaction-manifest")
         source._keys(manifest["artifacts"], set(_ARTIFACTS), "checkpoint-transaction-artifacts")
-        if manifest["schema"] != "sia-checkpoint-transaction-preparation-v1" \
+        if manifest["schema"] != (_SUCCESSOR_SCHEMA if successor else "sia-checkpoint-transaction-preparation-v1") \
                 or manifest["status"] != "retained-not-activated" \
-                or manifest["non_claims"] != list(NON_CLAIMS) \
+                or manifest["non_claims"] != list(SUCCESSOR_NON_CLAIMS if successor else NON_CLAIMS) \
                 or manifest["root_sha256"] != expected_root_sha256:
             source.refuse("checkpoint-transaction-manifest-contract")
         root = read("root", "root-" + expected_root_sha256 + ".json", expected_root_sha256)
@@ -97,12 +105,33 @@ def _hold_prepared(owner, *, directory, expected_manifest_sha256, expected_root_
         source._keys(root, {"schema", "status", "epoch_id", "committed", "legacy_epoch_sha256", "legacy_history_sha256",
                            "final_entry_block_sha256", "non_claims"}, "checkpoint-transaction-root")
         if root["schema"] != "sia-source-history-root-v1" or root["status"] != "root-retained-not-activated" \
-                or root["non_claims"] != list(siahistoryroot.NON_CLAIMS) \
-                or checkpoint._wire(owner, root["committed"]) != checkpoint._wire(owner, manifest["predecessor"]):
+                or root["non_claims"] != list(siahistoryroot.NON_CLAIMS):
             source.refuse("checkpoint-transaction-root-contract")
         for key in ("legacy_epoch_sha256", "legacy_history_sha256", "final_entry_block_sha256"):
             source._hex(root[key], "checkpoint-transaction-root-reference")
-        parent = read("parent", store._name(root["final_entry_block_sha256"]), root["final_entry_block_sha256"])
+        if not successor:
+            # Root-only lane, unchanged: the bootstrap root is itself the head.
+            head = root
+            if checkpoint._wire(owner, root["committed"]) != checkpoint._wire(owner, manifest["predecessor"]):
+                source.refuse("checkpoint-transaction-root-contract")
+        else:
+            # The manifest is pinned by the caller, so its head pin is pinned
+            # too. The bootstrap root stays the root; only the head advances.
+            source._hex(manifest["head_sha256"], "checkpoint-transaction-head-pin")
+            if manifest["head_sha256"] == expected_root_sha256:
+                source.refuse("checkpoint-transaction-head-contract")
+            head = read("head", "successor-" + manifest["head_sha256"] + ".json", manifest["head_sha256"])
+            # One closed head validator, shared with the chain reader and the
+            # capture, rather than another partial copy of the same contract.
+            # It is what admits the head's own generation type and range, so
+            # the manifest's value is bound to its validated result.
+            next_generation = siahistoryroot._successor_generation(
+                owner, lambda value: checkpoint._wire(owner, value), head, raw_slots["head"],
+                root=root, root_raw=raw_slots["root"], expected_root_sha256=expected_root_sha256)
+            if manifest["next_generation"] != next_generation \
+                    or checkpoint._wire(owner, head["committed"]) != checkpoint._wire(owner, manifest["predecessor"]):
+                source.refuse("checkpoint-transaction-head-contract")
+        parent = read("parent", store._name(head["final_entry_block_sha256"]), head["final_entry_block_sha256"])
         blocks._parent(parent)
         artifacts = {}
         for name in _ARTIFACTS:
@@ -116,11 +145,13 @@ def _hold_prepared(owner, *, directory, expected_manifest_sha256, expected_root_
                 or batch["epoch"]["root_sha256"] != expected_root_sha256 \
                 or batch["epoch"]["epoch_id"] != root["epoch_id"] \
                 or checkpoint._wire(owner, batch["epoch"]["predecessor"]) != checkpoint._wire(owner, manifest["predecessor"]) \
-                or checkpoint._wire(owner, batch["intake_projection"]["checkpoint"]) != raw_slots["checkpoint"]:
+                or checkpoint._wire(owner, batch["intake_projection"]["checkpoint"]) != raw_slots["checkpoint"] \
+                or (successor
+                    and batch["epoch"]["checkpoint_sha256"] != head["checkpoint_sha256"]):
             source.refuse("checkpoint-transaction-capture-binding")
         expected_block = blocks.prepare_checkpoint_capture(
             owner, batch=batch, expected_batch_sha256=manifest["source_batch_sha256"],
-            parent=parent, expected_parent_sha256=root["final_entry_block_sha256"])
+            parent=parent, expected_parent_sha256=head["final_entry_block_sha256"])
         if checkpoint._wire(owner, expected_block) != raw_slots["block"]:
             source.refuse("checkpoint-transaction-block-replay")
         generation = batch["delivery_input"]["epoch_view"]["parent_generation"]
@@ -138,8 +169,13 @@ def _hold_prepared(owner, *, directory, expected_manifest_sha256, expected_root_
                   "manifest_sha256": expected_manifest_sha256, "manifest": detached["manifest"],
                   "root": detached["root"], "parent": detached["parent"],
                   "artifacts": {name: detached[name] for name in _ARTIFACTS}, "non_claims": list(READ_NON_CLAIMS)}
+        if successor:
+            # The head is reported separately; the root slot keeps naming the
+            # bootstrap root, so no consumer can mistake one for the other.
+            result["head"] = detached["head"]
         def images_current():
-            source._keys(result, {"schema", "status", "manifest_sha256", "manifest", "root", "parent", "artifacts", "non_claims"},
+            source._keys(result, {"schema", "status", "manifest_sha256", "manifest", "root", "parent", "artifacts", "non_claims"}
+                         | ({"head"} if successor else set()),
                          "checkpoint-transaction-view")
             source._keys(result["artifacts"], set(_ARTIFACTS), "checkpoint-transaction-view-artifacts")
             if result["schema"] != "sia-checkpoint-transaction-view-v1" \
@@ -327,17 +363,49 @@ def _hold_root_preparation(owner, *, memo, admitted_status, directory, expected_
             held._closed = True
 
 
+def prepare_successor(owner, *, memo, admitted_status, directory, expected_root_sha256,
+                      expected_head_sha256, observed_at, journal_limits,
+                      expected_journal_limits_sha256, expected_adoption_sha256):
+    """Retain the unactivated package that continues an acknowledged chain.
+
+    Same protocol as prepare_root, with the chain head rather than the
+    bootstrap root supplying the parent entry and the predecessor. The
+    original root pin is carried in the manifest and never replaced by the
+    head pin, and the package is written under the separately versioned
+    successor manifest so a root-only reader cannot admit it.
+    """
+    source._hex(expected_head_sha256, "checkpoint-transaction-head-pin")
+    return _prepare(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        expected_root_sha256=expected_root_sha256, expected_head_sha256=expected_head_sha256,
+        observed_at=observed_at, journal_limits=journal_limits,
+        expected_journal_limits_sha256=expected_journal_limits_sha256,
+        expected_adoption_sha256=expected_adoption_sha256)
+
+
 def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha256,
                  observed_at, journal_limits, expected_journal_limits_sha256,
                  expected_adoption_sha256):
     """Capture, execute the pure pulse, and retain its unactivated package."""
+    return _prepare(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        expected_root_sha256=expected_root_sha256, expected_head_sha256=None,
+        observed_at=observed_at, journal_limits=journal_limits,
+        expected_journal_limits_sha256=expected_journal_limits_sha256,
+        expected_adoption_sha256=expected_adoption_sha256)
+
+
+def _prepare(owner, *, memo, admitted_status, directory, expected_root_sha256,
+             expected_head_sha256, observed_at, journal_limits,
+             expected_journal_limits_sha256, expected_adoption_sha256):
+    successor = expected_head_sha256 is not None
     owner_references = dict(owner)
     with owner["brainstem_owner"](), owner["corpus_owner"](), contextlib.ExitStack() as stack:
-        batch = checkpoint.capture_root_delivery(
-            owner, memo=memo, admitted_status=admitted_status, directory=directory,
+        capture_args = dict(memo=memo, admitted_status=admitted_status, directory=directory,
             expected_root_sha256=expected_root_sha256, observed_at=observed_at,
             journal_limits=journal_limits, expected_journal_limits_sha256=expected_journal_limits_sha256,
             expected_adoption_sha256=expected_adoption_sha256)
+        batch = checkpoint.capture_successor_delivery(
+            owner, expected_head_sha256=expected_head_sha256, **capture_args) \
+            if successor else checkpoint.capture_root_delivery(owner, **capture_args)
         raw_batch = checkpoint._wire(owner, batch)
         memo_raw, status_raw = checkpoint._wire(owner, memo), checkpoint._wire(owner, admitted_status)
         limit = min(owner["MAX_STATE_JSON_BYTES"], blocks.MAX_DOCUMENT_BYTES)
@@ -355,13 +423,25 @@ def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha25
         root_file = observe("root-" + expected_root_sha256 + ".json")
         blocks._pin(root_file.raw, expected_root_sha256)
         root = json.loads(root_file.raw)
-        parent_pin = root["final_entry_block_sha256"]
         blocks._pin(checkpoint._wire(owner, root), expected_root_sha256)
+        if successor:
+            head_file = observe("successor-" + expected_head_sha256 + ".json")
+            blocks._pin(head_file.raw, expected_head_sha256)
+            head = json.loads(head_file.raw)
+            blocks._pin(checkpoint._wire(owner, head), expected_head_sha256)
+        else:
+            head_file, head = root_file, root
+        parent_pin = head["final_entry_block_sha256"]
         parent_file = observe(store._name(parent_pin))
         parent = store._decode(parent_file, parent_pin)
         held.extend((root_file, parent_file))
+        if successor:
+            held.append(head_file)
         predecessor = batch["epoch"]["predecessor"]
-        if root["committed"] != predecessor or root["epoch_id"] != batch["epoch"]["epoch_id"]:
+        # The head supplies the predecessor; the bootstrap root still supplies
+        # the epoch identity, which the head itself was checked against.
+        if head["committed"] != predecessor or root["epoch_id"] != batch["epoch"]["epoch_id"] \
+                or (successor and batch["epoch"]["checkpoint_sha256"] != head["checkpoint_sha256"]):
             source.refuse("checkpoint-transaction-root-binding")
 
         def current():
@@ -373,10 +453,13 @@ def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha25
             source._durable_successor_authority(owner, files, memo, predecessor)
             marker = source._notification_marker(owner, memo)
             if marker is None:
-                view = ack.read_completed(owner, memo=memo, admitted_status=admitted_status)
+                view = (ack.read_checkpoint_completed if successor else ack.read_completed)(
+                    owner, memo=memo, admitted_status=admitted_status)
                 expected_status = "available"
             else:
-                view = ack.read_capturable_predecessor(
+                read = ack.read_capturable_checkpoint_predecessor if successor \
+                    else ack.read_capturable_predecessor
+                view = read(
                     owner, memo=memo, admitted_status=admitted_status, committed=predecessor,
                     notification_baseline_attempt=marker,
                     expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
@@ -403,10 +486,14 @@ def prepare_root(owner, *, memo, admitted_status, directory, expected_root_sha25
         # Admit every complete member before any new publication.
         raws = {name: checkpoint._wire(owner, value) for name, value in artifacts.items()}
         pins = {name: hashlib.sha256(raw).hexdigest() for name, raw in raws.items()}
-        manifest = {"schema": "sia-checkpoint-transaction-preparation-v1", "status": "retained-not-activated",
+        manifest = {"schema": _SUCCESSOR_SCHEMA if successor else "sia-checkpoint-transaction-preparation-v1",
+                    "status": "retained-not-activated",
                     "root_sha256": expected_root_sha256, "predecessor": predecessor,
                     "source_batch_sha256": batch["batch_sha256"], "artifacts": pins,
-                    "non_claims": list(NON_CLAIMS)}
+                    "non_claims": list(SUCCESSOR_NON_CLAIMS if successor else NON_CLAIMS)}
+        if successor:
+            manifest["head_sha256"] = expected_head_sha256
+            manifest["next_generation"] = head["generation"] + 1
         manifest_raw = checkpoint._wire(owner, manifest)
         manifest_pin = hashlib.sha256(manifest_raw).hexdigest()
 

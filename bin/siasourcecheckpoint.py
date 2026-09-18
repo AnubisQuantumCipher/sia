@@ -387,15 +387,13 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
                     or root["non_claims"] != list(roots.NON_CLAIMS) \
                     or prior["epoch"]["root_sha256"] != expected_root_sha256:
                 source.refuse("checkpoint-successor-root-contract")
-            source._keys(head, roots._SUCCESSOR_KEYS, "checkpoint-successor-head-shape")
-            if head["schema"] != "sia-source-history-successor-v1" \
-                    or head["status"] != "successor-retained-not-activated" \
-                    or head["non_claims"] != list(roots.SUCCESSOR_NON_CLAIMS) \
-                    or head["root_sha256"] != expected_root_sha256 \
-                    or head["epoch_id"] != root["epoch_id"] \
-                    or head["legacy_epoch_sha256"] != root["legacy_epoch_sha256"] \
-                    or head["legacy_history_sha256"] != root["legacy_history_sha256"] \
-                    or _wire(owner, head["committed"]) != committed_raw \
+            # The one closed head validator admits the head's whole contract,
+            # including its generation type and range; only the two
+            # source-dependent bindings are checked here.
+            roots._successor_generation(owner, lambda value: _wire(owner, value),
+                head, head_file.raw, root=root, root_raw=root_file.raw,
+                expected_root_sha256=expected_root_sha256)
+            if _wire(owner, head["committed"]) != committed_raw \
                     or head["checkpoint_sha256"] != prior["intake_projection"]["checkpoint_sha256"]:
                 source.refuse("checkpoint-successor-head-binding")
             # Rebuild the head's entry from the actual acknowledged prior and

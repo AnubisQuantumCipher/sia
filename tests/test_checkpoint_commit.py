@@ -499,6 +499,17 @@ class CheckpointCommit(unittest.TestCase):
             roots.prepare_successor(vars(owner), **{**args,
                 "expected_head_sha256": forged_head})
         self.assertEqual(refused.exception.reason, "successor-head-checkpoint-binding")
+        # A self-consistent head whose generation is not a represented
+        # positive integer is refused, never believed arithmetically. One
+        # closed validator decides this for the chain reader, the capture
+        # and the package manifest alike.
+        for bad in (True, 1.5, 0, -1, "1"):
+            malformed = publish("successor-", {**successor, "generation": bad})
+            with self.assertRaises(ValueError) as refused:
+                roots.prepare_successor(vars(owner), **{**args,
+                    "expected_head_sha256": malformed})
+            self.assertEqual(refused.exception.reason, "successor-head-contract",
+                "generation %r was not refused by the closed head validator" % (bad,))
         # Current acknowledged authority, not a caller's memo copy, decides.
         forged = copy.deepcopy(memo)
         forged["controller_source_committed"] = {**committed, "live_generation_sha256": "0" * 64}
@@ -545,6 +556,44 @@ class CheckpointCommit(unittest.TestCase):
         self.record_chain_selection(owner, args)
         self.capture_transition_successor(owner, args)
         self.capture_fenced_successor(owner, args)
+        self.prepare_successor_package(owner, args)
+
+    def prepare_successor_package(self, owner, args):
+        """Retain the package that continues the acknowledged chain."""
+        import siacheckpointtransaction as api
+        self.assertTrue(callable(getattr(api, "prepare_successor", None)),
+            "missing compact successor package preparation")
+        memo = owner.load_memo()
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        request = dict(memo=memo, admitted_status=status, directory=args["directory"],
+            expected_root_sha256=args["expected_root_sha256"],
+            expected_head_sha256=args["expected_head_sha256"],
+            observed_at=args["observed_at"] + 2, **self.premises)
+        package = api.prepare_successor(vars(owner), **request)
+        manifest = package["manifest"]
+        self.assertEqual(manifest["schema"], "sia-checkpoint-transaction-preparation-v2")
+        # The bootstrap root pin is carried, not replaced by the head pin.
+        self.assertEqual(manifest["root_sha256"], args["expected_root_sha256"])
+        self.assertEqual(manifest["head_sha256"], args["expected_head_sha256"])
+        self.assertNotEqual(manifest["root_sha256"], manifest["head_sha256"])
+        self.assertEqual(manifest["next_generation"], 2)
+        self.assertEqual(manifest["predecessor"], memo["controller_source_committed"])
+        # The ordinary reader admits the versioned successor manifest and
+        # reports the head separately from the preserved bootstrap root.
+        view = api.read_prepared(vars(owner), directory=args["directory"],
+            expected_manifest_sha256=package["manifest_sha256"],
+            expected_root_sha256=args["expected_root_sha256"])
+        self.assertEqual(view["manifest"], manifest)
+        self.assertEqual(view["root"]["schema"], "sia-source-history-root-v1")
+        self.assertEqual(view["head"]["schema"], "sia-source-history-successor-v1")
+        self.assertEqual(view["head"]["generation"], 1)
+        self.assertEqual(view["parent"]["source_batch_sha256"],
+            memo["controller_source_committed"]["source_batch_sha256"])
+        # The head pin is not a root pin, and naming it as one is refused.
+        with self.assertRaises(ValueError):
+            api.read_prepared(vars(owner), directory=args["directory"],
+                expected_manifest_sha256=package["manifest_sha256"],
+                expected_root_sha256=args["expected_head_sha256"])
 
     def record_chain_selection(self, owner, args):
         """Pin the chain head before any capture can raise a fence."""
