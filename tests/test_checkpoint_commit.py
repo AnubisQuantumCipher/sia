@@ -29,6 +29,23 @@ class CheckpointCommit(unittest.TestCase):
         self.driver_api = importlib.import_module("siacheckpointrunner")
         self.exercise(synchronize=True)
 
+    def test_durable_package_selection_drives_recurring_dispatch(self):
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
+    def test_dispatch_recovers_after_marker_written_before_adoption(self):
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.recover_before_adoption = True
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
+    def test_dispatch_recovers_after_interrupted_marker_retirement(self):
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.interrupt_retire = True
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
     def test_actual_git_cut_retry_and_false_generation_refusal(self):
         self.exercise(synchronize=False)
 
@@ -127,7 +144,10 @@ class CheckpointCommit(unittest.TestCase):
             git("-c", "user.email=sia@omarchy.local", "-c", "user.name=SIA", "commit", "-q", "-m", "fixture parent")
             parent = git("rev-parse", "HEAD")
             adoption = case.api
-            adoption.adopt_root(vars(owner), **request)
+            if hasattr(self, "dispatch_api"):
+                self.record_package(owner, f, request)
+            if not getattr(self, "recover_before_adoption", False):
+                adoption.adopt_root(vars(owner), **request)
             args = {k: v for k, v in request.items() if k not in {
                 "journal_limits", "expected_journal_limits_sha256", "expected_adoption_sha256"}}
             if not hasattr(self, "driver_api"):
@@ -204,6 +224,9 @@ class CheckpointCommit(unittest.TestCase):
         request["started_at"] = f.status["ts"]
         with mock.patch.object(owner, "_export_graph_publication", side_effect=export), \
                 mock.patch.object(owner, "_controller_source_effects_observed_at", return_value=effects_fixture.STATUS_AT):
+            if hasattr(self, "dispatch_api"):
+                self.dispatch_case(owner, args, request)
+                return
             if getattr(self, "interrupt_driver", False):
                 def interrupted(name):
                     if name == "archive-durable":
@@ -252,6 +275,124 @@ class CheckpointCommit(unittest.TestCase):
             with self.assertRaises(ValueError):
                 with parents.hold_checkpoint_live(vars(owner), **{**retained, "committed": wrong}):
                     self.fail("compact parent reader admitted wrong predecessor")
+
+    def record_package(self, owner, f, request):
+        """Bind the package pins durably before the transaction is adopted."""
+        api = self.dispatch_api
+        pins = dict(directory=request["directory"],
+            expected_manifest_sha256=request["expected_manifest_sha256"],
+            expected_root_sha256=request["expected_root_sha256"],
+            started_at=f.status["ts"], seq=request["seq"])
+        self.assertTrue(api.record(vars(owner), memo=request["memo"], **pins))
+        self.assertFalse(api.record(vars(owner), memo=request["memo"], **pins))
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("record retry wrote")):
+            self.assertFalse(api.record(vars(owner), memo=request["memo"], **pins))
+        with self.assertRaises(ValueError) as refused:
+            api.record(vars(owner), memo=request["memo"], **{**pins, "started_at": "different"})
+        self.assertEqual(refused.exception.reason, "checkpoint-dispatch-marker-differs")
+        self.assertIn(api._MARKER, owner.load_memo())
+        # A present but malformed marker is a refusal, never a free slot.
+        durable = owner.load_memo()
+        owner.atomic_write(owner.MEMO_PATH,
+            owner.json.dumps({**durable, api._MARKER: None}), mode=0o600)
+        with self.assertRaises(ValueError) as refused:
+            api.record(vars(owner), memo=owner.load_memo(), **pins)
+        self.assertEqual(refused.exception.reason, "checkpoint-dispatch-marker-shape")
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(durable), mode=0o600)
+        self.premises = {key: request[key] for key in (
+            "journal_limits", "expected_journal_limits_sha256", "expected_adoption_sha256")}
+
+    def dispatch_case(self, owner, args, request):
+        """Finish the recorded package from durable state, holding no pins."""
+        api = self.dispatch_api
+        sha = content.adoption.transaction.live._sha
+        selected = api.select(vars(owner), memo=owner.load_memo())
+        self.assertEqual(selected["directory"], request["directory"])
+        self.assertEqual(selected["manifest_sha256"], request["expected_manifest_sha256"])
+        self.assertEqual(selected["root_sha256"], request["expected_root_sha256"])
+        self.assertEqual(selected["started_at"], request["started_at"])
+        if getattr(self, "recover_before_adoption", False):
+            self.recover_case(owner, args, selected)
+            return
+        self.assertEqual(selected["source_batch_sha256"],
+            owner.load_memo()["controller_source_pending"]["batch_sha256"])
+
+        durable = owner.load_memo()
+
+        def replace(marker):
+            owner.atomic_write(owner.MEMO_PATH,
+                owner.json.dumps({**durable, api._MARKER: marker}), mode=0o600)
+
+        def refuses(reason):
+            with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("refused dispatch wrote")):
+                with self.assertRaises(ValueError) as refused:
+                    api.dispatch(vars(owner))
+            self.assertEqual(refused.exception.reason, reason)
+
+        # A mutated pin without a recomputed digest is caught by the digest.
+        replace({**selected, "source_batch_sha256": "0" * 64})
+        refuses("checkpoint-dispatch-marker-digest")
+        # A consistently re-digested marker still cannot name a package that
+        # durable state does not actually show adopted or acknowledged.
+        forged = {key: value for key, value in selected.items() if key != "marker_sha256"}
+        forged["source_batch_sha256"] = "0" * 64
+        replace({**forged, "marker_sha256": sha(forged)})
+        refuses("checkpoint-dispatch-package-not-adopted")
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(durable), mode=0o600)
+
+        if getattr(self, "interrupt_retire", False):
+            actual_write = owner.atomic_write
+
+            def interrupted(path, text, *args, **kwargs):
+                if path == owner.MEMO_PATH and api._MARKER not in owner.json.loads(text):
+                    raise OSError("controlled dispatch retirement interruption")
+                return actual_write(path, text, *args, **kwargs)
+
+            with mock.patch.object(owner, "atomic_write", side_effect=interrupted):
+                with self.assertRaisesRegex(OSError, "controlled dispatch retirement interruption"):
+                    api.dispatch(vars(owner))
+            interrupted_memo = owner.load_memo()
+            self.assertIn(api._MARKER, interrupted_memo)
+            self.assertIn("ready", interrupted_memo)
+            self.assertNotIn("controller_source_pending", interrupted_memo)
+
+        self.check_completed(owner, api.dispatch(vars(owner)), selected)
+
+    def recover_case(self, owner, args, selected):
+        """Resume a package whose marker became durable before adoption."""
+        api = self.dispatch_api
+        memo = owner.load_memo()
+        self.assertNotIn("controller_source_pending", memo)
+        self.assertFalse(api._adopted(memo, selected["source_batch_sha256"]))
+        # The pins-free completion must not invent an adoption it cannot see.
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("unadopted dispatch wrote")):
+            with self.assertRaises(ValueError) as refused:
+                api.dispatch(vars(owner))
+        self.assertEqual(refused.exception.reason, "checkpoint-dispatch-package-not-adopted")
+        # A marker names bytes, never authorization: the independent epoch
+        # adoption premise is still checked against the retained package.
+        forged = {**self.premises, "expected_adoption_sha256": "0" * 64}
+        with self.assertRaises(ValueError):
+            api.advance(vars(owner), admitted_status=args["admitted_status"], **forged)
+        self.assertNotIn("controller_source_pending", owner.load_memo())
+        self.assertIn(api._MARKER, owner.load_memo())
+        view = api.advance(vars(owner), admitted_status=args["admitted_status"], **self.premises)
+        self.check_completed(owner, view, selected)
+        self.assertIsNone(api.advance(vars(owner),
+            admitted_status=args["admitted_status"], **self.premises))
+
+    def check_completed(self, owner, view, selected):
+        api = self.dispatch_api
+        self.assertEqual(view["status"], "available")
+        self.assertEqual(view["batch"]["batch_sha256"], selected["source_batch_sha256"])
+        memo = owner.load_memo()
+        self.assertIn("ready", memo)
+        self.assertNotIn(api._MARKER, memo)
+        self.assertFalse(Path(owner.CONTROLLER_SOURCE_BATCH_PATH).exists())
+        # A retired package is never retried, and nothing else is selected.
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("retired dispatch wrote")):
+            self.assertIsNone(api.dispatch(vars(owner)))
+        self.assertIsNone(api.select(vars(owner), memo=memo))
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture
