@@ -1,6 +1,7 @@
 """Real Git commit of compact pages, with unchanged source authority."""
 
 import copy
+import hashlib
 import importlib
 from pathlib import Path
 import subprocess
@@ -30,6 +31,15 @@ class CheckpointCommit(unittest.TestCase):
         self.exercise(synchronize=True)
 
     def test_durable_package_selection_drives_recurring_dispatch(self):
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
+    def test_successor_extends_the_chain_from_the_acknowledged_compact_parent(self):
+        import siahistoryroot
+        self.assertTrue(callable(getattr(siahistoryroot, "prepare_successor", None)),
+            "missing compact successor chain link")
+        self.check_successor = True
         self.dispatch_api = importlib.import_module("siacheckpointdispatch")
         self.driver_api = importlib.import_module("siacheckpointrunner")
         self.exercise(synchronize=True)
@@ -393,6 +403,111 @@ class CheckpointCommit(unittest.TestCase):
         with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("retired dispatch wrote")):
             self.assertIsNone(api.dispatch(vars(owner)))
         self.assertIsNone(api.select(vars(owner), memo=memo))
+        if getattr(self, "check_successor", False):
+            self.successor_case(owner, selected)
+
+    def successor_case(self, owner, selected):
+        """Extend the retained chain by one link from the acknowledged parent."""
+        import siahistoryroot as roots
+        directory = Path(selected["directory"])
+        root_pin = selected["root_sha256"]
+        root = owner.json.loads((directory / ("root-" + root_pin + ".json")).read_bytes())
+        memo = owner.load_memo()
+        committed = memo["controller_source_committed"]
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        args = dict(memo=memo, admitted_status=status, directory=str(directory),
+            expected_root_sha256=root_pin, expected_head_sha256=root_pin)
+        # Retaining the acknowledged parent is the successor's precondition,
+        # not something the successor may reconstruct for itself.
+        with self.assertRaises(ValueError) as refused:
+            roots.prepare_successor(vars(owner), **args)
+        self.assertEqual(refused.exception.reason, "checkpoint-parent-graph-required")
+        import siacheckpointparent as parents
+        retained = dict(directory=str(directory), committed=committed)
+        parents.retain_graph(vars(owner), **retained)
+        self.assertTrue(parents.retain_checkpoint_live(vars(owner), **retained,
+            memo=memo, admitted_status=status))
+        view = roots.prepare_successor(vars(owner), **args)
+        successor = view["successor"]
+        self.assertEqual(successor["schema"], "sia-source-history-successor-v1")
+        self.assertEqual(successor["status"], "successor-retained-not-activated")
+        # The bootstrap root is carried by reference, never rebuilt.
+        self.assertEqual(successor["root_sha256"], root_pin)
+        self.assertEqual(successor["parent_sha256"], root_pin)
+        self.assertEqual(successor["generation"], 1)
+        self.assertEqual(successor["epoch_id"], root["epoch_id"])
+        for key in ("legacy_epoch_sha256", "legacy_history_sha256"):
+            self.assertEqual(successor[key], root[key])
+        self.assertEqual(successor["committed"], committed)
+        self.assertNotEqual(successor["committed"], root["committed"])
+        # The chain advances by exactly one entry block.
+        self.assertNotEqual(successor["final_entry_block_sha256"],
+            root["final_entry_block_sha256"])
+        self.assertTrue((directory / roots.store._name(
+            successor["final_entry_block_sha256"])).exists())
+        self.assertEqual(view["parent_sha256"], root_pin)
+        self.assertEqual(successor["checkpoint_sha256"],
+            view["batch"]["intake_projection"]["checkpoint_sha256"])
+        # The head names this capture's own predecessor as a whole triple.
+        self.assertEqual(root["committed"], view["batch"]["epoch"]["predecessor"])
+        self.assertEqual(view["batch"]["batch_sha256"], committed["source_batch_sha256"])
+        # A retry rereads the retained successor instead of republishing it;
+        # content-addressed block retention may still replay for durability.
+        published = roots.store.queue.fixed_atomic_publish
+
+        def no_successor(path, *rest, **options):
+            if Path(path).name.startswith("successor-"):
+                raise AssertionError("successor retry published")
+            return published(path, *rest, **options)
+
+        with mock.patch.object(roots.store.queue, "fixed_atomic_publish",
+                side_effect=no_successor):
+            retried = roots.prepare_successor(vars(owner), **args)
+        self.assertEqual(retried, view)
+        # A head pin the directory does not hold is refused, not bootstrapped.
+        with self.assertRaises(ValueError):
+            roots.prepare_successor(vars(owner), **{**args, "expected_head_sha256": "0" * 64})
+        # A rehashed unrelated bootstrap root carrying the same final entry
+        # block must not be carried forward as this chain's origin.
+        def publish(prefix, document):
+            raw = roots.blocks._wire(document)
+            pin = hashlib.sha256(raw).hexdigest()
+            owner.atomic_write(str(directory / (prefix + pin + ".json")),
+                raw.decode("utf-8"), mode=0o600)
+            return pin
+
+        # A rehashed bootstrap root keeping the same final entry block is not
+        # this chain's origin: the acknowledged capture pins the original.
+        wrong_pin = publish("root-", {**root, "epoch_id": root["epoch_id"] + "-other"})
+        with self.assertRaises(ValueError) as refused:
+            roots.prepare_successor(vars(owner), **{**args,
+                "expected_root_sha256": wrong_pin, "expected_head_sha256": wrong_pin})
+        self.assertEqual(refused.exception.reason, "successor-parent-root-binding")
+        # The original root pin survives; only the head advances. A head whose
+        # recorded predecessor is not the acknowledged capture's own
+        # predecessor is refused, because block linkage binds just the source
+        # batch of that triple, not its effects or live identity.
+        with self.assertRaises(ValueError) as refused:
+            roots.prepare_successor(vars(owner), **{**args,
+                "expected_head_sha256": view["successor_sha256"]})
+        self.assertEqual(refused.exception.reason, "successor-head-predecessor-binding")
+        # Predecessor corrected, checkpoint metadata altered: still refused.
+        forged_head = publish("successor-", {**successor,
+            "committed": copy.deepcopy(root["committed"]), "checkpoint_sha256": "0" * 64})
+        with self.assertRaises(ValueError) as refused:
+            roots.prepare_successor(vars(owner), **{**args,
+                "expected_head_sha256": forged_head})
+        self.assertEqual(refused.exception.reason, "successor-head-checkpoint-binding")
+        # Current acknowledged authority, not a caller's memo copy, decides.
+        forged = copy.deepcopy(memo)
+        forged["controller_source_committed"] = {**committed, "live_generation_sha256": "0" * 64}
+        with self.assertRaises(ValueError):
+            roots.prepare_successor(vars(owner), **{**args, "memo": forged})
+        stale = copy.deepcopy(memo)
+        stale.pop("ready", None)
+        with self.assertRaises(ValueError) as refused:
+            roots.prepare_successor(vars(owner), **{**args, "memo": stale})
+        self.assertEqual(refused.exception.reason, "successor-durable-memo-differs")
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture
