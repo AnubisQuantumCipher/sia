@@ -542,13 +542,107 @@ class CheckpointCommit(unittest.TestCase):
             api.capture_successor_delivery(vars(owner), **{**args,
                 "expected_head_sha256": forged_head})
         self.assertEqual(refused.exception.reason, "checkpoint-successor-head-binding")
-        # An outstanding notification fence is refused, never captured beneath.
-        fenced = copy.deepcopy(memo)
-        owner._mark_notify_baseline_attempt(fenced)
-        with self.assertRaises(ValueError) as refused:
-            api.capture_successor_delivery(vars(owner), **{**args, "memo": fenced})
-        self.assertEqual(refused.exception.reason,
-            "checkpoint-successor-notification-fence-unsupported")
+        self.capture_transition_successor(owner, args)
+        self.capture_fenced_successor(owner, args)
+
+    def capture_transition_successor(self, owner, args):
+        """Capture entered unfenced and fenced part-way through collection.
+
+        read_prior() must switch from the completed reader to the capturable
+        one inside current(), and the delivery epoch handoff must survive
+        that switch. The hook is a controlled stand-in for the sense_notify
+        branch, not the real notification sense: it performs exactly that
+        branch's three effects — the production baseline write, the held
+        memo refresh, and propagation of the new marker through the
+        collector's return contract — so the collected batch and the durable
+        memo agree, as production requires.
+        """
+        import siasourcebatch
+        import siasourcecheckpoint as api
+        self.assertIsNone(
+            siasourcebatch._notification_marker(vars(owner), owner.load_memo()))
+        actual_collector = siasourcebatch._collector_result
+        created = []
+
+        def collect(owner_dict, runtime, selected, trial, memo_arg, files, *rest):
+            if not created:
+                created.append(owner_dict["_mark_notify_baseline_attempt"](memo_arg))
+                files.refresh_memo(memo_arg)
+            events, records, used_trial, receipt, _stale = actual_collector(
+                owner_dict, runtime, selected, trial, memo_arg, files, *rest)
+            return (events, records, used_trial, receipt,
+                    siasourcebatch._notification_marker(owner_dict, memo_arg))
+
+        with mock.patch.object(siasourcebatch, "_collector_result", side_effect=collect):
+            batch = api.capture_successor_delivery(vars(owner), **args)
+        self.assertTrue(created, "the controlled collector never ran")
+        marker = created[0]
+        self.assertEqual(batch["notification_baseline_attempt"], marker)
+        self.assertEqual(batch["epoch"]["root_sha256"], args["expected_root_sha256"])
+        self.assertEqual(
+            siasourcebatch._notification_marker(vars(owner), owner.load_memo()), marker)
+
+    def capture_fenced_successor(self, owner, args):
+        """Capture beneath an outstanding fence, reading it and never clearing it."""
+        import siasourcecheckpoint as api
+        import siasourceack as ack
+        self.assertTrue(callable(getattr(
+            ack, "read_capturable_checkpoint_predecessor", None)),
+            "missing compact capturable predecessor reader")
+        import siasourcebatch
+        # A pre-existing outstanding fence, written by the production writer.
+        # The capture entered while already fenced; the unfenced-to-fenced
+        # transition inside one capture is not exercised here.
+        fenced = copy.deepcopy(owner.load_memo())
+        marker = owner._mark_notify_baseline_attempt(fenced)
+        self.assertIsNotNone(marker)
+        self.assertEqual(owner.load_memo(), fenced)
+        fenced_args = {**args, "memo": fenced}
+
+        def fence_intact():
+            actual = owner.load_memo()
+            self.assertEqual(actual, fenced)
+            self.assertEqual(
+                siasourcebatch._notification_marker(vars(owner), actual), marker)
+
+        # An interrupted fenced capture surfaces a closed refusal rather than
+        # the raw error, and leaves the fence and the memo untouched. The
+        # capture writes nothing, so recovery is simply the retry below.
+        actual_load = owner.load_memo
+        calls = []
+
+        def interrupted():
+            calls.append(None)
+            if len(calls) > 1:
+                raise OSError("controlled fenced capture interruption")
+            return actual_load()
+
+        with mock.patch.object(owner, "load_memo", side_effect=interrupted):
+            with self.assertRaises(ValueError) as refused:
+                api.capture_successor_delivery(vars(owner), **fenced_args)
+        self.assertEqual(refused.exception.reason, "ack-capturable-predecessor-refused")
+        self.assertGreater(len(calls), 1)
+        fence_intact()
+
+        batch = api.capture_successor_delivery(vars(owner), **fenced_args)
+        self.assertEqual(batch["notification_baseline_attempt"], marker)
+        self.assertEqual(batch["epoch"]["root_sha256"], args["expected_root_sha256"])
+        # Reading the fence is not clearing it.
+        fence_intact()
+
+        # A fence the durable memo does not actually carry is refused, and the
+        # real outstanding fence survives the refusal untouched.
+        forged = copy.deepcopy(fenced)
+        forged[owner.NOTIFY_BASELINE_ATTEMPT_KEY] = {
+            **copy.deepcopy(marker), "id": "0" * 32}
+        with self.assertRaises(ValueError):
+            api.capture_successor_delivery(vars(owner), **{**args, "memo": forged})
+        fence_intact()
+        # Wrong chain pins beneath a real fence are refused the same way.
+        with self.assertRaises(ValueError):
+            api.capture_successor_delivery(vars(owner), **{**fenced_args,
+                "expected_root_sha256": "0" * 64})
+        fence_intact()
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture

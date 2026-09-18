@@ -929,7 +929,7 @@ def read_capturable_predecessor(
         owner, *, memo, admitted_status, committed,
         notification_baseline_attempt,
         expected_notification_baseline_attempt_sha256):
-    """Read a historical predecessor beneath the exact notification fence.
+    """Read a historical legacy predecessor beneath the exact notification fence.
 
     This entry point is neither the completed reader nor an ACK operation.
     It receives the caller's ordinary owner scope and creates none itself.
@@ -937,6 +937,36 @@ def read_capturable_predecessor(
     existing effects/live verification; the old ready receipt is checked only
     as a historical join. No fixed-slot content is acquired or interpreted.
     """
+    return _read_capturable_predecessor(
+        owner, memo=memo, admitted_status=admitted_status, committed=committed,
+        notification_baseline_attempt=notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256=
+            expected_notification_baseline_attempt_sha256, checkpoint=False)
+
+
+def read_capturable_checkpoint_predecessor(
+        owner, *, memo, admitted_status, committed,
+        notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256):
+    """Read a historical compact predecessor beneath the exact fence.
+
+    Only the archive decoder differs from the legacy entry point. The whole
+    actual memo with its notification marker, the fence check before and
+    after durable readback, the archive/effects identity join, the historical
+    ready receipt and every original capacity remain exactly as they are for
+    a legacy predecessor. The legacy entry keeps its own behavior unchanged.
+    """
+    return _read_capturable_predecessor(
+        owner, memo=memo, admitted_status=admitted_status, committed=committed,
+        notification_baseline_attempt=notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256=
+            expected_notification_baseline_attempt_sha256, checkpoint=True)
+
+
+def _read_capturable_predecessor(
+        owner, *, memo, admitted_status, committed,
+        notification_baseline_attempt,
+        expected_notification_baseline_attempt_sha256, checkpoint):
     import siasourcebatch as source
     import siasourceeffects as effects
     import siasourcepublication as publication
@@ -1040,7 +1070,8 @@ def read_capturable_predecessor(
 
             current()
             with _historical_predecessor(
-                    owner, source, effects, memo, admitted_status, committed) as (
+                    owner, source, effects, memo, admitted_status, committed,
+                    checkpoint=checkpoint) as (
                     archive, effects_archive, status, generation):
                 retained_bytes += len(archive.raw) + len(effects_archive.raw)
                 if retained_bytes > capacities["MAX_STATE_JSON_BYTES"]:

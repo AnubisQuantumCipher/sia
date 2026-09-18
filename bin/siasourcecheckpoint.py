@@ -280,8 +280,10 @@ def capture_successor_delivery(owner, *, memo, admitted_status, directory, expec
     projected result admitted by pin, so no pulse rebuilds or traverses whole
     ancestry, and every artifact keeps its original single-document cap.
 
-    An outstanding notification fence is refused rather than captured beneath:
-    the fenced compact predecessor reader is not yet built.
+    An outstanding notification fence selects the compact capturable reader
+    instead of the completed one. The fence is read, never cleared, and that
+    reader keeps the legacy entry's whole contract apart from its archive
+    decoder.
     """
     source._hex(expected_head_sha256, "checkpoint-successor-head-pin")
     return _capture_root(owner, memo=memo, admitted_status=admitted_status, directory=directory,
@@ -327,9 +329,19 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
             marker = source._notification_marker(owner, memo)
             if expected_head_sha256 is not None:
                 if marker is not None:
-                    source.refuse("checkpoint-successor-notification-fence-unsupported")
-                view = ack.read_checkpoint_completed(owner, memo=memo, admitted_status=admitted_status)
-                if view.get("status") != "available" \
+                    # Beneath an outstanding fence the compact predecessor is
+                    # capturable, not completed. The fence is read, never
+                    # cleared, and the reader keeps its full legacy contract.
+                    view = ack.read_capturable_checkpoint_predecessor(
+                        owner, memo=memo, admitted_status=admitted_status,
+                        committed=memo.get("controller_source_committed"),
+                        notification_baseline_attempt=marker,
+                        expected_notification_baseline_attempt_sha256=source.native_sha(owner, marker))
+                    expected = "capturable-not-ready"
+                else:
+                    view = ack.read_checkpoint_completed(owner, memo=memo, admitted_status=admitted_status)
+                    expected = "available"
+                if view.get("status") != expected \
                         or view.get("committed") != memo.get("controller_source_committed") \
                         or not _is_capture(view.get("batch")):
                     source.refuse("checkpoint-successor-source-authority")

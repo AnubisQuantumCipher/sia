@@ -672,8 +672,16 @@ class _CaptureTransaction(_Transaction):
             _refuse("capture-notification-key-changed")
 
     def source_predecessor(self):
+        """The fenced transaction requires the capturable predecessor reader.
+
+        A compact predecessor is read through the compact fenced entry, which
+        differs only in its archive decoder. parent() then requires the
+        reader's own batch to equal the retained batch that selected it.
+        """
         owner, request = self.owner, self.admitted
-        view = acknowledgment.read_capturable_predecessor(
+        read = acknowledgment.read_capturable_checkpoint_predecessor \
+            if self._compact_predecessor() else acknowledgment.read_capturable_predecessor
+        view = read(
             owner, memo=self.memo, admitted_status=request["admitted_status"],
             committed=request["committed"],
             notification_baseline_attempt=request["notification_baseline_attempt"],
