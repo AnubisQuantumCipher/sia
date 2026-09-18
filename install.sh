@@ -8609,6 +8609,7 @@ SIA_RELEASE_FILES=(
   bin/siacheckpointlive.py bin/siacheckpointparent.py
   bin/siacheckpointrunner.py bin/siacheckpointtransaction.py
   bin/siacheckpointcycle.py
+  bin/siacorpuslease.py
   bin/siatakes.py docs/ARCHITECTURE.md docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
@@ -9663,7 +9664,7 @@ for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siacheckpointadoption.py siacheckpointcontent.py siacheckpointdispatch.py \
     siacheckpointeffects.py siacheckpointlive.py siacheckpointparent.py \
     siacheckpointrunner.py siacheckpointtransaction.py \
-    siacheckpointcycle.py; do
+    siacheckpointcycle.py siacorpuslease.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done

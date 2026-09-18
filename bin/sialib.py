@@ -983,66 +983,15 @@ def _validated_inherited_lifecycle_fd():
 
 
 def _validated_inherited_corpus_fd():
-    """Recognize only a parent's inherited exclusive corpus lease."""
-    raw = os.environ.get(_INHERITED_CORPUS_FD_ENV)
-    if raw is None:
-        return None
-    if not raw or not raw.isascii() or not raw.isdigit():
-        raise RuntimeError("invalid inherited SIA corpus descriptor")
-    try:
-        inherited_fd = int(raw, 10)
-        inherited = os.fstat(inherited_fd)
-        target = os.lstat(CORPUS_OWNER_LOCK)
-    except (OSError, ValueError) as exc:
-        raise RuntimeError("invalid inherited SIA corpus descriptor") from exc
-    if not stat.S_ISREG(inherited.st_mode) \
-            or inherited.st_uid != os.geteuid() \
-            or not stat.S_ISREG(target.st_mode) \
-            or target.st_uid != os.geteuid() \
-            or (inherited.st_dev, inherited.st_ino) != \
-               (target.st_dev, target.st_ino):
-        raise RuntimeError(
-            "inherited SIA corpus descriptor is not the owned lease")
+    """Recognize only a parent's inherited exclusive corpus lease.
 
-    flags = (os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
-             | getattr(os, "O_NOFOLLOW", 0))
-    try:
-        probe_fd = os.open(CORPUS_OWNER_LOCK, flags)
-    except OSError as exc:
-        raise RuntimeError("could not probe inherited SIA corpus lease") \
-            from exc
-    try:
-        probe = os.fstat(probe_fd)
-        if not stat.S_ISREG(probe.st_mode) \
-                or probe.st_uid != os.geteuid() \
-                or (probe.st_dev, probe.st_ino) != \
-                   (inherited.st_dev, inherited.st_ino):
-            raise RuntimeError("SIA corpus lease changed during handoff")
-        try:
-            fcntl.flock(probe_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            pass
-        else:
-            fcntl.flock(probe_fd, fcntl.LOCK_UN)
-            raise RuntimeError(
-                "inherited SIA corpus descriptor has no conflicting lease")
-        try:
-            fcntl.flock(probe_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-        except BlockingIOError:
-            pass
-        else:
-            fcntl.flock(probe_fd, fcntl.LOCK_UN)
-            raise RuntimeError(
-                "inherited SIA corpus descriptor is not exclusively held")
-        try:
-            fcntl.flock(inherited_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError(
-                "inherited SIA corpus descriptor does not own the lease") \
-                from exc
-    finally:
-        os.close(probe_fd)
-    return inherited_fd
+    The checks live in siacorpuslease; this keeps the original private
+    name so existing callers and tests that patch it still bind here.
+    """
+    import siacorpuslease
+
+    return siacorpuslease.validated_inherited_fd(
+        environ_key=_INHERITED_CORPUS_FD_ENV, lock_path=CORPUS_OWNER_LOCK)
 
 
 def _validated_launcher_lifecycle_fd(expected_target):
