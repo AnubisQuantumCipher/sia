@@ -87,6 +87,11 @@ _BINDING_KEYS = {
 }
 _LEGACY = {"sia-controller-source-batch-v1", "sia-controller-source-batch-v2"}
 _PARENT_SCHEMAS = _LEGACY | {"sia-controller-source-batch-v3"}
+# Only the compact builder may name a compact parent, and only the held
+# delivery capture, which carries the same wrapper and adoption pin. The
+# legacy builder's allowlist is deliberately left unchanged.
+_COMPACT_PARENT_SCHEMAS = _PARENT_SCHEMAS | {
+    "sia-controller-source-checkpoint-capture-v3"}
 _CAPACITIES = (
     "MAX_STATE_JSON_BYTES", "MAX_CONFIG_PATH_CHARS", "MAX_SOURCE_REPLAY_EVENTS",
     "MAX_SOURCE_REPLAY_SOURCES", "MAX_CONFIG_TEXT_CHARS", "MAX_CONFIG_TAGS",
@@ -586,7 +591,8 @@ def _make_checkpoint(owner, request):
     import siaeventcheckpoint as checkpoints
     import siasourcecheckpoint as compact
 
-    if type(request["parent_source_schema"]) is not str or request["parent_source_schema"] not in _PARENT_SCHEMAS:
+    if type(request["parent_source_schema"]) is not str \
+            or request["parent_source_schema"] not in _COMPACT_PARENT_SCHEMAS:
         _refuse("parent-source-schema")
     if not live._integer(request["observed_at"]):
         _refuse("explicit-controller-clock")

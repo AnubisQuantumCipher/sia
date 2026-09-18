@@ -410,6 +410,7 @@ class CheckpointCommit(unittest.TestCase):
         """Extend the retained chain by one link from the acknowledged parent."""
         import siahistoryroot as roots
         directory = Path(selected["directory"])
+        self.successor_directory = str(directory)
         root_pin = selected["root_sha256"]
         root = owner.json.loads((directory / ("root-" + root_pin + ".json")).read_bytes())
         memo = owner.load_memo()
@@ -508,6 +509,46 @@ class CheckpointCommit(unittest.TestCase):
         with self.assertRaises(ValueError) as refused:
             roots.prepare_successor(vars(owner), **{**args, "memo": stale})
         self.assertEqual(refused.exception.reason, "successor-durable-memo-differs")
+        self.capture_successor(owner, memo, committed, root, root_pin, view, forged_head)
+
+    def capture_successor(self, owner, memo, committed, root, root_pin, view, forged_head):
+        """Capture the pulse after the acknowledged compact predecessor."""
+        import siasourcecheckpoint as api
+        self.assertTrue(callable(getattr(api, "capture_successor_delivery", None)),
+            "missing compact successor capture")
+        successor = view["successor"]
+        status = owner.json.loads(Path(owner.STATUS_PATH).read_bytes())
+        args = dict(memo=memo, admitted_status=status,
+            directory=view["directory"] if "directory" in view else None,
+            expected_root_sha256=root_pin,
+            expected_head_sha256=view["successor_sha256"],
+            observed_at=view["batch"]["observed_at"] + 1, **self.premises)
+        args["directory"] = self.successor_directory
+        batch = api.capture_successor_delivery(vars(owner), **args)
+        epoch = batch["epoch"]
+        self.assertEqual(batch["schema"], "sia-controller-source-checkpoint-capture-v3")
+        # The original bootstrap root pin is preserved, not replaced by the head.
+        self.assertEqual(epoch["root_sha256"], root_pin)
+        self.assertEqual(epoch["epoch_id"], root["epoch_id"])
+        # The predecessor is now the acknowledged compact transaction.
+        self.assertEqual(epoch["predecessor"], committed)
+        self.assertNotEqual(epoch["predecessor"], root["committed"])
+        # The parent checkpoint is the predecessor's own projected result.
+        self.assertEqual(epoch["checkpoint_sha256"], successor["checkpoint_sha256"])
+        self.assertEqual(epoch["checkpoint_sha256"],
+            view["batch"]["intake_projection"]["checkpoint_sha256"])
+        # A head the chain does not actually produce is refused.
+        with self.assertRaises(ValueError) as refused:
+            api.capture_successor_delivery(vars(owner), **{**args,
+                "expected_head_sha256": forged_head})
+        self.assertEqual(refused.exception.reason, "checkpoint-successor-head-binding")
+        # An outstanding notification fence is refused, never captured beneath.
+        fenced = copy.deepcopy(memo)
+        owner._mark_notify_baseline_attempt(fenced)
+        with self.assertRaises(ValueError) as refused:
+            api.capture_successor_delivery(vars(owner), **{**args, "memo": fenced})
+        self.assertEqual(refused.exception.reason,
+            "checkpoint-successor-notification-fence-unsupported")
 
     def stage_case(self, f, owner, args, before):
         from tests import test_controller_source_effects as effects_fixture

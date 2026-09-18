@@ -50,6 +50,13 @@ CAPTURE_HELD_NON_CLAIMS = (
     "No complete machine history, human receipt, biological cognition or held-out retrieval win is established; directory identities describe checked local generations, not hostile same-user protection.",
     "All capture-only source-predecessor, adoption, ordinary held-epoch, live-loop and delivery-journal nonclaims remain controlling.",
 )
+def _compact(batch):
+    """Whether a retained predecessor is a compact capture, not a legacy batch."""
+    import siasourcecheckpoint as checkpoint
+
+    return checkpoint._is_capture(batch)
+
+
 _MARKER = "controller_delivery_epoch"
 _ROOT = "CONTROLLER_DELIVERY_EPOCH_ROOT"
 _BOUNDARY = "_controller_delivery_epoch_boundary"
@@ -346,9 +353,22 @@ class _Transaction:
         if self.readonly:
             _refuse("held-epoch-effect-not-authorized")
 
+    def _compact_predecessor(self):
+        return _compact(self.admitted["retained_batch"])
+
     def source_predecessor(self):
-        """The ordinary transaction requires the strict completed reader."""
-        completed = acknowledgment.read_completed(
+        """The ordinary transaction requires the strict completed reader.
+
+        A compact predecessor is read through its own completed reader. The
+        legacy decoder refuses that schema by design and is not relaxed here.
+        Which reader runs follows the retained batch the caller already
+        supplied, and parent() immediately requires the reader's own result to
+        equal that batch, so the choice cannot admit a predecessor the
+        archives do not actually hold.
+        """
+        read = acknowledgment.read_checkpoint_completed \
+            if self._compact_predecessor() else acknowledgment.read_completed
+        completed = read(
             self.owner, memo=self.memo,
             admitted_status=self.admitted["admitted_status"])
         _keys(completed, {"status", "batch", "committed"}, "completed-source-view")
@@ -408,7 +428,10 @@ class _Transaction:
                     or deliveries["complete"] is not True \
                     or type(deliveries["records"]) is not list or deliveries["records"]:
                 _refuse("legacy-parent-must-have-no-deliveries")
-        elif schema == "sia-controller-source-batch-v3":
+        elif schema == "sia-controller-source-batch-v3" or _compact(retained):
+            # A compact capture carries the same held delivery wrapper, so it
+            # is held to the same adoption pin rather than to a weaker rule.
+            # Compact schemas without that wrapper fall into the same refusal.
             wrapper = retained.get("delivery_input")
             if type(wrapper) is not dict or self.external is None \
                     or wrapper.get("expected_adoption_sha256") != self.external:

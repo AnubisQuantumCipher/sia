@@ -57,13 +57,25 @@ class _CheckpointDeliveryRequest(source._DeliveryCaptureRequest):
             owner, checkpoint=self.checkpoint, expected_checkpoint_sha256=epoch["checkpoint_sha256"])
         _validate(owner, epoch, self.admitted_checkpoint, request["observed_at"])
         prior, committed = request["retained_batch"], request["committed"]
-        source.validate_batch(owner, prior, committed["source_batch_sha256"])
+        projection = prior["intake_projection"] if type(prior) is dict else None
+        if _is_capture(prior):
+            # A compact predecessor is admitted by its own validator; the
+            # legacy source decoder refuses this schema by design. Its
+            # already-projected result is this epoch's parent checkpoint, so
+            # no ancestry is replayed to rediscover what it recorded.
+            validate_capture(owner, prior, committed["source_batch_sha256"])
+            continued = self.wire(self.admitted_checkpoint) == self.wire(projection["checkpoint"]) \
+                and epoch["checkpoint_sha256"] == projection["checkpoint_sha256"]
+        else:
+            source.validate_batch(owner, prior, committed["source_batch_sha256"])
+            continued = self.wire(self.admitted_checkpoint["intake"]) \
+                == self.wire(projection["intake"])
         if request["observed_at"] < prior["observed_at"] \
                 or self.wire(epoch["predecessor"]) != self.wire(committed) \
                 or epoch["epoch_id"] != prior["epoch"]["epoch_id"] \
                 or epoch["started_at"] != prior["epoch"]["started_at"] \
                 or any(self.wire(epoch[key]) != self.wire(prior["epoch"][key]) for key in _DOC_KEYS) \
-                or self.wire(self.admitted_checkpoint["intake"]) != self.wire(prior["intake_projection"]["intake"]):
+                or not continued:
             source.refuse("checkpoint-delivery-predecessor-binding")
         self.basis_current()
         if self.wire(self.checkpoint) != self.checkpoint_raw \
@@ -82,6 +94,18 @@ class _CheckpointDeliveryRequest(source._DeliveryCaptureRequest):
         return siacontrollerdeliverywrapper.build_checkpoint(
             self.owner, **self.wrapper_arguments(result, source.native_sha(self.owner, result["intake_projection"])),
             parent_checkpoint=result["parent_checkpoint"])
+
+
+_CAPTURE_SCHEMAS = frozenset({
+    "sia-controller-source-checkpoint-capture-v1",
+    "sia-controller-source-checkpoint-capture-v2",
+    "sia-controller-source-checkpoint-capture-v3",
+})
+
+
+def _is_capture(batch):
+    """Whether a retained predecessor is compact rather than legacy."""
+    return type(batch) is dict and batch.get("schema") in _CAPTURE_SCHEMAS
 
 
 def _wire(owner, value):
@@ -245,8 +269,31 @@ def capture_root_delivery(owner, *, memo, admitted_status, directory, expected_r
                                                expected_adoption_sha256=expected_adoption_sha256))
 
 
+def capture_successor_delivery(owner, *, memo, admitted_status, directory, expected_root_sha256,
+                               expected_head_sha256, observed_at, journal_limits,
+                               expected_journal_limits_sha256, expected_adoption_sha256):
+    """Capture the pulse after an acknowledged compact predecessor.
+
+    This continues a chain rather than bootstrapping one. The original root
+    pin is preserved and carried, not replaced by the head; only the retained
+    successor head advances. The parent checkpoint is the predecessor's own
+    projected result admitted by pin, so no pulse rebuilds or traverses whole
+    ancestry, and every artifact keeps its original single-document cap.
+
+    An outstanding notification fence is refused rather than captured beneath:
+    the fenced compact predecessor reader is not yet built.
+    """
+    source._hex(expected_head_sha256, "checkpoint-successor-head-pin")
+    return _capture_root(owner, memo=memo, admitted_status=admitted_status, directory=directory,
+                         expected_root_sha256=expected_root_sha256, observed_at=observed_at, with_idle=True,
+                         expected_head_sha256=expected_head_sha256,
+                         delivery_options=dict(journal_limits=journal_limits,
+                                               expected_journal_limits_sha256=expected_journal_limits_sha256,
+                                               expected_adoption_sha256=expected_adoption_sha256))
+
+
 def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha256, observed_at, with_idle,
-                  delivery_options=None):
+                  delivery_options=None, expected_head_sha256=None):
     """Capture actual collectors after read-only acknowledged-root bootstrap.
 
     The existing root and final-entry block must already be retained. This
@@ -254,6 +301,10 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
     controller transaction: delivery execution and publication remain required
     integration work. Idle and delivery variants retain their actual inputs,
     not durable consolidation or output completion.
+
+    With an explicit successor head pin the predecessor is compact and the
+    chain advances by one entry from the head, instead of anchoring a new
+    bootstrap from a legacy predecessor.
     """
     import siahistoryroot as roots
     import siasourceack as ack
@@ -274,6 +325,15 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
 
         def read_prior():
             marker = source._notification_marker(owner, memo)
+            if expected_head_sha256 is not None:
+                if marker is not None:
+                    source.refuse("checkpoint-successor-notification-fence-unsupported")
+                view = ack.read_checkpoint_completed(owner, memo=memo, admitted_status=admitted_status)
+                if view.get("status") != "available" \
+                        or view.get("committed") != memo.get("controller_source_committed") \
+                        or not _is_capture(view.get("batch")):
+                    source.refuse("checkpoint-successor-source-authority")
+                return view
             if delivery_options is not None and marker is not None:
                 view = ack.read_capturable_predecessor(
                     owner, memo=memo, admitted_status=admitted_status,
@@ -288,36 +348,89 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
             return view
 
         root_file = hold("root-" + expected_root_sha256 + ".json", expected_root_sha256)
+        head_file = None
         view = read_prior()
         prior, committed = view["batch"], view["committed"]
         prior_raw, committed_raw = _wire(owner, prior), _wire(owner, committed)
-        block = checkpoints.blocks.prepare_captured(
-            owner, batch=prior, expected_batch_sha256=committed["source_batch_sha256"],
-            parent=None, expected_parent_sha256=None)
-        block_raw = _wire(owner, block)
-        block_pin = hashlib.sha256(block_raw).hexdigest()
-        expected_root = {"schema": "sia-source-history-root-v1", "status": "root-retained-not-activated",
-                         "epoch_id": prior["epoch"]["epoch_id"], "committed": committed,
-                         "legacy_epoch_sha256": prior["epoch_sha256"],
-                         "legacy_history_sha256": prior["epoch"]["expected_history_sha256"],
-                         "final_entry_block_sha256": block_pin, "non_claims": list(roots.NON_CLAIMS)}
-        if _wire(owner, expected_root) != root_file.raw:
-            source.refuse("checkpoint-root-source-binding")
+        if expected_head_sha256 is None:
+            block = checkpoints.blocks.prepare_captured(
+                owner, batch=prior, expected_batch_sha256=committed["source_batch_sha256"],
+                parent=None, expected_parent_sha256=None)
+            block_raw = _wire(owner, block)
+            block_pin = hashlib.sha256(block_raw).hexdigest()
+            expected_root = {"schema": "sia-source-history-root-v1", "status": "root-retained-not-activated",
+                             "epoch_id": prior["epoch"]["epoch_id"], "committed": committed,
+                             "legacy_epoch_sha256": prior["epoch_sha256"],
+                             "legacy_history_sha256": prior["epoch"]["expected_history_sha256"],
+                             "final_entry_block_sha256": block_pin, "non_claims": list(roots.NON_CLAIMS)}
+            if _wire(owner, expected_root) != root_file.raw:
+                source.refuse("checkpoint-root-source-binding")
+        else:
+            head_file = hold("successor-" + expected_head_sha256 + ".json", expected_head_sha256)
+            head = json.loads(head_file.raw)
+            root = json.loads(root_file.raw)
+            source._keys(root, roots._ROOT_KEYS, "checkpoint-successor-root-shape")
+            if root["schema"] != "sia-source-history-root-v1" \
+                    or root["status"] != "root-retained-not-activated" \
+                    or root["non_claims"] != list(roots.NON_CLAIMS) \
+                    or prior["epoch"]["root_sha256"] != expected_root_sha256:
+                source.refuse("checkpoint-successor-root-contract")
+            source._keys(head, roots._SUCCESSOR_KEYS, "checkpoint-successor-head-shape")
+            if head["schema"] != "sia-source-history-successor-v1" \
+                    or head["status"] != "successor-retained-not-activated" \
+                    or head["non_claims"] != list(roots.SUCCESSOR_NON_CLAIMS) \
+                    or head["root_sha256"] != expected_root_sha256 \
+                    or head["epoch_id"] != root["epoch_id"] \
+                    or head["legacy_epoch_sha256"] != root["legacy_epoch_sha256"] \
+                    or head["legacy_history_sha256"] != root["legacy_history_sha256"] \
+                    or _wire(owner, head["committed"]) != committed_raw \
+                    or head["checkpoint_sha256"] != prior["intake_projection"]["checkpoint_sha256"]:
+                source.refuse("checkpoint-successor-head-binding")
+            # Rebuild the head's entry from the actual acknowledged prior and
+            # its one pinned parent. Declared digests alone would let a
+            # rehashed block keep its source hash while carrying a different
+            # entry, so the canonical entry itself is reconstructed. Exactly
+            # two blocks are opened: depth is constant, never ancestry-deep.
+            block_pin = head["final_entry_block_sha256"]
+            block = json.loads(hold(block_pin + ".json", block_pin).raw)
+            checkpoints.blocks._parent(block)
+            block_raw = _wire(owner, block)
+            grandparent_pin = block["parent_sha256"]
+            if block["source_batch_sha256"] != committed["source_batch_sha256"] \
+                    or block["epoch_id"] != root["epoch_id"] or grandparent_pin is None:
+                source.refuse("checkpoint-successor-entry-binding")
+            grandparent = json.loads(hold(grandparent_pin + ".json", grandparent_pin).raw)
+            checkpoints.blocks._parent(grandparent)
+            rebuilt = checkpoints.blocks.prepare_checkpoint_capture(
+                owner, batch=prior, expected_batch_sha256=committed["source_batch_sha256"],
+                parent=grandparent, expected_parent_sha256=grandparent_pin)
+            if _wire(owner, rebuilt) != block_raw:
+                source.refuse("checkpoint-successor-entry-replay")
         block_file = hold(block_pin + ".json", block_pin)
         if block_file.raw != block_raw:
             source.refuse("checkpoint-root-entry-binding")
-        history = json.loads(_wire(owner, prior["epoch"]["history"]))
-        history["entries"].append(json.loads(_wire(owner, block["entry"])))
-        request = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
-                   "observed_at": prior["observed_at"], **{key: prior["epoch"][key] for key in _DOC_KEYS}}
-        request_raw = _wire(owner, request)
-        checkpoint = checkpoints.bootstrap_incremental(
-            owner, request=request, expected_request_sha256=hashlib.sha256(request_raw).hexdigest())
-        if _wire(owner, checkpoint["intake"]) != _wire(owner, prior["intake_projection"]["intake"]) \
-                or _wire(owner, checkpoint["source_non_claims"]) != _wire(owner, prior["intake_projection"]["source_non_claims"]):
-            source.refuse("checkpoint-source-intake-fidelity")
-        if with_idle:
-            checkpoint = checkpoints._with_episodes(owner, checkpoint, request, hashlib.sha256(request_raw).hexdigest())
+        if expected_head_sha256 is not None:
+            # The predecessor already projected the next checkpoint and the
+            # head pinned it. Admitting that result by pin is the whole point
+            # of an incremental chain: no epoch history is rebuilt here, and
+            # no prefix is decoded, so a pulse costs one link, not an epoch.
+            checkpoint = checkpoints.admit(owner, checkpoint=prior["intake_projection"]["checkpoint"],
+                expected_checkpoint_sha256=head["checkpoint_sha256"])
+            if with_idle and checkpoint["schema"] != "sia-event-replay-checkpoint-v3":
+                source.refuse("checkpoint-idle-episode-records-required")
+        else:
+            history = json.loads(_wire(owner, prior["epoch"]["history"]))
+            history["entries"].append(json.loads(_wire(owner, block["entry"])))
+            request = {"history": history, "expected_history_sha256": source._component_sha(owner, history),
+                       "observed_at": prior["observed_at"], **{key: prior["epoch"][key] for key in _DOC_KEYS}}
+            request_raw = _wire(owner, request)
+            checkpoint = checkpoints.bootstrap_incremental(
+                owner, request=request, expected_request_sha256=hashlib.sha256(request_raw).hexdigest())
+            if _wire(owner, checkpoint["intake"]) != _wire(owner, prior["intake_projection"]["intake"]) \
+                    or _wire(owner, checkpoint["source_non_claims"]) != _wire(owner, prior["intake_projection"]["source_non_claims"]):
+                source.refuse("checkpoint-source-intake-fidelity")
+            if with_idle:
+                checkpoint = checkpoints._with_episodes(owner, checkpoint, request, hashlib.sha256(request_raw).hexdigest())
         epoch = prepare_epoch(owner, checkpoint=checkpoint,
                               expected_checkpoint_sha256=hashlib.sha256(_wire(owner, checkpoint)).hexdigest(),
                               committed=committed, root_sha256=expected_root_sha256, observed_at=observed_at)
@@ -339,6 +452,8 @@ def _capture_root(owner, *, memo, admitted_status, directory, expected_root_sha2
                     or _wire(owner, present.get("committed")) != committed_raw:
                 source.refuse("checkpoint-capture-source-changed")
             root_file.current()
+            if head_file is not None:
+                head_file.current()
             block_file.current()
             directory_hold.current()
 
