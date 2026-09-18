@@ -8602,6 +8602,12 @@ SIA_RELEASE_FILES=(
   bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
   bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
   bin/siaworkspace.py
+  bin/siahistoryblock.py bin/siahistoryblockstore.py bin/siahistoryroot.py
+  bin/siaeventcheckpoint.py bin/siasourcecheckpoint.py
+  bin/siacheckpointadoption.py bin/siacheckpointcontent.py
+  bin/siacheckpointdispatch.py bin/siacheckpointeffects.py
+  bin/siacheckpointlive.py bin/siacheckpointparent.py
+  bin/siacheckpointrunner.py bin/siacheckpointtransaction.py
   bin/siatakes.py docs/ARCHITECTURE.md docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
@@ -9650,7 +9656,12 @@ for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siagetrenderadmit.py siainstalledengine.py siainstalledexpectations.py \
     siasourcepublication.py \
     siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
-    siavectorrun.py siaworkspace.py; do
+    siavectorrun.py siaworkspace.py \
+    siahistoryblock.py siahistoryblockstore.py siahistoryroot.py \
+    siaeventcheckpoint.py siasourcecheckpoint.py \
+    siacheckpointadoption.py siacheckpointcontent.py siacheckpointdispatch.py \
+    siacheckpointeffects.py siacheckpointlive.py siacheckpointparent.py \
+    siacheckpointrunner.py siacheckpointtransaction.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done
