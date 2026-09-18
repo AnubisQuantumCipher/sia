@@ -1,0 +1,264 @@
+"""Start a compact chain from an adopted, acknowledged legacy controller.
+
+The state here is genuinely pre-compact: the underlying capture fixture
+yields a real legacy acknowledgment and a real adopted delivery epoch,
+and this module asserts that no chain pointer, package marker or root
+document exists before the first cycle call. Nothing is seeded to make
+bootstrap look reachable.
+
+The resident entry takes its own owner leases, so the resident fixture is
+used rather than the capture one. The configured chain root is an owned
+temporary directory for the duration; the controlled clock is a fixture,
+not a claim about real timing. No operator configuration is created,
+read or altered: the authority is the opt-in the caller already
+established plus the adopted, acknowledged state itself.
+"""
+
+import contextlib
+import copy
+import importlib
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest import mock
+
+from tests import test_controller_source_resident_v3 as resident_tests
+from tests import test_controller_source_rollover_storage as clock_tests
+from tests import test_controller_source_effects as effects_fixture
+
+
+class CheckpointBootstrap(unittest.TestCase):
+    def setUp(self):
+        self.cycle = importlib.import_module("siacheckpointcycle")
+        self.assertTrue(callable(getattr(self.cycle, "bootstrap", None)),
+            "missing compact bootstrap entry")
+        self.dispatch = importlib.import_module("siacheckpointdispatch")
+        self.resident = resident_tests.ControllerSourceResidentV3(methodName="runTest")
+        self.resident.setUp()
+        self.addCleanup(self.resident.doCleanups)
+
+    @contextlib.contextmanager
+    def precompact(self, *, notifications=False):
+        """A real adopted, acknowledged controller with no compact state."""
+        with self.resident.capture.prepared(notifications=notifications) as f, \
+                tempfile.TemporaryDirectory(prefix="sia-chain-bootstrap-") as directory, \
+                self.resident.resident_owner(f) as owner:
+            memo = owner.load_memo()
+            self.assertIsNone(self.dispatch.select(vars(owner), memo=memo),
+                "a package marker existed before bootstrap")
+            self.assertIsNone(self.dispatch.select_chain(vars(owner), memo=memo),
+                "a chain pointer existed before bootstrap")
+            self.assertEqual(sorted(Path(directory).iterdir()), [],
+                "the owned chain root was not empty before bootstrap")
+            with contextlib.ExitStack() as stack:
+                for context in self.engine(f, owner, directory):
+                    stack.enter_context(context)
+                if notifications:
+                    # The real notification collector, so the fence below is
+                    # written by production code at the production point.
+                    stack.enter_context(mock.patch.object(owner, "SENSES",
+                        [owner.sense_notify, owner.sense_custom]))
+                yield f, owner, directory
+
+    def engine(self, f, owner, directory):
+        """Controlled Git and index observations, not proof of those programs.
+
+        The compact completion commits real pages to a real repository and
+        reads a controlled index generation, exactly as the existing
+        compact fixtures do. Nothing about the engine itself is claimed.
+        """
+        def git(*args):
+            return subprocess.run(["/usr/bin/git", *args], cwd=owner.CORPUS,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=True, text=True).stdout.strip()
+
+        git("init", "-q", "-b", "fixture")
+        git("add", "-A")
+        git("-c", "user.email=sia@omarchy.local", "-c", "user.name=SIA",
+            "commit", "-q", "--allow-empty", "-m", "fixture parent")
+
+        graph = f.case.effects._new_graph()
+        graph["publication_id"] = "4" * 32
+
+        def export():
+            owner.atomic_write(owner.GRAPH_PATH, owner.json.dumps(graph), mode=0o600)
+
+        def observed(*, corpus_generation, target_versions):
+            manifest = [{**row, "page_state": "live", "parse_error_codes": [],
+                "expected_projection_sha256": "4" * 64,
+                "current_projection_sha256": "4" * 64,
+                "current_content_hash": "4" * 64,
+                "current_content_hash_match": True, "projection_match": True}
+                for row in target_versions]
+            generation = f.case.effects._sync_generation(manifest,
+                sync_requested_commit=corpus_generation["corpus_commit_oid"],
+                status_last_commit=corpus_generation["corpus_commit_oid"],
+                local_path=str(owner.CORPUS))
+            return {"sync_generation": generation, "target_manifest": manifest,
+                "target_manifest_sha256": owner.sialiveloop._sha(manifest)}
+
+        return (
+            mock.patch.object(owner, "CONTROLLER_CHECKPOINT_CHAIN_DIR",
+                directory, create=True),
+            mock.patch.object(owner.time, "time",
+                return_value=clock_tests.SUCCESSOR_OBSERVED_AT),
+            mock.patch.object(owner, "GIT", "/usr/bin/git"),
+            mock.patch.object(owner, "_export_graph_publication", side_effect=export),
+            mock.patch.object(owner, "_controller_source_effects_observed_at",
+                return_value=effects_fixture.STATUS_AT),
+            mock.patch.object(owner, "_controller_source_sync_generation",
+                side_effect=observed),
+        )
+
+    def test_bootstrap_starts_a_chain_and_leaves_a_usable_pointer(self):
+        with self.precompact() as (f, owner, directory):
+            before = owner.load_memo()
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            durable = owner.load_memo()
+            # A compact transaction was acknowledged, not a legacy one.
+            self.assertEqual(view["batch"]["schema"],
+                "sia-controller-source-checkpoint-capture-v3")
+            self.assertNotEqual(
+                durable["controller_source_committed"]["source_batch_sha256"],
+                before["controller_source_committed"]["source_batch_sha256"])
+            # The chain exists now, and its head is its own root.
+            pointer = self.dispatch.select_chain(vars(owner), memo=durable)
+            self.assertEqual(pointer["status"], "continued")
+            self.assertEqual(pointer["directory"], directory)
+            self.assertEqual(pointer["head_sha256"], pointer["root_sha256"])
+            self.assertEqual(pointer["next_generation"], 1)
+            self.assertIsNone(self.dispatch.select(vars(owner), memo=durable))
+            self.assertTrue(
+                (Path(directory) / ("root-" + pointer["root_sha256"] + ".json")).exists())
+
+    def test_capture_interruption_leaves_the_root_head_selection_recoverable(self):
+        """Interruption BEFORE capture, resumed as a root package.
+
+        Boundary, stated rather than implied: this interrupts before the
+        capture runs, so it establishes that the root=head selection is
+        durable ahead of capture and that resuming it uses the ROOT
+        preparer. It does NOT establish recovery from a fence the capture
+        itself raises; that needs a real notify collector in this lane and
+        has no coverage here.
+        """
+        with self.precompact() as (f, owner, directory):
+            transaction = importlib.import_module("siacheckpointtransaction")
+            real = transaction.prepare_root
+
+            def interrupted(*args, **options):
+                raise OSError("controlled bootstrap capture interruption")
+
+            # The selection is written before the capture precisely so a
+            # fence or crash during capture has something to come back to.
+            with mock.patch.object(transaction, "prepare_root", side_effect=interrupted):
+                with self.assertRaisesRegex(OSError, "bootstrap capture interruption"):
+                    owner._run_controller_source_cycle()
+            stranded = owner.load_memo()
+            pointer = self.dispatch.select_chain(vars(owner), memo=stranded)
+            self.assertIsNotNone(pointer, "the root=head selection was not durable")
+            self.assertEqual(pointer["status"], "selected-not-captured")
+            self.assertEqual(pointer["head_sha256"], pointer["root_sha256"])
+            self.assertIsNone(self.dispatch.select(vars(owner), memo=stranded))
+            reserved = stranded["pulse_seq"]
+
+            # Re-entering resumes that exact selection rather than choosing
+            # a new one, and spends the reservation already made.
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            durable = owner.load_memo()
+            self.assertEqual(durable["pulse_seq"], reserved,
+                "the retry reserved a second sequence for one link")
+            advanced = self.dispatch.select_chain(vars(owner), memo=durable)
+            self.assertEqual(advanced["status"], "continued")
+            self.assertEqual(advanced["head_sha256"], pointer["head_sha256"])
+
+    def test_notifications_bootstrap_raises_no_new_fence_once_a_baseline_exists(self):
+        """Why capture-created fence recovery has NO coverage in this lane.
+
+        This is a recorded boundary, not a proof of recovery. With the real
+        notification collector running, an epoch that has already taken a
+        notification baseline does not raise a new fence during capture:
+        sense_notify only calls the baseline writer when it must establish
+        an initial baseline. So the capture-created fence this lane would
+        need cannot be reached from this fixture at all, and the honest
+        record is that fact rather than a fence the fixture raised itself.
+
+        What therefore remains UNVERIFIED for bootstrap: recovery from a
+        fence the capture itself creates, and the interrupted-first-
+        baseline opaque recovery underneath it. Reaching either needs a
+        chain whose notification baseline has never been established.
+        """
+        import siasourcebatch
+        with self.precompact(notifications=True) as (f, owner, directory):
+            self.assertIsNone(siasourcebatch._notification_marker(
+                vars(owner), owner.load_memo()))
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            durable = owner.load_memo()
+            # The real collector ran and still raised no fence, because the
+            # baseline was already established before this pulse.
+            self.assertIsNone(view["batch"]["notification_baseline_attempt"])
+            self.assertIsNone(siasourcebatch._notification_marker(
+                vars(owner), durable))
+            after = view["batch"]["cursor_proposal"]["after"]
+            self.assertTrue(owner._notify_cursor_checkpoint_safe(after))
+            self.assertEqual(after["notify.baseline"]["kind"], "exact")
+            # Bootstrap still completed and left the chain usable.
+            pointer = self.dispatch.select_chain(vars(owner), memo=durable)
+            self.assertEqual(pointer["status"], "continued")
+            self.assertEqual(pointer["head_sha256"], pointer["root_sha256"])
+
+    def test_root_head_selection_recovers_beneath_a_retained_fence(self):
+        """Resume a root=head selection while a fence is outstanding.
+
+        Honest about provenance: the capture does not raise a fence here
+        (see the boundary test above), so the fence is injected by the
+        fixture — but through the production writer,
+        _mark_notify_baseline_attempt, at a point where a real pulse could
+        hold one. This is a controlled injection of a retained fence, and
+        it is NOT a capture-created fence or a first-baseline recovery.
+
+        What it does establish: the root=head selection persisted before
+        capture is resumable while a fence stands, the retry reuses its
+        reservation, and acknowledgment clears the fence itself.
+        """
+        import siasourcebatch
+        import siacheckpointtransaction as transaction
+        with self.precompact(notifications=True) as (f, owner, directory):
+            def interrupted(*args, **options):
+                raise OSError("controlled pre-capture interruption")
+
+            with mock.patch.object(transaction, "prepare_root", side_effect=interrupted):
+                with self.assertRaisesRegex(OSError, "pre-capture interruption"):
+                    owner._run_controller_source_cycle()
+            stranded = owner.load_memo()
+            pointer = self.dispatch.select_chain(vars(owner), memo=stranded)
+            self.assertEqual(pointer["status"], "selected-not-captured")
+            self.assertEqual(pointer["head_sha256"], pointer["root_sha256"])
+            reserved = stranded["pulse_seq"]
+
+            # Controlled injection, production writer, durable immediately.
+            marker = owner._mark_notify_baseline_attempt(stranded)
+            self.assertIsNotNone(marker)
+            self.assertEqual(
+                siasourcebatch._notification_marker(vars(owner), owner.load_memo()),
+                marker)
+
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            durable = owner.load_memo()
+            self.assertEqual(durable["pulse_seq"], reserved,
+                "the fenced retry reserved a second sequence")
+            self.assertEqual(view["batch"]["notification_baseline_attempt"], marker)
+            # Acknowledgment retired the fence; the fixture never cleared it.
+            self.assertIsNone(
+                siasourcebatch._notification_marker(vars(owner), durable))
+            advanced = self.dispatch.select_chain(vars(owner), memo=durable)
+            self.assertEqual(advanced["status"], "continued")
+            self.assertEqual(advanced["head_sha256"], pointer["head_sha256"])
+
+
+if __name__ == "__main__":
+    unittest.main()

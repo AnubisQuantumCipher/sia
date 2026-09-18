@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """SIA test suite — the invariants the whitepaper claims were verified in
-review, now shipped as executable checks. Pure stdlib (unittest), no
-network, no daemon, no brain. Run: python3 -m unittest -v tests.test_sia
-(from the repo root), or ./tests/test_sia.py.
+review, now shipped as executable checks. unittest, never pytest; it
+never opens a socket, starts the daemon, or reads resident memory. It is
+NOT, however, pure stdlib: `cryptography` is imported at module scope and
+is load-bearing (Ed25519 ledger fixtures), chain and vault fixtures shell
+out to git, and the process-bound tests read /proc — so importing it
+needs `cryptography` and running it needs a Linux host with git. Run:
+python3 -m unittest -v tests.test_sia (from the repo root), or
+./tests/test_sia.py.
 
 Covers the load-bearing correctness properties a reviewer would poke at
 first: cursor/replay semantics, epoch-merge idempotence, ledger verify,
@@ -10,7 +15,8 @@ PageRank mass conservation, novelty-as-absence, empirical surprise incl.
 absence detection, redaction fail-closed, and touch-source weighting.
 """
 
-import contextlib, copy, datetime, hashlib, importlib.machinery, importlib.util, json, os, re, shlex, sqlite3, stat
+import ast, contextlib, copy, datetime, fcntl, hashlib, importlib.machinery
+import importlib.util, io, json, os, re, shlex, shutil, sqlite3, stat
 import subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
@@ -36,6 +42,22 @@ def _load(name, path):
     return mod
 
 siamind = _load("siamind", os.path.join(BIN, "siamind.py"))
+
+
+def _empty_graph_snapshot():
+    return {
+        "v": 2, "ts": "2026-08-30T12:00:00Z",
+        "publication_id": "b" * 32,
+        "nodes": [], "edges": [], "pages_total": 0,
+        "pages_total_complete": True,
+        "snapshot": {
+            "complete": True, "truncated": 0,
+            "omitted_nodes": 0, "omitted_edges": 0,
+            "omissions_imply_absence": False,
+            "aged_out": 0, "counts_by_kind": {},
+            "failed_ops": [], "window_days": 14,
+        },
+    }
 
 
 class TailCursors(unittest.TestCase):
@@ -100,6 +122,43 @@ class TailCursors(unittest.TestCase):
         got = sialib.tail_lines(self.path, self.cur, "k")
         self.assertEqual(got, ["a", "b", "c"])
         self.assertIn("k.prefix_sha256", self.cur)
+
+    def test_partial_or_malformed_cursor_metadata_cannot_rebaseline(self):
+        sialib = _load(
+            "sialib_cursor_metadata", os.path.join(BIN, "sialib.py"))
+        self._write(["unseen"])
+        for cursor in (
+                {"k.cursor_v": True},
+                {"k.offset": 0},
+                {"k": 0, "k.generation": 0}):
+            with self.subTest(cursor=cursor):
+                prior = dict(cursor)
+                with self.assertRaisesRegex(ValueError, "cursor metadata"):
+                    sialib.tail_lines(self.path, cursor, "k")
+                self.assertEqual(cursor, prior)
+
+    def test_same_inode_rewrite_after_read_cannot_advance_cursor(self):
+        sialib = _load(
+            "sialib_cursor_post_read_rewrite", os.path.join(BIN, "sialib.py"))
+        with open(self.path, "wb") as stream:
+            stream.write(b"old\n")
+        cursor = {}
+        original_identity = sialib._source_path_identity
+
+        def rewrite_then_reopen(path, flags):
+            with open(path, "r+b") as stream:
+                stream.write(b"new\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            return original_identity(path, flags)
+
+        with mock.patch.dict(os.environ, {"SIA_BACKFILL": "1"}), \
+                mock.patch.object(
+                    sialib, "_source_path_identity",
+                    side_effect=rewrite_then_reopen), \
+                self.assertRaisesRegex(RuntimeError, "changed while cursoring"):
+            sialib._stable_tail_chunk(self.path, cursor, "k", 16)
+        self.assertEqual(cursor, {})
 
     def test_torn_byte_tail_waits(self):
         sialib = _load("sialib", os.path.join(BIN, "sialib.py"))
@@ -166,10 +225,234 @@ class SourceReplayJournal(unittest.TestCase):
             {"organs/custom"}, {"custom"},
             occurrence="custom:demo:0:7")
 
+    def _notification_event(self, name="fresh.json"):
+        token = self.sialib._source_entity_token(name, "notification")
+        return self.sialib.Event(
+            "notify", self.when, "notification", "new notification",
+            {"organs/notify"}, {"notification"},
+            occurrence=f"notification:{token}")
+
     def _effects(self):
         return {"day": "2026-08-30", "events_pulse": 1,
                 "organs": {"custom": {
                     "today": 1, "last_ts": "2026-08-30T12:00:00Z"}}}
+
+    def _marker(self, events, sources):
+        effects = self._effects()
+        effects["events_pulse"] = len(events)
+        return self.sialib._source_replay_marker_value(
+            {}, 9, sources, events, effects)
+
+    def _generation(self):
+        return {"device": 1, "inode": 2, "size": 3,
+                "mtime_ns": 4, "ctime_ns": 5}
+
+    def test_notification_replay_authority_matrix_is_fail_closed(self):
+        event = self._notification_event()
+        marker = self._marker([event], {"sense_notify"})
+        exact = {"schema": "sia-notification-baseline-v1",
+                 "kind": "exact", "names": ["old.json"]}
+        empty = {"schema": "sia-notification-baseline-v1",
+                 "kind": "exact", "names": []}
+        filter_bits = self.sialib._notify_filter_add(
+            self.sialib._notify_scan_candidate(None)["baseline_bits"],
+            "old.json")
+        filter_baseline = {
+            "schema": "sia-notification-baseline-v1",
+            "kind": "filter", "bits": filter_bits}
+        page = {**self._generation(), "cookie": 1, "reset": False}
+        scan = {
+            "schema": "sia-notification-directory-scan-v3",
+            "generation": self._generation(), "sources": [],
+            "truncated": False,
+            "baseline_bits": self.sialib._notify_scan_candidate(
+                None)["baseline_bits"],
+        }
+        valid = (
+            {"notify.baseline": exact,
+             "notify.generation": self._generation()},
+            {"notify.baseline": filter_baseline,
+             "notify.generation": self._generation()},
+            {"notify.last": ""},
+            {"notify.baseline": empty,
+             "notify.scan_mode": "empty-replay"},
+            {"notify.baseline": empty,
+             "notify.scan_mode": "empty-replay",
+             "source.notify.page": page, "notify.scan": scan},
+        )
+        for cursors in valid:
+            with self.subTest(valid=cursors):
+                self.assertIs(
+                    self.sialib._authorize_pending_source_replay(
+                        marker, cursors), marker)
+
+        opaque = {"schema": "sia-notification-baseline-v1",
+                  "kind": "opaque", "cause": "v2-migration"}
+        invalid = (
+            {"notify.generation": self._generation()},
+            {"notify.baseline": opaque,
+             "notify.generation": self._generation()},
+            {"notify.baseline": None,
+             "notify.generation": self._generation()},
+            {"notify.baseline": {"schema": "wrong"},
+             "notify.generation": self._generation()},
+            {"notify.baseline": empty,
+             "notify.generation": None,
+             "notify.scan_mode": "empty-replay"},
+            {"notify.last": "old.json"},
+            {"notify.last": "", "notify.pending": []},
+            {"source.notify.page": {}},
+            {"notify.baseline": empty,
+             "notify.scan_mode": "empty-replay",
+             "notify.scan_tainted": "yes"},
+        )
+        for cursors in invalid:
+            with self.subTest(invalid=cursors), self.assertRaisesRegex(
+                    self.sialib.SourceReplayQuarantine,
+                    "notification cursor authority is ambiguous"):
+                self.sialib._authorize_pending_source_replay(
+                    marker, cursors)
+
+    def test_notification_diagnostics_require_owned_cursor_authority(self):
+        diagnostic = self.sialib.Event(
+            "notify", self.when, "source-truncated", "bounded refusal",
+            {"organs/notify"}, {"refusal"},
+            occurrence="source-truncated:notify:notification-history")
+        custom_collision = self.sialib.Event(
+            "notify", self.when, "notification", "custom row",
+            {"organs/notify"}, {"custom"},
+            occurrence="custom:demo:0:7")
+        diagnostic_marker = self._marker([diagnostic], {"sense_notify"})
+        with self.assertRaisesRegex(
+                self.sialib.SourceReplayQuarantine,
+                "notification cursor authority is ambiguous"):
+            self.sialib._authorize_pending_source_replay(
+                diagnostic_marker, {})
+        opaque = {
+            "notify.baseline": {
+                "schema": "sia-notification-baseline-v1",
+                "kind": "opaque", "cause": "baseline-unstable",
+            },
+            "notify.scan_mode": "replay",
+        }
+        self.assertIs(
+            self.sialib._authorize_pending_source_replay(
+                diagnostic_marker, opaque), diagnostic_marker)
+
+        custom_marker = self._marker(
+            [custom_collision], {"sense_custom:demo"})
+        self.assertIs(
+            self.sialib._authorize_pending_source_replay(custom_marker, {}),
+            custom_marker)
+
+    def test_notification_marker_without_source_ownership_is_quarantined(self):
+        marker = self._marker(
+            [self._notification_event()], {"sense_custom:demo"})
+        with self.assertRaisesRegex(
+                self.sialib.SourceReplayQuarantine,
+                "notification-source ownership"):
+            self.sialib._authorize_pending_source_replay(
+                marker, {"notify.last": ""})
+
+    def test_preupgrade_quarantine_precedes_live_generation_recovery(self):
+        with mock.patch.object(
+                self.sialib, "_recover_pending_live_generation",
+                side_effect=AssertionError("live recovery before source authority")):
+            self.test_preupgrade_notification_batch_refuses_before_any_recovery()
+
+    def test_preupgrade_notification_batch_refuses_before_any_recovery(self):
+        with tempfile.TemporaryDirectory() as state:
+            memo_path = os.path.join(state, "memo.json")
+            cursor_path = os.path.join(state, "cursors.json")
+            mind_path = os.path.join(state, "mind.json")
+            corpus = os.path.join(state, "corpus")
+            events = [self._notification_event(), self._event()]
+            source = self._marker(
+                events, {"sense_notify", "sense_custom:demo"})
+            pulse = {
+                "v": 1, "seq": 9, "id": "c" * 32,
+                "started_at": source["started_at"],
+                "effects": source["effects"],
+            }
+            memo = {
+                # Model the caller's already-durable reservation for the
+                # attempted pulse while retaining the older publication.
+                "pulse_seq": 10, "sync_needed": True,
+                "pulse_publication": pulse,
+                "source_replay_pending": source,
+            }
+            cursors = {"notify.generation": self._generation()}
+            mind = self.sialib.siamind._empty_mind()
+            mind["event_batch_applied"] = source["id"]
+            with mock.patch.object(self.sialib, "MEMO_PATH", memo_path), \
+                    mock.patch.object(
+                        self.sialib, "CURSORS_PATH", cursor_path), \
+                    mock.patch.object(self.sialib, "CORPUS", corpus), \
+                    mock.patch.object(
+                        self.sialib.siamind, "MIND_PATH", mind_path):
+                self.sialib._write_memo(memo)
+                self.sialib.save_cursors(cursors)
+                self.sialib.siamind.save_mind(mind)
+                paths = (memo_path, cursor_path, mind_path)
+
+                def read_bytes(path):
+                    with open(path, "rb") as stream:
+                        return stream.read()
+
+                before = {path: read_bytes(path) for path in paths}
+                day_page = os.path.join(
+                    corpus, "events", "notify", "2026-08-30.md")
+                forbidden = (
+                    mock.patch.object(
+                        self.sialib, "ensure_dirs",
+                        side_effect=AssertionError("directory mutation")),
+                    mock.patch.object(
+                        self.sialib, "_write_memo",
+                        side_effect=AssertionError("memo mutation")),
+                    mock.patch.object(
+                        self.sialib, "load_thoughts",
+                        side_effect=AssertionError("thought recovery")),
+                    mock.patch.object(
+                        self.sialib, "update_day_page",
+                        side_effect=AssertionError("page publication")),
+                    mock.patch.object(
+                        self.sialib, "export_status",
+                        side_effect=AssertionError("status publication")),
+                    mock.patch.object(
+                        self.sialib.siamind, "save_mind",
+                        side_effect=AssertionError("mind mutation")),
+                    mock.patch.object(
+                        self.sialib, "save_cursors",
+                        side_effect=AssertionError("cursor mutation")),
+                )
+                with contextlib.ExitStack() as stack:
+                    for patcher in forbidden:
+                        stack.enter_context(patcher)
+                    entries = (
+                        (self.sialib._pulse_transaction, (10,)),
+                        (self.sialib._dream_transaction, ()),
+                    )
+                    for entry, args in entries:
+                        with self.subTest(entry=entry.__name__), \
+                                self.assertRaisesRegex(
+                                    self.sialib.SourceReplayQuarantine,
+                                    "notification cursor authority is "
+                                    "ambiguous"):
+                            entry(*args)
+                after = {path: read_bytes(path) for path in paths}
+                self.assertEqual(after, before)
+                self.assertEqual(
+                    self.sialib.load_memo()["source_replay_pending"], source)
+                self.assertFalse(os.path.exists(day_page))
+                with mock.patch.object(
+                        self.sialib, "corpus_owner",
+                        return_value=contextlib.nullcontext()), \
+                        mock.patch.object(
+                            self.sialib, "_cortex_boundary_status",
+                            return_value=(True, "")):
+                    ready, reason = self.sialib.memory_readiness()
+                self.assertFalse(ready)
+                self.assertIn("source replay quarantine", reason)
 
     def test_replay_record_round_trip_binds_timestamp_and_meaning(self):
         original = self._event()
@@ -205,6 +488,64 @@ class SourceReplayJournal(unittest.TestCase):
                     memo, 9, {"sense_custom:demo"},
                     [self._event("different meaning")], self._effects())
 
+    def test_source_replay_version_requires_exact_json_integer(self):
+        marker = self._marker([self._event()], {"sense_custom:demo"})
+        self.assertIsNotNone(self.sialib._pending_source_replay_marker(
+            {"source_replay_pending": marker}))
+        for replacement in (True, 1.0):
+            with self.subTest(replacement=replacement):
+                malformed = copy.deepcopy(marker)
+                malformed["v"] = replacement
+                with self.assertRaisesRegex(
+                        RuntimeError, "source replay marker is invalid"):
+                    self.sialib._pending_source_replay_marker(
+                        {"source_replay_pending": malformed})
+
+    def test_source_replay_clock_preserves_post_drain_subsecond_time(self):
+        policy_at = self.when.timestamp() + 0.75
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=policy_at)
+
+        clock, day = self.sialib._source_replay_clock(marker)
+
+        self.assertEqual(marker["v"], 2)
+        self.assertEqual(marker["policy_at"], policy_at)
+        self.assertEqual(clock, policy_at)
+        self.assertEqual(day, "2026-08-30")
+
+    def test_legacy_source_replay_clock_remains_accepted(self):
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=self.when.timestamp() + 0.75)
+        policy_at = marker.pop("policy_at")
+        marker["v"] = 1
+
+        validated = self.sialib._pending_source_replay_marker(
+            {"source_replay_pending": marker})
+        clock, day = self.sialib._source_replay_clock(validated)
+
+        self.assertEqual(clock, int(policy_at))
+        self.assertEqual(day, "2026-08-30")
+
+    def test_post_drain_fractional_recall_does_not_break_source_policy(self):
+        base = self.when.timestamp()
+        mind = self.sialib.siamind._empty_mind()
+        self.sialib.siamind.touch(
+            mind, "organs/recalled", base + 0.5, src="user-ask")
+        marker = self.sialib._source_replay_marker_value(
+            {}, 9, {"sense_custom:demo"}, [self._event()],
+            self._effects(), policy_at=base + 0.75)
+        policy_at, policy_day = self.sialib._source_replay_clock(marker)
+
+        result = self.sialib._event_cognitive_transition(
+            mind, [(self._event(), "events/custom/2026-08-30")],
+            policy_at, policy_day, marker["id"])
+
+        self.assertFalse(result["already_applied"])
+        self.assertEqual(result["memory_state"]["v"],
+                         self.sialib.siamind.MIND_VERSION)
+
     def test_marker_preserves_duplicate_filtered_cognitive_admission(self):
         with tempfile.TemporaryDirectory() as state, mock.patch.object(
                 self.sialib, "MEMO_PATH", os.path.join(state, "memo.json")):
@@ -232,6 +573,52 @@ class SourceReplayJournal(unittest.TestCase):
         self.assertEqual(
             mind["nodes"]["events/custom/2026-08-30"]["n"], touches)
         self.assertEqual(mind["event_batch_applied"], identity)
+
+    def test_native_event_time_after_controller_frame_is_not_a_usage_time(self):
+        """A long capture may finish after its one pinned controller clock.
+
+        Native event chronology remains novelty/source metadata.  Perception
+        admission is the use, so every legacy usage/co-return touch from this
+        transaction must use the controller frame instead of manufacturing a
+        future use that makes its own activation snapshot invalid.
+        """
+        mind = self.sialib.siamind._empty_mind()
+        observed_at = self.when.timestamp()
+        later = self.sialib.Event(
+            "custom", self.when + datetime.timedelta(seconds=30),
+            "event", "captured after the controller frame",
+            {"organs/custom"}, {"custom"},
+            occurrence="custom:demo:0:later")
+
+        result = self.sialib._event_cognitive_transition(
+            mind, [(later, "events/custom/2026-08-30")],
+            observed_at, "2026-08-30", "e" * 32)
+
+        self.assertFalse(result["already_applied"])
+        for slug in ("events/custom/2026-08-30", "organs/custom"):
+            self.assertEqual(mind["nodes"][slug]["rt"], [[observed_at, 1.0]])
+        self.assertEqual(
+            mind["edges"][
+                "events/custom/2026-08-30|organs/custom"]["last_touch"],
+            observed_at)
+
+    def test_event_transition_does_not_regress_familiarity_watermarks(self):
+        mind = self.sialib.siamind._empty_mind()
+        entity = "organs/custom"
+        pair = "pair:custom:event"
+        latest = self.when.timestamp()
+        mind["seen"].update({entity: latest, pair: latest})
+        older_when = self.when - datetime.timedelta(seconds=1)
+        older = self.sialib.Event(
+            "custom", older_when, "event", "older observed row",
+            {entity}, {"custom"}, occurrence="custom:demo:0:older")
+
+        self.sialib._event_cognitive_transition(
+            mind, [(older, "events/custom/2026-08-30")], latest,
+            "2026-08-30", "d" * 32)
+
+        self.assertEqual(mind["seen"][entity], latest)
+        self.assertEqual(mind["seen"][pair], latest)
 
     def test_full_cognitive_candidate_detects_retained_pin_growth(self):
         mind = self.sialib.siamind._empty_mind()
@@ -653,22 +1040,86 @@ class WorldlineCursor(unittest.TestCase):
 
 class PPRMass(unittest.TestCase):
     """Personalized PageRank: dangling mass returns to the personalization
-    vector (no rank leaks to zero); dense order is the primary signal."""
+    vector (no rank leaks to zero); retrieval order is the primary signal."""
+
+    # ppr_rerank returns a BLEND, never the rank vector: with no `mind`
+    # the score is base * (1 + K * rank_i / rank_max), where base is
+    # (retrieval_score / retrieval_max) * the origin weight. Divide out the base, then
+    # divide every remainder by the top hit's, and rank_i / rank_max
+    # comes back with K cancelled — so these tests pin the mass
+    # invariant and not the tuning constant next to it.
+    #
+    # What this CANNOT see, stated so nobody reads more into it: losing
+    # the teleport entirely leaves the fixed point on the same ray
+    # (both updates are c * pers + (1 - damping) * A * rank, differing
+    # only in c), so every rank_i / rank_max is unchanged and the total
+    # is not recoverable through this API. What changes shape — and what
+    # is pinned below — is whether the dangling mass comes back to the
+    # dangling SEEDS in the right proportion.
+    def _rank_shares(self, out, bases):
+        excess = {slug: score / bases[slug] - 1.0 for slug, score in out}
+        top = max(excess.values())
+        self.assertGreater(top, 0.0, "no PPR contribution to recover")
+        return {slug: value / top for slug, value in excess.items()}
 
     def test_dangling_conserved(self):
         graph = {"nodes": [{"id": c} for c in "abcde"],
                  "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
         # 'd' is dangling (no edges); its mass must not vanish
-        out = siamind.ppr_rerank(graph, [("a", 1.0), ("d", 0.5)])
+        out = siamind.ppr_rerank(
+            graph, [("a", 1.0), ("d", 0.5)],
+            origins={slug: "evidence" for slug in "abcde"})
         self.assertTrue(out, "must return results")
         slugs = [s for s, _ in out]
         self.assertIn("a", slugs)
         self.assertIn("d", slugs)
-        # top hit is the strongest dense seed
+        # top hit is the strongest retrieval seed
         self.assertEqual(out[0][0], "a")
+        # Mass. Personalization is a = 2/3, d = 1/3 ((retrieval score / max) over
+        # max(1, deg)), and the conserving fixed point of the damping-0.5
+        # walk is rank = [7, 4, 1, 3, 0] / 15 — total exactly 1, with 'd'
+        # holding 3/15 although no edge points at it. Every unit of that
+        # arrived by teleport, so d/a = 3/7 IS the returned dangling
+        # mass: a walk that handed it back only to nodes with edges
+        # leaves d at 18/49, and one that dropped dangling seeds from the
+        # personalization vector leaves it at 0. The old version of this
+        # test asserted membership and order only, which all three
+        # satisfy. Tolerance: 30 power iterations at damping 0.5 leave
+        # ~1e-9 of residual here, and the nearest wrong answer is 0.09
+        # away, so 1e-6 is both stable and decisive.
+        shares = self._rank_shares(out, {"a": 1.0, "d": 0.5})
+        self.assertGreater(shares["d"], 0.0, "dangling rank leaked to 0")
+        self.assertAlmostEqual(shares["d"], 3 / 7, delta=1e-6)
+        self.assertAlmostEqual(sum(shares.values()), 10 / 7, delta=1e-6)
+
+    def test_total_rank_mass_stays_one(self):
+        # Same graph, every node seeded, so the whole rank vector is
+        # observable in the output instead of two entries of it.
+        # Personalization is [2, 1, 2, 2, 2] / 9 and the conserving fixed
+        # point is rank = [3, 4, 3, 2, 2] / 14: total 1, top rank 2/7 at
+        # 'b'. Rank reaches the caller divided by that top rank, so a
+        # conserved total of 1 has to show up as shares summing to
+        # 1 / (2/7) = 7/2. Returning the dangling mass only to nodes with
+        # edges sums to ~3.32; dropping the dangling seeds from the
+        # personalization vector, 2.5 with two nodes at flat zero.
+        graph = {"nodes": [{"id": c} for c in "abcde"],
+                 "edges": [{"s": "a", "d": "b"}, {"s": "b", "d": "c"}]}
+        hits = [(c, 1.0) for c in "abcde"]
+        shares = self._rank_shares(
+            siamind.ppr_rerank(
+                graph, hits,
+                origins={slug: "evidence" for slug in "abcde"}),
+            {c: 1.0 for c in "abcde"})
+        self.assertAlmostEqual(sum(shares.values()), 7 / 2, delta=1e-6)
+        for slug, expected in (("a", 3 / 4), ("b", 1.0), ("c", 3 / 4),
+                               ("d", 1 / 2), ("e", 1 / 2)):
+            with self.subTest(slug=slug):
+                self.assertGreater(shares[slug], 0.0,
+                                   "rank leaked to zero")
+                self.assertAlmostEqual(shares[slug], expected, delta=1e-6)
 
     def test_uncertainty_fallback(self):
-        # empty graph -> pure dense order preserved
+        # empty graph -> input retrieval order preserved
         out = siamind.ppr_rerank({"nodes": [], "edges": []},
                                  [("x", 0.9), ("y", 0.3)])
         self.assertEqual([s for s, _ in out], ["x", "y"])
@@ -709,16 +1160,114 @@ class PPRMass(unittest.TestCase):
         self.assertEqual(siamind.origin_class(
             "takes/new-open", "take", "derived"), "derived")
 
+    def test_removed_tuning_arguments_cannot_masquerade_as_controls(self):
+        graph = {"nodes": [], "edges": []}
+        hits = [("events/example/day", 1.0)]
+        for name in ("alpha", "beta", "gamma"):
+            with self.subTest(name=name), self.assertRaises(TypeError):
+                siamind.ppr_rerank(graph, hits, **{name: 0.0})
+        with self.assertRaises(TypeError):
+            siamind.ppr_rerank(graph, hits, 0.0)
+
+    def test_named_ppr_tiebreak_gain_drives_the_actual_blend(self):
+        graph = {
+            "nodes": [
+                {"id": "events/a/day", "t": "event-day"},
+                {"id": "events/b/day", "t": "event-day"},
+            ],
+            "edges": [{"s": "events/a/day", "d": "events/b/day"}],
+        }
+        hits = [("events/a/day", 1.0), ("events/b/day", 1.0)]
+        rank = [1.0, 0.0]
+        with mock.patch.object(
+                siamind, "_ppr_power_iteration", return_value=rank), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0):
+            disabled = siamind.ppr_rerank(graph, hits)
+        self.assertEqual(dict(disabled)["events/a/day"],
+                         dict(disabled)["events/b/day"])
+
+        with mock.patch.object(
+                siamind, "_ppr_power_iteration", return_value=rank):
+            enabled = siamind.ppr_rerank(graph, hits)
+        self.assertGreater(dict(enabled)["events/a/day"],
+                           dict(enabled)["events/b/day"])
+
+    def test_named_activation_tiebreak_gain_drives_the_actual_blend(self):
+        graph = {
+            "nodes": [
+                {"id": "events/a/day", "t": "event-day"},
+                {"id": "events/b/day", "t": "event-day"},
+            ],
+            "edges": [{"s": "events/a/day", "d": "events/b/day"}],
+        }
+        hits = [("events/a/day", 1.0), ("events/b/day", 1.0)]
+        mind = {"nodes": {}, "edges": {}}
+        activations = {"events/a/day": 0.0, "events/b/day": 1.0}
+        with mock.patch.object(
+                siamind, "activations", return_value=activations), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0), \
+                mock.patch.object(siamind, "ACTIVATION_TIEBREAK_GAIN", 0.0):
+            disabled = siamind.ppr_rerank(graph, hits, mind=mind)
+        self.assertEqual(dict(disabled)["events/a/day"],
+                         dict(disabled)["events/b/day"])
+
+        with mock.patch.object(
+                siamind, "activations", return_value=activations), \
+                mock.patch.object(siamind, "PPR_TIEBREAK_GAIN", 0.0):
+            enabled = siamind.ppr_rerank(graph, hits, mind=mind)
+        self.assertGreater(dict(enabled)["events/b/day"],
+                           dict(enabled)["events/a/day"])
+
+
+    def test_dangling_mass_is_conserved_not_leaked(self):
+        """The invariant the class name claims, asserted on the vector.
+
+        Through ``ppr_rerank`` this is untestable: the caller divides by
+        ``max(rank)``, and a pure leak scales the whole vector uniformly, so
+        the ranking is byte-identical either way. Deleting the teleport block
+        was therefore invisible to every earlier test in this class. Assert it
+        on ``_ppr_power_iteration``, where the mass still exists.
+        """
+        siamind = _load("siamind_ppr_mass", os.path.join(BIN, "siamind.py"))
+        # Node 1 is a sink: everything that reaches it must come back to the
+        # seeds rather than evaporate.
+        pers = [1.0, 0.0]
+        adj = [[(1, 1.0)], []]
+        rank = siamind._ppr_power_iteration(pers, adj)
+        self.assertAlmostEqual(
+            sum(rank), 1.0, places=9,
+            msg="dangling mass leaked instead of teleporting to the seeds")
+
+    def test_a_leaking_iteration_is_caught_by_that_assertion(self):
+        """Prove the guard bites: the same graph, with the teleport removed,
+        loses mass. This is the mutation the old test could not see."""
+        siamind = _load("siamind_ppr_leak", os.path.join(BIN, "siamind.py"))
+        pers = [1.0, 0.0]
+        adj = [[(1, 1.0)], []]
+        damping = siamind.PPR_DAMPING
+        rank = pers[:]
+        for _ in range(siamind.PPR_ITers):
+            nxt = [damping * p for p in pers]
+            for i, r in enumerate(rank):
+                if r and adj[i]:
+                    total = sum(w for _, w in adj[i]) or 1.0
+                    share = (1 - damping) * r / total
+                    for j, weight in adj[i]:
+                        nxt[j] += share * weight
+            rank = nxt          # no teleport: the sink swallows the mass
+        self.assertLess(
+            sum(rank), 0.999,
+            "a leaking iteration must not satisfy the conservation check")
 
 class Novelty(unittest.TestCase):
-    """Novelty measures ABSENCE, not first-sighting age: a continuously
+    """Novelty measures an observation gap, not initial-observation age: a continuously
     seen entity never re-fires the 30-day bonus."""
 
     def test_absence_not_age(self):
-        mind = {"seen": {}}
+        mind = siamind._empty_mind()
         now = 1_000_000_000.0
         s1, _ = siamind.novelty(mind, "o", "k", ["e"], ["k"] * 10, now)
-        self.assertGreaterEqual(s1, 0.4)               # first sighting
+        self.assertGreaterEqual(s1, 0.4)               # first recorded occurrence
         # seen again one hour later: no bonus (not absent)
         s2, _ = siamind.novelty(mind, "o", "k", ["e"], ["k"] * 10, now + 3600)
         self.assertLess(s2, 0.4)
@@ -726,6 +1275,16 @@ class Novelty(unittest.TestCase):
         s3, _ = siamind.novelty(mind, "o", "k", ["e"], ["k"] * 10,
                                 now + 3600 + 40 * 86400)
         self.assertGreaterEqual(s3, 0.2)
+        # Bands alone do not say it: s2 < 0.4 and s3 >= 0.2 are both true
+        # of s2 = 0.35, s3 = 0.25 — the non-return scoring ABOVE the
+        # genuine return, which is the claim inverted. An absence window
+        # read as 30 minutes instead of 30 days lands exactly there
+        # (s2 = s3 = 0.2) and passed the bands unchanged. Ordering is the
+        # claim: the 30-day bonus re-fires for the return and for
+        # nothing else, and a return is still worth less than a first
+        # sighting.
+        self.assertGreater(s3, s2)
+        self.assertGreater(s1, s3)
 
 
 class Surprise(unittest.TestCase):
@@ -744,12 +1303,12 @@ class Surprise(unittest.TestCase):
         for hour in range(active_hours):
             siamind.surprisal_update(
                 mind, {"org": 5}, hour * 3600 + 10)
-        # Advance twice: the first call opens the silent bucket; the second
-        # closes and evaluates it while another organ keeps time advancing.
+        # Only an explicit zero is a quiet intake sample. Another organ's
+        # activity does not certify that this organ was observed.
         siamind.surprisal_update(
-            mind, {"other": 1}, active_hours * 3600 + 10)
+            mind, {"org": 0, "other": 1}, active_hours * 3600 + 10)
         found = siamind.surprisal_update(
-            mind, {"other": 1}, (active_hours + 1) * 3600 + 10)
+            mind, {"org": 0, "other": 1}, (active_hours + 1) * 3600 + 10)
         self.assertTrue(any(o == "org" and k == "absence"
                             for o, k, _ in found),
                         "absence-surprise must fire for a paced band")
@@ -1379,6 +1938,25 @@ class GbrainProcessBounds(unittest.TestCase):
                 [sys.executable, "-c", code], env=dict(os.environ),
                 timeout=timeout, cwd=cwd)
 
+    def _assert_lock_released(self, path, message):
+        descriptor = os.open(path, os.O_RDWR)
+        try:
+            deadline = time.monotonic() + 2
+            released = False
+            while time.monotonic() < deadline:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    released = True
+                    break
+                except BlockingIOError:
+                    time.sleep(0.01)
+            self.assertTrue(released, message)
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
     def test_combined_stdout_stderr_overflow_is_refused(self):
         code = (
             "import os; os.write(1, b'x' * 40); "
@@ -1395,6 +1973,60 @@ class GbrainProcessBounds(unittest.TestCase):
     def test_invalid_utf8_is_refused_before_text_admission(self):
         with self.assertRaises(UnicodeDecodeError):
             self._run("import os; os.write(1, bytes([255]))")
+
+    def test_progress_heartbeat_is_constant_and_does_not_echo_child_output(self):
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as cwd, \
+                contextlib.redirect_stderr(output):
+            result = self.sialib._run_bounded_text_process(
+                [sys.executable, "-c",
+                 "import sys,time; print('private corpus text'); "
+                 "print('private diagnostic', file=sys.stderr); "
+                 "time.sleep(0.05)"],
+                env=dict(os.environ), timeout=30, cwd=cwd,
+                progress_interval=0.01,
+                progress_label="fixture first light")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(
+            "SIA: fixture first light is still running\n", output.getvalue())
+        self.assertNotIn("private", output.getvalue())
+
+    def test_first_light_gbrain_requests_safe_progress_heartbeats(self):
+        completed = subprocess.CompletedProcess(
+            ["gbrain"], 0, stdout="", stderr="")
+        with mock.patch.object(
+                self.sialib, "gbrain_owner",
+                return_value=contextlib.nullcontext(9)), \
+                mock.patch.object(
+                    self.sialib, "_run_bounded_text_process",
+                    return_value=completed) as bounded:
+            self.sialib.gbrain(["sync", "--source", "sia"], timeout=1800)
+        self.assertEqual(bounded.call_args.kwargs["progress_interval"], 30)
+        self.assertEqual(
+            bounded.call_args.kwargs["progress_label"],
+            "CPU-only first-light memory indexing")
+
+    def test_progress_label_is_bounded_before_child_launch(self):
+        with tempfile.TemporaryDirectory() as cwd, mock.patch.object(
+                self.sialib.subprocess, "Popen",
+                side_effect=AssertionError("unsafe child launch")) as launch, \
+                self.assertRaisesRegex(ValueError, "progress label"):
+            self.sialib._run_bounded_text_process(
+                [sys.executable, "-c", "pass"], env=dict(os.environ),
+                timeout=30, cwd=cwd, progress_interval=0.01,
+                progress_label="x" * 201)
+        launch.assert_not_called()
+
+    def test_process_group_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=self.sialib.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        cleanup = self.sialib._siasenses._ORIGINAL_CHILD_FUNCTIONS[
+            "_signal_and_reap_process_group"]
+        with mock.patch.object(self.sialib._siasenses, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            cleanup(process, 1)
+        os_shim.killpg.assert_not_called()
 
     def test_timeout_kills_descendant_after_direct_parent_exits(self):
         with tempfile.TemporaryDirectory() as cwd:
@@ -1425,6 +2057,74 @@ class GbrainProcessBounds(unittest.TestCase):
                     break
                 time.sleep(0.01)
             self.assertFalse(alive, "gbrain descendant survived group kill")
+
+    def test_private_pid_namespace_removes_new_session_descendant(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            lock_file = os.path.join(cwd, "descendant.lock")
+            child = (
+                "import fcntl,os,sys,time\n"
+                "stream=open(sys.argv[1],'w')\n"
+                "fcntl.flock(stream,fcntl.LOCK_EX)\n"
+                "stream.write('ready');stream.flush();os.fsync(stream.fileno())\n"
+                "time.sleep(60)\n")
+            parent = (
+                "import os,pathlib,subprocess,sys,time\n"
+                f"child_code={child!r}\n"
+                "subprocess.Popen([sys.executable,'-c',child_code,sys.argv[1]],"
+                "start_new_session=True,stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,close_fds=True)\n"
+                "while not os.path.exists(sys.argv[1]) or "
+                "pathlib.Path(sys.argv[1]).read_text()!='ready':\n"
+                "    time.sleep(0.01)\n")
+            result = self.sialib._run_bounded_text_process(
+                [sys.executable, "-c", parent, lock_file],
+                env=dict(os.environ), timeout=30, cwd=cwd,
+                isolate_process_tree=True)
+            self.assertEqual(result.returncode, 0)
+            self._assert_lock_released(
+                lock_file,
+                "new-session descendant survived namespace teardown")
+
+    def test_private_pid_namespace_does_not_expose_host_parent_in_procfs(self):
+        code = (
+            "import os,sys\n"
+            "host_parent=sys.argv[1]\n"
+            "raise SystemExit(1 if os.path.exists('/proc/'+host_parent) "
+            "else 0)\n")
+        with tempfile.TemporaryDirectory() as cwd:
+            result = self.sialib._run_bounded_text_process(
+                [sys.executable, "-c", code, str(os.getpid())],
+                env=dict(os.environ), timeout=30, cwd=cwd,
+                isolate_process_tree=True)
+        self.assertEqual(result.returncode, 0)
+
+    def test_private_pid_namespace_timeout_removes_new_session_descendant(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            lock_file = os.path.join(cwd, "descendant.lock")
+            child = (
+                "import fcntl,os,sys,time\n"
+                "stream=open(sys.argv[1],'w')\n"
+                "fcntl.flock(stream,fcntl.LOCK_EX)\n"
+                "stream.write('ready');stream.flush();os.fsync(stream.fileno())\n"
+                "time.sleep(60)\n")
+            parent = (
+                "import os,pathlib,subprocess,sys,time\n"
+                f"child_code={child!r}\n"
+                "subprocess.Popen([sys.executable,'-c',child_code,sys.argv[1]],"
+                "start_new_session=True,stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,close_fds=True)\n"
+                "while not os.path.exists(sys.argv[1]) or "
+                "pathlib.Path(sys.argv[1]).read_text()!='ready':\n"
+                "    time.sleep(0.01)\n"
+                "time.sleep(60)\n")
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.sialib._run_bounded_text_process(
+                    [sys.executable, "-c", parent, lock_file],
+                    env=dict(os.environ), timeout=1, cwd=cwd,
+                    isolate_process_tree=True)
+            self._assert_lock_released(
+                lock_file,
+                "timed-out descendant survived namespace teardown")
 
     def test_public_wrappers_share_the_bounded_runner(self):
         completed = subprocess.CompletedProcess(
@@ -1495,6 +2195,78 @@ class GbrainProcessBounds(unittest.TestCase):
             "signed ledger append", "signed ledger presence",
             "signed ledger settlement", "signed ledger head",
         ])
+
+    def test_ledger_append_log_redaction_is_durably_accounted(self):
+        old_memo_path = self.sialib.MEMO_PATH
+        old_redactions = copy.deepcopy(self.sialib.REDACTIONS)
+        self.sialib.REDACTIONS.clear()
+        with tempfile.TemporaryDirectory() as root, \
+                tempfile.TemporaryFile(mode="w+", encoding="utf-8") \
+                as output:
+            try:
+                self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+                self.sialib._write_memo({"redactions": {}})
+                with mock.patch.object(
+                        self.sialib, "corpus_owner",
+                        return_value=contextlib.nullcontext()), \
+                        mock.patch.object(
+                            self.sialib, "_run_bounded_text_process",
+                            side_effect=RuntimeError(
+                                "token=abcdefghijklmnop")), \
+                        contextlib.redirect_stdout(output):
+                    self.assertFalse(self.sialib.ledger_append(
+                        "TEST:failure", "a", "b"))
+                output.seek(0)
+                logged = output.read()
+                self.assertNotIn("abcdefghijklmnop", logged)
+                self.assertIn("⟦redacted⟧", logged)
+                self.assertEqual(
+                    self.sialib.load_memo()["redactions"],
+                    {"status-error": 1})
+                self.assertEqual(self.sialib.REDACTIONS, {})
+            finally:
+                self.sialib.MEMO_PATH = old_memo_path
+                self.sialib.REDACTIONS.clear()
+                self.sialib.REDACTIONS.update(old_redactions)
+
+    def test_memory_readiness_redacts_displayed_failure_and_accounts_it(self):
+        old_memo_path = self.sialib.MEMO_PATH
+        old_redactions = copy.deepcopy(self.sialib.REDACTIONS)
+        self.sialib.REDACTIONS.clear()
+        with tempfile.TemporaryDirectory() as root:
+            try:
+                self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+                self.sialib._write_memo({"redactions": {}})
+                with mock.patch.object(
+                        self.sialib, "corpus_owner",
+                        return_value=contextlib.nullcontext()), \
+                        mock.patch.object(
+                            self.sialib, "_cortex_boundary_status",
+                            return_value=(True, "")), \
+                        mock.patch.object(
+                            self.sialib, "_consolidation_scan_debt",
+                            side_effect=RuntimeError(
+                                "token=abcdefghijklmnop")):
+                    ready, reason = self.sialib.memory_readiness()
+                self.assertFalse(ready)
+                self.assertNotIn("abcdefghijklmnop", reason)
+                self.assertIn("⟦redacted⟧", reason)
+                self.assertEqual(
+                    self.sialib.load_memo()["redactions"],
+                    {"status-error": 1})
+                self.assertEqual(self.sialib.REDACTIONS, {})
+            finally:
+                self.sialib.MEMO_PATH = old_memo_path
+                self.sialib.REDACTIONS.clear()
+                self.sialib.REDACTIONS.update(old_redactions)
+
+    def test_ledger_head_rejects_parseable_output_from_failed_keeper(self):
+        failed = subprocess.CompletedProcess(
+            [], 1, "7 " + "a" * 64 + "\n", "keeper failed")
+        with mock.patch.object(
+                self.sialib, "_run_bounded_text_process",
+                return_value=failed):
+            self.assertEqual(self.sialib.ledger_head(), (0, ""))
 
 
 class BuiltinSourceBounds(unittest.TestCase):
@@ -1720,6 +2492,98 @@ class BuiltinSourceBounds(unittest.TestCase):
                 self.sialib._bounded_source_entries(
                     directory, state, limit=1)
             self.assertTrue(restarted["reset"])
+
+    def test_current_source_tree_cursor_requires_its_exact_state_shape(self):
+        fresh = self.sialib._validated_source_tree_state(
+            None, self.sialib.MAX_GRAPH_TREE_LEVELS)
+        mutations = []
+        missing_catalog = copy.deepcopy(fresh)
+        missing_catalog.pop("directories")
+        mutations.append(missing_catalog)
+        extra_top_level = copy.deepcopy(fresh)
+        extra_top_level["unexpected"] = False
+        mutations.append(extra_top_level)
+        extra_frame = copy.deepcopy(fresh)
+        next(iter(extra_frame["queue"]))["unexpected"] = False
+        mutations.append(extra_frame)
+        with tempfile.TemporaryDirectory() as directory:
+            generation = self.sialib._source_tree_path_generation(directory)
+            generation["unexpected"] = False
+            extra_generation = copy.deepcopy(fresh)
+            extra_generation["directories"] = [{
+                "relative": "", "generation": generation}]
+            mutations.append(extra_generation)
+            for mutation in mutations:
+                with self.subTest(mutation=mutation), \
+                        self.assertRaisesRegex(
+                            ValueError, "source tree .*invalid"):
+                    self.sialib._validated_source_tree_state(
+                        mutation, self.sialib.MAX_GRAPH_TREE_LEVELS)
+
+    def test_current_source_tree_cursor_refuses_partial_page_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _entries, _complete, _inspected, page = \
+                self.sialib._bounded_source_entries(directory)
+        page.pop("device")
+        current = self.sialib._validated_source_tree_state(
+            None, self.sialib.MAX_GRAPH_TREE_LEVELS)
+        next(iter(current["queue"]))["page"] = page
+        with self.assertRaisesRegex(ValueError, "source tree .*invalid"):
+            self.sialib._validated_source_tree_state(
+                current, self.sialib.MAX_GRAPH_TREE_LEVELS)
+
+    def test_session_tree_self_certifying_cursors_refuse_without_pruning(self):
+        cases = (
+            ("claude", "claude.sessions", "source.claude.tree",
+             "claude-session", self.sialib.sense_claude, 1),
+            ("codex", "codex.sessions", "source.codex.tree",
+             "codex-session", self.sialib.sense_codex, 3),
+        )
+        for label, session_key, tree_key, namespace, sense, depth in cases:
+            with self.subTest(label=label), \
+                    tempfile.TemporaryDirectory() as home:
+                if label == "claude":
+                    root = os.path.join(home, ".claude", "projects")
+                    os.makedirs(os.path.join(root, "project"))
+                else:
+                    root = os.path.join(home, ".codex", "sessions")
+                    os.makedirs(os.path.join(root, "year", "month", "day"))
+                prior = self.sialib._source_entity_token("prior", namespace)
+                session_state = [
+                    "sia-source-entity-state-v1",
+                    {prior: {"size": 0, "announced": False,
+                             "generation": 0}}]
+                wrong_depth = self.sialib._validated_source_tree_state(
+                    None, depth)
+                wrong_depth["queue"][0]["levels"] = 0
+                duplicate_path = self.sialib._validated_source_tree_state(
+                    None, depth)
+                duplicate_path["queue"].append(
+                    copy.deepcopy(duplicate_path["queue"][0]))
+                _entries, _complete, _inspected, page = \
+                    self.sialib._bounded_source_entries(root)
+                page["reset"] = True
+                persisted_reset = self.sialib._validated_source_tree_state(
+                    None, depth)
+                persisted_reset["queue"][0]["page"] = page
+                old_home = self.sialib.HOME
+                self.sialib.HOME = home
+                try:
+                    for malformed, tree_state in (
+                            ("wrong-depth", wrong_depth),
+                            ("duplicate-path", duplicate_path),
+                            ("persisted-reset", persisted_reset)):
+                        cursors = {
+                            session_key: copy.deepcopy(session_state),
+                            tree_key: copy.deepcopy(tree_state)}
+                        before = copy.deepcopy(cursors)
+                        with self.subTest(malformed=malformed):
+                            with self.assertRaisesRegex(
+                                    ValueError, "source tree"):
+                                sense(cursors)
+                            self.assertEqual(cursors, before)
+                finally:
+                    self.sialib.HOME = old_home
 
     def test_source_tree_missing_frame_taints_cycle_and_reappearance_rebaselines(self):
         with tempfile.TemporaryDirectory() as root:
@@ -2055,6 +2919,48 @@ class BuiltinSourceBounds(unittest.TestCase):
             finally:
                 self.sialib.HOME = old_home
 
+    def test_session_senses_refuse_type_confused_persisted_rows(self):
+        with tempfile.TemporaryDirectory() as home:
+            claude_root = os.path.join(home, ".claude", "projects", "demo")
+            codex_root = os.path.join(
+                home, ".codex", "sessions", "year", "month", "day")
+            os.makedirs(claude_root)
+            os.makedirs(codex_root)
+            with open(os.path.join(claude_root, "session.jsonl"), "w"):
+                pass
+            with open(os.path.join(
+                    codex_root, "rollout-session.jsonl"), "w"):
+                pass
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            try:
+                for key, sense in (
+                        ("claude.sessions", self.sialib.sense_claude),
+                        ("codex.sessions", self.sialib.sense_codex)):
+                    cursors = {key: [
+                        "sia-source-entity-state-v1", {
+                            "session": {
+                                "size": 0, "announced": "yes",
+                                "generation": 0}}]}
+                    with self.subTest(key=key), self.assertRaisesRegex(
+                            ValueError, f"source cursor {re.escape(key)}"):
+                        sense(cursors)
+            finally:
+                self.sialib.HOME = old_home
+
+    def test_future_session_mtime_is_not_reported_as_fresh(self):
+        source = {"path": "/source/session.jsonl", "size": 0,
+                  "mtime": 1}
+        for sense in (self.sialib.sense_claude, self.sialib.sense_codex):
+            cursors = {}
+            with self.subTest(sense=sense.__name__), \
+                    mock.patch.object(
+                        self.sialib, "_bounded_source_tree_files",
+                        return_value=([source], False, [], 0)), \
+                    mock.patch.object(self.sialib.time, "time", return_value=0):
+                events = sense(cursors)
+            self.assertEqual(events, [])
+
     def test_overbound_line_progresses_by_bounded_chunks_then_signs_skip(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "source.log")
@@ -2157,7 +3063,117 @@ class BuiltinSourceBounds(unittest.TestCase):
             self.assertIn("git.a_2bb", cursors)
             self.assertEqual(repeated, [])
 
-    def test_paginated_notifications_refuse_overflow_per_entry(self):
+    def test_session_special_nodes_cannot_authorize_pruning(self):
+        cases = (
+            ("claude", "claude.sessions", "claude-session",
+             self.sialib.sense_claude,
+             "Claude session path linked-project", "linked-project"),
+            ("codex", "codex.sessions", "codex-session",
+             self.sialib.sense_codex,
+             "Codex session path year/month/day/rollout-hidden.jsonl",
+             "year/month/day/rollout-hidden.jsonl"),
+        )
+        for label, cursor_key, namespace, sense, source_label, relative in cases:
+            with self.subTest(label=label), \
+                    tempfile.TemporaryDirectory() as home:
+                sid = self.sialib._source_entity_token("hidden", namespace)
+                cursors = {cursor_key: [
+                    "sia-source-entity-state-v1",
+                    {sid: {"size": 0, "announced": False,
+                           "generation": 0}}]}
+                if label == "claude":
+                    root = os.path.join(home, ".claude", "projects")
+                    target = os.path.join(home, "linked-claude-project")
+                    os.makedirs(root)
+                    os.makedirs(target)
+                    with open(os.path.join(target, "hidden.jsonl"), "w"):
+                        pass
+                    os.symlink(target, os.path.join(root, relative))
+                else:
+                    leaf = os.path.join(
+                        home, ".codex", "sessions", "year", "month", "day")
+                    os.makedirs(leaf)
+                    target = os.path.join(home, "linked-codex-session.jsonl")
+                    with open(target, "w"):
+                        pass
+                    os.symlink(target, os.path.join(
+                        home, ".codex", "sessions", relative))
+                old_home = self.sialib.HOME
+                self.sialib.HOME = home
+                try:
+                    events = sense(cursors)
+                finally:
+                    self.sialib.HOME = old_home
+                self.assertIn(sid, cursors[cursor_key][1])
+                refusals = [event for event in events
+                            if event.kind == "source-entry-refused"]
+                self.assertEqual(len(refusals), 1)
+                self.assertEqual(
+                    refusals[0].summary,
+                    source_label
+                    + " could not be admitted within the bounded source state")
+
+    def test_git_special_project_path_cannot_authorize_pruning(self):
+        with tempfile.TemporaryDirectory() as home:
+            projects = os.path.join(home, "Projects")
+            linked = os.path.join(home, "linked-project")
+            os.makedirs(os.path.join(linked, ".git", "logs"))
+            with open(os.path.join(linked, ".git", "logs", "HEAD"), "w"):
+                pass
+            os.makedirs(projects)
+            repo = "linked"
+            os.symlink(linked, os.path.join(projects, repo))
+            repo_id = self.sialib._source_entity_token(repo, "project")
+            cursor_key = f"git.{repo_id}"
+            cursors = {
+                "source.git.repositories": [repo_id], cursor_key: 0}
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            try:
+                events = self.sialib.sense_git(cursors)
+            finally:
+                self.sialib.HOME = old_home
+            self.assertIn(repo_id, cursors["source.git.repositories"])
+            self.assertIn(cursor_key, cursors)
+            refusals = [event for event in events
+                        if event.kind == "source-entry-refused"]
+            self.assertEqual(len(refusals), 1)
+            self.assertEqual(
+                refusals[0].summary,
+                "project repository linked could not be admitted within "
+                "the bounded source state")
+
+    def test_guardian_nonregular_entry_refuses_without_marking_seen(self):
+        with tempfile.TemporaryDirectory() as home:
+            checkpoints = os.path.join(
+                home, ".local", "state", "omarchy-guardian", "checkpoints")
+            os.makedirs(checkpoints)
+            candidate = os.path.join(checkpoints, "candidate")
+            os.makedirs(candidate)
+            cursors = {}
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            try:
+                refused = self.sialib.sense_guardian(cursors)
+                self.assertEqual(cursors["guardian.checkpoints"], [])
+                os.rmdir(candidate)
+                with open(candidate, "w"):
+                    pass
+                admitted = self.sialib.sense_guardian(cursors)
+            finally:
+                self.sialib.HOME = old_home
+            refusals = [event for event in refused
+                        if event.kind == "source-entry-refused"]
+            self.assertEqual(len(refusals), 1)
+            self.assertEqual(
+                refusals[0].summary,
+                "guardian checkpoint candidate could not be admitted within "
+                "the bounded source state")
+            self.assertEqual(
+                [(event.kind, event.summary) for event in admitted],
+                [("checkpoint", "new checkpoint: candidate")])
+
+    def test_paginated_notifications_process_every_bounded_page(self):
         with tempfile.TemporaryDirectory() as home:
             history = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
@@ -2176,18 +3192,20 @@ class BuiltinSourceBounds(unittest.TestCase):
                         self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 2):
                     for _unused in range(len(names) + 1):
                         events.extend(self.sialib.sense_notify(cursors))
-                        page = cursors.get("source.notify.page", {})
-                        if cursors.get("notify.paginated") \
-                                and page.get("cookie") == 0 \
-                                and not cursors.get("notify.pending"):
+                        if "source.notify.page" not in cursors:
                             break
             finally:
                 self.sialib.HOME = old_home
-            self.assertTrue(any(event.kind == "notification"
-                                for event in events))
-            self.assertTrue(any(event.kind == "source-entry-refused"
-                                for event in events))
-            self.assertEqual(cursors["notify.last"], max(names))
+            self.assertEqual(
+                {event.summary for event in events},
+                {f"fixture: {name}" for name in names})
+            self.assertFalse(any(event.kind == "source-entry-refused"
+                                 for event in events))
+            self.assertIn("notify.generation", cursors)
+            self.assertFalse(any(
+                key in cursors for key in (
+                    "notify.last", "notify.pending", "notify.seen",
+                    "notify.cycle_max")))
 
     def test_builtin_snapshot_senses_do_not_use_listdir_or_glob(self):
         with tempfile.TemporaryDirectory() as home:
@@ -2238,6 +3256,51 @@ class BuiltinSourceBounds(unittest.TestCase):
                     self.sialib.sense_agents({})
             finally:
                 self.sialib.HOME = old_home
+
+
+class LoadBearingCommentIntegrity(unittest.TestCase):
+    """A garbled explanatory comment is a defect, not cosmetics.
+
+    Two blocks in sialib.py shipped broken: the bench-trend rotation
+    comment stopped mid-phrase before naming the bound it protects, and
+    the dream-unit comment stuttered "failure / failure" across a line
+    break and then restarted its own clause.  Both describe why a bound
+    exists, which is the only thing a later reader has to go on.
+    """
+
+    ANCHORS = ("    prior = collections.deque(",
+               "    ncomp = nepoch = nkept = 0")
+
+    def setUp(self):
+        with open(os.path.join(BIN, "sialib.py"), encoding="utf-8") as src:
+            self.lines = src.read().splitlines()
+
+    def _comment_block_above(self, anchor):
+        index = self.lines.index(anchor)
+        block = []
+        while index > 0 and self.lines[index - 1].strip().startswith("#"):
+            index -= 1
+            block.insert(0, self.lines[index].strip().lstrip("#").strip())
+        self.assertTrue(block, f"no comment block above {anchor!r}")
+        return block
+
+    def test_comment_blocks_end_in_a_finished_sentence(self):
+        for anchor in self.ANCHORS:
+            block = self._comment_block_above(anchor)
+            self.assertTrue(
+                block[-1].endswith("."),
+                f"comment above {anchor!r} stops mid-sentence: "
+                f"{block[-1]!r}")
+
+    def test_comment_blocks_do_not_stutter_across_a_line_break(self):
+        for anchor in self.ANCHORS:
+            block = self._comment_block_above(anchor)
+            words = re.findall(r"[A-Za-z']+", " ".join(block).lower())
+            repeats = [first for first, second in zip(words, words[1:])
+                       if first == second]
+            self.assertEqual(
+                repeats, [],
+                f"comment above {anchor!r} repeats a word: {repeats}")
 
 
 class ObsidianVaultOrgan(unittest.TestCase):
@@ -2684,6 +3747,33 @@ class Redaction(unittest.TestCase):
         self.assertNotIn("<img", event.summary)
         self.assertNotIn("[forged](", event.summary)
 
+    def test_event_capacity_accepts_duplicate_normalized_values(self):
+        bound = self.sialib.MAX_LEDGER_PENDING_RECORDS
+        links = [f"projects/event-capacity-{index}"
+                 for index in range(bound)]
+        tags = [f"tag-{index}" for index in range(bound)]
+        event = self.sialib.Event(
+            "test", self.sialib.utcnow(), "capacity", "duplicates",
+            links=links + [links[0]], tags=tags + [" TAG 0 "])
+        self.assertEqual(event.links, set(links))
+        self.assertEqual(event.tags, set(tags))
+
+    def test_event_capacity_refuses_excess_unique_links_and_tags(self):
+        bound = self.sialib.MAX_LEDGER_PENDING_RECORDS
+        links = [f"projects/event-capacity-{index}"
+                 for index in range(bound)]
+        tags = [f"tag-{index}" for index in range(bound)]
+        with self.assertRaisesRegex(
+                ValueError, "event links exceed their unique-value bound"):
+            self.sialib.Event(
+                "test", self.sialib.utcnow(), "capacity", "links",
+                links=links + ["projects/event-capacity-overflow"])
+        with self.assertRaisesRegex(
+                ValueError, "event tags exceed their unique-value bound"):
+            self.sialib.Event(
+                "test", self.sialib.utcnow(), "capacity", "tags",
+                tags=tags + ["tag-overflow"])
+
 
 class SignedSiaLedgerProjection(unittest.TestCase):
     def setUp(self):
@@ -2763,6 +3853,92 @@ class SignedSiaLedgerProjection(unittest.TestCase):
                 self.sialib.sense_sekhmet(cursors)
         self.assertEqual(cursors, {"sekhmet.lines": 0})
 
+    def test_optional_chain_refuses_hardlinked_ledger_or_verifier(self):
+        ledger = os.path.join(self.temp.name, "optional.tsv")
+        verifier = os.path.join(self.temp.name, "verify.py")
+        with open(verifier, "w", encoding="utf-8") as stream:
+            stream.write("raise SystemExit(0)\n")
+        with open(ledger, "w", encoding="utf-8") as stream:
+            stream.write(
+                "1\t2026-08-30T00:00:00Z\tOUTCOME:restart\tunit\tok\t"
+                "digest\t0\tprev\tvalid\n")
+        binding = (ledger, verifier,
+                   [sys.executable, verifier, ledger])
+        for target in (ledger, verifier):
+            with self.subTest(target=target):
+                alias = target + ".alias"
+                os.link(target, alias)
+                try:
+                    with mock.patch.object(
+                            self.sialib, "_chain_cmds",
+                            return_value={"sekhmet": binding}), \
+                            self.assertRaisesRegex(
+                                RuntimeError, "single-link"):
+                        self.sialib.sense_sekhmet({"sekhmet.lines": 0})
+                finally:
+                    os.unlink(alias)
+
+    def test_optional_chain_verifier_uses_private_launch_context(self):
+        ledger = os.path.join(self.temp.name, "optional.tsv")
+        verifier = os.path.join(self.temp.name, "verify.py")
+        with open(ledger, "w", encoding="utf-8") as stream:
+            stream.write("ledger\n")
+        with open(verifier, "w", encoding="utf-8") as stream:
+            stream.write("raise SystemExit(1)\n")
+        binding = (ledger, verifier,
+                   [sys.executable, verifier, ledger])
+        observed = {}
+
+        def reject(_command, **kwargs):
+            observed["cwd"] = kwargs["cwd"]
+            observed["cwd_entries"] = os.listdir(kwargs["cwd"])
+            observed["env"] = dict(kwargs["env"])
+            return subprocess.CompletedProcess([], 1, "", "keeper refused")
+
+        with mock.patch.object(
+                self.sialib, "_chain_cmds",
+                return_value={"sekhmet": binding}), \
+                mock.patch.dict(
+                    os.environ,
+                    {"SIA_TEST_AMBIENT_VERIFIER_SECRET": "must-not-pass"}), \
+                mock.patch.object(
+                    self.sialib, "_run_bounded_text_process",
+                    side_effect=reject), \
+                self.assertRaisesRegex(RuntimeError, "projection refused"):
+            self.sialib.sense_sekhmet({"sekhmet.lines": 0})
+
+        self.assertTrue(os.path.isabs(observed["cwd"]))
+        self.assertEqual(observed["cwd_entries"], [])
+        self.assertEqual(set(observed["env"]), {
+            "HOME", "TMPDIR", "PATH", "LANG", "LC_ALL",
+        })
+        self.assertNotIn(
+            "SIA_TEST_AMBIENT_VERIFIER_SECRET", observed["env"])
+
+    def test_optional_chain_verifier_output_is_not_persistable_diagnostic(self):
+        ledger = os.path.join(self.temp.name, "optional.tsv")
+        verifier = os.path.join(self.temp.name, "verify.py")
+        with open(ledger, "w", encoding="utf-8") as stream:
+            stream.write("ledger\n")
+        with open(verifier, "w", encoding="utf-8") as stream:
+            stream.write("raise SystemExit(1)\n")
+        binding = (ledger, verifier,
+                   [sys.executable, verifier, ledger])
+        secret = "VERIFIER-PRIVATE-OUTPUT-MUST-NOT-PERSIST"
+
+        with mock.patch.object(
+                self.sialib, "_chain_cmds",
+                return_value={"sekhmet": binding}), \
+                mock.patch.object(
+                    self.sialib, "_run_bounded_text_process",
+                    return_value=subprocess.CompletedProcess(
+                        [], 17, secret + "-stdout", secret + "-stderr")), \
+                self.assertRaisesRegex(
+                    RuntimeError, "keeper exited nonzero") as raised:
+            self.sialib.sense_sekhmet({"sekhmet.lines": 0})
+
+        self.assertNotIn(secret, str(raised.exception))
+
     def test_mutation_after_keeper_success_cannot_project_or_advance(self):
         ledger = os.path.join(self.temp.name, "optional.tsv")
         verifier = os.path.join(self.temp.name, "verify.py")
@@ -2793,6 +3969,74 @@ class SignedSiaLedgerProjection(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "changed after keeper"):
                 self.sialib.sense_sekhmet(cursors)
         self.assertEqual(cursors, {"sekhmet.lines": 0})
+
+    def test_transient_path_swap_during_tail_cannot_admit_forged_generation(self):
+        ledger = os.path.join(self.temp.name, "optional.tsv")
+        verified_hold = os.path.join(self.temp.name, "verified-held.tsv")
+        forged = os.path.join(self.temp.name, "forged.tsv")
+        verifier = os.path.join(self.temp.name, "verify.py")
+        verified_row = (
+            "1\t2026-08-30T00:00:00Z\tOUTCOME:restart\tverified-unit\tok\t"
+            "digest\t0\tprev\tvalid\n")
+        forged_rows = (
+            "1\t2026-08-30T00:00:00Z\tOUTCOME:restart\tforged-alpha\tok\t"
+            "digest\t0\tprev\tinvalid\n"
+            "2\t2026-08-30T00:00:01Z\tOUTCOME:restart\tforged-beta\tok\t"
+            "digest\t0\tprev\tinvalid\n")
+        with open(ledger, "w", encoding="utf-8") as stream:
+            stream.write(verified_row)
+        with open(forged, "w", encoding="utf-8") as stream:
+            stream.write(forged_rows)
+        with open(verifier, "w", encoding="utf-8") as stream:
+            stream.write(
+                "import pathlib,sys\n"
+                "raw=pathlib.Path(sys.argv[1]).read_bytes()\n"
+                "valid=(b'verified-unit' in raw and b'forged-' not in raw)\n"
+                "raise SystemExit(0 if valid else 1)\n")
+        binding = (ledger, verifier,
+                   [sys.executable, verifier, ledger])
+        cursors = {"sekhmet.lines": 0}
+        original_attest_rows = self.sialib._attest_rows
+        original_matches = self.sialib._chain_generation_matches
+        swaps = []
+
+        def swap_only_while_tailing(*args, **kwargs):
+            os.replace(ledger, verified_hold)
+            os.replace(forged, ledger)
+            swaps.append(True)
+            try:
+                return original_attest_rows(*args, **kwargs)
+            finally:
+                os.replace(ledger, forged)
+                os.replace(verified_hold, ledger)
+
+        def isolate_consumed_generation(record, *, rebind=True):
+            if record["path"] == ledger:
+                return True
+            return original_matches(record, rebind=rebind)
+
+        with mock.patch.object(
+                self.sialib, "_chain_cmds",
+                return_value={"sekhmet": binding}), \
+                mock.patch.object(
+                    self.sialib, "_attest_rows",
+                    side_effect=swap_only_while_tailing), \
+                mock.patch.object(
+                    self.sialib, "_chain_generation_matches",
+                    side_effect=isolate_consumed_generation):
+            events = self.sialib.sense_sekhmet(cursors)
+
+        self.assertEqual(swaps, [True])
+        self.assertEqual(len(events), 1)
+        self.assertIn("verified-unit", events[0].summary)
+        self.assertNotIn("forged-", events[0].summary)
+        self.assertEqual(cursors["sekhmet.lines"], 1)
+        self.assertEqual(
+            cursors["sekhmet.lines.inode"], os.stat(ledger).st_ino)
+        with open(ledger, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), verified_row)
+        with open(forged, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), forged_rows)
 
 
 class CorpusOriginLabels(unittest.TestCase):
@@ -2836,6 +4080,44 @@ class CorpusOriginLabels(unittest.TestCase):
         self.assertEqual(self.sialib.corpus_origin("events/duplicate-type",
                                                   "event-day"),
                          "legacy-unlabeled")
+
+    def test_unlabeled_origin_requires_matching_namespace_and_type(self):
+        expected = (
+            ("sia/cortex", "organ", "evidence"),
+            ("organs/journal", "organ", "evidence"),
+            ("events/journal/day", "event-day", "evidence"),
+            ("epochs/journal/week", "epoch", "evidence"),
+            ("units/example", "unit", "evidence"),
+            ("packages/example", "package", "evidence"),
+            ("projects/example", "project", "evidence"),
+            ("skills/example", "skill", "evidence"),
+            ("intents/example", "intent", "evidence"),
+            ("synthesis/example", "synthesis", "model"),
+            ("notes/example", "note", "model"),
+            ("thoughts/example", "thought", "legacy-unlabeled"),
+            ("takes/example", "take", "legacy-unlabeled"),
+        )
+        for slug, page_type, origin in expected:
+            with self.subTest(slug=slug):
+                self._page(slug, f"type: {page_type}")
+                self.assertEqual(self.sialib.corpus_origin(slug), origin)
+
+        mismatches = (
+            ("unknown/page", "alien"),
+            ("unknown/event", "event-day"),
+            ("events/wrong-type", "unit"),
+            ("sia/not-cortex", "organ"),
+        )
+        for slug, page_type in mismatches:
+            with self.subTest(slug=slug):
+                self._page(slug, f"type: {page_type}")
+                self.assertEqual(
+                    self.sialib.corpus_origin(slug), "legacy-unlabeled")
+
+        self._page(
+            "custom/declared", "type: alien\norigin: evidence")
+        self.assertEqual(
+            self.sialib.corpus_origin("custom/declared"), "evidence")
 
     def test_legacy_jackal_pages_are_non_evidence_and_false_prose_is_inert(self):
         self._page(
@@ -2942,6 +4224,60 @@ class EvidenceCursorHealth(unittest.TestCase):
                 os.symlink(target, self.sialib.CURSORS_PATH)
                 with self.assertRaisesRegex(RuntimeError, "safely"):
                     self.sialib.load_cursors()
+            finally:
+                self.sialib.CURSORS_PATH = old_path
+
+    def test_cursor_state_refuses_a_path_replaced_during_decode(self):
+        with tempfile.TemporaryDirectory() as state:
+            cursor_path = os.path.join(state, "cursors.json")
+            replacement = os.path.join(state, "replacement.json")
+            with open(cursor_path, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "opened"}, stream)
+            with open(replacement, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "named"}, stream)
+            strict_loads = self.sialib._strict_json_loads
+
+            def replace_while_decoding(raw):
+                os.replace(replacement, cursor_path)
+                return strict_loads(raw)
+
+            with mock.patch.object(
+                    self.sialib, "_strict_json_loads",
+                    side_effect=replace_while_decoding), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "changed while read"):
+                self.sialib.read_state_json(
+                    cursor_path, {}, "evidence cursor")
+
+    def test_cursor_state_refuses_a_hardlinked_authority(self):
+        with tempfile.TemporaryDirectory() as state:
+            cursor_path = os.path.join(state, "cursors.json")
+            alias_path = os.path.join(state, "cursor-alias.json")
+            with open(cursor_path, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "linked"}, stream)
+            os.link(cursor_path, alias_path)
+            with self.assertRaisesRegex(
+                    RuntimeError, "single-link regular file"):
+                self.sialib.read_state_json(
+                    cursor_path, {}, "evidence cursor")
+
+    def test_cursor_writer_refuses_nonfinite_state_without_replacing_prior(self):
+        with tempfile.TemporaryDirectory() as state:
+            old_path = self.sialib.CURSORS_PATH
+            self.sialib.CURSORS_PATH = os.path.join(state, "cursors.json")
+            prior = '{"stable":true}\n'
+            with open(self.sialib.CURSORS_PATH, "w", encoding="utf-8") \
+                    as stream:
+                stream.write(prior)
+            try:
+                for value in (
+                        float("nan"), float("inf"), float("-inf")):
+                    with self.subTest(value=value), self.assertRaises(
+                            ValueError):
+                        self.sialib.save_cursors({"poison": value})
+                    with open(self.sialib.CURSORS_PATH, encoding="utf-8") \
+                            as stream:
+                        self.assertEqual(stream.read(), prior)
             finally:
                 self.sialib.CURSORS_PATH = old_path
 
@@ -3248,8 +4584,10 @@ class EvidenceCursorHealth(unittest.TestCase):
                 stream.write(b"oversized")
             with mock.patch.object(
                     self.sialib, "MAX_JOURNAL_CURSOR_BYTES", 4), \
-                    mock.patch.object(self.sialib.subprocess, "Popen") \
-                    as launch:
+                    mock.patch.object(
+                        self.sialib.subprocess, "Popen",
+                        side_effect=AssertionError(
+                            "bounded cursor fixture launched a child")) as launch:
                 with self.assertRaisesRegex(RuntimeError, "bounded"):
                     self.sialib._journalctl([], cursor)
                 launch.assert_not_called()
@@ -3258,11 +4596,43 @@ class EvidenceCursorHealth(unittest.TestCase):
             with open(target, "wb") as stream:
                 stream.write(b"cursor")
             os.symlink(target, cursor)
-            with mock.patch.object(self.sialib.subprocess, "Popen") as launch:
+            with mock.patch.object(
+                    self.sialib.subprocess, "Popen",
+                    side_effect=AssertionError(
+                        "no-follow cursor fixture launched a child")) as launch:
                 with self.assertRaises(OSError):
                     self.sialib._journalctl([], cursor)
                 launch.assert_not_called()
             self.assertFalse(os.path.lexists(cursor + ".pulse"))
+
+    def test_journal_catalog_allows_cursor_at_string_bound(self):
+        with tempfile.TemporaryDirectory() as state:
+            cursor = os.path.join(state, "journal.cursor")
+            cursor_bytes = b"at-bound"
+            with open(cursor, "wb") as stream:
+                stream.write(cursor_bytes)
+            row = json.dumps({
+                "MESSAGE": "ok", "__CURSOR": cursor_bytes.decode(),
+            }, separators=(",", ":")).encode() + b"\n"
+            metadata_row = json.dumps({
+                "__CURSOR": cursor_bytes.decode(),
+            }, separators=(",", ":")).encode() + b"\n"
+            with self._journal_process(
+                    f"os.write(1, {row!r})",
+                    cursor_bytes=cursor_bytes,
+                    metadata=f"os.write(1, {metadata_row!r})"), \
+                    mock.patch.object(
+                        self.sialib, "MAX_JOURNAL_CURSOR_BYTES",
+                        len(cursor_bytes)):
+                records, pending, refusals = self.sialib._journalctl(
+                    [], cursor)
+            self.assertEqual(records, [{
+                "MESSAGE": "ok", "__CURSOR": cursor_bytes.decode(),
+            }])
+            self.assertEqual(refusals, [])
+            with open(pending[0], "rb") as stream:
+                self.assertEqual(stream.read(), cursor_bytes)
+            os.unlink(pending[0])
 
     def test_fresh_nonempty_journal_discards_newest_baseline_row(self):
         with tempfile.TemporaryDirectory() as state:
@@ -3386,6 +4756,118 @@ class EvidenceCursorHealth(unittest.TestCase):
         finally:
             self.sialib.CONFIG = old_config
             os.unlink(path)
+
+    def test_custom_jsonl_refuses_ambiguous_and_nonstandard_records(self):
+        private = "private-value-must-not-be-selected"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write(
+                '{"message":"safe","message":"' + private + '"}\n')
+            stream.write('{"message":NaN}\n')
+            stream.write('{"message":"reachable"}\n')
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        cursors = {"custom.fixture": 0}
+        self.sialib.CONFIG = {"custom_senses": [{
+            "name": "fixture", "path": path, "type": "jsonl",
+            "field": "message", "kind": "event", "tags": []}]}
+        try:
+            for ordinal in range(2):
+                events, errors = self.sialib.sense_custom(cursors)
+                self.assertEqual((events, errors), ([], []))
+                refusal = self.sialib._take_source_record_refusals(cursors)
+                self.assertEqual(refusal[0]["reason"],
+                                 "malformed-json-record")
+                self.assertEqual(refusal[0]["ordinal"], ordinal)
+                self.assertNotIn(private, json.dumps(
+                    refusal, sort_keys=True))
+            events, errors = self.sialib.sense_custom(cursors)
+            self.assertEqual(errors, [])
+            self.assertEqual([event.summary for event in events],
+                             ["reachable"])
+        finally:
+            self.sialib.CONFIG = old_config
+            os.unlink(path)
+
+    def test_custom_sense_unknown_key_refuses_without_reading(self):
+        private = "SHOULD-NOT-BE-INGESTED"
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write(private + "\n")
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        cursors = {"custom.disabled-source": 0}
+        self.sialib.CONFIG = {"custom_senses": [{
+            "_comment": "mistyped disable must remain inert",
+            "name": "disabled-source", "organ": "should-be-inert",
+            "path": path, "enable": False,
+        }]}
+        try:
+            self.assertNotIn("should-be-inert", self.sialib._build_organs())
+            events, errors, successful = self.sialib.sense_custom(
+                cursors, include_sources=True)
+            self.assertEqual(events, [])
+            self.assertEqual(successful, [])
+            self.assertIn("unknown keys", errors[0]["error"])
+            self.assertEqual(cursors, {"custom.disabled-source": 0})
+            self.assertNotIn(private, json.dumps(errors, sort_keys=True))
+        finally:
+            self.sialib.CONFIG = old_config
+            os.unlink(path)
+
+    def test_disable_policy_gates_custom_name_organ_and_native_collision(self):
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as stream:
+            stream.write("PRIVATE-DISABLED-ROW\n")
+            path = stream.name
+        old_config = self.sialib.CONFIG
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        try:
+            cases = (
+                ("Custom Source", "custom-organ"),
+                ("Custom Organ", "custom-organ"),
+                ("journal", "journal"),
+            )
+            for disabled, organ in cases:
+                with self.subTest(disabled=disabled, organ=organ):
+                    self.sialib.CONFIG_ERRORS.clear()
+                    self.sialib.CONFIG = {
+                        "senses": {"disable": [disabled]},
+                        "custom_senses": [{
+                            "name": "custom-source", "organ": organ,
+                            "path": path, "type": "lines",
+                        }],
+                    }
+                    self.assertNotIn(organ, self.sialib._build_organs())
+                    cursors = {"unrelated": "retained"}
+                    with mock.patch.object(
+                            self.sialib, "tail_line_records",
+                            side_effect=AssertionError("disabled source read")):
+                        events, errors, successful = \
+                            self.sialib.sense_custom(
+                                cursors, include_sources=True)
+                    self.assertEqual((events, errors, successful),
+                                     ([], [], []))
+                    self.assertEqual(cursors, {"unrelated": "retained"})
+        finally:
+            self.sialib.CONFIG = old_config
+            self.sialib.CONFIG_ERRORS[:] = old_errors
+            os.unlink(path)
+
+    def test_custom_organ_registry_uses_the_complete_source_schema(self):
+        old_config = self.sialib.CONFIG
+        self.sialib.CONFIG = {"custom_senses": [{
+            "name": "missing-path",
+            "organ": "must-not-activate",
+        }]}
+        try:
+            self.assertNotIn("must-not-activate",
+                             self.sialib._build_organs())
+            events, errors, successful = self.sialib.sense_custom(
+                {}, include_sources=True)
+            self.assertEqual(events, [])
+            self.assertEqual(successful, [])
+            self.assertIn("path must be a non-empty string",
+                          errors[0]["error"])
+        finally:
+            self.sialib.CONFIG = old_config
 
     def test_custom_jsonl_missing_field_refuses_without_exposing_other_fields(self):
         secret = "unrelated-private-value-must-never-render"
@@ -3599,18 +5081,426 @@ class EvidenceCursorHealth(unittest.TestCase):
             }
             self.sialib.CONFIG = malformed
             organs = self.sialib._build_organs()
-            self.assertTrue(all(
-                organs.get(name) == value
-                for name, value in self.sialib.BASE_ORGANS.items()))
+            self.assertTrue(
+                (set(self.sialib.BASE_ORGANS)
+                 | set(self.sialib.OPTIONAL_ORGANS)).isdisjoint(organs))
             self.assertNotIn("bad-description", organs)
             events, errors, successful = self.sialib.sense_custom(
                 {}, include_sources=True)
             self.assertEqual(events, [])
             self.assertEqual(successful, [])
-            self.assertEqual(len(errors), len(malformed["custom_senses"]))
+            self.assertTrue(any(
+                row["error"] == "senses-must-be-object"
+                for row in errors))
+            self.assertTrue(all(
+                any(fragment in row["error"] for row in errors)
+                for fragment in (
+                    "configuration entry must be an object",
+                    "name must be a non-empty string",
+                    "description must be a bounded string")))
         finally:
             self.sialib.CONFIG = old_config
             self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_config_policy_refuses_replaced_or_hardlinked_authority(self):
+        old_path = self.sialib.CONFIG_PATH
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            config_path = os.path.join(root, "config.json")
+            replacement = os.path.join(root, "replacement.json")
+            self.sialib.CONFIG_PATH = config_path
+            try:
+                with open(config_path, "w", encoding="utf-8") as stream:
+                    json.dump({"senses": {"disable": []}}, stream)
+                with open(replacement, "w", encoding="utf-8") as stream:
+                    json.dump({"senses": {"disable": ["journal"]}}, stream)
+                strict_loads = self.sialib._strict_json_loads
+
+                def replace_while_decoding(raw):
+                    os.replace(replacement, config_path)
+                    return strict_loads(raw)
+
+                with mock.patch.object(
+                        self.sialib, "_strict_json_loads",
+                        side_effect=replace_while_decoding):
+                    self.assertEqual(self.sialib.load_config(), {})
+                self.assertEqual(
+                    self.sialib.CONFIG_ERRORS[0]["error"],
+                    "config-changed-or-over-bound")
+
+                alias = os.path.join(root, "config-alias.json")
+                os.link(config_path, alias)
+                self.assertEqual(self.sialib.load_config(), {})
+                self.assertEqual(
+                    self.sialib.CONFIG_ERRORS[0]["error"],
+                    "config-file-refused")
+            finally:
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_malformed_disable_policy_cannot_enable_optional_sources(self):
+        old_home = self.sialib.HOME
+        old_config = self.sialib.CONFIG
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as home:
+            for relative in (".codex/sessions", ".local/state/jackal"):
+                os.makedirs(os.path.join(home, relative))
+            self.sialib.HOME = home
+            try:
+                configs = (
+                    {"senses": {"disable": "codex"}},
+                    {"senses": {"disable": ["pacman", "codex", 7]}},
+                    {"senses": {"disbale": ["custom-source"]}},
+                )
+                for config in configs:
+                    with self.subTest(config=config):
+                        self.sialib.CONFIG_ERRORS.clear()
+                        self.sialib.CONFIG = {
+                            **config,
+                            "custom_senses": [{
+                                "name": "custom-source",
+                                "organ": "custom-organ",
+                                "path": "/tmp/private-source",
+                            }],
+                        }
+                        organs = self.sialib._build_organs()
+                        self.assertTrue(
+                            (set(self.sialib.BASE_ORGANS)
+                             | set(self.sialib.OPTIONAL_ORGANS)
+                             | {"custom-organ"}).isdisjoint(organs))
+                        with mock.patch.object(
+                                self.sialib, "tail_line_records",
+                                side_effect=AssertionError(
+                                    "malformed policy read source")):
+                            events, errors, successful = \
+                                self.sialib.sense_custom(
+                                    {}, include_sources=True)
+                        self.assertEqual(events, [])
+                        self.assertEqual(successful, [])
+                        self.assertTrue(errors)
+                        self.assertTrue(self.sialib.CONFIG_ERRORS)
+            finally:
+                self.sialib.HOME = old_home
+                self.sialib.CONFIG = old_config
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_fatal_config_load_cannot_activate_optional_sources(self):
+        old_home = self.sialib.HOME
+        old_path = self.sialib.CONFIG_PATH
+        old_config = self.sialib.CONFIG
+        old_loaded = self.sialib._LAST_LOADED_CONFIG
+        old_valid = self.sialib._LAST_CONFIG_LOAD_VALID
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as home:
+            config_path = os.path.join(home, "config.json")
+            for relative in (".codex/sessions", ".local/state/jackal"):
+                os.makedirs(os.path.join(home, relative))
+            self.sialib.HOME = home
+            self.sialib.CONFIG_PATH = config_path
+            try:
+                with open(config_path, "w", encoding="utf-8") as stream:
+                    stream.write("not-json")
+                self.sialib.CONFIG = self.sialib.load_config()
+
+                self.assertFalse(self.sialib._active_config_load_valid())
+                config_refusals = [
+                    binding for binding in self.sialib._chain_cmds().values()
+                    if binding[2]
+                    and binding[2][0]
+                    == self.sialib.INVALID_CHAIN_SENTINEL
+                ]
+                self.assertEqual(config_refusals, [("", "", [
+                    self.sialib.INVALID_CHAIN_SENTINEL,
+                    "active configuration provenance is invalid",
+                ])])
+                self.assertEqual(
+                    self.sialib._configured_skill_root_paths(), [])
+                organs = self.sialib._build_organs()
+                self.assertTrue(
+                    (set(self.sialib.BASE_ORGANS)
+                     | set(self.sialib.OPTIONAL_ORGANS)).isdisjoint(organs))
+
+                os.unlink(config_path)
+                self.sialib.CONFIG = self.sialib.load_config()
+                self.assertTrue(self.sialib._active_config_load_valid())
+                defaults = self.sialib._build_organs()
+                self.assertIn("codex", defaults)
+                self.assertIn("jackal", defaults)
+                self.assertIn("skills", defaults)
+
+                with open(config_path, "w", encoding="utf-8") as stream:
+                    stream.write("{}")
+                self.sialib.CONFIG = self.sialib.load_config()
+                self.assertTrue(self.sialib._active_config_load_valid())
+                self.assertIn("skills", self.sialib._build_organs())
+            finally:
+                self.sialib.HOME = old_home
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG = old_config
+                self.sialib._LAST_LOADED_CONFIG = old_loaded
+                self.sialib._LAST_CONFIG_LOAD_VALID = old_valid
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_unknown_top_level_config_keys_fail_closed(self):
+        old_home = self.sialib.HOME
+        old_path = self.sialib.CONFIG_PATH
+        old_config = self.sialib.CONFIG
+        old_loaded = self.sialib._LAST_LOADED_CONFIG
+        old_valid = self.sialib._LAST_CONFIG_LOAD_VALID
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as home:
+            config_path = os.path.join(home, "config.json")
+            for relative in (".codex/sessions", ".local/state/jackal"):
+                os.makedirs(os.path.join(home, relative))
+            self.sialib.HOME = home
+            self.sialib.CONFIG_PATH = config_path
+            try:
+                for malformed in (
+                        {"sense": {"disable": ["codex"]}},
+                        {"senses": {"disable": ["codex"]},
+                         "unexpected": True}):
+                    with self.subTest(malformed=malformed):
+                        with open(config_path, "w", encoding="utf-8") \
+                                as stream:
+                            json.dump(malformed, stream)
+                        self.sialib.CONFIG = self.sialib.load_config()
+                        self.assertEqual(self.sialib.CONFIG, {})
+                        self.assertFalse(
+                            self.sialib._active_config_load_valid())
+                        self.assertEqual(
+                            self.sialib.CONFIG_ERRORS,
+                            [{"config": "config.json",
+                              "error": "config-unknown-key"}])
+                        config_refusals = [
+                            binding
+                            for binding in self.sialib._chain_cmds().values()
+                            if binding[2]
+                            and binding[2][0]
+                            == self.sialib.INVALID_CHAIN_SENTINEL
+                        ]
+                        self.assertEqual(config_refusals, [("", "", [
+                            self.sialib.INVALID_CHAIN_SENTINEL,
+                            "active configuration provenance is invalid",
+                        ])])
+                        organs = self.sialib._build_organs()
+                        self.assertTrue(
+                            (set(self.sialib.BASE_ORGANS)
+                             | set(self.sialib.OPTIONAL_ORGANS))
+                            .isdisjoint(organs))
+
+                self.sialib.CONFIG_PATH = os.path.join(
+                    REPO, "config.example.json")
+                self.sialib.CONFIG = self.sialib.load_config()
+                self.assertTrue(self.sialib._active_config_load_valid())
+                self.assertEqual(self.sialib.CONFIG_ERRORS, [])
+                self.assertEqual(
+                    set(self.sialib.CONFIG),
+                    self.sialib._CONFIG_TOP_LEVEL_KEYS)
+            finally:
+                self.sialib.HOME = old_home
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG = old_config
+                self.sialib._LAST_LOADED_CONFIG = old_loaded
+                self.sialib._LAST_CONFIG_LOAD_VALID = old_valid
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_config_parser_rejects_duplicate_keys_and_constants(self):
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            config_path = os.path.join(root, "config.json")
+            old_path = self.sialib.CONFIG_PATH
+            self.sialib.CONFIG_PATH = config_path
+            try:
+                cases = (
+                    '{"custom_senses":[],"custom_senses":['
+                    '{"name":"accepted","path":"/tmp/private"}]}',
+                    '{"custom_senses":[],"_comment":NaN}',
+                    '{"custom_senses":[],"_comment":Infinity}',
+                    '{"custom_senses":[],"_comment":-Infinity}',
+                )
+                for raw in cases:
+                    with self.subTest(raw=raw):
+                        with open(config_path, "w", encoding="utf-8") \
+                                as stream:
+                            stream.write(raw)
+                        self.assertEqual(self.sialib.load_config(), {})
+                        self.assertEqual(
+                            self.sialib.CONFIG_ERRORS,
+                            [{"config": "config.json",
+                              "error": "config-invalid-json"}])
+            finally:
+                self.sialib.CONFIG_PATH = old_path
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_over_cap_custom_senses_create_no_registry_or_organ_pages(self):
+        old_config = self.sialib.CONFIG
+        old_config_path = self.sialib.CONFIG_PATH
+        old_loaded = self.sialib._LAST_LOADED_CONFIG
+        old_valid = self.sialib._LAST_CONFIG_LOAD_VALID
+        old_organs = self.sialib.ORGANS
+        old_corpus = self.sialib.CORPUS
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            config_path = os.path.join(root, "config.json")
+            corpus = os.path.join(root, "corpus")
+            custom = [
+                {"name": f"bounded-{index}", "path": "/tmp/source"}
+                for index in range(
+                    self.sialib.MAX_LEDGER_PENDING_RECORDS + 1)
+            ]
+            encoded = json.dumps(
+                {"custom_senses": custom}, separators=(",", ":"))
+            self.assertLessEqual(
+                len(encoded.encode()), self.sialib.MAX_CONFIG_BYTES)
+            with open(config_path, "w", encoding="utf-8") as stream:
+                stream.write(encoded)
+            try:
+                self.sialib.CONFIG_PATH = config_path
+                self.sialib.CONFIG = self.sialib.load_config()
+                self.assertIn(
+                    {"config": "config.json",
+                     "error": "custom-senses-over-bound"},
+                    self.sialib.CONFIG_ERRORS)
+                organs = self.sialib._build_organs()
+                self.assertFalse(any(
+                    name.startswith("bounded-") for name in organs))
+
+                self.sialib.ORGANS = organs
+                self.sialib.CORPUS = corpus
+                with mock.patch.object(
+                        self.sialib, "_before_corpus_mutation"):
+                    self.sialib.ensure_organs()
+                organ_dir = os.path.join(corpus, "organs")
+                self.assertFalse(any(
+                    name.startswith("bounded-")
+                    for name in os.listdir(organ_dir)))
+            finally:
+                self.sialib.CONFIG = old_config
+                self.sialib.CONFIG_PATH = old_config_path
+                self.sialib._LAST_LOADED_CONFIG = old_loaded
+                self.sialib._LAST_CONFIG_LOAD_VALID = old_valid
+                self.sialib.ORGANS = old_organs
+                self.sialib.CORPUS = old_corpus
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_over_cap_chain_roster_is_one_refusal_without_expansion(self):
+        old_config = self.sialib.CONFIG
+        old_config_path = self.sialib.CONFIG_PATH
+        old_loaded = self.sialib._LAST_LOADED_CONFIG
+        old_valid = self.sialib._LAST_CONFIG_LOAD_VALID
+        old_errors = copy.deepcopy(self.sialib.CONFIG_ERRORS)
+        with tempfile.TemporaryDirectory() as root:
+            config_path = os.path.join(root, "config.json")
+            configured = [
+                {} for _ in range(self.sialib.MAX_CONFIGURED_CHAINS)]
+            configured.append({})
+            encoded = json.dumps(
+                {"chains": configured}, separators=(",", ":"))
+            self.assertLessEqual(
+                len(encoded.encode()), self.sialib.MAX_CONFIG_BYTES)
+            with open(config_path, "w", encoding="utf-8") as stream:
+                stream.write(encoded)
+            try:
+                self.sialib.CONFIG_PATH = config_path
+                self.sialib.CONFIG = self.sialib.load_config()
+                self.assertIn(
+                    {"config": "config.json", "error": "chains-over-bound"},
+                    self.sialib.CONFIG_ERRORS)
+
+                registry = self.sialib._chain_cmds()
+                refusals = [
+                    binding for name, binding in registry.items()
+                    if name.startswith("config-error-")]
+                self.assertEqual(len(refusals), 1)
+                self.assertEqual(
+                    refusals[0][2][0], self.sialib.INVALID_CHAIN_SENTINEL)
+
+                at_bound = {
+                    name: "pass" for name in
+                    ("sia", "custos", "sekhmet", "aegis")}
+                at_bound.update({
+                    f"configured-{index}": "pass"
+                    for index in range(self.sialib.MAX_CONFIGURED_CHAINS)})
+                self.assertTrue(self.sialib._status_chains_shape(at_bound))
+                at_bound["overflow"] = "pass"
+                self.assertFalse(self.sialib._status_chains_shape(at_bound))
+            finally:
+                self.sialib.CONFIG = old_config
+                self.sialib.CONFIG_PATH = old_config_path
+                self.sialib._LAST_LOADED_CONFIG = old_loaded
+                self.sialib._LAST_CONFIG_LOAD_VALID = old_valid
+                self.sialib.CONFIG_ERRORS[:] = old_errors
+
+    def test_memo_json_rejects_ambiguity_and_nonfinite_output(self):
+        old_path = self.sialib.MEMO_PATH
+        with tempfile.TemporaryDirectory() as root:
+            self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+            try:
+                for raw in (
+                        '{"sync_needed":true,"sync_needed":false}',
+                        '{"sync_needed":NaN}',
+                        '{"sync_needed":Infinity}',
+                        '{"sync_needed":-Infinity}'):
+                    with self.subTest(raw=raw):
+                        with open(self.sialib.MEMO_PATH, "w") as stream:
+                            stream.write(raw)
+                        with self.assertRaisesRegex(
+                                RuntimeError,
+                                "brainstem memo is unreadable or malformed"):
+                            self.sialib.load_memo()
+                with self.assertRaises(ValueError):
+                    self.sialib._memo_text({"sync_needed": float("nan")})
+                with open(self.sialib.MEMO_PATH, "wb") as stream:
+                    stream.write(
+                        '{"sync_needed":true}'.encode("utf-16"))
+                with self.assertRaisesRegex(
+                        RuntimeError,
+                        "brainstem memo is unreadable or malformed"):
+                    self.sialib.load_memo()
+            finally:
+                self.sialib.MEMO_PATH = old_path
+
+    def test_memo_reader_refuses_a_hardlinked_authority(self):
+        old_path = self.sialib.MEMO_PATH
+        with tempfile.TemporaryDirectory() as root:
+            self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+            alias_path = os.path.join(root, "memo-alias.json")
+            try:
+                with open(self.sialib.MEMO_PATH, "w", encoding="utf-8") \
+                        as stream:
+                    json.dump({"pulse_seq": 7}, stream)
+                os.link(self.sialib.MEMO_PATH, alias_path)
+                with self.assertRaisesRegex(
+                        RuntimeError, "owned single-link regular file"):
+                    self.sialib.load_memo()
+            finally:
+                self.sialib.MEMO_PATH = old_path
+
+    def test_memo_reader_refuses_a_path_replaced_during_decode(self):
+        old_path = self.sialib.MEMO_PATH
+        with tempfile.TemporaryDirectory() as root:
+            self.sialib.MEMO_PATH = os.path.join(root, "memo.json")
+            replacement = os.path.join(root, "replacement.json")
+            try:
+                with open(self.sialib.MEMO_PATH, "w", encoding="utf-8") \
+                        as stream:
+                    json.dump({"generation": "opened"}, stream)
+                with open(replacement, "w", encoding="utf-8") as stream:
+                    json.dump({"generation": "named"}, stream)
+                strict_loads = self.sialib._strict_json_loads
+
+                def replace_while_decoding(raw):
+                    os.replace(replacement, self.sialib.MEMO_PATH)
+                    return strict_loads(raw)
+
+                with mock.patch.object(
+                        self.sialib, "_strict_json_loads",
+                        side_effect=replace_while_decoding), \
+                        self.assertRaisesRegex(
+                            RuntimeError, "changed while read"):
+                    self.sialib.load_memo()
+            finally:
+                self.sialib.MEMO_PATH = old_path
 
     def test_custom_json_surrogate_is_refused_and_next_row_progresses(self):
         with tempfile.NamedTemporaryFile(
@@ -3659,6 +5549,38 @@ class EvidenceCursorHealth(unittest.TestCase):
                     {"safe": True})
         finally:
             os.unlink(path)
+
+    def test_best_effort_json_refuses_a_path_replaced_during_decode(self):
+        with tempfile.TemporaryDirectory() as state:
+            path = os.path.join(state, "status.json")
+            replacement = os.path.join(state, "replacement.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "opened"}, stream)
+            with open(replacement, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "named"}, stream)
+            strict_loads = self.sialib._strict_json_loads
+
+            def replace_while_decoding(raw):
+                os.replace(replacement, path)
+                return strict_loads(raw)
+
+            with mock.patch.object(
+                    self.sialib, "_strict_json_loads",
+                    side_effect=replace_while_decoding):
+                self.assertEqual(
+                    self.sialib.read_json(path, {"unavailable": True}),
+                    {"unavailable": True})
+
+    def test_best_effort_json_refuses_a_hardlinked_snapshot(self):
+        with tempfile.TemporaryDirectory() as state:
+            path = os.path.join(state, "status.json")
+            alias_path = os.path.join(state, "status-alias.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"generation": "linked"}, stream)
+            os.link(path, alias_path)
+            self.assertEqual(
+                self.sialib.read_json(path, {"unavailable": True}),
+                {"unavailable": True})
 
     def test_authoritative_json_parser_limits_are_named_and_source_free(self):
         with tempfile.TemporaryDirectory() as root:
@@ -3812,29 +5734,38 @@ class EvidenceCursorHealth(unittest.TestCase):
                 self.sialib.ORGANS = old_organs
                 self.sialib.CONFIG_ERRORS[:] = old_errors
 
-    def test_notification_cap_advances_only_through_processed_batch(self):
+    def test_notification_pages_publish_only_after_clean_eof(self):
         with tempfile.TemporaryDirectory() as home:
             history = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
             os.makedirs(history)
-            names = []
-            for index in range(101):
-                name = f"{index:03d}.json"
-                names.append(name)
+            names = ("alpha.json", "bravo.json")
+            for name in names:
                 with open(os.path.join(history, name), "w") as stream:
                     json.dump({"app": "fixture", "summary": name}, stream)
             old_home = self.sialib.HOME
             self.sialib.HOME = home
             cursors = {"notify.last": ""}
             try:
-                first = self.sialib.sense_notify(cursors)
-                self.assertTrue(first)
-                self.assertEqual(cursors["notify.last"], names[-2])
-                second = self.sialib.sense_notify(cursors)
-                self.assertTrue(second)
-                self.assertEqual(cursors["notify.last"], names[-1])
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 1):
+                    first = self.sialib.sense_notify(cursors)
+                    first_page = copy.deepcopy(
+                        cursors["source.notify.page"])
+                    second = self.sialib.sense_notify(cursors)
+                    second_page = copy.deepcopy(
+                        cursors["source.notify.page"])
+                    completed = self.sialib.sense_notify(cursors)
             finally:
                 self.sialib.HOME = old_home
+            self.assertEqual(first, [])
+            self.assertEqual(second, [])
+            self.assertEqual(
+                {event.summary for event in completed},
+                {f"fixture: {name}" for name in names})
+            self.assertNotEqual(first_page["cookie"], second_page["cookie"])
+            self.assertNotIn("source.notify.page", cursors)
+            self.assertIn("notify.generation", cursors)
 
 
 class ChildModuleBindSeam(unittest.TestCase):
@@ -4127,7 +6058,7 @@ class GradingExcerptsShowTheEvidence(unittest.TestCase):
         'sia_counts: {"boot": 4, "genesis": 1, "intent": 5, "obs": 16, '
         '"outcome": 5} --- # SEKHMET — 2026 week 35 Consolidated from 2 '
         'day-memories (2026-08-24 … 2026-08-25); originals verbatim in '
-        'corpus git history. Organ: [[organs/sekhmet]] of [[sia/cortex]]. '
+        'corpus git history. Source: [[organs/sekhmet]] for [[sia/cortex]]. '
         '## Exemplars - 2026-08-24 · 22:13:56Z GENESIS:init sekhmet - '
         '- 2026-08-24 · 22:14:21Z INTENT:restart_wireplumber '
         'wireplumber_down - 2026-08-24 · 22:14:21Z '
@@ -4226,6 +6157,110 @@ class GradingPrefersTheExcerptThatBearsOnTheClaim(unittest.TestCase):
 
 
 class SkillSenseContainment(unittest.TestCase):
+    def test_configured_skill_roots_refuse_home_escape(self):
+        sialib = _load("sialib_skill_root_containment",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home, \
+                tempfile.TemporaryDirectory() as outside:
+            sialib.HOME = home
+            for supplied, expected_error in (
+                    ("../outside", "skills-roots-outside-home"),
+                    (outside, "skills-roots-invalid")):
+                with self.subTest(root=supplied):
+                    sialib.CONFIG = {"skills": {"roots": [supplied]}}
+                    sialib.CONFIG_ERRORS.clear()
+
+                    self.assertEqual(sialib._configured_skill_roots(), [])
+                    self.assertEqual(sialib._configured_skill_root_paths(), [])
+                    self.assertEqual(sialib.CONFIG_ERRORS, [{
+                        "config": "config.json", "error": expected_error}])
+                    self.assertNotIn("skills", sialib._build_organs())
+
+    def test_malformed_skill_root_roster_disables_without_defaults(self):
+        sialib = _load("sialib_skill_root_malformed",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            sialib.HOME = home
+            cases = (
+                ({"skills": "not-an-object"}, "skills-must-be-object"),
+                ({"skills": {"rooots": [".agents/skills"]}},
+                 "skills-unknown-key"),
+                ({"skills": {"_comment": ["not-text"]}},
+                 "skills-comment-must-be-string"),
+                ({"skills": {"roots": ".agents/skills"}},
+                 "skills-roots-invalid"),
+                ({"skills": {"roots": [""]}}, "skills-roots-invalid"),
+            )
+            for config, expected_error in cases:
+                with self.subTest(config=config):
+                    sialib.CONFIG = config
+                    sialib.CONFIG_ERRORS.clear()
+
+                    self.assertEqual(sialib._configured_skill_roots(), [])
+                    self.assertEqual(sialib.CONFIG_ERRORS, [{
+                        "config": "config.json", "error": expected_error}])
+                    self.assertNotIn("skills", sialib._build_organs())
+
+            sialib.CONFIG = {"skills": {"roots": []}}
+            sialib.CONFIG_ERRORS.clear()
+            self.assertEqual(sialib._configured_skill_roots(), [])
+            self.assertEqual(sialib.CONFIG_ERRORS, [])
+            self.assertNotIn("skills", sialib._build_organs())
+
+    def test_loaded_skill_config_surfaces_unknown_keys_and_bad_comments(self):
+        sialib = _load("sialib_skill_load_shape",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "config.json")
+            old_path = sialib.CONFIG_PATH
+            sialib.CONFIG_PATH = path
+            try:
+                with open(path, "w", encoding="utf-8") as stream:
+                    json.dump({"skills": {
+                        "rooots": [".agents/skills"],
+                        "_comment": ["not-text"],
+                    }}, stream)
+                loaded = sialib.load_config()
+                self.assertEqual(loaded["skills"]["rooots"],
+                                 [".agents/skills"])
+                self.assertEqual(sialib.CONFIG_ERRORS, [
+                    {"config": "config.json",
+                     "error": "skills-unknown-key"},
+                    {"config": "config.json",
+                     "error": "skills-comment-must-be-string"},
+                ])
+                sialib.CONFIG = loaded
+                self.assertEqual(sialib._configured_skill_root_paths(), [])
+            finally:
+                sialib.CONFIG_PATH = old_path
+
+    def test_configured_non_claude_root_activates_the_skills_organ(self):
+        sialib = _load("sialib_skill_configured_activation",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            configured = os.path.join(home, ".agents/skills")
+            os.makedirs(configured)
+            sialib.HOME = home
+            sialib.CONFIG = {
+                "skills": {"roots": [".agents/skills"]},
+            }
+
+            sialib.SKILL_ROOTS = sialib._configured_skill_roots()
+            organs = sialib._build_organs()
+            senses = [
+                sense for sense in sialib._ALL_SENSES
+                if sialib._SENSE_ORGAN.get(sense.__name__, "") in organs]
+
+            self.assertEqual(sialib.SKILL_ROOTS, [configured])
+            self.assertIn("skills", organs)
+            self.assertIn(sialib.sense_skills, senses)
+
+            os.rmdir(configured)
+            self.assertIn(
+                "skills", sialib._build_organs(),
+                "a restart with all configured roots absent must still "
+                "run the sense so prior catalog state can converge")
+
     def test_sensing_facade_keeps_dynamic_alias_contexts_isolated(self):
         first = _load("sialib_sense_alias_first",
                       os.path.join(BIN, "sialib.py"))
@@ -4262,7 +6297,7 @@ class SkillSenseContainment(unittest.TestCase):
             self.assertIs(first.SENSES[-1], first.sense_custom)
             self.assertIs(second.SENSES[-1], second.sense_custom)
 
-    def test_skill_snapshot_captures_once_with_digest_and_description(self):
+    def test_skill_snapshot_replays_once_with_digest_and_description(self):
         sialib = _load("sialib_skill_single_capture",
                        os.path.join(BIN, "sialib.py"))
         with tempfile.TemporaryDirectory() as directory:
@@ -4278,17 +6313,17 @@ class SkillSenseContainment(unittest.TestCase):
             original = sialib._read_skill_manifest
             calls = []
 
-            def capture_once(capture_root, name):
+            def capture_and_replay(capture_root, name):
                 calls.append((capture_root, name))
-                if len(calls) > 1:
-                    raise AssertionError("skill manifest reopened")
+                if len(calls) > 2:
+                    raise AssertionError("skill manifest replay exceeded bound")
                 return original(capture_root, name)
 
             with mock.patch.object(
                     sialib, "_read_skill_manifest",
-                    side_effect=capture_once):
+                    side_effect=capture_and_replay):
                 events = sialib.sense_skills({"skills.snapshot": {}})
-            self.assertEqual(calls, [(root, "stable")])
+            self.assertEqual(calls, [(root, "stable"), (root, "stable")])
             installed = [event for event in events
                          if event.kind == "installed"]
             self.assertEqual(len(installed), 1)
@@ -4499,18 +6534,19 @@ class SkillSenseContainment(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = os.path.join(directory, "skills")
             os.makedirs(root)
+            previous = os.path.join(root, "previous")
+            os.makedirs(previous)
+            with open(os.path.join(previous, "SKILL.md"), "w") as stream:
+                stream.write("---\ndescription: prior\n---\n")
+            sialib.SKILL_ROOTS = [root]
+            cursors = {}
+            sialib.sense_skills(cursors)
+            shutil.rmtree(previous)
             for name in ("one", "two", "three"):
                 skill = os.path.join(root, name)
                 os.makedirs(skill)
                 with open(os.path.join(skill, "SKILL.md"), "w") as stream:
                     stream.write("---\ndescription: bounded\n---\n")
-            sialib.SKILL_ROOTS = [root]
-            cursors = {
-                "skills.snapshot": {
-                    "previous": {"name": "previous", "mtime": 0,
-                                 "roots": []}},
-                "skills.truncated": False,
-            }
             with mock.patch.object(
                     sialib, "MAX_SKILL_SNAPSHOT_ENTRIES", 2):
                 events = sialib.sense_skills(cursors)
@@ -4612,7 +6648,7 @@ class SkillSenseContainment(unittest.TestCase):
 
 
 class TouchWeighting(unittest.TestCase):
-    """World-originated touches count full; endogenous self-reference is
+    """World-originated touches count full; system-generated self-reference is
     steeply discounted (no echo chamber)."""
 
     def test_exo_beats_endo(self):
@@ -4699,6 +6735,117 @@ class EpochMerge(unittest.TestCase):
             with self.assertRaisesRegex(
                     ValueError, "invalid or exceeds its bound"):
                 sialib._event_day_shards("org", "2026-01-05")
+
+    def test_two_digit_event_shard_number_is_recognized_not_skipped(self):
+        sialib = _load("sialib_epoch_two_digit_shard",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as corpus:
+            sialib.CORPUS = corpus
+            event_dir = os.path.join(corpus, "events", "org")
+            os.makedirs(event_dir)
+            with open(os.path.join(event_dir, "2026-01-05.md"), "w") \
+                    as stream:
+                stream.write("base\n")
+            with open(os.path.join(
+                    event_dir, "2026-01-05-part-10.md"), "w") \
+                    as stream:
+                stream.write("overflow\n")
+
+            # A part-10 shard with no part-2..9 predecessors must be seen and
+            # rejected as a genuine contiguity gap, not silently skipped by a
+            # parser that only recognized a single leading digit.
+            with self.assertRaisesRegex(
+                    ValueError, "are not contiguous"):
+                sialib._event_day_shards("org", "2026-01-05")
+
+    def test_event_source_regex_admits_multi_digit_parts_and_refuses_invalid_forms(self):
+        sialib = _load("sialib_event_source_re_grammar",
+                       os.path.join(BIN, "sialib.py"))
+        admitted = ("events/org/2026-01-05.md",
+                    "events/org/2026-01-05-part-2.md",
+                    "events/org/2026-01-05-part-9.md",
+                    "events/org/2026-01-05-part-10.md",
+                    "events/org/2026-01-05-part-19.md",
+                    "events/org/2026-01-05-part-100.md",
+                    "events/org/2026-01-05-part-199.md")
+        for relative in admitted:
+            with self.subTest(relative=relative):
+                self.assertIsNotNone(
+                    sialib.EVENT_SOURCE_RE.fullmatch(relative))
+        refused = ("events/org/2026-01-05-part-0.md",
+                   "events/org/2026-01-05-part-1.md",
+                   "events/org/2026-01-05-part-01.md",
+                   "events/org/2026-01-05-part-1a.md",
+                   "events/org/2026-01-05-part-.md",
+                   "events/org/2026-01-05-part-ten.md")
+        for relative in refused:
+            with self.subTest(relative=relative):
+                self.assertIsNone(
+                    sialib.EVENT_SOURCE_RE.fullmatch(relative))
+
+    def test_event_replay_key_admits_multi_digit_parts_and_refuses_invalid_forms(self):
+        sialib = _load("sialib_event_replay_key_grammar",
+                       os.path.join(BIN, "sialib.py"))
+        event_id = "a" * 64
+        admitted = ("events/org/2026-01-05",
+                    "events/org/2026-01-05-part-2",
+                    "events/org/2026-01-05-part-9",
+                    "events/org/2026-01-05-part-10",
+                    "events/org/2026-01-05-part-19",
+                    "events/org/2026-01-05-part-100",
+                    "events/org/2026-01-05-part-199")
+        for day_slug in admitted:
+            with self.subTest(day_slug=day_slug):
+                sialib.siamind._validate_event_replay_key(day_slug, event_id)
+        refused = ("events/org/2026-01-05-part-0",
+                   "events/org/2026-01-05-part-1",
+                   "events/org/2026-01-05-part-01",
+                   "events/org/2026-01-05-part-1a",
+                   "events/org/2026-01-05-part-",
+                   "events/org/2026-01-05-part-ten")
+        for day_slug in refused:
+            with self.subTest(day_slug=day_slug):
+                with self.assertRaisesRegex(
+                        ValueError, "event replay identity is invalid"):
+                    sialib.siamind._validate_event_replay_key(day_slug, event_id)
+
+    def test_contiguous_shards_through_a_two_digit_part_are_discovered(self):
+        sialib = _load("sialib_epoch_contiguous_two_digit_shard",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            old_bullets = sialib.MAX_EVENT_BULLETS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            sialib.MAX_EVENT_BULLETS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind,
+                            "EPISODIC_DAYS", old_window)
+            self.addCleanup(setattr, sialib, "MAX_EVENT_BULLETS",
+                            old_bullets)
+            sialib.log = lambda *a: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            events = [
+                sialib.Event(
+                    "org", stamp, "obs", f"observation {number}",
+                    occurrence=f"native:two-digit-shard:{number}")
+                for number in range(1, 11)
+            ]
+            # MAX_EVENT_BULLETS=1 forces one event per page: the base page
+            # plus part-2 through part-10, so the tenth event lands on the
+            # two-digit shard this grammar previously could not admit.
+            sialib.update_day_page("org", "2026-01-05", events)
+            event_dir = os.path.join(d, "events", "org")
+            self.assertTrue(os.path.exists(
+                os.path.join(event_dir, "2026-01-05-part-10.md")))
+
+            shards = sialib._event_day_shards("org", "2026-01-05")
+            self.assertEqual(len(shards), 10)
 
     def test_queued_operator_pin_protects_day_before_next_pulse(self):
         sialib = _load("sialib_epoch_queued_pin",
@@ -5369,6 +7516,310 @@ class EpochMerge(unittest.TestCase):
             self.assertTrue(sialib.page_exists(
                 sialib.day_slug("org", "2026-08-29")))
 
+    def test_missing_consolidated_event_leaf_refuses_exact_replay(self):
+        sialib = _load("sialib_epoch_missing_event_leaf",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind, "EPISODIC_DAYS",
+                            old_window)
+            sialib.log = lambda *_args: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            original = sialib.Event(
+                "org", stamp, "obs", "indexed occurrence",
+                occurrence="native:completeness:missing")
+            sialib.update_day_page("org", "2026-01-05", [original])
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "source"], check=True)
+            sialib.consolidate_corpus()
+
+            event_id = sialib.event_memory_identity(original)
+            leaf = os.path.join(
+                d, sialib._event_index_relative("org", event_id))
+            os.unlink(leaf)
+            later = sialib.datetime.datetime(
+                2026, 8, 29, 20, tzinfo=sialib.datetime.timezone.utc)
+            replay = sialib.Event(
+                "org", later, "obs", "indexed occurrence",
+                occurrence="native:completeness:missing")
+
+            with self.assertRaisesRegex(
+                    ValueError, "consolidated event index leaf is missing"):
+                sialib.update_day_page("org", "2026-08-29", [replay])
+            self.assertFalse(sialib.page_exists(
+                sialib.day_slug("org", "2026-08-29")))
+
+            novel = sialib.Event(
+                "org", later, "obs", "genuinely novel occurrence",
+                occurrence="native:completeness:novel")
+            _pages, appended, _admitted = sialib.update_day_page(
+                "org", "2026-08-29", [novel])
+            self.assertEqual(appended, [novel])
+
+    def test_index_era_epoch_without_completeness_refuses_missing_lookup(self):
+        sialib = _load("sialib_epoch_missing_completeness",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind, "EPISODIC_DAYS",
+                            old_window)
+            sialib.log = lambda *_args: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            original = sialib.Event(
+                "org", stamp, "obs", "indexed occurrence",
+                occurrence="native:completeness:authority")
+            sialib.update_day_page("org", "2026-01-05", [original])
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "source"], check=True)
+            sialib.consolidate_corpus()
+
+            epoch_path = sialib.corpus_path(
+                sialib._epoch_slug_for_day("org", "2026-01-05"))
+            with open(epoch_path, encoding="utf-8") as stream:
+                epoch_text = stream.read()
+            epoch_text = re.sub(
+                r"(?m)^sia_event_ids: .*\n", "", epoch_text)
+            with open(epoch_path, "w", encoding="utf-8") as stream:
+                stream.write(epoch_text)
+            later = sialib.datetime.datetime(
+                2026, 8, 29, 20, tzinfo=sialib.datetime.timezone.utc)
+            novel = sialib.Event(
+                "org", later, "obs", "genuinely novel occurrence",
+                occurrence="native:completeness:unknown")
+
+            with self.assertRaisesRegex(
+                    ValueError, "event-index completeness is unavailable"):
+                sialib.update_day_page("org", "2026-08-29", [novel])
+            self.assertFalse(sialib.page_exists(
+                sialib.day_slug("org", "2026-08-29")))
+
+    def test_pre_index_legacy_epoch_does_not_block_novel_occurrence(self):
+        sialib = _load("sialib_epoch_pre_index_compatibility",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            legacy_slug = sialib._epoch_slug_for_day(
+                "org", "2026-01-05")
+            legacy_source = "0" * 64
+            sialib.write_page(
+                legacy_slug,
+                ["type: epoch", sialib.fm_title("legacy epoch"),
+                 "tags: [org]", "date: 2026-01-05",
+                 "sia_sources: " + json.dumps([legacy_source]),
+                 'sia_dates: ["2026-01-05"]',
+                 'sia_counts: {"obs": 1}'],
+                "# legacy epoch\n\n"
+                "Consolidated from 1 day-memories "
+                "(2026-01-05 … 2026-01-05).\n")
+            stamp = sialib.datetime.datetime(
+                2026, 8, 29, 20, tzinfo=sialib.datetime.timezone.utc)
+            novel = sialib.Event(
+                "org", stamp, "obs", "new after legacy epoch",
+                occurrence="native:legacy:novel")
+
+            _pages, appended, _admitted = sialib.update_day_page(
+                "org", "2026-08-29", [novel])
+            self.assertEqual(appended, [novel])
+            self.assertTrue(sialib.page_exists(
+                sialib.day_slug("org", "2026-08-29")))
+
+    def test_event_completeness_precedes_leaf_publish_and_source_unlink(self):
+        sialib = _load("sialib_epoch_completeness_ordering",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind, "EPISODIC_DAYS",
+                            old_window)
+            sialib.log = lambda *_args: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            event = sialib.Event(
+                "org", stamp, "obs", "ordered completeness",
+                occurrence="native:completeness:ordering")
+            sialib.update_day_page("org", "2026-01-05", [event])
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "source"], check=True)
+            source_path = sialib.corpus_path(
+                sialib.day_slug("org", "2026-01-05"))
+            epoch_path = sialib.corpus_path(
+                sialib._epoch_slug_for_day("org", "2026-01-05"))
+            event_id = sialib.event_memory_identity(event)
+            real_publish = sialib._publish_event_index_entries
+            observed = []
+
+            def inspect_epoch_then_publish(entries):
+                self.assertTrue(os.path.isfile(source_path))
+                with open(epoch_path, encoding="utf-8") as stream:
+                    epoch_text = stream.read()
+                ids = json.loads(re.search(
+                    r"^sia_event_ids: (.*)$", epoch_text,
+                    re.M).group(1))
+                self.assertEqual(ids, [event_id])
+                observed.append(event_id)
+                return real_publish(entries)
+
+            with mock.patch.object(
+                    sialib, "_publish_event_index_entries",
+                    side_effect=inspect_epoch_then_publish):
+                sialib.consolidate_corpus()
+
+            self.assertEqual(observed, [event_id])
+            self.assertFalse(os.path.exists(source_path))
+
+    def test_event_completeness_capacity_retains_new_source_and_old_epoch(self):
+        sialib = _load("sialib_epoch_completeness_capacity",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind, "EPISODIC_DAYS",
+                            old_window)
+            sialib.log = lambda *_args: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            first = sialib.Event(
+                "org", stamp, "obs", "first indexed occurrence",
+                occurrence="native:completeness:capacity:first")
+            sialib.update_day_page("org", "2026-01-05", [first])
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "first"], check=True)
+            sialib.consolidate_corpus()
+
+            epoch_path = sialib.corpus_path(
+                sialib._epoch_slug_for_day("org", "2026-01-05"))
+            with open(epoch_path, encoding="utf-8") as stream:
+                epoch_before = stream.read()
+            event_ids = json.loads(re.search(
+                r"^sia_event_ids: (.*)$", epoch_before, re.M).group(1))
+            later = sialib.datetime.datetime(
+                2026, 1, 6, 12, tzinfo=sialib.datetime.timezone.utc)
+            second = sialib.Event(
+                "org", later, "obs", "second indexed occurrence",
+                occurrence="native:completeness:capacity:second")
+            sialib.update_day_page("org", "2026-01-06", [second])
+            second_source = sialib.corpus_path(
+                sialib.day_slug("org", "2026-01-06"))
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "second"], check=True)
+
+            with mock.patch.object(
+                    sialib, "MAX_EPOCH_EVENT_IDS", len(event_ids)):
+                self.assertEqual(sialib.consolidate_corpus(), (0, 0, 1))
+
+            with open(epoch_path, encoding="utf-8") as stream:
+                self.assertEqual(stream.read(), epoch_before)
+            self.assertTrue(os.path.isfile(second_source))
+            second_leaf = os.path.join(
+                d, sialib._event_index_relative(
+                    "org", sialib.event_memory_identity(second)))
+            self.assertFalse(os.path.exists(second_leaf))
+
+    def test_pre_index_epoch_extension_retains_source_without_full_evidence(self):
+        sialib = _load("sialib_epoch_legacy_extension",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind, "EPISODIC_DAYS",
+                            old_window)
+            sialib.log = lambda *_args: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            legacy_slug = sialib._epoch_slug_for_day(
+                "org", "2026-01-05")
+            sialib.write_page(
+                legacy_slug,
+                ["type: epoch", sialib.fm_title("legacy epoch"),
+                 "tags: [org]", "date: 2026-01-05",
+                 "sia_sources: " + json.dumps(["0" * 64]),
+                 'sia_dates: ["2026-01-05"]',
+                 'sia_counts: {"obs": 1}'],
+                "# legacy epoch\n\n"
+                "Consolidated from 1 day-memories "
+                "(2026-01-05 … 2026-01-05).\n")
+            stamp = sialib.datetime.datetime(
+                2026, 1, 6, 12, tzinfo=sialib.datetime.timezone.utc)
+            event = sialib.Event(
+                "org", stamp, "obs", "new exact source",
+                occurrence="native:legacy:extension")
+            sialib.update_day_page("org", "2026-01-06", [event])
+            source_path = sialib.corpus_path(
+                sialib.day_slug("org", "2026-01-06"))
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", d, "-c", "user.email=t@t", "-c",
+                 "user.name=t", "commit", "-qm", "legacy and source"],
+                check=True)
+            epoch_path = sialib.corpus_path(legacy_slug)
+            with open(epoch_path, encoding="utf-8") as stream:
+                epoch_before = stream.read()
+
+            self.assertEqual(sialib.consolidate_corpus(), (0, 0, 1))
+
+            with open(epoch_path, encoding="utf-8") as stream:
+                self.assertEqual(stream.read(), epoch_before)
+            self.assertTrue(os.path.isfile(source_path))
+            self.assertFalse(os.path.exists(os.path.join(d, "event-index")))
+
     def test_malformed_counts_refuse_consolidation_and_day_rewrite(self):
         sialib = _load("sialib_epoch_malformed",
                        os.path.join(BIN, "sialib.py"))
@@ -5448,6 +7899,65 @@ class EpochMerge(unittest.TestCase):
                     if not os.path.exists(source):
                         break
             self.assertFalse(os.path.exists(source))
+
+    def test_consolidation_cursor_refuses_unknown_or_partial_state(self):
+        sialib = _load(
+            "sialib_epoch_cursor_shape", os.path.join(BIN, "sialib.py"))
+        fresh = sialib._fresh_consolidation_scan(sialib.today())
+        extra = copy.deepcopy(fresh)
+        extra["unexpected"] = False
+        with self.assertRaisesRegex(RuntimeError, "scan state is invalid"):
+            sialib._canonical_consolidation_scan(extra)
+        with tempfile.TemporaryDirectory() as directory:
+            _entries, _complete, _inspected, page = \
+                sialib._bounded_source_entries(directory)
+        page.pop("device")
+        partial = copy.deepcopy(fresh)
+        next(iter(partial["queue"]))["page"] = page
+        with self.assertRaisesRegex(RuntimeError, "scan cursor is invalid"):
+            sialib._canonical_consolidation_scan(partial)
+
+    def test_consolidation_cursor_rejects_self_certifying_states(self):
+        sialib = _load(
+            "sialib_epoch_cursor_invariants", os.path.join(BIN, "sialib.py"))
+        wrong_depth = sialib._fresh_consolidation_scan("2026-08-30")
+        wrong_depth["queue"][0]["levels"] = 0
+        duplicate_path = sialib._fresh_consolidation_scan("2026-08-30")
+        duplicate_path["queue"].append(
+            copy.deepcopy(duplicate_path["queue"][0]))
+        empty_scan = sialib._fresh_consolidation_scan("2026-08-30")
+        empty_scan["queue"] = []
+        persisted_reset = sialib._fresh_consolidation_scan("2026-08-30")
+        persisted_reset["queue"][0]["page"] = {
+            "device": 0, "inode": 0, "cookie": 0, "size": 0,
+            "mtime_ns": 0, "ctime_ns": 0, "reset": True,
+        }
+        for label, state in (
+                ("wrong-depth", wrong_depth),
+                ("duplicate-path", duplicate_path),
+                ("scan-empty", empty_scan),
+                ("persisted-reset", persisted_reset)):
+            with self.subTest(label=label), self.assertRaisesRegex(
+                    RuntimeError, "consolidation scan"):
+                sialib._canonical_consolidation_scan(state)
+
+    def test_consolidation_refuses_special_organ_namespace_entry(self):
+        sialib = _load(
+            "sialib_epoch_special_organ", os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as root:
+            corpus = os.path.join(root, "corpus")
+            events = os.path.join(corpus, "events")
+            hidden = os.path.join(root, "hidden-organ")
+            os.makedirs(events)
+            os.makedirs(hidden)
+            with open(os.path.join(hidden, "2026-01-05.md"), "w"):
+                pass
+            os.symlink(hidden, os.path.join(events, "linked-organ"))
+            sialib.CORPUS = corpus
+            state = sialib._fresh_consolidation_scan("2026-08-30")
+            with self.assertRaisesRegex(
+                    RuntimeError, "consolidation organ path"):
+                sialib._advance_consolidation_scan(state)
 
     def test_pulses_resume_marker_free_scan_debt_until_readiness_returns(self):
         sialib = _load(
@@ -5559,11 +8069,17 @@ class EpochMerge(unittest.TestCase):
                 mock.patch.object(
                     sialib, "corpus_owner",
                     side_effect=lambda: contextlib.nullcontext()),
+                mock.patch.object(
+                    sialib, "_cortex_boundary_status",
+                    return_value=(True, "")),
                 mock.patch.object(sialib, "load_memo", return_value=memo),
                 mock.patch.object(
                     sialib, "_thought_recovery_debt", return_value=""),
                 mock.patch.object(
                     sialib, "_graph_projection_debt", return_value=""),
+                mock.patch.object(
+                    sialib, "read_json",
+                    return_value=_empty_graph_snapshot()),
                 mock.patch.object(
                     sialib.siamind, "load_mind", return_value={}),
                 mock.patch.object(
@@ -5710,11 +8226,17 @@ class EpochMerge(unittest.TestCase):
                 mock.patch.object(
                     sialib, "corpus_owner",
                     side_effect=lambda: contextlib.nullcontext()),
+                mock.patch.object(
+                    sialib, "_cortex_boundary_status",
+                    return_value=(True, "")),
                 mock.patch.object(sialib, "load_memo", return_value=memo),
                 mock.patch.object(
                     sialib, "_thought_recovery_debt", return_value=""),
                 mock.patch.object(
                     sialib, "_graph_projection_debt", return_value=""),
+                mock.patch.object(
+                    sialib, "read_json",
+                    return_value=_empty_graph_snapshot()),
                 mock.patch.object(
                     sialib.siamind, "load_mind", return_value={}),
                 mock.patch.object(
@@ -5929,7 +8451,7 @@ def _intent_page(st):
 
 
 class Intents(unittest.TestCase):
-    """Prospective memory: create, surface by deadline, close on the
+    """Dated intents: create, surface by deadline, close on the
     operator's word only."""
 
     def test_lifecycle(self):
@@ -5977,8 +8499,8 @@ class Intents(unittest.TestCase):
 
 
 class Coincidence(unittest.TestCase):
-    """Two organs spiking in the same window is an observation; the
-    thought states the coincidence and the sighting count, no cause."""
+    """Two sources exceeding bands in one pass is an observation; the
+    generated entry states the coincidence and occurrence count, no cause."""
 
     def test_pairs_counted(self):
         sialib = _load("sialib_c", os.path.join(BIN, "sialib.py"))
@@ -5987,12 +8509,12 @@ class Coincidence(unittest.TestCase):
               ("jackal", "absence", "z")]
         out = sialib.coincidence_findings(mind, f1, now=1000.0)
         self.assertEqual(len(out), 1)
-        self.assertIn("first sighting", out[0][0])
-        self.assertIn("not a cause", out[0][0])
+        self.assertIn("first recorded occurrence", out[0][0])
+        self.assertIn("no cause is inferred", out[0][0])
         self.assertEqual(sorted(out[0][1]),
                          ["organs/journal", "organs/pacman"])
         out2 = sialib.coincidence_findings(mind, f1, now=2000.0)
-        self.assertIn("2nd sighting", out2[0][0])
+        self.assertIn("2nd recorded occurrence", out2[0][0])
         self.assertEqual(mind["coincide"]["journal|pacman"]["n"], 2)
 
     def test_single_organ_none(self):
@@ -6091,7 +8613,7 @@ The worker dumped core.
 
     def test_entity_descriptions_stay_neutral(self):
         self._page("organs/sekhmet", "organ",
-                   "Self-healing fabric. Organ of [[sia/cortex]].\n")
+                   "Self-healing fabric. Source adapter for [[sia/cortex]].\n")
         self._page("skills/diagnose-crash", "skill",
                    "Agent skill installed here. Watched by [[organs/skills]].\n")
         self.assertIn("skill", self.entity_types)
@@ -6214,6 +8736,98 @@ Legacy model prose [[units/forged]].
             self.assertEqual(
                 {e["link_type"] for e in self._edges(slug)}, {"mentions"})
 
+    def test_substituted_edge_provider_non_mapping_fails_closed(self):
+        old_graph = self.sialib.GRAPH_PATH
+        self.sialib.GRAPH_PATH = os.path.join(self.tmp.name, "graph.json")
+        pages = [{"slug": "organs/example", "type": "organ",
+                  "title": "example",
+                  "updated_at": "2026-01-01T00:00:00Z"}]
+        try:
+            with mock.patch.object(
+                    self.sialib, "gbrain_all_pages",
+                    return_value=(pages, True, None)), \
+                    mock.patch.object(
+                        self.sialib, "corpus_edges", return_value=[None]):
+                self.sialib.export_graph(require_complete=False)
+            with open(self.sialib.GRAPH_PATH) as stream:
+                graph = json.load(stream)
+            self.assertFalse(graph["snapshot"]["complete"])
+            self.assertIn(
+                "corpus_edge_shape", graph["snapshot"]["failed_ops"])
+            self.assertEqual(graph["edges"], [])
+        finally:
+            self.sialib.GRAPH_PATH = old_graph
+
+    def test_substituted_edge_provider_unsafe_omission_count_refuses(self):
+        old_graph = self.sialib.GRAPH_PATH
+        self.sialib.GRAPH_PATH = os.path.join(self.tmp.name, "graph.json")
+        pages = [{"slug": "organs/example", "type": "organ",
+                  "title": "example",
+                  "updated_at": "2026-01-01T00:00:00Z"}]
+        try:
+            with mock.patch.object(
+                    self.sialib, "gbrain_all_pages",
+                    return_value=(pages, True, None)), \
+                    mock.patch.object(
+                        self.sialib, "corpus_edges",
+                        return_value=([], 9007199254740992)):
+                self.sialib.export_graph(require_complete=False)
+            with open(self.sialib.GRAPH_PATH) as stream:
+                graph = json.load(stream)
+            self.assertFalse(graph["snapshot"]["complete"])
+            self.assertIn("corpus_edges", graph["snapshot"]["failed_ops"])
+            self.assertEqual(graph["snapshot"]["omitted_edges"], 0)
+        finally:
+            self.sialib.GRAPH_PATH = old_graph
+
+    def test_substituted_edge_omission_requires_a_full_window(self):
+        old_graph = self.sialib.GRAPH_PATH
+        self.sialib.GRAPH_PATH = os.path.join(self.tmp.name, "graph.json")
+        pages = [{"slug": "organs/example", "type": "organ",
+                  "title": "example",
+                  "updated_at": "2026-01-01T00:00:00Z"}]
+        try:
+            with mock.patch.object(
+                    self.sialib, "gbrain_all_pages",
+                    return_value=(pages, True, None)), \
+                    mock.patch.object(
+                        self.sialib, "corpus_edges",
+                        return_value=([], 1)):
+                self.sialib.export_graph(require_complete=False)
+            with open(self.sialib.GRAPH_PATH) as stream:
+                graph = json.load(stream)
+            self.assertFalse(graph["snapshot"]["complete"])
+            self.assertIn("corpus_edges", graph["snapshot"]["failed_ops"])
+            self.assertEqual(graph["snapshot"]["omitted_edges"], 0)
+        finally:
+            self.sialib.GRAPH_PATH = old_graph
+
+    def test_substituted_edge_provider_cannot_exceed_edge_window(self):
+        old_graph = self.sialib.GRAPH_PATH
+        self.sialib.GRAPH_PATH = os.path.join(self.tmp.name, "graph.json")
+        pages = [{"slug": "organs/example", "type": "organ",
+                  "title": "example",
+                  "updated_at": "2026-01-01T00:00:00Z"}]
+        oversized = [
+            {"from_slug": "organs/example", "to_slug": "organs/example",
+             "link_type": f"relation-{index}", "context": "context"}
+            for index in range(4097)]
+        try:
+            with mock.patch.object(
+                    self.sialib, "gbrain_all_pages",
+                    return_value=(pages, True, None)), \
+                    mock.patch.object(
+                        self.sialib, "corpus_edges",
+                        return_value=oversized):
+                self.sialib.export_graph(require_complete=False)
+            with open(self.sialib.GRAPH_PATH) as stream:
+                graph = json.load(stream)
+            self.assertFalse(graph["snapshot"]["complete"])
+            self.assertIn("corpus_edges", graph["snapshot"]["failed_ops"])
+            self.assertEqual(graph["edges"], [])
+        finally:
+            self.sialib.GRAPH_PATH = old_graph
+
     def test_typed_occurrence_suppresses_generic_duplicate(self):
         self._page("events/packages", "event-day", """# packages
 
@@ -6251,6 +8865,23 @@ link_types:
         with self.assertRaisesRegex(ValueError, "unsafe domain regex"):
             self.sialib.load_domain_edge_spec(pack)
 
+    def test_schema_pack_relation_names_match_the_graph_envelope(self):
+        for label, name in (
+                ("spaces", "Not Canonical"),
+                ("hidden-format", "hidden\U000e0001relation")):
+            with self.subTest(label=label):
+                pack = os.path.join(
+                    self.tmp.name, "unsafe-name-" + label + ".yaml")
+                with open(pack, "w", encoding="utf-8") as stream:
+                    stream.write(
+                        "link_types:\n"
+                        f"  - name: {name}\n"
+                        "    inference:\n"
+                        "      regex: refused\n")
+                with self.assertRaisesRegex(
+                        ValueError, "name is not canonical"):
+                    self.sialib.load_domain_edge_spec(pack)
+
     def test_ambiguous_alternation_repeat_bypass_fails_closed(self):
         pack = os.path.join(self.tmp.name, "ambiguous-repeat.yaml")
         with open(pack, "w") as f:
@@ -6273,6 +8904,18 @@ link_types:
         os.symlink(target, link)
         with self.assertRaises(OSError):
             self.sialib.load_domain_edge_spec(link)
+
+    def test_schema_pack_hardlink_is_refused_as_aliased_policy(self):
+        pack = os.path.join(self.tmp.name, "pack.yaml")
+        shutil.copyfile(
+            os.path.join(REPO, "schema-pack", "pack.yaml"), pack)
+        alias = pack + ".alias"
+        os.link(pack, alias)
+        try:
+            with self.assertRaisesRegex(ValueError, "single-link"):
+                self.sialib.load_domain_edge_spec(pack)
+        finally:
+            os.unlink(alias)
 
     def test_schema_pack_newline_free_byte_overflow_is_refused(self):
         pack = os.path.join(self.tmp.name, "oversize.yaml")
@@ -6413,6 +9056,18 @@ class BoundedGraphProjection(unittest.TestCase):
         with open(self.sialib.GRAPH_PATH, encoding="utf-8") as stream:
             return json.load(stream)
 
+    def test_graph_reader_refuses_hardlinked_corpus_authority(self):
+        slug = "events/journal/hardlinked"
+        self._page(slug)
+        path = os.path.join(self.corpus, slug + ".md")
+        alias = path + ".alias"
+        os.link(path, alias)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "single-link"):
+                self.sialib._read_graph_corpus_page(slug)
+        finally:
+            os.unlink(alias)
+
     def test_directory_cookie_resumes_without_whole_corpus_materialization(self):
         self._page("events/journal/first")
         self._page("events/journal/second")
@@ -6453,6 +9108,36 @@ class BoundedGraphProjection(unittest.TestCase):
                   encoding="utf-8") as stream:
             self.assertEqual(json.load(stream)["failed_ops"], [])
 
+    def test_reserved_graph_namespace_special_node_is_refusal_debt(self):
+        for reserved in (".git", "event-index"):
+            with self.subTest(reserved=reserved):
+                path = os.path.join(self.corpus, reserved)
+                os.symlink(self.state, path)
+                try:
+                    self.sialib._mark_graph_projection_dirty()
+                    _pages, complete, failure = \
+                        self.sialib.gbrain_all_pages()
+                finally:
+                    os.unlink(path)
+                self.assertFalse(complete)
+                self.assertEqual(
+                    failure,
+                    "graph_reserved_directory_refused:" + reserved)
+
+    def test_navigable_graph_namespace_special_node_is_refusal_debt(self):
+        events = os.path.join(self.corpus, "events")
+        held = os.path.join(self.tmp.name, "events-held")
+        os.replace(events, held)
+        os.symlink(held, events)
+        try:
+            self.sialib._mark_graph_projection_dirty()
+            _pages, complete, failure = self.sialib.gbrain_all_pages()
+        finally:
+            os.unlink(events)
+            os.replace(held, events)
+        self.assertFalse(complete)
+        self.assertEqual(failure, "graph_nonregular_entry:events")
+
     def test_supported_mutation_restarts_projection_before_page_write(self):
         self._page("events/journal/first")
         for _attempt in range(20):
@@ -6466,6 +9151,26 @@ class BoundedGraphProjection(unittest.TestCase):
                 "events/journal/second",
                 ["type: event-day", self.sialib.fm_title("second")],
                 "[[sia/cortex]]\n")
+        state = self.sialib._load_graph_projection_state()
+        self.assertEqual(state["phase"], "scan")
+        self.assertEqual(state["candidates"], [])
+
+    def test_stale_ready_projection_restarts_when_page_bytes_differ(self):
+        slug = "events/journal/changed-after-ready"
+        self._page(slug, body="before\n")
+        for _attempt in range(20):
+            _pages, complete, _failure = self.sialib.gbrain_all_pages(
+                batch_size=1)
+            if complete:
+                break
+        self.assertTrue(complete)
+
+        self._page(slug, body="after\n")
+        self.sialib.export_graph(require_complete=False)
+
+        graph = self._graph()
+        self.assertFalse(graph["snapshot"]["complete"])
+        self.assertIn("corpus_edges", graph["snapshot"]["failed_ops"])
         state = self.sialib._load_graph_projection_state()
         self.assertEqual(state["phase"], "scan")
         self.assertEqual(state["candidates"], [])
@@ -6496,6 +9201,88 @@ class BoundedGraphProjection(unittest.TestCase):
                 "origin: model\n---\n[[sia/cortex]]\n")
         with self.assertRaisesRegex(RuntimeError, "origin is ambiguous"):
             self.sialib._read_graph_corpus_page("events/journal/origin")
+
+        record, _frontmatter, _body = \
+            self.sialib._read_graph_corpus_page("events/journal/title")
+        safe_record = copy.deepcopy(record)
+        record["title"] = "hidden\U000e0001title"
+        extra = self.sialib._fresh_graph_projection_state()
+        extra["unexpected"] = True
+        impossible_counts = self.sialib._fresh_graph_projection_state()
+        impossible_counts["pages_seen"] = 0
+        impossible_counts["eligible_seen"] = 1
+        hidden_failure = self.sialib._fresh_graph_projection_state()
+        hidden_failure["failed_ops"] = ["hidden\U000e0001failure"]
+        hidden_title = self.sialib._fresh_graph_projection_state()
+        hidden_title["candidates"] = [record]
+        hidden_title["pages_seen"] = 1
+        hidden_title["eligible_seen"] = 1
+        impossible_candidates = self.sialib._fresh_graph_projection_state()
+        impossible_candidates["candidates"] = [safe_record]
+        empty_scan = self.sialib._fresh_graph_projection_state()
+        empty_scan["queue"] = []
+        future_candidate = self.sialib._fresh_graph_projection_state()
+        future_record = copy.deepcopy(safe_record)
+        future_record["updated_at"] = "2999-01-01T00:00:00Z"
+        future_candidate["candidates"] = [future_record]
+        future_candidate["pages_seen"] = 1
+        future_candidate["eligible_seen"] = 1
+        future_started = self.sialib._fresh_graph_projection_state()
+        future_started["started_at"] = "2999-01-01T00:00:00Z"
+        wrong_cutoff = self.sialib._fresh_graph_projection_state()
+        wrong_cutoff["cutoff"] = wrong_cutoff["started_at"]
+        underflow_cutoff = self.sialib._fresh_graph_projection_state()
+        underflow_cutoff["started_at"] = "0001-01-01T00:00:00Z"
+        underflow_cutoff["cutoff"] = "0001-01-01T00:00:00Z"
+        duplicate_cursor = self.sialib._fresh_graph_projection_state()
+        duplicate_cursor["queue"].append(
+            copy.deepcopy(duplicate_cursor["queue"][0]))
+        wrong_cursor_depth = self.sialib._fresh_graph_projection_state()
+        wrong_cursor_depth["queue"][0]["levels"] = 0
+        open_cursor_page = self.sialib._fresh_graph_projection_state()
+        open_cursor_page["queue"][0]["page"] = {"unexpected": True}
+        partial_cursor_page = self.sialib._fresh_graph_projection_state()
+        partial_cursor_page["queue"][0]["page"] = {"cookie": 0}
+        for label, malformed, reason in (
+                ("extra-key", extra, "projection state"),
+                ("impossible-counts", impossible_counts,
+                 "projection state"),
+                ("hidden-failure", hidden_failure,
+                 "projection failure"),
+                ("hidden-title", hidden_title, "candidate"),
+                ("impossible-candidates", impossible_candidates,
+                 "projection state"),
+                ("empty-scan", empty_scan, "projection state"),
+                ("future-candidate", future_candidate, "candidate"),
+                ("future-started", future_started,
+                 "projection state"),
+                ("wrong-cutoff", wrong_cutoff, "projection state"),
+                ("underflow-cutoff", underflow_cutoff,
+                 "projection state"),
+                ("duplicate-cursor", duplicate_cursor, "cursor"),
+                ("wrong-cursor-depth", wrong_cursor_depth, "cursor"),
+                ("open-cursor-page", open_cursor_page, "cursor"),
+                ("partial-cursor-page", partial_cursor_page, "cursor")):
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(RuntimeError, reason):
+                    self.sialib._canonical_graph_projection_state(malformed)
+
+        self._page("events/journal/future", title="future")
+        future_path = os.path.join(
+            self.corpus, "events", "journal", "future.md")
+        future = time.time() + 3600
+        os.utime(future_path, (future, future))
+        with self.assertRaisesRegex(RuntimeError, "future timestamp"):
+            self.sialib._read_graph_corpus_page("events/journal/future")
+
+    def test_fresh_projection_uses_one_clock_observation(self):
+        instant = datetime.datetime.strptime(
+            "2026-09-04T12:00:00Z", "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=datetime.timezone.utc)
+        with mock.patch.object(
+                self.sialib, "utcnow", side_effect=[instant]):
+            state = self.sialib._fresh_graph_projection_state()
+        self.sialib._canonical_graph_projection_state(state)
 
     def test_recent_node_cap_is_complete_with_explicit_nonabsence_boundary(self):
         for index in range(self.sialib.MAX_GRAPH_NODES + 1):
@@ -6529,6 +9316,34 @@ class BoundedGraphProjection(unittest.TestCase):
         self.assertTrue(omitted)
         self.assertTrue(os.path.isfile(
             os.path.join(self.corpus, omitted[0] + ".md")))
+
+    def test_elapsed_window_adds_disjoint_aged_out_classes(self):
+        pages = [
+            {"slug": "events/journal/was-recent", "type": "event-day",
+             "title": "was recent",
+             "updated_at": "2000-01-01T00:00:00Z"},
+        ]
+        projection = {
+            "candidates": [{"slug": "events/journal/was-recent"}],
+            "pages_seen": 2,
+            "eligible_seen": 1,
+            "failed_ops": [],
+        }
+        with mock.patch.object(
+                self.sialib, "gbrain_all_pages",
+                return_value=(pages, True, None)), \
+                mock.patch.object(
+                    self.sialib, "corpus_edges", return_value=([], 0)), \
+                mock.patch.object(
+                    self.sialib, "_load_graph_projection_state",
+                    return_value=projection):
+            self.sialib.export_graph()
+        graph = self._graph()
+        self.assertEqual(graph["snapshot"]["aged_out"], 2)
+        self.assertEqual(
+            len(graph["nodes"]),
+            graph["pages_total"] - graph["snapshot"]["aged_out"]
+            - graph["snapshot"]["truncated"])
 
     def test_dense_valid_edge_window_caps_without_publication_debt(self):
         slugs = [f"events/journal/dense-{index:04d}"
@@ -6669,6 +9484,126 @@ class BoundedGraphProjection(unittest.TestCase):
                     RuntimeError, "backfill exceeded its generation ceiling"):
             self.sialib._reconcile_legacy_memory_authority({})
         self.assertEqual(take_advance.call_count, 2)
+
+class ProcessWideOsPatches(unittest.TestCase):
+    """`mock.patch.object(<module>.os, ...)` reaches the whole process.
+
+    Every module in bin/ does a plain `import os`, so `sialib.os` IS the
+    stdlib module object: the patch is not scoped to the module named in
+    the target, it replaces that attribute for everything running in the
+    interpreter until the block exits. Under the single-threaded
+    unittest runner that is safe, and at most of these sites it is the
+    only way to fail one exact syscall at one exact moment while the
+    real one still answers every other call. It stops being safe the day
+    any of this runs in parallel — xdist-style workers, a thread, an
+    async runner — because an unrelated test then picks up the injected
+    failure and reports it as its own defect.
+
+    So the inventory is frozen rather than forbidden: a new site has to
+    be added below on purpose, with its reason, instead of arriving in a
+    diff that reads as ordinary mocking. Where a test only needs a
+    tripwire ("this call must never happen"), the module-local form
+    `mock.patch.object(sialib, "os", <shim>)` rebinds one module's own
+    name and leaves the stdlib module alone — prefer it.
+    """
+
+    # (test file, patched expression, attribute). A leading "self." is
+    # normalised away: `self.sialib.os` and `sialib.os` are the same
+    # object, and which one a test writes is only style.
+    ACCEPTED = frozenset({
+        # Crash injection mid-commit. The durable write must really
+        # happen up to the chosen call and fail exactly there, so the
+        # recovery path is exercised against a real half-written tree.
+        ("test_sia.py", "sialib.os", "fsync"),
+        ("test_sia.py", "sialib.os", "unlink"),
+        ("test_thought_recovery.py", "sialib.os", "unlink"),
+        # Swap the file out from under a check (TOCTOU). Both stats have
+        # to be answered for real; only the moment between them moves.
+        ("test_calibration_benchmark.py", "siatakes.os", "stat"),
+        ("test_dream.py", "sialib.os", "lstat"),
+        ("test_release.py", "os", "fstat"),
+        ("test_release.py", "os", "stat"),
+        ("test_sia.py", "sialib.os", "read"),
+        ("test_staging_recovery.py", "siaqueue.os", "lstat"),
+        # Surveillance: record every path opened to prove a note body is
+        # never read, which needs the real open underneath each call.
+        ("test_sia.py", "sialib.os", "open"),
+        # Tripwires — the call must never be reached at all. These four
+        # need nothing underneath and could move to the module-local
+        # shim form; they are accepted, not endorsed.
+        ("test_calibration_benchmark.py", "siabench.os", "walk"),
+        ("test_calibration_benchmark.py", "siatakes.os", "listdir"),
+        ("test_ledger_recovery.py", "sialib.os", "listdir"),
+        ("test_sia.py", "sialib.os", "listdir"),
+        # A kernel and an owner the test host cannot supply otherwise.
+        ("test_ledger_init_recovery.py", "KEEPER.os", "O_TMPFILE"),
+        ("test_ledger_init_recovery.py", "KEEPER.os", "geteuid"),
+    })
+
+    ADVICE = ("patch a module-local shim — mock.patch.object(<module>, "
+              "'os', shim) — or add the site to "
+              "ProcessWideOsPatches.ACCEPTED with its reason")
+
+    @staticmethod
+    def _expression(node):
+        """Render an attribute chain back into dotted source text."""
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        parts.append(node.id if isinstance(node, ast.Name) else "<expr>")
+        text = ".".join(reversed(parts))
+        return text[len("self."):] if text.startswith("self.") else text
+
+    def _patched_os_attributes(self):
+        found = set()
+        tests = os.path.join(REPO, "tests")
+        for name in sorted(os.listdir(tests)):
+            if not name.endswith(".py"):
+                continue
+            with open(os.path.join(tests, name), encoding="utf-8") as src:
+                tree = ast.parse(src.read(), filename=name)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not node.args:
+                    continue
+                call = self._expression(node.func)
+                target = self._expression(node.args[0])
+                if call.endswith("patch.object"):
+                    if target != "os" and not target.endswith(".os"):
+                        continue
+                    # A computed attribute name is unreadable here, so it
+                    # is reported rather than guessed at.
+                    attribute = "<computed>"
+                    if len(node.args) > 1 \
+                            and isinstance(node.args[1], ast.Constant):
+                        attribute = node.args[1].value
+                    found.add((name, target, attribute))
+                elif call == "patch" or call.endswith(".patch"):
+                    # A string target reaches the same module attribute
+                    # by another road; it must not be a way around this.
+                    literal = node.args[0]
+                    if isinstance(literal, ast.Constant) \
+                            and isinstance(literal.value, str) \
+                            and ".os." in literal.value:
+                        module, _, attribute = literal.value.rpartition(".")
+                        found.add((name, module, attribute))
+        return found
+
+    def test_no_unlisted_process_wide_os_patch(self):
+        unlisted = self._patched_os_attributes() - self.ACCEPTED
+        self.assertEqual(
+            unlisted, set(),
+            f"process-wide os patch not accepted anywhere: {self.ADVICE}")
+
+    def test_accepted_sites_all_still_exist(self):
+        # A list that has drifted from the tests stops being a guard and
+        # starts being folklore, so a removed site is a failure too.
+        stale = self.ACCEPTED - self._patched_os_attributes()
+        self.assertEqual(
+            stale, set(),
+            "ProcessWideOsPatches.ACCEPTED lists sites that are gone; "
+            "delete these entries")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

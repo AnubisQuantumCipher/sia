@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused continuity-unit and runtime-v4 uninstall regressions."""
+"""Focused continuity-unit and current-runtime uninstall regressions."""
 
 import json
 import os
@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 try:
     from test_release import (  # type: ignore
         REPO,
+        SIARELEASE,
         _fake_command,
         _managed_cli_runtime,
         _managed_file_receipt,
@@ -22,11 +23,14 @@ try:
         _read,
         _read_path,
         _runtime_digest,
+        _runtime_tree_digest_shell,
+        _uninstaller_fenced_runtime_shell,
         _write,
     )
 except ModuleNotFoundError:
     from tests.test_release import (  # type: ignore
         REPO,
+        SIARELEASE,
         _fake_command,
         _managed_cli_runtime,
         _managed_file_receipt,
@@ -34,6 +38,8 @@ except ModuleNotFoundError:
         _read,
         _read_path,
         _runtime_digest,
+        _runtime_tree_digest_shell,
+        _uninstaller_fenced_runtime_shell,
         _write,
     )
 
@@ -47,11 +53,41 @@ CONTINUITY_UNITS = (
 BACKUP_TIMER, _BACKUP_CHECK_TIMER, BACKUP_SERVICE, _BACKUP_CHECK_SERVICE = \
     CONTINUITY_UNITS
 
-MODERN_V4_NAMES = (
-    "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-    "sia-mcp", "siabench.py", "sialib.py", "siamind.py", "siaqueue.py",
-    "siatakes.py", "siasenses.py", "siacapsule.py", "siabackup.py",
-    "siarestoreadmit.py", "sia-continuity-worker",
+MODERN_V4_NAMES = SIARELEASE.MODERN_V4_RUNTIME_NAMES
+MODERN_V5_NAMES = SIARELEASE.MODERN_V5_RUNTIME_NAMES
+MODERN_V6_NAMES = SIARELEASE.MODERN_V6_RUNTIME_NAMES
+MODERN_V7_NAMES = SIARELEASE.MODERN_V7_RUNTIME_NAMES
+MODERN_V8_NAMES = SIARELEASE.MODERN_V8_RUNTIME_NAMES
+MODERN_V9_NAMES = SIARELEASE.MODERN_V9_RUNTIME_NAMES
+
+# Members each rung added over its predecessor.  A rung is only pinned when
+# every one of them is load-bearing, including each marker whose presence
+# selects newer ground; shedding a marker must never leave an older receipt
+# authorized for the mutated tree.
+V4_NEW_MEMBERS = (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "sia-continuity-worker",
+)
+V5_NEW_MEMBERS = V4_NEW_MEMBERS + ("siagraph.py",)
+V6_NEW_MEMBERS = V5_NEW_MEMBERS + ("siathought.py",)
+V7_NEW_MEMBERS = V6_NEW_MEMBERS + (
+    "siaactivation.py", "siacognitivebaseline.py",
+    "siacognitivecommand.py", "siacognitivehistory.py",
+    "siacognitiveselect.py", "siacontrollerliveinput.py",
+    "siacontrollerstatus.py", "siacoretrieval.py",
+    "siacortexrepair.py", "siaencoding.py", "siaeventintake.py",
+    "siaeventplan.py", "siagist.py", "siajournalcapture.py",
+    "sialivegist.py", "sialiveloop.py", "sialivepublication.py",
+    "siasourcebatch.py", "siasourcepublication.py", "siavector.py",
+    "siavectoradmit.py", "siavectormodel.py", "siavectorprepare.py",
+    "siavectorrun.py", "siaworkspace.py",
+)
+V8_NEW_MEMBERS = V7_NEW_MEMBERS + (
+    "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+    "siasourcegit.py",
+)
+V9_NEW_MEMBERS = V8_NEW_MEMBERS + (
+    "siacontrollerepoch.py", "siacontrollersourcerunner.py",
 )
 
 
@@ -127,6 +163,13 @@ if [ "$1 $2" = "--user stop" ]; then
 fi
 exit 0
 '''
+
+
+def _shell_function(source, name):
+    marker = name + "() {"
+    if source.count(marker) != 1:
+        raise AssertionError(f"expected one production {name} function")
+    return marker + source.split(marker, 1)[1].split("\n}\n", 1)[0] + "\n}\n"
 
 
 class ContinuityUninstall(unittest.TestCase):
@@ -397,21 +440,34 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
             self.assertIn("ambiguous archive recovery retained", result.stderr)
             self.assertIn("purge blocked", result.stderr)
 
-    def test_runtime_v4_digest_and_fence_require_every_new_member(self):
+    def _fence_script(self):
         uninstaller = _read("uninstall.sh")
-        digest_function = "runtime_tree_digest() {" + uninstaller.split(
-            "runtime_tree_digest() {", 1)[1].split(
-                "\n}\nruntime_receipt_valid", 1)[0] + "\n}\n"
-        fence_function = "fenced_runtime_authorized() {" + uninstaller.split(
-            "fenced_runtime_authorized() {", 1)[1].split(
-                "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
+        digest_function = _runtime_tree_digest_shell(uninstaller)
+        fence_function = _uninstaller_fenced_runtime_shell(uninstaller)
+        # "set -eu", not "set -u": under plain -u a failed digest comparison
+        # is discarded and the script's status comes from the fence alone, so
+        # the rung/salt half of the ladder was asserted by a line that could
+        # not fail the test.  Both functions are a single python3 heredoc, so
+        # -e adds no spurious early exit.
+        return digest_function + fence_function + r'''
+set -eu
+LAUNCH_FENCE_JOURNAL="$TEST_JOURNAL"
+LIFECYCLE_TOMBSTONE="$TEST_TOMBSTONE"
+RUNTIME_RECEIPT="$TEST_RECEIPT"
+RUNTIME_BIN_DIR="$TEST_RUNTIME"
+[ "$(runtime_tree_digest "$RUNTIME_BIN_DIR")" = "$TEST_DIGEST" ]
+fenced_runtime_authorized
+'''
+
+    def _assert_rung_pins_every_member(
+            self, script, names, added, promotion=None):
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
             managed = os.path.join(root, "managed")
             receipt = os.path.join(managed, "runtime")
             journal = os.path.join(managed, "launch-fence.json")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            for name in MODERN_V4_NAMES:
+            for name in names:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
             digest = _runtime_digest(runtime)
             _write(
@@ -430,15 +486,6 @@ owned_file_cas archive "$TEST_UNIT_ARCHIVE" "$TEST_UNIT" \
                 }, sort_keys=True, separators=(",", ":")) + "\n",
                 0o600)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
-            script = digest_function + fence_function + r'''
-set -u
-LAUNCH_FENCE_JOURNAL="$TEST_JOURNAL"
-LIFECYCLE_TOMBSTONE="$TEST_TOMBSTONE"
-RUNTIME_RECEIPT="$TEST_RECEIPT"
-RUNTIME_BIN_DIR="$TEST_RUNTIME"
-[ "$(runtime_tree_digest "$RUNTIME_BIN_DIR")" = "$TEST_DIGEST" ]
-fenced_runtime_authorized
-'''
             environment = os.environ.copy()
             environment.update({
                 "TEST_JOURNAL": journal,
@@ -456,13 +503,77 @@ fenced_runtime_authorized
 
             result = authorize()
             self.assertEqual(result.returncode, 0, result.stderr)
-            for name in ("siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-                         "sia-continuity-worker"):
+            for name in added:
                 with self.subTest(missing=name):
                     path = os.path.join(runtime, name)
                     os.unlink(path)
                     self.assertNotEqual(authorize().returncode, 0)
                     _write(path, name + "\n", 0o644)
+            self.assertEqual(authorize().returncode, 0)
+            if promotion is not None:
+                # Dropping a later rung's member into an earlier rung's tree
+                # re-selects the ladder: the receipt was signed under the
+                # older salt and member list and must stop authorizing.
+                _write(
+                    os.path.join(runtime, promotion),
+                    promotion + "\n", 0o644)
+                self.assertNotEqual(authorize().returncode, 0, promotion)
+
+    def test_current_runtime_digest_and_fence_require_every_new_member(self):
+        script = self._fence_script()
+        for rung, names, added, promotion in (
+                ("v4", MODERN_V4_NAMES, V4_NEW_MEMBERS, "siagraph.py"),
+                ("v5", MODERN_V5_NAMES, V5_NEW_MEMBERS, "siathought.py"),
+                ("v6", MODERN_V6_NAMES, V6_NEW_MEMBERS, "sialiveloop.py"),
+                ("v7", MODERN_V7_NAMES, V7_NEW_MEMBERS,
+                 "siasourceack.py"),
+                ("v8", MODERN_V8_NAMES, V8_NEW_MEMBERS,
+                 "siacontrollerepoch.py"),
+                ("v9", MODERN_V9_NAMES, V9_NEW_MEMBERS, None)):
+            with self.subTest(rung=rung):
+                self._assert_rung_pins_every_member(
+                    script, names, added, promotion)
+
+    def test_release_authority_fd_survives_plugin_archive_and_closes(self):
+        uninstaller = _read("uninstall.sh")
+        hold = _shell_function(uninstaller, "hold_release_authority")
+        close = _shell_function(uninstaller, "close_release_authority")
+        with tempfile.TemporaryDirectory() as root:
+            plugin = os.path.join(root, "plugin")
+            archive = os.path.join(root, "plugin-archive")
+            source = os.path.join(plugin, "bin", "siarelease.py")
+            runtime = os.path.join(root, "runtime")
+            _write(source, _read("bin/siarelease.py"), 0o600)
+            for name in MODERN_V6_NAMES:
+                _write(os.path.join(runtime, name), name + "\n", 0o644)
+            digest = _runtime_digest(runtime)
+            script = hold + close + r'''
+set -eu
+SIA_RELEASE_AUTHORITY=""
+SIA_RELEASE_AUTHORITY_FD=""
+hold_release_authority "$TEST_SOURCE"
+held="$SIA_RELEASE_AUTHORITY"
+mv -- "$TEST_PLUGIN" "$TEST_ARCHIVE"
+[ ! -e "$TEST_SOURCE" ]
+[ "$(python3 "$SIA_RELEASE_AUTHORITY" runtime-tree-digest \
+  "$TEST_RUNTIME")" = "$TEST_DIGEST" ]
+close_release_authority
+[ -z "$SIA_RELEASE_AUTHORITY_FD" ]
+[ ! -e "$held" ]
+'''
+            environment = os.environ.copy()
+            environment.update({
+                "TEST_ARCHIVE": archive,
+                "TEST_DIGEST": digest,
+                "TEST_PLUGIN": plugin,
+                "TEST_RUNTIME": runtime,
+                "TEST_SOURCE": source,
+            })
+            result = subprocess.run(
+                ["bash", "-c", script], env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_purge_removes_continuity_secrets_but_normal_uninstall_retains_them(self):
         for purge in (False, True):

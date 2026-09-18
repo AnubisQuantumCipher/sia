@@ -51,3 +51,9 @@ def _cleanup():
 
 
 atexit.register(_cleanup)
+
+# Discovery imports this helper directly; composed fixtures also import it
+# through the tests namespace. Both spellings must retain this one owner,
+# not stack a second expanduser patch over already imported runtime paths.
+sys.modules.setdefault("sia_test_home", sys.modules[__name__])
+sys.modules.setdefault("tests.sia_test_home", sys.modules[__name__])

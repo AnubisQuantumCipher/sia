@@ -1,5 +1,5 @@
 [Unit]
-Description=SIA continuity — capture and encrypt the Omarchy Brain
+Description=SIA continuity — capture and encrypt local machine memory
 Documentation=https://github.com/AnubisQuantumCipher/sia
 After=network-online.target
 Wants=network-online.target

@@ -6,6 +6,7 @@ create a second, stale runtime state.  The owning core binds its current
 namespace immediately before each public sensing call instead.
 """
 
+import errno as _errno
 import threading as _threading
 
 def sense_jackal(cursors):
@@ -23,7 +24,7 @@ def sense_jackal(cursors):
     records = []
     for line in lines:
         try:
-            r = json.loads(line)
+            r = _strict_json_loads(line)
             if not isinstance(r, dict):
                 continue
             source_ts = r.get("ts", 0)
@@ -155,9 +156,9 @@ def sense_jackal(cursors):
     return evs
 
 
-def _attest_rows(path, cursors, key):
+def _attest_rows(path, cursors, key, *, source_fd=None):
     rows = []
-    for line in tail_lines(path, cursors, key):
+    for line in tail_lines(path, cursors, key, source_fd=source_fd):
         p = line.split("\t")
         if len(p) == 9:
             rows.append(p)
@@ -171,23 +172,28 @@ def _attest_generation(path, label):
         info = os.fstat(descriptor)
     finally:
         os.close(descriptor)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-        raise RuntimeError(f"{label} is not an owned regular file")
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1:
+        raise RuntimeError(
+            f"{label} is not an owned single-link regular file")
     return _journal_file_identity(info)
 
 
 def _verified_builtin_attest_rows(chain, cursors, key):
     """Verify and tail one unchanged built-in ledger generation.
 
-    The caller's cursor is isolated until the same ledger and verifier file
-    identities are observed before verification and after the bounded tail.
-    Thus no row appended/replaced after keeper success can become evidence in
-    this transaction.
+    Keep the descriptor-bound verifier and its declared authority inputs alive
+    through the bounded tail. The caller's cursor commits only after every
+    retained generation still matches, including keeper sidecars.
     """
     binding = _chain_cmds().get(chain)
     if binding is None:
         return []
-    ledger, tool, command = binding
+    try:
+        ledger, tool, command, inputs = _normalize_chain_binding(binding)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{chain} ledger projection binding is invalid") from exc
     if command and command[0] == INVALID_CHAIN_SENTINEL:
         raise RuntimeError(f"{chain} ledger projection binding is invalid")
     if not os.path.lexists(ledger) and not os.path.lexists(tool):
@@ -195,26 +201,41 @@ def _verified_builtin_attest_rows(chain, cursors, key):
     if not os.path.lexists(ledger) or not os.path.lexists(tool):
         raise RuntimeError(f"{chain} ledger projection keeper is incomplete")
     trial = copy.deepcopy(cursors)
-    ledger_before = _attest_generation(ledger, f"{chain} ledger")
-    tool_before = _attest_generation(tool, f"{chain} verifier")
     try:
-        verified = _run_bounded_text_process(
-            command, env=None, timeout=60, cwd=None,
-            label=f"{chain} ledger verifier")
+        with _bound_chain_verification(
+                chain, ledger, tool, command, inputs) as bound:
+            bound_ledger = next(
+                record for record in bound["records"]
+                if record["path"] == ledger and not record["directory"])
+            for record in bound["records"]:
+                if record["path"] not in (ledger, tool):
+                    continue
+                info = os.fstat(record["fd"])
+                if info.st_uid != os.geteuid() or info.st_nlink != 1:
+                    raise RuntimeError(
+                        f"{record['label']} is not an owned single-link "
+                        "regular file")
+            verified = _run_bounded_text_process(
+                bound["command"], env=bound["env"], timeout=60,
+                cwd=bound["cwd"],
+                label=f"{chain} ledger verifier", pass_fds=bound["pass_fds"],
+                output_limit=MAX_CONFIG_BYTES, isolate_process_tree=True,
+                retain_output=False)
+            if verified.returncode != 0:
+                raise RuntimeError(f"{chain} keeper exited nonzero")
+            if not all(_chain_generation_matches(record)
+                       for record in bound["records"]):
+                raise RuntimeError(
+                    f"{chain} ledger projection changed after keeper verification")
+            rows = _attest_rows(
+                ledger, trial, key, source_fd=bound_ledger["fd"])
+            if not all(_chain_generation_matches(record)
+                       for record in bound["records"]):
+                raise RuntimeError(
+                    f"{chain} ledger projection changed after keeper verification")
     except Exception as exc:
         raise RuntimeError(
-            f"{chain} ledger projection keeper did not run") from exc
-    if verified.returncode != 0:
-        detail = (verified.stderr or verified.stdout
-                  or "keeper refused")[-160:]
-        raise RuntimeError(
-            f"{chain} ledger projection refused: {detail}")
-    rows = _attest_rows(ledger, trial, key)
-    ledger_after = _attest_generation(ledger, f"{chain} ledger")
-    tool_after = _attest_generation(tool, f"{chain} verifier")
-    if ledger_before != ledger_after or tool_before != tool_after:
-        raise RuntimeError(
-            f"{chain} ledger projection changed after keeper verification")
+            f"{chain} ledger projection refused: {exc}") from exc
     cursors.clear()
     cursors.update(trial)
     return rows
@@ -296,7 +317,7 @@ def sense_sia(cursors):
     """Project verified SIA lifecycle rows into answer-bearing memory pages.
 
     PULSE rows are deliberately excluded: projecting one would itself make
-    the corpus dirty and mint another PULSE row, creating an endogenous loop.
+    the corpus dirty and mint another PULSE row, creating a feedback loop.
     Benchmark-result rows are excluded for the analogous evaluation-feedback
     reason. Source refusal rows are also terminal evidence, not fresh source
     material: projecting one and refusing that projection could otherwise
@@ -742,13 +763,20 @@ def _journal_seed_cursor(cursor_file, tmp):
         raise RuntimeError("journal cursor changed while copied")
 
 
+def _real_process_pid(process):
+    pid = process.pid
+    if type(pid) is not int or pid <= 1:
+        raise RuntimeError("bounded subprocess lost its process identity")
+    return pid
+
+
 def _await_process_exit_unreaped(process, deadline, command, timeout):
     """Wait for leader exit through pidfd while preserving its PID/PGID."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(command, timeout)
     try:
-        pidfd = os.pidfd_open(process.pid, 0)
+        pidfd = os.pidfd_open(_real_process_pid(process), 0)
     except (AttributeError, OSError) as exc:
         raise RuntimeError(
             "bounded subprocess cannot establish a stable process identity") \
@@ -767,8 +795,9 @@ def _signal_and_reap_process_group(process, timeout):
     """Signal a still-identity-bound process group, then reap its leader."""
     if process is None:
         return None
+    pid = _real_process_pid(process)
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        os.killpg(pid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
         try:
             process.kill()
@@ -873,7 +902,7 @@ def _journalctl_records(cmd, *, record_limit=None, output_limit=None):
                             "journalctl output exceeds record bound; "
                             "cursor retained")
                     try:
-                        records.append(json.loads(line))
+                        records.append(_strict_json_loads(line))
                     except (UnicodeError, ValueError, RecursionError) as exc:
                         raise RuntimeError(
                             "journalctl returned malformed JSON; "
@@ -1050,7 +1079,7 @@ def _journalctl_projected_records(cmd, catalog, scope):
                         reason = "journal-record-over-bound"
                     else:
                         try:
-                            parsed = json.loads(raw.decode(
+                            parsed = _strict_json_loads(raw.decode(
                                 "utf-8", errors="strict"))
                         except (UnicodeError, ValueError, RecursionError):
                             reason = "journal-record-malformed"
@@ -1112,42 +1141,62 @@ def _journalctl_projected_records(cmd, catalog, scope):
             _journal_abort_process(process)
 
 
-def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
-    tmp = cursor_file + ".pulse"
-    catalog_tmp = tmp + ".catalog"
-    full_tmp = tmp + ".full"
+def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys", journal_context=None):
+    if journal_context is None:
+        tmp = cursor_file + ".pulse"
+        catalog_tmp = tmp + ".catalog"
+        full_tmp = tmp + ".full"
+    else:
+        tmp, catalog_tmp, full_tmp = journal_context.begin(scope, cursor_file, metadata_only)
     temporary = (tmp, catalog_tmp, full_tmp)
     try:
-        for target in temporary:
-            try:
-                tmp_info = os.lstat(target)
-            except FileNotFoundError:
-                continue
-            if not (stat.S_ISREG(tmp_info.st_mode)
-                    or stat.S_ISLNK(tmp_info.st_mode)):
-                raise RuntimeError("journal temporary cursor is not a file")
-            os.unlink(target)
-        _journal_seed_cursor(cursor_file, catalog_tmp)
+        if journal_context is None:
+            for target in temporary:
+                try:
+                    tmp_info = os.lstat(target)
+                except FileNotFoundError:
+                    continue
+                if not (stat.S_ISREG(tmp_info.st_mode)
+                        or stat.S_ISLNK(tmp_info.st_mode)):
+                    raise RuntimeError("journal temporary cursor is not a file")
+                os.unlink(target)
+            _journal_seed_cursor(cursor_file, catalog_tmp)
+        else:
+            journal_context.seed(scope, catalog_tmp)
         catalog_cmd = [
             "journalctl", "-o", "json", "--output-fields=__CURSOR",
             "--no-pager", f"--cursor-file={catalog_tmp}"] + args
-        catalog_rows = _journalctl_records(
-            catalog_cmd, record_limit=MAX_JOURNAL_CURSOR_BYTES,
-            output_limit=MAX_STATE_JSON_BYTES)
+        try:
+            catalog_rows = _journalctl_records(
+                catalog_cmd, record_limit=MAX_STATE_JSON_BYTES,
+                output_limit=MAX_STATE_JSON_BYTES)
+        finally:
+            if journal_context is not None:
+                journal_context.settle(scope, catalog_tmp)
         catalog = [_journal_catalog_cursor(row) for row in catalog_rows]
         if len(catalog) != len(set(catalog)):
             raise RuntimeError("journal cursor catalog repeats an entry")
 
         out, refusals, processed = [], [], len(catalog)
         if not metadata_only and catalog:
-            _journal_seed_cursor(cursor_file, full_tmp)
+            if journal_context is None:
+                _journal_seed_cursor(cursor_file, full_tmp)
+            else:
+                journal_context.seed(scope, full_tmp)
             full_cmd = ["journalctl", "-o", "json", "--no-pager",
                         f"--cursor-file={full_tmp}"] + args
-            out, refusals, processed = _journalctl_projected_records(
-                full_cmd, catalog, scope)
+            try:
+                out, refusals, processed = _journalctl_projected_records(
+                    full_cmd, catalog, scope)
+            finally:
+                if journal_context is not None:
+                    journal_context.settle(scope, full_tmp)
 
         # The source cursor is selected from the verified catalog prefix, not
         # from either producer-owned cursor file (which may have run ahead).
+        if journal_context is not None:
+            captured = journal_context.finish(scope, catalog, processed)
+            return out, captured, refusals
         _journal_seed_cursor(cursor_file, tmp)
         if processed:
             _journal_unlink_tmp(tmp)
@@ -1169,8 +1218,11 @@ def _journalctl(args, cursor_file, *, metadata_only=False, scope="sys"):
         if not stat.S_ISREG(info.st_mode):
             raise RuntimeError("journalctl produced an unsafe cursor file")
     except Exception:
-        for target in temporary:
-            _journal_unlink_tmp(target)
+        if journal_context is None:
+            for target in temporary:
+                _journal_unlink_tmp(target)
+        else:
+            journal_context.abort()
         raise
     _journal_unlink_tmp(catalog_tmp)
     _journal_unlink_tmp(full_tmp)
@@ -1192,23 +1244,25 @@ def _journal_msg(msg):
     return str(msg)
 
 
-def sense_journal(cursors):
+def sense_journal(cursors, *, journal_context=None):
     evs = []
     pending = []
     refusals = []
     try:
         for scope, extra in (("sys", []), ("user", ["--user"])):
             cfile = os.path.join(STATE, f"journal-{scope}.cursor")
-            first = not os.path.lexists(cfile)
+            first = (not os.path.lexists(cfile) if journal_context is None
+                     else journal_context.baseline(scope, cfile))
+            context_args = {} if journal_context is None else {"journal_context": journal_context}
             if first:
                 _records, cursor, _refused = _journalctl(
                     extra + ["-n", "1"], cfile,
-                    metadata_only=True, scope=scope)
+                    metadata_only=True, scope=scope, **context_args)
                 pending.append(cursor)
                 continue
             recs, cursor, refused = _journalctl(
                 extra + ["-p", "err..alert", "-n", "+300"], cfile,
-                scope=scope)
+                scope=scope, **context_args)
             pending.append(cursor)
             refusals.extend(refused)
             for record in recs:
@@ -1236,22 +1290,31 @@ def sense_journal(cursors):
                     {"organs/journal", f"units/{u}"}, tags,
                     occurrence=f"journal:{scope}:{source_cursor}"))
     except Exception:
-        for tmp, _real in pending:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+        if journal_context is None:
+            for tmp, _real in pending:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        else:
+            journal_context.abort()
         raise
     if refusals:
         queued = cursors.setdefault(SOURCE_RECORD_REFUSALS_KEY, [])
         if not isinstance(queued, list) \
                 or len(queued) + len(refusals) \
                 > MAX_LEDGER_PENDING_RECORDS:
-            for tmp, _real in pending:
-                _journal_unlink_tmp(tmp)
+            if journal_context is None:
+                for tmp, _real in pending:
+                    _journal_unlink_tmp(tmp)
+            else:
+                journal_context.abort()
             raise ValueError("source record refusal state exceeds its bound")
         queued.extend(refusals)
-    PENDING_CURSOR_RENAMES.extend(pending)
+    if journal_context is None:
+        PENDING_CURSOR_RENAMES.extend(pending)
+    else:
+        journal_context.current()
     return evs
 
 
@@ -1274,8 +1337,16 @@ def sense_guardian(cursors):
             cursors.pop(page_key, None)
             continue
         cursors[page_key] = next_page
-        names = [entry["name"] for entry in entries
-                 if not entry["name"].endswith(".applied")]
+        names = []
+        for entry in entries:
+            name = entry["name"]
+            if name.endswith(".applied"):
+                continue
+            if not stat.S_ISREG(entry["mode"]):
+                evs.append(_source_entry_refusal_event(
+                    "guardian", f"guardian {label} {name}"))
+                continue
+            names.append(name)
         seen = _bounded_seen_names(cursors.get(key))
         if seen is None:
             seen = []
@@ -1321,6 +1392,10 @@ def sense_git(cursors):
     cursors[page_key] = next_page
     directory_reset = bool(next_page.get("reset", False))
     repos = [entry for entry in entries if stat.S_ISDIR(entry["mode"])]
+    special_project_entries = [
+        entry for entry in entries
+        if not stat.S_ISDIR(entry["mode"])
+        and not stat.S_ISREG(entry["mode"])]
     cycle_value = cursors.get("source.git.cycle")
     if began_at_start or directory_reset:
         cycle_live = []
@@ -1336,6 +1411,10 @@ def sense_git(cursors):
         else:
             cycle_live = _bounded_seen_names(cycle_value.get("live")) or []
             cycle_coverage = cycle_value["coverage"]
+    for entry in special_project_entries:
+        cycle_coverage = False
+        evs.append(_source_entry_refusal_event(
+            "projects", f"project repository {entry['name']}"))
     cycle_live_set = set(cycle_live)
     admitted = _bounded_seen_names(cursors.get("source.git.repositories"))
     if admitted is None:
@@ -1657,11 +1736,52 @@ def sense_obsidian(cursors):
         os.close(git_fd)
 
 
+def _session_cursor_row_valid(value):
+    """Accept one canonical session row, including its upgrade-only shape."""
+    if not isinstance(value, dict) or set(value) not in ({
+            "size", "announced", "generation"}, {
+            "size", "announced", "generation", "snapshot_generation"}):
+        return False
+    integer_fields = {"size", "generation"}
+    if "snapshot_generation" in value:
+        integer_fields.add("snapshot_generation")
+    return isinstance(value["announced"], bool) and all(
+        not isinstance(value[field], bool)
+        and isinstance(value[field], int) and value[field] >= 0
+        for field in integer_fields)
+
+
+def _normalized_session_cursor_row(value):
+    """Migrate only byte-exact historical session row schemas."""
+    if _session_cursor_row_valid(value):
+        return copy.deepcopy(value)
+    if isinstance(value, dict) and set(value) == {"size", "announced"} \
+            and not isinstance(value["size"], bool) \
+            and isinstance(value["size"], int) and value["size"] >= 0 \
+            and isinstance(value["announced"], bool):
+        return {**value, "generation": 0}
+    if isinstance(value, dict) and set(value) == {
+            "off", "n", "title", "announced", "cwd"} \
+            and all(not isinstance(value[field], bool)
+                    and isinstance(value[field], int) and value[field] >= 0
+                    for field in ("off", "n")) \
+            and isinstance(value["announced"], bool) \
+            and _strict_config_string(
+                value["title"], limit=MAX_CONFIG_TEXT_CHARS) \
+            and _strict_config_string(
+                value["cwd"], limit=MAX_CONFIG_PATH_CHARS):
+        return {"size": value["off"], "announced": value["announced"],
+                "generation": 0}
+    return value
+
+
 def sense_claude(cursors):
     """Claude sessions from filesystem metadata only; payloads are unopened."""
     evs = []
     sessions, state_truncated = _bounded_source_state(
-        cursors, "claude.sessions", "claude-session")
+        cursors, "claude.sessions", "claude-session",
+        value_validator=_session_cursor_row_valid,
+        value_normalizer=_normalized_session_cursor_row)
     if state_truncated:
         evs.append(_source_truncation_event(
             "claude-code", "Claude session cursor"))
@@ -1683,8 +1803,9 @@ def sense_claude(cursors):
                 "claude-code", f"Claude session {sid_raw}"))
             continue
         if st is None:
-            # first sighting: only announce if the file is fresh (< 1 h old)
-            fresh = (time.time() - source["mtime"]) < 3600
+            # First observation: announce only if the file is fresh (< 1 h old).
+            age = time.time() - source["mtime"]
+            fresh = 0 <= age < 3600
             sessions[sid] = {"size": size, "announced": fresh,
                              "generation": 0,
                              "snapshot_generation": snapshot_generation}
@@ -1715,7 +1836,7 @@ def sense_claude(cursors):
                    "generation": generation,
                    "snapshot_generation": snapshot_generation})
         if not was_announced:
-            # an old session woke up after we first saw it — start reporting
+            # An old session grew after its initial observation; start reporting.
             evs.append(Event("claude-code", utcnow(), "session",
                              f"agent session {clip(sid_raw, 8)}… resumed",
                              {"organs/claude-code"}, {"claude-code"},
@@ -1742,10 +1863,12 @@ def sense_codex(cursors):
     """Codex CLI sessions — metadata only (existence, growth), never
     payload bodies. Dated tree: ~/.codex/sessions/YYYY/MM/DD/*.jsonl.
     Closes the coverage gap where MCP advertised Codex but only Claude
-    was a first-class session organ."""
+    was a first-class session source."""
     evs = []
     sessions, state_truncated = _bounded_source_state(
-        cursors, "codex.sessions", "codex-session")
+        cursors, "codex.sessions", "codex-session",
+        value_validator=_session_cursor_row_valid,
+        value_normalizer=_normalized_session_cursor_row)
     if state_truncated:
         evs.append(_source_truncation_event("codex", "Codex session cursor"))
     files, complete_snapshot, refused, snapshot_generation = \
@@ -1766,7 +1889,8 @@ def sense_codex(cursors):
                 "codex", f"Codex session {sid_raw}"))
             continue
         if st is None:
-            fresh = (time.time() - source["mtime"]) < 3600
+            age = time.time() - source["mtime"]
+            fresh = 0 <= age < 3600
             sessions[sid] = {"size": size, "announced": fresh,
                              "generation": 0,
                              "snapshot_generation": snapshot_generation}
@@ -1809,230 +1933,1173 @@ def sense_codex(cursors):
     return evs
 
 
-def sense_notify(cursors):
+_NOTIFY_LEGACY_CURSOR_KEYS = frozenset({
+    "notify.last", "notify.pending", "notify.pending_complete",
+    "notify.paginated", "notify.baselining", "notify.seen",
+    "notify.cycle_max",
+})
+_NOTIFY_SCAN_MODES = frozenset({"baseline", "replay", "empty-replay"})
+_NOTIFY_SCAN_SCHEMA = "sia-notification-directory-scan-v3"
+_NOTIFY_SCAN_LEGACY_SCHEMAS = frozenset({
+    "sia-notification-directory-scan-v1",
+    "sia-notification-directory-scan-v2",
+})
+_NOTIFY_BASELINE_SCHEMA = "sia-notification-baseline-v1"
+_NOTIFY_OPAQUE_CAUSES = frozenset({
+    "baseline-unstable", "legacy-ambiguous", "v2-migration"})
+# Arithmetic evidence: status=exact, parsed=256*8, exact=2048; parsed=256*2,
+# exact=512. Exact rational arithmetic outside the Lean certificate chain;
+# NOT formal-bounded.
+_NOTIFY_FILTER_BYTES = 256
+_NOTIFY_FILTER_BITS = 2048
+_NOTIFY_FILTER_HEX_CHARS = 512
+
+
+def _notify_generation(value):
+    """Return one canonical completed notification-directory generation."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("notification directory generation is invalid")
+    generation = _source_tree_directory_generation(value)
+    if value != generation:
+        raise ValueError("notification directory generation is invalid")
+    return generation
+
+
+def _notify_scan_candidate(value):
+    """Validate one bounded notification generation candidate."""
+    if value is None:
+        return {
+            "schema": _NOTIFY_SCAN_SCHEMA, "generation": None,
+            "sources": [], "truncated": False,
+            "baseline_bits": "0" * _NOTIFY_FILTER_HEX_CHARS,
+        }
+    if not isinstance(value, dict) \
+            or set(value) != {
+                "schema", "generation", "sources", "truncated",
+                "baseline_bits"} \
+            or value.get("schema") != _NOTIFY_SCAN_SCHEMA \
+            or not isinstance(value.get("sources"), list) \
+            or not isinstance(value.get("truncated"), bool) \
+            or not isinstance(value.get("baseline_bits"), str) \
+            or len(value["baseline_bits"]) != _NOTIFY_FILTER_HEX_CHARS \
+            or re.fullmatch(r"[0-9a-f]+", value["baseline_bits"]) is None \
+            or len(value["sources"]) > MAX_LEDGER_PENDING_RECORDS \
+            or any(not _agent_source_capture_valid(source, suffix=None)
+                   for source in value["sources"]) \
+            or len({source["name"] for source in value["sources"]}) \
+            != len(value["sources"]) \
+            or value["sources"] != sorted(
+                value["sources"], key=_notification_source_order,
+                reverse=True) \
+            or (value["truncated"]
+                and len(value["sources"]) != MAX_LEDGER_PENDING_RECORDS):
+        raise ValueError("notification directory scan cursor is invalid")
+    generation = _notify_generation(value.get("generation"))
+    if generation is None or value["generation"] != generation:
+        raise ValueError("notification directory scan cursor is invalid")
+    return value
+
+
+def _notification_name_valid(value):
+    """Whether a cursor value can be one exact filesystem component."""
+    if not isinstance(value, str):
+        return False
+    try:
+        raw = os.fsencode(value)
+    except UnicodeError:
+        return False
+    return bool(raw) and raw not in {b".", b".."} \
+        and b"/" not in raw and b"\0" not in raw \
+        and len(raw) <= MAX_CORPUS_COMPONENT_BYTES
+
+
+def _notify_baseline(value):
+    """Return one immutable exact/filter baseline or opaque boundary."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) \
+            or value.get("schema") != _NOTIFY_BASELINE_SCHEMA:
+        raise ValueError("notification baseline cursor is invalid")
+    if value.get("kind") == "exact":
+        if set(value) != {"schema", "kind", "names"} \
+                or not isinstance(value.get("names"), list) \
+                or len(value["names"]) > MAX_LEDGER_PENDING_RECORDS \
+                or any(not _notification_name_valid(name)
+                       for name in value["names"]) \
+                or len(set(value["names"])) != len(value["names"]) \
+                or value["names"] != sorted(
+                    value["names"], key=os.fsencode):
+            raise ValueError("notification baseline cursor is invalid")
+        return {"schema": _NOTIFY_BASELINE_SCHEMA, "kind": "exact",
+                "names": list(value["names"])}
+    if value.get("kind") == "filter":
+        if set(value) != {"schema", "kind", "bits"} \
+                or not isinstance(value.get("bits"), str) \
+                or len(value["bits"]) != _NOTIFY_FILTER_HEX_CHARS \
+                or re.fullmatch(r"[0-9a-f]+", value["bits"]) is None \
+                or value["bits"] == "0" * _NOTIFY_FILTER_HEX_CHARS:
+            raise ValueError("notification baseline cursor is invalid")
+        return dict(value)
+    if value.get("kind") == "opaque":
+        if set(value) != {"schema", "kind", "cause"} \
+                or value.get("cause") not in _NOTIFY_OPAQUE_CAUSES:
+            raise ValueError("notification baseline cursor is invalid")
+        return dict(value)
+    raise ValueError("notification baseline cursor is invalid")
+
+
+def _notify_opaque_baseline(cause):
+    if cause not in _NOTIFY_OPAQUE_CAUSES:
+        raise ValueError("notification baseline cause is invalid")
+    return {"schema": _NOTIFY_BASELINE_SCHEMA,
+            "kind": "opaque", "cause": cause}
+
+
+def _notify_filter_add(bits, name):
+    """Add a raw leaf name to the fixed one-sided membership filter."""
+    digest = hashlib.sha256(
+        (_NOTIFY_BASELINE_SCHEMA + "\0").encode("ascii")
+        + os.fsencode(name)).digest()
+    bit = int.from_bytes(digest, "big") % _NOTIFY_FILTER_BITS
+    byte_index, bit_index = divmod(bit, 8)
+    updated = bytearray.fromhex(bits)
+    updated[byte_index] |= 1 << bit_index
+    return updated.hex()
+
+
+def _notify_filter_contains(bits, name):
+    """Return false only when the immutable filter proves non-membership."""
+    digest = hashlib.sha256(
+        (_NOTIFY_BASELINE_SCHEMA + "\0").encode("ascii")
+        + os.fsencode(name)).digest()
+    bit = int.from_bytes(digest, "big") % _NOTIFY_FILTER_BITS
+    byte_index, bit_index = divmod(bit, 8)
+    return bool(bytes.fromhex(bits)[byte_index] & (1 << bit_index))
+
+
+def _notify_baseline_from_scan(scan):
+    """Bind a clean first generation with one-sided overflow membership."""
+    if scan["truncated"]:
+        return {
+            "schema": _NOTIFY_BASELINE_SCHEMA,
+            "kind": "filter",
+            "bits": scan["baseline_bits"],
+        }
+    return {
+        "schema": _NOTIFY_BASELINE_SCHEMA,
+        "kind": "exact",
+        "names": sorted(
+            (source["name"] for source in scan["sources"]),
+            key=os.fsencode),
+    }
+
+
+def _notify_baseline_refusal_event(baseline):
+    return _source_entry_refusal_event(
+        "notify", f"notification baseline {baseline['cause']}")
+
+
+def _legacy_notify_cursor_valid(cursors):
+    """Validate the bounded legacy fields before replacing their authority."""
+    for key in ("notify.last", "notify.cycle_max"):
+        if key in cursors and cursors[key] != "" \
+                and not _notification_name_valid(cursors[key]):
+            return False
+    for key in ("notify.pending", "notify.seen"):
+        if key not in cursors:
+            continue
+        names = cursors[key]
+        if not isinstance(names, list) \
+                or len(names) > MAX_SOURCE_SCAN_ENTRIES \
+                or any(not _notification_name_valid(name)
+                       for name in names) \
+                or len(set(names)) != len(names):
+            return False
+    for key in ("notify.pending_complete", "notify.paginated",
+                "notify.baselining"):
+        if key in cursors and not isinstance(cursors[key], bool):
+            return False
+    return True
+
+
+def _notify_scan_page_authority(cursors):
+    """Validate a paired in-progress directory page and scan candidate."""
+    page_present = "source.notify.page" in cursors
+    scan_present = "notify.scan" in cursors
+    if page_present != scan_present:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    if not page_present:
+        return False
+    try:
+        scan = _notify_scan_candidate(cursors["notify.scan"])
+        page = _validated_source_page_state(cursors["source.notify.page"])
+        page_generation = _source_tree_directory_generation(page)
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError(
+            "notification replay cursor authority is ambiguous") from None
+    if page.get("cookie", 0) <= 0 \
+            or scan["generation"] != page_generation:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    return True
+
+
+def _notify_replay_authority(cursors, *, allow_opaque=False):
+    """Name the persisted authority that can justify notification replay.
+
+    A source replay marker predates cursor publication.  Only an immutable
+    membership baseline from the current runtime, or the unique legacy state
+    proving an empty prior directory, can distinguish a newly observed name
+    from a pre-upgrade baseline row.
+    """
+    if not isinstance(allow_opaque, bool) or not isinstance(cursors, dict):
+        raise ValueError("notification replay cursor image is invalid")
+    legacy_keys = {
+        key for key in _NOTIFY_LEGACY_CURSOR_KEYS if key in cursors}
+    current_keys = {
+        "notify.baseline", "notify.generation", "notify.scan_mode",
+        "notify.scan_tainted", "notify.scan", "source.notify.page",
+    }
+    if legacy_keys:
+        if legacy_keys == {"notify.last"} \
+                and cursors["notify.last"] == "" \
+                and not current_keys.intersection(cursors):
+            return "legacy-empty"
+        raise ValueError("notification replay cursor authority is ambiguous")
+    try:
+        baseline = _notify_baseline(cursors.get("notify.baseline"))
+        generation = _notify_generation(cursors.get("notify.generation"))
+    except ValueError:
+        raise ValueError(
+            "notification replay cursor authority is ambiguous") from None
+    mode_present = "notify.scan_mode" in cursors
+    mode = cursors.get("notify.scan_mode")
+    taint_present = "notify.scan_tainted" in cursors
+    tainted = cursors.get("notify.scan_tainted", False)
+    if mode_present and mode not in _NOTIFY_SCAN_MODES \
+            or not isinstance(tainted, bool) \
+            or tainted and mode is None:
+        raise ValueError("notification replay cursor authority is ambiguous")
+    page_present = _notify_scan_page_authority(cursors)
+    if mode is None and (taint_present or page_present):
+        raise ValueError("notification replay cursor authority is ambiguous")
+    if baseline is not None and baseline["kind"] in {"exact", "filter"} \
+            and generation is not None:
+        if mode not in {None, "replay"} \
+                or not allow_opaque and mode is not None:
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "baseline"
+    if baseline is not None and baseline["kind"] == "exact" \
+            and not baseline["names"] and generation is None \
+            and "notify.generation" not in cursors \
+            and cursors.get("notify.scan_mode") == "empty-replay":
+        tainted = cursors.get("notify.scan_tainted", False)
+        if not isinstance(tainted, bool):
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "legacy-empty-continuation"
+    if allow_opaque and baseline is not None \
+            and baseline["kind"] == "opaque":
+        if mode not in {None, "replay"} \
+                or generation is None and mode != "replay":
+            raise ValueError(
+                "notification replay cursor authority is ambiguous")
+        return "opaque-diagnostic"
+    if allow_opaque and baseline is None and generation is None \
+            and mode == "baseline" and page_present:
+        return "baseline-continuation"
+    raise ValueError("notification replay cursor authority is ambiguous")
+
+
+def _notify_cursor_checkpoint_safe(cursors):
+    """Whether a durable cursor makes an interrupted baseline unambiguous."""
+    try:
+        _notify_replay_authority(cursors, allow_opaque=True)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _notify_recover_interrupted_baseline(cursors):
+    """Turn a pre-cursor crash at first baseline into permanent opacity."""
+    if not isinstance(cursors, dict):
+        raise ValueError("notification baseline recovery cursor is invalid")
+    recovered = copy.deepcopy(cursors)
+    if _notify_cursor_checkpoint_safe(recovered):
+        return recovered
+    notification_keys = set(_NOTIFY_LEGACY_CURSOR_KEYS) | {
+        "notify.baseline", "notify.generation", "notify.scan_mode",
+        "notify.scan_tainted", "notify.scan", "source.notify.page",
+    }
+    if notification_keys.intersection(recovered):
+        raise ValueError("notification baseline recovery cursor is ambiguous")
+    recovered["notify.baseline"] = _notify_opaque_baseline(
+        "baseline-unstable")
+    recovered["notify.scan_mode"] = "replay"
+    return recovered
+
+
+def _notification_source_order(source):
+    """Newest stable notification captures win a bounded generation."""
+    return (
+        source["mtime_ns"], source["ctime_ns"],
+        os.fsencode(source["name"]))
+
+
+def sense_notify(cursors, *, before_initial_baseline=None):
+    """Rescan a changed notification-directory generation from its root.
+
+    A completed generation is a cheap unchanged-directory gate.  A changed
+    directory is paged from the beginning, and a between-page mutation makes
+    the generic directory cursor restart that scan.  A complete first
+    generation binds an immutable exact name baseline, or a fixed one-sided
+    membership filter when the source window overflows.  Replays emit only
+    names proved outside it and keep source-stable occurrence identities for
+    durable admission.  Legacy, membership-free, or unstable first scans
+    stay explicitly opaque instead of guessing.
+    """
+    if before_initial_baseline is not None \
+            and not callable(before_initial_baseline):
+        raise TypeError("notification baseline callback is not callable")
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/notifications/history")
-    pending = _bounded_seen_names(cursors.get("notify.pending"))
-    if pending:
-        names = pending
-        complete = bool(cursors.get("notify.pending_complete", False))
-        paginated = True
-    else:
-        cursors.pop("notify.pending", None)
-        cursors.pop("notify.pending_complete", None)
-        page_key = "source.notify.page"
-        page_before = cursors.get(page_key)
-        began_at_start = page_before is None or (
-            isinstance(page_before, dict)
-            and page_before.get("cookie", 0) == 0)
-        try:
-            entries, complete, _inspected, next_page = \
-                _bounded_source_entries(d, page_before)
-        except FileNotFoundError:
-            cursors.pop(page_key, None)
-            return evs
-        cursors[page_key] = next_page
-        names = [entry["name"] for entry in entries
-                 if stat.S_ISREG(entry["mode"])]
-        paginated = bool(cursors.get("notify.paginated", False)) \
-            or not (complete and began_at_start)
+    page_key = "source.notify.page"
+    mode_key = "notify.scan_mode"
+    generation_key = "notify.generation"
+    taint_key = "notify.scan_tainted"
+    scan_key = "notify.scan"
+    baseline_key = "notify.baseline"
+    baseline_refusal_emitted = False
 
-    def append_notification(name):
+    if generation_key in cursors and cursors[generation_key] is None:
+        raise ValueError("notification directory generation is invalid")
+    if baseline_key in cursors and cursors[baseline_key] is None:
+        raise ValueError("notification baseline cursor is invalid")
+
+    legacy = any(key in cursors for key in _NOTIFY_LEGACY_CURSOR_KEYS)
+    completed_generation = _notify_generation(cursors.get(generation_key))
+    baseline = _notify_baseline(cursors.get(baseline_key))
+    mode = cursors.get(mode_key)
+    if mode is not None and mode not in _NOTIFY_SCAN_MODES:
+        raise ValueError("notification directory scan mode is invalid")
+    scan_tainted = cursors.get(taint_key, False)
+    if not isinstance(scan_tainted, bool) \
+            or (scan_tainted and mode is None):
+        raise ValueError("notification directory scan taint is invalid")
+
+    if legacy:
+        if baseline is not None or not _legacy_notify_cursor_valid(cursors):
+            raise ValueError("notification legacy cursor is invalid")
+        legacy_keys = {
+            key for key in _NOTIFY_LEGACY_CURSOR_KEYS if key in cursors}
+        empty_high_water = legacy_keys == {"notify.last"} \
+            and cursors["notify.last"] == ""
+        # The producer's lone empty high-water value proves that its prior
+        # generation had no names.  Every other lexical cursor can confuse an
+        # old baseline name with a later lower-sorting name and stays opaque.
+        baseline = ({"schema": _NOTIFY_BASELINE_SCHEMA,
+                     "kind": "exact", "names": []}
+                    if empty_high_water else
+                    _notify_opaque_baseline("legacy-ambiguous"))
+        cursors[baseline_key] = baseline
+        for key in _NOTIFY_LEGACY_CURSOR_KEYS:
+            cursors.pop(key, None)
+        cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
+        cursors.pop(taint_key, None)
+        mode = "empty-replay" if empty_high_water else "replay"
+        scan_tainted = False
+    elif baseline is None and completed_generation is not None:
+        # v2 recorded only a directory generation.  Even an unchanged rescan
+        # cannot recover baseline names that were subsequently deleted, so
+        # this uncertainty must remain opaque across future reappearance.
+        baseline = _notify_opaque_baseline("v2-migration")
+        cursors[baseline_key] = baseline
+        if page_key in cursors or mode is not None:
+            cursors.pop(page_key, None)
+            cursors.pop(scan_key, None)
+            cursors.pop(taint_key, None)
+            mode = "replay"
+            scan_tainted = False
+    elif baseline is None and completed_generation is None \
+            and mode == "replay":
+        # An interrupted legacy migration may already have removed its old
+        # fields.  The replay marker proves uncertainty, not membership.
+        baseline = _notify_opaque_baseline("legacy-ambiguous")
+        cursors[baseline_key] = baseline
+        cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
+        cursors.pop(taint_key, None)
+        scan_tainted = False
+
+    if mode == "baseline" and (
+            baseline is not None or completed_generation is not None):
+        raise ValueError("notification baseline cursor is incomplete")
+    if baseline is not None and baseline["kind"] in {"exact", "filter"} \
+            and completed_generation is None and not (
+                mode == "empty-replay"
+                and baseline["kind"] == "exact"
+                and not baseline["names"]):
+        raise ValueError("notification baseline cursor is incomplete")
+    if baseline is not None and baseline["kind"] == "opaque" \
+            and completed_generation is None and mode != "replay":
+        raise ValueError("notification baseline cursor is incomplete")
+    if mode == "empty-replay" and (
+            completed_generation is not None
+            or baseline is None or baseline["kind"] != "exact"
+            or baseline["names"]):
+        raise ValueError("notification baseline cursor is incomplete")
+
+    page_present = page_key in cursors
+    raw_scan = cursors.get(scan_key)
+    old_scan = isinstance(raw_scan, dict) \
+        and raw_scan.get("schema") in _NOTIFY_SCAN_LEGACY_SCHEMAS
+
+    def make_initial_scan_opaque():
+        """Absorb uncertainty from an interrupted/unstable first scan."""
+        nonlocal baseline, mode, scan_tainted, baseline_refusal_emitted
+        baseline = _notify_opaque_baseline("baseline-unstable")
+        cursors[baseline_key] = baseline
+        cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
+        cursors.pop(taint_key, None)
+        mode = "replay"
+        cursors[mode_key] = mode
+        scan_tainted = False
+        if not baseline_refusal_emitted:
+            evs.append(_notify_baseline_refusal_event(baseline))
+            baseline_refusal_emitted = True
+
+    if mode == "baseline" and (
+            not page_present or scan_tainted
+            or raw_scan is None or old_scan):
+        # A discarded prefix could contain a preexisting name that later
+        # reappears.  No compact rescan can recover that membership fact.
+        make_initial_scan_opaque()
+        page_present = False
+        raw_scan = None
+    if not page_present:
+        cursors.pop(scan_key, None)
+    if page_present and mode is None:
+        raise ValueError("notification directory scan state is incomplete")
+
+    if not page_present:
+        # A candidate without its directory cookie cannot establish which
+        # portion of a generation it represents and is never an authority.
+        # A prior refused pass deliberately left its mode and taint marker at
+        # EOF.  This call is a fresh root-to-EOF attempt over the same
+        # generation, so only refusals observed again may taint it.
+        scan_tainted = False
+        initial_observation = (
+            mode is None and baseline is None
+            and completed_generation is None)
+        initial_fence_set = False
+        if initial_observation and before_initial_baseline is not None:
+            # Absence is itself an exact empty membership observation. Fence
+            # it before even the path stat so a crash cannot later reinterpret
+            # the first appearing name as an old baseline member.
+            before_initial_baseline()
+            initial_fence_set = True
+        try:
+            current_generation = _source_tree_path_generation(d)
+        except FileNotFoundError:
+            if initial_observation:
+                baseline = {
+                    "schema": _NOTIFY_BASELINE_SCHEMA,
+                    "kind": "exact", "names": [],
+                }
+                cursors[baseline_key] = baseline
+                mode = "empty-replay"
+                cursors[mode_key] = mode
+                cursors.pop(taint_key, None)
+            elif mode is not None:
+                cursors[mode_key] = mode
+            if baseline is not None and baseline["kind"] == "opaque":
+                evs.append(_notify_baseline_refusal_event(baseline))
+            return evs
+        if mode is None:
+            if completed_generation == current_generation:
+                if baseline is not None and baseline["kind"] == "opaque":
+                    evs.append(_notify_baseline_refusal_event(baseline))
+                return evs
+            mode = ("baseline" if completed_generation is None
+                    else "replay")
+        if mode == "baseline" and before_initial_baseline is not None \
+                and not initial_fence_set:
+            before_initial_baseline()
+        page_before = None
+        scan = _notify_scan_candidate(None)
+    else:
+        page_before = cursors[page_key]
+        if raw_scan is None or old_scan:
+            # Migrate an old page-only cursor by replaying its generation
+            # from the root; its already-returned prefix is not candidate
+            # state that can justify publication after this upgrade.
+            page_before = None
+            scan_tainted = False
+            scan = _notify_scan_candidate(None)
+        else:
+            scan = _notify_scan_candidate(raw_scan)
+            page_generation = _source_tree_directory_generation(page_before)
+            if page_before.get("cookie", 0) <= 0 \
+                    or scan["generation"] != page_generation:
+                raise ValueError(
+                    "notification directory scan cursor is invalid")
+
+    cursors[mode_key] = mode
+    try:
+        entries, complete, _inspected, next_page = \
+            _bounded_source_entries(d, page_before)
+    except FileNotFoundError:
+        if mode == "baseline":
+            make_initial_scan_opaque()
+        else:
+            # Preserve the scan mode but discard a cookie into a vanished
+            # generation.  Reappearance begins at the directory root.
+            cursors.pop(page_key, None)
+            cursors.pop(scan_key, None)
+        return evs
+    except RuntimeError:
+        if mode != "baseline":
+            raise
+        # The generic scanner detected a within-page generation change.
+        # The lost prefix makes an exact/filter first baseline impossible.
+        make_initial_scan_opaque()
+        return evs
+    cursors[page_key] = next_page
+    generation = _source_tree_directory_generation(next_page)
+    if next_page.get("reset"):
+        scan_tainted = False
+        scan = _notify_scan_candidate(None)
+        if mode == "baseline":
+            # The page belongs to the restarted generation, but a name from
+            # the discarded first-generation prefix may later reappear.
+            baseline = _notify_opaque_baseline("baseline-unstable")
+            cursors[baseline_key] = baseline
+            mode = "replay"
+            cursors[mode_key] = mode
+            if not baseline_refusal_emitted:
+                evs.append(_notify_baseline_refusal_event(baseline))
+                baseline_refusal_emitted = True
+    scan["generation"] = generation
+
+    def read_notification(source):
+        name = source["name"]
         try:
             record = _read_bounded_source_json(
                 os.path.join(d, name), f"notification record {name}")
-            app = record.get("app") or "app"
-            summary = clip(record.get("summary", ""), 80)
+            if not _agent_source_capture_matches(
+                    d, source, suffix=None):
+                raise RuntimeError("notification source changed")
+            app_value = record["app"] if "app" in record else "app"
+            summary_value = record["summary"] \
+                if "summary" in record else ""
+            if not _strict_config_string(
+                    app_value, limit=MAX_SOURCE_NAME_CHARS) \
+                    or not _strict_config_string(
+                        summary_value, limit=MAX_CONFIG_TEXT_CHARS):
+                raise ValueError("notification text is invalid")
+            app = app_value or "app"
+            summary = clip(summary_value, 80)
         except Exception:
             evs.append(_source_entry_refusal_event(
                 "notify", f"notification record {name}"))
-            return
-        token = _source_entity_token(name, "notification")
-        evs.append(Event(
-            "notify", utcnow(), "notification",
-            f"{app}" + (f": {summary}" if summary else ""),
-            {"organs/notify"}, {"notification"},
-            occurrence=f"notification:{token}"))
+            return None
+        return app, summary
 
-    last = cursors.get("notify.last")
-    if last is not None and not isinstance(last, str):
-        raise ValueError("notification cursor is invalid")
-    if not paginated:
-        if last is None:
-            cursors["notify.last"] = names[-1] if names else ""
-            return evs
-        new = [name for name in names if name > last]
-        batch = new[:100]
-        for name in batch:
-            append_notification(name)
-        if batch:
-            cursors["notify.last"] = batch[-1]
+    for entry in entries:
+        if not stat.S_ISREG(entry["mode"]):
+            scan_tainted = True
+            evs.append(_source_entry_refusal_event(
+                "notify", f"notification record {entry['name']}"))
+            continue
+        source = _agent_source_capture(entry)
+        if read_notification(source) is None:
+            scan_tainted = True
+            continue
+        if any(prior["name"] == source["name"]
+               for prior in scan["sources"]):
+            scan_tainted = True
+            evs.append(_source_entry_refusal_event(
+                "notify", f"duplicate notification record "
+                f"{source['name']}"))
+            continue
+        if mode == "baseline":
+            scan["baseline_bits"] = _notify_filter_add(
+                scan["baseline_bits"], source["name"])
+        scan["sources"].append(source)
+        scan["sources"].sort(
+            key=_notification_source_order, reverse=True)
+        if len(scan["sources"]) > MAX_LEDGER_PENDING_RECORDS:
+            del scan["sources"][MAX_LEDGER_PENDING_RECORDS:]
+            scan["truncated"] = True
+    cursors[taint_key] = scan_tainted
+    if not complete:
+        cursors[scan_key] = scan
         return evs
 
-    cursors["notify.paginated"] = True
-    if last is None:
-        last = ""
-        cursors["notify.last"] = last
-        cursors["notify.baselining"] = True
-    baselining = bool(cursors.get("notify.baselining", False))
-    seen = _bounded_seen_names(cursors.get("notify.seen")) or []
-    seen_set = set(seen)
-    cycle_max = cursors.get("notify.cycle_max", "")
-    if not isinstance(cycle_max, str):
-        raise ValueError("notification page cursor is invalid")
-    candidates = [name for name in names if name > last]
-    batch = candidates[:100]
-    remainder = candidates[100:]
-    for name in batch:
-        cycle_max = max(cycle_max, name)
-        if name in seen_set:
-            continue
-        if len(seen) >= MAX_SOURCE_SCAN_ENTRIES:
-            evs.append(_source_entry_refusal_event(
-                "notify", f"notification record {name}"))
-            continue
-        if not baselining:
-            append_notification(name)
-        seen.append(name)
-        seen_set.add(name)
-    cursors["notify.seen"] = sorted(seen)
-    cursors["notify.cycle_max"] = cycle_max
-    if remainder:
-        cursors["notify.pending"] = remainder
-        cursors["notify.pending_complete"] = complete
-    else:
-        cursors.pop("notify.pending", None)
-        cursors.pop("notify.pending_complete", None)
-        if complete:
-            cursors["notify.last"] = max(last, cycle_max)
-            cursors["notify.cycle_max"] = ""
-            if baselining:
-                cursors["notify.baselining"] = False
+    cursors.pop(page_key, None)
+    cursors.pop(scan_key, None)
+    admitted = []
+    if not scan_tainted:
+        for source in scan["sources"]:
+            record = read_notification(source)
+            if record is None:
+                scan_tainted = True
+                continue
+            admitted.append((source["name"], *record))
+    if scan_tainted:
+        if mode == "baseline":
+            # Refusal during a first scan means unseen/deleted names cannot
+            # be reconstructed later.  Make that uncertainty permanent, but
+            # retain replay debt: repairing a file in place need not change
+            # the parent directory generation.
+            make_initial_scan_opaque()
+            return evs
+        # Keep the mode and the last completed generation. Repairing a file
+        # in place need not mutate the parent directory, so the next call
+        # must rescan even if its generation gate is unchanged. No candidate
+        # notification becomes public from this refused generation.
+        cursors[mode_key] = mode
+        cursors[taint_key] = True
+        return evs
+    if scan["truncated"]:
+        evs.append(Event(
+            "notify", utcnow(), "source-truncated",
+            "notification history exceeded its bounded source state; "
+            "only the newest stable records were admitted",
+            {"organs/notify"}, {"source-truncated", "refusal"},
+            occurrence="source-truncated:notify:notification-history"))
+    if mode == "baseline":
+        baseline = _notify_baseline_from_scan(scan)
+        cursors[baseline_key] = baseline
+    if baseline is None:
+        raise ValueError("notification baseline cursor is incomplete")
+    if mode in {"replay", "empty-replay"} \
+            and baseline["kind"] in {"exact", "filter"}:
+        baseline_names = (set(baseline["names"])
+                          if baseline["kind"] == "exact" else None)
+        for name, app, summary in admitted:
+            if baseline_names is not None and name in baseline_names:
+                continue
+            if baseline["kind"] == "filter" and _notify_filter_contains(
+                    baseline["bits"], name):
+                continue
+            token = _source_entity_token(name, "notification")
+            evs.append(Event(
+                "notify", utcnow(), "notification",
+                f"{app}" + (f": {summary}" if summary else ""),
+                {"organs/notify"}, {"notification"},
+                occurrence=f"notification:{token}"))
+    elif baseline["kind"] == "opaque" and not baseline_refusal_emitted:
+        evs.append(_notify_baseline_refusal_event(baseline))
+    cursors[generation_key] = generation
+    cursors.pop(mode_key, None)
+    cursors.pop(taint_key, None)
     return evs
 
 
+_AGENT_SCAN_SCHEMA = "sia-agent-catalog-scan-v1"
+_AGENT_SOURCE_FIELDS = (
+    "device", "inode", "mode", "size", "mtime_ns", "ctime_ns")
+_AGENT_SOURCE_STAT_FIELDS = (
+    "st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+
+
+def _agent_source_capture(entry):
+    return {
+        "name": entry["name"],
+        **{field: entry[field] for field in _AGENT_SOURCE_FIELDS},
+    }
+
+
+def _agent_source_capture_valid(value, *, suffix=".json"):
+    if not isinstance(value, dict) \
+            or set(value) != {"name", *_AGENT_SOURCE_FIELDS} \
+            or not isinstance(value.get("name"), str):
+        return False
+    try:
+        name_bytes = os.fsencode(value["name"])
+    except UnicodeError:
+        return False
+    return bool(name_bytes) and name_bytes not in {b".", b".."} \
+        and b"/" not in name_bytes and b"\0" not in name_bytes \
+        and len(name_bytes) <= MAX_CORPUS_COMPONENT_BYTES \
+        and (suffix is None or value["name"].endswith(suffix)) \
+        and all(not isinstance(value[field], bool)
+                and isinstance(value[field], int) and value[field] >= 0
+                for field in _AGENT_SOURCE_FIELDS) \
+        and stat.S_ISREG(value["mode"])
+
+
+def _agent_source_capture_matches(directory, capture, *, suffix=".json"):
+    """Revalidate one prior-page usage record without following links."""
+    if not _agent_source_capture_valid(capture, suffix=suffix):
+        return False
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    path = os.path.join(directory, capture["name"])
+    descriptor = _open_source_nofollow(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        after = os.fstat(descriptor)
+        current = _source_path_identity(path, flags)
+    finally:
+        os.close(descriptor)
+    expected = tuple(capture[field] for field in _AGENT_SOURCE_FIELDS)
+    observed = tuple(getattr(before, field)
+                     for field in _AGENT_SOURCE_STAT_FIELDS)
+    finished = tuple(getattr(after, field)
+                     for field in _AGENT_SOURCE_STAT_FIELDS)
+    current_identity = tuple(getattr(current, field)
+                             for field in _AGENT_SOURCE_STAT_FIELDS)
+    return expected == observed == finished == current_identity
+
+
+def _agent_usage_row_valid(value):
+    """Validate one authoritative per-agent usage row exactly."""
+    if not isinstance(value, dict) \
+            or set(value) != {"tokens", "limits", "generation"} \
+            or isinstance(value["tokens"], bool) \
+            or not isinstance(value["tokens"], int) \
+            or value["tokens"] < 0 \
+            or not isinstance(value["limits"], dict) \
+            or len(value["limits"]) > MAX_CONFIG_TAGS \
+            or isinstance(value["generation"], bool) \
+            or not isinstance(value["generation"], int) \
+            or value["generation"] < 0:
+        return False
+    return all(
+        _source_entity_token_is_canonical(label_id, "agent-limit")
+        and not isinstance(percent, bool)
+        and isinstance(percent, int)
+        and 0 <= percent <= 100
+        for label_id, percent in value["limits"].items())
+
+
+def _normalized_agent_usage_row(value):
+    """Migrate only the exact pre-generation agent row schema."""
+    if _agent_usage_row_valid(value):
+        return copy.deepcopy(value)
+    if not isinstance(value, dict) \
+            or set(value) != {"tokens", "limits"} \
+            or isinstance(value["tokens"], bool) \
+            or not isinstance(value["tokens"], int) \
+            or value["tokens"] < 0 \
+            or not isinstance(value["limits"], dict) \
+            or len(value["limits"]) > MAX_CONFIG_TAGS:
+        return value
+    limits = {}
+    for raw_label, percent in value["limits"].items():
+        if not _strict_config_string(
+                raw_label, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
+                or isinstance(percent, bool) \
+                or not isinstance(percent, int) \
+                or not 0 <= percent <= 100:
+            return value
+        label_id = _source_entity_token(raw_label, "agent-limit")
+        if label_id in limits:
+            return value
+        limits[label_id] = percent
+    return {
+        "tokens": value["tokens"], "limits": limits, "generation": 0}
+
+
+def _normalized_legacy_agent_key(source_key, value, tagged):
+    """Classify a persisted agent key using its producer's row schema."""
+    legacy = isinstance(value, dict) \
+        and set(value) == {"tokens", "limits"}
+    modern = _agent_usage_row_valid(value)
+    if legacy:
+        if not tagged:
+            return _source_entity_token(source_key, "agent"), 0
+        if not isinstance(source_key, str):
+            raise ValueError("legacy agent identity is invalid")
+        broad = re.fullmatch(
+            r"[a-z0-9_][a-z0-9._-]*", source_key) is not None \
+            and len(source_key) <= MAX_SOURCE_NAME_CHARS \
+            and len(source_key.encode("utf-8")) <= MAX_CORPUS_LEAF_BYTES
+        if not broad:
+            raise ValueError("legacy agent identity is invalid")
+        if not _source_entity_token_is_canonical(source_key, "agent"):
+            return _source_entity_token(source_key, "agent"), 0
+        if _source_entity_token(source_key, "agent") != source_key:
+            raise ValueError("legacy agent identity is ambiguous")
+        return source_key, 0
+    if not modern \
+            or not _source_entity_token_is_canonical(source_key, "agent"):
+        raise ValueError("agent usage identity is invalid")
+    return source_key, 1
+
+
+def _agent_scan_candidate(value):
+    """Validate one bounded, generation-scoped agent scan candidate."""
+    if value is None:
+        return {
+            "schema": _AGENT_SCAN_SCHEMA, "generation": None,
+            "tainted": False, "rows": {}, "sources": {}, "displays": {},
+            "partial_limits": [], "conflicted_ids": []}
+    if not isinstance(value, dict) \
+            or set(value) != {
+                "schema", "generation", "tainted", "rows", "sources",
+                "displays", "partial_limits", "conflicted_ids"} \
+            or value.get("schema") != _AGENT_SCAN_SCHEMA \
+            or not isinstance(value.get("tainted"), bool) \
+            or not isinstance(value.get("rows"), dict) \
+            or not isinstance(value.get("sources"), dict) \
+            or set(value["sources"]) != set(value["rows"]) \
+            or not isinstance(value.get("displays"), dict) \
+            or set(value["displays"]) != set(value["rows"]) \
+            or any(not _agent_source_capture_valid(source)
+                   for source in value["sources"].values()) \
+            or len({source["name"]
+                    for source in value["sources"].values()}) \
+            != len(value["sources"]) \
+            or not isinstance(value.get("partial_limits"), list) \
+            or not isinstance(value.get("conflicted_ids"), list) \
+            or len(value["rows"]) > MAX_SOURCE_SCAN_ENTRIES \
+            or len(value["partial_limits"]) > MAX_SOURCE_SCAN_ENTRIES \
+            or len(value["conflicted_ids"]) > MAX_SOURCE_SCAN_ENTRIES \
+            or len(value["rows"]) + len(value["conflicted_ids"]) \
+            > MAX_SOURCE_SCAN_ENTRIES \
+            or any(not isinstance(aid, str)
+                   for aid in value["partial_limits"]
+                   + value["conflicted_ids"]) \
+            or len(set(value["partial_limits"])) \
+            != len(value["partial_limits"]) \
+            or len(set(value["conflicted_ids"])) \
+            != len(value["conflicted_ids"]) \
+            or any(aid not in value["rows"]
+                   for aid in value["partial_limits"]) \
+            or any(not isinstance(aid, str)
+                   or re.fullmatch(r"[a-z0-9_][a-z0-9._-]*", aid) is None
+                   or aid in value["rows"]
+                   for aid in value["conflicted_ids"]):
+        raise ValueError("agent usage scan cursor is invalid")
+    generation = value.get("generation")
+    if generation is not None:
+        generation = _source_tree_directory_generation(generation)
+        if value["generation"] != generation:
+            raise ValueError("agent usage scan cursor is invalid")
+    for aid, row in value["rows"].items():
+        source = value["sources"].get(aid)
+        display = value["displays"].get(aid)
+        if not isinstance(aid, str) \
+                or re.fullmatch(r"[a-z0-9_][a-z0-9._-]*", aid) is None \
+                or len(aid) > MAX_SOURCE_NAME_CHARS \
+                or len(aid.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES \
+                or not _agent_usage_row_valid(row) \
+                or not _agent_source_capture_valid(source) \
+                or not isinstance(display, dict) \
+                or set(display) != {"agent", "limits"} \
+                or not isinstance(display["agent"], str) \
+                or len(display["agent"]) > 40 \
+                or not isinstance(display["limits"], dict) \
+                or set(display["limits"]) != set(row["limits"]) \
+                or any(not isinstance(label, str) or len(label) > 30
+                       for label in display["limits"].values()):
+            raise ValueError("agent usage scan cursor is invalid")
+    return value
+
+
+def _store_agent_state(cursors, rows):
+    """Replace the authoritative bounded agent state without aliasing it."""
+    if not isinstance(rows, dict) \
+            or len(rows) > MAX_SOURCE_SCAN_ENTRIES:
+        raise ValueError("agent usage state exceeds its bound")
+    cursors["agents.state"] = [
+        "sia-source-entity-state-v1", copy.deepcopy(rows)]
+
+
+def _agent_transition_events(aid, display, prior, current):
+    """Render transitions only after one candidate survives to EOF."""
+    if not prior:
+        return []
+    transition_id = hashlib.sha256(json.dumps(
+        {"prior": prior, "current": current},
+        sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    agent_label = display["agent"]
+    events = []
+    dtok = current["tokens"] - prior.get("tokens", 0)
+    if dtok > 500_000:
+        events.append(Event(
+            "agents", utcnow(), "usage",
+            f"{agent_label}: +{dtok // 1000}k tokens today "
+            f"({current['tokens'] // 1000}k total)",
+            {"organs/agents"}, {"agents"},
+            occurrence=f"agents:{aid}:usage:{transition_id}"))
+    prior_limits = prior.get("limits", {})
+    if not isinstance(prior_limits, dict):
+        raise ValueError("agent usage cursor is invalid")
+    for label_id, pct in current["limits"].items():
+        old = prior_limits.get(label_id, pct)
+        if pct < old + 10:
+            continue
+        tags = {"agents"}
+        if pct >= 90:
+            tags.add("urgent")
+        label = display["limits"][label_id]
+        events.append(Event(
+            "agents", utcnow(), "limit",
+            f"{agent_label} {label} limit at {pct}% (was {old}%)",
+            {"organs/agents"}, tags,
+            occurrence=(f"agents:{aid}:limit:{label_id}:"
+                        f"{transition_id}")))
+    return events
+
+
 def sense_agents(cursors):
-    """Omarchy Quattro agents-usage records: authoritative per-agent token
-    spend + rate-limit pressure (~/.local/state/omarchy/agents/usage/)."""
+    """Omarchy Quattro agents-usage records.
+
+    Directory pages accumulate in a generation-bound candidate.  The prior
+    authoritative catalog therefore remains intact until EOF; only a clean
+    generation can replace it and prove that an agent vanished.  A refused
+    generation still advances and merges every admitted observation, but it
+    cannot prune an unseen authoritative row.
+    """
     evs = []
     d = os.path.join(HOME, ".local/state/omarchy/agents/usage")
     state, state_truncated = _bounded_source_state(
-        cursors, "agents.state", "agent")
+        cursors, "agents.state", "agent",
+        value_validator=_agent_usage_row_valid,
+        value_normalizer=_normalized_agent_usage_row,
+        legacy_key_normalizer=_normalized_legacy_agent_key)
     if state_truncated:
         evs.append(_source_truncation_event("agents", "agent usage cursor"))
     page_key = "source.agents.page"
+    scan_key = "agents.scan"
+    page_before = cursors.get(page_key)
+    raw_scan = cursors.get(scan_key)
+    if page_before is None:
+        # A candidate without its directory cookie cannot establish which
+        # portion of the generation it represents.  Start from the root.
+        scan = _agent_scan_candidate(None)
+    elif raw_scan is None:
+        # Migrate the old page-only cursor conservatively: replay its
+        # generation rather than treating a page-mutated authority as a
+        # candidate or inferring absence from its suffix.
+        page_before = None
+        scan = _agent_scan_candidate(None)
+    else:
+        scan = _agent_scan_candidate(raw_scan)
+        page_generation = _source_tree_directory_generation(page_before)
+        if page_before.get("cookie", 0) <= 0 \
+                or scan["generation"] != page_generation:
+            raise ValueError("agent usage scan cursor is invalid")
     try:
-        entries, _complete, _inspected, next_page = _bounded_source_entries(
-            d, cursors.get(page_key), MAX_CONFIG_TAGS)
+        entries, complete, _inspected, next_page = _bounded_source_entries(
+            d, page_before, MAX_CONFIG_TAGS)
     except FileNotFoundError:
         cursors.pop(page_key, None)
+        cursors.pop(scan_key, None)
         return evs
-    cursors[page_key] = next_page
-    names = [entry["name"] for entry in entries
-             if stat.S_ISREG(entry["mode"])
-             and entry["name"].endswith(".json")]
-    for n in names:
+    generation = _source_tree_directory_generation(next_page)
+    if next_page.get("reset") or scan["generation"] not in (None, generation):
+        # The returned page starts at the new generation's root.  Nothing
+        # accumulated under the old cookie may leak into this candidate.
+        scan = _agent_scan_candidate(None)
+    scan["generation"] = generation
+    candidate = scan["rows"]
+
+    for entry in entries:
+        n = entry["name"]
+        if not n.endswith(".json"):
+            continue
+        if not stat.S_ISREG(entry["mode"]):
+            scan["tainted"] = True
+            evs.append(_source_entry_refusal_event(
+                "agents", f"agent usage record {n}"))
+            continue
         try:
             j = _read_bounded_source_json(
                 os.path.join(d, n), f"agent usage record {n}")
         except Exception:
+            scan["tainted"] = True
             evs.append(_source_entry_refusal_event(
                 "agents", f"agent usage record {n}"))
             continue
-        aid_raw = str(j.get("id") or n[:-5])
+        source_capture = _agent_source_capture(entry)
+        try:
+            source_stable = _agent_source_capture_matches(d, source_capture)
+        except (OSError, RuntimeError, ValueError):
+            source_stable = False
+        if not source_stable:
+            scan["tainted"] = True
+            evs.append(_source_entry_refusal_event(
+                "agents", f"agent usage record {n}"))
+            continue
+        try:
+            aid_raw = j["id"] if "id" in j else n[:-5]
+            if not _strict_config_string(
+                    aid_raw, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
+                raise ValueError("agent identity is invalid")
+            raw_tokens = j["todayTotalTokens"] \
+                if "todayTotalTokens" in j else 0
+            if isinstance(raw_tokens, bool) \
+                    or not isinstance(raw_tokens, int) \
+                    or raw_tokens < 0:
+                raise ValueError("agent token count is invalid")
+            source_limits = j["limits"] if "limits" in j else []
+            if not isinstance(source_limits, list):
+                raise ValueError("agent limits are invalid")
+            tokens = raw_tokens
+        except (TypeError, UnicodeError, ValueError):
+            scan["tainted"] = True
+            evs.append(_source_entry_refusal_event(
+                "agents", f"agent usage record {n}"))
+            continue
         aid = _source_entity_token(aid_raw, "agent")
-        prev = state.get(aid, {})
-        if not isinstance(prev, dict):
+        if aid in scan["conflicted_ids"]:
+            scan["tainted"] = True
+            evs.append(_source_entry_refusal_event(
+                "agents", f"duplicate agent usage identity {aid_raw} "
+                f"in {n}"))
+            continue
+        prior_source = scan["sources"].get(aid)
+        if prior_source is not None and prior_source["name"] != n:
+            scan["tainted"] = True
+            candidate.pop(aid, None)
+            scan["sources"].pop(aid, None)
+            scan["displays"].pop(aid, None)
+            scan["partial_limits"] = [
+                value for value in scan["partial_limits"] if value != aid]
+            scan["conflicted_ids"].append(aid)
+            evs.append(_source_entry_refusal_event(
+                "agents", f"duplicate agent usage identity {aid_raw} "
+                f"in {prior_source['name']} and {n}"))
+            continue
+        prior = candidate.get(aid, state.get(aid, {}))
+        if not isinstance(prior, dict):
             raise ValueError("agent usage cursor is invalid")
-        if not prev and aid not in state \
-                and len(state) >= MAX_SOURCE_SCAN_ENTRIES:
+        if aid not in candidate and aid not in scan["conflicted_ids"] \
+                and (len(candidate) + len(scan["conflicted_ids"])) \
+                >= MAX_SOURCE_SCAN_ENTRIES:
+            scan["tainted"] = True
             evs.append(_source_entry_refusal_event(
                 "agents", f"agent usage identity {aid_raw}"))
             continue
 
         def _pct(v):
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                return None
             try:
                 f = float(v)
                 if not math.isfinite(f):
-                    return 0
+                    return None
                 # collectors store fractions of 1.0; older ones use 0-100
-                return int(round(f * 100)) if 0 <= f <= 1.0 \
+                percent = int(round(f * 100)) if 0 <= f <= 1.0 \
                     else int(round(f))
+                return percent if 0 <= percent <= 100 else None
             except (OverflowError, TypeError, ValueError):
-                return 0
+                return None
 
-        try:
-            tokens = int(j.get("todayTotalTokens") or 0)
-        except (OverflowError, TypeError, ValueError):
-            evs.append(_source_entry_refusal_event(
-                "agents", f"agent usage record {n}"))
-            continue
-        source_limits = j.get("limits") or []
-        if not isinstance(source_limits, list):
-            source_limits = []
         limits = {}
         limits_truncated = len(source_limits) > MAX_CONFIG_TAGS
+        limits_invalid = False
         for source_limit in source_limits[:MAX_CONFIG_TAGS]:
             if not isinstance(source_limit, dict):
-                continue
-            label = str(source_limit.get("label", ""))
+                limits_invalid = True
+                break
+            label = source_limit.get("label")
+            if not _strict_config_string(
+                    label, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
+                limits_invalid = True
+                break
             label_id = _source_entity_token(label, "agent-limit")
-            limits[label_id] = {"label": label,
-                                "percent": _pct(source_limit.get("percent"))}
+            percent = _pct(source_limit.get("percent"))
+            if percent is None or label_id in limits:
+                limits_invalid = True
+                break
+            limits[label_id] = {"label": label, "percent": percent}
+        if limits_invalid:
+            scan["tainted"] = True
+            evs.append(_source_entry_refusal_event(
+                "agents", f"agent limit record {aid_raw}"))
+            continue
+        limits_partial = limits_truncated
         if limits_truncated:
+            scan["tainted"] = True
             evs.append(_source_truncation_event(
                 "agents", f"agent limit record {aid_raw}"))
         cur = {"tokens": tokens,
                "limits": {label_id: value["percent"]
                           for label_id, value in limits.items()}}
-        generation = prev.get("generation", 0) if isinstance(prev, dict) else 0
-        if isinstance(generation, bool) or not isinstance(generation, int) \
-                or generation < 0:
+        transition_generation = prior.get("generation", 0)
+        if isinstance(transition_generation, bool) \
+                or not isinstance(transition_generation, int) \
+                or transition_generation < 0:
             raise ValueError("agent usage generation is invalid")
-        if prev and cur["tokens"] < prev.get("tokens", 0):
-            generation += 1
-        cur["generation"] = generation
-        transition_id = hashlib.sha256(json.dumps(
-            {"prior": prev, "current": cur},
-            sort_keys=True, separators=(",", ":")).encode(
-                "utf-8")).hexdigest()
-        if prev:
-            dtok = cur["tokens"] - prev.get("tokens", 0)
-            if dtok > 500_000:
-                evs.append(Event("agents", utcnow(), "usage",
-                                 f"{clip(aid_raw, 40)}: +{dtok // 1000}k tokens today "
-                                 f"({cur['tokens'] // 1000}k total)",
-                                 {"organs/agents"}, {"agents"},
-                                 occurrence=(f"agents:{aid}:usage:"
-                                             f"{transition_id}")))
-            for label_id, pct in cur["limits"].items():
-                old = prev.get("limits", {}).get(label_id, pct)
-                if pct >= old + 10:
-                    tags = {"agents"}
-                    if pct >= 90:
-                        tags.add("urgent")
-                    label = limits[label_id]["label"]
-                    evs.append(Event("agents", utcnow(), "limit",
-                                     f"{clip(aid_raw, 40)} "
-                                     f"{clip(label, 30)} limit at "
-                                     f"{pct}% (was {old}%)",
-                                     {"organs/agents"}, tags,
-                                     occurrence=(f"agents:{aid}:limit:"
-                                                 f"{label_id}:"
-                                                 f"{transition_id}")))
-        state[aid] = cur
+        if prior and cur["tokens"] < prior.get("tokens", 0):
+            transition_generation += 1
+        cur["generation"] = transition_generation
+        candidate[aid] = cur
+        scan["sources"][aid] = source_capture
+        scan["displays"][aid] = {
+            "agent": clip(aid_raw, 40),
+            "limits": {label_id: clip(value["label"], 30)
+                       for label_id, value in limits.items()},
+        }
+        if limits_partial and aid not in scan["partial_limits"]:
+            scan["partial_limits"].append(aid)
+
+    if not complete:
+        cursors[page_key] = next_page
+        cursors[scan_key] = scan
+        return evs
+
+    for aid, source_capture in list(scan["sources"].items()):
+        try:
+            source_stable = _agent_source_capture_matches(d, source_capture)
+        except (OSError, RuntimeError, ValueError):
+            source_stable = False
+        if source_stable:
+            continue
+        scan["tainted"] = True
+        candidate.pop(aid, None)
+        scan["sources"].pop(aid, None)
+        scan["displays"].pop(aid, None)
+        scan["partial_limits"] = [
+            value for value in scan["partial_limits"] if value != aid]
+        evs.append(_source_entry_refusal_event(
+            "agents", f"agent usage record {source_capture['name']}"))
+
+    for aid, row in candidate.items():
+        prior = state.get(aid, {})
+        if not isinstance(prior, dict):
+            raise ValueError("agent usage cursor is invalid")
+        evs.extend(_agent_transition_events(
+            aid, scan["displays"][aid], prior, row))
+
+    if scan["tainted"]:
+        merged = copy.deepcopy(state)
+        for aid, row in candidate.items():
+            if aid in merged or len(merged) < MAX_SOURCE_SCAN_ENTRIES:
+                admitted = copy.deepcopy(row)
+                if aid in scan["partial_limits"]:
+                    prior_row = merged.get(aid, {})
+                    prior_limits = prior_row.get("limits", {}) \
+                        if isinstance(prior_row, dict) else {}
+                    if not isinstance(prior_limits, dict):
+                        raise ValueError("agent usage cursor is invalid")
+                    observed_limits = admitted["limits"]
+                    admitted["limits"] = copy.deepcopy(prior_limits)
+                    admitted["limits"].update(observed_limits)
+                merged[aid] = admitted
+            else:
+                evs.append(_source_entry_refusal_event(
+                    "agents", f"agent usage identity {aid}"))
+        _store_agent_state(cursors, merged)
+    else:
+        _store_agent_state(cursors, candidate)
+    cursors.pop(page_key, None)
+    cursors.pop(scan_key, None)
     return evs
 
 
 def _configured_skill_roots():
-    skills = CONFIG.get("skills", {})
-    roots = skills.get("roots", DEFAULT_SKILL_ROOTS) \
-        if isinstance(skills, dict) else DEFAULT_SKILL_ROOTS
-    if not isinstance(roots, list) or len(roots) > MAX_CONFIG_TAGS \
-            or any(not isinstance(root, str) or not root.strip()
-                   or len(root) > MAX_CONFIG_PATH_CHARS for root in roots):
-        roots = DEFAULT_SKILL_ROOTS
-    return [os.path.join(HOME, root) for root in roots]
+    return _configured_skill_root_paths()
 
 
 
@@ -2059,6 +3126,10 @@ def _skill_description_from_head(head):
     return redact(clip(value, 220), "skills") if value else ""
 
 
+_SKILL_MANIFEST_ABSENCE_ERRNOS = frozenset({
+    _errno.ENOENT, _errno.ENOTDIR, _errno.ELOOP})
+
+
 def _read_skill_manifest(root, name):
     """Capture one stable directly-contained SKILL.md without symlinks."""
     if not isinstance(name, str) or not name or name in {".", ".."} \
@@ -2072,7 +3143,14 @@ def _read_skill_manifest(root, name):
     manifest_fd = -1
     try:
         root_before = os.fstat(root_fd)
-        skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
+        try:
+            skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
+        except OSError as exc:
+            if exc.errno in _SKILL_MANIFEST_ABSENCE_ERRNOS:
+                raise FileNotFoundError(
+                    _errno.ENOENT, "skill directory is absent") from exc
+            raise RuntimeError("skill directory could not be inspected") \
+                from exc
         skill_before = os.fstat(skill_fd)
 
         def containers_stable():
@@ -2095,7 +3173,8 @@ def _read_skill_manifest(root, name):
         try:
             manifest_fd = os.open(
                 "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         except OSError as exc:
             try:
                 stable_absence = containers_stable()
@@ -2104,10 +3183,15 @@ def _read_skill_manifest(root, name):
             if not stable_absence:
                 raise RuntimeError(
                     "skill manifest path changed while inspected") from exc
-            raise
+            if exc.errno in _SKILL_MANIFEST_ABSENCE_ERRNOS:
+                raise FileNotFoundError(
+                    _errno.ENOENT, "skill manifest is absent") from exc
+            raise RuntimeError(
+                "skill manifest could not be inspected") from exc
         before = os.fstat(manifest_fd)
         if not stat.S_ISREG(before.st_mode):
-            raise OSError("skill manifest is not a regular file")
+            raise FileNotFoundError(
+                _errno.ENOENT, "skill manifest is not a regular file")
         captured = bytearray()
         while len(captured) <= MAX_SKILL_MANIFEST_HEAD_BYTES:
             request = MAX_SKILL_MANIFEST_HEAD_BYTES + 1 - len(captured)
@@ -2120,7 +3204,8 @@ def _read_skill_manifest(root, name):
         try:
             current_manifest_fd = os.open(
                 "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         except OSError as exc:
             raise RuntimeError(
                 "skill manifest path changed while captured") from exc
@@ -2161,9 +3246,10 @@ def _read_skill_manifest(root, name):
         os.close(root_fd)
 
 
-def _list_skill_entries(root):
+def _list_skill_entries(root, page_state=None):
     entries, complete, _inspected, page = _bounded_source_entries(
-        root, limit=MAX_SKILL_SNAPSHOT_ENTRIES)
+        root, page_state,
+        limit=MAX_SKILL_SNAPSHOT_ENTRIES)
     return [entry["name"] for entry in entries], not complete, page
 
 
@@ -2230,14 +3316,16 @@ def _skill_manifest_capture_matches(root, name, capture):
         skill_before = os.fstat(skill_fd)
         manifest_fd = os.open(
             "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         manifest_before = os.fstat(manifest_fd)
         current_root = _source_path_identity(root, directory_flags)
         current_skill_fd = os.open(name, directory_flags, dir_fd=root_fd)
         current_skill = os.fstat(current_skill_fd)
         current_manifest_fd = os.open(
             "SKILL.md", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0), dir_fd=skill_fd)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0), dir_fd=skill_fd)
         current_manifest = os.fstat(current_manifest_fd)
         manifest_after = os.fstat(manifest_fd)
         skill_after = os.fstat(skill_fd)
@@ -2279,43 +3367,584 @@ def _skill_description(name):
     return ""
 
 
-def sense_skills(cursors):
-    """Agent skills installed in the personal skill roots. Scans for
-    <root>/<name>/SKILL.md, diffs against the last snapshot, and emits
-    cataloged/installed/updated/removed events linking [[skills/<name>]]
-    entities. Snapshot rides in cursors, so it commits only after the
-    corpus write — a failed pulse re-diffs and the day-page idempotence
-    gate absorbs the replay."""
-    previous = cursors.get("skills.snapshot")
-    prev = previous if isinstance(previous, dict) else None
-    snap = {}
-    truncated = False
-    incomplete_roots = []
-    for root in SKILL_ROOTS:
-        root_id = hashlib.sha256(_skill_name_bytes(root)).hexdigest()
-        try:
-            entries, root_truncated, generation = _list_skill_entries(root)
-        except (OSError, RuntimeError, ValueError):
-            incomplete_roots.append(root)
+_SKILL_SCAN_SCHEMA_V1 = "sia-skill-catalog-scan-v1"
+_SKILL_SCAN_SCHEMA = "sia-skill-catalog-scan-v2"
+_SKILL_ROOT_HISTORY_SCHEMA = "sia-skill-root-history-v1"
+
+
+def _skill_root_id(root):
+    return hashlib.sha256(_skill_name_bytes(root)).hexdigest()
+
+
+def _validated_skill_root_history(value, root_ids, snapshot, *, present=True):
+    """Load exact root-presence history and seed upgrades from provenance."""
+    if not present:
+        stored = []
+    elif isinstance(value, list) and len(value) == 2 \
+            and value[0] == _SKILL_ROOT_HISTORY_SCHEMA \
+            and isinstance(value[1], list) \
+            and len(value[1]) <= MAX_CONFIG_TAGS \
+            and all(isinstance(root_id, str)
+                    and re.fullmatch(r"[0-9a-f]{64}", root_id) is not None
+                    for root_id in value[1]) \
+            and len(value[1]) == len(set(value[1])):
+        stored = value[1]
+    else:
+        raise ValueError("skill catalog state is invalid")
+    known = set(stored)
+    for state in snapshot.values():
+        for row in state["roots"]:
+            known.add(row["root_id"])
+    return [root_id for root_id in root_ids if root_id in known]
+
+
+def _new_skill_scan(root_ids, prior_truncated=False, prior_guard=False,
+                    known_roots=()):
+    return {
+        "schema": _SKILL_SCAN_SCHEMA, "roots": list(root_ids),
+        "root_index": 0, "page": None, "entries": [], "rows": [],
+        "tainted_roots": [], "truncated_roots": [],
+        "known_roots": list(known_roots), "absent_roots": [],
+        "completed_roots": [],
+        "prior_truncated": bool(prior_truncated),
+        "prior_removal_guard": bool(prior_guard),
+    }
+
+
+def _skill_manifest_state_valid(value):
+    if not isinstance(value, dict) \
+            or set(value) != {
+                "device", "inode", "mode", "uid", "size", "mtime_ns",
+                "ctime_ns", "head_bytes", "head_truncated", "head_sha256",
+            } \
+            or any(isinstance(value[field], bool)
+                   or not isinstance(value[field], int)
+                   or value[field] < 0
+                   for field in (
+                       "device", "inode", "mode", "uid", "size",
+                       "mtime_ns", "ctime_ns", "head_bytes")) \
+            or not stat.S_ISREG(value["mode"]) \
+            or value["head_bytes"] \
+            != min(value["size"], MAX_SKILL_MANIFEST_HEAD_BYTES) \
+            or not isinstance(value["head_truncated"], bool) \
+            or value["head_truncated"] \
+            != (value["size"] > value["head_bytes"]) \
+            or not isinstance(value["head_sha256"], str) \
+            or re.fullmatch(
+                r"[0-9a-f]{64}", value["head_sha256"]) is None:
+        return False
+    return True
+
+
+def _migrated_legacy_skill_state(skill, value):
+    """Recognize the old positive-only row without inheriting its roots."""
+    if not isinstance(value, dict) \
+            or set(value) != {"mtime", "name", "roots"}:
+        return None
+    name = value.get("name")
+    roots = value.get("roots")
+    mtime = value.get("mtime")
+    name_bytes = _skill_name_bytes(name) if isinstance(name, str) else b""
+    if isinstance(mtime, bool) or not isinstance(mtime, int) or mtime < 0 \
+            or not _strict_config_string(
+                name, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS) \
+            or not name_bytes or name_bytes in {b".", b".."} \
+            or b"/" in name_bytes or b"\0" in name_bytes \
+            or len(name_bytes) > MAX_CORPUS_COMPONENT_BYTES \
+            or sanitize_slugpart(name) != skill \
+            or not isinstance(roots, list) \
+            or len(roots) > MAX_CONFIG_TAGS \
+            or any(not _strict_config_string(
+                root, nonempty=True, limit=MAX_CONFIG_PATH_CHARS)
+                   for root in roots) \
+            or len(roots) != len(set(roots)):
+        raise ValueError("skill catalog state is invalid")
+    return {
+        "name": _skill_display_name(name),
+        "name_id": hashlib.sha256(name_bytes).hexdigest(),
+        "description": "",
+        # Legacy root strings were followed-path labels, not descriptor-bound
+        # provenance. A current scan must earn every replacement root row.
+        "roots": [],
+    }
+
+
+def _validated_skill_snapshot(value):
+    """Validate the exact authoritative catalog before any scan mutates it."""
+    if not isinstance(value, dict) \
+            or len(value) > MAX_SKILL_SNAPSHOT_ENTRIES:
+        raise ValueError("skill catalog state is invalid")
+    validated = {}
+    for skill, state in value.items():
+        if not isinstance(skill, str) \
+                or re.fullmatch(
+                    r"[a-z0-9_][a-z0-9._-]*", skill) is None \
+                or len(skill) > MAX_SOURCE_NAME_CHARS \
+                or len(skill.encode("utf-8")) > MAX_CORPUS_LEAF_BYTES:
+            raise ValueError("skill catalog state is invalid")
+        legacy = _migrated_legacy_skill_state(skill, state)
+        if legacy is not None:
+            validated[skill] = legacy
             continue
-        truncated |= root_truncated
-        root_rows = []
+        if not isinstance(state, dict) \
+                or set(state) != {
+                    "name", "name_id", "description", "roots"} \
+                or not _strict_config_string(
+                    state["name"], nonempty=True,
+                    limit=MAX_CONFIG_TEXT_CHARS) \
+                or not isinstance(state["name_id"], str) \
+                or re.fullmatch(r"[0-9a-f]{64}", state["name_id"]) is None \
+                or not _strict_config_string(
+                    state["description"], limit=220) \
+                or not isinstance(state["roots"], list) \
+                or len(state["roots"]) > MAX_CONFIG_TAGS:
+            raise ValueError("skill catalog state is invalid")
+        seen_roots = set()
+        for row in state["roots"]:
+            if not isinstance(row, dict) \
+                    or set(row) != {
+                        "root_id", "description", "manifest"} \
+                    or not isinstance(row["root_id"], str) \
+                    or re.fullmatch(
+                        r"[0-9a-f]{64}", row["root_id"]) is None \
+                    or row["root_id"] in seen_roots \
+                    or not _strict_config_string(
+                        row["description"], limit=220) \
+                    or not _skill_manifest_state_valid(row["manifest"]):
+                raise ValueError("skill catalog state is invalid")
+            seen_roots.add(row["root_id"])
+        validated[skill] = state
+    return validated
+
+
+def _validated_skill_scan(value, root_ids, prior_truncated=False,
+                          prior_guard=False, known_root_ids=None, *,
+                          present=True):
+    """Validate the bounded continuation for one configured root roster."""
+    if not present:
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    if not isinstance(value, dict):
+        raise ValueError("skill catalog scan cursor is invalid")
+    if value.get("roots") != list(root_ids):
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    schema = value.get("schema")
+    if schema not in {_SKILL_SCAN_SCHEMA_V1, _SKILL_SCAN_SCHEMA}:
+        return _new_skill_scan(
+            root_ids, prior_truncated, prior_guard,
+            known_root_ids or ())
+    legacy = schema == _SKILL_SCAN_SCHEMA_V1
+    expected_fields = {
+            "schema", "roots", "root_index", "page", "rows",
+            "tainted_roots", "truncated_roots", "prior_truncated",
+            "prior_removal_guard"}
+    if not legacy:
+        expected_fields.update({
+            "entries", "known_roots", "absent_roots", "completed_roots"})
+    if set(value) != expected_fields:
+        raise ValueError("skill catalog scan cursor is invalid")
+    index = value.get("root_index")
+    rows = value.get("rows")
+    tainted = value.get("tainted_roots")
+    truncated = value.get("truncated_roots")
+    if isinstance(index, bool) or not isinstance(index, int) \
+            or index < 0 or index >= len(root_ids) \
+            or not isinstance(rows, list) \
+            or len(rows) > MAX_SKILL_SNAPSHOT_ENTRIES \
+            or not isinstance(tainted, list) \
+            or not isinstance(truncated, list) \
+            or not isinstance(value.get("prior_truncated"), bool) \
+            or not isinstance(value.get("prior_removal_guard"), bool) \
+            or len(tainted) > len(root_ids) \
+            or len(truncated) > len(root_ids) \
+            or any(not isinstance(root_id, str)
+                   for root_id in tainted + truncated) \
+            or len(set(tainted)) != len(tainted) \
+            or len(set(truncated)) != len(truncated) \
+            or any(root_id not in root_ids
+                   for root_id in tainted + truncated):
+        raise ValueError("skill catalog scan cursor is invalid")
+    page = value.get("page")
+    if page is not None:
+        _validated_source_page_state(page)
+        _source_tree_directory_generation(page)
+        if page.get("cookie", 0) <= 0:
+            raise ValueError("skill catalog scan cursor is invalid")
+    else:
+        # Persisted candidates are written only at a partial directory page;
+        # a missing cookie cannot justify retaining their prefix.
+        raise ValueError("skill catalog scan cursor is invalid")
+    prior_roots = set(root_ids[:index])
+    reached_roots = set(root_ids[:index + 1])
+    if any(root_id not in prior_roots for root_id in tainted) \
+            or any(root_id not in reached_roots for root_id in truncated):
+        raise ValueError("skill catalog scan cursor is invalid")
+    row_keys = set()
+    for row in rows:
+        name_bytes = _skill_name_bytes(row.get("name", "")) \
+            if isinstance(row, dict) else b""
+        manifest = row.get("manifest") if isinstance(row, dict) else None
+        if not isinstance(row, dict) \
+                or set(row) != {
+                    "root_id", "name", "name_id", "description",
+                    "manifest"} \
+                or row["root_id"] not in reached_roots \
+                or row["root_id"] in tainted \
+                or not isinstance(row["name"], str) \
+                or not name_bytes or name_bytes in {b".", b".."} \
+                or b"/" in name_bytes or b"\0" in name_bytes \
+                or len(name_bytes) > MAX_CORPUS_COMPONENT_BYTES \
+                or not isinstance(row["name_id"], str) \
+                or re.fullmatch(r"[0-9a-f]{64}", row["name_id"]) is None \
+                or row["name_id"] != hashlib.sha256(name_bytes).hexdigest() \
+                or not isinstance(row["description"], str) \
+                or len(row["description"]) > 220 \
+                or not _skill_manifest_state_valid(manifest):
+            raise ValueError("skill catalog scan cursor is invalid")
+        row_key = (row["root_id"], row["name_id"])
+        if row_key in row_keys:
+            raise ValueError("skill catalog scan cursor is invalid")
+        row_keys.add(row_key)
+    if legacy:
+        known = set(known_root_ids or ())
+        known.update(row["root_id"] for row in rows)
+        known.add(root_ids[index])
+        known.update(root_id for root_id in root_ids[:index]
+                     if root_id not in tainted)
+        # V1 retained neither negative child coverage nor completed-root
+        # generations. Its private candidate cannot be upgraded into exact
+        # removal authority, so restart it while preserving observed roots
+        # and the pre-scan guard state.
+        return _new_skill_scan(
+            root_ids, value["prior_truncated"],
+            value["prior_removal_guard"],
+            [root_id for root_id in root_ids if root_id in known])
+    known = value.get("known_roots")
+    absent = value.get("absent_roots")
+    if not isinstance(known, list) \
+            or len(known) > MAX_CONFIG_TAGS \
+            or any(root_id not in root_ids for root_id in known) \
+            or len(known) != len(set(known)) \
+            or known != [root_id for root_id in root_ids
+                          if root_id in set(known)] \
+            or root_ids[index] not in known \
+            or any(row["root_id"] not in known for row in rows) \
+            or known_root_ids is not None \
+            and known != list(known_root_ids):
+        raise ValueError("skill catalog scan cursor is invalid")
+    entries = value.get("entries")
+    entry_names = {}
+    if not isinstance(entries, list) \
+            or len(entries) > MAX_SKILL_SNAPSHOT_ENTRIES:
+        raise ValueError("skill catalog scan cursor is invalid")
+    for entry in entries:
+        name_bytes = _skill_name_bytes(entry.get("name", "")) \
+            if isinstance(entry, dict) else b""
+        if not isinstance(entry, dict) \
+                or set(entry) != {"root_id", "name", "name_id"} \
+                or entry["root_id"] not in reached_roots \
+                or entry["root_id"] in tainted \
+                or not isinstance(entry["name"], str) \
+                or not name_bytes or name_bytes in {b".", b".."} \
+                or b"/" in name_bytes or b"\0" in name_bytes \
+                or len(name_bytes) > MAX_CORPUS_COMPONENT_BYTES \
+                or not isinstance(entry["name_id"], str) \
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", entry["name_id"]) is None \
+                or entry["name_id"] \
+                != hashlib.sha256(name_bytes).hexdigest():
+            raise ValueError("skill catalog scan cursor is invalid")
+        entry_key = (entry["root_id"], entry["name_id"])
+        if entry_key in entry_names:
+            raise ValueError("skill catalog scan cursor is invalid")
+        entry_names[entry_key] = entry["name"]
+    if any(row_key not in entry_names for row_key in row_keys) \
+            or any(entry_names[(row["root_id"], row["name_id"])]
+                   != row["name"] for row in rows):
+        raise ValueError("skill catalog scan cursor is invalid")
+    completed = value.get("completed_roots")
+    if not isinstance(completed, list) \
+            or len(completed) > MAX_CONFIG_TAGS:
+        raise ValueError("skill catalog scan cursor is invalid")
+    completed_ids = []
+    generation_fields = set(SOURCE_TREE_GENERATION_FIELDS)
+    for completion in completed:
+        if not isinstance(completion, dict) \
+                or set(completion) != {"root_id", "generation"} \
+                or completion["root_id"] not in prior_roots \
+                or completion["root_id"] in completed_ids \
+                or not isinstance(completion["generation"], dict) \
+                or set(completion["generation"]) != generation_fields:
+            raise ValueError("skill catalog scan cursor is invalid")
+        try:
+            _source_tree_directory_generation(completion["generation"])
+        except ValueError as exc:
+            raise ValueError(
+                "skill catalog scan cursor is invalid") from exc
+        completed_ids.append(completion["root_id"])
+    if completed_ids != [root_id for root_id in root_ids
+                          if root_id in set(completed_ids)]:
+        raise ValueError("skill catalog scan cursor is invalid")
+    if not isinstance(absent, list) \
+            or len(absent) > MAX_CONFIG_TAGS \
+            or any(root_id not in root_ids for root_id in absent) \
+            or len(absent) != len(set(absent)) \
+            or absent != [root_id for root_id in root_ids
+                           if root_id in set(absent)] \
+            or any(root_id not in prior_roots for root_id in absent) \
+            or set(absent) & (set(known) | set(tainted)
+                              | set(truncated)) \
+            or set(completed_ids) & (set(absent) | set(tainted)) \
+            or any(root_id not in set(absent) | set(tainted)
+                   | set(completed_ids) for root_id in prior_roots) \
+            or any(root_id not in known for root_id in completed_ids) \
+            or any(entry["root_id"] != root_ids[index]
+                   and entry["root_id"] not in completed_ids
+                   for entry in entries):
+        raise ValueError("skill catalog scan cursor is invalid")
+    return value
+
+
+def _discard_skill_root_candidate(scan, root_id):
+    scan["rows"] = [
+        row for row in scan["rows"] if row["root_id"] != root_id]
+    scan["entries"] = [
+        row for row in scan["entries"] if row["root_id"] != root_id]
+    scan["tainted_roots"] = [
+        value for value in scan["tainted_roots"] if value != root_id]
+    scan["truncated_roots"] = [
+        value for value in scan["truncated_roots"] if value != root_id]
+    scan["absent_roots"] = [
+        value for value in scan["absent_roots"] if value != root_id]
+    scan["completed_roots"] = [
+        value for value in scan["completed_roots"]
+        if value["root_id"] != root_id]
+
+
+def _skill_root_refusal(root, timestamp=None):
+    timestamp = utcnow() if timestamp is None else timestamp
+    return Event(
+        "skills", timestamp, "source-refused",
+        f"skill root could not be read as one stable snapshot: "
+        f"{clip(_skill_display_name(root), 220)}",
+        {"organs/skills"}, {"skills", "refusal"},
+        occurrence=("skills:source-refused:" +
+                    _source_entity_token(root, "skill-root")))
+
+
+def _skill_snapshot_from_rows(rows):
+    """Project captured root/name rows into the bounded public snapshot."""
+    snap = {}
+    for row in rows:
+        name = row["name"]
+        raw_id = row["name_id"]
+        skill = _skill_entity_token(name)
+        if skill in snap and snap[skill].get("name_id") != raw_id:
+            skill = "skill-" + raw_id
+        if skill not in snap and len(snap) >= MAX_SKILL_SNAPSHOT_ENTRIES:
+            raise ValueError("skill catalog projection exceeds its bound")
+        cur = snap.setdefault(
+            skill, {"name": _skill_display_name(name),
+                    "name_id": raw_id, "description": "", "roots": []})
+        root_row = {
+            "root_id": row["root_id"],
+            "description": row["description"],
+            "manifest": row["manifest"],
+        }
+        if not any(existing.get("root_id") == row["root_id"]
+                   for existing in cur["roots"]
+                   if isinstance(existing, dict)):
+            cur["roots"].append(root_row)
+        if not cur["description"] and row["description"]:
+            cur["description"] = row["description"]
+    return snap
+
+
+def _skill_positive_merge(previous, observed, unresolved_root_ids, root_ids):
+    """Overlay positives while retaining unresolved root provenance.
+
+    A partial aggregate can prove the state of each successfully completed
+    root, but it cannot replace provenance previously captured from a root
+    that was refused or exceeded the aggregate bound.  Preserve those root
+    rows, overlay every observed row for the same root, then rebuild root and
+    description order from the configured root roster.
+    """
+    unresolved = set(unresolved_root_ids)
+    merged = {}
+    overflow = []
+
+    def project(skill, prior, current):
+        prior_roots = prior.get("roots", [])
+        current_roots = current.get("roots", []) \
+            if isinstance(current, dict) else []
+        by_root = {}
+        if isinstance(prior_roots, list):
+            for row in prior_roots:
+                prior_root_id = row.get("root_id") \
+                    if isinstance(row, dict) else None
+                if isinstance(prior_root_id, str) \
+                        and prior_root_id in unresolved:
+                    by_root.setdefault(
+                        prior_root_id, copy.deepcopy(row))
+        if isinstance(current_roots, list):
+            for row in current_roots:
+                current_root_id = row.get("root_id") \
+                    if isinstance(row, dict) else None
+                if isinstance(current_root_id, str) \
+                        and current_root_id in root_ids:
+                    by_root[current_root_id] = copy.deepcopy(row)
+        combined = copy.deepcopy(
+            current if isinstance(current, dict) else prior)
+        combined["name"] = _skill_display_name(
+            combined.get("name", skill))
+        combined["roots"] = [by_root[root_id] for root_id in root_ids
+                             if root_id in by_root]
+        combined["description"] = next((
+            row.get("description", "") for row in combined["roots"]
+            if isinstance(row.get("description", ""), str)
+            and row.get("description", "")), "")
+        return combined
+
+    for skill, prior in previous.items():
+        if not isinstance(skill, str) or not isinstance(prior, dict):
+            continue
+        if len(merged) >= MAX_SKILL_SNAPSHOT_ENTRIES:
+            overflow.append(skill)
+            continue
+        merged[skill] = project(skill, prior, observed.get(skill))
+    for skill, current in observed.items():
+        if skill in merged:
+            continue
+        if len(merged) >= MAX_SKILL_SNAPSHOT_ENTRIES:
+            overflow.append(skill)
+            continue
+        merged[skill] = project(skill, {}, current)
+    return merged, overflow
+
+
+def _skill_catalog_event(kind, skill, source_state, timestamp):
+    label = _skill_display_name(source_state.get("name", skill))
+    desc = source_state.get("description", "") \
+        if isinstance(source_state, dict) else ""
+    source_id = hashlib.sha256(json.dumps(
+        source_state, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=True).encode("utf-8")).hexdigest()
+    if kind == "cataloged":
+        summary = f"cataloged installed skill: {clip(label, 220)}" \
+            + (f" — {desc}" if desc else "")
+        tags = {"skills", "cataloged"}
+    else:
+        summary = f"skill {kind}: {clip(label, 220)}" \
+            + (f" — {desc}" if desc else "")
+        tags = {"skills", kind}
+    return Event(
+        "skills", timestamp, kind, summary,
+        {"organs/skills", f"skills/{skill}"}, tags,
+        occurrence=f"skills:{kind}:{skill}:{source_id}")
+
+
+def sense_skills(cursors):
+    """Scan skill roots through a resumable, generation-stable aggregate.
+
+    Each pulse reads at most one bounded page from the current root. Positive
+    captures and negative child-name coverage stay private in a cursor
+    candidate until every configured root reaches a stable EOF. A
+    root-generation reset drops that root's earlier captures. Completed roots
+    are revalidated across the aggregate boundary. Refused or over-cap
+    aggregates may add/update observations, but never use missing rows as
+    evidence of removal.
+    """
+    if "skills.snapshot" in cursors:
+        prev = _validated_skill_snapshot(cursors["skills.snapshot"])
+    else:
+        prev = None
+    for flag in (
+            "skills.truncated", "skills.partial", "skills.removal_guard"):
+        if flag in cursors and not isinstance(cursors[flag], bool):
+            raise ValueError("skill catalog state is invalid")
+    skill_roots = []
+    root_ids = []
+    for root in SKILL_ROOTS:
+        root_id = _skill_root_id(root)
+        if root_id in root_ids:
+            continue
+        skill_roots.append(root)
+        root_ids.append(root_id)
+    root_history_key = "skills.root_history"
+    known_root_ids = _validated_skill_root_history(
+        cursors.get(root_history_key), root_ids, prev or {},
+        present=root_history_key in cursors)
+    scan_key = "skills.scan"
+    prior_truncated = cursors.get("skills.truncated", False)
+    prior_guard = cursors.get(
+        "skills.removal_guard",
+        cursors.get("skills.partial", prior_truncated))
+    scan = _validated_skill_scan(
+        cursors.get(scan_key), root_ids, prior_truncated, prior_guard,
+        known_root_ids, present=scan_key in cursors)
+    known_roots = set(scan["known_roots"])
+    evs = []
+
+    while scan["root_index"] < len(skill_roots):
+        root_index = scan["root_index"]
+        root = skill_roots[root_index]
+        root_id = root_ids[root_index]
+        page_before = scan["page"]
+        try:
+            entries, root_truncated, next_page = _list_skill_entries(
+                root, page_before)
+        except FileNotFoundError:
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id in known_roots:
+                if root_id not in scan["tainted_roots"]:
+                    scan["tainted_roots"].append(root_id)
+                evs.append(_skill_root_refusal(root))
+            elif root_id not in scan["absent_roots"]:
+                scan["absent_roots"].append(root_id)
+            scan["root_index"] += 1
+            scan["page"] = None
+            continue
+        except (OSError, RuntimeError, ValueError):
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id not in scan["tainted_roots"]:
+                scan["tainted_roots"].append(root_id)
+            evs.append(_skill_root_refusal(root))
+            scan["root_index"] += 1
+            scan["page"] = None
+            continue
+        known_roots.add(root_id)
+        scan["known_roots"] = [
+            value for value in root_ids if value in known_roots]
+
+        if next_page.get("reset"):
+            # `_bounded_source_entries` already returned a page from the new
+            # root generation. Discard every capture tied to the old cookie
+            # before considering that returned page.
+            _discard_skill_root_candidate(scan, root_id)
+
+        page_rows = []
         manifest_unstable = False
         for name in entries:
             try:
                 capture = _read_skill_manifest(root, name)
+            except FileNotFoundError:
+                continue
             except RuntimeError:
                 manifest_unstable = True
                 break
             except OSError:
-                continue
-            root_rows.append((name, capture))
+                manifest_unstable = True
+                break
+            page_rows.append((name, capture))
         try:
-            root_stable = _skill_root_generation_matches(root, generation)
+            root_stable = _skill_root_generation_matches(root, next_page)
         except (OSError, RuntimeError, ValueError):
             root_stable = False
         if root_stable and not manifest_unstable:
-            for name, capture in root_rows:
+            for name, capture in page_rows:
                 try:
                     current = _skill_manifest_capture_matches(
                         root, name, capture)
@@ -2325,135 +3954,240 @@ def sense_skills(cursors):
                     manifest_unstable = True
                     break
         if manifest_unstable or not root_stable:
-            incomplete_roots.append(root)
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id not in scan["tainted_roots"]:
+                scan["tainted_roots"].append(root_id)
+            evs.append(_skill_root_refusal(root))
+            scan["root_index"] += 1
+            scan["page"] = None
             continue
-        for name, capture in root_rows:
+
+        page_captures = {name: capture for name, capture in page_rows}
+        for name in entries:
             raw_id = hashlib.sha256(_skill_name_bytes(name)).hexdigest()
-            skill = _skill_entity_token(name)
-            if skill in snap and snap[skill].get("name_id") != raw_id:
-                skill = "skill-" + raw_id
-            if skill not in snap and len(snap) >= MAX_SKILL_SNAPSHOT_ENTRIES:
-                truncated = True
+            covered = next((
+                entry for entry in scan["entries"]
+                if entry["root_id"] == root_id
+                and entry["name_id"] == raw_id), None)
+            if covered is None:
+                if len(scan["entries"]) >= MAX_SKILL_SNAPSHOT_ENTRIES:
+                    if root_id not in scan["truncated_roots"]:
+                        scan["truncated_roots"].append(root_id)
+                        evs.append(_source_entry_refusal_event(
+                            "skills", "skill root entry coverage for "
+                            f"{_skill_display_name(root)}"))
+                    continue
+                scan["entries"].append({
+                    "root_id": root_id, "name": name, "name_id": raw_id})
+            capture = page_captures.get(name)
+            if capture is None:
                 continue
-            cur = snap.setdefault(
-                skill, {"name": _skill_display_name(name),
-                        "name_id": raw_id, "description": "",
-                        "roots": []})
-            root_row = {
-                "root_id": root_id,
+            duplicate = next((
+                row for row in scan["rows"]
+                if row["root_id"] == root_id and row["name_id"] == raw_id),
+                None)
+            row = {
+                "root_id": root_id, "name": name, "name_id": raw_id,
                 "description": capture["description"],
                 "manifest": capture["manifest"],
             }
-            if not any(row.get("root_id") == root_id
-                       for row in cur["roots"] if isinstance(row, dict)):
-                cur["roots"].append(root_row)
-            if not cur["description"] and capture["description"]:
-                cur["description"] = capture["description"]
-    partial = bool(truncated or incomplete_roots)
-    prior_partial = bool(cursors.get(
-        "skills.partial", cursors.get("skills.truncated", False)))
-    # A partial aggregate cannot prove absence.  Retain the last effective
-    # rows during the partial pass and for its first complete successor; the
-    # following complete unchanged pass can then prove a removal.
-    if prev and (partial or prior_partial):
-        observed_snap = snap
-        snap = {}
-        for skill, prior in prev.items():
-            if not isinstance(skill, str) or not isinstance(prior, dict):
-                continue
-            if len(snap) >= MAX_SKILL_SNAPSHOT_ENTRIES:
-                truncated = True
-                partial = True
-                break
-            preserved = dict(prior)
-            preserved["name"] = _skill_display_name(
-                preserved.get("name", skill))
-            snap[skill] = preserved
-        for skill, observed in observed_snap.items():
-            if skill in snap:
-                snap[skill] = observed
-            elif len(snap) < MAX_SKILL_SNAPSHOT_ENTRIES:
-                snap[skill] = observed
+            if duplicate is not None:
+                scan["rows"][scan["rows"].index(duplicate)] = row
+            elif len(scan["rows"]) < MAX_SKILL_SNAPSHOT_ENTRIES:
+                scan["rows"].append(row)
             else:
-                truncated = True
-                partial = True
+                if root_id not in scan["truncated_roots"]:
+                    scan["truncated_roots"].append(root_id)
+                evs.append(_source_entry_refusal_event(
+                    "skills", "skill manifest "
+                    f"{_skill_display_name(name)} in "
+                    f"{_skill_display_name(root)}"))
+
+        if root_truncated:
+            scan["page"] = next_page
+            cursors[scan_key] = scan
+            cursors[root_history_key] = [
+                _SKILL_ROOT_HISTORY_SCHEMA,
+                [value for value in root_ids if value in known_roots],
+            ]
+            cursors["skills.partial"] = True
+            cursors["skills.truncated"] = bool(
+                scan["truncated_roots"]
+                or len(scan["entries"]) >= MAX_SKILL_SNAPSHOT_ENTRIES)
+            return evs
+
+        # EOF validates every manifest captured from earlier pages too; a
+        # child-file rewrite does not necessarily change the root directory's
+        # own generation and therefore cannot be detected by its cookie alone.
+        root_rows = [row for row in scan["rows"]
+                     if row["root_id"] == root_id]
+        for row in root_rows:
+            capture = {"description": row["description"],
+                       "manifest": row["manifest"]}
+            try:
+                current = _skill_manifest_capture_matches(
+                    root, row["name"], capture)
+            except (OSError, RuntimeError, ValueError):
+                current = False
+            if not current:
+                manifest_unstable = True
+                break
+        if manifest_unstable:
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id not in scan["tainted_roots"]:
+                scan["tainted_roots"].append(root_id)
+            evs.append(_skill_root_refusal(root))
+        else:
+            scan["completed_roots"].append({
+                "root_id": root_id,
+                "generation": _source_tree_directory_generation(next_page),
+            })
+        scan["root_index"] += 1
+        scan["page"] = None
+
+    # A clean optional-root absence has no filesystem generation to retain.
+    # Recheck every such absence after the last root reaches EOF; if a root
+    # appeared (or can no longer be classified as absent), this aggregate is
+    # incomplete and therefore cannot authorize a removal.
+    directory_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                       | getattr(os, "O_NOFOLLOW", 0)
+                       | getattr(os, "O_DIRECTORY", 0))
+    roots_by_id = dict(zip(root_ids, skill_roots))
+    for root_id in list(scan["absent_roots"]):
+        root = roots_by_id[root_id]
+        try:
+            descriptor = _open_source_nofollow(root, directory_flags)
+        except FileNotFoundError:
+            continue
+        except (OSError, RuntimeError, ValueError):
+            pass
+        else:
+            os.close(descriptor)
+            known_roots.add(root_id)
+        scan["absent_roots"] = [
+            value for value in scan["absent_roots"] if value != root_id]
+        if root_id not in scan["tainted_roots"]:
+            scan["tainted_roots"].append(root_id)
+        evs.append(_skill_root_refusal(root))
+
+    # Completed roots also need a final aggregate-bound check. Directory
+    # generation proves that the enumerated child-name set did not change;
+    # replaying every bounded child covers both captured manifests and stable
+    # negative observations where SKILL.md was absent or inadmissible.
+    for completion in list(scan["completed_roots"]):
+        root_id = completion["root_id"]
+        root = roots_by_id[root_id]
+        generation = completion["generation"]
+        try:
+            root_current = _skill_root_generation_matches(root, generation)
+        except (OSError, RuntimeError, ValueError):
+            root_current = False
+        expected_rows = {
+            (row["root_id"], row["name_id"]): row
+            for row in scan["rows"] if row["root_id"] == root_id}
+        if root_current:
+            for entry in scan["entries"]:
+                if entry["root_id"] != root_id:
+                    continue
+                expected = expected_rows.get((root_id, entry["name_id"]))
+                try:
+                    capture = _read_skill_manifest(root, entry["name"])
+                except FileNotFoundError:
+                    if expected is not None:
+                        root_current = False
+                        break
+                    continue
+                except RuntimeError:
+                    root_current = False
+                    break
+                except OSError:
+                    root_current = False
+                    break
+                current = {
+                    "description": capture["description"],
+                    "manifest": capture["manifest"],
+                }
+                if expected is None or current != {
+                        "description": expected["description"],
+                        "manifest": expected["manifest"]}:
+                    root_current = False
+                    break
+        if root_current:
+            try:
+                root_current = _skill_root_generation_matches(
+                    root, generation)
+            except (OSError, RuntimeError, ValueError):
+                root_current = False
+        if not root_current:
+            _discard_skill_root_candidate(scan, root_id)
+            if root_id not in scan["tainted_roots"]:
+                scan["tainted_roots"].append(root_id)
+            evs.append(_skill_root_refusal(root))
+
+    observed = _skill_snapshot_from_rows(scan["rows"])
+    partial = bool(scan["tainted_roots"] or scan["truncated_roots"])
+    prior_partial = scan["prior_removal_guard"]
+    prior_truncated = scan["prior_truncated"]
+    overflow = []
+    if prev is not None and (partial or prior_partial):
+        unresolved_roots = set(scan["tainted_roots"]) \
+            | set(scan["truncated_roots"])
+        snap, overflow = _skill_positive_merge(
+            prev, observed, unresolved_roots, root_ids)
+        if overflow:
+            partial = True
+    else:
+        snap = observed
     cursors["skills.snapshot"] = snap
-    prior_truncated = bool(cursors.get("skills.truncated", False))
-    cursors["skills.truncated"] = truncated
+    cursors["skills.truncated"] = bool(
+        scan["truncated_roots"] or overflow)
     cursors["skills.partial"] = partial
+    cursors["skills.removal_guard"] = partial
+    cursors[root_history_key] = [
+        _SKILL_ROOT_HISTORY_SCHEMA,
+        [value for value in root_ids if value in known_roots],
+    ]
+    cursors.pop(scan_key, None)
+
+    for skill in overflow:
+        source = observed.get(skill, prev.get(skill) if prev else {})
+        label = source.get("name", skill) if isinstance(source, dict) else skill
+        evs.append(_source_entry_refusal_event(
+            "skills", f"skill snapshot identity {label}"))
+
     ts = utcnow()
-    refusal_events = [Event(
-        "skills", ts, "source-refused",
-        f"skill root could not be read as one stable snapshot: "
-        f"{clip(_skill_display_name(root), 220)}",
-        {"organs/skills"}, {"skills", "refusal"},
-        occurrence=("skills:source-refused:" +
-                    _source_entity_token(root, "skill-root")))
-        for root in incomplete_roots]
     if prev is None:
-        if not snap:
-            return refusal_events
-        evs = []
         for skill in sorted(snap):
-            label = snap[skill].get("name", skill)
-            desc = snap[skill].get("description", "")
-            evs.append(Event(
-                "skills", ts, "cataloged",
-                f"cataloged installed skill: {clip(label, 220)}"
-                + (f" — {desc}" if desc else ""),
-                {"organs/skills", f"skills/{skill}"},
-                {"skills", "cataloged"},
-                occurrence=("skills:cataloged:" + skill + ":" +
-                            hashlib.sha256(json.dumps(
-                                snap[skill], sort_keys=True,
-                                separators=(",", ":"),
-                                ensure_ascii=True).encode(
-                                    "utf-8")).hexdigest())))
-        if truncated:
-            evs.append(Event(
-                "skills", ts, "catalog-truncated",
-                "skill catalog exceeded its bounded snapshot; later entries "
-                "were not indexed", {"organs/skills"},
-                {"skills", "refusal"},
-                occurrence="skills:catalog-truncated"))
-        return evs + refusal_events
-    evs = []
-    # A partial directory page cannot prove absence.  Require two complete
-    # consecutive snapshots before emitting a removal after any truncation.
-    removed = (set() if partial or prior_partial
-               else set(prev) - set(snap))
-    for kind, names in (("installed", sorted(set(snap) - set(prev))),
-                        ("removed", sorted(removed)),
-                        ("updated", sorted(s for s in set(snap) & set(prev)
-                                           if snap[s] != prev[s]))):
-        for s in names:
-            source_state = snap.get(s, prev.get(s))
-            label = _skill_display_name(source_state.get("name", s))
-            desc = source_state.get("description", "") \
-                if isinstance(source_state, dict) else ""
-            source_id = hashlib.sha256(json.dumps(
-                source_state, sort_keys=True, separators=(",", ":"),
-                ensure_ascii=True).encode("utf-8")).hexdigest()
-            evs.append(Event("skills", ts, kind,
-                             f"skill {kind}: {clip(label, 220)}"
-                             + (f" — {desc}" if desc else ""),
-                             {"organs/skills", f"skills/{s}"},
-                             {"skills", kind},
-                             occurrence=f"skills:{kind}:{s}:{source_id}"))
-    if truncated and not prior_truncated:
+            evs.append(_skill_catalog_event(
+                "cataloged", skill, snap[skill], ts))
+    else:
+        removed = (set() if partial or prior_partial
+                   else set(prev) - set(snap))
+        for kind, names in (
+                ("installed", sorted(set(snap) - set(prev))),
+                ("removed", sorted(removed)),
+                ("updated", sorted(
+                    skill for skill in set(snap) & set(prev)
+                    if skill in observed
+                    and snap[skill] != prev[skill]))):
+            for skill in names:
+                source_state = snap.get(skill, prev.get(skill))
+                evs.append(_skill_catalog_event(
+                    kind, skill, source_state, ts))
+    if cursors["skills.truncated"] and not prior_truncated:
         evs.append(Event(
             "skills", ts, "catalog-truncated",
             "skill catalog exceeded its bounded snapshot; later entries "
-            "were not indexed", {"organs/skills"},
+            "were observed but could not be retained", {"organs/skills"},
             {"skills", "refusal"},
             occurrence="skills:catalog-truncated"))
-    return evs + refusal_events
+    return evs
 
 
 def _parse_custom_json_record(line):
     """Parse/classify one decoded JSONL row at its physical boundary."""
     try:
-        value = json.loads(line)
+        value = _strict_json_loads(line)
     except (UnicodeError, ValueError, RecursionError):
         return None, "malformed-json-record"
     if not isinstance(value, dict):
@@ -2472,33 +4206,21 @@ def _custom_match_literals(value, *, field="match"):
     Regex operators are refused instead of being silently reinterpreted or
     evaluated with attacker-controlled backtracking cost.
     """
-    if field not in {"match", "exclude"}:
-        raise ValueError("custom literal field is invalid")
-    if value is None or value == "":
-        return ()
-    if not _strict_config_string(value, limit=MAX_CONFIG_TEXT_CHARS):
-        raise ValueError(f"{field} must be a bounded string")
-    alternatives = value.split("|")
-    if len(alternatives) > MAX_CONFIG_TAGS \
-            or any(not literal for literal in alternatives):
-        raise ValueError(
-            f"{field} must contain bounded non-empty literal alternatives")
-    regex_operators = set(r"\.^$*+?{}[]()")
-    if any(regex_operators.intersection(literal)
-           for literal in alternatives):
-        raise ValueError(
-            f"{field} supports literal alternatives only, not regex syntax")
-    return tuple(alternatives)
+    return _validated_custom_match_literals(value, field=field)
 
 
 def sense_custom(cursors, include_sources=False, *, entry_index=None,
                  seen_names=None):
     """User-defined evidence streams from config custom_senses: tail a
-    log (lines or jsonl), match a pattern, emit events into the user's
-    own organ. This is how anyone points SIA at THEIR programs."""
+    log (lines or jsonl), match a pattern, and emit events through the user's
+    own source adapter. This is how anyone points SIA at their programs."""
     evs, successful = [], []
+    disable_policy = _configured_disabled_sense_policy()
     config_errors = (copy.deepcopy(CONFIG_ERRORS)
                      if entry_index in (None, 0) else [])
+    if not isinstance(CONFIG, dict):
+        result = ([], config_errors)
+        return (*result, successful) if include_sources else result
     configured = CONFIG.get("custom_senses", [])
     if not isinstance(configured, list):
         config_errors.append({"config": "custom_senses",
@@ -2526,71 +4248,26 @@ def sense_custom(cursors, include_sources=False, *, entry_index=None,
         config_events = []
         label = f"entry-{index}"
         try:
-            if not isinstance(cs, dict):
-                raise ValueError("configuration entry must be an object")
-            if cs.get("enabled") is False:
+            normalized = _validated_custom_sense_entry(cs)
+            if normalized is None:
                 continue
-            if "enabled" in cs and not isinstance(cs.get("enabled"), bool):
-                raise ValueError("enabled must be boolean")
-            description = cs.get("description", "custom evidence stream")
-            if not _strict_config_string(
-                    description, limit=MAX_CONFIG_TEXT_CHARS):
-                raise ValueError("description must be a bounded string")
-            if not _strict_config_string(
-                    cs.get("name"), nonempty=True,
-                    limit=MAX_CONFIG_TEXT_CHARS):
-                raise ValueError("name must be a non-empty string")
-            name = sanitize_slugpart(cs["name"])
+            if _custom_sense_disabled(normalized, disable_policy):
+                continue
+            description = normalized["description"]
+            name = normalized["name"]
             label = name
-            source_id = f"sense_custom:{name}"
-            if len(name) > MAX_SOURCE_NAME_CHARS \
-                    or len(source_id) > MAX_SOURCE_NAME_CHARS:
-                raise ValueError("name exceeds its canonical source bound")
+            source_id = normalized["source_id"]
             if name in seen_names:
                 raise ValueError("custom sense names must be unique")
             seen_names.add(name)
-            organ_value = cs.get("organ", name)
-            if not _strict_config_string(
-                    organ_value, nonempty=True,
-                    limit=MAX_CONFIG_TEXT_CHARS):
-                raise ValueError("organ must be a non-empty string")
-            organ = sanitize_slugpart(organ_value)
-            if len(organ) > MAX_SOURCE_NAME_CHARS:
-                raise ValueError("organ exceeds its canonical bound")
-            path_value = cs.get("path")
-            if not _strict_config_string(
-                    path_value, nonempty=True,
-                    limit=MAX_CONFIG_PATH_CHARS):
-                raise ValueError("path must be a non-empty string")
-            path = os.path.expanduser(path_value)
-            stream_type = cs.get("type", "lines")
-            if stream_type not in {"lines", "jsonl"}:
-                raise ValueError("type must be lines or jsonl")
-            match_literals = _custom_match_literals(cs.get("match"))
-            exclude_literals = _custom_match_literals(
-                cs.get("exclude"), field="exclude")
-            field = cs.get("field", "message")
-            if not _strict_config_string(
-                    field, nonempty=True, limit=MAX_SOURCE_NAME_CHARS):
-                raise ValueError("field must be a non-empty string")
-            kind = cs.get("kind", "event")
-            if not _strict_config_string(
-                    kind, nonempty=True, limit=MAX_CONFIG_TEXT_CHARS):
-                raise ValueError("kind must be a non-empty string")
-            kind = sanitize_slugpart(kind)
-            if len(kind) > MAX_SOURCE_NAME_CHARS:
-                raise ValueError("kind exceeds its canonical bound")
-            tags_value = cs.get("tags", [])
-            if not isinstance(tags_value, list) \
-                    or len(tags_value) > MAX_CONFIG_TAGS \
-                    or any(not _strict_config_string(
-                               tag, nonempty=True,
-                               limit=MAX_CONFIG_TEXT_CHARS)
-                           for tag in tags_value):
-                raise ValueError("tags must be a list of non-empty strings")
-            tags = {sanitize_slugpart(tag) for tag in tags_value} | {organ}
-            if any(len(tag) > MAX_SOURCE_NAME_CHARS for tag in tags):
-                raise ValueError("tag exceeds its canonical bound")
+            organ = normalized["organ"]
+            path = normalized["path"]
+            stream_type = normalized["stream_type"]
+            match_literals = normalized["match_literals"]
+            exclude_literals = normalized["exclude_literals"]
+            field = normalized["field"]
+            kind = normalized["kind"]
+            tags = normalized["tags"]
             selected_json_texts = []
 
             def validate_json_record(line):

@@ -111,6 +111,17 @@ operator's corpus.
 
 ## 1.7.5 — 2026-09-03 · what held by discipline now holds by test
 
+*There is no 1.7.4 entry and no `v1.7.4` tag, and this heading carries the
+title 1.7.4 was written under. Commit `8cdfa3e` did bump the manifest to
+1.7.4 with the three checks below, and called the fourth thing the review
+reported — the installer terminal that "appeared only at the end of the
+install" — unreproduced. Before anything was tagged it turned out to be two
+defects on this side, so the cockpit fix landed as a second entry and
+`3b0762d` folded both into this one: one release for one review. 1.7.4 was
+spent on an untagged commit and is left unused rather than reissued, because
+one version number naming two different trees is exactly the kind of
+bookkeeping this project refuses elsewhere.*
+
 [@m10ust](https://github.com/m10ust) took the standing review invitation and
 audited the v1.5.2...v1.6.0 module-split diff: all four digest routines, the
 release/staging file lists, `bin/siagraph.py`, the bind/invoke façade, and the
@@ -323,13 +334,15 @@ policy change the measurement demanded; no new capability.
 ### The tripwire warning was investigated — and the rerank is demoted
 
 The nightly drift tripwire showed the blend trailing keyword retrieval, so the
-full three-system decomposition ran: dense exactly equalled keyword (slug
-match@5 0.92, reciprocal rank 0.71 on the original 13 probes), isolating the
-deficit to the graph rerank itself. The probe set was then extended from 13 to
+full three-system decomposition ran: the hybrid-query ranking equalled keyword
+(slug match@5 0.92, reciprocal rank 0.71 on the original 13 probes).
+Correction: because `gbrain query` is itself hybrid, that equality did not
+isolate the vector contribution or attribute the deficit solely to the graph
+rerank. The probe set was then extended from 13 to
 22 organ-gated probes (nine organs with corpus presence had no probe at all),
 with acceptors widened to the established organs/-inclusive style for
-fairness. On the extended set the blend measured uniformly below plain dense
-retrieval: match@5 0.86 vs 0.91, reciprocal rank 0.67 vs 0.71, match@1 0.50
+fairness. On the extended set the blend measured uniformly below the
+unmodified hybrid query: match@5 0.86 vs 0.91, reciprocal rank 0.67 vs 0.71, match@1 0.50
 vs 0.59. Per the hypothesis-lane freeze rule, `sia ask` now applies graph
 influence only when the new validated `retrieval.associative_rerank` key is
 explicitly true (default off; the answer footer states the mode), and
@@ -339,7 +352,7 @@ lane regardless, so the hypothesis stays under instrumentation.
 
 ### The rehearsal-efficacy instrument (ROADMAP P1.3)
 
-`sia memory --efficacy` partitions the dense-lane probes by SM-2 review state
+`sia memory --efficacy` partitions the hybrid-query probes by SM-2 review state
 and reports hit-rates with populations and non-claims. First datapoint
 (2026-09-02): rehearsed families 6/6 (1.0) vs unrehearsed 14/16 (0.875) —
 directionally favorable and explicitly no-conclusion under the

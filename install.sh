@@ -1,18 +1,43 @@
 #!/usr/bin/env bash
-# SIA — the Omarchy Brain · installer
+# SIA — local machine memory · installer
 # Idempotent. Marketplace / Omarchy path:
 #   omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 #   click the SIA bar item, review the first-light boundary, and continue
 # Or standalone: git clone … && cd sia && ./install.sh
 #
-# What you get: a resident daemon that turns YOUR machine's evidence
-# streams into a private, associative, self-consolidating memory. A fresh
+# What you get: a resident daemon that records YOUR machine's enabled evidence
+# streams in a private corpus with local semantic indexing and weekly compaction. A fresh
 # installation creates private keys and an empty corpus before replaying the
 # available historical tails; an upgrade verifies and retains the existing
 # identity and corpus. Ingestion, storage, indexing, and embeddings stay local;
 # an optional operator-configured CLI judge may send recalled context.
 
 set -euo pipefail
+# BEGIN SIA RELEASE LIFETIME
+if [ "${1:-}" = --sia-release-worker ]; then
+  [ "$#" -ge 5 ] || { echo "incomplete release ownership" >&2; exit 2; }
+  shift
+  sia_owner_control="$1" sia_owner_source="$2" sia_owner_script="$3"
+  sia_owner_root="$4"
+  shift 4
+  for sia_owner_descriptor in "$sia_owner_control" "$sia_owner_source" \
+      "$sia_owner_script" "$sia_owner_root"; do
+    case "$sia_owner_descriptor" in
+      ""|*[!0-9]*) echo "invalid release ownership descriptor" >&2; exit 2 ;;
+    esac
+  done
+  sia_owner_admission="$(python3 -I "/proc/self/fd/$sia_owner_source" admit \
+    "$sia_owner_control" "$sia_owner_source" "$sia_owner_script" \
+    "$sia_owner_root" "$$")" || exit 2
+  eval "$sia_owner_admission"
+  unset sia_owner_control sia_owner_source sia_owner_script sia_owner_root
+  unset sia_owner_descriptor sia_owner_admission
+else
+  sia_owner_entry="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")" || exit 2
+  exec python3 -I "${sia_owner_entry%/*}/bin/sialifetime.py" \
+    supervise --caller "$PPID" "$sia_owner_entry" "$@"
+fi
+# END SIA RELEASE LIFETIME
 case "${HOME:-}" in
   ""|/) echo "refusing install with an unsafe HOME" >&2; exit 2 ;;
   /*) ;;
@@ -49,8 +74,9 @@ unset SIA_INHERITED_LIFECYCLE_FD SIA_INHERITED_CORPUS_FD \
   SIA_RESTORE_ADMIN_FD SIA_RESTORE_TARGET_FD \
   SIA_RESTORE_TARGET_PATH SIA_RESTORE_MASK_OWNED \
   SIA_RESTORE_FINALIZE_ABI SIA_RESTORE_FINALIZE_ADMIN_FD
-REPO="$(cd "$(dirname "$0")" && pwd)"
-SIA_ORIGINAL_REPO="$REPO"
+REPO="$SIA_LIFETIME_SOURCE_ROOT"
+SIA_ORIGINAL_REPO="$SIA_LIFETIME_SOURCE_ROOT_PATH"
+SIA_BOUND_RELEASE_ROOT="$REPO"
 SIA_RELEASE_SOURCE=""
 SHARE="$HOME/.local/share/sia"
 STATE="$HOME/.local/state/sia"
@@ -168,7 +194,18 @@ try:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey, Ed25519PublicKey)
-except Exception as error:
+except (KeyboardInterrupt, SystemExit):
+    raise
+except BaseException as error:
+    # BaseException, not Exception, and the difference is the whole point of
+    # this check.  A python-cryptography whose compiled extension does not
+    # match the running interpreter fails inside its Rust extension, and pyo3
+    # surfaces that as pyo3_runtime.PanicException — which derives from
+    # BaseException precisely so that a panic is not silently swallowed by an
+    # ordinary `except Exception`.  Catching only Exception meant the one
+    # failure this preflight exists to name was the one it could not name:
+    # the installer still refused and mutated nothing, but it did so with a
+    # raw Rust traceback instead of the sentence below.
     raise SystemExit(
         "python-cryptography with Ed25519 support is required: "
         f"{error}") from error
@@ -212,7 +249,13 @@ try:
     restored_public = Ed25519PublicKey.from_public_bytes(public_raw)
     message = b"sia-installer-ed25519-preflight-v1"
     restored_public.verify(restored_private.sign(message), message)
-except Exception as error:
+except (KeyboardInterrupt, SystemExit):
+    raise
+except BaseException as error:
+    # Same reason as the import above, and this block is the likelier place
+    # to need it: generate/sign/verify actually enter the Rust extension, so
+    # a panic here is a panic in library code we just called rather than one
+    # raised while a module was still being initialised.
     raise SystemExit(
         "python-cryptography cannot generate, raw-serialize, sign, and "
         f"verify Ed25519 keys: {error}") from error
@@ -443,223 +486,15 @@ PY
 # front door streams a status=exact 1048576-byte ceiling, rejects NUL/non-UTF-8,
 # and kills an overflowing producer before Bash materializes its response.
 bounded_command_capture() {
-  python3 - "$@" 3<&0 <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-MAX_CAPTURE_BYTES = 1_048_576
-MAX_RUNTIME_SECONDS = 120
-LEADER_POLL_SECONDS = 15
-arguments = sys.argv[1:]
-if arguments[:1] == ["--stdin"]:
-    child_stdin = 3
-    arguments = arguments[1:]
-else:
-    child_stdin = subprocess.DEVNULL
-if not arguments:
-    raise SystemExit("missing bounded inspector command")
-try:
-    process = subprocess.Popen(arguments, stdin=child_stdin,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT,
-                               start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded inspector: {error}", file=sys.stderr)
-    raise SystemExit(127)
-chunks = []
-total = 0
-deadline = time.monotonic() + MAX_RUNTIME_SECONDS
-selector = selectors.DefaultSelector()
-os.set_blocking(process.stdout.fileno(), False)
-selector.register(process.stdout, selectors.EVENT_READ, "stdout")
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ, "leader")
-
-
-def leader_exited():
-    # A registered pidfd is itself the non-reaping exit notification. Avoid a
-    # second waitid(P_PIDFD) syscall; the selector branch below observes it.
-    if pidfd is not None:
-        return False
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-failure_code = None
-failure_message = None
-leader_done = False
-stdout_open = True
-try:
-    while True:
-        if leader_exited():
-            leader_done = True
-            break
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            failure_code = 124
-            failure_message = "external inspector exceeded its runtime deadline"
-            break
-        wait_time = remaining if pidfd is not None else min(
-            remaining, LEADER_POLL_SECONDS)
-        for key, _ in selector.select(wait_time):
-            if key.data == "leader":
-                leader_done = True
-                continue
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                continue
-            if not chunk:
-                selector.unregister(process.stdout)
-                stdout_open = False
-                continue
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-        if failure_code is not None or leader_done:
-            break
-finally:
-    # Keep the leader unreaped until this signal. Its PID therefore still pins
-    # the process-group identity and cannot be recycled under killpg().
-    kill_group()
-    status = process.wait()
-    if stdout_open and total <= MAX_CAPTURE_BYTES:
-        while True:
-            try:
-                chunk = os.read(
-                    process.stdout.fileno(), MAX_CAPTURE_BYTES + 1 - total)
-            except BlockingIOError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_CAPTURE_BYTES:
-                failure_code = 125
-                failure_message = (
-                    "external inspector exceeded its output byte ceiling")
-                break
-    selector.close()
-    process.stdout.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if failure_code is not None:
-    print(failure_message, file=sys.stderr)
-    raise SystemExit(failure_code)
-content = b"".join(chunks)
-if b"\0" in content:
-    print("external inspector emitted NUL", file=sys.stderr)
-    raise SystemExit(125)
-try:
-    text = content.decode("utf-8", "strict")
-except UnicodeError:
-    print("external inspector emitted non-UTF-8 output", file=sys.stderr)
-    raise SystemExit(125)
-sys.stdout.write(text)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" capture --caller "$BASHPID" "$@"
 }
 
 # Status=exact deadline constants: parsed=2*60 exact=120,
-# parsed=5*60 exact=300, parsed=30*60 exact=1800, and parsed=15 exact=15.
-# These are operational ceilings, not claims that a command will finish.
+# parsed=5*60 exact=300, and parsed=30*60 exact=1800.
+# The accepted set is 120, 300, and 1800 seconds; capture uses 120. These are
+# operational ceilings, not claims that a command will finish.
 run_with_deadline() {
-  python3 - "$@" <<'PY'
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-ALLOWED_DEADLINES = {120, 300, 1800}
-LEADER_POLL_SECONDS = 15
-try:
-    deadline = int(sys.argv[1], 10)
-except (IndexError, ValueError):
-    raise SystemExit("invalid command deadline")
-if deadline not in ALLOWED_DEADLINES or len(sys.argv) < 3:
-    raise SystemExit("unsupported command deadline")
-try:
-    process = subprocess.Popen(sys.argv[2:], start_new_session=True)
-except OSError as error:
-    print(f"could not execute bounded command: {error}", file=sys.stderr)
-    raise SystemExit(127)
-pidfd = None
-if hasattr(os, "pidfd_open"):
-    try:
-        pidfd = os.pidfd_open(process.pid, 0)
-    except OSError:
-        pidfd = None
-selector = selectors.DefaultSelector()
-if pidfd is not None:
-    selector.register(pidfd, selectors.EVENT_READ)
-
-
-def leader_exited():
-    if pidfd is not None:
-        return bool(selector.select(0))
-    result = os.waitid(
-        os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    return result is not None
-
-
-def kill_group():
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-timed_out = False
-end = time.monotonic() + deadline
-try:
-    while not leader_exited():
-        remaining = end - time.monotonic()
-        if remaining <= 0:
-            timed_out = True
-            break
-        if pidfd is not None:
-            selector.select(remaining)
-        else:
-            time.sleep(min(remaining, LEADER_POLL_SECONDS))
-finally:
-    # Polling a pidfd never reaps; the fallback WNOWAIT check also preserves
-    # the leader's PID/PGID until every descendant has received SIGKILL.
-    kill_group()
-    status = process.wait()
-    selector.close()
-    if pidfd is not None:
-        os.close(pidfd)
-if timed_out:
-    print(f"command exceeded its {deadline}-second runtime deadline",
-          file=sys.stderr)
-    raise SystemExit(124)
-raise SystemExit(status)
-PY
+  python3 -I "$SIA_LIFETIME_SOURCE" run --caller "$BASHPID" "$@"
 }
 
 # One byte-exact front door for lifecycle authority metadata.  File bytes never
@@ -1938,7 +1773,7 @@ except BaseException:
 PY
 }
 
-step "SIA — the Omarchy Brain"
+step "SIA — local machine memory"
 for dep in python3 git curl tar unzip bzip2 sha256sum zstd systemctl systemd-run flock ss; do
   have "$dep" || { echo "missing dependency: $dep"; exit 1; }
 done
@@ -1979,6 +1814,8 @@ SIA_OLLAMA_ENABLE_STATE=disabled
 sia_install_cleanup() {
   local status=$? brainstem_contained=0
   trap - EXIT
+  trap '' INT TERM HUP
+  lifetime_quiesce cleanup || exit 2
   set +e
   chmod -R u+w -- "$SIA_INSTALL_TMP" >/dev/null 2>&1 || true
   rm -rf -- "$SIA_INSTALL_TMP"
@@ -2047,22 +1884,26 @@ sia_install_cleanup() {
   # owns a lease that the launcher needs. This also makes pre-mutation failure
   # restoration safe after any partial quiescence acquisition.
   if [ -n "$SIA_GBRAIN_LOCK_FD" ]; then
+    lifetime_release SIA_GBRAIN_LOCK_FD || exit 2
     flock -u "$SIA_GBRAIN_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_GBRAIN_LOCK_FD}>&-"
     SIA_GBRAIN_LOCK_FD=""
   fi
   if [ -n "$SIA_CORPUS_LOCK_FD" ]; then
+    lifetime_release SIA_CORPUS_LOCK_FD || exit 2
     flock -u "$SIA_CORPUS_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_CORPUS_LOCK_FD}>&-"
     SIA_CORPUS_LOCK_FD=""
     SIA_CORPUS_RECEIPT_LOCKS_HELD=0
   fi
   if [ -n "$SIA_BRAINSTEM_LOCK_FD" ]; then
+    lifetime_release SIA_BRAINSTEM_LOCK_FD || exit 2
     flock -u "$SIA_BRAINSTEM_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_BRAINSTEM_LOCK_FD}>&-"
     SIA_BRAINSTEM_LOCK_FD=""
   fi
   if [ -n "$SIA_INSTALL_LOCK_FD" ]; then
+    lifetime_release SIA_INSTALL_LOCK_FD || exit 2
     flock -u "$SIA_INSTALL_LOCK_FD" >/dev/null 2>&1 || true
     eval "exec ${SIA_INSTALL_LOCK_FD}>&-"
     SIA_INSTALL_LOCK_FD=""
@@ -2510,10 +2351,11 @@ import os
 import sys
 
 path = sys.argv[1]
-source = r'''#!/usr/bin/env python3
+source = r'''#!/usr/bin/env -S python3 -I
 """Stable SIA launcher: pin one runtime generation before opening Python."""
 
 import ctypes
+import datetime
 import errno
 import fcntl
 import hashlib
@@ -2549,7 +2391,7 @@ def _generation(value):
             value.st_ctime_ns)
 
 
-def _strict_private_json(path, label):
+def _strict_private_json(path, label, *, return_generation=False):
     descriptor = os.open(
         path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
         | getattr(os, "O_NOFOLLOW", 0)
@@ -2580,10 +2422,13 @@ def _strict_private_json(path, label):
         return result
 
     try:
-        return json.loads(raw.decode("utf-8", "strict"),
-                          object_pairs_hook=unique)
+        value = json.loads(raw.decode("utf-8", "strict"),
+                           object_pairs_hook=unique)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise RuntimeError(f"{label} is malformed") from exc
+    if return_generation:
+        return value, after
+    return value
 
 
 def _hex_id(value):
@@ -2591,48 +2436,136 @@ def _hex_id(value):
         and all(character in "0123456789abcdef" for character in value)
 
 
+def _hex_exact(value, length):
+    return _hex_id(value) and len(value) == length
+
+
+def _canonical_utc_timestamp(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ") == value
+
+
 def _request_binding(path, root):
-    value = _strict_private_json(path, "restore request")
+    value, request_info = _strict_private_json(
+        path, "restore request", return_generation=True)
     required = {"schema", "id", "created_at", "action", "args"}
+    argument_fields = {
+        "prepared_id", "snapshot_id", "capsule_id", "manifest_sha256",
+        "confirmation", "identity_key_file", "repository",
+        "environment_file", "repository_id", "configured_at",
+        "target_public_key", "restored_public_key", "adoption",
+    }
+    args = value.get("args") if isinstance(value, dict) else None
+    confirmation = args.get("confirmation") if isinstance(args, dict) else None
+    adoption = args.get("adoption") if isinstance(args, dict) else None
+    target = adoption.get("target") if isinstance(adoption, dict) else None
+    corpus_root = target.get("corpus_root") \
+        if isinstance(target, dict) else None
     if not isinstance(value, dict) or set(value) != required \
             or value.get("schema") != _REQUEST_SCHEMA \
             or value.get("action") != "apply" \
-            or not _hex_id(value.get("id")) \
-            or not isinstance(value.get("args"), dict) \
-            or not _hex_id(value["args"].get("prepared_id")) \
-            or not _hex_id(value["args"].get("capsule_id")) \
-            or not _hex_id(value["args"].get("manifest_sha256")) \
-            or not isinstance(value["args"].get("snapshot_id"), str) \
-            or not value["args"]["snapshot_id"] \
-            or not isinstance(value["args"].get("repository"), str) \
-            or not value["args"]["repository"] \
-            or not isinstance(value["args"].get("environment_file"), str) \
-            or (value["args"]["environment_file"]
-                and (not os.path.isabs(value["args"]["environment_file"])
-                     or os.path.abspath(value["args"]["environment_file"]) !=
-                        value["args"]["environment_file"])) \
-            or not _hex_id(value["args"].get("repository_id")) \
-            or not isinstance(value["args"].get("configured_at"), str) \
-            or not value["args"]["configured_at"] \
-            or not _hex_id(value["args"].get("target_public_key")) \
-            or not _hex_id(value["args"].get("restored_public_key")):
+            or not _hex_exact(value.get("id"), 32) \
+            or not _canonical_utc_timestamp(value.get("created_at")) \
+            or not isinstance(args, dict) or set(args) != argument_fields \
+            or not _hex_exact(args.get("prepared_id"), 32) \
+            or not _hex_exact(args.get("capsule_id"), 32) \
+            or not _hex_exact(args.get("manifest_sha256"), 64) \
+            or not isinstance(args.get("snapshot_id"), str) \
+            or not _hex_id(args["snapshot_id"]) \
+            or len(args["snapshot_id"]) > 64 \
+            or not isinstance(args.get("repository"), str) \
+            or not args["repository"] \
+            or not isinstance(args.get("environment_file"), str) \
+            or (args["environment_file"]
+                and (not os.path.isabs(args["environment_file"])
+                     or os.path.abspath(args["environment_file"]) !=
+                        args["environment_file"])) \
+            or not _hex_exact(args.get("repository_id"), 64) \
+            or not _canonical_utc_timestamp(
+                args.get("configured_at")) \
+            or not _hex_exact(args.get("target_public_key"), 64) \
+            or not _hex_exact(args.get("restored_public_key"), 64) \
+            or (args.get("identity_key_file") is not None
+                and (not isinstance(args["identity_key_file"], str)
+                     or not os.path.isabs(args["identity_key_file"])
+                     or os.path.abspath(args["identity_key_file"]) !=
+                        args["identity_key_file"])) \
+            or not isinstance(confirmation, dict) \
+            or set(confirmation) != {
+                "schema_version", "phrase", "snapshot_id", "ledger_head",
+                "corpus_receipt_re_adopt"} \
+            or type(confirmation.get("schema_version")) is not int \
+            or confirmation["schema_version"] != 1 \
+            or confirmation.get("phrase") != "RESTORE" \
+            or confirmation.get("snapshot_id") != args["snapshot_id"] \
+            or not _hex_exact(confirmation.get("ledger_head"), 64) \
+            or confirmation.get("corpus_receipt_re_adopt") is not True \
+            or not isinstance(adoption, dict) \
+            or set(adoption) != {"order", "record_id", "target"} \
+            or type(adoption.get("order")) is not int \
+            or adoption["order"] < 0 \
+            or not _hex_exact(adoption.get("record_id"), 64) \
+            or not isinstance(target, dict) \
+            or set(target) != {
+                "corpus_root", "receipt_sha256", "receipt_mode"} \
+            or not isinstance(corpus_root, dict) \
+            or set(corpus_root) != {"device", "inode", "mode", "owner"} \
+            or any(type(corpus_root.get(key)) is not int
+                   for key in ("device", "inode", "mode", "owner")) \
+            or not _hex_exact(target.get("receipt_sha256"), 64) \
+            or type(target.get("receipt_mode")) is not int:
         raise RuntimeError("restore request binding is invalid")
     expected = os.path.join(root, "requests", value["id"] + ".json")
     if os.path.abspath(path) != os.path.abspath(expected):
         raise RuntimeError("restore request is outside its spool")
+    confirmation_raw = (json.dumps(
+        confirmation, ensure_ascii=True, sort_keys=True,
+        separators=(",", ":")) + "\n").encode("utf-8")
+    confirmation_sha256 = hashlib.sha256(confirmation_raw).hexdigest()
+    content = json.dumps({
+        "accepted_ledger_head": confirmation["ledger_head"],
+        "confirmation_sha256": confirmation_sha256,
+        "snapshot_id": args["snapshot_id"],
+        "manifest_sha256": args["manifest_sha256"],
+        "target": target,
+        "receipt_re_adopted": True,
+    }, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    basis = {
+        "order": adoption["order"], "action": "RESTORE:adopt",
+        "arg1": args["prepared_id"], "arg2": args["capsule_id"],
+        "content": content,
+    }
+    record_id = hashlib.sha256(json.dumps(
+        basis, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    if record_id != adoption["record_id"]:
+        raise RuntimeError("restore request adoption binding changed")
     return {
         "request_path": os.path.abspath(path),
         "request_id": value["id"],
-        "prepared_id": value["args"]["prepared_id"],
-        "snapshot_id": value["args"]["snapshot_id"],
-        "capsule_id": value["args"]["capsule_id"],
-        "manifest_sha256": value["args"]["manifest_sha256"],
-        "repository": value["args"]["repository"],
-        "environment_file": value["args"]["environment_file"],
-        "repository_id": value["args"]["repository_id"],
-        "configured_at": value["args"]["configured_at"],
-        "target_public_key": value["args"]["target_public_key"],
-        "restored_public_key": value["args"]["restored_public_key"],
+        "request_device": str(request_info.st_dev),
+        "request_inode": str(request_info.st_ino),
+        "prepared_id": args["prepared_id"],
+        "snapshot_id": args["snapshot_id"],
+        "capsule_id": args["capsule_id"],
+        "manifest_sha256": args["manifest_sha256"],
+        "identity_key_file": args["identity_key_file"] or "",
+        "repository": args["repository"],
+        "environment_file": args["environment_file"],
+        "repository_id": args["repository_id"],
+        "configured_at": args["configured_at"],
+        "target_public_key": args["target_public_key"],
+        "restored_public_key": args["restored_public_key"],
+        "accepted_ledger_head": confirmation["ledger_head"],
+        "confirmation_sha256": confirmation_sha256,
+        "adoption_order": str(adoption["order"]),
+        "adoption_record_id": adoption["record_id"],
+        "target": target,
     }
 
 
@@ -2650,13 +2583,15 @@ def _supervisor_debt(root):
                 "prepared_id", "snapshot_id", "capsule_id",
                 "manifest_sha256", "phase", "child_code", "restart_pid",
                 "runtime_path", "runtime_device", "runtime_inode",
-                "repository", "environment_file", "repository_id",
-                "configured_at", "target_public_key",
-                "restored_public_key"}
+                "request_device", "request_inode", "repository",
+                "environment_file", "identity_key_file", "repository_id",
+                "configured_at", "target_public_key", "restored_public_key",
+                "accepted_ledger_head", "confirmation_sha256",
+                "adoption_order", "adoption_record_id", "target"}
     if not isinstance(value, dict) or set(value) != required \
             or value.get("schema") != _SUPERVISOR_SCHEMA \
             or value.get("kind") not in {"restore-apply", "restore-recover"} \
-            or not _hex_id(value.get("request_id")) \
+            or not _hex_exact(value.get("request_id"), 32) \
             or value.get("phase") not in {
                 "accepted", "child-running", "child-finished",
                 "restart-starting", "restart-attested", "restart-failed"} \
@@ -2671,11 +2606,12 @@ def _supervisor_debt(root):
             or not value["runtime_inode"].isascii() \
             or not value["runtime_inode"].isdigit() \
             or (value["kind"] == "restore-apply"
-                and (not _hex_id(value.get("prepared_id"))
-                     or not _hex_id(value.get("capsule_id"))
-                     or not _hex_id(value.get("manifest_sha256"))
+                and (not _hex_exact(value.get("prepared_id"), 32)
+                     or not _hex_exact(value.get("capsule_id"), 32)
+                     or not _hex_exact(value.get("manifest_sha256"), 64)
                      or not isinstance(value.get("snapshot_id"), str)
-                     or not value["snapshot_id"]
+                     or not _hex_id(value["snapshot_id"])
+                     or len(value["snapshot_id"]) > 64
                      or not isinstance(value.get("repository"), str)
                      or not value["repository"]
                      or not isinstance(value.get("environment_file"), str)
@@ -2683,11 +2619,48 @@ def _supervisor_debt(root):
                          and (not os.path.isabs(value["environment_file"])
                               or os.path.abspath(value["environment_file"]) !=
                                  value["environment_file"]))
-                     or not _hex_id(value.get("repository_id"))
-                     or not isinstance(value.get("configured_at"), str)
-                     or not value["configured_at"]
-                     or not _hex_id(value.get("target_public_key"))
-                     or not _hex_id(value.get("restored_public_key"))
+                     or not _hex_exact(value.get("repository_id"), 64)
+                     or not _canonical_utc_timestamp(
+                         value.get("configured_at"))
+                     or not _hex_exact(value.get("target_public_key"), 64)
+                     or not _hex_exact(value.get("restored_public_key"), 64)
+                     or (not isinstance(value.get("identity_key_file"), str)
+                         or (value["identity_key_file"]
+                             and (not os.path.isabs(
+                                      value["identity_key_file"])
+                                  or os.path.abspath(
+                                      value["identity_key_file"]) !=
+                                     value["identity_key_file"])))
+                     or not isinstance(value.get("request_device"), str)
+                     or not value["request_device"].isascii()
+                     or not value["request_device"].isdigit()
+                     or not isinstance(value.get("request_inode"), str)
+                     or not value["request_inode"].isascii()
+                     or not value["request_inode"].isdigit()
+                     or not _hex_exact(
+                         value.get("accepted_ledger_head"), 64)
+                     or not _hex_exact(
+                         value.get("confirmation_sha256"), 64)
+                     or not isinstance(value.get("adoption_order"), str)
+                     or not value["adoption_order"].isascii()
+                     or not value["adoption_order"].isdigit()
+                     or (value["adoption_order"].startswith("0")
+                         and value["adoption_order"] != "0")
+                     or not _hex_exact(
+                         value.get("adoption_record_id"), 64)
+                     or not isinstance(value.get("target"), dict)
+                     or set(value["target"]) != {
+                         "corpus_root", "receipt_sha256", "receipt_mode"}
+                     or not isinstance(
+                         value["target"].get("corpus_root"), dict)
+                     or set(value["target"]["corpus_root"]) != {
+                         "device", "inode", "mode", "owner"}
+                     or any(type(value["target"]["corpus_root"].get(key))
+                            is not int for key in (
+                                "device", "inode", "mode", "owner"))
+                     or not _hex_exact(
+                         value["target"].get("receipt_sha256"), 64)
+                     or type(value["target"].get("receipt_mode")) is not int
                      or os.path.abspath(value.get("request_path", "")) !=
                         os.path.abspath(os.path.join(
                             root, "requests",
@@ -2696,8 +2669,11 @@ def _supervisor_debt(root):
                 and any(value.get(key) != "" for key in {
                     "request_path", "prepared_id", "snapshot_id",
                     "capsule_id", "manifest_sha256", "repository",
-                    "environment_file", "repository_id", "configured_at",
-                    "target_public_key", "restored_public_key"})):
+                    "environment_file", "identity_key_file", "repository_id",
+                    "configured_at", "target_public_key",
+                    "restored_public_key", "request_device", "request_inode",
+                    "accepted_ledger_head", "confirmation_sha256",
+                    "adoption_order", "adoption_record_id", "target"})):
         raise RuntimeError("restore supervisor debt is malformed")
     if value["phase"] == "restart-attested":
         if not value["restart_pid"].isascii() \
@@ -2718,9 +2694,12 @@ def _write_supervisor(root, value):
         binding = {"kind", "request_path", "request_id", "prepared_id",
                    "snapshot_id", "capsule_id", "manifest_sha256",
                    "runtime_path", "runtime_device", "runtime_inode",
-                   "repository", "environment_file", "repository_id",
+                   "request_device", "request_inode", "repository",
+                   "environment_file", "identity_key_file", "repository_id",
                    "configured_at", "target_public_key",
-                   "restored_public_key"}
+                   "restored_public_key", "accepted_ledger_head",
+                   "confirmation_sha256", "adoption_order",
+                   "adoption_record_id", "target"}
         if any(existing[key] != value[key] for key in binding):
             raise RuntimeError("restore supervisor debt binding changed")
     raw = (json.dumps(value, ensure_ascii=True, sort_keys=True,
@@ -3051,7 +3030,8 @@ def _service_state(home, expected_drop_in_paths, *, allow_operator_mask=False):
          "--property=UnitFileState", "--property=ActiveState",
          "--property=FragmentPath", "--property=DropInPaths",
          "--property=MainPID", "--property=RefuseManualStart",
-         "--property=Job"], "inspect the SIA brainstem", capture=True)
+         "--property=Job", "--property=NeedDaemonReload"],
+        "inspect the SIA brainstem", capture=True)
     fields = {}
     for raw in result.stdout.decode("utf-8", "strict").splitlines():
         if "=" not in raw:
@@ -3061,13 +3041,16 @@ def _service_state(home, expected_drop_in_paths, *, allow_operator_mask=False):
             raise RuntimeError("brainstem state report is ambiguous")
         fields[key] = value
     expected = {"LoadState", "UnitFileState", "ActiveState", "FragmentPath",
-                "DropInPaths", "MainPID", "RefuseManualStart", "Job"}
+                "DropInPaths", "MainPID", "RefuseManualStart", "Job",
+                "NeedDaemonReload"}
     if set(fields) != expected \
             or not fields["MainPID"].isascii() \
             or not fields["MainPID"].isdigit():
         raise RuntimeError("brainstem state report is incomplete")
     if fields["Job"]:
         raise RuntimeError("brainstem state has a pending systemd job")
+    if fields["NeedDaemonReload"] != "no":
+        raise RuntimeError("brainstem daemon reload is pending")
     if fields["ActiveState"] not in {"active", "inactive", "failed"}:
         raise RuntimeError("brainstem state is transitional")
     if _masked(fields):
@@ -3300,6 +3283,8 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
     debt = None
     child_code = 1
     failure = None
+    restart_may_have_started = False
+    restart_attested = False
     try:
         fcntl.flock(admin_fd, fcntl.LOCK_EX)
         marker_before = _marker_present(root)
@@ -3356,7 +3341,7 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
                 if not public_recovery:
                     raise RuntimeError(
                         "restore recovery lacks exact supervisor debt")
-                recovery_id = secrets.token_hex()
+                recovery_id = secrets.token_hex(16)
                 debt = {
                     "schema": _SUPERVISOR_SCHEMA,
                     "kind": "restore-recover",
@@ -3378,6 +3363,14 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
                     "runtime_path": os.path.abspath(target),
                     "runtime_device": str(target_info.st_dev),
                     "runtime_inode": str(target_info.st_ino),
+                    "request_device": "",
+                    "request_inode": "",
+                    "identity_key_file": "",
+                    "accepted_ledger_head": "",
+                    "confirmation_sha256": "",
+                    "adoption_order": "",
+                    "adoption_record_id": "",
+                    "target": "",
                 }
                 _write_supervisor(root, debt)
             elif recovery_id is not None \
@@ -3481,11 +3474,18 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
                     # Retire the runtime-mask marker before starting the
                     # brainstem, or its normal import would correctly refuse.
                     _remove_marker(root)
+                    # Once the marker is gone, _retire_gate may start a
+                    # resident and still raise before returning (for example,
+                    # if retired-barrier discard fails). This is cleanup
+                    # authority, not an attestation; only a successful return
+                    # below binds restart_pid and restart_attested.
+                    restart_may_have_started = True
                     gate_ok, restart_pid = _retire_gate(
                         home, root, owned=owned, barrier_present=False)
                     if not gate_ok or not restart_pid:
                         raise RuntimeError(
                             "SIA brainstem restart was not attested")
+                    restart_attested = True
                     debt["phase"] = "restart-attested"
                     debt["restart_pid"] = restart_pid
                     _write_supervisor(root, debt)
@@ -3501,15 +3501,22 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
         if not barrier_after and debt is not None and not finalization_ok:
             try:
                 persisted = _supervisor_debt(root)
+                if restart_attested and persisted is None:
+                    # Finalization can retire the supervisor name and expose
+                    # its terminal replacement before reporting an uncertain
+                    # parent sync. Recreate the exact captured authority so a
+                    # gated resident cannot coexist with an actionable
+                    # terminal status.
+                    debt["phase"] = "restart-failed"
+                    _write_supervisor(root, debt)
+                    persisted = _supervisor_debt(root)
                 if persisted is not None and persisted.get("phase") in {
                         "restart-starting", "restart-attested"}:
-                    # A failed post-restart finalizer must not leave the
-                    # admitted resident writer running behind nonterminal
-                    # supervisor debt. Re-arm the exact runtime gate first.
-                    owned = _gate_brainstem(
-                        home, root, supervisor_owned=True)
                     persisted["phase"] = "restart-failed"
                     _write_supervisor(root, persisted)
+                downgraded = False
+                if persisted is not None \
+                        and persisted.get("phase") == "restart-failed":
                     debt = persisted
                     if debt["kind"] == "restore-apply":
                         downgraded = _post_supervisor(
@@ -3521,9 +3528,19 @@ def _restore_main(home, target, tombstone, state_parent, child_arguments,
                             stable,
                             ["_continuity-recovery-restart-failed"],
                             admin_fd)
-                    if not downgraded and failure is None:
-                        failure = RuntimeError(
+                    if not downgraded:
+                        raise RuntimeError(
                             "restore restart-failure status was refused")
+                if restart_attested or restart_may_have_started:
+                    if not downgraded:
+                        raise RuntimeError(
+                            "restore status was not downgraded before gating")
+                    # Conservatively restore the gate and stop any resident
+                    # that may have started, but only after current status is
+                    # durably non-green. A failed downgrade must not strand a
+                    # gated runtime behind an actionable status.
+                    owned = _gate_brainstem(
+                        home, root, supervisor_owned=True)
             except (OSError, RuntimeError, ValueError) as exc:
                 if failure is None:
                     failure = exc
@@ -3565,6 +3582,33 @@ def _main():
             and not restore_worker:
         _refuse("invalid restore-worker invocation")
     runtime = os.path.join(home, ".local", "share", "sia", "bin")
+    if launcher == "sia" and sys.argv[1:2] == ["uninstall"]:
+        if sys.argv[1:] not in (["uninstall"], ["uninstall", "--purge"]):
+            print("usage: sia uninstall [--purge]", file=sys.stderr)
+            return 2
+        owner = os.path.join(runtime, "sialifetime.py")
+        entry = os.path.join(runtime, "uninstall.sh")
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not key.startswith("SIA_LIFETIME_")
+            and not key.startswith("SIA_SETUP_HANDOFF_")
+        }
+        for key in (
+                "SIA_INHERITED_LIFECYCLE_FD", "SIA_INHERITED_CORPUS_FD",
+                "SIA_LAUNCHER_ABI", "SIA_LAUNCHER_LIFECYCLE_FD",
+                "SIA_LAUNCHER_TARGET_FD", "SIA_LAUNCHER_TARGET_PATH",
+                "SIA_RESTORE_LAUNCH_ABI", "SIA_RESTORE_LIFECYCLE_FD",
+                "SIA_RESTORE_ADMIN_FD", "SIA_RESTORE_TARGET_FD",
+                "SIA_RESTORE_TARGET_PATH", "SIA_RESTORE_MASK_OWNED",
+                "SIA_RESTORE_FINALIZE_ABI",
+                "SIA_RESTORE_FINALIZE_ADMIN_FD"):
+            environment.pop(key, None)
+        environment.pop("BASH_ENV", None)
+        environment.pop("ENV", None)
+        os.execve(
+            sys.executable,
+            [sys.executable, "-I", owner, "supervise-installed", "--caller",
+             str(os.getppid()), entry, *sys.argv[2:]], environment)
     if launcher == "sia":
         target = os.path.join(runtime, "sia-cli")
     elif launcher == "sia-brainstem":
@@ -3801,6 +3845,7 @@ acquire_owner_lock() {
   echo "  waiting within a bounded window for $label quiescence"
   for ((attempt = 1; attempt <= SIA_LIFECYCLE_ACQUIRE_ATTEMPTS; attempt++)); do
     if flock -n "$descriptor"; then
+      lifetime_register "$variable" "$descriptor" || return 1
       printf -v "$variable" '%s' "$descriptor"
       return 0
     fi
@@ -3847,6 +3892,7 @@ prepare_and_lock_install() {
     echo "another SIA install or uninstall is active" >&2
     return 1
   }
+  lifetime_register SIA_INSTALL_ADMIN_LOCK_FD "$SIA_INSTALL_ADMIN_LOCK_FD" || return 1
   if [ -e "$RESTORE_BARRIER" ] || [ -L "$RESTORE_BARRIER" ] \
       || [ -e "$RESTORE_MASK_DEBT" ] || [ -L "$RESTORE_MASK_DEBT" ] \
       || [ -e "$RESTORE_SUPERVISOR_DEBT" ] \
@@ -4085,6 +4131,7 @@ acquire_install_lifecycle() {
   echo "  waiting within a bounded window for active SIA clients"
   for ((attempt = 1; attempt <= SIA_LIFECYCLE_ACQUIRE_ATTEMPTS; attempt++)); do
     if flock -n "$SIA_INSTALL_LOCK_FD"; then
+      lifetime_register SIA_INSTALL_LOCK_FD "$SIA_INSTALL_LOCK_FD" || return 1
       # A pre-lifecycle runtime may not have held the lease. Reinspect and
       # quiesce it even after acquisition before any managed byte changes.
       quiesce_install_brainstem_for_lifecycle || return 1
@@ -5764,6 +5811,7 @@ try:
 except (UnicodeError, json.JSONDecodeError, ValueError) as error:
     raise SystemExit(f"invalid gbrain engine status: {error}") from error
 if not isinstance(report, dict) \
+        or type(report.get("schema_version")) is not int \
         or report.get("schema_version") != 1 \
         or report.get("effective_engine") != "pglite" \
         or report.get("config_file_engine") != "pglite" \
@@ -6487,73 +6535,7 @@ complete_gbrain_bootstrap() {
 }
 
 runtime_tree_digest() {
-  python3 - "$1" <<'PY'
-import hashlib
-import os
-import stat
-import sys
-
-root = sys.argv[1]
-legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                   "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                   "siamind.py", "siaqueue.py", "siatakes.py")
-modern_v3_names = modern_v2_names + ("siasenses.py",)
-modern_v4_names = modern_v3_names + (
-    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-    "sia-continuity-worker")
-modern_v5_names = modern_v4_names + ("siagraph.py",)
-modern = any(os.path.lexists(os.path.join(root, name))
-             for name in ("sia-brainstem.py", "sia-cli"))
-v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-v4 = any(os.path.lexists(os.path.join(root, name))
-         for name in ("siacapsule.py", "siabackup.py",
-                      "sia-continuity-worker"))
-v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-if v5:
-    names, salt = modern_v5_names, b"sia-runtime-v5\0"
-elif v4:
-    names, salt = modern_v4_names, b"sia-runtime-v4\0"
-elif v3:
-    names, salt = modern_v3_names, b"sia-runtime-v3\0"
-elif modern:
-    names, salt = modern_v2_names, b"sia-runtime-v2\0"
-else:
-    names, salt = legacy_names, b"sia-runtime-v1\0"
-digest = hashlib.sha256(salt)
-uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
-
-def generation(value):
-    return (value.st_dev, value.st_ino, value.st_mode, value.st_uid,
-            value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-
-for name in names:
-    path = os.path.join(root, name)
-    descriptor = os.open(path, flags)
-    member = hashlib.sha256()
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_uid != uid:
-            raise SystemExit(f"unsafe runtime member: {name}")
-        while True:
-            chunk = os.read(descriptor, 1_048_576)
-            if not chunk:
-                break
-            member.update(chunk)
-        after = os.fstat(descriptor)
-        current = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(current.st_mode) or current.st_uid != uid \
-                or generation(before) != generation(after) \
-                or generation(after) != generation(current):
-            raise SystemExit(f"runtime member changed while hashing: {name}")
-    finally:
-        os.close(descriptor)
-    digest.update(name.encode() + b"\0" + member.digest())
-print(digest.hexdigest())
-PY
+  python3 "$REPO/bin/siarelease.py" runtime-tree-digest "$1"
 }
 
 runtime_receipt_valid() {
@@ -8344,6 +8326,11 @@ def generation(value):
             value.st_size, value.st_mtime_ns, value.st_ctime_ns)
 
 
+def owner_controlled(value):
+    return value.st_uid == os.geteuid() \
+        and stat.S_IMODE(value.st_mode) & (stat.S_IWGRP | stat.S_IWOTH) == 0
+
+
 def normalize_relative(value):
     if not value or os.path.isabs(value) or "\\" in value:
         raise ValueError("unsafe release-source allowlist entry")
@@ -8366,6 +8353,17 @@ def required_directories(relatives):
 
 def open_absolute_directory(path):
     absolute = os.path.abspath(path)
+    inherited_prefix = "/proc/self/fd/"
+    inherited_value = absolute.removeprefix(inherited_prefix)
+    if absolute.startswith(inherited_prefix) \
+            and inherited_value.isascii() \
+            and inherited_value.isdecimal():
+        descriptor = os.dup(int(inherited_value, 10))
+        os.set_inheritable(descriptor, False)
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            os.close(descriptor)
+            raise ValueError("inherited release-source root is not a directory")
+        return descriptor
     descriptor = os.open(os.sep, DIRECTORY_FLAGS)
     try:
         for component in [part for part in absolute.split(os.sep) if part]:
@@ -8389,7 +8387,7 @@ class BoundTree:
         self.directory_fds[""] = root_fd
         root_info = os.fstat(root_fd)
         if not stat.S_ISDIR(root_info.st_mode) \
-                or root_info.st_uid != os.geteuid():
+                or not owner_controlled(root_info):
             raise ValueError("unsafe release-source root")
         self.states[("directory", "")] = generation(root_info)
         for relative in directories:
@@ -8402,7 +8400,7 @@ class BoundTree:
             value = os.fstat(descriptor)
             current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
             if not stat.S_ISDIR(value.st_mode) \
-                    or value.st_uid != os.geteuid() \
+                    or not owner_controlled(value) \
                     or generation(value) != generation(current):
                 os.close(descriptor)
                 raise ValueError(
@@ -8416,7 +8414,7 @@ class BoundTree:
             value = os.stat(name, dir_fd=self.directory_fds[parent],
                             follow_symlinks=False)
             if not stat.S_ISREG(value.st_mode) \
-                    or value.st_uid != os.geteuid():
+                    or not owner_controlled(value):
                 raise ValueError(f"unsafe release-source file: {relative}")
             if value.st_size > MAX_SOURCE_FILE_BYTES:
                 raise ValueError(
@@ -8436,7 +8434,7 @@ class BoundTree:
             expected = self.states[("file", relative)]
             if generation(before) != expected \
                     or not stat.S_ISREG(before.st_mode) \
-                    or before.st_uid != os.geteuid() \
+                    or not owner_controlled(before) \
                     or before.st_size > MAX_SOURCE_FILE_BYTES:
                 raise ValueError("release source changed before it was read")
             chunks = []
@@ -8577,20 +8575,49 @@ PY
 }
 
 SIA_RELEASE_FILES=(
-  manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md LICENSE
-  SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
-  uninstall.sh assets/cockpit.png bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
+  bin/sialifetime.py
+  manifest.json preview.png Panel.qml Cockpit.qml LiveView.qml Model.js README.md ROADMAP.md LICENSE
+  SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
+  uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
-  bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siasenses.py bin/siarestoreadmit.py
-  bin/siamind.py bin/siaqueue.py bin/siarelease.py
-  bin/siatakes.py docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
+  bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
+  bin/siamind.py bin/siaqueue.py bin/siarelease.py bin/siaactivation.py
+  bin/siacognitivebaseline.py bin/siacognitivecommand.py
+  bin/siacognitivehistory.py bin/siacognitiveselect.py
+  bin/siacontrollerliveinput.py bin/siacontrollerstatus.py
+  bin/siacoretrieval.py bin/siacortexrepair.py bin/siaencoding.py
+  bin/siaeventintake.py bin/siaeventplan.py bin/siagist.py
+  bin/siajournalcapture.py bin/sialivegist.py bin/sialiveloop.py
+  bin/sialivepublication.py bin/siasourceack.py bin/siasourcebatch.py
+  bin/siasourceeffects.py bin/siasourceengine.py bin/siasourcegit.py
+  bin/siacontrollerepoch.py bin/siacontrollersourcerunner.py
+  bin/siacognitiveregistry.py bin/siacontrolleridle.py bin/sialiveidle.py
+  bin/sialiveview.py bin/siasourcegist.py
+  bin/siacontrollercandidate.py bin/siacontrollerdeliveryepoch.py
+  bin/siacontrollerdeliveryinput.py bin/siacontrollerdeliverywrapper.py
+  bin/siadelivery.py bin/siacontrollerdeliverywriter.py
+  bin/siacontrollerrecallprojection.py bin/siacontrollerrecalloutput.py
+  bin/siacontrollerrecallcli.py bin/siagetrenderadmit.py
+  bin/siainstalledengine.py bin/siainstalledexpectations.py
+  bin/siasourcepublication.py bin/siavector.py bin/siavectoradmit.py
+  bin/siavectormodel.py bin/siavectorprepare.py bin/siavectorrun.py
+  bin/siaworkspace.py
+  bin/siahistoryblock.py bin/siahistoryblockstore.py bin/siahistoryroot.py
+  bin/siaeventcheckpoint.py bin/siasourcecheckpoint.py
+  bin/siacheckpointadoption.py bin/siacheckpointcontent.py
+  bin/siacheckpointdispatch.py bin/siacheckpointeffects.py
+  bin/siacheckpointlive.py bin/siacheckpointparent.py
+  bin/siacheckpointrunner.py bin/siacheckpointtransaction.py
+  bin/siacheckpointcycle.py
+  bin/siacorpuslease.py
+  bin/siatakes.py docs/ARCHITECTURE.md docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
   schema-pack/pack.yaml
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
   systemd/sia-backup.service systemd/sia-backup.timer
   systemd/sia-backup-check.service systemd/sia-backup-check.timer
 )
 SIA_RELEASE_SOURCE="$SIA_INSTALL_TMP/release-source"
-release_source_frontdoor snapshot "$SIA_ORIGINAL_REPO" \
+release_source_frontdoor snapshot "$SIA_BOUND_RELEASE_ROOT" \
   "$SIA_RELEASE_SOURCE" "${SIA_RELEASE_FILES[@]}"
 REPO="$SIA_RELEASE_SOURCE"
 
@@ -8868,16 +8895,305 @@ fi
 bun_runtime_receipt_valid || {
   echo "private Bun receipt or executable verification failed" >&2; exit 1; }
 
-PIN="$(grep '^commit=' "$REPO/GBRAIN_PIN" 2>/dev/null | cut -d= -f2)"
-PIN_VERSION="$(grep '^version=' "$REPO/GBRAIN_PIN" 2>/dev/null | cut -d= -f2)"
-PIN_LOCK_SHA256="$(grep '^bun_lock_sha256=' "$REPO/GBRAIN_PIN" 2>/dev/null \
-  | cut -d= -f2)"
+gbrain_pin_frontdoor() {
+  python3 - "$@" <<'PY'
+import datetime
+import hashlib
+import os
+import re
+import stat
+import sys
+
+
+PIN_MAX_BYTES = 65_536
+OVERLAY_MAX_BYTES = 16_777_216
+PIN_KEYS = {
+    "commit", "version", "bun_lock_sha256", "overlay_sha256",
+    "overlay_tree_oid", "verified",
+}
+
+
+def generation(info):
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+        info.st_uid, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def stable_regular(path, maximum, label):
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or cloexec is None:
+        raise ValueError(label + " cannot be opened with required flags")
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
+                or before.st_uid != os.geteuid() \
+                or before.st_size < 0 or before.st_size > maximum:
+            raise ValueError(label + " is not an admitted regular file")
+        chunks = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1_048_576, remaining))
+            if not chunk:
+                raise ValueError(label + " ended before its held generation")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise ValueError(label + " grew beyond its held generation")
+        after = os.fstat(descriptor)
+        if generation(before) != generation(after):
+            raise ValueError(label + " changed while being read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+try:
+    if len(sys.argv) != 3:
+        raise ValueError("gbrain pin front door requires pin and overlay paths")
+    pin_path, overlay_path = sys.argv[1:]
+    pin_raw = stable_regular(pin_path, PIN_MAX_BYTES, "GBRAIN_PIN")
+    overlay_raw = stable_regular(
+        overlay_path, OVERLAY_MAX_BYTES, "GBRAIN_OVERLAY.patch")
+    try:
+        pin_text = pin_raw.decode("utf-8", errors="strict")
+    except UnicodeError as error:
+        raise ValueError("GBRAIN_PIN is not valid UTF-8") from error
+    values = {}
+    for line in pin_text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.count("=") != 1:
+            raise ValueError("GBRAIN_PIN contains a malformed assignment")
+        key, value = line.split("=", 1)
+        if key not in PIN_KEYS or key in values or not value:
+            raise ValueError("GBRAIN_PIN keys are unknown, missing, or duplicated")
+        values[key] = value
+    if set(values) != PIN_KEYS:
+        raise ValueError("GBRAIN_PIN keys are unknown, missing, or duplicated")
+    if re.fullmatch(r"[0-9a-f]{40}", values["commit"]) is None:
+        raise ValueError("GBRAIN_PIN commit is invalid")
+    if re.fullmatch(r"[0-9]+(?:[.][0-9]+)+", values["version"]) is None:
+        raise ValueError("GBRAIN_PIN version is invalid")
+    for key in ("bun_lock_sha256", "overlay_sha256"):
+        if re.fullmatch(r"[0-9a-f]{64}", values[key]) is None:
+            raise ValueError("GBRAIN_PIN " + key + " is invalid")
+    if re.fullmatch(r"[0-9a-f]{40}", values["overlay_tree_oid"]) is None:
+        raise ValueError("GBRAIN_PIN overlay tree OID is invalid")
+    try:
+        verified = datetime.date.fromisoformat(values["verified"])
+    except ValueError as error:
+        raise ValueError("GBRAIN_PIN verified date is invalid") from error
+    if verified.isoformat() != values["verified"]:
+        raise ValueError("GBRAIN_PIN verified date is not canonical")
+    if hashlib.sha256(overlay_raw).hexdigest() != values["overlay_sha256"]:
+        raise ValueError("GBRAIN_OVERLAY.patch digest does not match GBRAIN_PIN")
+    print("\t".join(values[key] for key in (
+        "commit", "version", "bun_lock_sha256", "overlay_sha256",
+        "overlay_tree_oid")))
+except (OSError, ValueError) as error:
+    raise SystemExit(str(error)) from error
+PY
+}
+
+gbrain_overlay_frontdoor() {
+  python3 - "$@" <<'PY'
+import hashlib
+import os
+import re
+import stat
+import subprocess
+import sys
+
+
+PATCH_MAX_BYTES = 16_777_216
+LOCK_MAX_BYTES = 16_777_216
+PACKAGE_MAX_BYTES = 1_048_576
+GIT = "/usr/bin/git"
+
+
+def generation(info):
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+        info.st_uid, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def stable_regular(path, maximum, label):
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or cloexec is None:
+        raise ValueError(label + " cannot be opened with required flags")
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
+                or before.st_uid != os.geteuid() \
+                or before.st_size < 0 or before.st_size > maximum:
+            raise ValueError(label + " is not an admitted regular file")
+        chunks = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1_048_576, remaining))
+            if not chunk:
+                raise ValueError(label + " ended before its held generation")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise ValueError(label + " grew beyond its held generation")
+        after = os.fstat(descriptor)
+        if generation(before) != generation(after):
+            raise ValueError(label + " changed while being read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def git(source, *arguments, input_bytes=None, ok=(0,)):
+    environment = {
+        "HOME": os.path.dirname(source),
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "UTC",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    result = subprocess.run(
+        [GIT, "-C", source, *arguments], input=input_bytes,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=environment, check=False)
+    if result.returncode not in ok:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError("gbrain overlay Git operation refused: " + detail)
+    return result
+
+
+def line(source, *arguments):
+    raw = git(source, *arguments).stdout
+    try:
+        value = raw.decode("ascii", errors="strict").rstrip("\n")
+    except UnicodeError as error:
+        raise ValueError("gbrain Git identity is not ASCII") from error
+    if "\n" in value or "\r" in value:
+        raise ValueError("gbrain Git identity is not one line")
+    return value
+
+
+try:
+    if len(sys.argv) != 7:
+        raise ValueError("gbrain overlay front door requires six arguments")
+    source, patch_path, commit, lock_sha256, overlay_sha256, tree_oid = sys.argv[1:]
+    for value, width, label in (
+            (commit, 40, "commit"), (lock_sha256, 64, "lock digest"),
+            (overlay_sha256, 64, "overlay digest"),
+            (tree_oid, 40, "overlay tree OID")):
+        if len(value) != width or re.fullmatch(r"[0-9a-f]+", value) is None:
+            raise ValueError("gbrain " + label + " is invalid")
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    cloexec = getattr(os, "O_CLOEXEC", None)
+    if nofollow is None or directory is None or cloexec is None:
+        raise ValueError("gbrain source cannot be opened with required flags")
+    source_fd = os.open(source, os.O_RDONLY | nofollow | directory | cloexec)
+    try:
+        source_info = os.fstat(source_fd)
+        if not stat.S_ISDIR(source_info.st_mode) \
+                or source_info.st_uid != os.geteuid():
+            raise ValueError("gbrain source is not an admitted directory")
+    finally:
+        os.close(source_fd)
+    patch_raw = stable_regular(
+        patch_path, PATCH_MAX_BYTES, "GBRAIN_OVERLAY.patch")
+    if hashlib.sha256(patch_raw).hexdigest() != overlay_sha256:
+        raise ValueError("gbrain overlay digest changed")
+    lock_path = os.path.join(source, "bun.lock")
+    package_path = os.path.join(source, "package.json")
+    lock_raw = stable_regular(lock_path, LOCK_MAX_BYTES, "gbrain bun.lock")
+    package_raw = stable_regular(
+        package_path, PACKAGE_MAX_BYTES, "gbrain package.json")
+    if hashlib.sha256(lock_raw).hexdigest() != lock_sha256:
+        raise ValueError("gbrain bun.lock does not match its pin")
+    if line(source, "rev-parse", "HEAD") != commit:
+        raise ValueError("gbrain checkout is not the requested commit")
+    if line(source, "rev-parse", "--is-inside-work-tree") != "true":
+        raise ValueError("gbrain source is not a work tree")
+    git(source, "ls-files", "--error-unmatch", "bun.lock", "package.json")
+    git(source, "diff", "--quiet", "--no-ext-diff")
+    git(source, "diff", "--cached", "--quiet", "--no-ext-diff")
+    if git(source, "ls-files", "--others", "--exclude-standard", "-z").stdout:
+        raise ValueError("gbrain pristine source has unexpected untracked files")
+    git(source, "apply", "--check", "--index", "--whitespace=error-all", "-",
+        input_bytes=patch_raw)
+    git(source, "apply", "--index", "--whitespace=error-all", "-",
+        input_bytes=patch_raw)
+    if line(source, "rev-parse", "HEAD") != commit:
+        raise ValueError("gbrain commit changed while applying its overlay")
+    if stable_regular(lock_path, LOCK_MAX_BYTES, "gbrain bun.lock") != lock_raw \
+            or stable_regular(
+                package_path, PACKAGE_MAX_BYTES, "gbrain package.json") \
+            != package_raw:
+        raise ValueError("gbrain dependency inputs changed under the overlay")
+    git(source, "diff", "--quiet", "--no-ext-diff")
+    if git(source, "ls-files", "--others", "--exclude-standard", "-z").stdout:
+        raise ValueError("gbrain overlay introduced unexpected untracked files")
+    if git(source, "diff", "--name-only", "HEAD", "--",
+           "bun.lock", "package.json").stdout:
+        raise ValueError("gbrain overlay changes dependency inputs")
+    observed_tree = line(source, "write-tree")
+    if observed_tree != tree_oid:
+        raise ValueError("gbrain post-overlay tree does not match its pin")
+    print(observed_tree)
+except (OSError, ValueError) as error:
+    raise SystemExit(str(error)) from error
+PY
+}
+
+GBRAIN_OVERLAY="$REPO/GBRAIN_OVERLAY.patch"
+GBRAIN_PIN_VALUES="$(gbrain_pin_frontdoor \
+  "$REPO/GBRAIN_PIN" "$GBRAIN_OVERLAY")" || exit 1
+IFS=$'\t' read -r PIN PIN_VERSION PIN_LOCK_SHA256 \
+  PIN_OVERLAY_SHA256 PIN_OVERLAY_TREE_OID <<< "$GBRAIN_PIN_VALUES"
 [[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || {
   echo "GBRAIN_PIN must contain one full lowercase commit digest"; exit 1; }
 [[ "$PIN_VERSION" =~ ^[0-9]+([.][0-9]+)+$ ]] || {
   echo "GBRAIN_PIN must contain a numeric dotted version"; exit 1; }
 [[ "$PIN_LOCK_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
   echo "GBRAIN_PIN must bind the upstream bun.lock SHA-256"; exit 1; }
+[[ "$PIN_OVERLAY_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "GBRAIN_PIN must bind the overlay SHA-256"; exit 1; }
+[[ "$PIN_OVERLAY_TREE_OID" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "GBRAIN_PIN must bind the post-overlay Git tree"; exit 1; }
+
+GBRAIN_BUILD_HOME="$SIA_INSTALL_TMP/gbrain-build-home"
+mkdir -p "$GBRAIN_BUILD_HOME" "$GBRAIN_BUILD_HOME/.config" \
+  "$GBRAIN_BUILD_HOME/.cache" "$GBRAIN_BUILD_HOME/.local/state"
+GBRAIN_STERILE_ENV=(
+  /usr/bin/env -i
+  HOME="$GBRAIN_BUILD_HOME"
+  GBRAIN_HOME="$GBRAIN_BUILD_HOME"
+  XDG_CONFIG_HOME="$GBRAIN_BUILD_HOME/.config"
+  XDG_CACHE_HOME="$GBRAIN_BUILD_HOME/.cache"
+  XDG_STATE_HOME="$GBRAIN_BUILD_HOME/.local/state"
+  TMPDIR="$SIA_INSTALL_TMP"
+  BUN_INSTALL_CACHE_DIR="$SIA_INSTALL_TMP/bun-cache"
+  PATH=/usr/bin:/bin
+  LANG=C.UTF-8
+  LC_ALL=C.UTF-8
+  TZ=UTC
+  DO_NOT_TRACK=1
+  NO_COLOR=1
+  GBRAIN_SKIP_STARTUP_HOOKS=1
+  GBRAIN_SYNC_NO_DELEGATE=1
+  GBRAIN_NO_BANNER=1
+  GBRAIN_SELF_UPGRADE_MODE=off
+  GIT_CONFIG_NOSYSTEM=1
+  GIT_CONFIG_GLOBAL=/dev/null
+  GIT_TERMINAL_PROMPT=0
+)
 
 GBRAIN_ROOT="$TOOLCHAIN/gbrain"
 GBRAIN_BIN="$GBRAIN_ROOT/bin/gbrain"
@@ -8887,12 +9203,14 @@ gbrain_runtime_receipt_valid() {
   local receipt_prefix reported_version
   [ -x "$GBRAIN_BIN" ] && [ ! -L "$GBRAIN_BIN" ] \
     && [ -f "$GBRAIN_RECEIPT" ] && [ ! -L "$GBRAIN_RECEIPT" ] || return 1
-  receipt_prefix="$(printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s' \
-    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256")"
+  receipt_prefix="$(printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\noverlay_sha256=%s\noverlay_tree_oid=%s' \
+    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID")"
   owned_metadata release "$GBRAIN_RECEIPT" "$GBRAIN_BIN" \
     "$receipt_prefix" || return 1
   reported_version="$(bounded_command_capture \
-    "$GBRAIN_BIN" --version 2>/dev/null)" || return 1
+    "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" --version 2>/dev/null)" \
+    || return 1
   [ "$reported_version" = "gbrain $PIN_VERSION" ]
 }
 if ! gbrain_runtime_receipt_valid; then
@@ -8930,26 +9248,42 @@ if ! gbrain_runtime_receipt_valid; then
     echo "gbrain checkout did not resolve to the requested commit" >&2; exit 1; }
   printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
     | sha256sum -c -
-  BUN_INSTALL_CACHE_DIR="$SIA_INSTALL_TMP/bun-cache" \
-    run_with_deadline 1800 "$BUN_BIN" install --cwd "$GBRAIN_SOURCE" \
+  run_with_deadline 1800 "${GBRAIN_STERILE_ENV[@]}" \
+    "$BUN_BIN" install --no-env-file --cwd "$GBRAIN_SOURCE" \
       --frozen-lockfile \
       --production --ignore-scripts --no-progress
   printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
     | sha256sum -c -
+  GBRAIN_OVERLAY_TREE="$(gbrain_overlay_frontdoor "$GBRAIN_SOURCE" \
+    "$GBRAIN_OVERLAY" "$PIN" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID")" || exit 1
+  [ "$GBRAIN_OVERLAY_TREE" = "$PIN_OVERLAY_TREE_OID" ] || {
+    echo "gbrain overlay front door returned the wrong tree" >&2; exit 1; }
   SIA_GBRAIN_STAGE="$(mktemp -d "$TOOLCHAIN/.gbrain.stage.XXXXXX")"
   mkdir -p "$SIA_GBRAIN_STAGE/bin"
-  run_with_deadline 1800 "$BUN_BIN" build --compile \
+  run_with_deadline 1800 "${GBRAIN_STERILE_ENV[@]}" "$BUN_BIN" build \
+    --no-env-file --no-install \
+    --no-compile-autoload-dotenv --no-compile-autoload-bunfig --compile \
     --outfile "$SIA_GBRAIN_STAGE/bin/gbrain" \
     "$GBRAIN_SOURCE/src/cli.ts"
+  [ "$(bounded_command_capture git -C "$GBRAIN_SOURCE" write-tree)" \
+    = "$PIN_OVERLAY_TREE_OID" ] || {
+    echo "gbrain source tree changed during build" >&2; exit 1; }
+  git -C "$GBRAIN_SOURCE" diff --quiet --no-ext-diff || {
+    echo "gbrain tracked source changed during build" >&2; exit 1; }
+  printf '%s  %s\n' "$PIN_LOCK_SHA256" "$GBRAIN_SOURCE/bun.lock" \
+    | sha256sum -c -
   chmod 0755 "$SIA_GBRAIN_STAGE/bin/gbrain"
   GBRAIN_VERSION_OUTPUT="$(bounded_command_capture \
-    "$SIA_GBRAIN_STAGE/bin/gbrain" --version)"
+    "${GBRAIN_STERILE_ENV[@]}" "$SIA_GBRAIN_STAGE/bin/gbrain" --version)"
   [ "$GBRAIN_VERSION_OUTPUT" = "gbrain $PIN_VERSION" ] || {
     echo "compiled gbrain version mismatch" >&2; exit 1; }
   GBRAIN_BINARY_SHA256="$(owned_metadata digest \
     "$SIA_GBRAIN_STAGE/bin/gbrain")" || exit 1
-  printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\nbinary_sha256=%s\n' \
-    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" "$GBRAIN_BINARY_SHA256" \
+  printf 'managed-by=khephri.sia\ncommit=%s\nversion=%s\nbun_lock_sha256=%s\noverlay_sha256=%s\noverlay_tree_oid=%s\nbinary_sha256=%s\n' \
+    "$PIN" "$PIN_VERSION" "$PIN_LOCK_SHA256" \
+    "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID" \
+    "$GBRAIN_BINARY_SHA256" \
     > "$SIA_GBRAIN_STAGE/.sia-release"
   SIA_INSTALL_MUTATED=1
   GBRAIN_RESULT="$(atomic_install_tree "$SIA_GBRAIN_STAGE" "$GBRAIN_ROOT" \
@@ -8964,8 +9298,8 @@ gbrain_runtime_receipt_valid || {
   echo "private gbrain receipt or executable verification failed" >&2; exit 1; }
 PATH="$GBRAIN_ROOT/bin:$BUN_ROOT/bin:$PATH"
 export PATH
-bounded_command_capture "$GBRAIN_BIN" --version
-echo "  (compiled from requested gbrain commit $PIN and frozen lockfile)"
+bounded_command_capture "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" --version
+echo "  (compiled from requested gbrain commit $PIN, frozen lockfile, and pinned overlay tree $PIN_OVERLAY_TREE_OID)"
 
 step "2/9 ollama (local embeddings — nothing leaves the machine)"
 # Pin provenance (verified 2026-08-30):
@@ -9306,7 +9640,31 @@ step "3/9 runtime"
 SIA_RUNTIME_STAGE="$(mktemp -d "$SHARE/.bin.stage.XXXXXX")"
 for runtime_module in sialib.py siasenses.py siarestoreadmit.py siamind.py \
     siatakes.py siabench.py siaqueue.py siacapsule.py siabackup.py \
-    siagraph.py; do
+    sialifetime.py \
+    siagraph.py siathought.py siaactivation.py siacognitivebaseline.py \
+    siacognitivecommand.py siacognitivehistory.py siacognitiveselect.py \
+    siacontrollerliveinput.py siacontrollerstatus.py siacoretrieval.py \
+    siacortexrepair.py siaencoding.py siaeventintake.py siaeventplan.py \
+    siagist.py siajournalcapture.py sialivegist.py sialiveloop.py \
+    sialivepublication.py siasourceack.py siasourcebatch.py \
+    siasourceeffects.py siasourceengine.py siasourcegit.py \
+    siacontrollerepoch.py siacontrollersourcerunner.py \
+    siacognitiveregistry.py siacontrolleridle.py sialiveidle.py \
+    sialiveview.py siasourcegist.py \
+    siacontrollercandidate.py siacontrollerdeliveryepoch.py \
+    siacontrollerdeliveryinput.py siacontrollerdeliverywrapper.py siadelivery.py \
+    siacontrollerdeliverywriter.py siacontrollerrecallprojection.py \
+    siacontrollerrecalloutput.py siacontrollerrecallcli.py \
+    siagetrenderadmit.py siainstalledengine.py siainstalledexpectations.py \
+    siasourcepublication.py \
+    siavector.py siavectoradmit.py siavectormodel.py siavectorprepare.py \
+    siavectorrun.py siaworkspace.py \
+    siahistoryblock.py siahistoryblockstore.py siahistoryroot.py \
+    siaeventcheckpoint.py siasourcecheckpoint.py \
+    siacheckpointadoption.py siacheckpointcontent.py siacheckpointdispatch.py \
+    siacheckpointeffects.py siacheckpointlive.py siacheckpointparent.py \
+    siacheckpointrunner.py siacheckpointtransaction.py \
+    siacheckpointcycle.py siacorpuslease.py; do
   install -m 0644 "$REPO/bin/$runtime_module" \
     "$SIA_RUNTIME_STAGE/$runtime_module"
 done
@@ -9319,6 +9677,7 @@ install -m 0755 "$SIA_STABLE_LAUNCHER" \
 install -m 0644 "$REPO/bin/sia-brainstem" \
   "$SIA_RUNTIME_STAGE/sia-brainstem.py"
 install -m 0644 "$REPO/bin/sia" "$SIA_RUNTIME_STAGE/sia-cli"
+install -m 0500 "$REPO/uninstall.sh" "$SIA_RUNTIME_STAGE/uninstall.sh"
 STAGED_RUNTIME_DIGEST="$(runtime_tree_digest "$SIA_RUNTIME_STAGE")"
 update_install_launch_fence_desired "$STAGED_RUNTIME_DIGEST"
 # The durable mode fence has excluded new opens since before engine/model
@@ -9525,7 +9884,7 @@ fi
 if [ "$SIA_CORPUS_ADOPTION_NEEDED" -eq 1 ]; then
   retire_corpus_adoption_intent
 fi
-step "5/9 the brain (gbrain · PGLite · local embeddings)"
+step "5/9 the local memory index (gbrain · PGLite · local embeddings)"
 export GBRAIN_HOME="$SHARE"
 preflight_gbrain_bootstrap
 if [ "$SIA_GBRAIN_BOOTSTRAP_NEEDED" -eq 1 ]; then
@@ -9788,13 +10147,16 @@ verify_install_brainstem_runtime_barrier
 # gates only through the inherited open-file description that the CLI and
 # nested sialib readers validate independently. Reacquire the brainstem lease
 # after first light so no resident daemon can start before integration ends.
+lifetime_release SIA_GBRAIN_LOCK_FD
 flock -u "$SIA_GBRAIN_LOCK_FD"
 exec {SIA_GBRAIN_LOCK_FD}>&-
 SIA_GBRAIN_LOCK_FD=""
+lifetime_release SIA_CORPUS_LOCK_FD
 flock -u "$SIA_CORPUS_LOCK_FD"
 exec {SIA_CORPUS_LOCK_FD}>&-
 SIA_CORPUS_LOCK_FD=""
 SIA_CORPUS_RECEIPT_LOCKS_HELD=0
+lifetime_release SIA_BRAINSTEM_LOCK_FD
 flock -u "$SIA_BRAINSTEM_LOCK_FD"
 exec {SIA_BRAINSTEM_LOCK_FD}>&-
 SIA_BRAINSTEM_LOCK_FD=""
@@ -9830,10 +10192,10 @@ if [ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ] && have omarchy; then
     PLUGIN_TREE_EXPECTED=absent
   fi
   SIA_PLUGIN_STAGE="$(mktemp -d "$PLUGIN_PARENT/.khephri.sia.stage.XXXXXX")"
-  PLUGIN_ROOT_FILES=(manifest.json preview.png Panel.qml Cockpit.qml Model.js README.md
-    LICENSE SECURITY.md CHANGELOG.md GBRAIN_PIN config.example.json install.sh
+  PLUGIN_ROOT_FILES=(manifest.json preview.png Panel.qml Cockpit.qml LiveView.qml Model.js README.md
+    ROADMAP.md LICENSE SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
     uninstall.sh)
-  PLUGIN_DIRS=(assets bin docs schema-pack skill systemd)
+  PLUGIN_DIRS=(bin docs schema-pack skill systemd)
   for relative in "${PLUGIN_ROOT_FILES[@]}"; do
     if [ ! -f "$REPO/$relative" ] || [ -L "$REPO/$relative" ]; then
       echo "plugin snapshot source is not a regular file: $relative"
@@ -10010,7 +10372,7 @@ install_sia_keybinding() {
       || ! printf '%s\n' '' \
         '-- BEGIN SIA (managed by khephri.sia/install.sh)' \
         'hl.unbind("SUPER + SHIFT + B")   -- displaces Browser (still on SUPER+SHIFT+RETURN)' \
-        'o.bind("SUPER + SHIFT + B", "SIA: brain cockpit", "omarchy-shell shell summon khephri.sia '\''{}'\''")' \
+        'o.bind("SUPER + SHIFT + B", "SIA: memory cockpit", "omarchy-shell shell summon khephri.sia '\''{}'\''")' \
         '-- END SIA' >> "$stage"; then
     rm -f -- "$stage"
     echo "failed to assemble the managed SIA keybinding" >&2
@@ -10661,7 +11023,7 @@ if have omarchy; then
 fi
 
 if [ "$SIA_ORIGINAL_REPO" = "$PLUGDIR" ]; then
-  release_source_frontdoor verify "$SIA_ORIGINAL_REPO" \
+  release_source_frontdoor verify "$SIA_BOUND_RELEASE_ROOT" \
     "$SIA_RELEASE_SOURCE" "${SIA_RELEASE_FILES[@]}"
 fi
 
@@ -10675,6 +11037,7 @@ if [ "$SIA_RESTORE_LIFECYCLE_TOMBSTONE" -eq 1 ]; then
   SIA_LIFECYCLE_TOMBSTONE_CLEARED=0
   SIA_RESTORE_LIFECYCLE_TOMBSTONE=0
 fi
+lifetime_release SIA_BRAINSTEM_LOCK_FD
 flock -u "$SIA_BRAINSTEM_LOCK_FD"
 exec {SIA_BRAINSTEM_LOCK_FD}>&-
 SIA_BRAINSTEM_LOCK_FD=""
@@ -10682,6 +11045,7 @@ SIA_BRAINSTEM_LOCK_FD=""
 # purged reinstall) tombstone clear are complete. Release the generation gate
 # before synchronous systemd operations so a start job already waiting on the
 # lease can finish instead of deadlocking the installer.
+lifetime_release SIA_INSTALL_LOCK_FD
 flock -u "$SIA_INSTALL_LOCK_FD"
 exec {SIA_INSTALL_LOCK_FD}>&-
 SIA_INSTALL_LOCK_FD=""
@@ -10733,20 +11097,21 @@ fi
 # public readiness predicate after final service attestation, then publish the
 # release-bound record atomically.  An interrupted or refused installer leaves
 # the prior/missing record fail-closed.
-run_with_deadline 120 "$CLI_PATH" ready
+run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready
 publish_first_light_state "$BINDIR" ready
 echo "  first light: matching runtime and readiness completion published"
 
-step "done — your machine has a brain"
+step "done — local machine memory is ready"
 cat <<'EOF'
   cockpit    click the bar widget (optional consented key: SUPER+SHIFT+B)
   ask it     sia ask "what happened today"
-  thoughts   sia think          status   sia status
+  entries    sia think          status   sia status
   predict    sia take "..." --confidence 0.8 --by YYYY-MM-DD
   configure  ~/.config/sia/config.json   (judge model, custom senses, chains)
   docs       docs/MANUAL.md · docs/WHITEPAPER.md
 
-  It dreams at 03:33: consolidation, musing, grading. Storage, indexing, and
-  embeddings stay local; the optional configured CLI judge may send recalled
-  context. The corpus (~/.local/share/sia/corpus) IS the brain — back it up.
+  Weekly maintenance runs at 03:33: compaction, graph-link proposals, and
+  grading. Storage, indexing, and embeddings stay local; the optional
+  configured CLI judge may send recalled context. The corpus
+  (~/.local/share/sia/corpus) is authoritative local memory — back it up.
 EOF

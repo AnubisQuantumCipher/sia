@@ -1,16 +1,38 @@
 #!/usr/bin/env python3
 """Release-shape and installer supply-chain regression tests."""
 
+# KNOWN, DELIBERATE COUPLING -- read before editing install.sh/uninstall.sh.
+#
+# Most tests here, and nearly every recovery/fence test, treat the two
+# installers as TEXT.  The _*_shell() helpers below split a 10,000-line
+# script on verbatim source markers ("runtime_tree_digest() {", "\n}\n",
+# "\n}\n\nwrite_runtime_receipt", ...) and execute the lifted fragment under
+# bash.  That is the only way to exercise an installer's fail-closed branches
+# without running the real thing against a real machine, so the coupling is
+# the point, not an accident waiting to be refactored away.
+#
+# The price is that renaming an installer function, moving a closing brace,
+# reordering two functions, or reflowing a heredoc breaks tests here for
+# reasons that are not behavioural.  That price is accepted: silent
+# divergence between the installer and the guard that pins it is the worse
+# failure, and it is the failure these markers exist to make loud.
+#
+# So: edit the installers knowingly.  When a split marker stops matching, the
+# repair is to re-point the marker at the moved source -- never to delete the
+# assertion it feeds, and never to relax it into something that still passes.
+
 import ast
 import hashlib
 import fcntl
 import importlib.machinery
 import importlib.util
 import inspect
+import io
 import json
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -33,6 +55,31 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _read(relative):
     with open(os.path.join(REPO, relative), encoding="utf-8") as stream:
         return stream.read()
+
+
+def _workflow_run_block(step_name):
+    """Extract one workflow run block verbatim for behavioral testing."""
+    lines = _read(".github/workflows/ci.yml").splitlines()
+    marker = f"- name: {step_name}"
+    starts = [index for index, line in enumerate(lines)
+              if line.strip() == marker]
+    if len(starts) != 1:
+        raise AssertionError(
+            f"workflow must define exactly one {marker!r} step")
+    run = None
+    for index in range(starts[0] + 1, len(lines)):
+        if lines[index].strip() == "run: |":
+            run = index
+            break
+    if run is None:
+        raise AssertionError(f"workflow step {step_name!r} has no run block")
+    indent = len(lines[run]) - len(lines[run].lstrip())
+    body = []
+    for line in lines[run + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        body.append(line[indent + 2:] if line.strip() else "")
+    return "\n".join(body) + "\n"
 
 
 def _read_path(path):
@@ -60,6 +107,22 @@ def _load(name, path):
     return module
 
 
+SIARELEASE = _load(
+    "siarelease_test_support", os.path.join(REPO, "bin", "siarelease.py"))
+
+
+class _OsShim:
+    """Module-local syscall overrides without patching the global os module."""
+
+    def __init__(self, **overrides):
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(os, name)
+
+
 ABSENT_USER_UNIT = (
     'if [ "$1 $2" = "--user show" ]; then\n'
     '  echo "LoadState=not-found"; echo "ActiveState=inactive"\n'
@@ -79,39 +142,7 @@ def _managed_file_receipt(path, kind):
 
 
 def _runtime_digest(root):
-    legacy_names = ("sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py",
-                    "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
-    modern_v2_names = ("sia-brainstem", "sia-brainstem.py", "sia-cli",
-                       "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
-                       "siamind.py", "siaqueue.py", "siatakes.py")
-    modern_v3_names = modern_v2_names + ("siasenses.py",)
-    modern_v4_names = modern_v3_names + (
-        "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
-        "sia-continuity-worker")
-    modern_v5_names = modern_v4_names + ("siagraph.py",)
-    modern = any(os.path.lexists(os.path.join(root, name))
-                 for name in ("sia-brainstem.py", "sia-cli"))
-    v3 = os.path.lexists(os.path.join(root, "siasenses.py"))
-    v4 = any(os.path.lexists(os.path.join(root, name))
-             for name in ("siacapsule.py", "siabackup.py",
-                          "sia-continuity-worker"))
-    v5 = os.path.lexists(os.path.join(root, "siagraph.py"))
-    if v5:
-        names, salt = modern_v5_names, b"sia-runtime-v5\0"
-    elif v4:
-        names, salt = modern_v4_names, b"sia-runtime-v4\0"
-    elif v3:
-        names, salt = modern_v3_names, b"sia-runtime-v3\0"
-    elif modern:
-        names, salt = modern_v2_names, b"sia-runtime-v2\0"
-    else:
-        names, salt = legacy_names, b"sia-runtime-v1\0"
-    digest = hashlib.sha256(salt)
-    for name in names:
-        with open(os.path.join(root, name), "rb") as stream:
-            content = stream.read()
-        digest.update(name.encode() + b"\0" + hashlib.sha256(content).digest())
-    return digest.hexdigest()
+    return SIARELEASE.runtime_tree_digest(root)
 
 
 def _managed_cli_runtime(home):
@@ -141,7 +172,8 @@ def _managed_brainstem_install(home):
 
 
 def _brainstem_show(unit, *, drop_in="", refuse="no", load="loaded",
-                    unit_state="enabled", active="active", pid="1", job=""):
+                    unit_state="enabled", active="active", pid="1", job="",
+                    daemon_reload="no"):
     values = {
         "LoadState": load,
         "UnitFileState": unit_state,
@@ -151,9 +183,60 @@ def _brainstem_show(unit, *, drop_in="", refuse="no", load="loaded",
         "MainPID": pid,
         "RefuseManualStart": refuse,
         "Job": job,
+        "NeedDaemonReload": daemon_reload,
     }
     return ("\n".join(f"{key}={value}" for key, value in values.items())
             + "\n").encode("utf-8")
+
+
+def _restore_adoption_fields(binding, *, ledger_head=None, order=7):
+    ledger_head = ledger_head or "0" * 64
+    confirmation = {
+        "schema_version": 1,
+        "phrase": "RESTORE",
+        "snapshot_id": binding["snapshot_id"],
+        "ledger_head": ledger_head,
+        "corpus_receipt_re_adopt": True,
+    }
+    target = {
+        "corpus_root": {
+            "device": 1, "inode": 2, "mode": 448,
+            "owner": os.geteuid(),
+        },
+        "receipt_sha256": "f" * 64,
+        "receipt_mode": 384,
+    }
+    confirmation_raw = (json.dumps(
+        confirmation, ensure_ascii=True, sort_keys=True,
+        separators=(",", ":")) + "\n").encode("utf-8")
+    confirmation_sha256 = hashlib.sha256(confirmation_raw).hexdigest()
+    content = json.dumps({
+        "accepted_ledger_head": ledger_head,
+        "confirmation_sha256": confirmation_sha256,
+        "snapshot_id": binding["snapshot_id"],
+        "manifest_sha256": binding["manifest_sha256"],
+        "target": target,
+        "receipt_re_adopted": True,
+    }, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    basis = {
+        "order": order,
+        "action": "RESTORE:adopt",
+        "arg1": binding["prepared_id"],
+        "arg2": binding["capsule_id"],
+        "content": content,
+    }
+    record_id = hashlib.sha256(json.dumps(
+        basis, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    adoption = {"order": order, "record_id": record_id, "target": target}
+    return confirmation, adoption, {
+        "identity_key_file": "",
+        "accepted_ledger_head": ledger_head,
+        "confirmation_sha256": confirmation_sha256,
+        "adoption_order": str(order),
+        "adoption_record_id": record_id,
+        "target": target,
+    }
 
 
 def _mcp_guard_contents(home, client, reason):
@@ -184,9 +267,32 @@ def _generate_stable_launcher(path):
 
 
 def _bounded_commands_shell(script):
-    return "bounded_command_capture() {" + script.split(
+    return _lifetime_command_context() + "bounded_command_capture() {" + script.split(
         "bounded_command_capture() {", 1)[1].split(
         "\nowned_metadata() {", 1)[0]
+
+
+def _lifetime_command_context():
+    return "SIA_LIFETIME_SOURCE=" + shlex.quote(
+        os.path.join(REPO, "bin", "sialifetime.py")) + "\n"
+
+
+def _run_release_fragment(script, environment):
+    """Run the actual admitted entry around an isolated release-body fixture."""
+    with tempfile.TemporaryDirectory(prefix="sia-release-fragment-") as root:
+        os.mkdir(os.path.join(root, "bin"))
+        shutil.copy2(os.path.join(REPO, "bin", "sialifetime.py"),
+                     os.path.join(root, "bin", "sialifetime.py"))
+        bootstrap = _read("install.sh").split(
+            "# BEGIN SIA RELEASE LIFETIME\n", 1)[1].split(
+                "# END SIA RELEASE LIFETIME\n", 1)[0]
+        entry = os.path.join(root, "install.sh")
+        with open(entry, "w", encoding="utf-8") as stream:
+            stream.write("#!/usr/bin/env bash\n" + bootstrap + script)
+        os.chmod(entry, 0o700)
+        return subprocess.run(
+            [entry], env=environment, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False)
 
 
 def _owned_metadata_shell(script):
@@ -224,67 +330,162 @@ def _fenced_runtime_authorization_shell(script):
 
 def _runtime_tree_digest_shell(script):
     body = script.split("runtime_tree_digest() {", 1)[1].split(
-        "\nPY\n}", 1)[0]
-    return "runtime_tree_digest() {" + body + "\nPY\n}\n"
+        "\n}", 1)[0]
+    authority = shlex.quote(os.path.join(REPO, "bin", "siarelease.py"))
+    return (f"REPO={shlex.quote(REPO)}\n"
+            f"SIA_RELEASE_AUTHORITY={authority}\n"
+            "runtime_tree_digest() {" + body + "\n}\n")
 
 
 def _uninstaller_fenced_runtime_shell(script):
     body = script.split(
         "fenced_runtime_authorized() {", 1)[1].split(
             "\n}\n\ncapture_runtime_removal_authority", 1)[0]
-    return "fenced_runtime_authorized() {" + body + "\n}\n"
+    authority = shlex.quote(os.path.join(REPO, "bin", "siarelease.py"))
+    return (f"SIA_RELEASE_AUTHORITY={authority}\n"
+            "fenced_runtime_authorized() {" + body + "\n}\n")
 
 
-# The rung ladder decides which member set a runtime receipt covers, and it
-# is hand-copied to four places.  A rung added to one and not the others is
-# the regression these sites exist to make loud.
-RUNTIME_RUNG_SITES = (
-    ("install.sh", "\nruntime_tree_digest() {", "\nPY\n}\n"),
-    ("uninstall.sh", "\nruntime_tree_digest() {", "\nPY\n}\n"),
-    ("uninstall.sh", "\nfenced_runtime_authorized() {", "\nPY\n}\n"),
-    ("tests/test_release.py", "\ndef _runtime_digest(root):", "\n\ndef "),
-)
+LEGACY_RUNTIME_NAMES = (
+    "sia-brainstem", "sia-ledger", "sia-mcp", "siabench.py", "sialib.py",
+    "siamind.py", "siaqueue.py", "siatakes.py")
 
-RUNTIME_RUNG_OPENING = "legacy_names = ("
-RUNTIME_RUNG_CLOSING = r'b"sia-runtime-v1\0"'
-
-MODERN_V4_RUNTIME_NAMES = (
+MODERN_V2_RUNTIME_NAMES = (
     "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger", "sia-mcp",
-    "siabench.py", "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py",
-    "siasenses.py", "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
+    "siabench.py", "sialib.py", "siamind.py", "siaqueue.py", "siatakes.py")
+
+MODERN_V3_RUNTIME_NAMES = MODERN_V2_RUNTIME_NAMES + ("siasenses.py",)
+
+MODERN_V4_RUNTIME_NAMES = MODERN_V3_RUNTIME_NAMES + (
+    "siacapsule.py", "siabackup.py", "siarestoreadmit.py",
     "sia-continuity-worker")
 
 MODERN_V5_RUNTIME_NAMES = MODERN_V4_RUNTIME_NAMES + ("siagraph.py",)
+MODERN_V6_RUNTIME_NAMES = MODERN_V5_RUNTIME_NAMES + ("siathought.py",)
+MODERN_V7_RUNTIME_NAMES = MODERN_V6_RUNTIME_NAMES + (
+    "siaactivation.py", "siacognitivebaseline.py",
+    "siacognitivecommand.py", "siacognitivehistory.py",
+    "siacognitiveselect.py", "siacontrollerliveinput.py",
+    "siacontrollerstatus.py", "siacoretrieval.py",
+    "siacortexrepair.py", "siaencoding.py", "siaeventintake.py",
+    "siaeventplan.py", "siagist.py", "siajournalcapture.py",
+    "sialivegist.py", "sialiveloop.py", "sialivepublication.py",
+    "siasourcebatch.py", "siasourcepublication.py", "siavector.py",
+    "siavectoradmit.py", "siavectormodel.py", "siavectorprepare.py",
+    "siavectorrun.py", "siaworkspace.py",
+)
+MODERN_V8_RUNTIME_NAMES = MODERN_V7_RUNTIME_NAMES + (
+    "siasourceack.py", "siasourceeffects.py", "siasourceengine.py",
+    "siasourcegit.py",
+)
+MODERN_V9_RUNTIME_NAMES = MODERN_V8_RUNTIME_NAMES + (
+    "siacontrollerepoch.py", "siacontrollersourcerunner.py",
+)
 
-
-def _runtime_rung_source(relative, marker, terminator):
-    # Bound the search to the marked function.  An unbounded search would
-    # answer with the NEXT function's ladder once a site loses its own,
-    # turning a real divergence into a passing comparison.
-    text = _read(relative)
-    start = text.index(marker) + len(marker)
-    region = text[start:text.index(terminator, start)]
-    found = region.count(RUNTIME_RUNG_OPENING)
-    if found != 1:
-        raise AssertionError(
-            f"{relative} {marker.strip()} holds {found} rung ladders")
-    opening = region.index(RUNTIME_RUNG_OPENING)
-    closing = region.index(RUNTIME_RUNG_CLOSING, opening)
-    return textwrap.dedent(
-        region[region.rindex("\n", 0, opening) + 1:
-               closing + len(RUNTIME_RUNG_CLOSING)]) + "\n"
-
-
-def _runtime_rung_classification(relative, marker, terminator, root):
-    namespace = {"os": os, "root": root, "runtime": root}
-    exec(compile(_runtime_rung_source(relative, marker, terminator),
-                 relative + " rung", "exec"), namespace)
-    return namespace["salt"], namespace["names"]
+# Independent rung fixtures, not an operational ladder.  The historical
+# entries pin bytes already accepted by shipped receipts, while the newest
+# entry pins the candidate contract emitted by the release front door.
+RUNTIME_RUNG_FIXTURES = (
+    ("v1", b"sia-runtime-v1\0", LEGACY_RUNTIME_NAMES,
+     "f9dc027491272df1e17648cb4dc936b2928a0f15953758b72495f8a29fad29d7"),
+    ("v2", b"sia-runtime-v2\0", MODERN_V2_RUNTIME_NAMES,
+     "cf26e711604a57f8e539646beca7b0027aa1ad051e3729b92f45f4c0cc3f0544"),
+    ("v3", b"sia-runtime-v3\0", MODERN_V3_RUNTIME_NAMES,
+     "c0042e7df7d9c09ba1247b6d25140b0f91afee0d8e7df1200d4831988ed3dbf4"),
+    ("v4", b"sia-runtime-v4\0", MODERN_V4_RUNTIME_NAMES,
+     "f96c9529bcb56570278b53d0edef86976268ed52a948deb81db1c0ab129ae212"),
+    ("v5", b"sia-runtime-v5\0", MODERN_V5_RUNTIME_NAMES,
+     "e8e8e2c5fe0aab2a5823d887d525aa49e123e18d391b90058b8363fb2e0c6db8"),
+    ("v6", b"sia-runtime-v6\0", MODERN_V6_RUNTIME_NAMES,
+     "3ba7772c833c658c6ad4be4273d5dbff5324fc123824dd62c75514a38a8e182f"),
+    ("v7", b"sia-runtime-v7\0", MODERN_V7_RUNTIME_NAMES,
+     "54f7917d096b318649cf6c15138eb9dade967277e41fe9256e3f003f69e360bc"),
+    ("v8", b"sia-runtime-v8\0", MODERN_V8_RUNTIME_NAMES,
+     "0225ff0d0a864a8f26ad75f37afb92ced45ef5966ad2c17b7343e5081a8ebcfc"),
+    ("v9", b"sia-runtime-v9\0", MODERN_V9_RUNTIME_NAMES,
+     "8f68448335643681bebf024dd14fa946280f5d888e24d5d0c55688931fadb524"),
+)
 
 
 def _plant_runtime_tree(runtime, names):
     for name in names:
         _write(os.path.join(runtime, name), name + "\n", 0o644)
+
+
+def _staged_runtime_members(script):
+    # Recover the runtime members install.sh actually stages, from the
+    # installer source rather than from a second hand-kept list.  A restated
+    # list would drift in exactly the same silence as the rung ladder it is
+    # meant to police, which is the whole defect.
+    #
+    # The block stages three ways -- a loop over modules, a loop over
+    # commands, and bare install(1) lines -- so both the loop word lists and
+    # the literal destinations have to be read back out.
+    marker = '\nstep "3/9 runtime"\n'
+    terminator = "\nSTAGED_RUNTIME_DIGEST="
+    if script.count(marker) != 1 or script.count(terminator) != 1:
+        raise AssertionError(
+            "install.sh runtime staging block is no longer uniquely "
+            "delimited by its step banner and its digest assignment; "
+            "re-point this extractor at the moved source")
+    region = script.split(marker, 1)[1].split(terminator, 1)[0]
+    # Fold shell line continuations first: the module list wraps across
+    # three physical lines and would otherwise be read short.
+    flat = region.replace("\\\n", " ")
+    staged = []
+    for match in re.finditer(
+            r'"\$SIA_RUNTIME_STAGE/(\$?[A-Za-z0-9_.-]+)"', flat):
+        token = match.group(1)
+        if not token.startswith("$"):
+            staged.append(token)
+            continue
+        variable = token[1:]
+        loop = re.search(
+            r"\bfor " + re.escape(variable) + r" in ([^;]+); do", flat)
+        if loop is None:
+            raise AssertionError(
+                f"install.sh stages ${variable} with no visible `for "
+                f"{variable} in ...` list to expand")
+        staged.extend(shlex.split(loop.group(1)))
+    return tuple(staged)
+
+
+# The marketplace refuses to snapshot a source file larger than this, so a
+# file that crosses it is not shippable at all.
+MARKETPLACE_SCAN_CAP = 524288
+
+# The guard below fires at 95% of that cap -- 498,073 bytes, still 26,215
+# bytes short of unshippable.  The threshold is deliberately not 99%: it has
+# to fire while a module extraction can still be planned and landed calmly,
+# so crossing it is a scheduling signal, not a release blocker.  Raising this
+# number to buy silence is the one repair that is not available; the repair
+# is to make the file smaller.
+MARKETPLACE_SCAN_HEADROOM_FLOOR = MARKETPLACE_SCAN_CAP * 95 // 100
+
+
+def _marketplace_scanned_sources():
+    # The marketplace snapshot scans by extension, plus the four
+    # extensionless executables in bin/.  The hard cap test and the headroom
+    # guard must walk exactly one set: if they diverge, one of them is
+    # policing files the marketplace never reads, and the other is silently
+    # missing files it does.
+    extensions = {".js", ".py", ".qml", ".sh"}
+    extensionless = {
+        os.path.join("bin", name) for name in (
+            "sia", "sia-brainstem", "sia-ledger", "sia-mcp")}
+    found = []
+    for directory, subdirectories, filenames in os.walk(REPO):
+        subdirectories[:] = [
+            name for name in subdirectories
+            if name not in {".git", "assets", "__pycache__"}]
+        for filename in filenames:
+            absolute = os.path.join(directory, filename)
+            relative = os.path.relpath(absolute, REPO)
+            if (os.path.splitext(filename)[1] not in extensions
+                    and relative not in extensionless):
+                continue
+            found.append((relative, absolute))
+    return sorted(found)
 
 
 class ReleaseContract(unittest.TestCase):
@@ -373,12 +574,79 @@ class ReleaseContract(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(REPO, relative)),
                             relative)
         version = manifest["version"]
-        self.assertEqual(version, "1.7.8")
-        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
-        self.assertIn(f'VERSION = "{version}"', _read("bin/sialib.py"))
-        self.assertIn(f'SERVER_VERSION = "{version}"',
-                      _read("bin/sia-mcp"))
-        self.assertIn(f"## {version} —", _read("CHANGELOG.md"))
+        self.assertRegex(
+            version,
+            r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
+            r"(?:0|[1-9][0-9]*)$")
+        patterns = {
+            "bin/sialib.py": r'(?m)^VERSION = "([^"]+)"$',
+            "bin/sia-mcp": r'(?m)^SERVER_VERSION = "([^"]+)"$',
+            "Model.js": (
+                r'(?m)^function releaseVersion\(\) \{ return "([^"]+)" \}$'),
+        }
+        for relative, pattern in patterns.items():
+            self.assertEqual(re.findall(pattern, _read(relative)), [version],
+                             relative)
+        document_patterns = {
+            "README.md": r"(?m)^\*\*Current release: v([^*]+)\.\*\*",
+            "docs/MANUAL.md": r"(?m)^\*\*Describes SIA v([^ ]+) ·",
+            "docs/CONTINUITY.md": r"(?m)^\*\*Describes SIA v([^ ]+) ·",
+            "docs/WHITEPAPER.md": (
+                r"(?m)^\*\*Khephri Labs · open source \(MIT\) · "
+                r"[^·]+ · v([^*]+)\*\*$"),
+        }
+        for relative, pattern in document_patterns.items():
+            self.assertEqual(re.findall(pattern, _read(relative)), [version],
+                             relative)
+        headings = re.findall(
+            r"(?m)^## ((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
+            r"(?:0|[1-9][0-9]*)) —", _read("CHANGELOG.md"))
+        self.assertTrue(headings)
+        self.assertEqual(headings[0], version)
+
+    def test_operator_docs_match_release_and_recovery_boundaries(self):
+        owner = _read("bin/sialifetime.py")
+        self.assertIn("ALLOWED_DEADLINES = {120, 300, 1800}", owner)
+        for script_name in ("install.sh", "uninstall.sh"):
+            script = _read(script_name)
+            deadline_comment = script.split(
+                "# Status=exact deadline constants:", 1)[1].split(
+                    "run_with_deadline() {", 1)[0]
+            self.assertNotIn("parsed=15 exact=15", deadline_comment)
+            self.assertIn("accepted set is 120, 300, and 1800 seconds",
+                          deadline_comment)
+
+        readme = " ".join(_read("README.md").split())
+        for requirement in (
+                "pidfd_send_signal", "waitid/WNOWAIT/WSTOPPED",
+                "child-subreaper", "sealed memfd", "/proc",
+                "SCM_CREDENTIALS", "SCM_RIGHTS",
+                "before the mutating shell launches"):
+            self.assertIn(requirement, readme)
+
+        architecture = _read("docs/ARCHITECTURE.md")
+        self.assertIn("root directory descriptor", architecture)
+        self.assertIn("descriptor-relative", architecture)
+
+        manual = _read("docs/MANUAL.md")
+        quarantine = next(
+            line for line in manual.splitlines()
+            if line.startswith("| Source replay quarantine"))
+        self.assertIn("memo.json", quarantine)
+        self.assertIn("cursors.json", quarantine)
+        self.assertIn("same known-good backup generation", quarantine)
+        self.assertIn("Do not delete", quarantine)
+        self.assertIn("Continuity", quarantine)
+
+        config = json.loads(_read("config.example.json"))
+        senses_comment = config["senses"]["_comment"]
+        self.assertIn("The skills source is the exception", senses_comment)
+        self.assertIn("root roster", senses_comment)
+        skill_comment = config["skills"]["_comment"].casefold()
+        for term in (
+                "omitting", "default roster", "empty", "disables",
+                "every root is absent", "removal"):
+            self.assertIn(term, skill_comment)
 
     def test_marketplace_documentation_and_license_are_present(self):
         readme = _read("README.md").casefold()
@@ -411,24 +679,58 @@ class ReleaseContract(unittest.TestCase):
 
     def test_marketplace_scanned_source_files_fit_the_static_limit(self):
         # Observed from the marketplace baseline's source-snapshot guard.
-        cap = 524288
-        extensions = {".js", ".py", ".qml", ".sh"}
-        extensionless = {
-            os.path.join("bin", name) for name in (
-                "sia", "sia-brainstem", "sia-ledger", "sia-mcp")}
-        for directory, subdirectories, filenames in os.walk(REPO):
-            subdirectories[:] = [
-                name for name in subdirectories
-                if name not in {".git", "assets", "__pycache__"}]
-            for filename in filenames:
-                absolute = os.path.join(directory, filename)
-                relative = os.path.relpath(absolute, REPO)
-                if (os.path.splitext(filename)[1] not in extensions
-                        and relative not in extensionless):
-                    continue
-                with self.subTest(path=relative):
-                    self.assertFalse(os.path.islink(absolute))
-                    self.assertLessEqual(os.path.getsize(absolute), cap)
+        for relative, absolute in _marketplace_scanned_sources():
+            with self.subTest(path=relative):
+                self.assertFalse(os.path.islink(absolute))
+                self.assertLessEqual(
+                    os.path.getsize(absolute), MARKETPLACE_SCAN_CAP)
+
+    def test_marketplace_scanned_sources_keep_headroom_under_the_limit(self):
+        # The cap test above only tells us we have not shipped an
+        # unpublishable file YET; it goes green at 524,287 bytes and offers
+        # no warning on the way up.  This guard converts the remaining slack
+        # into a deadline visible in CI while a module extraction can still
+        # be scheduled.
+        #
+        # The failure names the exact bytes free on purpose: "over 95%" is
+        # not actionable, "15,823 bytes left" is.
+        crowded = []
+        for relative, absolute in _marketplace_scanned_sources():
+            size = os.path.getsize(absolute)
+            if size > MARKETPLACE_SCAN_HEADROOM_FLOOR:
+                crowded.append(
+                    f"{relative} is {size} bytes with only "
+                    f"{MARKETPLACE_SCAN_CAP - size} bytes free of the "
+                    f"{MARKETPLACE_SCAN_CAP}-byte cap")
+        self.assertEqual(
+            crowded, [],
+            "marketplace per-file scan headroom is nearly gone (guard "
+            f"trips above {MARKETPLACE_SCAN_HEADROOM_FLOOR} bytes, 95% of "
+            f"the {MARKETPLACE_SCAN_CAP}-byte cap): " + "; ".join(crowded)
+            + ". Extract a module; raising the threshold is not a repair.")
+
+    def test_architecture_does_not_duplicate_live_module_measurements(self):
+        architecture = _read("docs/ARCHITECTURE.md")
+        split_modules = architecture.split(
+            "## What is already split", 1)[1].split("\n## ", 1)[0]
+        section = architecture.split(
+            "## What remains in `bin/sialib.py`", 1)[1].split(
+                "\n## ", 1)[0]
+
+        self.assertIn("| Module | Lane |", split_modules)
+        self.assertNotIn("| Module | Size | Lane |", split_modules)
+        self.assertNotRegex(split_modules, r"(?:\bbytes\b|\bKB\b)")
+        self.assertIn("wc -lc bin/sialib.py", section)
+        self.assertIn(
+            "test_marketplace_scanned_source_files_fit_the_static_limit",
+            section)
+        self.assertIn(
+            "test_marketplace_scanned_sources_keep_headroom_under_the_limit",
+            section)
+        self.assertNotIn("| Lane |", section)
+        # This live section deliberately contains no numeric measurements;
+        # historical release measurements remain in Extraction progress.
+        self.assertNotRegex(section, r"[0-9]")
 
     def test_operator_docs_state_installer_and_removal_boundaries(self):
         readme = _read("README.md")
@@ -548,7 +850,43 @@ class ReleaseContract(unittest.TestCase):
         self.assertIn("Type=notify\n", unit)
         self.assertIn("NotifyAccess=main\n", unit)
         self.assertIn("TimeoutStartSec=120\n", unit)
+        self.assertIn("RestartPreventExitStatus=78\n", unit)
         self.assertNotIn("Type=simple\n", unit)
+
+    def test_brainstem_restart_suppression_matches_source_exit_policy(self):
+        statuses = re.findall(
+            r"(?m)^RestartPreventExitStatus=([0-9]+)$",
+            _read("systemd/sia-brainstem.service"))
+        self.assertEqual(statuses, ["78"])
+        service_status = int(statuses[0], 10)
+
+        assignments = [
+            node for node in ast.parse(_read("bin/sia-brainstem")).body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name)
+                    and target.id == "INTENTIONAL_STOP_EXIT"
+                    for target in node.targets)
+        ]
+        self.assertEqual(len(assignments), 1)
+        assignment = assignments[0]
+        self.assertEqual(len(assignment.targets), 1)
+        self.assertIsInstance(assignment.targets[0], ast.Name)
+
+        policy = assignment.value
+        self.assertIsInstance(policy, ast.Call)
+        self.assertIsInstance(policy.func, ast.Name)
+        self.assertEqual(policy.func.id, "getattr")
+        self.assertEqual(len(policy.args), 3)
+        self.assertEqual(policy.keywords, [])
+        self.assertIsInstance(policy.args[0], ast.Name)
+        self.assertEqual(policy.args[0].id, "os")
+        self.assertEqual(ast.literal_eval(policy.args[1]), "EX_CONFIG")
+
+        fallback = ast.literal_eval(policy.args[2])
+        self.assertIs(type(fallback), int)
+        self.assertEqual(service_status, fallback)
+        self.assertEqual(
+            service_status, getattr(os, "EX_CONFIG", fallback))
 
     def test_installer_uses_full_pins_and_verified_downloads(self):
         installer = _read("install.sh")
@@ -559,16 +897,20 @@ class ReleaseContract(unittest.TestCase):
                     if "=" in line and not line.startswith("#"))
         self.assertRegex(pins["commit"], r"^[0-9a-f]{40}$")
         self.assertRegex(pins["bun_lock_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(pins["overlay_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(pins["overlay_tree_oid"], r"^[0-9a-f]{40}$")
         self.assertIn('[[ "$PIN" =~ ^[0-9a-f]{40}$ ]]', installer)
         self.assertIn('git -C "$GBRAIN_SOURCE" rev-parse HEAD', installer)
         self.assertRegex(
             flattened_installer,
-            r'run_with_deadline 1800 "\$BUN_BIN" install\s+'
+            r'run_with_deadline 1800 "\$\{GBRAIN_STERILE_ENV\[@\]\}"\s+'
+            r'"\$BUN_BIN" install\s+--no-env-file\s+'
             r'--cwd "\$GBRAIN_SOURCE"\s+--frozen-lockfile')
         self.assertIn('--production --ignore-scripts --no-progress', installer)
         self.assertRegex(
             flattened_installer,
-            r'run_with_deadline 1800 "\$BUN_BIN" build\s+'
+            r'run_with_deadline 1800 "\$\{GBRAIN_STERILE_ENV\[@\]\}"\s+'
+            r'"\$BUN_BIN" build[^\n]*'
             r'--compile\s+--outfile')
         self.assertIn(
             'GBRAIN_VERSION_OUTPUT="$(bounded_command_capture', installer)
@@ -1180,9 +1522,7 @@ recover_publication_receipts_from_fence
 
     def test_runtime_v3_digest_migrates_without_replacing_valid_v2_tree(self):
         installer = _read("install.sh")
-        digest_function = "runtime_tree_digest() {" + installer.split(
-            "runtime_tree_digest() {", 1)[1].split(
-                "\n}\n\nruntime_receipt_valid", 1)[0] + "\n}\n"
+        digest_function = _runtime_tree_digest_shell(installer)
         receipt_function = "runtime_receipt_valid() {" + installer.split(
             "runtime_receipt_valid() {", 1)[1].split(
                 "\n}\n\nfenced_managed_file_authorized", 1)[0] + "\n}\n"
@@ -1191,15 +1531,11 @@ recover_publication_receipts_from_fence
                 "\n}\n\nrecover_publication_receipts_from_fence", 1)[0] \
             + "\n}\n"
         functions = digest_function + receipt_function + preflight_function
-        modern_v2_names = (
-            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
-            "siaqueue.py", "siatakes.py")
         with tempfile.TemporaryDirectory() as root:
             share = os.path.join(root, "share")
             runtime = os.path.join(share, "bin")
             receipt = os.path.join(root, "managed", "runtime")
-            for name in modern_v2_names:
+            for name in MODERN_V2_RUNTIME_NAMES:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
 
             def write_receipt():
@@ -1261,21 +1597,14 @@ preflight_runtime
             self.assertNotEqual(preflight().returncode, 0)
 
     def test_uninstaller_fence_requires_complete_v3_runtime(self):
-        uninstaller = _read("uninstall.sh")
-        function = "fenced_runtime_authorized() {" + uninstaller.split(
-            "fenced_runtime_authorized() {", 1)[1].split(
-                "\n}\n\ncapture_runtime_removal_authority", 1)[0] + "\n}\n"
-        modern_v3_names = (
-            "sia-brainstem", "sia-brainstem.py", "sia-cli", "sia-ledger",
-            "sia-mcp", "siabench.py", "sialib.py", "siamind.py",
-            "siaqueue.py", "siatakes.py", "siasenses.py")
+        function = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
             managed = os.path.join(root, "managed")
             journal = os.path.join(managed, "launch-fence.json")
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            for name in modern_v3_names:
+            for name in MODERN_V3_RUNTIME_NAMES:
                 _write(os.path.join(runtime, name), name + "\n", 0o644)
             digest = _runtime_digest(runtime)
             _write(
@@ -1321,69 +1650,585 @@ fenced_runtime_authorized
             os.unlink(os.path.join(runtime, "siasenses.py"))
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_runtime_digest_rung_ladder_is_identical_at_every_site(self):
-        # Four hand-maintained copies of the rung ladder decide which member
-        # set a receipt covers. A rung added to one site and not the others
-        # is the regression this guards: extraction, not measurement.
-        ladders = {}
-        for site in RUNTIME_RUNG_SITES:
-            ladders[site] = " ".join(
-                _runtime_rung_source(*site).split()).replace(
-                    "os.path.join(runtime,", "os.path.join(root,")
-        # The dict is keyed by four distinct sites, so its length proves
-        # nothing on its own; count the ladders in the tree instead, so a
-        # fifth copy pasted somewhere new cannot go unpinned.
-        self.assertEqual(len(ladders), 4)
+    def test_staged_runtime_members_match_the_latest_rung_member_set(self):
+        # Two independent hand-maintained lists have to agree and nothing
+        # made them: install.sh stages the runtime tree one install(1) line
+        # at a time, while the rung ladder decides which members the receipt
+        # written straight afterwards actually measures.
+        #
+        # Staged but not in the ladder: the module is installed into $BINDIR
+        # and the publication receipt covering that tree never hashes it, so
+        # a later tamper of exactly that file verifies clean.  In the ladder
+        # but never staged: runtime_tree_digest refuses on a tree the
+        # installer just published, and the install cannot complete.  Both
+        # halves are silent at authoring time, so pin them to each other.
+        staged = _staged_runtime_members(_read("install.sh"))
         self.assertEqual(
-            sum(_read(relative).count(RUNTIME_RUNG_OPENING)
-                for relative in ("install.sh", "uninstall.sh",
-                                 "tests/test_release.py")),
-            len(RUNTIME_RUNG_SITES) + 1)
-        reference = ladders[RUNTIME_RUNG_SITES[0]]
-        for site, ladder in ladders.items():
-            with self.subTest(site=site):
-                self.assertEqual(ladder, reference)
-        self.assertIn(r'b"sia-runtime-v5\0"', reference)
-        self.assertIn(
-            'modern_v5_names = modern_v4_names + ("siagraph.py",)',
-            reference)
-        with tempfile.TemporaryDirectory() as root:
-            runtime = os.path.join(root, "bin")
-            _plant_runtime_tree(runtime, MODERN_V5_RUNTIME_NAMES)
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v5\0")
-                    self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
+            len(staged), len(set(staged)),
+            f"install.sh stages a runtime member more than once: {staged}")
+        self.assertNotIn("LATEST_RUNTIME_NAMES", _read("bin/siarelease.py"))
+        SIARELEASE.validate_runtime_ladder()
+        latest_names = SIARELEASE.RUNTIME_LADDER[0][1]
+        missing = sorted(set(latest_names) - set(staged))
+        unmeasured = sorted(set(staged) - set(latest_names))
+        self.assertEqual(
+            (missing, unmeasured), ([], []),
+            f"install.sh stages {len(staged)} runtime members but the latest "
+            f"rung ladder covers {len(latest_names)}. In the "
+            f"ladder yet never staged (digest will refuse): {missing}. "
+            f"Staged yet outside the ladder (installed unmeasured by any "
+            f"receipt): {unmeasured}")
 
-    def test_partial_v5_runtime_tree_still_classifies_as_the_v5_rung(self):
-        # Classification is by presence of the rung marker, never by
-        # completeness. A tree carrying siagraph.py but missing v4-era
-        # members must still be measured with the v5 salt over the whole v5
-        # member set, so it can never be mistaken for a complete v4 tree.
+    def test_v9_runtime_modules_are_in_the_release_source_snapshot(self):
+        installer = _read("install.sh")
+        release_files = set(shlex.split(installer.split(
+            "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
+        expected = {
+            "bin/siasourceack.py", "bin/siasourceeffects.py",
+            "bin/siasourceengine.py", "bin/siasourcegit.py",
+            "bin/siacontrollerepoch.py",
+            "bin/siacontrollersourcerunner.py",
+        }
+        self.assertTrue(expected.issubset(release_files),
+                        expected - release_files)
+
+    def test_v12_recall_front_door_is_one_complete_runtime_rung(self):
+        additions = (
+            "siacontrollerdeliverywriter.py", "siacontrollerrecallprojection.py",
+            "siacontrollerrecalloutput.py", "siacontrollerrecallcli.py",
+            "siagetrenderadmit.py", "siainstalledengine.py",
+            "siainstalledexpectations.py",
+        )
+        salt, names, selectors = next(
+            rung for rung in SIARELEASE.RUNTIME_LADDER
+            if rung[0] == b"sia-runtime-v12\0")
+        self.assertEqual(salt, b"sia-runtime-v12\0")
+        self.assertEqual(selectors, additions)
+        self.assertEqual(
+            names, SIARELEASE.MODERN_V11_RUNTIME_NAMES + additions)
+        staged = _staged_runtime_members(_read("install.sh"))
+        self.assertTrue(set(additions).issubset(staged),
+                        set(additions) - set(staged))
+        installer = _read("install.sh")
+        release_files = set(shlex.split(installer.split(
+            "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0]))
+        expected = {"bin/" + name for name in additions}
+        self.assertTrue(expected.issubset(release_files),
+                        expected - release_files)
+
+    def test_runtime_fence_metadata_parser_is_strict_and_named(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _plant_runtime_tree(runtime, LEGACY_RUNTIME_NAMES)
+            before_digest = _runtime_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            payload = {
+                "schema": "sia-launch-fence-v1",
+                "runtime_before_digest": before_digest,
+                "runtime_digest": "",
+                "cli_digest": "",
+                "entries": [{
+                    "path": os.path.join(root, "unused-entry"),
+                    "device": 0,
+                    "inode": 0,
+                    "mode": 0,
+                    "sha256": "0" * 64,
+                }],
+            }
+
+            def authorize_raw(raw):
+                _write(journal, raw + "\n", 0o600)
+                stderr = io.StringIO()
+                with mock.patch.object(sys, "stderr", stderr):
+                    status = SIARELEASE.main([
+                        "runtime-authorize-fence", journal, tombstone,
+                        receipt, runtime])
+                return status, stderr.getvalue()
+
+            valid_optional_digests = (
+                ("", ""),
+                (hashlib.sha256(b"published runtime").hexdigest(),
+                 hashlib.sha256(b"published cli").hexdigest()),
+            )
+            for runtime_digest, cli_digest in valid_optional_digests:
+                with self.subTest(
+                        valid_runtime=runtime_digest, valid_cli=cli_digest):
+                    candidate = dict(
+                        payload, runtime_digest=runtime_digest,
+                        cli_digest=cli_digest)
+                    status, stderr = authorize_raw(json.dumps(
+                        candidate, sort_keys=True, separators=(",", ":")))
+                    self.assertEqual(status, 0, stderr)
+
+            canonical = json.dumps(
+                payload, sort_keys=True, separators=(",", ":"))
+            ambiguous = {
+                "duplicate top-level field": canonical.replace(
+                    '"schema":"sia-launch-fence-v1"',
+                    '"schema":"discarded",'
+                    '"schema":"sia-launch-fence-v1"', 1),
+                "duplicate nested field": canonical.replace(
+                    '"path":', '"path":"discarded","path":', 1),
+                "NaN": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":NaN', 1),
+                "Infinity": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":Infinity', 1),
+                "negative Infinity": canonical.replace(
+                    '"cli_digest":""', '"cli_digest":-Infinity', 1),
+            }
+            for case, raw in ambiguous.items():
+                with self.subTest(case=case):
+                    status, stderr = authorize_raw(raw)
+                    self.assertEqual(status, 2)
+                    self.assertEqual(
+                        stderr,
+                        "SIA runtime fence refused: invalid runtime "
+                        "launch-fence metadata\n")
+
+            invalid_optional_digests = (
+                None, True, [], {}, "A" * 64, "not-a-digest")
+            for field in ("runtime_digest", "cli_digest"):
+                for value in invalid_optional_digests:
+                    with self.subTest(field=field, value=value):
+                        candidate = dict(payload)
+                        candidate[field] = value
+                        status, stderr = authorize_raw(json.dumps(
+                            candidate, sort_keys=True,
+                            separators=(",", ":")))
+                        self.assertEqual(status, 2)
+                        self.assertEqual(
+                            stderr,
+                            "SIA runtime fence refused: invalid runtime "
+                            "launch-fence digest\n")
+
+            with mock.patch.object(
+                    SIARELEASE.json, "loads",
+                    side_effect=RecursionError("deep JSON")):
+                status, stderr = authorize_raw(canonical)
+            self.assertEqual(status, 2)
+            self.assertEqual(
+                stderr,
+                "SIA runtime fence refused: invalid runtime "
+                "launch-fence metadata\n")
+            self.assertNotIn("Traceback", stderr)
+
+            class ParserPanic(BaseException):
+                pass
+
+            _write(journal, canonical + "\n", 0o600)
+            with mock.patch.object(
+                    SIARELEASE.json, "loads",
+                    side_effect=ParserPanic("native parser panic")):
+                with self.assertRaises(ParserPanic):
+                    SIARELEASE.authorize_fenced_runtime(
+                        journal, tombstone, receipt, runtime)
+
+    def test_runtime_ladder_has_one_authority_and_every_consumer_delegates(
+            self):
+        authority = _read("bin/siarelease.py")
+        installer = _read("install.sh")
+        uninstaller = _read("uninstall.sh")
+
+        # A copied declaration can drift even when today's copies agree.
+        # Keep every membership, marker, and salt decision in siarelease.
+        for relative, source in (("install.sh", installer),
+                                 ("uninstall.sh", uninstaller)):
+            with self.subTest(relative=relative):
+                self.assertNotIn("legacy_names = (", source)
+                self.assertNotIn("modern_v6_names =", source)
+                self.assertNotIn("sia-runtime-v", source)
+        self.assertEqual(authority.count("RUNTIME_LADDER = ("), 1)
+
+        install_digest = installer.split(
+            "runtime_tree_digest() {", 1)[1].split(
+                "\n}\n\nruntime_receipt_valid", 1)[0]
+        uninstall_digest = uninstaller.split(
+            "runtime_tree_digest() {", 1)[1].split(
+                "\n}\nruntime_receipt_valid", 1)[0]
+        uninstall_fence = uninstaller.split(
+            "fenced_runtime_authorized() {", 1)[1].split(
+                "\n}\n\ncapture_runtime_removal_authority", 1)[0]
+        self.assertIn('"$REPO/bin/siarelease.py" runtime-tree-digest',
+                      install_digest)
+        self.assertIn('"$SIA_RELEASE_AUTHORITY" runtime-tree-digest',
+                      uninstall_digest)
+        self.assertIn('"$SIA_RELEASE_AUTHORITY" runtime-authorize-fence',
+                      uninstall_fence)
+
+    def test_manual_names_the_authoritative_current_runtime_rung(self):
+        manual = _read("docs/MANUAL.md")
+        current = SIARELEASE.RUNTIME_LADDER[0][0].rstrip(b"\0").decode(
+            "ascii")
+        self.assertIn(f"current `{current}` member set", manual)
+        self.assertIn("`bin/siarelease.py:RUNTIME_LADDER`", manual)
+
+    def test_runtime_ladder_authority_preserves_every_shipped_rung(self):
+        authority = SIARELEASE
+        for rung, expected_salt, expected_names, expected_digest in \
+                RUNTIME_RUNG_FIXTURES:
+            with self.subTest(rung=rung), \
+                    tempfile.TemporaryDirectory() as runtime:
+                _plant_runtime_tree(runtime, expected_names)
+                salt, names = authority.runtime_rung(runtime)
+                self.assertEqual(salt, expected_salt)
+                self.assertEqual(names, expected_names)
+                self.assertEqual(
+                    authority.runtime_tree_digest(runtime), expected_digest)
+
+    def test_runtime_ladder_schema_refuses_malformed_authority(self):
+        ladder = SIARELEASE.RUNTIME_LADDER
+
+        def changed(index, *, salt=None, names=None, selectors=None):
+            result = list(ladder)
+            old_salt, old_names, old_selectors = result[index]
+            result[index] = (
+                old_salt if salt is None else salt,
+                old_names if names is None else names,
+                old_selectors if selectors is None else selectors)
+            return tuple(result)
+
+        malformed = {
+            "empty": (),
+            "duplicate salt": changed(0, salt=ladder[1][0]),
+            "duplicate member": changed(
+                0, names=ladder[0][1] + (ladder[0][1][0],)),
+            "non-cumulative": changed(
+                0, names=tuple(
+                    name for name in ladder[0][1] if name != "sia-ledger")),
+            "selector outside introduction": changed(
+                0, selectors=("sia-brainstem",)),
+            "nested member": changed(
+                0, names=ladder[0][1] + ("nested/member",)),
+            "nul member": changed(
+                0, names=ladder[0][1] + ("member\0tail",)),
+            "nested selector": changed(
+                0, selectors=("nested/siathought.py",)),
+        }
+        for case, candidate in malformed.items():
+            with self.subTest(case=case):
+                with self.assertRaises(ValueError):
+                    SIARELEASE.validate_runtime_ladder(candidate)
+
+        # Validation is part of the executable classification boundary, not
+        # an optional test helper a caller can forget to invoke.
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ()):
+            with self.assertRaises(ValueError):
+                SIARELEASE.runtime_rung(runtime)
+            with self.assertRaises(ValueError):
+                SIARELEASE.runtime_tree_digest(runtime)
+
+    def test_runtime_digest_refuses_member_over_declared_bound(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder), \
+                mock.patch.object(
+                    SIARELEASE, "MAX_RUNTIME_SOURCE_BYTES", 4):
+            _write(os.path.join(runtime, "member"), "12345", 0o600)
+
+            with self.assertRaisesRegex(ValueError, "byte bound"):
+                SIARELEASE.runtime_tree_digest(runtime)
+
+    def test_runtime_digest_refuses_root_generation_swap(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as parent, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(parent, "runtime")
+            replacement = os.path.join(parent, "replacement")
+            archive = os.path.join(parent, "archive")
+            for root, label in ((runtime, "old"), (replacement, "new")):
+                _write(os.path.join(root, "alpha"), label + " alpha", 0o600)
+                _write(os.path.join(root, "bravo"), label + " bravo", 0o600)
+            original_open = os.open
+            swapped = False
+
+            def swap_before_second_member(path, flags, *args, **kwargs):
+                nonlocal swapped
+                target = os.fspath(path)
+                if not swapped and target in {
+                        "bravo", os.path.join(runtime, "bravo")}:
+                    os.rename(runtime, archive)
+                    os.rename(replacement, runtime)
+                    swapped = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=swap_before_second_member)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime tree changed"):
+                SIARELEASE.runtime_tree_digest(runtime)
+            self.assertTrue(swapped)
+
+    def test_runtime_digest_revalidates_earlier_members_at_completion(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            alpha = os.path.join(runtime, "alpha")
+            _write(alpha, "old alpha", 0o600)
+            _write(os.path.join(runtime, "bravo"), "stable bravo", 0o600)
+            original_open = os.open
+            changed = False
+
+            def change_first_before_second_open(
+                    path, flags, *args, **kwargs):
+                nonlocal changed
+                if not changed and os.fspath(path) == "bravo":
+                    _write(alpha, "new alpha", 0o600)
+                    changed = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=change_first_before_second_open)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime member changed"):
+                SIARELEASE.runtime_tree_digest(runtime)
+            self.assertTrue(changed)
+
+    def test_fenced_runtime_refuses_member_over_declared_bound(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _write(os.path.join(runtime, "member"), "12345", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+
+            with mock.patch.object(
+                    SIARELEASE, "MAX_RUNTIME_SOURCE_BYTES", 4), \
+                    self.assertRaisesRegex(ValueError, "byte bound"):
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime)
+
+    def test_fenced_runtime_accepts_stable_attested_mode_zero_member(self):
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            managed = os.path.join(root, "managed")
+            member = os.path.join(runtime, "member")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            _write(member, "fenced member", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            info = os.lstat(member)
+            with open(member, "rb") as stream:
+                member_digest = hashlib.sha256(stream.read()).hexdigest()
+            os.chmod(member, 0)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [{
+                        "path": member,
+                        "device": info.st_dev,
+                        "inode": info.st_ino,
+                        "mode": stat.S_IMODE(info.st_mode),
+                        "sha256": member_digest,
+                    }],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+
+            self.assertEqual(
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime),
+                before_digest)
+
+    def test_fenced_runtime_closes_mode_zero_fd_when_inspection_fails(self):
+        if not getattr(SIARELEASE.os, "O_PATH", 0):
+            return
+        ladder = ((b"sia-runtime-v1\0", ("member",), ()),)
+        with tempfile.TemporaryDirectory() as runtime, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            member = os.path.join(runtime, "member")
+            _write(member, "fenced member", 0o600)
+            info = os.lstat(member)
+            os.chmod(member, 0)
+            entries = {member: {
+                "device": info.st_dev,
+                "inode": info.st_ino,
+                "sha256": "0" * 64,
+            }}
+            original_open = os.open
+            original_fstat = os.fstat
+            member_descriptor = None
+
+            def capture_member_descriptor(path, flags, *args, **kwargs):
+                nonlocal member_descriptor
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if os.fspath(path) == "member":
+                    member_descriptor = descriptor
+                return descriptor
+
+            def refuse_member_fstat(descriptor):
+                if descriptor == member_descriptor:
+                    raise OSError("synthetic member fstat refusal")
+                return original_fstat(descriptor)
+
+            with mock.patch.object(
+                    SIARELEASE, "os", _OsShim(
+                        open=capture_member_descriptor,
+                        fstat=refuse_member_fstat)), \
+                    self.assertRaisesRegex(
+                        OSError, "synthetic member fstat refusal"):
+                SIARELEASE._measure_runtime_tree(runtime, entries)
+            self.assertIsNotNone(member_descriptor)
+            with self.assertRaises(OSError):
+                original_fstat(member_descriptor)
+
+    def test_fenced_runtime_refuses_root_generation_swap(self):
+        ladder = ((
+            b"sia-runtime-v1\0", ("alpha", "bravo"), ()),)
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(SIARELEASE, "RUNTIME_LADDER", ladder):
+            runtime = os.path.join(root, "runtime")
+            replacement = os.path.join(root, "replacement")
+            archive = os.path.join(root, "archive")
+            managed = os.path.join(root, "managed")
+            journal = os.path.join(managed, "launch-fence.json")
+            receipt = os.path.join(managed, "runtime")
+            tombstone = os.path.join(root, "sia.lifecycle-removed")
+            for tree in (runtime, replacement):
+                _write(os.path.join(tree, "alpha"), "same alpha", 0o600)
+                _write(os.path.join(tree, "bravo"), "same bravo", 0o600)
+            before_digest = SIARELEASE.runtime_tree_digest(runtime)
+            _write(
+                receipt,
+                "managed-by=khephri.sia\nkind=runtime\n"
+                f"path={runtime}\nsha256={before_digest}\n",
+                0o600)
+            _write(
+                journal,
+                json.dumps({
+                    "schema": "sia-launch-fence-v1",
+                    "runtime_before_digest": before_digest,
+                    "runtime_digest": "",
+                    "cli_digest": "",
+                    "entries": [],
+                }, sort_keys=True, separators=(",", ":")) + "\n",
+                0o600)
+            _write(tombstone, "removed-by=khephri.sia\n", 0o600)
+            original_open = os.open
+            swapped = False
+
+            def swap_before_second_member(path, flags, *args, **kwargs):
+                nonlocal swapped
+                target = os.fspath(path)
+                if not swapped and target in {
+                        "bravo", os.path.join(runtime, "bravo")}:
+                    os.rename(runtime, archive)
+                    os.rename(replacement, runtime)
+                    swapped = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(
+                    SIARELEASE, "os",
+                    _OsShim(open=swap_before_second_member)), \
+                    self.assertRaisesRegex(
+                        ValueError, "runtime tree changed"):
+                SIARELEASE.authorize_fenced_runtime(
+                    journal, tombstone, receipt, runtime)
+            self.assertTrue(swapped)
+
+    def test_a_partial_tree_classifies_by_its_marker_not_completeness(self):
+        # Marker presence selects the newest applicable contract even when a
+        # required older member is absent.  Digesting must refuse that partial
+        # newer tree; it must not fall back to an older receipt.
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "bin")
             _plant_runtime_tree(runtime, MODERN_V4_RUNTIME_NAMES)
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site, rung="v4"):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v4\0")
-                    self.assertEqual(names, MODERN_V4_RUNTIME_NAMES)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v4\0")
+            self.assertEqual(names, MODERN_V4_RUNTIME_NAMES)
+
             _write(os.path.join(runtime, "siagraph.py"), "siagraph.py\n",
                    0o644)
             for name in ("siacapsule.py", "siarestoreadmit.py",
                          "sia-continuity-worker", "siasenses.py"):
                 os.unlink(os.path.join(runtime, name))
-            for site in RUNTIME_RUNG_SITES:
-                with self.subTest(site=site, rung="partial-v5"):
-                    salt, names = _runtime_rung_classification(*site,
-                                                               root=runtime)
-                    self.assertEqual(salt, b"sia-runtime-v5\0")
-                    self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
-                    self.assertIn("siacapsule.py", names)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v5\0")
+            self.assertEqual(names, MODERN_V5_RUNTIME_NAMES)
+            self.assertIn("siacapsule.py", names)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
+
+            _write(
+                os.path.join(runtime, "siathought.py"), "siathought.py\n",
+                0o644)
+            salt, names = SIARELEASE.runtime_rung(runtime)
+            self.assertEqual(salt, b"sia-runtime-v6\0")
+            self.assertEqual(names, MODERN_V6_RUNTIME_NAMES)
+            self.assertIn("siagraph.py", names)
+            self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
+
+            _plant_runtime_tree(runtime, MODERN_V7_RUNTIME_NAMES)
+            for selector in (
+                    "siasourceack.py", "siasourceeffects.py",
+                    "siasourceengine.py", "siasourcegit.py"):
+                with self.subTest(v8_selector=selector):
+                    _write(os.path.join(runtime, selector), selector + "\n",
+                           0o644)
+                    salt, names = SIARELEASE.runtime_rung(runtime)
+                    self.assertEqual(salt, b"sia-runtime-v8\0")
+                    self.assertEqual(names, MODERN_V8_RUNTIME_NAMES)
+                    self.assertRaises(
+                        FileNotFoundError, _runtime_digest, runtime)
+                    os.unlink(os.path.join(runtime, selector))
+
+            _plant_runtime_tree(runtime, MODERN_V8_RUNTIME_NAMES)
+            for selector in (
+                    "siacontrollerepoch.py",
+                    "siacontrollersourcerunner.py"):
+                with self.subTest(v9_selector=selector):
+                    _write(os.path.join(runtime, selector), selector + "\n",
+                           0o644)
+                    salt, names = SIARELEASE.runtime_rung(runtime)
+                    self.assertEqual(salt, b"sia-runtime-v9\0")
+                    self.assertEqual(names, MODERN_V9_RUNTIME_NAMES)
+                    self.assertRaises(
+                        FileNotFoundError, _runtime_digest, runtime)
+                    os.unlink(os.path.join(runtime, selector))
 
     def test_runtime_v5_digest_migrates_without_replacing_valid_v4_tree(self):
         installer = _read("install.sh")
@@ -1474,7 +2319,7 @@ preflight_runtime
             os.unlink(graph)
             self.assertEqual(preflight().returncode, 0)
 
-    def test_uninstaller_fence_requires_complete_v5_runtime(self):
+    def test_uninstaller_fence_requires_complete_v6_runtime(self):
         function = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
         with tempfile.TemporaryDirectory() as root:
             runtime = os.path.join(root, "runtime")
@@ -1482,9 +2327,9 @@ preflight_runtime
             journal = os.path.join(managed, "launch-fence.json")
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
-            graph = os.path.join(runtime, "siagraph.py")
+            marker = os.path.join(runtime, "siathought.py")
             member = os.path.join(runtime, "siarestoreadmit.py")
-            _plant_runtime_tree(runtime, MODERN_V5_RUNTIME_NAMES)
+            _plant_runtime_tree(runtime, MODERN_V6_RUNTIME_NAMES)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
 
             def publish_fence():
@@ -1530,34 +2375,33 @@ fenced_runtime_authorized
             publish_fence()
             self.assertEqual(authorize().returncode, 0)
 
-            # Dropping the rung marker is a rollback, not a shorter v5 tree.
-            os.unlink(graph)
+            # Dropping the rung marker is a rollback, not a shorter v6 tree.
+            os.unlink(marker)
             self.assertNotEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             self.assertEqual(authorize().returncode, 0)
 
-            # A fence cut from the complete v4 tree never authorizes the v5
+            # A fence cut from the complete v5 tree never authorizes the v6
             # tree that grew out of it.
-            os.unlink(graph)
+            os.unlink(marker)
             publish_fence()
             self.assertEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             self.assertNotEqual(authorize().returncode, 0)
 
-            # A partial v5 tree authorizes against neither rung's fence.
+            # A partial v6 tree authorizes against neither rung's fence.
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
-            _write(graph, "siagraph.py\n", 0o644)
+            _write(marker, "siathought.py\n", 0o644)
             _write(member, "siarestoreadmit.py\n", 0o644)
             publish_fence()
             os.unlink(member)
             self.assertNotEqual(authorize().returncode, 0)
 
-    def test_runtime_digest_sites_agree_byte_for_byte_across_v4_v5(self):
-        # The installer, both uninstaller copies and the test mirror must
-        # measure the same tree identically and refuse identically; a
-        # disagreement means one lane's receipt silently stops authorizing
-        # another lane.
+    def test_runtime_digest_consumers_agree_across_v4_through_v9(self):
+        # Both normal shell consumers delegate to the authority and the
+        # uninstaller's fenced path must accept exactly the same receipt
+        # bytes, including the current top rung.
         installer_digest = _runtime_tree_digest_shell(_read("install.sh"))
         uninstaller_digest = _runtime_tree_digest_shell(_read("uninstall.sh"))
         fence = _uninstaller_fenced_runtime_shell(_read("uninstall.sh"))
@@ -1568,6 +2412,7 @@ fenced_runtime_authorized
             receipt = os.path.join(managed, "runtime")
             tombstone = os.path.join(root, "sia.lifecycle-removed")
             graph = os.path.join(runtime, "siagraph.py")
+            thought = os.path.join(runtime, "siathought.py")
             member = os.path.join(runtime, "siarestoreadmit.py")
             _plant_runtime_tree(runtime, MODERN_V4_RUNTIME_NAMES)
             _write(tombstone, "removed-by=khephri.sia\n", 0o600)
@@ -1616,9 +2461,17 @@ fenced_runtime_authorized
                     check=False).returncode == 0
 
             measured = {}
-            for rung in ("v4", "v5"):
+            for rung in ("v4", "v5", "v6", "v7", "v8", "v9"):
                 if rung == "v5":
                     _write(graph, "siagraph.py\n", 0o644)
+                elif rung == "v6":
+                    _write(thought, "siathought.py\n", 0o644)
+                elif rung == "v7":
+                    _plant_runtime_tree(runtime, MODERN_V7_RUNTIME_NAMES)
+                elif rung == "v8":
+                    _plant_runtime_tree(runtime, MODERN_V8_RUNTIME_NAMES)
+                elif rung == "v9":
+                    _plant_runtime_tree(runtime, MODERN_V9_RUNTIME_NAMES)
                 mirror = _runtime_digest(runtime)
                 measured[rung] = mirror
                 for site, result in (
@@ -1630,21 +2483,26 @@ fenced_runtime_authorized
                 with self.subTest(rung=rung, site="uninstall.sh fence"):
                     self.assertTrue(fence_admits(mirror))
             self.assertNotEqual(measured["v4"], measured["v5"])
-            self.assertFalse(fence_admits(measured["v4"]))
+            self.assertNotEqual(measured["v5"], measured["v6"])
+            self.assertNotEqual(measured["v6"], measured["v7"])
+            self.assertNotEqual(measured["v7"], measured["v8"])
+            self.assertNotEqual(measured["v8"], measured["v9"])
+            for historical in ("v4", "v5", "v6", "v7", "v8"):
+                self.assertFalse(fence_admits(measured[historical]))
 
-            # Every site refuses the partial v5 tree, and none of them falls
-            # back to a digest either stored receipt would accept.
+            # Every site refuses the partial v9 tree, and none of them falls
+            # back to a digest any stored receipt would accept.
             os.unlink(member)
             for site, result in (
                     ("install.sh", shell_digest(installer_digest)),
                     ("uninstall.sh", shell_digest(uninstaller_digest))):
                 with self.subTest(site=site):
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertNotIn(measured["v4"], result.stdout)
-                    self.assertNotIn(measured["v5"], result.stdout)
+                    for prior in measured.values():
+                        self.assertNotIn(prior, result.stdout)
             self.assertRaises(FileNotFoundError, _runtime_digest, runtime)
-            self.assertFalse(fence_admits(measured["v4"]))
-            self.assertFalse(fence_admits(measured["v5"]))
+            for prior in measured.values():
+                self.assertFalse(fence_admits(prior))
 
     def test_fenced_runtime_authorization_requires_exact_journal_and_tombstone(
             self):
@@ -2015,7 +2873,7 @@ retain_unowned_cli_before_fence
                 process.communicate(timeout=2)
 
             _write(target, _read("bin/sia"), 0o644)
-            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+            for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
@@ -2094,7 +2952,8 @@ retain_unowned_cli_before_fence
             root = os.path.join(home, ".local/state/sia-continuity")
             requests = os.path.join(root, "requests")
             os.makedirs(requests, mode=0o700)
-            request_path = os.path.join(requests, "abc123.json")
+            request_id = "a" * 32
+            request_path = os.path.join(requests, request_id + ".json")
             repository_binding = {
                 "repository": "rest:https://backup.invalid/sia",
                 "environment_file": "",
@@ -2103,23 +2962,51 @@ retain_unowned_cli_before_fence
                 "target_public_key": "d" * 64,
                 "restored_public_key": "e" * 64,
             }
+            core_binding = {
+                "prepared_id": "d" * 32,
+                "snapshot_id": "9" * 64,
+                "capsule_id": "a" * 32,
+                "manifest_sha256": "b" * 64,
+                **repository_binding,
+            }
+            confirmation, adoption, _adoption_debt = \
+                _restore_adoption_fields(core_binding)
             request = {
                 "schema": launcher._REQUEST_SCHEMA,
-                "id": "abc123",
+                "id": request_id,
                 "created_at": "2026-09-01T00:00:00Z",
                 "action": "apply",
                 "args": {
-                    "prepared_id": "def456",
-                    "snapshot_id": "snapshot",
-                    "capsule_id": "a" * 32,
-                    "manifest_sha256": "b" * 64,
-                    **repository_binding,
+                    **core_binding,
+                    "confirmation": confirmation,
+                    "identity_key_file": None,
+                    "adoption": adoption,
                 },
             }
             _write(request_path, json.dumps(request) + "\n", 0o600)
             binding = launcher._request_binding(request_path, root)
             for key, value in repository_binding.items():
                 self.assertEqual(binding[key], value)
+
+            for field, replacement in (
+                    ("created_at", "2026-09-01T00:00:00.0Z"),
+                    ("configured_at", "not-a-time")):
+                changed_request = {
+                    **request,
+                    "args": dict(request["args"]),
+                }
+                if field == "created_at":
+                    changed_request[field] = replacement
+                else:
+                    changed_request["args"][field] = replacement
+                _write(
+                    request_path, json.dumps(changed_request) + "\n",
+                    0o600)
+                with self.subTest(request_timestamp=field), \
+                        self.assertRaisesRegex(
+                            RuntimeError, "request binding is invalid"):
+                    launcher._request_binding(request_path, root)
+            _write(request_path, json.dumps(request) + "\n", 0o600)
 
             runtime_info = os.lstat(launcher_path)
             debt = {
@@ -2135,6 +3022,16 @@ retain_unowned_cli_before_fence
             }
             launcher._write_supervisor(root, debt)
             self.assertEqual(launcher._supervisor_debt(root), debt)
+            _write(
+                launcher._supervisor_path(root),
+                json.dumps({**debt, "configured_at": "not-a-time"})
+                + "\n", 0o600)
+            with self.assertRaisesRegex(
+                    RuntimeError, "supervisor debt is malformed"):
+                launcher._supervisor_debt(root)
+            _write(
+                launcher._supervisor_path(root),
+                json.dumps(debt) + "\n", 0o600)
             changed = {**debt, "repository_id": "f" * 64}
             with self.assertRaisesRegex(
                     RuntimeError, "supervisor debt binding changed"):
@@ -2149,9 +3046,20 @@ retain_unowned_cli_before_fence
                 "capsule_id": "",
                 "manifest_sha256": "",
                 **{key: "" for key in repository_binding},
+                **{key: "" for key in {
+                    "identity_key_file", "request_device", "request_inode",
+                    "accepted_ledger_head", "confirmation_sha256",
+                    "adoption_order", "adoption_record_id", "target"}},
             }
             launcher._write_supervisor(root, recovery)
             self.assertEqual(launcher._supervisor_debt(root), recovery)
+            _write(
+                launcher._supervisor_path(root),
+                json.dumps({**recovery, "request_id": "a"}) + "\n",
+                0o600)
+            with self.assertRaisesRegex(
+                    RuntimeError, "supervisor debt is malformed"):
+                launcher._supervisor_debt(root)
 
     def test_brainstem_restart_admits_current_restore_binding_schema(self):
         library = _load(
@@ -2167,7 +3075,7 @@ retain_unowned_cli_before_fence
             os.makedirs(requests, mode=0o700)
             runtime_path = os.path.join(runtime, "sia-cli")
             _write(runtime_path, "runtime\n", 0o600)
-            request_id = "abc123"
+            request_id = "a" * 32
             request_path = os.path.join(requests, request_id + ".json")
             binding = {
                 "prepared_id": "d" * 32,
@@ -2181,6 +3089,8 @@ retain_unowned_cli_before_fence
                 "target_public_key": "d" * 64,
                 "restored_public_key": "e" * 64,
             }
+            confirmation, adoption, adoption_debt = \
+                _restore_adoption_fields(binding)
             request = {
                 "schema": "sia-continuity-request-v1",
                 "id": request_id,
@@ -2188,17 +3098,13 @@ retain_unowned_cli_before_fence
                 "action": "apply",
                 "args": {
                     **binding,
-                    "confirmation": {
-                        "schema_version": 1,
-                        "phrase": "RESTORE",
-                        "snapshot_id": binding["snapshot_id"],
-                        "ledger_head": "0" * 64,
-                        "corpus_receipt_re_adopt": True,
-                    },
+                    "confirmation": confirmation,
                     "identity_key_file": None,
+                    "adoption": adoption,
                 },
             }
             _write(request_path, json.dumps(request) + "\n", 0o600)
+            request_info = os.lstat(request_path)
             info = os.lstat(runtime_path)
             debt = {
                 "schema": "sia-restore-supervisor-v1",
@@ -2212,6 +3118,9 @@ retain_unowned_cli_before_fence
                 "runtime_path": runtime_path,
                 "runtime_device": str(info.st_dev),
                 "runtime_inode": str(info.st_ino),
+                "request_device": str(request_info.st_dev),
+                "request_inode": str(request_info.st_ino),
+                **adoption_debt,
             }
             supervisor = os.path.join(root, "restore-supervisor.json")
             _write(supervisor, json.dumps(debt) + "\n", 0o600)
@@ -2226,11 +3135,118 @@ retain_unowned_cli_before_fence
                         library, "RESTORE_SUPERVISOR_PATH", supervisor):
                 self.assertTrue(
                     admission._brainstem_restore_restart_admitted(library))
+                short_id = {**debt, "request_id": "a"}
+                _write(
+                    supervisor,
+                    json.dumps(short_id) + "\n", 0o600)
+                with self.assertRaisesRegex(
+                        RuntimeError, "restart is not admissible"):
+                    admission._brainstem_restore_restart_admitted(library)
+                _write(supervisor, json.dumps(debt) + "\n", 0o600)
                 request["args"]["repository_id"] = "9" * 64
                 _write(request_path, json.dumps(request) + "\n", 0o600)
                 with self.assertRaisesRegex(
                         RuntimeError, "request binding changed"):
                     admission._brainstem_restore_restart_admitted(library)
+                request["args"]["repository_id"] = binding["repository_id"]
+                request["args"]["confirmation"]["unexpected"] = True
+                _write(request_path, json.dumps(request) + "\n", 0o600)
+                with self.assertRaisesRegex(
+                        RuntimeError, "request binding changed"):
+                    admission._brainstem_restore_restart_admitted(library)
+                del request["args"]["confirmation"]["unexpected"]
+                _write(request_path, json.dumps(request) + "\n", 0o600)
+                self.assertTrue(
+                    admission._brainstem_restore_restart_admitted(library))
+
+                replacement = request_path + ".replacement"
+                _write(replacement, json.dumps(request) + "\n", 0o600)
+                os.replace(replacement, request_path)
+                with self.assertRaisesRegex(
+                        RuntimeError, "request binding changed"):
+                    admission._brainstem_restore_restart_admitted(library)
+
+                os.unlink(request_path)
+                status_path = os.path.join(root, "status.json")
+                status = {
+                    "schema_version": 2,
+                    "state": "recovery-only",
+                    "detail": "Restore verified; repository copy unclaimed.",
+                    "repository_display": "External recovery repository",
+                    "latest": None,
+                    "prepared": None,
+                    "operation": {
+                        "request_id": request_id,
+                        "kind": "restore-apply",
+                        "prepared_id": binding["prepared_id"],
+                        "phase": "verified",
+                        "ready": True,
+                        "sia_ledger_verified": True,
+                    },
+                    "updated_at": "2026-09-01T00:00:00Z",
+                }
+                _write(status_path, json.dumps(status) + "\n", 0o600)
+                self.assertTrue(
+                    admission._brainstem_restore_restart_admitted(library))
+                _write(
+                    status_path,
+                    json.dumps({**status, "unexpected": True}) + "\n",
+                    0o600)
+                with self.assertRaisesRegex(
+                        RuntimeError, "replay is uncorrelated"):
+                    admission._brainstem_restore_restart_admitted(library)
+
+    def test_public_recovery_emits_an_admissible_correlation_identifier(self):
+        library = _load(
+            "sialib_public_recovery_admission",
+            os.path.join(REPO, "bin/sialib.py"))
+        admission = _load(
+            "siarestoreadmit_public_recovery",
+            os.path.join(REPO, "bin/siarestoreadmit.py"))
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            target = os.path.join(
+                home, ".local", "share", "sia", "bin", "sia-cli")
+            _generate_stable_launcher(launcher_path)
+            _write(target, "# runtime target\n", 0o600)
+            launcher = _load("sia_public_recovery_id", launcher_path)
+            state_parent = os.path.join(home, ".local", "state")
+            root = os.path.join(state_parent, "sia-continuity")
+            os.makedirs(root, mode=0o700)
+            launcher._write_marker(root)
+
+            with mock.patch.object(
+                    launcher, "_gate_brainstem", return_value=True), \
+                    mock.patch.object(
+                        launcher.subprocess, "run",
+                        return_value=subprocess.CompletedProcess([], 1)), \
+                    mock.patch.object(sys, "argv", [
+                        launcher_path, launcher._RECOVER_COMMAND]):
+                stopped = launcher._restore_main(
+                    home, target,
+                    os.path.join(state_parent, "sia.lifecycle-removed"),
+                    state_parent, [launcher._RECOVER_COMMAND],
+                    public_recovery=True)
+            self.assertEqual(stopped, 1)
+            debt = launcher._supervisor_debt(root)
+            self.assertRegex(debt["request_id"], r"^[0-9a-f]{32}$")
+
+            debt["phase"] = "restart-starting"
+            debt["child_code"] = "0"
+            launcher._write_supervisor(root, debt)
+            launcher._remove_marker(root)
+            with mock.patch.object(library, "BIN", os.path.dirname(target)), \
+                    mock.patch.object(
+                        library, "RESTORE_BARRIER_PATH",
+                        os.path.join(root, "restore-in-progress.json")), \
+                    mock.patch.object(
+                        library, "RESTORE_MASK_PATH",
+                        os.path.join(root, "restore-runtime-mask")), \
+                    mock.patch.object(
+                        library, "RESTORE_SUPERVISOR_PATH",
+                        launcher._supervisor_path(root)):
+                self.assertTrue(
+                    admission._brainstem_restore_restart_admitted(library))
 
     def test_restore_supervisor_refuses_foreign_effective_unit_before_stop(self):
         with tempfile.TemporaryDirectory() as home:
@@ -2280,6 +3296,27 @@ retain_unowned_cli_before_fence
                         "managed brainstem unit receipt does not match"):
                 launcher._service_state(home, "")
             systemctl.assert_not_called()
+
+    def test_restore_supervisor_refuses_cached_brainstem_generation(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            _generate_stable_launcher(launcher_path)
+            launcher = _load("sia_restore_cached_unit", launcher_path)
+            unit = _managed_brainstem_install(home)
+            observed = []
+
+            def systemctl(arguments, _label, *, capture=False):
+                observed.append(list(arguments))
+                return subprocess.CompletedProcess(
+                    arguments, 0,
+                    stdout=_brainstem_show(unit, daemon_reload="yes"))
+
+            with mock.patch.object(
+                    launcher, "_systemctl", side_effect=systemctl), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "daemon reload is pending"):
+                launcher._service_state(home, "")
+            self.assertIn("--property=NeedDaemonReload", observed[0])
 
     def test_restore_supervisor_drop_in_gate_and_operator_mask_controls(self):
         with tempfile.TemporaryDirectory() as home:
@@ -2469,6 +3506,245 @@ retain_unowned_cli_before_fence
             self.assertNotIn(
                 ["_continuity-supervisor-reconcile"], finalizer_calls)
 
+    def test_restore_discard_failure_regates_started_resident_without_attestation(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            target = os.path.join(
+                home, ".local", "share", "sia", "bin", "sia-cli")
+            _generate_stable_launcher(launcher_path)
+            _write(target, "# runtime target\n", 0o600)
+            launcher = _load(
+                "sia_restore_discard_failure_regate", launcher_path)
+            state_parent = os.path.join(home, ".local", "state")
+            root = os.path.join(state_parent, "sia-continuity")
+            os.makedirs(root, mode=0o700)
+            request_path = os.path.join(root, "requests", "request.json")
+            target_info = os.lstat(target)
+            persisted = {
+                "schema": launcher._SUPERVISOR_SCHEMA,
+                "kind": "restore-apply",
+                "request_path": request_path,
+                "request_id": "a" * 32,
+                "prepared_id": "b" * 32,
+                "snapshot_id": "c" * 64,
+                "capsule_id": "d" * 32,
+                "manifest_sha256": "e" * 64,
+                "phase": "accepted",
+                "child_code": "pending",
+                "restart_pid": "pending",
+                "runtime_path": target,
+                "runtime_device": str(target_info.st_dev),
+                "runtime_inode": str(target_info.st_ino),
+            }
+            binding = {
+                key: persisted[key] for key in {
+                    "request_path", "request_id", "prepared_id",
+                    "snapshot_id", "capsule_id", "manifest_sha256"}
+            }
+            gate_calls = []
+            finalizer_calls = []
+            service_states = [
+                {
+                    "LoadState": "loaded", "UnitFileState": "enabled",
+                    "ActiveState": "inactive", "MainPID": "0",
+                },
+                {
+                    "LoadState": "loaded", "UnitFileState": "enabled",
+                    "ActiveState": "inactive", "MainPID": "0",
+                },
+                {
+                    "LoadState": "loaded", "UnitFileState": "enabled",
+                    "ActiveState": "active", "MainPID": "123",
+                },
+            ]
+
+            def read_debt(_root):
+                return dict(persisted)
+
+            def write_debt(_root, value):
+                persisted.clear()
+                persisted.update(value)
+
+            def gate(*_args, **kwargs):
+                gate_calls.append(kwargs.get("supervisor_owned", False))
+                return True
+
+            def barrier_file(action):
+                if action == "state":
+                    return "active"
+                if action == "retire":
+                    return "retired"
+                if action == "discard":
+                    return "retired"
+                raise AssertionError(f"unexpected barrier action: {action}")
+
+            def service_state(*_args, **_kwargs):
+                return service_states.pop(0)
+
+            def post(_stable, arguments, _admin_fd):
+                finalizer_calls.append(arguments)
+                return True
+
+            systemctl = mock.Mock()
+            error = io.StringIO()
+            with mock.patch.object(
+                    launcher, "_supervisor_debt", side_effect=read_debt), \
+                    mock.patch.object(
+                        launcher, "_write_supervisor",
+                        side_effect=write_debt), \
+                    mock.patch.object(
+                        launcher, "_request_binding",
+                        return_value=binding), \
+                    mock.patch.object(
+                        launcher, "_marker_present", return_value=False), \
+                    mock.patch.object(
+                        launcher, "_gate_brainstem", side_effect=gate), \
+                    mock.patch.object(launcher, "_remove_marker"), \
+                    mock.patch.object(
+                        launcher, "_barrier_file", side_effect=barrier_file), \
+                    mock.patch.object(
+                        launcher, "_service_state", side_effect=service_state), \
+                    mock.patch.object(
+                        launcher, "_systemctl", systemctl), \
+                    mock.patch.object(
+                        launcher, "_post_supervisor", side_effect=post), \
+                    mock.patch.object(
+                        launcher.subprocess, "run",
+                        return_value=subprocess.CompletedProcess([], 0)), \
+                    mock.patch.object(
+                        sys, "argv", [launcher_path,
+                                      launcher._RESTORE_COMMAND,
+                                      request_path]), \
+                    mock.patch.object(sys, "stderr", error), \
+                    self.assertRaises(SystemExit):
+                launcher._restore_main(
+                    home, target,
+                    os.path.join(state_parent, "sia.lifecycle-removed"),
+                    state_parent,
+                    [launcher._RESTORE_COMMAND, request_path],
+                    apply_request=request_path)
+
+            self.assertEqual(service_states, [])
+            self.assertIn(
+                mock.call(["start", launcher._SERVICE],
+                          "restart the SIA brainstem"),
+                systemctl.call_args_list)
+            self.assertIn(
+                "retired SIA restore runtime barrier remains",
+                error.getvalue())
+            self.assertEqual(gate_calls, [False, True])
+            self.assertEqual(persisted["phase"], "restart-failed")
+            self.assertEqual(persisted["restart_pid"], "pending")
+            self.assertIn(
+                ["_continuity-restore-restart-failed", request_path],
+                finalizer_calls)
+            self.assertNotIn(
+                ["_continuity-supervisor-reconcile"], finalizer_calls)
+
+    def test_restore_finalizer_failure_regates_after_visible_debt_unlink(self):
+        with tempfile.TemporaryDirectory() as home:
+            launcher_path = os.path.join(home, ".local", "bin", "sia")
+            target = os.path.join(
+                home, ".local", "share", "sia", "bin", "sia-cli")
+            _generate_stable_launcher(launcher_path)
+            _write(target, "# runtime target\n", 0o600)
+            launcher = _load(
+                "sia_restore_finalizer_regate", launcher_path)
+            state_parent = os.path.join(home, ".local", "state")
+            root = os.path.join(state_parent, "sia-continuity")
+            os.makedirs(root, mode=0o700)
+            request_path = os.path.join(root, "requests", "request.json")
+            target_info = os.lstat(target)
+            persisted = {
+                "schema": launcher._SUPERVISOR_SCHEMA,
+                "kind": "restore-apply",
+                "request_path": request_path,
+                "request_id": "a" * 32,
+                "prepared_id": "b" * 32,
+                "snapshot_id": "c" * 64,
+                "capsule_id": "d" * 32,
+                "manifest_sha256": "e" * 64,
+                "phase": "accepted",
+                "child_code": "pending",
+                "restart_pid": "pending",
+                "runtime_path": target,
+                "runtime_device": str(target_info.st_dev),
+                "runtime_inode": str(target_info.st_ino),
+            }
+            binding = {
+                key: persisted[key] for key in {
+                    "request_path", "request_id", "prepared_id",
+                    "snapshot_id", "capsule_id", "manifest_sha256"}
+            }
+            debt_visible = True
+            gate_calls = []
+            gate_statuses = []
+            visible_status = "restoring"
+
+            def read_debt(_root):
+                return dict(persisted) if debt_visible else None
+
+            def write_debt(_root, value):
+                nonlocal debt_visible
+                debt_visible = True
+                persisted.clear()
+                persisted.update(value)
+
+            def gate(*_args, **_kwargs):
+                gate_calls.append(True)
+                gate_statuses.append(visible_status)
+                return True
+
+            def post(_stable, arguments, _admin_fd):
+                nonlocal debt_visible, visible_status
+                if arguments == ["_continuity-supervisor-reconcile"]:
+                    debt_visible = False
+                    visible_status = "verified"
+                    return False
+                if arguments == ["_continuity-restore-restart-failed",
+                                 request_path]:
+                    visible_status = "blocked"
+                    return True
+                return True
+
+            with mock.patch.object(
+                    launcher, "_supervisor_debt", side_effect=read_debt), \
+                    mock.patch.object(
+                        launcher, "_write_supervisor",
+                        side_effect=write_debt), \
+                    mock.patch.object(
+                        launcher, "_request_binding",
+                        return_value=binding), \
+                    mock.patch.object(
+                        launcher, "_marker_present", return_value=False), \
+                    mock.patch.object(
+                        launcher, "_gate_brainstem", side_effect=gate), \
+                    mock.patch.object(launcher, "_remove_marker"), \
+                    mock.patch.object(
+                        launcher, "_retire_gate",
+                        return_value=(True, "123")), \
+                    mock.patch.object(
+                        launcher, "_post_supervisor", side_effect=post), \
+                    mock.patch.object(
+                        launcher.subprocess, "run",
+                        return_value=subprocess.CompletedProcess([], 0)), \
+                    mock.patch.object(
+                        sys, "argv", [launcher_path,
+                                      launcher._RESTORE_COMMAND,
+                                      request_path]), \
+                    self.assertRaises(SystemExit):
+                launcher._restore_main(
+                    home, target,
+                    os.path.join(state_parent, "sia.lifecycle-removed"),
+                    state_parent,
+                    [launcher._RESTORE_COMMAND, request_path],
+                    apply_request=request_path)
+            self.assertEqual(len(gate_calls), 2)
+            self.assertEqual(gate_statuses, ["restoring", "blocked"])
+            self.assertTrue(debt_visible)
+            self.assertEqual(persisted["phase"], "restart-failed")
+            self.assertEqual(visible_status, "blocked")
+
     def test_restore_supervisor_never_claims_an_operator_mask(self):
         with tempfile.TemporaryDirectory() as home:
             launcher_path = os.path.join(home, ".local", "bin", "sia")
@@ -2570,7 +3846,7 @@ retain_unowned_cli_before_fence
     def test_new_sialib_rejects_loaded_old_installed_launchers(self):
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
-            for name in ("sialib.py", "siagraph.py", "siasenses.py",
+            for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
@@ -2602,14 +3878,44 @@ retain_unowned_cli_before_fence
     # not a smaller module.  Pin the exact set; the next extraction adds its
     # module here and inherits every façade guard below.
     FACADE_CHILD_EXPORTS = {
+        "sialivepublication": (
+            "_live_authority_memo",
+            "_live_bytes",
+            "_live_controller_source_pending",
+            "_live_files",
+            "_live_final_memo",
+            "_live_generation",
+            "_live_graph_status",
+            "_live_memo_bytes",
+            "_live_memo_sha",
+            "_live_own",
+            "_live_parent_generation",
+            "_live_prepare_replay",
+            "_live_receipt",
+            "_live_receipt_shape",
+            "_live_replay_candidate",
+            "_live_same",
+            "_live_sha",
+            "_live_source_effects_paid_corpus_debt",
+            "_live_status_image",
+            "_live_upstream_refusal",
+            "_publish_staged_live_generation",
+            "_read_committed_live_generation",
+            "_read_historical_live_generation",
+            "_read_live_generation_against_graph",
+            "_recover_pending_live_generation",
+            "_stage_live_generation",
+        ),
         "siagraph": (
             "_admit_graph_candidate", "_advance_graph_projection",
             "_append_graph_failure", "_canonical_graph_projection_state",
             "_export_graph_publication", "_fresh_graph_projection_state",
             "_graph_display_nodes", "_graph_projection_debt",
             "_graph_projection_pages", "_graph_projection_state_path",
+            "_graph_snapshot_body_counts",
             "_infer_domain_link_type", "_iter_corpus_link_edges",
             "_load_graph_projection_state", "_mark_graph_projection_dirty",
+            "_recoverable_graph_snapshot",
             "_read_graph_corpus_page", "_read_owned_stable_lines",
             "_record_graph_failure", "_relation_context",
             "_save_graph_projection_state", "_sia_schema_pack_path",
@@ -2617,26 +3923,143 @@ retain_unowned_cli_before_fence
             "_yaml_scalar", "corpus_edges", "export_graph",
             "load_domain_edge_spec",
         ),
+        "siathought": (
+            "_parse_sia_counts", "_event_shard_slug", "_read_event_page",
+            "_bounded_event_directory_snapshot", "_event_page_state",
+            "_event_day_shards", "_event_line", "_render_event_shard",
+            "_event_shard_trial", "_event_source_parts", "_event_payload_digest",
+            "_event_index_relative", "_canonical_event_index_entry",
+            "_event_index_encoded", "_read_event_index_entry",
+            "_preflight_event_index_entries", "_publish_event_index_entries",
+            "_missing_event_index_expectations", "_other_event_occurrences",
+            "_preflight_event_lookup", "_preflight_event_path_plan",
+            "_plan_event_day_update", "update_day_page",
+            "_acknowledge_consolidation_claims",
+            "_advance_consolidation_scan",
+            "_bind_consolidation_ledger",
+            "_bounded_event_directory_entries",
+            "_canonical_consolidation_day",
+            "_canonical_consolidation_scan",
+            "_canonical_epoch_event_ids",
+            "_canonical_epoch_source_manifest",
+            "_claimed_consolidation_paths",
+            "_clear_consolidation_marker",
+            "_consolidation_scan_debt",
+            "_consolidation_scan_path",
+            "_ensure_structured_consolidation_marker",
+            "_epoch_exemplars", "_epoch_json_field", "_epoch_slug_for_day",
+            "_event_index_entries_for_sources",
+            "_fresh_consolidation_scan", "_load_consolidation_scan",
+            "_mark_consolidation_applied", "_mark_consolidation_pending",
+            "_merge_epoch_event_ids", "_merge_epoch_source_manifest",
+            "_pending_consolidation_marker",
+            "_prepare_consolidation_claims", "_read_epoch_state",
+            "_recover_pending_consolidation", "_render_bounded_epoch",
+            "_render_epoch_source_manifest", "_save_consolidation_scan",
+            "_settle_consolidation_ledger", "_write_bounded_epoch",
+            "_write_epoch_source_manifest", "consolidate_corpus",
+            "_acknowledge_thought_recovery_claim",
+            "_apply_thought_recovery_claim",
+            "_archive_legacy_reset_path",
+            "_assert_legacy_thought_directory_generation",
+            "_canonical_thought_page_record",
+            "_clear_legacy_thought_mind_replay_locked",
+            "_clear_native_thought_mind_replay_locked",
+            "_clear_thought_mind_replay_scope_locked",
+            "_commit_thought_legacy_claim",
+            "_current_legacy_thought_directory_generation",
+            "_decode_exact_thought_page",
+            "_ensure_private_recovery_directory",
+            "_execute_legacy_thought_reset_locked",
+            "_finalize_native_thought_mind_replay",
+            "_index_legacy_thought_batch_locked",
+            "_legacy_thought_claim_locked",
+            "_list_thought_recovery_records_locked",
+            "_load_thought_legacy_scan",
+            "_mark_thought_mind_replay_applied_locked",
+            "_materialize_thought_recovery_page",
+            "_pending_external_thought_queue_ids",
+            "_persist_thought", "_prepare_thought_recovery_claim",
+            "_queue_thought_recovery", "_queued_thought_slug",
+            "_read_legacy_thought_directory_page",
+            "_read_thought_legacy_index_entry",
+            "_read_thought_page_text",
+            "_read_thought_recovery_claim",
+            "_read_thought_recovery_record",
+            "_remove_empty_thought_mind_replay_artifacts_locked",
+            "_save_thought_legacy_scan",
+            "_schedule_legacy_thought_reset_locked",
+            "_sync_directory", "_thought_directory_generation",
+            "_thought_legacy_catalog", "_thought_legacy_catalog_batch",
+            "_thought_legacy_catalog_path",
+            "_thought_legacy_index_bytes",
+            "_thought_legacy_index_dir",
+            "_thought_legacy_index_entry",
+            "_thought_legacy_scan_path",
+            "_thought_mind_replay_catalog", "_thought_mind_replay_intent",
+            "_thought_mind_replay_path",
+            "_thought_mind_replay_records", "_thought_page_parts",
+            "_thought_queue_binding",
+            "_thought_recovery_claim_basis",
+            "_thought_recovery_claim_bytes",
+            "_thought_recovery_claim_document",
+            "_thought_recovery_claim_path",
+            "_thought_recovery_debt", "_thought_recovery_dir",
+            "_thought_recovery_lock_path",
+            "_thought_recovery_receipt", "_thought_recovery_record",
+            "_thought_recovery_record_bytes",
+            "_upsert_thought_legacy_catalog",
+            "_validated_thought_directory_generation",
+            "_validated_thought_legacy_scan",
+            "_validated_thought_recovery_receipt",
+            "_write_thought_legacy_index",
+            "_write_thought_recovery_claim_locked",
+            "reconcile_thought_pages", "write_thought",
+        ),
         "siasenses": (
+            "_agent_scan_candidate", "_agent_source_capture",
+            "_agent_source_capture_matches", "_agent_source_capture_valid",
+            "_agent_transition_events", "_agent_usage_row_valid",
+            "_normalized_agent_usage_row", "_normalized_legacy_agent_key",
             "_attest_generation", "_attest_rows",
             "_await_process_exit_unreaped", "_configured_skill_roots",
             "_custom_json_record_refusal", "_custom_match_literals",
+            "_discard_skill_root_candidate",
             "_journal_abort_process", "_journal_catalog_cursor",
             "_journal_create_tmp", "_journal_file_identity", "_journal_msg",
             "_journal_refusal", "_journal_require_exact_cursor",
             "_journal_seed_cursor", "_journal_unlink_tmp", "_journalctl",
             "_journalctl_projected_records", "_journalctl_records",
-            "_list_skill_entries", "_obsidian_commit_record",
+            "_migrated_legacy_skill_state",
+            "_legacy_notify_cursor_valid", "_list_skill_entries",
+            "_new_skill_scan", "_notification_name_valid",
+            "_notification_source_order", "_notify_baseline",
+            "_notify_baseline_from_scan", "_notify_baseline_refusal_event",
+            "_notify_filter_add", "_notify_filter_contains",
+            "_notify_generation", "_notify_opaque_baseline",
+            "_notify_replay_authority", "_notify_scan_candidate",
+            "_notify_scan_page_authority",
+            "_notify_cursor_checkpoint_safe",
+            "_notify_recover_interrupted_baseline",
+            "_obsidian_commit_record",
             "_obsidian_control_file", "_obsidian_git_directory_identity",
             "_obsidian_git_environment", "_obsidian_git_metadata",
             "_obsidian_object_name", "_parse_custom_json_record",
             "_parse_obsidian_git_metadata", "_queue_source_entry_refusal",
-            "_read_skill_manifest", "_set_worldline_cursor",
+            "_read_skill_manifest", "_real_process_pid",
+            "_set_worldline_cursor",
+            "_normalized_session_cursor_row", "_session_cursor_row_valid",
             "_signal_and_reap_process_group", "_skill_description",
             "_skill_description_from_head", "_skill_display_name",
             "_skill_entity_token", "_skill_manifest_capture_matches",
-            "_skill_manifest_identity", "_skill_name_bytes",
-            "_skill_root_generation_matches", "_verified_builtin_attest_rows",
+            "_skill_manifest_identity", "_skill_manifest_state_valid",
+            "_skill_name_bytes",
+            "_skill_catalog_event", "_skill_positive_merge",
+            "_skill_root_generation_matches", "_skill_root_id",
+            "_skill_root_refusal", "_skill_snapshot_from_rows",
+            "_store_agent_state", "_validated_skill_scan",
+            "_validated_skill_root_history", "_validated_skill_snapshot",
+            "_verified_builtin_attest_rows",
             "_worldline_cursor", "_worldline_decode_text",
             "_worldline_observation", "_worldline_observation_digest",
             "_worldline_ordering_identity", "_worldline_refusal_event",
@@ -2720,8 +4143,14 @@ retain_unowned_cli_before_fence
                         self.assertIs(target, getattr(module, export))
                         self.assertTrue(inspect.isfunction(target))
                         self.assertEqual(target.__module__, module.__name__)
+                        implementation = target
+                        if export in getattr(module, "_CONTEXT_EXPORTS", ()):
+                            implementation = target.__wrapped__
+                            self.assertTrue(inspect.isgeneratorfunction(
+                                implementation))
                         self.assertEqual(
-                            os.path.realpath(target.__code__.co_filename),
+                            os.path.realpath(
+                                implementation.__code__.co_filename),
                             os.path.realpath(path))
                 # bind()'s delegate branch is what keeps a parent façade out
                 # of the child's own calls: a value marked
@@ -2773,12 +4202,183 @@ retain_unowned_cli_before_fence
                 # lock import is the whole import surface.
                 self.assertTrue(imported.isdisjoint(core),
                                 sorted(imported.intersection(core)))
-                self.assertEqual(imported, {"threading"})
+                expected_imports = {"threading"}
+                if name in {"siathought", "sialivepublication"}:
+                    expected_imports.add("contextlib")
+                if name == "siasenses":
+                    expected_imports.add("errno")
+                self.assertEqual(imported, expected_imports)
                 # Loading the child must stay side-effect free: no SIA
                 # module may reach sys.modules as a consequence.
                 before = set(sys.modules)
                 self._facade_child(name)
                 self.assertTrue(core.isdisjoint(set(sys.modules) - before))
+
+    def test_siathought_context_exports_are_child_owned_and_reuse_source_libc(self):
+        module = self._facade_child("siathought")
+        context_exports = frozenset({
+            "_thought_legacy_catalog", "_thought_mind_replay_catalog",
+        })
+        self.assertEqual(module._CONTEXT_EXPORTS, context_exports)
+        self.assertTrue(context_exports.issubset(module._CHILD_FUNCTIONS))
+
+        core_path = os.path.join(REPO, "bin", "sialib.py")
+        core_tree = ast.parse(_read_path(core_path), core_path)
+        core_definitions = {
+            node.name for node in ast.walk(core_tree)
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef))}
+        self.assertTrue(context_exports.isdisjoint(core_definitions))
+        self.assertNotIn("_ThoughtRecoveryDirent", core_definitions)
+        self.assertNotIn("_THOUGHT_RECOVERY_LIBC", _read_path(core_path))
+
+        child_path = os.path.join(REPO, "bin", "siathought.py")
+        child_tree = ast.parse(_read_path(child_path), child_path)
+        reader = next(
+            node for node in ast.walk(child_tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_read_legacy_thought_directory_page")
+        reader_names = {
+            node.id for node in ast.walk(reader) if isinstance(node, ast.Name)}
+        self.assertIn("_SOURCE_LIBC", reader_names)
+        self.assertNotIn("_THOUGHT_RECOVERY_LIBC", reader_names)
+
+    def test_siathought_context_invoke_rebinds_each_protocol_phase(self):
+        module = self._facade_child("siathought")
+        phases = []
+
+        class SuppressedError(Exception):
+            pass
+
+        class RecordingContext:
+            def __enter__(self):
+                phases.append(("enter", module.ACTIVE))
+                return module.ACTIVE
+
+            def __exit__(self, exc_type, _exc, _traceback):
+                phases.append(("exit", module.ACTIVE, exc_type))
+                return exc_type is SuppressedError
+
+        def context_factory():
+            phases.append(("factory", module.ACTIVE))
+            return RecordingContext()
+
+        module._ORIGINAL_CHILD_FUNCTIONS[
+            "_thought_legacy_catalog"] = context_factory
+        first = {"ACTIVE": "first"}
+        second = {"ACTIVE": "second"}
+        manager = module.invoke(first, "_thought_legacy_catalog")
+        self.assertEqual(phases, [])
+        module.bind(second)
+        with manager as active:
+            self.assertEqual(active, "first")
+            module.bind(second)
+            raise SuppressedError("the wrapped manager suppresses this")
+        self.assertEqual(phases, [
+            ("factory", "first"),
+            ("enter", "first"),
+            ("exit", "first", SuppressedError),
+        ])
+
+
+    def test_preflight_names_a_panicking_cryptography_backend(self):
+        # A python-cryptography whose compiled extension does not match the
+        # running interpreter fails inside its Rust extension, and pyo3
+        # surfaces that as pyo3_runtime.PanicException, which derives from
+        # BaseException so a panic is never silently swallowed. Catching only
+        # Exception meant the one failure this preflight exists to name was
+        # the one it could not name. Reported from a sandbox whose
+        # _cffi_backend was built for a different Python minor version.
+        installer = _read("install.sh")
+        body = "preflight_python_capabilities() {" + installer.split(
+            "preflight_python_capabilities() {", 1)[1].split(
+                "\n}\n", 1)[0] + "\n}\n"
+        self.assertIn("except BaseException as error:", body)
+        self.assertNotIn("except Exception as error:", body)
+
+        def run_preflight(root, failure):
+            environment = os.environ.copy()
+            environment.update({
+                "PYTHONPATH": root,
+                "SIA_TEST_CRYPTOGRAPHY_FAILURE": failure,
+            })
+            return subprocess.run(
+                ["bash", "-c", "set -euo pipefail\n" + body
+                 + "\npreflight_python_capabilities\n"
+                 + "echo REACHED_MUTATION_PHASE"],
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+
+        with tempfile.TemporaryDirectory() as root:
+            # Preserve the historical import-panic regression.
+            _write(os.path.join(root, "cryptography", "__init__.py"), "")
+            _write(os.path.join(root, "cryptography", "hazmat",
+                                "__init__.py"), "")
+            _write(os.path.join(root, "cryptography", "hazmat", "primitives",
+                                "__init__.py"),
+                   'class _Panic(BaseException):\n    pass\n'
+                   'raise _Panic("Python API call failed unexpectedly")\n')
+            imported = run_preflight(root, "import-panic")
+        self.assertNotEqual(imported.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", imported.stdout)
+        self.assertIn("python-cryptography with Ed25519 support is required",
+                      imported.stderr)
+        self.assertNotIn("Traceback (most recent call last)", imported.stderr)
+
+        with tempfile.TemporaryDirectory() as root:
+            # Import succeeds; generate() is the compiled-backend boundary.
+            for package in (
+                    "cryptography", "cryptography/hazmat",
+                    "cryptography/hazmat/primitives",
+                    "cryptography/hazmat/primitives/asymmetric"):
+                _write(os.path.join(root, package, "__init__.py"), "")
+            _write(os.path.join(
+                root, "cryptography", "hazmat", "primitives",
+                "serialization.py"), "")
+            _write(os.path.join(
+                root, "cryptography", "hazmat", "primitives", "asymmetric",
+                "ed25519.py"), r'''
+import os
+
+class _Panic(BaseException):
+    pass
+
+class Ed25519PrivateKey:
+    @classmethod
+    def generate(cls):
+        failure = os.environ["SIA_TEST_CRYPTOGRAPHY_FAILURE"]
+        if failure == "backend-panic":
+            raise _Panic("Rust Ed25519 backend panicked")
+        if failure == "keyboard-interrupt":
+            raise KeyboardInterrupt("operator interrupted backend probe")
+        if failure == "system-exit":
+            raise SystemExit(73)
+        raise AssertionError("test did not select a backend failure")
+
+class Ed25519PublicKey:
+    pass
+''')
+            panicked = run_preflight(root, "backend-panic")
+            interrupted = run_preflight(root, "keyboard-interrupt")
+            exited = run_preflight(root, "system-exit")
+
+        self.assertNotEqual(panicked.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", panicked.stdout)
+        self.assertIn("python-cryptography cannot generate, raw-serialize",
+                      panicked.stderr)
+        self.assertNotIn("Traceback (most recent call last)", panicked.stderr)
+
+        self.assertNotEqual(interrupted.returncode, 0)
+        self.assertNotIn("REACHED_MUTATION_PHASE", interrupted.stdout)
+        self.assertIn("KeyboardInterrupt", interrupted.stderr)
+        self.assertNotIn("python-cryptography cannot generate",
+                         interrupted.stderr)
+
+        self.assertEqual(exited.returncode, 73)
+        self.assertNotIn("REACHED_MUTATION_PHASE", exited.stdout)
+        self.assertNotIn("python-cryptography cannot generate", exited.stderr)
+        self.assertEqual(
+            body.count("except (KeyboardInterrupt, SystemExit):"), 2)
 
     def test_uninstaller_owner_lock_open_failure_is_aggregated(self):
         uninstaller = _read("uninstall.sh")
@@ -2894,9 +4494,7 @@ sia_install_cleanup
 '''
             environment = os.environ.copy()
             environment.update({"TRACE": trace, "WORK": root})
-            result = subprocess.run(
-                ["bash", "-c", script], env=environment, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            result = _run_release_fragment(script, environment)
             self.assertNotEqual(result.returncode, 0)
             calls = _read_path(trace)
             self.assertIn("--user disable --now sia-brainstem.service", calls)
@@ -2951,9 +4549,7 @@ sia_install_cleanup
 '''
             environment = os.environ.copy()
             environment.update({"TRACE": trace, "WORK": root})
-            result = subprocess.run(
-                ["bash", "-c", script], env=environment, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            result = _run_release_fragment(script, environment)
             self.assertNotEqual(result.returncode, 0)
             calls = _read_path(trace).splitlines()
             barrier = calls.index("barrier")
@@ -3137,9 +4733,13 @@ ollama_runtime_receipt_valid
                     "PIN": "b" * 40,
                     "PIN_VERSION": "4.5.6",
                     "PIN_LOCK_SHA256": "c" * 64,
+                    "PIN_OVERLAY_SHA256": "d" * 64,
+                    "PIN_OVERLAY_TREE_OID": "e" * 40,
                 },
                 "managed-by=khephri.sia\ncommit=" + "b" * 40 +
-                "\nversion=4.5.6\nbun_lock_sha256=" + "c" * 64,
+                "\nversion=4.5.6\nbun_lock_sha256=" + "c" * 64 +
+                "\noverlay_sha256=" + "d" * 64 +
+                "\noverlay_tree_oid=" + "e" * 40,
                 "gbrain 4.5.6",
             ),
         )
@@ -3152,8 +4752,8 @@ ollama_runtime_receipt_valid
                 receipt = os.path.join(root, ".sia-release")
                 sentinel = os.path.join(root, "executed")
                 _write(binary, "#!/bin/sh\n"
-                       ': > "${SENTINEL:?}"\n'
-                       "printf '%s\\n' \"$FAKE_VERSION\"\n", 0o755)
+                       f": > {shlex.quote(sentinel)}\n"
+                       f"printf '%s\\n' {shlex.quote(version)}\n", 0o755)
                 with open(binary, "rb") as stream:
                     digest = hashlib.sha256(stream.read()).hexdigest()
                 environment = os.environ.copy()
@@ -3166,7 +4766,10 @@ ollama_runtime_receipt_valid
                     "SENTINEL": sentinel,
                     "FAKE_VERSION": version,
                 })
-                script = (metadata_function + function + "\n" +
+                sterile = (
+                    "GBRAIN_STERILE_ENV=(/usr/bin/env -i PATH=/usr/bin:/bin)\n"
+                    if label == "gbrain" else "")
+                script = (metadata_function + sterile + function + "\n" +
                           function_name + "\n")
 
                 _write(receipt, "managed-by=khephri.sia\n")
@@ -3202,11 +4805,23 @@ ollama_runtime_receipt_valid
             'step "9/9 agents', 1)[0]
         for relative in (
                 "manifest.json", "preview.png", "Panel.qml", "Cockpit.qml", "Model.js",
-                "README.md", "LICENSE", "SECURITY.md", "CHANGELOG.md",
+                "README.md", "ROADMAP.md", "LICENSE", "SECURITY.md", "CHANGELOG.md",
                 "GBRAIN_PIN", "config.example.json", "install.sh",
-                "uninstall.sh", "assets", "bin", "docs", "schema-pack",
+                "uninstall.sh", "bin", "docs", "schema-pack",
                 "skill", "systemd"):
             self.assertIn(relative, desktop)
+        directory_roster = re.search(
+            r"PLUGIN_DIRS=\(([^)]*)\)", desktop)
+        self.assertIsNotNone(directory_roster)
+        for relative in shlex.split(directory_roster.group(1)):
+            self.assertTrue(os.path.isdir(os.path.join(REPO, relative)))
+        root_roster = re.search(
+            r"PLUGIN_ROOT_FILES=\(([^)]*)\)", desktop)
+        self.assertIsNotNone(root_roster)
+        root_files = shlex.split(root_roster.group(1))
+        self.assertIn("ROADMAP.md", root_files)
+        for relative in root_files:
+            self.assertTrue(os.path.isfile(os.path.join(REPO, relative)))
         self.assertIn(".khephri.sia.stage.XXXXXX", desktop)
         self.assertIn("atomic_install_tree", desktop)
         self.assertNotIn("RENAME_EXCHANGE", installer)
@@ -3222,11 +4837,15 @@ ollama_runtime_receipt_valid
                          desktop)
         self.assertIn('[ "$SIA_ORIGINAL_REPO" != "$PLUGDIR" ]', desktop)
         self.assertNotIn('[ "$REPO" != "$PLUGDIR" ]', desktop)
-        self.assertIn('SIA_ORIGINAL_REPO="$REPO"', installer)
+        self.assertIn(
+            'SIA_ORIGINAL_REPO="$SIA_LIFETIME_SOURCE_ROOT_PATH"', installer)
+        self.assertIn('SIA_BOUND_RELEASE_ROOT="$REPO"', installer)
         self.assertLess(
             installer.index("release_source_frontdoor snapshot"),
             installer.index("prepare_and_lock_install\n"))
-        self.assertIn('release_source_frontdoor verify "$SIA_ORIGINAL_REPO"',
+        self.assertIn('release_source_frontdoor snapshot "$SIA_BOUND_RELEASE_ROOT"',
+                      installer)
+        self.assertIn('release_source_frontdoor verify "$SIA_BOUND_RELEASE_ROOT"',
                       installer)
         self.assertIn('"$SIA_PLUGIN_STAGE/bin/sia-setup"', desktop)
 
@@ -3241,6 +4860,8 @@ ollama_runtime_receipt_valid
         self.assertIn("dir_fd=parent_fd", function)
         self.assertIn("source_tree.require_unchanged()", function)
         self.assertNotIn("__pycache__", installer.split(
+            "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0])
+        self.assertIn("docs/ARCHITECTURE.md", installer.split(
             "SIA_RELEASE_FILES=(", 1)[1].split("\n)", 1)[0])
         self.assertIn('chmod -R u+w -- "$SIA_INSTALL_TMP"', installer)
 
@@ -3329,6 +4950,74 @@ ollama_runtime_receipt_valid
             self.assertNotEqual(stopped.exception.code, 0)
             if os.path.isdir(snapshot):
                 subprocess.run(["chmod", "-R", "u+w", snapshot], check=True)
+
+    def test_release_source_refuses_group_or_world_writable_inputs(self):
+        installer = _read("install.sh")
+        body = installer.split("release_source_frontdoor() {", 1)[1].split(
+            "\n}\n\nSIA_RELEASE_FILES", 1)[0]
+        function = "release_source_frontdoor() {" + body + "\n}\n"
+        for boundary, relative, diagnostic in (
+                ("root", "", "unsafe release-source root"),
+                ("directory", "nested",
+                 "unsafe release-source directory: nested"),
+                ("file", "nested/two",
+                 "unsafe release-source file: nested/two")):
+            for writable in (stat.S_IWGRP, stat.S_IWOTH):
+                with self.subTest(boundary=boundary, writable=writable), \
+                        tempfile.TemporaryDirectory() as root:
+                    source = os.path.join(root, "source")
+                    snapshot = os.path.join(root, "snapshot")
+                    _write(os.path.join(source, "one"), "first\n")
+                    _write(os.path.join(source, "nested/two"), "second\n")
+                    target = (source if not relative else
+                              os.path.join(source, relative))
+                    os.chmod(target, stat.S_IMODE(os.stat(target).st_mode)
+                             | writable)
+                    command = (function +
+                               '\nrelease_source_frontdoor snapshot "$1" '
+                               '"$2" one nested/two')
+                    result = subprocess.run(
+                        ["bash", "-c", command, "snapshot-test", source,
+                         snapshot], text=True, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, check=False)
+                    if os.path.isdir(snapshot):
+                        subprocess.run(
+                            ["chmod", "-R", "u+w", snapshot], check=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertFalse(os.path.lexists(snapshot))
+
+    def test_release_source_snapshot_accepts_the_admitted_root_descriptor(self):
+        installer = _read("install.sh")
+        body = installer.split("release_source_frontdoor() {", 1)[1].split(
+            "\n}\n\nSIA_RELEASE_FILES", 1)[0]
+        function = "release_source_frontdoor() {" + body + "\n}\n"
+        with tempfile.TemporaryDirectory() as root:
+            source = os.path.join(root, "source")
+            retired = os.path.join(root, "retired")
+            snapshot = os.path.join(root, "snapshot")
+            _write(os.path.join(source, "one"), "original\n")
+            root_fd = os.open(
+                source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.rename(source, retired)
+                _write(os.path.join(source, "one"), "replacement\n")
+                command = (function
+                           + '\nrelease_source_frontdoor snapshot '
+                             '"/proc/self/fd/$1" "$2" one')
+                result = subprocess.run(
+                    ["bash", "-c", command, "snapshot-test", str(root_fd),
+                     snapshot], text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False,
+                    pass_fds=(root_fd,))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(_read_path(os.path.join(snapshot, "one")),
+                                 "original\n")
+            finally:
+                os.close(root_fd)
+                if os.path.isdir(snapshot):
+                    subprocess.run(
+                        ["chmod", "-R", "u+w", snapshot], check=True)
 
     def test_gbrain_config_update_is_bounded_nofollow_and_strict(self):
         installer = _read("install.sh")
@@ -5378,20 +7067,23 @@ remove_managed_skill
             script = _read(script_name)
             body = script.split("bounded_command_capture() {", 1)[1].split(
                 "\n}\n", 1)[0]
-            function = "bounded_command_capture() {" + body + "\n}\n"
-            self.assertIn("MAX_CAPTURE_BYTES = 1_048_576", function)
-            self.assertIn("subprocess.DEVNULL", function)
-            self.assertIn('arguments[:1] == ["--stdin"]', function)
-            self.assertIn("start_new_session=True", function)
-            self.assertIn("os.killpg(process.pid, signal.SIGKILL)", function)
-            self.assertIn("os.pidfd_open(process.pid, 0)", function)
-            self.assertIn("os.WNOWAIT", function)
-            self.assertNotIn("os.P_PIDFD", function)
+            function = _lifetime_command_context() + "bounded_command_capture() {" + body + "\n}\n"
+            owner = _read("bin/sialifetime.py")
+            self.assertNotIn("subprocess.Popen", function)
+            self.assertIn('"$SIA_LIFETIME_SOURCE" capture --caller "$BASHPID" "$@"', function)
+            self.assertIn("MAX_CAPTURE_BYTES = 1_048_576", owner)
+            self.assertIn("subprocess.DEVNULL", owner)
+            self.assertIn('commands[:1] == ["--stdin"]', owner)
+            self.assertIn("start_new_session=True", owner)
+            self.assertIn("_send_signal(pinned[pid], signal.SIGKILL)", owner)
+            self.assertIn("os.pidfd_open(process.pid, 0)", owner)
+            self.assertIn("os.WNOWAIT", owner)
+            self.assertNotIn("os.P_PIDFD", owner)
             self.assertLess(
-                function.index("kill_group()\n    status = process.wait()"),
-                function.index("selector.close()"))
-            self.assertIn('b"\\0" in content', function)
-            self.assertIn('decode("utf-8", "strict")', function)
+                owner.index("_send_signal(pinned[pid], signal.SIGKILL)"),
+                owner.index("os.waitpid(pid, os.WNOHANG)"))
+            self.assertIn('b"\\0" in output', owner)
+            self.assertIn('decode("utf-8", "strict")', owner)
             overflow = subprocess.run(
                 ["bash", "-c", function +
                  '\nbounded_command_capture "$1" -c "$2"',
@@ -5444,16 +7136,19 @@ remove_managed_skill
             script = _read(script_name)
             bounded_body = script.split(
                 "bounded_command_capture() {", 1)[1].split("\n}\n", 1)[0]
-            bounded = "bounded_command_capture() {" + bounded_body + "\n}\n"
+            bounded = _lifetime_command_context() + "bounded_command_capture() {" + bounded_body + "\n}\n"
             deadline_body = script.split(
                 "run_with_deadline() {", 1)[1].split("\n}\n", 1)[0]
-            deadline = "run_with_deadline() {" + deadline_body + "\n}\n"
-            self.assertIn("os.WNOWAIT", deadline)
-            self.assertIn("os.pidfd_open(process.pid, 0)", deadline)
-            self.assertNotIn("os.P_PIDFD", deadline)
+            deadline = _lifetime_command_context() + "run_with_deadline() {" + deadline_body + "\n}\n"
+            owner = _read("bin/sialifetime.py")
+            self.assertNotIn("subprocess.Popen", deadline)
+            self.assertIn('"$SIA_LIFETIME_SOURCE" run --caller "$BASHPID" "$@"', deadline)
+            self.assertIn("os.WNOWAIT", owner)
+            self.assertIn("os.pidfd_open(process.pid, 0)", owner)
+            self.assertNotIn("os.P_PIDFD", owner)
             self.assertLess(
-                deadline.index("kill_group()\n    status = process.wait()"),
-                deadline.index("selector.close()"))
+                owner.index("_send_signal(pinned[pid], signal.SIGKILL)"),
+                owner.index("os.waitpid(pid, os.WNOHANG)"))
             cases = (
                 (bounded,
                  '\nbounded_command_capture "$1" -c "$2"'),
@@ -6520,7 +8215,9 @@ remove_managed_skill
         self.assertIn("python3 -m json.tool config.example.json", workflow)
         self.assertIn("test -s schema-pack/pack.yaml", workflow)
         self.assertIn("test -s preview.png", workflow)
-        self.assertIn("git diff --check", workflow)
+        self.assertIn(
+            'git diff --check "$(git hash-object -t tree /dev/null)" HEAD --',
+            workflow)
         self.assertIn("koalaman/shellcheck-alpine@sha256:", workflow)
         self.assertIn("--network none --cap-drop all", workflow)
         self.assertIn(
@@ -6548,6 +8245,46 @@ remove_managed_skill
         self.assertIn("https://pypi.org/pypi/cryptography/50.0.1/json",
                       workflow)
 
+    def test_ci_release_artifact_block_checks_committed_tree_damage(self):
+        script = _workflow_run_block("release artifact contracts")
+        with tempfile.TemporaryDirectory() as root:
+            for relative, content in (
+                    ("manifest.json", '{"version":"1.0.0"}\n'),
+                    ("config.example.json", "{}\n"),
+                    ("schema-pack/pack.yaml", "name: fixture\n"),
+                    ("preview.png", "fixture\n"),
+                    ("bad.txt", "clean\ntrailing-space \n"
+                     "<<<<<<< HEAD\nleft\n=======\nright\n>>>>>>> topic\n")):
+                _write(os.path.join(root, relative), content)
+            for argv in (
+                    ("init", "-q"),
+                    ("config", "user.email", "ci@test.invalid"),
+                    ("config", "user.name", "CI Fixture"),
+                    ("add", "-A"),
+                    ("commit", "-qm", "fixture")):
+                subprocess.run(
+                    ("git",) + argv, cwd=root, check=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            status = subprocess.run(
+                ("git", "status", "--porcelain"), cwd=root, check=True,
+                text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
+            self.assertEqual(status.stdout, "")
+            environment = os.environ.copy()
+            environment.update({
+                "GITHUB_REF_TYPE": "branch",
+                "GITHUB_REF_NAME": "fixture",
+            })
+            result = subprocess.run(
+                ("bash", "-e", "-o", "pipefail", "-c", script),
+                cwd=root, env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False)
+        detail = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("trailing whitespace", detail)
+        self.assertIn("leftover conflict marker", detail)
+
     def test_cockpit_and_bar_share_the_configured_stale_threshold(self):
         cockpit = _read("Cockpit.qml")
         panel = _read("Panel.qml")
@@ -6568,8 +8305,21 @@ remove_managed_skill
         self.assertIn("validStaleAfterSec", cockpit)
         self.assertIn("validStaleAfterSec", panel)
         self.assertIn("root.shell.shellConfig", cockpit)
-        self.assertIn("root.staleAfterSec * 1000", cockpit)
-        self.assertIn("root.staleAfterSec * 1000", panel)
+        self.assertRegex(
+            cockpit,
+            r"Model\.timestampStale\(\s*root\.status\.ts,\s*root\.nowMs,"
+            r"\s*root\.staleAfterSec\)")
+        self.assertIn(
+            "interval: 1000; running: root.opened; repeat: true", cockpit)
+        self.assertRegex(
+            panel,
+            r"Model\.timestampStale\(\s*parsed\.ts,\s*Date\.now\(\),"
+            r"\s*root\.staleAfterSec\)")
+        self.assertRegex(
+            panel,
+            r"Model\.timestampStale\(\s*root\.status\.ts,\s*root\.nowMs,"
+            r"\s*root\.staleAfterSec\)")
+        self.assertNotIn("root.staleAfterSec * 1000", panel)
         self.assertNotRegex(cockpit, r">\s*240\s*\*\s*1000")
 
     def test_cockpit_exposes_snapshot_and_live_memory_boundaries(self):
@@ -6577,7 +8327,7 @@ remove_managed_skill
         model = _read("Model.js")
         # Snapshot diagnostics cannot impersonate `sia ready`. The cockpit
         # must retain its graph-first design while keeping this boundary and
-        # the v1.3 cognitive/agent projections visible to the operator.
+        # the v1.3 policy/agent projections visible to the operator.
         self.assertIn('"ready"', cockpit)
         self.assertIn("id: readyProc", cockpit)
         self.assertIn("id: readyTooltip", cockpit)
@@ -6601,7 +8351,11 @@ remove_managed_skill
         self.assertIn("MEMORY LENS", cockpit)
         self.assertIn("AGENT RELAY — last published pulse", cockpit)
         self.assertIn("off-map", cockpit)
-        self.assertIn("retained in mind", cockpit)
+        # The retained-source card replaces compatibility workspace slugs;
+        # off-map remains a display limit, never loss of retained selection.
+        self.assertIn("Off-map is only a graph-display limit", cockpit)
+        self.assertIn("compatibility slugs are not used here", cockpit)
+        self.assertNotIn("root.currentStatus.workspace", cockpit)
         self.assertIn("CORPUS-LINKED RELATIONS", cockpit)
         self.assertIn("Model.originLabel", cockpit)
         self.assertIn('return "record"', model)
@@ -6661,14 +8415,18 @@ remove_managed_skill
         status_path = "/.local/state/sia-continuity/status.json"
         self.assertIn(status_path, cockpit)
         self.assertIn(status_path, panel)
-        self.assertIn("Model.validContinuityStatus(parsed)", cockpit)
-        self.assertIn("Model.validContinuityStatus(parsed)", panel)
+        self.assertIn(
+            "Model.validContinuityStatus(parsed, receiptAuthenticated)",
+            cockpit)
+        self.assertIn(
+            "Model.validContinuityStatus(parsed, receiptAuthenticated)",
+            panel)
         self.assertIn("last good continuity status", cockpit)
 
-        # Continuity is deliberately above ordinary vitals, while the graph
+        # Continuity is deliberately above ordinary status counts, while the graph
         # remains the central cockpit instrument.
         self.assertLess(cockpit.index('text: "CONTINUITY"'),
-                        cockpit.index('text: "VITALS"'))
+                        cockpit.index('text: "STATUS COUNTS"'))
         self.assertIn("id: continuityLayer", cockpit)
         self.assertIn("parent: keyCatcher", cockpit)
 
@@ -6733,11 +8491,16 @@ remove_managed_skill
         self.assertIn("right-click for continuity", panel)
 
         self.assertIn("function validContinuityStatus", model)
-        self.assertIn('typeof value.ledger_head === "string"', model)
+        self.assertIn('/^[0-9a-f]{64}$/.test(value.ledger_head)', model)
         self.assertIn('typeof value.identity_matches === "boolean"', model)
         self.assertIn("function validContinuityOperation", model)
-        self.assertIn('typeof value.request_id === "string"', model)
-        self.assertIn('typeof value.sia_ledger_verified === "boolean"', model)
+        self.assertIn(
+            "validContinuityCorrelationId(value.request_id)", model)
+        self.assertIn('typeof value.sia_ledger_verified !== "boolean"', model)
+        self.assertIn("recordHasExactly(value, CONTINUITY_STATUS_FIELDS)",
+                      model)
+        self.assertIn("Model.strictContinuityJsonParse(text)", cockpit)
+        self.assertIn("Model.strictContinuityJsonParse(text)", panel)
         self.assertNotIn('return "PROTECTED"', model)
         for state in (
                 "unconfigured", "queued", "capturing", "uploading",
