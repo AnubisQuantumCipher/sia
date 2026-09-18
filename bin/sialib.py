@@ -5708,6 +5708,13 @@ CONTROLLER_SOURCE_ARCHIVE_DIR = os.path.join(
     STATE, "controller-source-archive")
 CONTROLLER_SOURCE_EFFECTS_ARCHIVE_DIR = os.path.join(
     STATE, "controller-source-effects-archive")
+# Owned, bounded home for retained compact chain artifacts: the bootstrap
+# root, its successor documents, entry blocks and unactivated packages.
+# Admitted through the ordinary private-directory contract like every
+# other STATE path here; it is not an index and holds no authority of its
+# own, only artifacts that every reader re-admits by pin.
+CONTROLLER_CHECKPOINT_CHAIN_DIR = os.path.join(
+    STATE, "controller-checkpoint-chain")
 CONTROLLER_DELIVERY_EPOCH_ROOT = os.path.join(
     STATE, "controller-delivery-epochs")
 CONTROLLER_SOURCE_LIVE_BINDING_NON_CLAIMS = (
@@ -6252,7 +6259,13 @@ def _run_controller_source_cycle():
     Journal limits are the existing closed delivery limits. An existing epoch
     contributes only its original persisted adoption pin while both resident
     owner scopes remain held; the v3 runner validates the actual storage.
+
+    A retained compact package or chain pointer is routed before any legacy
+    reader runs, so a durable compact prefix is never re-derived through the
+    legacy source-state and policy-supersession path. When neither exists
+    this pulse has no compact work and the legacy lane owns it unchanged.
     """
+    import siacheckpointcycle
     import siacontrollerepoch
     import siadelivery
     import sialiveloop
@@ -6269,6 +6282,42 @@ def _run_controller_source_cycle():
     with brainstem_owner(), corpus_owner():
         memo = load_memo()
         expected_adoption_sha256 = _configured_controller_source_adoption(memo)
+        # Recovery first. The package is already captured, so this samples
+        # no clock, runs no collector and reserves no sequence; it reuses
+        # the one the marker bound. It goes through the adopting entry
+        # because a marker is written before adoption, so a legitimate
+        # crash can leave a recorded-but-unadopted package.
+        premises = dict(
+            journal_limits=journal_limits,
+            expected_journal_limits_sha256=expected_journal_limits_sha256,
+            expected_adoption_sha256=expected_adoption_sha256)
+        # No status is admitted before the marker check: a legacy pulse
+        # must reach its own lane under exactly its original conditions.
+        recovered = siacheckpointcycle.recover(
+            globals(), memo=memo,
+            configured_directory=CONTROLLER_CHECKPOINT_CHAIN_DIR, **premises)
+        if recovered is not None:
+            return recovered
+        # Then continuation, which captures and therefore reserves a
+        # sequence and samples the clock — but only once it is certain
+        # there is a chain to continue, never to discover whether there is
+        # one. The clock stays a lazy closure, as on the legacy lane.
+        if siacheckpointcycle.chain_pending(globals(), memo=memo):
+            return siacheckpointcycle.advance(
+                globals(), memo=memo, clock=clock,
+                configured_directory=CONTROLLER_CHECKPOINT_CHAIN_DIR,
+                **premises)
+        # Finally bootstrap: an already enabled, already adopted and
+        # already acknowledged controller may start a chain in its own
+        # bounded storage. It returns None whenever the legacy lane should
+        # keep the pulse, so the no-adoption, initial and pending routes
+        # are reached exactly as before.
+        started = siacheckpointcycle.bootstrap(
+            globals(), memo=memo, clock=clock,
+            configured_directory=CONTROLLER_CHECKPOINT_CHAIN_DIR,
+            **premises)
+        if started is not None:
+            return started
         return _run_controller_source_transaction_v3(
             operation=initial, clock=clock,
             journal_limits=journal_limits,

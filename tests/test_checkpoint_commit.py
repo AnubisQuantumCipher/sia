@@ -1,15 +1,36 @@
 """Real Git commit of compact pages, with unchanged source authority."""
 
 import copy
+from contextlib import ExitStack
 import hashlib
 import importlib
 from pathlib import Path
 import subprocess
+import types
 import unittest
 from unittest import mock
 
 import siacheckpointcontent as content
 from tests import test_checkpoint_adoption as fixtures
+
+
+class _ControlledClock:
+    """Controlled wall clock, delegating everything else to the real module.
+
+    The fixture's epoch is anchored to a controlled observation time, so
+    the resident cycle's time.time() is replaced. Nothing else is:
+    monotonic timing and the rest still come from the real module, because
+    replacing those would change behaviour this test is not controlling.
+    """
+
+    def __init__(self, real, tick):
+        self._real, self._tick = real, tick
+
+    def time(self):
+        return self._tick()
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
 
 
 class CheckpointCommit(unittest.TestCase):
@@ -51,6 +72,15 @@ class CheckpointCommit(unittest.TestCase):
         self.notifications = True
         self.fenced_successor_ack = True
         self.check_successor = True
+        self.dispatch_api = importlib.import_module("siacheckpointdispatch")
+        self.driver_api = importlib.import_module("siacheckpointrunner")
+        self.exercise(synchronize=True)
+
+    def test_resident_cycle_routes_compact_state_before_the_legacy_lane(self):
+        import siacheckpointcycle
+        self.assertTrue(callable(getattr(siacheckpointcycle, "advance", None)),
+            "missing resident compact cycle entry")
+        self.resident_cycle = True
         self.dispatch_api = importlib.import_module("siacheckpointdispatch")
         self.driver_api = importlib.import_module("siacheckpointrunner")
         self.exercise(synchronize=True)
@@ -434,6 +464,12 @@ class CheckpointCommit(unittest.TestCase):
         self.assertEqual(pointer["next_generation"], 1)
         if getattr(self, "check_successor", False):
             self.successor_case(owner, selected)
+        if getattr(self, "resident_cycle", False):
+            # Anchor the controlled clock to the fixture's own observation
+            # time; the resident cycle otherwise samples the wall clock,
+            # which this controlled epoch cannot accept.
+            self.resident_observed_at = view["batch"]["observed_at"]
+            self.resident_cycle_case(owner, selected)
 
     def successor_case(self, owner, selected):
         """Extend the retained chain by one link from the acknowledged parent."""
@@ -630,6 +666,168 @@ class CheckpointCommit(unittest.TestCase):
         self.assertIsNone(dispatcher.select(vars(owner), memo=durable))
 
     def dispatch_crash_windows(self, owner, api):
+        """Both orderings around the pointer advance stay recoverable."""
+        return self._dispatch_crash_windows(owner, api)
+
+    def resident_cycle_case(self, owner, selected):
+        """Drive the real resident entry, not a hand-sequenced helper.
+
+        Every completion below is owner._run_controller_source_cycle().
+        The fixture's epoch is anchored to a controlled observation time,
+        so the cycle's wall clock is replaced by a controlled one; that is
+        a controlled engine fixture, not a claim about real timing.
+        """
+        import siacheckpointcycle as cycle
+        import siacheckpointdispatch as dispatch_api
+        import siasourcebatch
+        api = self.dispatch_api
+        directory = selected["directory"]
+
+        # The resident route operates only inside its configured root, so
+        # the fixture owns that constant for the duration.
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(mock.patch.object(
+            owner, "CONTROLLER_CHECKPOINT_CHAIN_DIR", directory))
+        ticks = [self.resident_observed_at]
+
+        def controlled():
+            ticks[0] += 1
+            return ticks[0]
+
+        stack.enter_context(mock.patch.object(owner, "time",
+            _ControlledClock(owner.time, controlled)))
+
+        # (a) A pointer or marker naming any other directory is refused
+        #     before any write, capture or collector runs.
+        durable = owner.load_memo()
+        elsewhere = copy.deepcopy(durable)
+        elsewhere[api._CHAIN] = dict(durable[api._CHAIN],
+            directory=directory + "-elsewhere")
+        elsewhere[api._CHAIN]["marker_sha256"] = api._chain_digest(
+            elsewhere[api._CHAIN])
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(elsewhere), mode=0o600)
+        with mock.patch.object(siasourcebatch, "_collector_result",
+                side_effect=AssertionError("refused route ran a collector")), \
+                mock.patch.object(owner, "ensure_durable_directory",
+                    side_effect=AssertionError("refused route created a directory")), \
+                mock.patch.object(owner, "atomic_write",
+                    side_effect=AssertionError("refused route wrote")):
+            with self.assertRaises(ValueError) as refused:
+                owner._run_controller_source_cycle()
+        self.assertEqual(refused.exception.reason,
+            "checkpoint-cycle-directory-differs")
+        owner.atomic_write(owner.MEMO_PATH, owner.json.dumps(durable), mode=0o600)
+
+        # (b) A further acknowledged link, produced by the resident entry
+        #     from durable state alone.
+        before = durable["controller_source_committed"]
+        pointer = api.select_chain(vars(owner), memo=durable)
+        self.assertEqual(pointer["status"], "continued")
+        reserved = durable["pulse_seq"]
+        view = owner._run_controller_source_cycle()
+        self.assertEqual(view["status"], "available")
+        durable = owner.load_memo()
+        self.assertNotEqual(
+            durable["controller_source_committed"]["source_batch_sha256"],
+            before["source_batch_sha256"])
+        self.assertGreater(durable["pulse_seq"], reserved,
+            "a fresh link did not reserve a sequence")
+        advanced = api.select_chain(vars(owner), memo=durable)
+        self.assertEqual(advanced["status"], "continued")
+        self.assertEqual(advanced["next_generation"],
+            pointer["next_generation"] + 1)
+        self.assertIsNone(api.select(vars(owner), memo=durable))
+
+        # (c) Genuine pre-adoption recovery. Interrupt a fresh link inside
+        #     adopt_root, after its package marker is durable, then re-enter
+        #     the resident entry: it must ADOPT and finish, spending no
+        #     clock, no collector and no new sequence.
+        import siacheckpointadoption as adoption_api
+        real_adopt = adoption_api.adopt_root
+
+        def interrupted(*args, **options):
+            raise OSError("controlled pre-adoption interruption")
+
+        with mock.patch.object(adoption_api, "adopt_root", side_effect=interrupted):
+            with self.assertRaisesRegex(OSError, "pre-adoption interruption"):
+                owner._run_controller_source_cycle()
+        stranded = owner.load_memo()
+        marker = api.select(vars(owner), memo=stranded)
+        self.assertIsNotNone(marker, "the package marker was not durable yet")
+        self.assertNotIn("controller_source_pending", stranded)
+        held = stranded["pulse_seq"]
+        adopted = []
+
+        def observed(*args, **options):
+            adopted.append(True)
+            return real_adopt(*args, **options)
+
+        with mock.patch.object(adoption_api, "adopt_root", side_effect=observed), \
+                mock.patch.object(siasourcebatch, "_collector_result",
+                    side_effect=AssertionError("recovery ran a collector")), \
+                mock.patch.object(owner, "time", _ControlledClock(
+                    owner.time, lambda: (_ for _ in ()).throw(
+                        AssertionError("recovery sampled the clock")))):
+            finished = owner._run_controller_source_cycle()
+        self.assertTrue(adopted, "recovery never adopted the stranded package")
+        self.assertEqual(finished["status"], "available")
+        recovered = owner.load_memo()
+        self.assertEqual(recovered["pulse_seq"], held,
+            "recovery reserved a new sequence instead of reusing one")
+        self.assertIsNone(api.select(vars(owner), memo=recovered))
+        self.resident_reserves_exactly_once(owner, api)
+
+    def resident_reserves_exactly_once(self, owner, api):
+        """A fresh link reserves once; its retry reuses that reservation.
+
+        Crashing at the clock is the seam: the reservation is durable
+        before the clock is sampled, so the sequence must already have
+        moved while no collector has run and no selection has been made.
+        The retry must then spend that reservation rather than take a new
+        one — assertGreater alone would not tell those apart.
+        """
+        import siasourcebatch
+        from tests.test_controller_source_capture_v3 import _ReservedAtClock
+
+        before = owner.load_memo()
+        self.assertEqual(
+            api.select_chain(vars(owner), memo=before)["status"], "continued")
+
+        def stop_at_clock():
+            raise _ReservedAtClock()
+
+        with mock.patch.object(owner, "time",
+                _ControlledClock(owner.time, stop_at_clock)), \
+                mock.patch.object(siasourcebatch, "_collector_result",
+                    side_effect=AssertionError("reservation ran a collector")):
+            with self.assertRaises(_ReservedAtClock):
+                owner._run_controller_source_cycle()
+        reserved = owner.load_memo()
+        # Reserved durably, exactly once, ahead of the clock.
+        self.assertEqual(reserved["pulse_seq"], before["pulse_seq"] + 1)
+        # And the selection for this link is already persisted, which is
+        # what makes the retry a retry rather than a fresh reservation.
+        selection = api.select_chain(vars(owner), memo=reserved)
+        self.assertEqual(selection["status"], "selected-not-captured")
+
+        ticks = [self.resident_observed_at + 500]
+
+        def controlled():
+            ticks[0] += 1
+            return ticks[0]
+
+        with mock.patch.object(owner, "time",
+                _ControlledClock(owner.time, controlled)):
+            view = owner._run_controller_source_cycle()
+        self.assertEqual(view["status"], "available")
+        finished = owner.load_memo()
+        self.assertEqual(finished["pulse_seq"], reserved["pulse_seq"],
+            "the retry reserved a second sequence for one link")
+        self.assertEqual(
+            api.select_chain(vars(owner), memo=finished)["status"], "continued")
+
+    def _dispatch_crash_windows(self, owner, api):
         """Both orderings around the pointer advance stay recoverable."""
         actual_write = owner.atomic_write
 
