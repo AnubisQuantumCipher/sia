@@ -1305,7 +1305,7 @@ class _CorpusWitnessResolver:
             self.directory_cache[organ] = entries
         base_name = date + ".md"
         part_re = re.compile(
-            rf"^{re.escape(date)}-part-([2-9][0-9]*)\.md$")
+            rf"^{re.escape(date)}-part-((?:[2-9]|[1-9][0-9]+))\.md$")
         parts = {}
         for entry in entries:
             name = entry["name"]

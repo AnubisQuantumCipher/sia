@@ -6736,6 +6736,117 @@ class EpochMerge(unittest.TestCase):
                     ValueError, "invalid or exceeds its bound"):
                 sialib._event_day_shards("org", "2026-01-05")
 
+    def test_two_digit_event_shard_number_is_recognized_not_skipped(self):
+        sialib = _load("sialib_epoch_two_digit_shard",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as corpus:
+            sialib.CORPUS = corpus
+            event_dir = os.path.join(corpus, "events", "org")
+            os.makedirs(event_dir)
+            with open(os.path.join(event_dir, "2026-01-05.md"), "w") \
+                    as stream:
+                stream.write("base\n")
+            with open(os.path.join(
+                    event_dir, "2026-01-05-part-10.md"), "w") \
+                    as stream:
+                stream.write("overflow\n")
+
+            # A part-10 shard with no part-2..9 predecessors must be seen and
+            # rejected as a genuine contiguity gap, not silently skipped by a
+            # parser that only recognized a single leading digit.
+            with self.assertRaisesRegex(
+                    ValueError, "are not contiguous"):
+                sialib._event_day_shards("org", "2026-01-05")
+
+    def test_event_source_regex_admits_multi_digit_parts_and_refuses_invalid_forms(self):
+        sialib = _load("sialib_event_source_re_grammar",
+                       os.path.join(BIN, "sialib.py"))
+        admitted = ("events/org/2026-01-05.md",
+                    "events/org/2026-01-05-part-2.md",
+                    "events/org/2026-01-05-part-9.md",
+                    "events/org/2026-01-05-part-10.md",
+                    "events/org/2026-01-05-part-19.md",
+                    "events/org/2026-01-05-part-100.md",
+                    "events/org/2026-01-05-part-199.md")
+        for relative in admitted:
+            with self.subTest(relative=relative):
+                self.assertIsNotNone(
+                    sialib.EVENT_SOURCE_RE.fullmatch(relative))
+        refused = ("events/org/2026-01-05-part-0.md",
+                   "events/org/2026-01-05-part-1.md",
+                   "events/org/2026-01-05-part-01.md",
+                   "events/org/2026-01-05-part-1a.md",
+                   "events/org/2026-01-05-part-.md",
+                   "events/org/2026-01-05-part-ten.md")
+        for relative in refused:
+            with self.subTest(relative=relative):
+                self.assertIsNone(
+                    sialib.EVENT_SOURCE_RE.fullmatch(relative))
+
+    def test_event_replay_key_admits_multi_digit_parts_and_refuses_invalid_forms(self):
+        sialib = _load("sialib_event_replay_key_grammar",
+                       os.path.join(BIN, "sialib.py"))
+        event_id = "a" * 64
+        admitted = ("events/org/2026-01-05",
+                    "events/org/2026-01-05-part-2",
+                    "events/org/2026-01-05-part-9",
+                    "events/org/2026-01-05-part-10",
+                    "events/org/2026-01-05-part-19",
+                    "events/org/2026-01-05-part-100",
+                    "events/org/2026-01-05-part-199")
+        for day_slug in admitted:
+            with self.subTest(day_slug=day_slug):
+                sialib.siamind._validate_event_replay_key(day_slug, event_id)
+        refused = ("events/org/2026-01-05-part-0",
+                   "events/org/2026-01-05-part-1",
+                   "events/org/2026-01-05-part-01",
+                   "events/org/2026-01-05-part-1a",
+                   "events/org/2026-01-05-part-",
+                   "events/org/2026-01-05-part-ten")
+        for day_slug in refused:
+            with self.subTest(day_slug=day_slug):
+                with self.assertRaisesRegex(
+                        ValueError, "event replay identity is invalid"):
+                    sialib.siamind._validate_event_replay_key(day_slug, event_id)
+
+    def test_contiguous_shards_through_a_two_digit_part_are_discovered(self):
+        sialib = _load("sialib_epoch_contiguous_two_digit_shard",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as d:
+            sialib.CORPUS = d
+            old_mind_path = sialib.siamind.MIND_PATH
+            old_window = sialib.siamind.EPISODIC_DAYS
+            old_bullets = sialib.MAX_EVENT_BULLETS
+            sialib.siamind.MIND_PATH = os.path.join(d, "mind.json")
+            sialib.siamind.EPISODIC_DAYS = 1
+            sialib.MAX_EVENT_BULLETS = 1
+            self.addCleanup(setattr, sialib.siamind, "MIND_PATH",
+                            old_mind_path)
+            self.addCleanup(setattr, sialib.siamind,
+                            "EPISODIC_DAYS", old_window)
+            self.addCleanup(setattr, sialib, "MAX_EVENT_BULLETS",
+                            old_bullets)
+            sialib.log = lambda *a: None
+            subprocess.run(["git", "init", "-q", d], check=True)
+            stamp = sialib.datetime.datetime(
+                2026, 1, 5, 12, tzinfo=sialib.datetime.timezone.utc)
+            events = [
+                sialib.Event(
+                    "org", stamp, "obs", f"observation {number}",
+                    occurrence=f"native:two-digit-shard:{number}")
+                for number in range(1, 11)
+            ]
+            # MAX_EVENT_BULLETS=1 forces one event per page: the base page
+            # plus part-2 through part-10, so the tenth event lands on the
+            # two-digit shard this grammar previously could not admit.
+            sialib.update_day_page("org", "2026-01-05", events)
+            event_dir = os.path.join(d, "events", "org")
+            self.assertTrue(os.path.exists(
+                os.path.join(event_dir, "2026-01-05-part-10.md")))
+
+            shards = sialib._event_day_shards("org", "2026-01-05")
+            self.assertEqual(len(shards), 10)
+
     def test_queued_operator_pin_protects_day_before_next_pulse(self):
         sialib = _load("sialib_epoch_queued_pin",
                        os.path.join(BIN, "sialib.py"))

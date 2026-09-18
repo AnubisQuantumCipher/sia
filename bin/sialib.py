@@ -3821,7 +3821,7 @@ EVENT_MARKER_RE = re.compile(
 EVENT_SOURCE_RE = re.compile(
     r"^events/(?P<organ>[a-z0-9][a-z0-9._-]{0,199})/"
     r"(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})"
-    r"(?:-part-(?P<part>[2-9][0-9]*))?\.md$")
+    r"(?:-part-(?P<part>[2-9]|[1-9][0-9]+))?\.md$")
 
 
 class ConsolidationCapacityError(RuntimeError):

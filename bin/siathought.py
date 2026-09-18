@@ -3424,7 +3424,7 @@ def _event_day_shards(organ, date, *, dependency_capture=None):
         root, cleanup_legacy_atomic=dependency_capture is None, **capture_kw)
     part_re = re.compile(
         rf"^{re.escape(os.path.basename(base_path[:-3]))}"
-        r"-part-([2-9][0-9]*)\.md$")
+        r"-part-((?:[2-9]|[1-9][0-9]+))\.md$")
     parts, generations = [], {}
     base_present = False
     for entry in entries:
@@ -3744,7 +3744,7 @@ def _other_event_occurrences(organ, wanted, excluded, *, dependency_capture=None
     found = {}
     page_re = re.compile(
         rf"^events/{re.escape(organ)}/[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
-        r"(?:-part-[2-9][0-9]*)?$")
+        r"(?:-part-(?:[2-9]|[1-9][0-9]+))?$")
     for entry in entries:
         if not entry["name"].endswith(".md"):
             continue
