@@ -542,8 +542,49 @@ class CheckpointCommit(unittest.TestCase):
             api.capture_successor_delivery(vars(owner), **{**args,
                 "expected_head_sha256": forged_head})
         self.assertEqual(refused.exception.reason, "checkpoint-successor-head-binding")
+        self.record_chain_selection(owner, args)
         self.capture_transition_successor(owner, args)
         self.capture_fenced_successor(owner, args)
+
+    def record_chain_selection(self, owner, args):
+        """Pin the chain head before any capture can raise a fence."""
+        import siacheckpointdispatch as api
+        self.assertTrue(callable(getattr(api, "record_chain", None)),
+            "missing durable chain-head selection")
+        # Record against the memo the later captures carry, so the durable
+        # memo and the caller's copy stay the same object's contents.
+        memo = args["memo"]
+        self.assertEqual(memo, owner.load_memo())
+        pins = dict(directory=args["directory"],
+            expected_root_sha256=args["expected_root_sha256"],
+            expected_head_sha256=args["expected_head_sha256"])
+        self.assertIsNone(api.select_chain(vars(owner), memo=memo))
+        self.assertIsNone(api.reopen_chain(vars(owner), memo=memo))
+        self.assertTrue(api.record_chain(vars(owner), memo=memo, **pins))
+        self.assertFalse(api.record_chain(vars(owner), memo=memo, **pins))
+        with mock.patch.object(owner, "atomic_write", side_effect=AssertionError("chain retry wrote")):
+            self.assertFalse(api.record_chain(vars(owner), memo=memo, **pins))
+        selection = api.select_chain(vars(owner), memo=owner.load_memo())
+        self.assertEqual(selection["root_sha256"], args["expected_root_sha256"])
+        self.assertEqual(selection["head_sha256"], args["expected_head_sha256"])
+        # The head is the generation-1 successor, so the next link is two.
+        self.assertEqual(selection["next_generation"], 2)
+        self.assertEqual(selection["committed"], memo["controller_source_committed"])
+        # A different head is refused rather than replacing one in flight.
+        with self.assertRaises(ValueError) as refused:
+            api.record_chain(vars(owner), memo=owner.load_memo(),
+                **{**pins, "expected_head_sha256": args["expected_root_sha256"]})
+        self.assertEqual(refused.exception.reason, "checkpoint-chain-marker-differs")
+        # A head the directory does not hold can never be selected.
+        with self.assertRaises(ValueError):
+            api.record_chain(vars(owner), memo=owner.load_memo(),
+                **{**pins, "expected_head_sha256": "0" * 64})
+        # Reopening consults no source authority, so it works under a fence.
+        reopened = api.reopen_chain(vars(owner), memo=owner.load_memo())
+        self.assertEqual(reopened["selection"], selection)
+        self.assertEqual(reopened["chain"]["head_sha256"], args["expected_head_sha256"])
+        self.assertEqual(reopened["chain"]["next_generation"], 2)
+        self.chain_selection = selection
 
     def capture_transition_successor(self, owner, args):
         """Capture entered unfenced and fenced part-way through collection.
@@ -628,6 +669,20 @@ class CheckpointCommit(unittest.TestCase):
         self.assertEqual(batch["notification_baseline_attempt"], marker)
         self.assertEqual(batch["epoch"]["root_sha256"], args["expected_root_sha256"])
         # Reading the fence is not clearing it.
+        fence_intact()
+        # The interrupted pulse's recovery entry: reopen the head already
+        # chosen, by its recorded pins, beneath the outstanding fence. The
+        # strict completed reader is not reachable here, and no file name is
+        # scanned to invent a pin.
+        import siacheckpointdispatch as dispatch
+        import siasourceack
+        reopened = dispatch.reopen_chain(vars(owner), memo=owner.load_memo())
+        self.assertEqual(reopened["selection"], self.chain_selection)
+        self.assertEqual(reopened["chain"]["next_generation"], 2)
+        with self.assertRaises(ValueError):
+            siasourceack.read_checkpoint_completed(
+                vars(owner), memo=owner.load_memo(),
+                admitted_status=owner.json.loads(Path(owner.STATUS_PATH).read_bytes()))
         fence_intact()
 
         # A fence the durable memo does not actually carry is refused, and the

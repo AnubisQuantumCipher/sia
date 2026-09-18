@@ -270,3 +270,166 @@ def _retire(owner, marker):
             source.refuse("checkpoint-dispatch-memo-image-differs")
         named_current()
         return True
+
+
+CHAIN_NON_CLAIMS = (
+    "The chain selection records which retained root and head a pulse committed to extend, before any capture could raise a notification fence. It is not capture, preparation, adoption, publication, acknowledgment or readiness.",
+    "Its pins are premises for a later independent reopen by pin. They do not authenticate the chain documents, and no pin is ever discovered by scanning the directory for plausible file names.",
+    "Selection does not choose among candidate chains, replace the bootstrap root, re-bootstrap ancestry, start a timer, install a unit or activate a service.",
+    "Retirement records only that this selection is superseded by a prepared package. It is not proof that the capture, its effects or its acknowledgment succeeded.",
+)
+
+_CHAIN_SCHEMA = "sia-checkpoint-chain-selection-v1"
+_CHAIN_STATUS = "selected-not-captured"
+_CHAIN = "controller_checkpoint_chain"
+_CHAIN_KEYS = frozenset({
+    "schema", "status", "directory", "root_sha256", "head_sha256",
+    "next_generation", "committed", "non_claims", "marker_sha256",
+})
+
+
+def _chain_digest(marker):
+    return live._sha({key: value for key, value in marker.items()
+                      if key != "marker_sha256"})
+
+
+def _validate_chain(owner, marker):
+    """Admit a represented chain selection, or refuse; never repair one."""
+    if type(marker) is not dict or set(marker) != _CHAIN_KEYS \
+            or marker["schema"] != _CHAIN_SCHEMA or marker["status"] != _CHAIN_STATUS \
+            or type(marker["next_generation"]) is not int \
+            or type(marker["next_generation"]) is bool \
+            or marker["next_generation"] < 1 \
+            or marker["next_generation"] >= owner["MAX_JSON_SAFE_INTEGER"] \
+            or marker["non_claims"] != list(CHAIN_NON_CLAIMS):
+        source.refuse("checkpoint-chain-marker-shape")
+    for name in ("root_sha256", "head_sha256"):
+        source._hex(marker[name], "checkpoint-chain-marker-pin")
+    committed = marker["committed"]
+    if type(committed) is not dict or set(committed) != {
+            "source_batch_sha256", "live_generation_sha256",
+            "source_effects_receipt_sha256"}:
+        source.refuse("checkpoint-chain-marker-committed")
+    for value in committed.values():
+        source._hex(value, "checkpoint-chain-marker-pin")
+    directory = marker["directory"]
+    if type(directory) is not str or not directory.startswith("/") \
+            or os.path.normpath(directory) != directory:
+        source.refuse("checkpoint-chain-marker-directory")
+    if marker["marker_sha256"] != _chain_digest(marker):
+        source.refuse("checkpoint-chain-marker-digest")
+    return copy.deepcopy(marker)
+
+
+def select_chain(owner, *, memo):
+    """Return the root/head a pulse already committed to extend, or None.
+
+    Absence is absence of a selection, never evidence that no chain exists.
+    """
+    if type(memo) is not dict:
+        source.refuse("checkpoint-dispatch-memo-shape")
+    if _CHAIN not in memo:
+        return None
+    return _validate_chain(owner, memo[_CHAIN])
+
+
+def record_chain(owner, *, memo, directory, expected_root_sha256, expected_head_sha256):
+    """Pin the chain head durably before any capture can raise a fence.
+
+    Written ahead of capture so a pulse interrupted after the notification
+    collector wrote a fence can reopen the head it already chose, by pin,
+    under capturable authority. Without this the retry would have to consult
+    the strict completed reader, which refuses beneath a fence, or discover
+    the head by scanning file names, which would invent a trusted pin.
+
+    The head is reopened and admitted here, so a selection can never name a
+    chain the directory does not actually hold. An identical selection is an
+    idempotent no-op; a different one is refused rather than replaced.
+    """
+    if type(owner) is not dict:
+        raise TypeError("owner must be a globals-style dictionary")
+    if type(memo) is not dict:
+        source.refuse("checkpoint-dispatch-memo-shape")
+    committed = memo.get("controller_source_committed")
+    if type(committed) is not dict:
+        source.refuse("checkpoint-chain-source-authority")
+    references = dict(owner)
+    original_memo = _wire(owner, memo, memo=True)
+    with owner["brainstem_owner"](), owner["corpus_owner"]():
+        import siahistoryroot as roots
+
+        view = roots.read_successor(owner, directory=directory,
+            expected_root_sha256=expected_root_sha256,
+            expected_head_sha256=expected_head_sha256)
+        marker = {
+            "schema": _CHAIN_SCHEMA,
+            "status": _CHAIN_STATUS,
+            "directory": directory,
+            "root_sha256": expected_root_sha256,
+            "head_sha256": expected_head_sha256,
+            "next_generation": view["next_generation"],
+            "committed": copy.deepcopy(committed),
+            "non_claims": list(CHAIN_NON_CLAIMS),
+        }
+        marker["marker_sha256"] = _chain_digest(marker)
+        marker = _validate_chain(owner, marker)
+        with publication._files(owner, source) as (files, observe, current, named_current):
+            def unchanged():
+                if any(owner.get(name) is not value
+                       for name, value in references.items()) \
+                        or _wire(owner, memo, memo=True) != original_memo:
+                    source.refuse("checkpoint-dispatch-input-changed")
+                current()
+
+            unchanged()
+            if _wire(owner, files["memo"].value, memo=True) != original_memo:
+                source.refuse("checkpoint-dispatch-memo-authority")
+            if _CHAIN in memo:
+                if _wire(owner, _validate_chain(owner, memo[_CHAIN])) != _wire(owner, marker):
+                    source.refuse("checkpoint-chain-marker-differs")
+                named_current()
+                return False
+            updated = copy.deepcopy(memo)
+            updated[_CHAIN] = marker
+            updated_raw = _wire(owner, updated, memo=True)
+            owner["_memo_text"](updated)
+            unchanged()
+            parent = files["memo"].parent_identity
+            owner["atomic_write"](owner["MEMO_PATH"],
+                updated_raw.decode("utf-8"), mode=0o600)
+            actual = observe("memo", owner["MEMO_PATH"], owner["MAX_MEMO_BYTES"])
+            if actual.parent_identity != parent or actual.raw != updated_raw:
+                source.refuse("checkpoint-dispatch-memo-image-differs")
+            unchanged()
+            named_current()
+            memo.clear()
+            memo.update(updated)
+            named_current()
+            return True
+
+
+def reopen_chain(owner, *, memo):
+    """Reopen the selected head by its recorded pins, fence or no fence.
+
+    This is the interrupted pulse's recovery entry. It consults no source
+    authority at all, so it behaves identically beneath an outstanding
+    notification fence, and it reads only the two documents the recorded
+    pins name. Returns None when no selection is held.
+
+    Consulting no authority is the point and also the limit: this proves
+    nothing about the current committed state. The recorded triple is what
+    was committed when the selection was made, not a claim about now. A
+    capture resuming from here must still rejoin the actual current or
+    fenced predecessor through its own reader before using any of it.
+    """
+    import siahistoryroot as roots
+
+    marker = select_chain(owner, memo=memo)
+    if marker is None:
+        return None
+    view = roots.read_successor(owner, directory=marker["directory"],
+        expected_root_sha256=marker["root_sha256"],
+        expected_head_sha256=marker["head_sha256"])
+    if view["next_generation"] != marker["next_generation"]:
+        source.refuse("checkpoint-chain-generation-differs")
+    return {"selection": marker, "chain": view}

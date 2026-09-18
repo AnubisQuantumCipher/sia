@@ -429,3 +429,84 @@ def prepare_successor(owner, *, memo, admitted_status, directory,
             retained.current()
             inputs_current()
             return result
+
+
+@contextlib.contextmanager
+def hold_successor(owner, *, directory, expected_root_sha256, expected_head_sha256):
+    """Reopen an already selected chain head by pin, under held descriptors.
+
+    Pure document admission: no source authority is consulted, so this works
+    identically before and beneath an outstanding notification fence, where
+    the strict completed reader must not be called. Pins come from the
+    caller, never from scanning the directory for plausible file names.
+    Exactly the bootstrap root and one head are opened; when the head pin is
+    the root pin the chain is still at generation zero.
+    """
+    if not blocks._digest(expected_root_sha256) or not blocks._digest(expected_head_sha256):
+        blocks._refuse("successor-chain-pin")
+    import siaeventcheckpoint as checkpoints
+
+    wire = lambda value: checkpoints._wire(owner, value)
+    limit = min(owner["MAX_STATE_JSON_BYTES"], blocks.MAX_DOCUMENT_BYTES)
+    references = dict(owner)
+    with contextlib.ExitStack() as stack:
+        directory_hold = source._DirectoryChain(owner, directory, private_terminal=True)
+        stack.callback(directory_hold.close)
+
+        def hold(name, pin):
+            held = ack._HeldRaw(owner, source, os.path.join(directory, name), limit,
+                                allow_absent=False)
+            stack.callback(held.close)
+            blocks._pin(held.raw, pin)
+            return held
+
+        root_file = hold("root-" + expected_root_sha256 + ".json", expected_root_sha256)
+        root = json.loads(root_file.raw)
+        source._keys(root, _ROOT_KEYS, "successor-root-shape")
+        if root["schema"] != "sia-source-history-root-v1" \
+                or root["status"] != "root-retained-not-activated" \
+                or root["non_claims"] != list(NON_CLAIMS) \
+                or wire(root) != root_file.raw:
+            blocks._refuse("successor-root-contract")
+        if expected_head_sha256 == expected_root_sha256:
+            head_file, head = root_file, root
+        else:
+            head_file = hold("successor-" + expected_head_sha256 + ".json", expected_head_sha256)
+            head = json.loads(head_file.raw)
+            if wire(head) != head_file.raw:
+                blocks._refuse("successor-head-image")
+        generation = _successor_generation(owner, wire, head, head_file.raw,
+            root=root, root_raw=root_file.raw, expected_root_sha256=expected_root_sha256)
+
+        view = {"root": root, "head": head, "next_generation": generation,
+                "root_sha256": expected_root_sha256,
+                "head_sha256": expected_head_sha256}
+        view_raw = wire(view)
+
+        def current():
+            # Descriptors and the yielded images both. A consumer mutating
+            # the admitted view must not survive as an admitted view.
+            if any(owner.get(name) is not value for name, value in references.items()):
+                blocks._refuse("successor-reader-owner-changed")
+            if wire(view) != view_raw or wire(view["root"]) != root_file.raw \
+                    or wire(view["head"]) != head_file.raw:
+                blocks._refuse("successor-reader-image-changed")
+            root_file.current()
+            head_file.current()
+            directory_hold.current()
+
+        current()
+        yield view, current
+        current()
+
+
+def read_successor(owner, *, directory, expected_root_sha256, expected_head_sha256):
+    """Return a detached reopened chain head; authority does not survive it."""
+    import siaeventcheckpoint as checkpoints
+
+    with hold_successor(owner, directory=directory,
+                        expected_root_sha256=expected_root_sha256,
+                        expected_head_sha256=expected_head_sha256) as (view, current):
+        detached = json.loads(checkpoints._wire(owner, view))
+        current()
+        return detached
