@@ -398,10 +398,14 @@ def materialize_agent_notes(owner, memo):
     # Settle here, before the capture, exactly as the legacy pulse does
     # before new work. Bounded legacy baselines that remain are named by
     # readiness and retried by the next prelude.
-    try:
-        owner["_settle_thought_page_signals"](store)
-    except owner["ThoughtRecoveryPending"] as exc:
-        owner["log"]("thought page recovery still pending: " + str(exc)[:160])
+    # The settlement acquires the corpus lease itself when the caller does
+    # not hold it; the prelude never re-enters a lease. The resident pulse
+    # always holds it here, and a driver that does not is not a pulse.
+    if owner["_CORPUS_OWNER_DEPTH"].get() > 0:
+        try:
+            owner["_settle_thought_page_signals"](store)
+        except owner["ThoughtRecoveryPending"] as exc:
+            owner["log"]("thought page recovery still pending: " + str(exc)[:160])
     if pages:
         pass
     if pages or owner["corpus_dirty"]():
