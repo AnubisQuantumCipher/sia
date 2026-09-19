@@ -253,8 +253,9 @@ def _prepare(owner, *, admitted_status, batch, expected_batch_sha256,
             siasourcecheckpoint.validate_capture(owner, batch, expected_batch_sha256)
         else:
             source.validate_batch(owner, batch, expected_batch_sha256)
-        if owner["_recoverable_status_integrity"](admitted_status) is None \
-                or admitted_status.get("version") != owner["VERSION"]:
+        # Integrity admits this runtime's version or an earlier canonical
+        # release (an update's first pulse admits the previous publication).
+        if owner["_recoverable_status_integrity"](admitted_status) is None:
             _refuse("admitted-status")
         if owner["_canonical_utc_timestamp"](started_at) != started_at \
                 or admitted_status["ts"] > started_at:

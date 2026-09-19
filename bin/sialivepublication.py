@@ -292,7 +292,10 @@ def _live_receipt(generation):
 
 
 def _live_graph_status(status, graph):
-    if _recoverable_status_integrity(status) is None or status.get("version") != VERSION:
+    # The integrity check admits this runtime's version or an earlier
+    # canonical release (the previous runtime's last publication, which is
+    # what an update rejoins) and refuses anything newer.
+    if _recoverable_status_integrity(status) is None:
         _live_refuse("frozen status is not canonical for this runtime")
     snapshot = _recoverable_graph_snapshot(graph, observed_by=status["ts"])
     if snapshot is None or graph.get("snapshot", {}).get("complete") is not True:
