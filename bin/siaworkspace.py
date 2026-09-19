@@ -299,6 +299,37 @@ def _payload_body(frame_sha256, source_generation, parent, observed_at, bindings
             "parent_state_sha256": parent, **bindings, "selected": selected}
 
 
+def _candidate_payload_sizes(frame, policy, template_size):
+    """Each candidate's payload item size and whether one such item fits the
+    payload beside the holding template. Deterministic on the same inputs."""
+    result = []
+    for candidate in frame["candidates"]:
+        item = {key: candidate[key] for key in _ITEM_KEYS}
+        size = _json_length(item, _PROTOCOL_MAX_BYTES, "payload-item")
+        result.append((candidate["subject"], size,
+                       template_size + size <= policy["max_payload_bytes"]))
+    return result
+
+
+def _oversized_subjects(frame, policy, observed_at):
+    """Subjects whose content cannot be broadcast under this policy.
+
+    The shipped policy admits 1 MiB of candidate content but a 64 KiB
+    payload; a day page above roughly 60 KB used to refuse every cycle with
+    payload-byte-capacity. Such a candidate is ineligible for a slot — the
+    same exclusion the ignition threshold applies — and the cycle proceeds.
+    A refused cycle never produced retained output, so excluding what could
+    never be carried changes no replayable generation.
+    """
+    bindings = {key: _ZERO_SHA256 for key in _BINDING_KEYS}
+    template = _payload_body(_ZERO_SHA256, _ZERO_SHA256, _ZERO_SHA256,
+                             observed_at, bindings, [], holding=True, policy=policy)
+    template["generation"] = _ZERO_SHA256
+    template_size = _json_length(template, _PROTOCOL_MAX_BYTES, "payload-reservation")
+    return {subject for subject, _size, fits in
+            _candidate_payload_sizes(frame, policy, template_size) if not fits}
+
+
 def _output_reservation(frame, state, policy, observed_at, consumers):
     """Reserve worst-case slots and escaped consumer copies before scoring."""
     bindings = {key: _ZERO_SHA256 for key in _BINDING_KEYS}
@@ -306,10 +337,11 @@ def _output_reservation(frame, state, policy, observed_at, consumers):
                              observed_at, bindings, [], holding=True, policy=policy)
     template["generation"] = _ZERO_SHA256
     payload_size = _json_length(template, _PROTOCOL_MAX_BYTES, "payload-reservation")
-    sizes = []
-    for candidate in frame["candidates"]:
-        item = {key: candidate[key] for key in _ITEM_KEYS}
-        sizes.append(_json_length(item, _PROTOCOL_MAX_BYTES, "payload-item"))
+    # Only candidates that can be carried are reserved for: a candidate whose
+    # item alone would overflow the payload is ineligible for selection (see
+    # _oversized_subjects), not a reason to refuse the whole cycle.
+    sizes = [size for _subject, size, fits in
+             _candidate_payload_sizes(frame, policy, payload_size) if fits]
     # This list contains only admitted bounded candidates' integer sizes.
     sizes.sort(reverse=True)
     selected_sizes = sizes[:policy["slots"]]
@@ -424,9 +456,11 @@ def advance_workspace(frame, *, observed_at, previous_state, expected_previous_s
             [item["trace"] for item in frame["candidates"]],
             observed_at=observed_at, policy=activation_policy)
         scores = {item["subject"]: item for item in activation["activations"]}
+        oversized = _oversized_subjects(frame, policy, observed_at)
         eligible = {subject for subject, item in scores.items()
                     if item["status"] == "computed-unverified"
-                    and item["score"] >= policy["ignition_threshold"]}
+                    and item["score"] >= policy["ignition_threshold"]
+                    and subject not in oversized}
         episode = None if previous_state is None else previous_state["episode"]
         release_reason = None
         if release:

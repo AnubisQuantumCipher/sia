@@ -46,6 +46,7 @@ EPOCH_EXPORTS = frozenset({
     "_pending_consolidation_marker",
     "_prepare_consolidation_claims",
     "_read_epoch_state",
+    "_reconstructed_epoch_event_ids",
     "_recover_pending_consolidation",
     "_render_bounded_epoch",
     "_render_epoch_source_manifest",

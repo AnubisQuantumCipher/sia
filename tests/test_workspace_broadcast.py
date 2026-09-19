@@ -236,6 +236,41 @@ class WorkspaceBroadcast(unittest.TestCase):
         self.assertTrue(all(row["status"] == "unavailable" for row in result["activation"]["activations"]))
         self.assertEqual(self.assert_broadcast(result)["selected"], [])
 
+    def test_oversized_candidate_is_ineligible_rather_than_refusing_the_cycle(self):
+        """The shipped policy admits 1 MiB of candidate content but a 64 KiB
+        payload. A candidate whose item cannot be carried is ineligible for
+        a slot, like one below the ignition threshold, and the cycle
+        proceeds with what fits; it used to refuse every cycle with
+        payload-byte-capacity as soon as one day page grew past ~60 KB."""
+        roomy = dict(POLICY, max_content_bytes=1048576)
+        big = candidate("units/huge", [99], content="x" * (roomy["max_payload_bytes"] + 1))
+        small = candidate("units/small", [97])
+        value = {"v": 1, "complete": True, "generation_sha256": "a" * 64,
+                 "candidates": [big, small]}
+        result = self.advance(value, policy=roomy)
+        payload = self.assert_broadcast(result)
+        self.assertEqual([item["subject"] for item in payload["selected"]], ["units/small"])
+        self.assertEqual(result["state"]["phase"], "holding")
+        self.assertIn("units/huge", {row["subject"] for row in result["activation"]["activations"]},
+                      "the oversized candidate is still inspectable")
+        self.assertEqual(self.component._oversized_subjects(value, roomy, 100), {"units/huge"})
+        # Nothing fitting: the cycle idles honestly instead of refusing.
+        alone = {"v": 1, "complete": True, "generation_sha256": "a" * 64, "candidates": [big]}
+        idle = self.advance(alone, policy=roomy)
+        self.assertEqual(idle["state"]["phase"], "idle")
+        self.assertIsNone(idle["state"]["episode"])
+        # A held episode that cannot be carried under the policy still refuses by name.
+        widened = dict(roomy, max_payload_bytes=roomy["max_payload_bytes"] * 4)
+        wide_prior = self.advance(value, policy=widened)
+        self.assertEqual([item["subject"] for item in json.loads(
+            wide_prior["payload_json"])["selected"]], ["units/huge"])
+        with self.assertRaises(Exception) as caught:
+            self.advance(value, previous_state=wide_prior["state"],
+                         expected_previous_state_sha256=wide_prior["state_sha256"],
+                         observed_at=105, policy=roomy)
+        self.assertIn("payload-byte-capacity", str(caught.exception)
+                      + str(getattr(caught.exception, "reason", "")))
+
     def test_stable_input_order_resolves_equal_activation_competition(self):
         value = frame()
         value["candidates"][0]["trace"]["uses"] = [{"id": "tie-use", "timestamp": 99}]
