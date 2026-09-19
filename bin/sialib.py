@@ -8843,12 +8843,30 @@ def _status_bench_trend_shape(value):
     return True
 
 
+def _retained_status_version_admissible(value):
+    """The current release, or an earlier canonical release.
+
+    A retained status is the last publication of whichever runtime wrote it.
+    After an update the first pulse republishes it under the new version; the
+    retained one must stay admissible so that update can start at all, and
+    so `sia status` keeps naming the last publication instead of calling it
+    invalid. A status from a NEWER release than this runtime is refused: it
+    would mean a rollback under a live publication, which this runtime cannot
+    interpret.
+    """
+    if value == VERSION:
+        return True
+    retained = _status_release_tuple(value)
+    current = _status_release_tuple(VERSION)
+    return retained is not None and current is not None and retained < current
+
+
 def _recoverable_status_integrity_checked(value):
     """Return a valid retained verdict, else refuse a hybrid status overlay."""
     if not isinstance(value, dict) \
             or set(value) != _RECOVERABLE_STATUS_KEYS \
             or type(value.get("v")) is not int or value["v"] not in {1, 2} \
-            or value.get("version") != VERSION \
+            or not _retained_status_version_admissible(value.get("version")) \
             or not isinstance(value.get("state"), str) \
             or value.get("state") not in {
                 "failed", "degraded", "thinking", "ok"} \

@@ -1963,11 +1963,16 @@ class MutationBoundaries(unittest.TestCase):
 
     def test_failure_journal_retirement_refuses_newer_or_malformed_core(self):
         status = self._complete_brainstem_status()
-        status.update({"version": "1.7.9", "state": "failed"})
+        # "Newer" is relative to the runtime under test, not a fixed string:
+        # a retained status from an EARLIER release is admissible by design.
+        major, minor, patch = (
+            int(part) for part in brainstem.sialib.VERSION.split("."))
+        newer_version = f"{major}.{minor}.{patch + 1}"
+        status.update({"version": newer_version, "state": "failed"})
         newer = {
             "pulse_seq": status["pulse_seq"], "redactions": {},
             "brainstem_failure_pending": {
-                "v": 2, "producer_version": "1.7.9", "status": status,
+                "v": 2, "producer_version": newer_version, "status": status,
             },
         }
         with self.assertRaisesRegex(RuntimeError, "newer runtime"):
@@ -3443,3 +3448,32 @@ class CommandLineSmoke(unittest.TestCase):
                     env={**os.environ, "HOME": sia_test_home.ISOLATED_HOME})
                 self.assertEqual(completed.returncode, code, completed.stdout)
                 self.assertIn(expected, completed.stdout)
+
+
+class RetainedStatusAcrossUpdates(unittest.TestCase):
+    """The last status published by the previous release must stay admissible
+    after an update: the first-light pulse reads its sequence before it can
+    republish, and `sia status` should name it, not call it invalid."""
+
+    def test_prior_release_status_is_admitted_and_newer_or_malformed_is_not(self):
+        lib = sia.sialib
+        current = _current_status_fixture()
+        self.assertIsNotNone(lib._recoverable_status_integrity(current))
+        prior = dict(current, version="1.7.8")
+        self.assertIsNotNone(lib._recoverable_status_integrity(prior))
+        self.assertIsNotNone(lib._recoverable_status_integrity(
+            dict(current, version="0.9.0")))
+        for version in ("99.0.0", "1.7", "1.7.8-rc1", "", 178, None):
+            with self.subTest(version=version):
+                self.assertIsNone(lib._recoverable_status_integrity(
+                    dict(current, version=version)))
+        with tempfile.TemporaryDirectory() as home:
+            status_path = os.path.join(home, "status.json")
+            with open(status_path, "w", encoding="utf-8") as stream:
+                json.dump(prior, stream)
+            os.chmod(status_path, 0o600)
+            with mock.patch.object(lib, "STATUS_PATH", status_path):
+                admitted = lib._require_status_sequence_not_ahead(prior["pulse_seq"])
+                self.assertEqual(admitted["version"], "1.7.8")
+                with self.assertRaisesRegex(ValueError, "exceeds the durable memo"):
+                    lib._require_status_sequence_not_ahead(prior["pulse_seq"] - 1)
