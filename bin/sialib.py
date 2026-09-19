@@ -3912,8 +3912,9 @@ MAX_GBRAIN_OUTPUT_BYTES = MAX_EXTERNAL_OUTPUT_BYTES
 
 
 _UNSHARE = "/usr/bin/unshare"
-_PROCESS_TREE_ISOLATION = None
-_PROCESS_TREE_ISOLATION_ANNOUNCED = False
+# One mutable cache created at import: transactions snapshot every library
+# global by identity, so the probe result must never rebind a module name.
+_PROCESS_TREE_ISOLATION = {"mode": None, "announced": False}
 
 
 def _probe_process_tree_isolation():
@@ -3932,18 +3933,17 @@ def process_tree_isolation():
     when the weaker mode is in force; it is a host property, not a claim
     about the child's correctness.
     """
-    global _PROCESS_TREE_ISOLATION, _PROCESS_TREE_ISOLATION_ANNOUNCED
-    if _PROCESS_TREE_ISOLATION is None:
-        _PROCESS_TREE_ISOLATION = (
+    cache = _PROCESS_TREE_ISOLATION
+    if cache["mode"] is None:
+        cache["mode"] = (
             "pid-namespace" if _probe_process_tree_isolation()
             else "process-group")
-    if _PROCESS_TREE_ISOLATION == "process-group" \
-            and not _PROCESS_TREE_ISOLATION_ANNOUNCED:
-        _PROCESS_TREE_ISOLATION_ANNOUNCED = True
+    if cache["mode"] == "process-group" and not cache["announced"]:
+        cache["announced"] = True
         print("SIA: unprivileged PID-namespace isolation is unavailable on "
               "this host (unshare refused); bounded subprocesses fall back to "
               "process-group isolation", file=sys.stderr, flush=True)
-    return _PROCESS_TREE_ISOLATION
+    return cache["mode"]
 
 
 def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),

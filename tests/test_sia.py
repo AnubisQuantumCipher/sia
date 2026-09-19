@@ -2184,9 +2184,8 @@ class GbrainProcessBounds(unittest.TestCase):
                 return real_popen(command, *args, **kwargs)
 
             announced = io.StringIO()
-            with mock.patch.object(self.sialib, "_PROCESS_TREE_ISOLATION", None), \
-                    mock.patch.object(
-                        self.sialib, "_PROCESS_TREE_ISOLATION_ANNOUNCED", False), \
+            with mock.patch.dict(self.sialib._PROCESS_TREE_ISOLATION,
+                                 {"mode": None, "announced": False}), \
                     mock.patch.object(
                         self.sialib, "_probe_process_tree_isolation",
                         return_value=False), \
