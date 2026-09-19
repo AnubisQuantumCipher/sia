@@ -3414,6 +3414,17 @@ class StorageReadmission(unittest.TestCase):
         self.assertEqual(calls, [False, True, False])
         self.assertEqual(sia.cmd_readmit(["--bogus"]), 2)
 
+    def test_note_refuses_option_shaped_text_instead_of_queueing_it(self):
+        """`sia note --help` queued a note whose body was "--help"."""
+        import siaqueue
+        with mock.patch.object(siaqueue, "enqueue_note") as enqueue:
+            for argv in (["--help"], ["-h"], ["--from", "me", "--help"]):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(sia.cmd_note(argv), 2, argv)
+                self.assertIn("nothing was queued", output.getvalue())
+            enqueue.assert_not_called()
+
     def test_controller_retire_reports_then_applies_only_with_yes(self):
         import siacheckpointcycle
         report = {"schema": siacheckpointcycle.RETIREMENT_SCHEMA, "applied": False,

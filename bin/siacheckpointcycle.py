@@ -192,13 +192,14 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         configured_directory=configured_directory, **premises)
     if recovered is not None:
         return recovered
-    converge_legacy_authority(owner, memo)
+    notes = converge_legacy_authority(owner, memo)
     try:
         if chain_pending(owner, memo=memo):
-            return advance(owner, memo=memo, clock=clock,
+            view = advance(owner, memo=memo, clock=clock,
                 configured_directory=configured_directory, **premises)
-        return bootstrap(owner, memo=memo, clock=clock,
-            configured_directory=configured_directory, **premises)
+        else:
+            view = bootstrap(owner, memo=memo, clock=clock,
+                configured_directory=configured_directory, **premises)
     except source.SourceBatchRefusal as exc:
         if exc.reason not in CAPACITY_REASONS:
             raise
@@ -214,6 +215,9 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         owner["log"]("controller-source lane retired at capacity ("
                      + exc.reason + "): " + RETIREMENT_NOTE)
         return None
+    if view is not None and notes:
+        acknowledge_agent_notes(owner, memo, notes)
+    return view
 
 
 CAPACITY_REASONS = frozenset({
@@ -349,6 +353,59 @@ def converge_legacy_authority(owner, memo):
     if errors:
         raise RuntimeError(f"grade recovery refused: {errors}")
     owner["_reconcile_legacy_memory_authority"](memo)
+    return materialize_agent_notes(owner, memo)
+
+
+def materialize_agent_notes(owner, memo):
+    """Write queued agent-note pages before a fresh capture.
+
+    Agents queue immutable note requests; only the resident pulse turns
+    them into corpus pages. The legacy pulse did that inside its own
+    transaction and acknowledged the requests after its commit and index
+    sync. The compact lane never did either, so on a machine where it owns
+    the pulse every `sia note` and MCP `note` stayed queued (56 requests
+    over nine days on the maintainer machine). Materialization is the
+    legacy lane's own deterministic writer: a page named by request id,
+    identical on every repeat, one thought per request. The pages are
+    committed here so the capture that follows observes a clean tree, and
+    the requests are acknowledged only after that capture's pulse completes
+    (its effects synchronize the corpus into the index). A refused pulse
+    leaves them queued; the next prelude repeats without duplication.
+    Returns the materialized (path, identity) pairs to acknowledge.
+    """
+    dumps = owner["json"].dumps
+    store = owner["load_thoughts"]()
+    receipts = dumps(memo.get("agent_note_redaction_receipts"), sort_keys=True)
+    paths, pages, thoughts, errors = owner["materialize_agent_notes"](store, memo)
+    if thoughts:
+        owner["export_thoughts"](store)
+    if pages:
+        if owner["corpus_commit"]("SIA agent notes") == "error":
+            raise RuntimeError("agent-note corpus commit refused")
+        owner["_mark_external_corpus_mutation"](memo)
+    if dumps(memo.get("agent_note_redaction_receipts"), sort_keys=True) != receipts:
+        owner["_write_memo"](memo)
+    for error in errors:
+        owner["log"]("agent note REFUSED: " + str(error.get("file"))[:80]
+                     + ": " + str(error.get("error"))[:160])
+    return paths
+
+
+def acknowledge_agent_notes(owner, memo, notes):
+    """Acknowledge materialized requests once their pulse has completed."""
+    memo.clear()
+    memo.update(owner["load_memo"]())
+    acknowledged, errors = owner["acknowledge_agent_notes"](
+        notes, "committed", True,
+        after_ack=lambda identity:
+            owner["_forget_agent_note_redaction_receipt"](memo, identity))
+    if acknowledged:
+        owner["_write_memo"](memo)
+        owner["log"](f"agent notes acknowledged: {acknowledged}")
+    for error in errors:
+        owner["log"]("agent note acknowledgement REFUSED: "
+                     + str(error.get("file"))[:80] + ": "
+                     + str(error.get("error"))[:160])
 
 
 def advance(owner, *, memo, configured_directory, clock, journal_limits,

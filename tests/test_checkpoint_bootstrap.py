@@ -311,6 +311,61 @@ class CheckpointBootstrap(unittest.TestCase):
             for key in self.cycle.RETIRED_KEYS:
                 self.assertIn(key, owner.load_memo())
 
+    def test_queued_agent_notes_are_materialized_and_acknowledged_by_a_compact_pulse(self):
+        """The README's relay: agents queue notes, the resident pulse lands them.
+
+        Only the legacy pulse ever materialized and acknowledged queued
+        agent notes; on a machine where the compact lane owns the pulse,
+        every `sia note` stayed queued (56 requests over nine days on the
+        maintainer machine). A compact pulse now materializes queued notes
+        before its capture, commits them, and acknowledges them after it
+        completes. A refused pulse leaves them queued, materialized once.
+        """
+        siaqueue = importlib.import_module("siaqueue")
+        with self.precompact() as (f, owner, directory):
+            receipt = siaqueue.enqueue_note(owner.STATE, "tester", "remember the fixture")
+            request_id = receipt["request_id"]
+            queued = [path for path, _record, _identity in siaqueue.pending(owner.STATE)[0]]
+            self.assertEqual(len(queued), 1)
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            notes = sorted(Path(owner.CORPUS, "notes").glob("*-tester-" + request_id + ".md"))
+            self.assertEqual(len(notes), 1, "the note page was not materialized")
+            self.assertIn("remember the fixture", notes[0].read_text())
+            tracked = subprocess.run(["/usr/bin/git", "ls-files", "--error-unmatch",
+                                      str(notes[0].relative_to(owner.CORPUS))],
+                                     cwd=owner.CORPUS, capture_output=True, text=True)
+            self.assertEqual(tracked.returncode, 0, "the note page is not committed")
+            self.assertEqual(subprocess.run(["/usr/bin/git", "status", "--porcelain"],
+                                            cwd=owner.CORPUS, capture_output=True,
+                                            text=True).stdout, "")
+            self.assertEqual(siaqueue.pending(owner.STATE)[0], [],
+                "the request was not acknowledged after the pulse completed")
+            thoughts = owner.load_thoughts()["thoughts"]
+            self.assertEqual([t for t in thoughts if t.get("queue_id") == request_id][0]["kind"],
+                             "note")
+
+        with self.precompact() as (f, owner, directory):
+            self.assertEqual(owner._run_controller_source_cycle()["status"], "available")
+            receipt = siaqueue.enqueue_note(owner.STATE, "tester", "survive a refusal")
+            request_id = receipt["request_id"]
+            source = importlib.import_module("siasourcebatch")
+            with mock.patch.object(self.cycle.transaction, "prepare_successor",
+                                   side_effect=source.SourceBatchRefusal("checkpoint-transaction-head-pin")), \
+                    self.assertRaises(source.SourceBatchRefusal):
+                owner._run_controller_source_cycle()
+            self.assertEqual(len(sorted(Path(owner.CORPUS, "notes").glob("*-" + request_id + ".md"))), 1)
+            self.assertEqual(len(siaqueue.pending(owner.STATE)[0]), 1,
+                "a refused pulse must leave the request queued")
+            before = owner.load_thoughts()["thoughts"]
+            # The next prelude repeats without duplicating page or thought.
+            with mock.patch.object(self.cycle.transaction, "prepare_successor",
+                                   side_effect=source.SourceBatchRefusal("checkpoint-transaction-head-pin")), \
+                    self.assertRaises(source.SourceBatchRefusal):
+                owner._run_controller_source_cycle()
+            self.assertEqual(owner.load_thoughts()["thoughts"], before)
+            self.assertEqual(len(siaqueue.pending(owner.STATE)[0]), 1)
+
     def test_compact_completion_renders_the_durable_status_not_the_view(self):
         """A pulse consumer renders a status; the compact lane returns a view.
 

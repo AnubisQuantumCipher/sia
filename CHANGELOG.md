@@ -178,6 +178,15 @@ met every 1.7.8 user with a corpus older than a few weeks:
   `SIA_RETIRE_CONTROLLER_SOURCE=1 ./install.sh` are the operator forms.
   A bounded segment design is the maintainer's follow-up; the bound and
   its cost are now documented in the manual.
+- The controller-source lane never materialized queued agent notes; only
+  the legacy pulse did. On the maintainer machine 56 `sia note` / MCP
+  `note` requests from nine days sat in the inbox unmaterialized while the
+  README promised the relay. A compact pulse now materializes queued notes
+  before its capture, commits them, and acknowledges them after it
+  completes; a refused pulse leaves them queued without duplication.
+- `sia note --help` queued a note whose body was "--help" (three such
+  pages exist in the maintainer corpus); an option-shaped first token now
+  refuses with the usage line, as `sia take` and `sia intend` already did.
 - A sense refusal and a corpus-write refusal log their refusal chain
   (file:function:line) beside the 160-byte status string.
 - The lazily bound live-publication helpers were reached through the owner

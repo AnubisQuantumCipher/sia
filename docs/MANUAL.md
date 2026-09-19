@@ -170,6 +170,18 @@ a downgrade even when `install.sh` is invoked directly.
 The resident service runs a pulse cycle every 60 seconds. Its
 scheduled maintenance cycle runs nightly at 03:33.
 
+### Agent notes on the controller-source lane (implemented, unreleased)
+
+Agents queue immutable note requests; the resident pulse alone materializes
+them. On the controller-source lane that happens before each fresh capture:
+queued requests become their deterministic `notes/<queued-at>-<author>-<id>`
+pages, are committed, and are acknowledged only after the pulse that
+captured them completes and its effects have synchronized the corpus into
+the index. A refused pulse leaves the requests queued; the next prelude
+repeats without duplicating a page or a thought. Before 1.8.0 this lane never
+materialized notes at all, so on a machine where it owned the pulse every
+`sia note` and MCP `note` stayed queued until the release lane ran again.
+
 ### Capacity and retirement of the controller-source lane (implemented, unreleased)
 
 The retained lane has no rollover. Every capture carries every page version

@@ -2353,6 +2353,15 @@ def cmd_note(argv):
                       "[--from <author>]")
                 return 2
             author = argv[i + 1]; i += 2
+        elif argv[i].startswith("-") and not text:
+            # An option-shaped first token is never note text. Before this
+            # guard, `sia note --help` queued a note whose body was "--help"
+            # — three such pages sit in the maintainer corpus.
+            print("usage: sia note \"what the next session should know\" "
+                  "[--from <author>]")
+            print(f"note refused: unrecognized option {argv[i]!r}; "
+                  "nothing was queued")
+            return 2
         else:
             text.append(argv[i]); i += 1
     body = " ".join(text).strip()
