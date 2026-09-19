@@ -8982,7 +8982,7 @@ if ! restic_runtime_receipt_valid; then
       exit 1
     fi
     if owned_metadata prior-release "$RESTIC_RECEIPT" "$RESTIC_BIN"; then
-      echo "  private restic tree carries a receipt for an earlier pin;" \\
+      echo "  private restic tree carries a receipt for an earlier pin;" \
         "rebuilding for this release (prior tree is retained)"
     elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private restic tree lacks an exact current release receipt; preserved" >&2
@@ -9050,7 +9050,7 @@ if ! bun_runtime_receipt_valid; then
       exit 1
     fi
     if owned_metadata prior-release "$BUN_RECEIPT" "$BUN_BIN"; then
-      echo "  private Bun tree carries a receipt for an earlier pin;" \\
+      echo "  private Bun tree carries a receipt for an earlier pin;" \
         "rebuilding for this release (prior tree is retained)"
     elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private Bun tree lacks an exact current release receipt; preserved" >&2
@@ -9416,7 +9416,7 @@ if ! gbrain_runtime_receipt_valid; then
       exit 1
     fi
     if owned_metadata prior-release "$GBRAIN_RECEIPT" "$GBRAIN_BIN"; then
-      echo "  private gbrain tree carries a receipt for an earlier pin;" \\
+      echo "  private gbrain tree carries a receipt for an earlier pin;" \
         "rebuilding for this release (prior tree is retained)"
     elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private gbrain tree lacks an exact current release receipt; preserved" >&2

@@ -5710,7 +5710,11 @@ preflight_corpus locked
                 f'echo "existing private {label} tree lacks an exact current '
                 'release receipt; preserved" >&2', 1)[0][-700:]
             self.assertIn("owned_metadata prior-release", block, label)
-            self.assertIn("rebuilding for this release", block, label)
+            # One backslash continues the echo; a doubled one once turned the
+            # notice into a command and failed the install mid-transaction.
+            self.assertIn('earlier pin;" \\\n        "rebuilding for this release',
+                          block, label)
+            self.assertNotIn('pin;" \\\\\n', block, label)
 
         def probe(home, receipt_text, *, binary_bytes=b"engine"):
             root = os.path.join(home, "tool")
