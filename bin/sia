@@ -773,8 +773,12 @@ def cmd_ready():
     return 1
 
 
-_CORPUS_RECEIPT_PATH = os.path.join(sialib.STATE, "managed-install", "corpus")
 _CORPUS_RECEIPT_HEAD = ("managed-by=khephri.sia", "kind=corpus-v2")
+
+
+def _corpus_receipt_path():
+    # Resolved per call: sialib is bound only after the runtime lease.
+    return os.path.join(sialib.STATE, "managed-install", "corpus")
 
 
 def _corpus_root_identity():
@@ -801,11 +805,12 @@ def _corpus_receipt_readmit(apply):
     its root line changes; anything else is left for the installer's own
     fail-closed recovery.
     """
-    result = {"path": _CORPUS_RECEIPT_PATH}
+    receipt_path = _corpus_receipt_path()
+    result = {"path": receipt_path}
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(_CORPUS_RECEIPT_PATH, flags)
+        descriptor = os.open(receipt_path, flags)
     except FileNotFoundError:
         result.update(status="absent", detail="no corpus receipt is installed")
         return result
@@ -839,8 +844,8 @@ def _corpus_receipt_readmit(apply):
         result["status"] = "drifted"
         return result
     payload = "\n".join(expected_head + ["root=" + observed]) + "\n"
-    sialib.atomic_write(_CORPUS_RECEIPT_PATH, payload, mode=0o600)
-    with open(_CORPUS_RECEIPT_PATH, encoding="utf-8") as stream:
+    sialib.atomic_write(receipt_path, payload, mode=0o600)
+    with open(receipt_path, encoding="utf-8") as stream:
         if stream.read() != payload:
             raise RuntimeError("corpus receipt readback differs")
     if _corpus_root_identity() != observed:

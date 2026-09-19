@@ -3425,3 +3425,21 @@ class StorageReadmission(unittest.TestCase):
         self.assertEqual(out.getvalue(), "")
         with self.assertRaises(ValueError):
             self.lib.record_pulse_failure(1, "x", failed_at="not-a-time")
+
+
+class CommandLineSmoke(unittest.TestCase):
+    """The CLI file must import and dispatch as a real process: a module-level
+    reference to the lazily bound runtime would crash every command."""
+
+    def test_cli_process_dispatches_usage_before_any_runtime_lease(self):
+        for arguments, code, expected in (
+                (["readmit", "--bogus"], 2, "usage: sia readmit [--yes] [--json]"),
+                (["version"], 0, sia.sialib.VERSION)):
+            with self.subTest(arguments=arguments):
+                completed = subprocess.run(
+                    [sys.executable, SIA_PATH, *arguments], text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=60, check=False,
+                    env={**os.environ, "HOME": sia_test_home.ISOLATED_HOME})
+                self.assertEqual(completed.returncode, code, completed.stdout)
+                self.assertIn(expected, completed.stdout)
