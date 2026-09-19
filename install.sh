@@ -10408,8 +10408,10 @@ case "$GBRAIN_CONFIG_ACTION" in
     exit 1
     ;;
 esac
+# Under the sterile environment (NO_COLOR=1): gbrain colours its shadowed
+# DB-plane notice on a colour-capable stderr, which no exact match admits.
 if ! GBRAIN_SELF_UPGRADE_OUTPUT="$(bounded_command_capture \
-    "$GBRAIN_BIN" config get self_upgrade.mode)"; then
+    "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" config get self_upgrade.mode)"; then
   echo "could not verify that gbrain self-upgrade is disabled" >&2
   exit 1
 fi
