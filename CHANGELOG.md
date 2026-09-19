@@ -53,6 +53,17 @@ the stable launcher, and the brainstem checks the plugin manifest before
 every pulse, taking its existing non-restart exit and pointing at
 `sia uninstall` if registration is missing or unsafe.
 
+An update whose gbrain overlay pin moved (this one) used to refuse every
+existing install with "existing private gbrain tree lacks an exact current
+release receipt; explicit replacement requires SIA_REPLACE_TOOLCHAIN=1". A
+genuine SIA receipt for an earlier pin — the managed-by header and the
+digest of exactly the binary beside it — is now an ordinary upgrade: the
+installer says it is rebuilding for this release and retains the prior
+tree. Unreceipted, foreign or torn trees still require the explicit
+consent. When the installer cannot acquire its lifecycle lease it now lists
+the processes still using the installed runtime (an hourly continuity run
+finishes on its own; an agent's `sia` MCP connection must be closed).
+
 ### Continuity
 
 Issue #12 ([m10ust](https://github.com/m10ust)) reported continuity failing
