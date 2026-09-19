@@ -3823,6 +3823,8 @@ def _missing_event_index_expectations(organ, wanted, *, dependency_capture=None)
             "device", "inode", "size", "mtime_ns", "ctime_ns"))
         epoch = _read_epoch_state(
             slug, expected_generation=expected_generation, **capture_kw)
+        if dependency_capture is not None:
+            dependency_capture.release_bytes(corpus_path(slug))
         if not epoch["source_manifest_declared"]:
             # Epochs predating exact source/index lineage cannot make a
             # completeness claim. They remain readable legacy summaries.
@@ -3875,6 +3877,9 @@ def _other_event_occurrences(organ, wanted, excluded, *, dependency_capture=None
             "device", "inode", "size", "mtime_ns", "ctime_ns"))
         text = _read_event_page(
             slug, expected_generation=generation, **capture_kw)
+        if dependency_capture is not None:
+            # A scanned page is a bound observation, not plan content.
+            dependency_capture.release_bytes(corpus_path(slug))
         for line in text.splitlines():
             marker = EVENT_MARKER_RE.fullmatch(line)
             if marker is None:

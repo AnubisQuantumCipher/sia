@@ -247,8 +247,21 @@ class _Capture:
             if expected_generation is not None and tuple(item["generation"][key] for key in
                     ("device", "inode", "size", "mtime_ns", "ctime_ns")) != expected_generation:
                 _refuse("source-generation")
-            if len(item["raw"]) > maximum:
+            if item["raw_bytes"] > maximum:
                 _refuse("source-byte-capacity")
+            if item["raw"] is None:
+                # Bytes were released after a dependency-only scan; re-read
+                # the same held descriptor and require the exact retained
+                # generation and digest before retaining them again.
+                self.budget.reserve(("file", relative),
+                                    2048 + _text_size(relative, self.budget.limit)
+                                    + item["raw_bytes"])
+                raw = os.pread(item["fd"], maximum + 1, 0)
+                if _generation(os.fstat(item["fd"])) != item["generation"] \
+                        or len(raw) != item["raw_bytes"] \
+                        or _hash(self.owner, raw) != item["raw_sha256"]:
+                    _refuse("source-generation-changed")
+                item["raw"] = raw
             return item["raw"]
         self.budget.reserve(("file", relative), 1024 + _text_size(relative, self.budget.limit))
         try:
@@ -261,24 +274,46 @@ class _Capture:
             _regular(before)
             if before.st_size > maximum:
                 _refuse("source-byte-capacity")
-            # Reserve raw retention and both possible page byte projections
-            # before allocating a read buffer or hashing source bytes.
+            # Reserve the raw retention before allocating a read buffer or
+            # hashing source bytes. Page byte projections are reserved only
+            # when a page is selected as a plan target (see prepare): every
+            # day page of an organ is read as a dependency by the cross-day
+            # occurrence scan, and reserving two projections for each of
+            # them exhausted the plan budget on organs a few weeks old.
             self.budget.reserve(("file", relative),
                                 2048 + _text_size(relative, self.budget.limit)
-                                + before.st_size + 2 * ((before.st_size + 2) // 3 * 4))
+                                + before.st_size)
             if expected_generation is not None \
                     and self.owner["_file_generation"](before) != expected_generation:
                 _refuse("source-generation")
             raw = os.pread(fd, maximum + 1, 0)
             if len(raw) != before.st_size or _generation(os.fstat(fd)) != _generation(before):
                 _refuse("source-changed-during-read")
-            self.files[relative] = {"fd": fd, "generation": _generation(before), "raw": raw}
+            self.files[relative] = {"fd": fd, "generation": _generation(before), "raw": raw,
+                                    "raw_bytes": len(raw), "raw_sha256": _hash(self.owner, raw)}
             self.check_file(path)
         except BaseException:
             if relative not in self.files:
                 os.close(fd)
             raise
         return raw
+
+    def release_bytes(self, path):
+        """Drop retained bytes of a dependency-only read; keep its observation.
+
+        The generation, byte count and digest remain in the plan's read
+        dependencies and the descriptor stays held, so the observation is as
+        binding as before; only the budget stops paying for bytes the plan
+        will never carry. A later read of the same page re-reads and
+        re-verifies them.
+        """
+        relative = self.relative(path)
+        item = self.files.get(relative)
+        if item is None or item["raw"] is None:
+            return
+        item["raw"] = None
+        self.budget.reserve(("file", relative),
+                            2048 + _text_size(relative, self.budget.limit))
 
     def check_file(self, path):
         relative = self.relative(path)
@@ -362,8 +397,8 @@ class _Capture:
         for relative in sorted(self.files):
             item = self.files[relative]
             before = None if item is None else {
-                "generation": item["generation"], "raw_bytes": len(item["raw"]),
-                "raw_sha256": _hash(self.owner, item["raw"])}
+                "generation": item["generation"], "raw_bytes": item["raw_bytes"],
+                "raw_sha256": item["raw_sha256"]}
             files.append({"relative": relative, "before": before})
         directories = []
         for relative in sorted(self.directories):
@@ -406,10 +441,15 @@ class _Capture:
         for relative, item in self.files.items():
             if item is None or relative in exempt_files:
                 continue
-            raw = os.pread(item["fd"], len(item["raw"]) + 1, 0)
-            if raw != item["raw"]:
+            raw = os.pread(item["fd"], item["raw_bytes"] + 1, 0)
+            if item["raw"] is not None:
+                if raw != item["raw"]:
+                    _refuse("source-bytes-changed")
+                _hash(self.owner, raw)
+            elif len(raw) != item["raw_bytes"] \
+                    or _hash(self.owner, raw) != item["raw_sha256"]:
+                # Released dependency bytes are still bound by digest.
                 _refuse("source-bytes-changed")
-            _hash(self.owner, raw)
         # No hash/copy follows this complete named roster sweep.
         self.named_current(exempt_files=exempt_files, exempt_directories=exempt_directories)
 
@@ -474,12 +514,24 @@ def prepare(owner, *, organ, date, events):
         file_rows = {row["relative"]: row["before"] for row in deps["files"]}
         pages = []
         encoder = owner.get("base64", base64)
+
+        def projected_bytes(count):
+            return (count + 2) // 3 * 4
+
         for slug in sorted(selected):
             original = capture.files[slug + ".md"]
+            if original is not None and original["raw"] is None:
+                capture.read_file(owner["corpus_path"](slug), owner["MAX_EVENT_PAGE_BYTES"])
             raw = capture.images.get(slug)
             write = raw is not None
             if raw is None:
                 raw = original["raw"]
+            # The plan carries this page's image (and its retained original's)
+            # as base64; reserve both projections now that the page is a
+            # target, before encoding.
+            budget.reserve(("projection", slug),
+                           4096 + projected_bytes(len(raw))
+                           + (0 if original is None else projected_bytes(len(original["raw"]))))
             projected = owner["_corpus_page_version_from_bytes"](slug=slug, raw=raw)
             before = None
             if original is not None:
@@ -716,6 +768,9 @@ def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
                     or not _same(owner, actual["generation"], before["generation"]) \
                     or len(raw) != before["raw_bytes"] or _hash(owner, raw) != before["raw_sha256"]:
                 _refuse("original-source-binding")
+            else:
+                # Verified dependency: its observation stays, its bytes go.
+                capture.release_bytes(capture.path(relative))
         for row in deps["directories"]:
             relative, before = row["relative"], row["before"]
             actual = capture.directories[relative]
@@ -773,6 +828,10 @@ class _BeforeView:
                 _refuse("missing-ancestor-dependency")
             self.used_directories.add(name)
 
+    def release_bytes(self, path):
+        """Replay views hold retained images, not budgeted live bytes."""
+        return None
+
     def read_file(self, path, maximum, *, expected_generation=None):
         relative = self.live.relative(path)
         self._anchor(relative)
@@ -785,7 +844,12 @@ class _BeforeView:
         if expected_generation is not None and tuple(before["generation"][key] for key in
                 ("device", "inode", "size", "mtime_ns", "ctime_ns")) != expected_generation:
             _refuse("before-scan-generation-binding")
-        raw = self.images[relative]["before"] if relative in self.images else self.live.files[relative]["raw"]
+        if relative in self.images:
+            raw = self.images[relative]["before"]
+        else:
+            raw = self.live.files[relative]["raw"]
+            if raw is None:
+                raw = self.live.read_file(self.live.path(relative), self.owner["MAX_EVENT_PAGE_BYTES"])
         if raw is None or len(raw) > maximum:
             _refuse("before-source-capacity")
         return raw
@@ -819,6 +883,10 @@ class _TargetView:
     def __init__(self, owner, slug, raw):
         self.path = os.path.abspath(owner["corpus_path"](slug))
         self.raw = raw
+
+    def release_bytes(self, path):
+        """Replay views hold retained images, not budgeted live bytes."""
+        return None
 
     def read_file(self, path, maximum, *, expected_generation=None):
         if os.path.abspath(path) != self.path or expected_generation is not None:

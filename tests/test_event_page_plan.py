@@ -499,6 +499,54 @@ class EventPageRenderPlan(unittest.TestCase):
         self.assertIn("epochs/org", directories)
         self.assertIsNone(directories["epochs/org"])
 
+    def test_many_historical_pages_do_not_exhaust_the_plan_budget(self):
+        """The cross-day occurrence scan reads every day page of the organ.
+        Each scanned page is bound by generation and digest in the plan's
+        read dependencies, but the plan carries no image of it, so the
+        budget must not pay for its bytes or projections: an organ a few
+        weeks old (53 codex days, 3.4 MB, on the maintainer machine) used to
+        exhaust the 16 MiB ceiling with complete-byte-capacity."""
+        _old, source, _record = self.fixture._source()
+        historical = []
+        for day in range(8, 28):
+            _page, path, _rec = self.fixture._source(
+                f"2026-01-{day:02d}", f"native:admission:history-{day}")
+            padding = "\n".join("- padding line " + "x" * 200 for _ in range(60))
+            path.write_text(path.read_text(encoding="utf-8") + "\n## Notes\n"
+                            + padding + "\n", encoding="utf-8")
+            historical.append(path)
+        total = sum(len(path.read_bytes()) for path in historical)
+        # A ceiling the old accounting (raw + two base64 projections per
+        # scanned page) cannot fit, but the actual plan document does.
+        ceiling = total * 2
+        event = self.event("2026-01-30", "native:admission:new")
+        with mock.patch.object(self.lib, "MAX_STATE_JSON_BYTES", ceiling):
+            plan = self.prepare([event], day="2026-01-30")
+            self.assert_plan(plan)
+            files = {row["relative"]: row["before"]
+                     for row in plan["read_dependencies"]["files"]}
+            for path in historical:
+                relative = str(path.relative_to(self.corpus))
+                self.assertEqual(files[relative], {
+                    "generation": generation(path.stat()),
+                    "raw_bytes": len(path.read_bytes()),
+                    "raw_sha256": digest(path.read_bytes())})
+            self.assertEqual([page["slug"] for page in plan["pages"]],
+                             ["events/org/2026-01-30"])
+            self.assertLess(len(canonical(plan)), ceiling)
+            result = self.publish(plan)
+        self.assertIsInstance(result, dict)
+        self.assertTrue((self.corpus / "events/org/2026-01-30.md").exists())
+        # A scanned page that changed after planning still refuses publish.
+        event2 = self.event("2026-01-31", "native:admission:new-2")
+        with mock.patch.object(self.lib, "MAX_STATE_JSON_BYTES", ceiling):
+            plan2 = self.prepare([event2], day="2026-01-31")
+            historical[3].write_text(historical[3].read_text(encoding="utf-8") + "- late\n",
+                                     encoding="utf-8")
+            with self.assertRaises(ValueError):
+                self.publish(plan2)
+        self.assertFalse((self.corpus / "events/org/2026-01-31.md").exists())
+
     def test_rehashed_missing_dependency_or_scan_member_refuses_before_writes(self):
         _old, source, _record = self.fixture._source()
         event = self.event("2026-01-07", "native:admission:new")
