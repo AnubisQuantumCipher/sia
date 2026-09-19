@@ -1296,29 +1296,57 @@ def view_identity_bound(owner, view):
     adoption = view["epoch_adoption"]["adoption"]
     if _same(owner, view["records_identity"], adoption["records_identity"]):
         return True
-    # A read that cannot even be attempted (a restricted owner, an unsafe
-    # path) is a refusal with a name, never a silent "unbound".
+    # Callers such as the checkpoint wrapper hold a restricted owner, so the
+    # receipt is read here with plain bounded no-follow calls rather than
+    # the library's held-file reader. A read that cannot even be attempted
+    # is a refusal with a name, never a silent "unbound".
     try:
         path = source._canonical_path(owner, os.path.join(
             os.path.dirname(view["records_directory"]), "readmission.json"))
-        held = source.HeldFile(owner, path, owner["MAX_STATE_JSON_BYTES"],
-                               allow_absent=True)
+        receipt = _read_private_document(path, owner["MAX_STATE_JSON_BYTES"])
     except _ERRORS as exc:
         raise ControllerDeliveryEpochRefusal(
             "readmission-receipt-unreadable", upstream=exc,
             detail=type(exc).__name__) from exc
+    if receipt is None:
+        return False
     try:
-        receipt = held.value
-        if receipt is None or held.generation is None \
-                or stat.S_IMODE(held.generation["mode"]) != 0o600:
-            return False
-        try:
-            _validate_readmission(_ReadmitScope(owner), adoption, receipt)
-        except ControllerDeliveryEpochRefusal:
-            return False
-        return _same(owner, view["records_identity"], receipt["records_identity"])
+        _validate_readmission(_ReadmitScope(owner), adoption, receipt)
+    except ControllerDeliveryEpochRefusal:
+        return False
+    return _same(owner, view["records_identity"], receipt["records_identity"])
+
+
+def _read_private_document(path, ceiling):
+    """One owned, private (0600), single-link regular JSON document, or
+    None when absent; anything else is an error for the caller to name."""
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600 \
+                or info.st_size > ceiling:
+            raise ValueError("readmission receipt is not an owned private document")
+        raw = os.read(descriptor, ceiling + 1)
+        if len(raw) != info.st_size:
+            raise ValueError("readmission receipt changed while read")
     finally:
-        held.close()
+        os.close(descriptor)
+    import json
+
+    def refuse_constant(_value):
+        raise ValueError("readmission receipt carries a non-finite number")
+
+    value = json.loads(raw.decode("utf-8", errors="strict"),
+                       parse_constant=refuse_constant)
+    if type(value) is not dict:
+        raise ValueError("readmission receipt is not an object")
+    return value
 
 
 class _ReadmitScope:

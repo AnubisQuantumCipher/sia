@@ -727,8 +727,11 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             receipt_path.unlink()
             self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, view))
             receipt_path.write_bytes(genuine)
-            # A receipt that is not private is not admitted either.
-            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, view))
+            # A receipt that is not private is refused by name, never
+            # silently read as "unbound".
+            with self.assertRaises(self.module.ControllerDeliveryEpochRefusal) as caught:
+                self.module.view_identity_bound(case.lib.__dict__, view)
+            self.assertEqual(caught.exception.reason, "readmission-receipt-unreadable")
             os.chmod(receipt_path, 0o600)
             self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, view))
             self.assertEqual(view["epoch_adoption"]["adoption"]["records_identity"],
