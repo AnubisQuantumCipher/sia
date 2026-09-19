@@ -1719,3 +1719,39 @@ class RestoreQuiescenceCapabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContinuityFailureNaming(unittest.TestCase):
+    """The continuity panel names WHICH of SIA's own capsule gates refused,
+    with its numeric-only clause, without ever echoing arbitrary exception
+    text that could carry a repository credential (issue #12)."""
+
+    def test_known_capsule_refusals_are_named_and_unknown_text_is_not_echoed(self):
+        import siabackup
+        clause = siabackup._named_failure_clause(ValueError(
+            "source corpus receipt does not bind the live corpus root "
+            "(receipt root=66306:3710730:16877:1000, live root=64768:1574983:16877:1000; "
+            "after a filesystem move run: sia readmit)"))
+        self.assertEqual(
+            clause,
+            " Reason: corpus-receipt-root-mismatch (receipt root=66306:3710730:16877:1000, "
+            "live root=64768:1574983:16877:1000; after a filesystem move run: sia readmit)")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError(
+                "capsule source directory exceeds its entry bound "
+                "(/home/x/.local/share/sia/corpus/packages: more than 65536 entries)")),
+            " Reason: capsule-entry-bound (/home/x/.local/share/sia/corpus/packages: "
+            "more than 65536 entries)")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError("capsule output already exists")),
+            " Reason: capsule-output-exists.")
+        # Unknown exceptions, and known prefixes with unsafe or oversized
+        # clauses, contribute nothing beyond the fixed sentence.
+        self.assertEqual(siabackup._named_failure_clause(
+            RuntimeError("restic: RESTIC_PASSWORD=hunter2 rejected")), "")
+        self.assertEqual(siabackup._named_failure_clause(ValueError(
+            "capsule output already exists <secret>")),
+            " Reason: capsule-output-exists.")
+        self.assertEqual(siabackup._named_failure_clause(ValueError(
+            "capsule output already exists " + "x" * 300)),
+            " Reason: capsule-output-exists.")

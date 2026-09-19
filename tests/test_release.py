@@ -5475,6 +5475,142 @@ preflight_corpus locked
             resumed = run(home, extra_environment=consent)
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
 
+    def test_moved_corpus_receipt_is_named_and_rebound_only_by_consent(self):
+        """A v2 receipt whose root no longer matches the live corpus (rsync,
+        btrfs subvolume, restore by copy) is recognized as `moved`, named
+        with both identities, and re-bound only under explicit consent."""
+        installer = _read("install.sh")
+        metadata = _owned_metadata_shell(installer)
+        tree = ("owned_tree_cas() {" + installer.split(
+            "owned_tree_cas() {", 1)[1].split(
+                "\n}\n\nowned_tree_generation()", 1)[0] +
+                '\n}\nowned_tree_generation() { '
+                'owned_tree_cas generation "$1"; }\n')
+        functions = ("durable_fixed_metadata_stage() {" + installer.split(
+            "durable_fixed_metadata_stage() {", 1)[1].split(
+                "\n}\n\nruntime_tree_digest()", 1)[0] + "\n}\n")
+        # The readmission runs before the first-light pulse, under the same
+        # consent variable, and never silently.
+        readmit = installer.index('python3 "$BINDIR/sia-cli" readmit --yes')
+        report = installer.index('python3 "$BINDIR/sia-cli" readmit || {', readmit)
+        pulse = installer.index(
+            'SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse', report)
+        self.assertLess(readmit, report)
+        self.assertLess(report, pulse)
+        self.assertIn('if [ "${SIA_READMIT_MOVED_STORAGE:-0}" = 1 ]; then',
+                      installer[readmit - 400:readmit])
+
+        def prepare(home, recorded_root):
+            share = os.path.join(home, "share")
+            managed = os.path.join(home, "state", "managed-install")
+            corpus = os.path.join(share, "corpus")
+            os.makedirs(corpus, mode=0o700)
+            os.makedirs(managed)
+            receipt = os.path.join(managed, "corpus")
+            stale = ("managed-by=khephri.sia\nkind=corpus-v2\n"
+                     f"path={corpus}\nroot={recorded_root}\n")
+            _write(receipt, stale, 0o600)
+            observed = os.stat(corpus)
+            live_root = (f"{observed.st_dev}:{observed.st_ino}:"
+                         f"{observed.st_mode}:{observed.st_uid}")
+            return managed, corpus, receipt, stale, live_root
+
+        def run(home, command, *, locked=False, consent=False,
+                early_state="absent", early_root="", early_generation=""):
+            share = os.path.join(home, "share")
+            managed = os.path.join(home, "state", "managed-install")
+            variables = f'''
+SHARE={shlex.quote(share)}
+STATE={shlex.quote(os.path.join(home, "state"))}
+MANAGED_DIR={shlex.quote(managed)}
+CORPUS_RECEIPT="$MANAGED_DIR/corpus"
+CORPUS_BOOTSTRAP_INTENT="$MANAGED_DIR/corpus-bootstrap"
+CORPUS_ADOPTION_INTENT="$MANAGED_DIR/corpus-adoption"
+CORPUS_BOOTSTRAP_STAGE="$SHARE/.corpus-bootstrap-tree"
+SIA_INSTALL_LOCK_FD={"installer-test" if locked else ""}
+SIA_CORPUS_LOCK_FD={"corpus-test" if locked else ""}
+SIA_CORPUS_RECEIPT_LOCKS_HELD={1 if locked else 0}
+SIA_CORPUS_EARLY_RECEIPT_STATE={early_state}
+SIA_CORPUS_EARLY_RECEIPT_ROOT={shlex.quote(early_root)}
+SIA_CORPUS_EARLY_RECEIPT_GENERATION={shlex.quote(early_generation)}
+SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
+{"SIA_READMIT_MOVED_STORAGE=1" if consent else "unset SIA_READMIT_MOVED_STORAGE"}
+'''
+            script = ("set -euo pipefail\n" + metadata + tree + functions
+                      + variables + command)
+            return subprocess.run(
+                ["bash", "-s", "moved-receipt-test"], input=script, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                timeout=30)
+
+        stale_root = "66306:3710730:16877:1000"
+        with tempfile.TemporaryDirectory() as home:
+            managed, corpus, receipt, stale, live_root = prepare(home, stale_root)
+            self.assertNotEqual(live_root, stale_root)
+            state = run(home, 'corpus_receipt_state\n')
+            self.assertEqual(state.returncode, 0, state.stderr)
+            self.assertEqual(state.stdout.strip(), "moved")
+            recorded = run(home, 'corpus_receipt_recorded_root\n')
+            self.assertEqual(recorded.stdout.strip(), stale_root)
+
+            refused = run(home, 'preflight_corpus read-only\n')
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn(f"corpus receipt binds root {stale_root} but the live "
+                          f"corpus root is {live_root}", refused.stderr)
+            self.assertIn("SIA_READMIT_MOVED_STORAGE=1 ./install.sh", refused.stderr)
+            self.assertIn("sia readmit --yes", refused.stderr)
+            self.assertNotIn("existing corpus receipt is invalid", refused.stderr)
+            self.assertEqual(_read_path(receipt), stale)
+
+            consented = run(
+                home,
+                'preflight_corpus read-only\n'
+                'test "$SIA_CORPUS_EARLY_RECEIPT_STATE" = moved\n'
+                'test "$SIA_CORPUS_EARLY_RECEIPT_ROOT" = ' + shlex.quote(live_root)
+                + '\n', consent=True)
+            self.assertEqual(consented.returncode, 0, consented.stderr)
+            self.assertIn("re-bound by operator consent", consented.stdout)
+            self.assertEqual(_read_path(receipt), stale)
+
+            # The locked migration refuses without consent and re-binds with it.
+            generation = run(home, 'owned_metadata generation "$CORPUS_RECEIPT"\n')
+            self.assertEqual(generation.returncode, 0, generation.stderr)
+            unconsented = run(
+                home, "migrate_legacy_corpus_receipt\n", locked=True,
+                early_state="moved", early_root=live_root,
+                early_generation=generation.stdout.strip())
+            self.assertNotEqual(unconsented.returncode, 0)
+            self.assertIn("SIA_READMIT_MOVED_STORAGE=1", unconsented.stderr)
+            self.assertEqual(_read_path(receipt), stale)
+            migrated = run(
+                home, "migrate_legacy_corpus_receipt\ncorpus_receipt_state\n",
+                locked=True, consent=True, early_state="moved",
+                early_root=live_root, early_generation=generation.stdout.strip())
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            self.assertIn(f"root {stale_root} -> {live_root}", migrated.stdout)
+            self.assertEqual(migrated.stdout.strip().splitlines()[-1], "v2")
+            self.assertEqual(
+                _read_path(receipt),
+                "managed-by=khephri.sia\nkind=corpus-v2\n"
+                f"path={corpus}\nroot={live_root}\n")
+            self.assertEqual(
+                sorted(name for name in os.listdir(managed)
+                       if not name.startswith(".sia-cas-lock-")),
+                ["corpus"])
+            valid = run(home, 'corpus_receipt_valid\n')
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+
+        with tempfile.TemporaryDirectory() as home:
+            # A receipt for another path is not "moved"; it stays invalid.
+            managed, corpus, receipt, _stale, _live = prepare(home, stale_root)
+            _write(receipt, "managed-by=khephri.sia\nkind=corpus-v2\n"
+                   f"path={corpus}-other\nroot={stale_root}\n", 0o600)
+            state = run(home, 'corpus_receipt_state\n')
+            self.assertNotEqual(state.returncode, 0)
+            refused = run(home, 'preflight_corpus read-only\n', consent=True)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("existing corpus receipt is invalid", refused.stderr)
+
     def test_corpus_receipt_v2_is_root_bound_and_lock_migrated(self):
         installer = _read("install.sh")
         metadata = _owned_metadata_shell(installer)

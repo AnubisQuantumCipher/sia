@@ -615,6 +615,145 @@ class ControllerDeliveryEpoch(unittest.TestCase):
                         expected_adoption_sha256=result["expected_adoption_sha256"])
             self.assertEqual((case.images(), _tree(root)), before)
 
+    def _move_records(self, retained, root, suffix):
+        """Give the records directory a new inode with the same content, the
+        way rsync/btrfs/restore-by-copy do, without touching the journal."""
+        _key, _directory, _birth_path, _adoption_path, records = self.paths(retained, root)
+        parked = root.parent / ("held-original-records-" + suffix)
+        records.rename(parked)
+        records.mkdir(mode=0o700)
+        for child in sorted(parked.iterdir()):
+            (records / child.name).write_bytes(child.read_bytes())
+            os.chmod(records / child.name, stat.S_IMODE(child.stat().st_mode))
+        return records
+
+    def _readmit(self, case, *, apply, readmitted_at=1_700_000_000):
+        with self.idle.source_owner(case), case.lib.brainstem_owner(), case.lib.corpus_owner():
+            return self.module.readmit_epoch(
+                case.lib.__dict__, memo=case.lib.load_memo(),
+                readmitted_at=readmitted_at, apply=apply)
+
+    def _hold_view(self, case, retained, committed, status, pin):
+        request = {
+            "memo": case.live.memo, "admitted_status": status,
+            "retained_batch": retained, "committed": committed,
+            "journal_limits": self.limits,
+            "expected_journal_limits_sha256": live_tests.digest(self.limits),
+            "expected_adoption_sha256": pin,
+        }
+        with self.idle.source_owner(case), case.lib.brainstem_owner(), case.lib.corpus_owner(), \
+                self.module.hold_epoch(case.lib.__dict__, **request) as held:
+            return held.read()
+
+    def test_moved_records_directory_refusal_names_both_identities_and_the_ceremony(self):
+        with self.completed() as (case, retained, committed, status, _generation, root):
+            result = self.prepare(case, retained, committed, status)
+            adopted_identity = result["adoption"]["records_identity"]
+            records = self._move_records(retained, root, "named")
+            observed = os.lstat(records)
+            refusal = self.refuse(case, retained, committed, status,
+                                  expected_adoption_sha256=result["expected_adoption_sha256"])
+            self.assertEqual(refusal.reason, "adoption-directory-or-content-binding")
+            self.assertEqual(
+                refusal.detail,
+                "records directory identity expected dev=%d ino=%d, observed "
+                "dev=%d ino=%d; after a filesystem move run: sia readmit"
+                % (adopted_identity["dev"], adopted_identity["ino"],
+                   observed.st_dev, observed.st_ino))
+            self.assertIn("(" + refusal.detail + ")", str(refusal))
+            self.assertNotIn("\n", str(refusal))
+
+    def test_operator_readmission_rebinds_the_same_adoption_without_changing_its_pin(self):
+        with self.completed() as (case, retained, committed, status, _generation, root):
+            self.assertEqual(self._readmit(case, apply=False)["status"], "absent")
+            result = self.prepare(case, retained, committed, status)
+            pin = result["expected_adoption_sha256"]
+            key, directory, birth_path, adoption_path, records = self.paths(retained, root)
+            bound = self._readmit(case, apply=False)
+            self.assertEqual(bound["status"], "bound")
+            self.assertEqual(bound["adoption_sha256"], pin)
+            self.assertFalse((directory / "readmission.json").exists())
+            adoption_bytes = adoption_path.read_bytes()
+            memo_before = copy.deepcopy(case.live._read("MEMO_PATH"))
+            self._move_records(retained, root, "readmit")
+            moved = os.lstat(records)
+            drifted = self._readmit(case, apply=False)
+            self.assertEqual(drifted["status"], "drifted")
+            self.assertEqual(drifted["observed_identity"]["ino"], moved.st_ino)
+            self.assertEqual(drifted["effective_identity"], result["adoption"]["records_identity"])
+            self.assertFalse((directory / "readmission.json").exists())
+            self.refuse(case, retained, committed, status, expected_adoption_sha256=pin)
+            readmitted = self._readmit(case, apply=True, readmitted_at=1_726_000_000)
+            self.assertEqual(readmitted["status"], "readmitted")
+            self.assertEqual(readmitted["previous_identity"], result["adoption"]["records_identity"])
+            self.assertIsNone(readmitted["superseded_readmission_sha256"])
+            receipt_path = directory / "readmission.json"
+            info = os.lstat(receipt_path)
+            self.assertTrue(stat.S_ISREG(info.st_mode))
+            self.assertEqual(stat.S_IMODE(info.st_mode), 0o600)
+            receipt = json.loads(receipt_path.read_bytes())
+            self.assertEqual(receipt_path.read_bytes(), _wire(receipt))
+            self.assertEqual(set(receipt), self.module._READMISSION_KEYS)
+            self.assertEqual(receipt["schema"], self.module.READMISSION_SCHEMA)
+            self.assertEqual(receipt["adoption_sha256"], pin)
+            self.assertEqual(receipt["adoption_identity"], result["adoption"]["records_identity"])
+            self.assertEqual(receipt["previous_identity"], result["adoption"]["records_identity"])
+            self.assertEqual(receipt["records_identity"]["ino"], moved.st_ino)
+            self.assertEqual(receipt["readmitted_at"], 1_726_000_000)
+            self.assertEqual(receipt["consent"], "operator-readmit-cli")
+            self.assertEqual(receipt["readmission_sha256"],
+                             live_tests.digest({k: v for k, v in receipt.items()
+                                                if k != "readmission_sha256"}))
+            self.assertEqual(readmitted["readmission_sha256"], receipt["readmission_sha256"])
+            # The adoption, its pin and the memo marker are untouched.
+            self.assertEqual(adoption_path.read_bytes(), adoption_bytes)
+            self.assertEqual(case.live._read("MEMO_PATH"), memo_before)
+            again = self.prepare(case, retained, committed, status, expected_adoption_sha256=pin)
+            self.assertEqual(again, result)
+            view = self._hold_view(case, retained, committed, status, pin)
+            self.assertEqual(view["records_identity"], receipt["records_identity"])
+            self.assertEqual(view["epoch_adoption"]["adoption"]["records_identity"],
+                             result["adoption"]["records_identity"])
+            self.assertEqual(self._readmit(case, apply=False)["status"], "bound")
+            # A second move supersedes the receipt and names the one it replaced.
+            self._move_records(retained, root, "again")
+            second = self._readmit(case, apply=True, readmitted_at=1_726_000_100)
+            self.assertEqual(second["status"], "readmitted")
+            self.assertEqual(second["previous_identity"], receipt["records_identity"])
+            self.assertEqual(second["superseded_readmission_sha256"], receipt["readmission_sha256"])
+            self.assertEqual(self.prepare(case, retained, committed, status,
+                                          expected_adoption_sha256=pin), result)
+
+    def test_tampered_or_pointless_readmission_refuses_before_any_effect(self):
+        with self.completed() as (case, retained, committed, status, _generation, root):
+            result = self.prepare(case, retained, committed, status)
+            pin = result["expected_adoption_sha256"]
+            _key, directory, _birth_path, _adoption_path, _records = self.paths(retained, root)
+            self._move_records(retained, root, "tamper")
+            self._readmit(case, apply=True)
+            receipt_path = directory / "readmission.json"
+            genuine = receipt_path.read_bytes()
+            receipt = json.loads(genuine)
+            tampered = copy.deepcopy(receipt)
+            tampered["readmitted_at"] += 1
+            receipt_path.write_bytes(_wire(tampered))
+            refusal = self.refuse(case, retained, committed, status, expected_adoption_sha256=pin)
+            self.assertEqual(refusal.reason, "readmission-adoption-binding")
+            pointless = copy.deepcopy(receipt)
+            pointless["records_identity"] = copy.deepcopy(receipt["adoption_identity"])
+            pointless["readmission_sha256"] = live_tests.digest(
+                {k: v for k, v in pointless.items() if k != "readmission_sha256"})
+            receipt_path.write_bytes(_wire(pointless))
+            refusal = self.refuse(case, retained, committed, status, expected_adoption_sha256=pin)
+            self.assertEqual(refusal.reason, "readmission-without-identity-change")
+            receipt_path.write_bytes(genuine)
+            self.assertEqual(self.prepare(case, retained, committed, status,
+                                          expected_adoption_sha256=pin), result)
+            (directory / "stray.json").write_bytes(b"{}\n")
+            self.assertEqual(self.refuse(case, retained, committed, status,
+                                         expected_adoption_sha256=pin).reason,
+                             "epoch-unrecognized-entry")
+
     def test_existing_unadmitted_records_are_not_bootstrapped_as_an_empty_journal(self):
         with self.completed() as (case, retained, committed, status, _generation, root):
             _key, directory, _birth_path, _adoption_path, records = self.paths(retained, root)

@@ -73,6 +73,28 @@ _ADOPTION_KEYS = {
 _MARKER_KEYS = {
     "schema", "epoch_id", "started_at", "birth_sha256", "adoption_sha256",
 }
+# An operator readmission re-binds the SAME adoption to the records
+# directory's current identity after a filesystem move (btrfs subvolume
+# change, a copied home directory, a restore by copy). The adoption document
+# and its pin never change; the readmission is a separate sealed receipt that
+# names both identities, so the move stays visible instead of being erased.
+READMISSION_SCHEMA = "sia-controller-delivery-epoch-readmission-v1"
+_READMISSION_KEYS = {
+    "schema", "status", "epoch_id", "started_at", "birth_sha256",
+    "adoption_sha256", "adoption_identity", "previous_identity",
+    "records_identity", "readmitted_at", "consent", "non_claims",
+    "readmission_sha256",
+}
+_READMISSION_CONSENT = "operator-readmit-cli"
+READMISSION_NON_CLAIMS = (
+    "A readmission re-binds one unchanged adoption to the records directory's "
+    "current stable identity; it does not create, repair or replay journal "
+    "records and grants no writer authorization.",
+    "The previous identity is retained for audit; nothing proves what happened "
+    "to the directory between the two observations beyond the retained "
+    "journal content the next pulse revalidates.",
+    "Readmission is an explicit operator act, not a resident-daemon decision.",
+)
 _IDENTITY_KEYS = {"dev", "ino", "mode", "uid", "gid"}
 # A declared representation ceiling, reserved before directory creation. An
 # observed identity outside it refuses; it is not rounded or stringified.
@@ -80,27 +102,37 @@ _IDENTITY_CEILING = (1 << 64) - 1
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _ERRORS = (OSError, ValueError, RuntimeError, TypeError, KeyError, IndexError,
            AttributeError, OverflowError, RecursionError)
-# A held read can retain thirteen separately bounded document images: request,
+# A held read can retain fourteen separately bounded document images: request,
 # two memo images, status, graph, live state, live candidate, two source
-# archives, parent generation, birth, adoption and the outer held view.
-# Arithmetic evidence: status=exact, parsed=13*16777216,
-# exact=218103808. Exact rational arithmetic outside the Lean certificate
+# archives, parent generation, birth, adoption, readmission and the outer
+# held view.
+# Arithmetic evidence: status=exact, parsed=14*16777216,
+# exact=234881024. Exact rational arithmetic outside the Lean certificate
 # chain; NOT formal-bounded.
-MAX_HELD_AUTHORITY_DOCUMENTS = 13
-MAX_HELD_AUTHORITY_BYTES = 218_103_808
+MAX_HELD_AUTHORITY_DOCUMENTS = 14
+MAX_HELD_AUTHORITY_BYTES = 234_881_024
 
 
 class ControllerDeliveryEpochRefusal(ValueError):
-    def __init__(self, reason, *, upstream=None):
+    def __init__(self, reason, *, upstream=None, detail=None):
         self.reason = reason
+        # ``detail`` is a short operator-facing clause built only from
+        # observed integers and fixed words (never corpus or journal text),
+        # so a refusal can name the value that caused it.
+        self.detail = detail
         self.non_claims = list(NON_CLAIMS)
         self.upstream_reason = getattr(upstream, "reason", None)
         self.upstream_non_claims = copy.deepcopy(getattr(upstream, "non_claims", ()))
-        super().__init__("controller delivery epoch refused: " + reason)
+        super().__init__("controller delivery epoch refused: " + reason
+                         + ("" if detail is None else " (" + detail + ")"))
 
 
-def _refuse(reason):
-    raise ControllerDeliveryEpochRefusal(reason)
+def _refuse(reason, detail=None):
+    raise ControllerDeliveryEpochRefusal(reason, detail=detail)
+
+
+def _identity_clause(identity):
+    return "dev=%d ino=%d" % (identity["dev"], identity["ino"])
 
 
 def _keys(value, names, label):
@@ -192,6 +224,65 @@ def _adoption(owner, birth, identity):
     }, "adoption_sha256")
 
 
+def _readmission(owner, adoption, current_identity, previous_identity,
+                 readmitted_at):
+    return _seal(owner, {
+        "schema": READMISSION_SCHEMA, "status": "readmitted-not-enabled",
+        "epoch_id": adoption["epoch_id"], "started_at": adoption["started_at"],
+        "birth_sha256": adoption["birth_sha256"],
+        "adoption_sha256": adoption["adoption_sha256"],
+        "adoption_identity": copy.deepcopy(adoption["records_identity"]),
+        "previous_identity": copy.deepcopy(previous_identity),
+        "records_identity": copy.deepcopy(current_identity),
+        "readmitted_at": readmitted_at, "consent": _READMISSION_CONSENT,
+        "non_claims": list(READMISSION_NON_CLAIMS),
+    }, "readmission_sha256")
+
+
+def _validate_readmission(tx, adoption, readmission):
+    """Admit a readmission only when it binds this exact adoption."""
+    _keys(readmission, _READMISSION_KEYS, "readmission")
+    _digest(readmission["readmission_sha256"])
+    for name in ("adoption_identity", "previous_identity", "records_identity"):
+        _keys(readmission[name], _IDENTITY_KEYS, "readmission-identity")
+        if any(type(item) is not int or not 0 <= item <= _IDENTITY_CEILING
+               for item in readmission[name].values()):
+            _refuse("readmission-identity-capacity")
+    if readmission["schema"] != READMISSION_SCHEMA \
+            or readmission["status"] != "readmitted-not-enabled" \
+            or readmission["epoch_id"] != adoption["epoch_id"] \
+            or not _same(tx.owner, readmission["started_at"], adoption["started_at"]) \
+            or readmission["birth_sha256"] != adoption["birth_sha256"] \
+            or readmission["adoption_sha256"] != adoption["adoption_sha256"] \
+            or not _same(tx.owner, readmission["adoption_identity"],
+                         adoption["records_identity"]) \
+            or readmission["consent"] != _READMISSION_CONSENT \
+            or type(readmission["readmitted_at"]) is not int \
+            or isinstance(readmission["readmitted_at"], bool) \
+            or readmission["readmitted_at"] < 0 \
+            or readmission["non_claims"] != list(READMISSION_NON_CLAIMS) \
+            or _own(tx.owner, readmission, "readmission_sha256") \
+            != readmission["readmission_sha256"]:
+        _refuse("readmission-adoption-binding")
+    if _same(tx.owner, readmission["records_identity"],
+             adoption["records_identity"]):
+        _refuse("readmission-without-identity-change")
+
+
+def _effective_identity(tx, adoption):
+    """The identity the records directory must present now.
+
+    Without a readmission that is the adopted identity. With one, it is the
+    readmitted identity, and the adoption document itself must still be the
+    exact sealed document that was adopted.
+    """
+    held = tx.files.get("readmission")
+    if held is None or held.value is None:
+        return copy.deepcopy(adoption["records_identity"]), None
+    _validate_readmission(tx, adoption, held.value)
+    return copy.deepcopy(held.value["records_identity"]), held.value
+
+
 def _result(birth, adoption):
     return {
         "schema": "sia-controller-delivery-epoch-v1",
@@ -260,6 +351,8 @@ class _Transaction:
         self.epoch_directory = None
         self.epoch_entries = None
         self.record_directory = None
+        self.effective_identity = None
+        self.readmission = None
         self.legacy = None
         self.generation_raw = None
         self.budget = len(self.request_raw) + len(self.memo_raw)
@@ -325,14 +418,15 @@ class _Transaction:
             directory.current()
         for name, held in self.files.items():
             held.current()
-            if name in ("birth", "adoption") and held.raw is not None \
+            if name in ("birth", "adoption", "readmission") and held.raw is not None \
                     and _wire(self.owner, held.value, self.limits) != held.raw:
                 _refuse("retained-epoch-document-value-changed")
         if self.epoch_directory is not None:
             with os.scandir(self.epoch_directory.fd) as entries:
                 names = set()
                 for entry in entries:
-                    if entry.name not in {"birth.json", "adoption.json", "records"}:
+                    if entry.name not in {"birth.json", "adoption.json",
+                                          "readmission.json", "records"}:
                         _refuse("epoch-unrecognized-entry")
                     names.add(entry.name)
             if names != self.epoch_entries:
@@ -464,6 +558,7 @@ class _Transaction:
                                 "epoch": epoch_path,
                                 "birth": os.path.join(epoch_path, "birth.json"),
                                 "adoption": os.path.join(epoch_path, "adoption.json"),
+                                "readmission": os.path.join(epoch_path, "readmission.json"),
                                 "records": os.path.join(epoch_path, "records"),
                             }.items()}
         self.staging_paths = {}
@@ -552,11 +647,12 @@ class _Transaction:
         with os.scandir(parent.fd) as entries:
             self.epoch_entries = set()
             for entry in entries:
-                if entry.name not in {"birth.json", "adoption.json", "records"}:
+                if entry.name not in {"birth.json", "adoption.json",
+                                      "readmission.json", "records"}:
                     _refuse("epoch-unrecognized-entry")
                 self.epoch_entries.add(entry.name)
         ceiling = min(self.owner["MAX_STATE_JSON_BYTES"], self.limits["max_document_bytes"])
-        for name in ("birth", "adoption"):
+        for name in ("birth", "adoption", "readmission"):
             self.observe(name, self.epoch_paths[name], ceiling, document=True)
         if "records" in self.epoch_entries:
             self.record_directory = self.hold_directory("records", self.epoch_paths["records"])
@@ -740,9 +836,20 @@ def _finish(tx, birth):
     if adoption is None or tx.record_directory is None:
         _refuse("adopted-storage-missing")
     _keys(adoption, _ADOPTION_KEYS, "adoption")
-    expected = _adoption(tx.owner, birth, _identity(os.fstat(tx.record_directory.fd)))
-    if not _same(tx.owner, adoption, expected):
-        _refuse("adoption-directory-or-content-binding")
+    _keys(adoption["records_identity"], _IDENTITY_KEYS, "adoption-identity")
+    observed = _identity(os.fstat(tx.record_directory.fd))
+    if not _same(tx.owner, adoption,
+                 _adoption(tx.owner, birth, adoption["records_identity"])):
+        _refuse("adoption-directory-or-content-binding",
+                "adoption document content or seal changed")
+    effective, readmission = _effective_identity(tx, adoption)
+    if not _same(tx.owner, observed, effective):
+        _refuse("adoption-directory-or-content-binding",
+                "records directory identity expected " + _identity_clause(effective)
+                + ", observed " + _identity_clause(observed)
+                + "; after a filesystem move run: sia readmit")
+    tx.effective_identity = effective
+    tx.readmission = readmission
     if tx.external is not None and adoption["adoption_sha256"] != tx.external:
         _refuse("external-adoption-pin-differs")
     if not _same(tx.owner, tx.memo.get(_MARKER), _marker(birth, adoption["adoption_sha256"])):
@@ -789,7 +896,7 @@ class _HeldEpoch:
             "expected_parent_generation_sha256":
                 tx.admitted["committed"]["live_generation_sha256"],
             "records_directory": tx.record_directory.path,
-            "records_identity": adopted["adoption"]["records_identity"],
+            "records_identity": copy.deepcopy(tx.effective_identity),
             "non_claims": list(HELD_NON_CLAIMS),
         }
 
@@ -1173,3 +1280,151 @@ def prepare_epoch(owner, *, memo, admitted_status, retained_batch, committed,
         raise
     except _ERRORS as exc:
         raise ControllerDeliveryEpochRefusal("epoch-domain-refused", upstream=exc) from exc
+
+
+class _ReadmitScope:
+    """The minimal owner view the readmission validators need."""
+
+    def __init__(self, owner):
+        self.owner = owner
+
+
+def readmit_epoch(owner, *, memo, readmitted_at, apply):
+    """Observe, and with ``apply`` publish, an operator storage readmission.
+
+    The caller must already hold the brainstem and corpus owner leases; a
+    resident daemon therefore has to be stopped first. Nothing here samples a
+    clock (``readmitted_at`` is the caller's declared operator time), touches
+    journal records, or changes the adoption document or its memo pin. The
+    result names both identities so the move stays auditable.
+    """
+    try:
+        if type(owner) is not dict or type(memo) is not dict \
+                or type(apply) is not bool \
+                or type(readmitted_at) is not int \
+                or isinstance(readmitted_at, bool) or readmitted_at < 0:
+            _refuse("readmit-request-contract")
+        _require_entered_corpus(owner)
+        marker = memo.get(_MARKER)
+        if marker is None:
+            return {"schema": "sia-controller-delivery-epoch-readmit-v1",
+                    "status": "absent", "detail": "no delivery epoch is adopted",
+                    "non_claims": list(READMISSION_NON_CLAIMS)}
+        _keys(marker, _MARKER_KEYS, "epoch-marker")
+        if marker["adoption_sha256"] is None:
+            _refuse("readmit-adoption-pending")
+        _digest(marker["adoption_sha256"])
+        _digest(marker["birth_sha256"])
+        epoch_key = _sha(owner, {
+            "schema": "sia-controller-delivery-epoch-path-v1",
+            "epoch_id": marker["epoch_id"], "started_at": marker["started_at"],
+        })
+        root = owner[_ROOT]
+        epoch_path = source._canonical_path(owner, os.path.join(root, epoch_key))
+        paths = {name: source._canonical_path(owner, os.path.join(epoch_path, leaf))
+                 for name, leaf in (("birth", "birth.json"),
+                                    ("adoption", "adoption.json"),
+                                    ("readmission", "readmission.json"),
+                                    ("records", "records"))}
+        ceiling = owner["MAX_STATE_JSON_BYTES"]
+        scope = _ReadmitScope(owner)
+        with contextlib.ExitStack() as stack:
+            try:
+                epoch_dir = source._DirectoryChain(owner, epoch_path, private_terminal=True)
+            except FileNotFoundError:
+                _refuse("pinned-epoch-directory-missing")
+            stack.callback(epoch_dir.close)
+            with os.scandir(epoch_dir.fd) as entries:
+                names = set()
+                for entry in entries:
+                    if entry.name not in {"birth.json", "adoption.json",
+                                          "readmission.json", "records"}:
+                        _refuse("epoch-unrecognized-entry")
+                    names.add(entry.name)
+            if "records" not in names or "adoption.json" not in names \
+                    or "birth.json" not in names:
+                _refuse("adopted-storage-missing")
+            held = {}
+            for name in ("birth", "adoption", "readmission"):
+                item = source.HeldFile(owner, paths[name], ceiling,
+                                       allow_absent=(name == "readmission"))
+                stack.callback(item.close)
+                if item.generation is not None \
+                        and stat.S_IMODE(item.generation["mode"]) != 0o600:
+                    _refuse("authority-file-not-private")
+                held[name] = item
+            birth, adoption = held["birth"].value, held["adoption"].value
+            _keys(birth, _BIRTH_KEYS, "birth")
+            _keys(adoption, _ADOPTION_KEYS, "adoption")
+            _keys(adoption["records_identity"], _IDENTITY_KEYS, "adoption-identity")
+            if birth["epoch_id"] != marker["epoch_id"] \
+                    or not _same(owner, birth["started_at"], marker["started_at"]) \
+                    or birth["birth_sha256"] != marker["birth_sha256"] \
+                    or _own(owner, birth, "birth_sha256") != birth["birth_sha256"]:
+                _refuse("epoch-marker-birth-binding")
+            if adoption["adoption_sha256"] != marker["adoption_sha256"] \
+                    or not _same(owner, adoption,
+                                 _adoption(owner, birth, adoption["records_identity"])):
+                _refuse("adoption-directory-or-content-binding",
+                        "adoption document content or seal changed")
+            records = source._DirectoryChain(owner, paths["records"], private_terminal=True)
+            stack.callback(records.close)
+            observed = _identity(os.fstat(records.fd))
+            effective = copy.deepcopy(adoption["records_identity"])
+            previous_receipt = None
+            if held["readmission"].value is not None:
+                _validate_readmission(scope, adoption, held["readmission"].value)
+                previous_receipt = held["readmission"].value
+                effective = copy.deepcopy(previous_receipt["records_identity"])
+            result = {
+                "schema": "sia-controller-delivery-epoch-readmit-v1",
+                "epoch_id": adoption["epoch_id"],
+                "adoption_sha256": adoption["adoption_sha256"],
+                "adoption_identity": copy.deepcopy(adoption["records_identity"]),
+                "effective_identity": copy.deepcopy(effective),
+                "observed_identity": copy.deepcopy(observed),
+                "records_directory": paths["records"],
+                "non_claims": list(READMISSION_NON_CLAIMS),
+            }
+            if _same(owner, observed, effective):
+                result["status"] = "bound"
+                result["detail"] = "records directory identity matches"
+                return result
+            result["detail"] = ("records directory identity expected "
+                                + _identity_clause(effective) + ", observed "
+                                + _identity_clause(observed))
+            if not apply:
+                result["status"] = "drifted"
+                return result
+            receipt = _readmission(owner, adoption, observed, effective, readmitted_at)
+            _validate_readmission(scope, adoption, receipt)
+            raw = _raw(owner, receipt, ceiling=ceiling) + b"\n"
+            roots = tuple(owner[name] for name in (_ROOT, "CORPUS", "STATE", "SHARE"))
+            staging = source._canonical_path(
+                owner, owner["siaqueue"].staging_dir_for(paths["readmission"],
+                                                        authority_roots=roots))
+            epoch_dir.current()
+            records.current()
+            if not _same(owner, _identity(os.fstat(records.fd)), observed):
+                _refuse("records-directory-changed-during-readmission")
+            owner["siaqueue"].fixed_atomic_publish(
+                paths["readmission"], raw, mode=0o600, exclusive=False,
+                nonblocking=True, destination_dir_fd=epoch_dir.fd,
+                staging_dir=staging)
+            os.fsync(epoch_dir.fd)
+            readback = source.HeldFile(owner, paths["readmission"], ceiling,
+                                       allow_absent=False)
+            stack.callback(readback.close)
+            if readback.raw != raw:
+                _refuse("readmission-publication-readback")
+            result["status"] = "readmitted"
+            result["readmission_sha256"] = receipt["readmission_sha256"]
+            result["previous_identity"] = copy.deepcopy(effective)
+            result["superseded_readmission_sha256"] = (
+                None if previous_receipt is None
+                else previous_receipt["readmission_sha256"])
+            return result
+    except ControllerDeliveryEpochRefusal:
+        raise
+    except _ERRORS as exc:
+        raise ControllerDeliveryEpochRefusal("readmit-domain-refused", upstream=exc) from exc

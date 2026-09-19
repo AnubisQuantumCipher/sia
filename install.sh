@@ -5141,8 +5141,56 @@ corpus_v2_receipt_payload() {
     "$SHARE/corpus" "$identity"
 }
 
+# Print only the validated numeric root token (dev:ino:mode:uid) of a v2
+# corpus receipt for this exact corpus path, or fail. No other receipt byte
+# enters the shell, so a moved receipt can be named without trusting it.
+corpus_receipt_recorded_root() {
+  python3 - "${1:-$CORPUS_RECEIPT}" "$SHARE/corpus" <<'PY'
+import os
+import re
+import stat
+import sys
+
+path, corpus = sys.argv[1], sys.argv[2]
+flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+         | getattr(os, "O_NOFOLLOW", 0))
+try:
+    descriptor = os.open(path, flags)
+except OSError:
+    raise SystemExit(1)
+try:
+    info = os.fstat(descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+            or info.st_nlink != 1 or info.st_size > 4096:
+        raise SystemExit(1)
+    raw = os.read(descriptor, 4097)
+finally:
+    os.close(descriptor)
+try:
+    text = raw.decode("utf-8", "strict")
+except UnicodeError:
+    raise SystemExit(1)
+expected = "managed-by=khephri.sia\nkind=corpus-v2\npath=" + corpus + "\nroot="
+if not text.startswith(expected):
+    raise SystemExit(1)
+root = text[len(expected):]
+if root.endswith("\n"):
+    root = root[:-1]
+if re.fullmatch(r"[0-9]+:[0-9]+:[0-9]+:[0-9]+", root) is None:
+    raise SystemExit(1)
+print(root)
+PY
+}
+
+# A retired prior receipt is either the exact legacy shape or a v2 receipt
+# for this corpus path (any root, i.e. one re-bound after a filesystem move).
+corpus_prior_receipt_recognized() {
+  corpus_legacy_receipt_valid "$1" \
+    || corpus_receipt_recorded_root "$1" >/dev/null
+}
+
 corpus_receipt_state() {
-  local before after expected receipt_before receipt_after
+  local before after expected receipt_before receipt_after recorded
   [ -f "$CORPUS_RECEIPT" ] && [ ! -L "$CORPUS_RECEIPT" ] || return 1
   before="$(corpus_root_identity)" || return 1
   if corpus_legacy_receipt_valid; then
@@ -5161,6 +5209,17 @@ corpus_receipt_state() {
     after="$(corpus_root_identity)" || return 1
     [ "$before" = "$after" ] || return 1
     printf '%s\n' v2
+    return 0
+  fi
+  # A v2 receipt for this exact path whose root no longer matches the live
+  # directory: the corpus was moved or copied (btrfs subvolume change, rsync,
+  # restore by copy). Recognized by name so the operator can consent to a
+  # re-binding instead of being told the receipt is merely "invalid".
+  if recorded="$(corpus_receipt_recorded_root)" \
+      && [ "$recorded" != "$before" ]; then
+    after="$(corpus_root_identity)" || return 1
+    [ "$before" = "$after" ] || return 1
+    printf '%s\n' moved
     return 0
   fi
   return 1
@@ -5184,24 +5243,24 @@ retire_migrated_legacy_corpus_receipt_stage() {
   local archive="$MANAGED_DIR/.corpus.receipt.retired" expected
   owned_file_cas recover "$stage" || return 1
   if [ -e "$archive" ] || [ -L "$archive" ]; then
-    corpus_legacy_receipt_valid "$archive" || {
+    corpus_prior_receipt_recognized "$archive" || {
       echo "fixed retired corpus receipt is invalid; preserved" >&2
       return 1
     }
     remove_owned_fixed_metadata "$archive" || return 1
   fi
   [ -e "$stage" ] || [ -L "$stage" ] || return 0
-  corpus_legacy_receipt_valid "$stage" || {
+  corpus_prior_receipt_recognized "$stage" || {
     echo "fixed prior corpus receipt stage is invalid; preserved" >&2
     return 1
   }
   expected="$(owned_metadata generation "$stage")" || return 1
-  corpus_legacy_receipt_valid "$stage" || {
+  corpus_prior_receipt_recognized "$stage" || {
     echo "fixed prior corpus receipt changed before retirement" >&2
     return 1
   }
   owned_file_cas archive "$archive" "$stage" "$expected" || return 1
-  corpus_legacy_receipt_valid "$archive" || return 1
+  corpus_prior_receipt_recognized "$archive" || return 1
   remove_owned_fixed_metadata "$archive"
 }
 
@@ -5211,8 +5270,8 @@ migrate_legacy_corpus_receipt() {
   local early_generation="${3:-${SIA_CORPUS_EARLY_RECEIPT_GENERATION:-}}"
   local early_journal="${4:-${SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE:-absent}}"
   local stage current_state current_root current_generation after_generation
-  local before after expected payload installed resume_authority=0
-  case "$early_state" in absent|legacy|v2) ;; *) return 1 ;; esac
+  local before after expected payload installed resume_authority=0 recorded
+  case "$early_state" in absent|legacy|v2|moved) ;; *) return 1 ;; esac
   case "$early_journal" in absent|fresh|migration) ;; *) return 1 ;; esac
   require_corpus_receipt_transition_locks || return 1
   owned_file_cas recover "$CORPUS_RECEIPT" || return 1
@@ -5266,6 +5325,77 @@ migrate_legacy_corpus_receipt() {
         fi
         ;;
     esac
+    retire_migrated_legacy_corpus_receipt_stage || return 1
+    return 0
+  fi
+  if [ "$current_state" = moved ]; then
+    if [ "${SIA_READMIT_MOVED_STORAGE:-0}" != 1 ]; then
+      echo "moved corpus receipt requires explicit consent:" \
+        "SIA_READMIT_MOVED_STORAGE=1" >&2
+      return 1
+    fi
+    if [ "$early_state" != moved ]; then
+      echo "refusing an unexpected moved receipt at the locked boundary" >&2
+      return 1
+    fi
+    case "$early_journal" in absent|migration) ;; *)
+      echo "moved receipt conflicts with a fresh receipt CAS journal" >&2
+      return 1
+      ;;
+    esac
+    if [ "$current_root" != "$early_root" ] \
+        || [ "$current_generation" != "$early_generation" ]; then
+      echo "corpus root or moved receipt changed before locked re-binding" >&2
+      return 1
+    fi
+    if [ -e "$CORPUS_BOOTSTRAP_INTENT" ] \
+        || [ -L "$CORPUS_BOOTSTRAP_INTENT" ] \
+        || [ -e "$CORPUS_ADOPTION_INTENT" ] \
+        || [ -L "$CORPUS_ADOPTION_INTENT" ]; then
+      echo "moved corpus receipt conflicts with a pending ownership intent" >&2
+      return 1
+    fi
+    recorded="$(corpus_receipt_recorded_root)" || return 1
+    before="$(corpus_root_identity)" || return 1
+    expected="$(owned_metadata generation "$CORPUS_RECEIPT")" || return 1
+    if [ "$before" != "$current_root" ] \
+        || [ "$expected" != "$current_generation" ]; then
+      echo "corpus root or moved receipt changed before publication staging" >&2
+      return 1
+    fi
+    [ "$(corpus_receipt_state)" = moved ] || {
+      echo "moved corpus receipt changed before re-binding" >&2
+      return 1
+    }
+    payload="$(corpus_v2_receipt_payload "$before")"
+    stage="$MANAGED_DIR/.corpus.receipt.stage"
+    if [ -e "$stage" ] || [ -L "$stage" ]; then
+      if ! corpus_receipt_file_private "$stage" \
+          || ! owned_metadata exact "$stage" "$payload" \
+          || ! corpus_receipt_file_private "$stage"; then
+        echo "fixed corpus receipt re-binding stage is invalid; preserved" >&2
+        return 1
+      fi
+    else
+      durable_fixed_metadata_stage "$stage" "$payload" || return 1
+    fi
+    after="$(corpus_root_identity)" || return 1
+    [ "$before" = "$after" ] || {
+      echo "corpus root changed before receipt re-binding" >&2
+      return 1
+    }
+    if ! installed="$(owned_file_cas publish "$stage" "$CORPUS_RECEIPT" \
+        "$expected")"; then
+      [ ! -e "$stage" ] \
+        || echo "corpus receipt re-binding stage retained at $stage" >&2
+      return 1
+    fi
+    after="$(corpus_root_identity)" || return 1
+    if [ "$before" != "$after" ] || ! corpus_receipt_valid; then
+      echo "corpus root changed across receipt re-binding; refusing" >&2
+      return 1
+    fi
+    echo "  corpus receipt re-bound by operator consent: root $recorded -> $before"
     retire_migrated_legacy_corpus_receipt_stage || return 1
     return 0
   fi
@@ -5384,7 +5514,7 @@ write_corpus_receipt() {
 }
 
 preflight_corpus_read_only() {
-  local receipt_state journal_state early_root="" after_root
+  local receipt_state journal_state early_root="" after_root recorded
   local early_generation after_generation
   SIA_CORPUS_NEEDS_RECEIPT=0
   SIA_CORPUS_BOOTSTRAP_NEEDED=0
@@ -5432,6 +5562,21 @@ preflight_corpus_read_only() {
     if [ "$receipt_state" = legacy ] && [ "$journal_state" = fresh ]; then
       echo "legacy corpus receipt conflicts with a fresh publication journal" >&2
       return 1
+    fi
+    if [ "$receipt_state" = moved ]; then
+      recorded="$(corpus_receipt_recorded_root)" || return 1
+      echo "corpus receipt binds root $recorded but the live corpus root is" \
+        "$after_root (device:inode:mode:uid)" >&2
+      echo "the corpus was moved or copied; SIA never guesses ownership" \
+        "across a filesystem move" >&2
+      if [ "${SIA_READMIT_MOVED_STORAGE:-0}" != 1 ]; then
+        echo "re-bind the retained corpus and delivery-epoch receipts by" \
+          "explicit consent:" >&2
+        echo "  SIA_READMIT_MOVED_STORAGE=1 ./install.sh" >&2
+        echo "or, with sia-brainstem stopped:  sia readmit --yes" >&2
+        return 1
+      fi
+      echo "  moved corpus receipt will be re-bound by operator consent"
     fi
     SIA_CORPUS_EARLY_RECEIPT_STATE="$receipt_state"
     SIA_CORPUS_EARLY_RECEIPT_ROOT="$early_root"
@@ -10160,6 +10305,23 @@ lifetime_release SIA_BRAINSTEM_LOCK_FD
 flock -u "$SIA_BRAINSTEM_LOCK_FD"
 exec {SIA_BRAINSTEM_LOCK_FD}>&-
 SIA_BRAINSTEM_LOCK_FD=""
+# A delivery epoch adopted before a filesystem move still names the old
+# records-directory identity. Name the drift before the first pulse can refuse
+# on it; re-bind only under the same explicit consent as the corpus receipt.
+if [ "${SIA_READMIT_MOVED_STORAGE:-0}" = 1 ]; then
+  SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
+    python3 "$BINDIR/sia-cli" readmit --yes || {
+    echo "storage readmission refused; nothing was re-bound" >&2
+    exit 1
+  }
+else
+  SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
+    python3 "$BINDIR/sia-cli" readmit || {
+    echo "storage identity drifted since adoption; re-bind it by explicit" \
+      "consent:  SIA_READMIT_MOVED_STORAGE=1 ./install.sh" >&2
+    exit 1
+  }
+fi
 SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
   SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse
 SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \

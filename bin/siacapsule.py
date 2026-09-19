@@ -721,7 +721,9 @@ def _copy_tree(source, target, manifest_prefix, area, entries,
             children.append(child)
             if len(children) > _CAPSULE_DIRECTORY_ENTRY_LIMIT:
                 raise ValueError(
-                    "capsule source directory exceeds its entry bound")
+                    "capsule source directory exceeds its entry bound "
+                    f"({source}: more than {_CAPSULE_DIRECTORY_ENTRY_LIMIT} "
+                    "entries)")
     children.sort(key=lambda entry: entry.name)
     for child in children:
         budget["records"] += 1
@@ -925,8 +927,18 @@ def freeze(output_path):
                     corpus_info.st_mode, corpus_info.st_uid))
                 + "\n").encode("utf-8")
             if receipt_raw != expected_receipt:
+                recorded = "unrecognized"
+                for line in receipt_raw.decode("utf-8", "replace").splitlines():
+                    if line.startswith("root=") and re.fullmatch(
+                            r"root=[0-9]+:[0-9]+:[0-9]+:[0-9]+", line):
+                        recorded = line[len("root="):]
+                live_root = ":".join(str(value) for value in (
+                    corpus_info.st_dev, corpus_info.st_ino,
+                    corpus_info.st_mode, corpus_info.st_uid))
                 raise ValueError(
-                    "source corpus receipt does not bind the live corpus root")
+                    "source corpus receipt does not bind the live corpus root "
+                    f"(receipt root={recorded}, live root={live_root}; "
+                    "after a filesystem move run: sia readmit)")
             source_receipt = {
                 "sha256": hashlib.sha256(receipt_raw).hexdigest(),
                 "mode": stat.S_IMODE(receipt_info.st_mode),

@@ -20,6 +20,9 @@ biological brain and does not establish cognition or neuroscience.
   sia graph             graph statistics
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
+  sia readmit [--yes] [--json]
+                        re-bind storage receipts after a filesystem move
+                        (device/inode changed); --yes needs the daemon off
   sia repair-cortex-boundary [--regenerate-legacy-graph] [--json]
                         publish only the witnessed additive cortex prose repair
   sia dream             run the weekly-compaction cycle now (daemon must be off)
@@ -628,12 +631,26 @@ def _corpus_owner_nowait():
             sialib._CORPUS_OWNER_DEPTH.reset(depth_token)
 
 
+def _print_pulse_failure():
+    """Name the last retained pulse refusal; SOURCE HEALTH cannot publish it
+    while a controller-source transaction holds publication authority."""
+    failure = sialib.read_pulse_failure()
+    if failure is None:
+        return None
+    print(f"  pulse    last pulse {failure['pulse_seq']} FAILED at "
+          f"{failure['failed_at']}: {failure['detail']}")
+    print("           the resident daemon retries; see: journalctl --user -u "
+          "sia-brainstem")
+    return failure
+
+
 def cmd_status():
     try:
         with _corpus_owner_nowait():
             return _cmd_status_owned()
     except sialib.OwnerBusy:
         print("SIA · resident pulse in progress · readiness check deferred")
+        _print_pulse_failure()
         selected = _print_live_summary()
         return 1 if selected["status"] == "refused" else 0
 
@@ -752,7 +769,165 @@ def cmd_ready():
         print("SIA memory ready")
         return 0
     print("SIA memory not ready: " + reason)
+    _print_pulse_failure()
     return 1
+
+
+_CORPUS_RECEIPT_PATH = os.path.join(sialib.STATE, "managed-install", "corpus")
+_CORPUS_RECEIPT_HEAD = ("managed-by=khephri.sia", "kind=corpus-v2")
+
+
+def _corpus_root_identity():
+    """The installer's corpus root identity: dev:ino:mode:uid of the live
+    corpus directory, opened without following links."""
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    descriptor = os.open(sialib.CORPUS, flags)
+    try:
+        info = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise ValueError("corpus root is not an owned directory")
+    return ":".join(str(value) for value in (
+        info.st_dev, info.st_ino, info.st_mode, info.st_uid))
+
+
+def _corpus_receipt_readmit(apply):
+    """Observe, and with ``apply`` re-bind, the installer's corpus receipt.
+
+    The receipt is `managed-by=khephri.sia / kind=corpus-v2 / path= / root=`.
+    Only a v2 receipt for this exact corpus path is ever rewritten, and only
+    its root line changes; anything else is left for the installer's own
+    fail-closed recovery.
+    """
+    result = {"path": _CORPUS_RECEIPT_PATH}
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(_CORPUS_RECEIPT_PATH, flags)
+    except FileNotFoundError:
+        result.update(status="absent", detail="no corpus receipt is installed")
+        return result
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
+                or info.st_nlink != 1 or info.st_size > 4096:
+            raise ValueError("corpus receipt is not an owned private file")
+        raw = os.read(descriptor, 4097)
+    finally:
+        os.close(descriptor)
+    lines = raw.decode("utf-8", "strict").split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    expected_head = list(_CORPUS_RECEIPT_HEAD) + ["path=" + sialib.CORPUS]
+    if len(lines) != 4 or lines[:3] != expected_head \
+            or not lines[3].startswith("root=") \
+            or re.fullmatch(r"root=[0-9]+:[0-9]+:[0-9]+:[0-9]+", lines[3]) is None:
+        result.update(status="unrecognized",
+                      detail="receipt is not a v2 receipt for this corpus; "
+                             "rerun install.sh for its own recovery")
+        return result
+    recorded = lines[3][len("root="):]
+    observed = _corpus_root_identity()
+    result.update(recorded_root=recorded, observed_root=observed)
+    if recorded == observed:
+        result.update(status="bound", detail="corpus root identity matches")
+        return result
+    result["detail"] = f"corpus root expected {recorded}, observed {observed}"
+    if not apply:
+        result["status"] = "drifted"
+        return result
+    payload = "\n".join(expected_head + ["root=" + observed]) + "\n"
+    sialib.atomic_write(_CORPUS_RECEIPT_PATH, payload, mode=0o600)
+    with open(_CORPUS_RECEIPT_PATH, encoding="utf-8") as stream:
+        if stream.read() != payload:
+            raise RuntimeError("corpus receipt readback differs")
+    if _corpus_root_identity() != observed:
+        raise RuntimeError("corpus root changed during readmission")
+    result.update(status="readmitted", previous_root=recorded)
+    return result
+
+
+def cmd_readmit(args):
+    """Re-bind storage identity receipts after a filesystem move.
+
+    A btrfs subvolume change, a copied home directory, or a restore by copy
+    changes the device and inode numbers that two receipts bind: the
+    installer's corpus receipt and the delivery epoch's records directory.
+    Both stay refused until an operator readmits them; nothing is guessed.
+    """
+    if len(args) != len(set(args)) or any(
+            item not in {"--yes", "--json"} for item in args):
+        print("usage: sia readmit [--yes] [--json]")
+        return 2
+    apply = "--yes" in args
+    as_json = "--json" in args
+    import time
+    import siacontrollerdeliveryepoch as epochs
+    report = {"schema": "sia-readmit-v1", "applied": apply}
+    try:
+        with sialib.brainstem_owner(), sialib.corpus_owner():
+            report["corpus_receipt"] = _corpus_receipt_readmit(apply)
+            report["delivery_epoch"] = epochs.readmit_epoch(
+                sialib.__dict__, memo=sialib.load_memo(),
+                readmitted_at=int(time.time()), apply=apply)
+    except sialib.OwnerBusy:
+        report["status"] = "refused"
+        report["reason"] = "runtime-owned"
+        if as_json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print("SIA readmit refused: runtime-owned — stop the resident "
+                  "daemon first:")
+            print("  systemctl --user stop sia-brainstem && sia readmit"
+                  + (" --yes" if apply else "")
+                  + " && systemctl --user start sia-brainstem")
+        return 1
+    except epochs.ControllerDeliveryEpochRefusal as exc:
+        report["status"] = "refused"
+        report["reason"] = exc.reason
+        if exc.detail is not None:
+            report["detail"] = exc.detail
+        if as_json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print("SIA readmit refused: " + exc.reason
+                  + ("" if exc.detail is None else " (" + exc.detail + ")"))
+        return 1
+    except (OSError, RuntimeError, ValueError) as exc:
+        report["status"] = "refused"
+        report["reason"] = "receipt-observation-refused"
+        report["detail"] = sialib.clip(sialib.inert_summary(str(exc)), 160)
+        if as_json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print("SIA readmit refused: " + report["detail"])
+        return 1
+    states = {report["corpus_receipt"]["status"],
+              report["delivery_epoch"]["status"]}
+    report["status"] = ("drifted" if "drifted" in states
+                        else "readmitted" if "readmitted" in states
+                        else "bound")
+    if as_json:
+        print(json.dumps(report, sort_keys=True))
+    else:
+        for label, key in (("corpus receipt", "corpus_receipt"),
+                           ("delivery epoch", "delivery_epoch")):
+            item = report[key]
+            print(f"  {label:15} {item['status']:11} {item['detail']}")
+        if report["status"] == "drifted":
+            print("storage identity drifted; to re-bind it (daemon must be off):")
+            print("  systemctl --user stop sia-brainstem && sia readmit --yes "
+                  "&& systemctl --user start sia-brainstem")
+        elif report["status"] == "readmitted":
+            print("storage receipts readmitted; the next pulse revalidates the "
+                  "retained journal content and republishes memory.")
+        else:
+            print("storage identity is bound; nothing to readmit.")
+        for line in epochs.READMISSION_NON_CLAIMS:
+            print("  boundary " + line)
+    return 1 if report["status"] == "drifted" else 0
 
 
 def _gbrain_read(args, timeout=None):
@@ -2410,6 +2585,8 @@ def _dispatch(argv, cmd):
         return cmd_live(argv[2:])
     if cmd == "ready":
         return cmd_ready()
+    if cmd == "readmit":
+        return cmd_readmit(argv[2:])
     if cmd in ("ask", "query") and len(argv) > 2:
         ask_args = argv[2:]
         no_touch = "--no-touch" in ask_args

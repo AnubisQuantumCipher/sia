@@ -1104,6 +1104,34 @@ def read_status():
     return value
 
 
+# Continuity failures never echo arbitrary exception text (it could carry a
+# repository credential). A closed set of SIA's own capsule refusals is
+# recognized by exact prefix and named, with its bounded, numeric-only
+# operator clause, so the panel can say WHICH gate refused instead of only
+# that one did (issue #12).
+_NAMED_FAILURE_PREFIXES = (
+    ("source corpus receipt does not bind the live corpus root",
+     "corpus-receipt-root-mismatch"),
+    ("capsule source directory exceeds its entry bound",
+     "capsule-entry-bound"),
+    ("capsule output already exists", "capsule-output-exists"),
+    ("live SIA identity keypair does not match", "identity-keypair-mismatch"),
+    ("capsule could not bind the signed SIA ledger head", "ledger-head-unbound"),
+)
+_SAFE_CLAUSE = re.compile(r"[A-Za-z0-9 _.:;=,()/'-]*")
+
+
+def _named_failure_clause(failure):
+    text = str(failure)
+    for prefix, code in _NAMED_FAILURE_PREFIXES:
+        if text.startswith(prefix):
+            clause = text[len(prefix):].strip()
+            if _SAFE_CLAUSE.fullmatch(clause) is None or len(clause) > 240:
+                clause = ""
+            return " Reason: " + code + ((" " + clause) if clause else ".")
+    return ""
+
+
 def _publish_status(**changes):
     _reconcile_atomic_publication_stages(linked_only=True)
     try:
@@ -3807,7 +3835,7 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
             except Exception:
                 pass
             return 3
-        except Exception:
+        except Exception as failure:
             _publish_status(
                 state=("blocked" if action in {"setup", "connect"}
                        else "failed"),
@@ -3816,7 +3844,7 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
                     "durable request was retained for exact reconciliation."
                     if action in {"setup", "connect"} else
                     "Continuity operation failed without reporting "
-                    "repository credentials."),
+                    "repository credentials." + _named_failure_clause(failure)),
                 operation=_operation(
                     request["id"], kind,
                     "blocked" if action in {"setup", "connect"}

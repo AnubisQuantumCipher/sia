@@ -12,6 +12,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -3269,3 +3270,158 @@ class MutationBoundaries(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class StorageReadmission(unittest.TestCase):
+    """`sia readmit` names moved storage identities and re-binds them only by
+    explicit consent; `sia status`/`sia ready` surface the retained pulse
+    failure that SOURCE HEALTH cannot publish under controller authority."""
+
+    def setUp(self):
+        self.lib = sia.sialib
+        self.managed = os.path.join(self.lib.STATE, "managed-install")
+        self.receipt = os.path.join(self.managed, "corpus")
+        os.makedirs(self.managed, exist_ok=True)
+        os.makedirs(self.lib.CORPUS, exist_ok=True)
+        self.addCleanup(self._cleanup)
+
+    def _cleanup(self):
+        for path in (self.receipt, self.lib.PULSE_FAILURE_PATH):
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+
+    def _write_receipt(self, root, *, kind="corpus-v2", path=None):
+        text = (f"managed-by=khephri.sia\nkind={kind}\n"
+                f"path={self.lib.CORPUS if path is None else path}\nroot={root}\n")
+        with open(self.receipt, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        os.chmod(self.receipt, 0o600)
+        return text
+
+    def test_corpus_receipt_readmit_names_both_roots_and_rebinds_only_on_apply(self):
+        self.assertEqual(sia._corpus_receipt_readmit(False)["status"], "absent")
+        live = sia._corpus_root_identity()
+        self.assertRegex(live, r"\A[0-9]+:[0-9]+:[0-9]+:[0-9]+\Z")
+        stale = "66306:3710730:16877:1000"
+        self.assertNotEqual(live, stale)
+        text = self._write_receipt(stale)
+        drifted = sia._corpus_receipt_readmit(False)
+        self.assertEqual(drifted["status"], "drifted")
+        self.assertEqual(drifted["recorded_root"], stale)
+        self.assertEqual(drifted["observed_root"], live)
+        self.assertEqual(drifted["detail"],
+                         f"corpus root expected {stale}, observed {live}")
+        with open(self.receipt, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), text)
+        rebound = sia._corpus_receipt_readmit(True)
+        self.assertEqual(rebound["status"], "readmitted")
+        self.assertEqual(rebound["previous_root"], stale)
+        with open(self.receipt, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), text.replace(stale, live))
+        self.assertEqual(stat.S_IMODE(os.stat(self.receipt).st_mode), 0o600)
+        self.assertEqual(sia._corpus_receipt_readmit(True)["status"], "bound")
+        self._write_receipt(stale, kind="corpus")
+        self.assertEqual(sia._corpus_receipt_readmit(True)["status"], "unrecognized")
+        self._write_receipt(stale, path=self.lib.CORPUS + "-other")
+        self.assertEqual(sia._corpus_receipt_readmit(True)["status"], "unrecognized")
+
+    def test_readmit_command_reports_drift_then_applies_only_with_yes(self):
+        import siacontrollerdeliveryepoch as epochs
+        stale = "66306:3710730:16877:1000"
+        self._write_receipt(stale)
+        absent = {"status": "absent", "detail": "no delivery epoch is adopted",
+                  "non_claims": list(epochs.READMISSION_NON_CLAIMS)}
+        calls = []
+
+        def fake_readmit(owner, *, memo, readmitted_at, apply):
+            calls.append(apply)
+            self.assertIs(owner, self.lib.__dict__)
+            self.assertIsInstance(memo, dict)
+            self.assertIsInstance(readmitted_at, int)
+            return dict(absent)
+
+        with mock.patch.object(epochs, "readmit_epoch", fake_readmit):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = sia.cmd_readmit([])
+            self.assertEqual(code, 1)
+            self.assertRegex(out.getvalue(), r"corpus receipt\s+drifted")
+            self.assertIn("sia readmit --yes", out.getvalue())
+            self.assertIn("boundary", out.getvalue())
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = sia.cmd_readmit(["--yes", "--json"])
+            self.assertEqual(code, 0)
+            report = json.loads(out.getvalue())
+            self.assertEqual(report["status"], "readmitted")
+            self.assertEqual(report["corpus_receipt"]["status"], "readmitted")
+            self.assertEqual(report["delivery_epoch"], absent)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = sia.cmd_readmit([])
+            self.assertEqual(code, 0)
+            self.assertIn("nothing to readmit", out.getvalue())
+        self.assertEqual(calls, [False, True, False])
+        self.assertEqual(sia.cmd_readmit(["--bogus"]), 2)
+
+    def test_readmit_refuses_while_the_resident_daemon_owns_the_runtime(self):
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import fcntl,sys,time\n"
+             "stream=open(sys.argv[1],'w')\n"
+             "fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)\n"
+             "print('held',flush=True)\n"
+             "time.sleep(60)\n", self.lib.BRAINSTEM_OWNER_LOCK],
+            stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "held")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = sia.cmd_readmit(["--yes"])
+        finally:
+            holder.kill()
+            holder.stdout.close()
+            holder.wait()
+        self.assertEqual(code, 1)
+        self.assertIn("runtime-owned", out.getvalue())
+        self.assertIn("systemctl --user stop sia-brainstem", out.getvalue())
+
+    def test_retained_pulse_failure_is_named_by_status_and_ready_until_cleared(self):
+        self.assertIsNone(self.lib.read_pulse_failure())
+        record = self.lib.record_pulse_failure(
+            13534, "controller delivery epoch refused: "
+            "adoption-directory-or-content-binding (records directory identity "
+            "expected dev=66306 ino=5793678, observed dev=64768 ino=1574983; "
+            "after a filesystem move run: sia readmit)",
+            failed_at="2026-09-19T03:11:24Z")
+        self.assertEqual(record["schema"], "sia-pulse-failure-v1")
+        self.assertEqual(stat.S_IMODE(os.stat(self.lib.PULSE_FAILURE_PATH).st_mode), 0o600)
+        retained = self.lib.read_pulse_failure()
+        self.assertEqual(retained["pulse_seq"], 13534)
+        self.assertEqual(retained["failed_at"], "2026-09-19T03:11:24Z")
+        self.assertIn("sia readmit", retained["detail"])
+        self.assertLessEqual(len(retained["detail"]), 240)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNotNone(sia._print_pulse_failure())
+        self.assertIn("last pulse 13534 FAILED at 2026-09-19T03:11:24Z", out.getvalue())
+        self.assertIn("journalctl --user -u sia-brainstem", out.getvalue())
+        with mock.patch.object(self.lib, "memory_readiness",
+                               return_value=(False, "a corpus publication is still pending")):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(sia.cmd_ready(), 1)
+        self.assertIn("SIA memory not ready: a corpus publication is still pending",
+                      out.getvalue())
+        self.assertIn("last pulse 13534 FAILED", out.getvalue())
+        self.lib.clear_pulse_failure()
+        self.assertIsNone(self.lib.read_pulse_failure())
+        self.lib.clear_pulse_failure()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(sia._print_pulse_failure())
+        self.assertEqual(out.getvalue(), "")
+        with self.assertRaises(ValueError):
+            self.lib.record_pulse_failure(1, "x", failed_at="not-a-time")
