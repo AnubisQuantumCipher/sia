@@ -192,6 +192,12 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         configured_directory=configured_directory, **premises)
     if recovered is not None:
         return recovered
+    # A pointer naming any other directory is refused before any write; the
+    # prelude below commits notes and settles thought pages, so the head's
+    # directory is admitted first, exactly as advance() will admit it again.
+    pointer = dispatch.select_chain(owner, memo=memo)
+    if pointer is not None:
+        _owned(owner, pointer["directory"], configured_directory)
     notes = converge_legacy_authority(owner, memo)
     try:
         if chain_pending(owner, memo=memo):
@@ -379,7 +385,19 @@ def materialize_agent_notes(owner, memo):
     paths, pages, thoughts, errors = owner["materialize_agent_notes"](store, memo)
     if thoughts:
         owner["export_thoughts"](store)
+    # A note's thought registers a page-recovery intent that only the legacy
+    # settlement writes, exports and acknowledges; without it `sia ready`
+    # refuses "thought page recovery intents are pending" on every read.
+    # Settle here, before the capture, exactly as the legacy pulse does
+    # before new work. Bounded legacy baselines that remain are named by
+    # readiness and retried by the next prelude.
+    try:
+        owner["_settle_thought_page_signals"](store)
+    except owner["ThoughtRecoveryPending"] as exc:
+        owner["log"]("thought page recovery still pending: " + str(exc)[:160])
     if pages:
+        pass
+    if pages or owner["corpus_dirty"]():
         if owner["corpus_commit"]("SIA agent notes") == "error":
             raise RuntimeError("agent-note corpus commit refused")
         owner["_mark_external_corpus_mutation"](memo)
@@ -402,6 +420,11 @@ def acknowledge_agent_notes(owner, memo, notes):
     if acknowledged:
         owner["_write_memo"](memo)
         owner["log"](f"agent notes acknowledged: {acknowledged}")
+        # The legacy pulse finalizes the native thought mind replay after
+        # its final memo image: applied receipts whose exact producer
+        # (the acknowledged queue id) is gone are retired, and an empty
+        # catalog is removed. Until then readiness names it as pending.
+        owner["_finalize_native_thought_mind_replay"]()
     for error in errors:
         owner["log"]("agent note acknowledgement REFUSED: "
                      + str(error.get("file"))[:80] + ": "

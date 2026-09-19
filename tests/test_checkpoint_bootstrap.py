@@ -344,6 +344,10 @@ class CheckpointBootstrap(unittest.TestCase):
             thoughts = owner.load_thoughts()["thoughts"]
             self.assertEqual([t for t in thoughts if t.get("queue_id") == request_id][0]["kind"],
                              "note")
+            # The note's thought page intent is settled before the capture,
+            # so readiness is not closed by "recovery intents are pending".
+            self.assertFalse(owner._siathought._thought_recovery_debt(),
+                "a materialized note left a thought page recovery intent pending")
 
         with self.precompact() as (f, owner, directory):
             self.assertEqual(owner._run_controller_source_cycle()["status"], "available")
