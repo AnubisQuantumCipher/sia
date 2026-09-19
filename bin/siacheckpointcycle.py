@@ -221,8 +221,15 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         owner["log"]("controller-source lane retired at capacity ("
                      + exc.reason + "): " + RETIREMENT_NOTE)
         return None
-    if view is not None and notes:
-        acknowledge_agent_notes(owner, memo, notes)
+    if view is not None:
+        if notes:
+            acknowledge_agent_notes(owner, memo, notes)
+        # The legacy pulse finalizes the native thought mind replay after
+        # every transaction's final memo image: applied receipts whose exact
+        # producer (an acknowledged queue id) is gone are retired and an
+        # empty catalog is removed. Until then readiness names it pending,
+        # so this runs after every completed compact pulse, notes or not.
+        owner["_finalize_native_thought_mind_replay"]()
     return view
 
 
@@ -420,11 +427,6 @@ def acknowledge_agent_notes(owner, memo, notes):
     if acknowledged:
         owner["_write_memo"](memo)
         owner["log"](f"agent notes acknowledged: {acknowledged}")
-        # The legacy pulse finalizes the native thought mind replay after
-        # its final memo image: applied receipts whose exact producer
-        # (the acknowledged queue id) is gone are retired, and an empty
-        # catalog is removed. Until then readiness names it as pending.
-        owner["_finalize_native_thought_mind_replay"]()
     for error in errors:
         owner["log"]("agent note acknowledgement REFUSED: "
                      + str(error.get("file"))[:80] + ": "
