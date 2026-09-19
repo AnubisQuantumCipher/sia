@@ -37,7 +37,7 @@ from tests import test_live_loop as live_tests
 VIEW_KEYS = {
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
-    "records_directory", "records_identity", "non_claims",
+    "records_directory", "records_identity", "records_readmission", "non_claims",
 }
 
 
@@ -83,6 +83,7 @@ class ControllerDeliveryEpochHold(unittest.TestCase):
             "expected_parent_generation_sha256": committed["live_generation_sha256"],
             "records_directory": str(records),
             "records_identity": adopted["adoption"]["records_identity"],
+            "records_readmission": None,
             "non_claims": list(self.module.HELD_NON_CLAIMS),
         })
 

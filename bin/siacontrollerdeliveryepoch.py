@@ -897,6 +897,7 @@ class _HeldEpoch:
                 tx.admitted["committed"]["live_generation_sha256"],
             "records_directory": tx.record_directory.path,
             "records_identity": copy.deepcopy(tx.effective_identity),
+            "records_readmission": copy.deepcopy(tx.readmission),
             "non_claims": list(HELD_NON_CLAIMS),
         }
 
@@ -1280,6 +1281,27 @@ def prepare_epoch(owner, *, memo, admitted_status, retained_batch, committed,
         raise
     except _ERRORS as exc:
         raise ControllerDeliveryEpochRefusal("epoch-domain-refused", upstream=exc) from exc
+
+
+def view_identity_bound(owner, view):
+    """Whether a held view's records identity is the adopted one, or the one
+    a valid readmission of that exact adoption names.
+
+    Consumers that compared the view's identity to the adoption's directly
+    use this instead, so an operator readmission after a filesystem move is
+    honoured everywhere the adoption pin is checked and nowhere else.
+    """
+    adoption = view["epoch_adoption"]["adoption"]
+    if _same(owner, view["records_identity"], adoption["records_identity"]):
+        return view.get("records_readmission") is None
+    readmission = view.get("records_readmission")
+    if readmission is None:
+        return False
+    try:
+        _validate_readmission(_ReadmitScope(owner), adoption, readmission)
+    except ControllerDeliveryEpochRefusal:
+        return False
+    return _same(owner, view["records_identity"], readmission["records_identity"])
 
 
 class _ReadmitScope:

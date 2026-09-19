@@ -32,7 +32,7 @@ NON_CLAIMS = (
 _VIEW_KEYS = frozenset({
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
-    "records_directory", "records_identity", "non_claims",
+    "records_directory", "records_identity", "records_readmission", "non_claims",
 })
 _BINDING_KEYS = frozenset({
     "schema", "status", "source_id", "expected_expectations_sha256",
@@ -330,7 +330,7 @@ class _HeldRecallProjection:
         if self.tx.external is None or adopted["expected_adoption_sha256"] != self.tx.external \
                 or wrapper["expected_adoption_sha256"] != self.tx.external \
                 or not _same(adopted, _pin(wrapper["epoch_view"]["epoch_adoption"])) \
-                or not _same(view["records_identity"], _pin(adopted["adoption"]["records_identity"])):
+                or not epoch_api.view_identity_bound(self.native_owner, view):
             _fail("original-adoption-binding")
         live._policy(state["policy"])
         versions = live._pages(state["intake"], state["observed_at"], state["policy"])

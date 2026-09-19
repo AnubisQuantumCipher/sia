@@ -671,6 +671,9 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             key, directory, birth_path, adoption_path, records = self.paths(retained, root)
             bound = self._readmit(case, apply=False)
             self.assertEqual(bound["status"], "bound")
+            unmoved = self._hold_view(case, retained, committed, status, pin)
+            self.assertIsNone(unmoved["records_readmission"])
+            self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, unmoved))
             self.assertEqual(bound["adoption_sha256"], pin)
             self.assertFalse((directory / "readmission.json").exists())
             adoption_bytes = adoption_path.read_bytes()
@@ -712,6 +715,14 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             self.assertEqual(again, result)
             view = self._hold_view(case, retained, committed, status, pin)
             self.assertEqual(view["records_identity"], receipt["records_identity"])
+            self.assertEqual(view["records_readmission"], receipt)
+            self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, view))
+            stale = copy.deepcopy(view)
+            stale["records_readmission"] = None
+            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, stale))
+            forged = copy.deepcopy(view)
+            forged["records_readmission"]["readmitted_at"] += 1
+            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, forged))
             self.assertEqual(view["epoch_adoption"]["adoption"]["records_identity"],
                              result["adoption"]["records_identity"])
             self.assertEqual(self._readmit(case, apply=False)["status"], "bound")

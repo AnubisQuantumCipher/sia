@@ -451,8 +451,7 @@ def _execute(owner, *, arguments, output_utf8, binary_sink, clock,
                         != data["expected_adoption_sha256"] \
                         or source.native_bytes(owner, view["epoch_adoption"]) \
                         != source.native_bytes(owner, data["retained_batch"]["delivery_input"]["epoch_view"]["epoch_adoption"]) \
-                        or view["records_identity"] \
-                        != view["epoch_adoption"]["adoption"]["records_identity"]:
+                        or not epoch_api.view_identity_bound(owner, view):
                     _refuse("actual-source-generation-or-adoption-binding")
 
                 def authority_current():

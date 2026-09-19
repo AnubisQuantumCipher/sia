@@ -52,7 +52,7 @@ CHECKPOINT_NON_CLAIMS = NON_CLAIMS + (
 _VIEW_KEYS = {
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
-    "records_directory", "records_identity", "non_claims",
+    "records_directory", "records_identity", "records_readmission", "non_claims",
 }
 _FENCE_KEYS = {
     "notification_baseline_attempt",
@@ -426,7 +426,9 @@ def _adoption(owner, request, generation):
         legacy=request["parent_source_schema"] in _LEGACY)
     epoch_api._validate_birth(context, birth, expected)
     if adopted["expected_birth_sha256"] != birth["birth_sha256"] \
-            or not _same(owner, adoption, epoch_api._adoption(owner, birth, identity)) \
+            or not _same(owner, adoption,
+                         epoch_api._adoption(owner, birth, adoption["records_identity"])) \
+            or not epoch_api.view_identity_bound(owner, view) \
             or not _same(owner, adopted, epoch_api._result(birth, adoption)) \
             or adoption["adoption_sha256"] != request["expected_adoption_sha256"]:
         _refuse("adoption-birth-identity-or-external-pin")
