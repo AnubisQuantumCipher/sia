@@ -4858,7 +4858,9 @@ ollama_runtime_receipt_valid
             installer)
 
         def run(fake_bin, home, mode):
-            script = (bounded + "\n" + function +
+            # The installer runs under errexit and pipefail; the notice
+            # must survive those, not only a permissive shell.
+            script = ("set -euo pipefail\n" + bounded + "\n" + function +
                       'OLLAMA_OPERATOR_DROP_IN='
                       + shlex.quote(os.path.join(
                           home, "ollama.service.d", "sia-operator.conf"))
@@ -4893,8 +4895,18 @@ ollama_runtime_receipt_valid
                 '  fail)\n'
                 '    exit 1\n'
                 '    ;;\n'
+                '  quiet)\n'
+                '    echo \'msg="listening" addr=127.0.0.1:11434\'\n'
+                '    ;;\n'
                 'esac\n'
                 'exit 0\n')
+
+            # A journal with no "inference compute" line at all (a rotated
+            # journal, or a fresh boot) yields silence and exit 0; under
+            # pipefail an empty grep once aborted the whole installer here.
+            quiet = run(fake_bin, home, "quiet")
+            self.assertEqual(quiet.returncode, 0, quiet.stderr)
+            self.assertEqual(quiet.stdout, "")
 
             igpu = run(fake_bin, home, "igpu")
             self.assertEqual(igpu.returncode, 0, igpu.stderr)

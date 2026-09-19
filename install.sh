@@ -9879,8 +9879,10 @@ ollama_inference_compute_notice() {
     echo "    Environment=OLLAMA_IGPU_ENABLE=1"
     return 0
   fi
+  # A journal without an "inference compute" line must yield silence, not
+  # an errexit exit from a failing command substitution under pipefail.
   last_compute="$(printf '%s\n' "$journal" \
-      | grep 'inference compute' | tail -n 1)"
+      | grep 'inference compute' | tail -n 1 || true)"
   if [ -n "$last_compute" ] \
       && printf '%s\n' "$last_compute" | grep -q 'library=cpu' \
       && ! printf '%s\n' "$journal" | grep -Eq \
