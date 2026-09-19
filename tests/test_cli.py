@@ -3414,6 +3414,39 @@ class StorageReadmission(unittest.TestCase):
         self.assertEqual(calls, [False, True, False])
         self.assertEqual(sia.cmd_readmit(["--bogus"]), 2)
 
+    def test_controller_retire_reports_then_applies_only_with_yes(self):
+        import siacheckpointcycle
+        report = {"schema": siacheckpointcycle.RETIREMENT_SCHEMA, "applied": False,
+                  "reason": "operator", "released": ["controller_source_committed"],
+                  "receipt_sha256": "c" * 64}
+        with mock.patch.object(sia.sialib, "brainstem_owner",
+                               return_value=contextlib.nullcontext()), \
+                mock.patch.object(sia.sialib, "corpus_owner",
+                                  return_value=contextlib.nullcontext()), \
+                mock.patch.object(sia.sialib, "load_memo", return_value={"m": 1}), \
+                mock.patch.object(siacheckpointcycle, "retire",
+                                  return_value=dict(report)) as retire:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_controller(["retire"]), 0)
+            self.assertFalse(retire.call_args.kwargs["apply"])
+            self.assertEqual(retire.call_args.kwargs["reason"], "operator")
+            self.assertIn("nothing changed", output.getvalue())
+            self.assertIn("sia controller retire --yes", output.getvalue())
+            retire.return_value = dict(report, applied=True, receipt="/tmp/r.json")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_controller(["retire", "--yes", "--json"]), 0)
+            self.assertTrue(retire.call_args.kwargs["apply"])
+            self.assertEqual(json.loads(output.getvalue())["receipt"], "/tmp/r.json")
+            retire.side_effect = sia.sialib.OwnerBusy("held")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_controller(["retire", "--yes"]), 1)
+            self.assertIn("runtime-owned", output.getvalue())
+        self.assertEqual(sia.cmd_controller([]), 2)
+        self.assertEqual(sia.cmd_controller(["retire", "--bogus"]), 2)
+
     def test_readmit_refuses_while_the_resident_daemon_owns_the_runtime(self):
         holder = subprocess.Popen(
             [sys.executable, "-c",

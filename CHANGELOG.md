@@ -166,6 +166,18 @@ met every 1.7.8 user with a corpus older than a few weeks:
   only at step 8, after first light, and left the brainstem disabled. A
   read-only preflight names that gate (`SIA_REPLACE_PLUGIN=1`, or update
   through `omarchy plugin update khephri.sia`) before step 1.
+- The opt-in controller-source lane (`mind.controller_source`, off by
+  default) has no rollover: every capture carries every page version since
+  adoption and its ceilings are final. The maintainer machine refused
+  `complete-byte-capacity` ten days after adoption, with a 16.7 MB capture
+  growing about 360 KB per pulse, and every later pulse would have refused
+  the same way. A capture refused for capacity now retires the lane under a
+  receipt (`controller-source-superseded/retired-<digest>.json`), releases
+  only the memo's lane authority and moves the retired live generation
+  beside the receipt, deletes nothing, and hands the pulse back; `sia controller retire [--yes]` and
+  `SIA_RETIRE_CONTROLLER_SOURCE=1 ./install.sh` are the operator forms.
+  A bounded segment design is the maintainer's follow-up; the bound and
+  its cost are now documented in the manual.
 - A sense refusal and a corpus-write refusal log their refusal chain
   (file:function:line) beside the 160-byte status string.
 - The lazily bound live-publication helpers were reached through the owner

@@ -170,6 +170,36 @@ a downgrade even when `install.sh` is invoked directly.
 The resident service runs a pulse cycle every 60 seconds. Its
 scheduled maintenance cycle runs nightly at 03:33.
 
+### Capacity and retirement of the controller-source lane (implemented, unreleased)
+
+The retained lane has no rollover. Every capture carries every page version
+and observation since the epoch was adopted, the live policy's ceilings
+(`max_versions` 256, `max_observations` 4096) and the 16 MiB retained-document
+ceiling are final, and each pulse revalidates the whole retained image by
+value. On an active machine that is days, not months: the maintainer machine
+refused `complete-byte-capacity` ten days after adoption, with a 16.7 MB
+capture growing by about 360 KB per pulse, and each pulse taking about thirty
+minutes of CPU by then.
+
+A capture refused for capacity is final for that lane, so the resident pulse
+retires the lane itself: it writes
+`~/.local/state/sia/controller-source-superseded/retired-<digest>.json`
+naming the released memo authority (`controller_source_committed`,
+`controller_checkpoint_chain`, `controller_delivery_epoch`,
+`live_loop_committed`) and the reason, moves the retired live generation and
+candidate files beside that receipt (named by their digests), releases
+exactly those keys, deletes nothing under the source archive, the checkpoint
+chain or the epoch records, and hands the pulse back to the ordinary route. With `mind.controller_source` still `true` the next capture
+starts a fresh segment (a new live lineage; the retired workspace is
+referenced by the receipt, not carried forward). With it `false` the released
+lane resumes.
+
+`sia controller retire` reports what would be released; `sia controller
+retire --yes` does it, with the resident daemon stopped. An install stopped at
+that refusal consents the same way: `SIA_RETIRE_CONTROLLER_SOURCE=1
+./install.sh`. Retirement refuses while a package, a pending source or its
+effects are in flight; finish or recover those first.
+
 ### Inspecting the retained live loop (implemented, unreleased)
 
 `sia live` shows the last acknowledged controller-source observation;

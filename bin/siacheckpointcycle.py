@@ -28,6 +28,8 @@ fresh work and fresh work must precede starting anything new:
    routes. The caller's legacy lane owns the pulse untouched.
 """
 
+import os
+
 import siacheckpointadoption as adoption
 import siacheckpointdispatch as dispatch
 import siacheckpointparent as parents
@@ -191,11 +193,136 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
     if recovered is not None:
         return recovered
     converge_legacy_authority(owner, memo)
-    if chain_pending(owner, memo=memo):
-        return advance(owner, memo=memo, clock=clock,
+    try:
+        if chain_pending(owner, memo=memo):
+            return advance(owner, memo=memo, clock=clock,
+                configured_directory=configured_directory, **premises)
+        return bootstrap(owner, memo=memo, clock=clock,
             configured_directory=configured_directory, **premises)
-    return bootstrap(owner, memo=memo, clock=clock,
-        configured_directory=configured_directory, **premises)
+    except source.SourceBatchRefusal as exc:
+        if exc.reason not in CAPACITY_REASONS:
+            raise
+        # The retained lane has no rollover: every capture carries every
+        # page version and observation since adoption, and the ceilings
+        # are final. Left alone this refusal repeats on every later pulse
+        # with nothing an operator could change. Retire the lane under a
+        # receipt and hand this pulse back to the legacy route; with the
+        # opt-in still on, the next capture starts a fresh segment.
+        retire(owner, memo=memo, apply=True,
+               reason="capacity: " + exc.reason,
+               retired_at=int(owner["time"].time()))
+        owner["log"]("controller-source lane retired at capacity ("
+                     + exc.reason + "): " + RETIREMENT_NOTE)
+        return None
+
+
+CAPACITY_REASONS = frozenset({
+    "complete-byte-capacity", "complete-json-byte-capacity",
+    "complete-version-or-observation-capacity", "complete-content-capacity",
+})
+RETIRED_KEYS = ("controller_source_committed", "controller_checkpoint_chain",
+                "controller_delivery_epoch", "live_loop_committed")
+RETIRED_FILES = (("live_generation", "LIVE_STATE_PATH"),
+                 ("live_candidate", "LIVE_CANDIDATE_PATH"))
+RETIREMENT_SCHEMA = "sia-controller-source-retirement-v1"
+RETIREMENT_DIRECTORY = "controller-source-superseded"
+RETIREMENT_NOTE = ("the checkpoint chain has no rollover; its archives, chain "
+                   "and epoch records are retained and named by the receipt; "
+                   "with mind.controller_source still true the next pulse "
+                   "starts a fresh segment, with it false the released lane "
+                   "resumes")
+RETIREMENT_NON_CLAIMS = (
+    "Retirement releases the memo's controller-source, checkpoint-chain and delivery-epoch authority; it deletes no archive, chain document, epoch record or corpus page.",
+    "The retained receipt names what was released and why; it is not an acknowledgment, a publication, a cursor change or evidence about the retired lane's content.",
+    "A fresh segment after retirement starts a new live lineage: the retired live generation and candidate are moved beside the receipt, named by digest, not carried forward.",
+)
+
+
+def retirement_pending(owner, memo):
+    """Name the in-flight authority that forbids retirement, or None.
+
+    A pending source batch is in flight only while it continues the lane
+    being retired. With no committed predecessor it is the initial batch of
+    a fresh segment; retiring the stale live lineage under it is exactly the
+    repair that lets it complete.
+    """
+    held = [key for key in (dispatch._MARKER, "controller_source_live_pending",
+                            "controller_source_effects_pending",
+                            "controller_source_effects_committed",
+                            "pulse_status_effects_pending", "live_loop_pending")
+            if key in memo]
+    if "controller_source_committed" in memo:
+        if "controller_source_pending" in memo:
+            held.append("controller_source_pending")
+        if owner["_live_present"](owner["CONTROLLER_SOURCE_BATCH_PATH"]):
+            held.append("controller-source-batch")
+    return held or None
+
+
+def retire(owner, *, memo, apply, reason, retired_at):
+    """Release the retained lane's memo authority under a receipt.
+
+    The receipt is durable before the memo changes, so an interrupted
+    retirement leaves both the receipt and the still-authoritative memo,
+    never a released memo without its receipt. Nothing under
+    controller-source-archive, controller-checkpoint-chain or the epoch
+    records directory is touched. With apply false the report names what
+    would be released and writes nothing.
+    """
+    if type(owner) is not dict or type(memo) is not dict:
+        raise TypeError("owner and memo must be dictionaries")
+    if type(reason) is not str or not reason or len(reason) > 160:
+        source.refuse("controller-retirement-reason")
+    if type(retired_at) is not int or isinstance(retired_at, bool) or retired_at < 0:
+        source.refuse("controller-retirement-clock")
+    held = retirement_pending(owner, memo)
+    if held is not None:
+        source.refuse("controller-retirement-in-flight")
+    retired = {key: memo[key] for key in RETIRED_KEYS if key in memo}
+    files = {}
+    for label, name in RETIRED_FILES:
+        path = owner[name]
+        if owner["_live_present"](path):
+            with open(path, "rb") as stream:
+                digest = owner["hashlib"].sha256(stream.read()).hexdigest()
+            files[label] = {"path": path, "sha256": digest}
+    if not retired and not files:
+        source.refuse("controller-retirement-nothing-retained")
+    directory = os.path.join(owner["STATE"], RETIREMENT_DIRECTORY)
+    receipt = {
+        "schema": RETIREMENT_SCHEMA, "retired_at": retired_at, "reason": reason,
+        "retired": retired,
+        "retired_sha256": {key: source.native_sha(owner, value)
+                           for key, value in retired.items()},
+        "retired_files": {label: dict(row, retained_as=os.path.join(
+            directory, "retired-" + row["sha256"] + "." + label + ".json"))
+            for label, row in files.items()},
+        "retained": ["controller-source-archive", "controller-checkpoint-chain",
+                     "controller-source-effects-archive", "controller-delivery-epochs"],
+        "non_claims": list(RETIREMENT_NON_CLAIMS),
+    }
+    receipt["receipt_sha256"] = source.native_sha(
+        owner, {key: value for key, value in receipt.items() if key != "receipt_sha256"})
+    report = {"schema": RETIREMENT_SCHEMA, "applied": bool(apply),
+              "reason": reason, "released": sorted(retired),
+              "moved": sorted(files), "receipt_sha256": receipt["receipt_sha256"]}
+    if not apply:
+        return report
+    owner["ensure_durable_directory"](directory, mode=0o700)
+    path = os.path.join(directory, "retired-" + receipt["receipt_sha256"] + ".json")
+    owner["atomic_write"](path, source.native_bytes(owner, receipt).decode("ascii"), mode=0o600)
+    # Receipt first, then the files, then the memo: an interruption leaves
+    # the receipt naming what was meant, never a released memo without one.
+    for label, row in receipt["retired_files"].items():
+        os.replace(row["path"], row["retained_as"])
+    released = {key: value for key, value in memo.items() if key not in retired}
+    owner["_write_memo"](released)
+    memo.clear()
+    memo.update(owner["load_memo"]())
+    if any(key in memo for key in retired) or owner["_live_started"](memo):
+        source.refuse("controller-retirement-not-released")
+    report["receipt"] = path
+    return report
 
 
 def converge_legacy_authority(owner, memo):

@@ -16,7 +16,10 @@ established plus the adopted, acknowledged state itself.
 
 import contextlib
 import copy
+import hashlib
+import os
 import importlib
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -187,6 +190,126 @@ class CheckpointBootstrap(unittest.TestCase):
                     return_value=([], [{"kind": "take", "error": "fixture"}])), \
                     self.assertRaisesRegex(RuntimeError, "natural-history recovery refused"):
                 owner._run_controller_source_cycle()
+
+    def test_retirement_releases_lane_authority_under_a_receipt(self):
+        """The retained lane has no rollover; retirement is its named end.
+
+        Every capture carries every page version since adoption and the
+        ceilings are final (the maintainer machine refused
+        complete-byte-capacity after ten days). Retirement writes a receipt
+        naming what it releases, releases exactly the memo's lane authority,
+        touches no archive, and refuses while anything is in flight.
+        """
+        source = importlib.import_module("siasourcebatch")
+        self.assertTrue(callable(getattr(self.cycle, "retire", None)),
+            "missing controller-source retirement")
+        with self.precompact() as (f, owner, directory):
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            memo = owner.load_memo()
+            for key in self.cycle.RETIRED_KEYS:
+                self.assertIn(key, memo)
+            chain_files = sorted(Path(directory).iterdir())
+            archive = Path(owner.CONTROLLER_SOURCE_ARCHIVE_DIR)
+            archive_files = sorted(archive.iterdir()) if archive.exists() else []
+
+            report = self.cycle.retire(vars(owner), memo=dict(memo), apply=False,
+                                       reason="operator", retired_at=1_790_000_000)
+            self.assertFalse(report["applied"])
+            self.assertEqual(report["released"], sorted(self.cycle.RETIRED_KEYS))
+            self.assertEqual(owner.load_memo(), memo, "a report changed the memo")
+            self.assertFalse((Path(owner.STATE) / self.cycle.RETIREMENT_DIRECTORY).exists())
+
+            held = dict(memo, controller_source_pending={"batch_sha256": "a" * 64})
+            with self.assertRaises(source.SourceBatchRefusal) as refused:
+                self.cycle.retire(vars(owner), memo=held, apply=True,
+                                  reason="operator", retired_at=1_790_000_000)
+            self.assertEqual(refused.exception.reason, "controller-retirement-in-flight")
+            # A pending batch with no committed predecessor is a fresh
+            # segment's initial batch, not the retired lane in flight.
+            fresh = {k: v for k, v in held.items() if k != "controller_source_committed"}
+            self.assertIsNone(self.cycle.retirement_pending(vars(owner), fresh))
+            live_files = [owner.LIVE_STATE_PATH, owner.LIVE_CANDIDATE_PATH]
+            present = [path for path in live_files if os.path.exists(path)]
+            self.assertTrue(present, "the fixture published no live generation")
+
+            live = dict(memo)
+            applied = self.cycle.retire(vars(owner), memo=live, apply=True,
+                                        reason="capacity: complete-byte-capacity",
+                                        retired_at=1_790_000_000)
+            self.assertTrue(applied["applied"])
+            receipt_path = Path(applied["receipt"])
+            self.assertTrue(receipt_path.is_file())
+            self.assertEqual(receipt_path.stat().st_mode & 0o777, 0o600)
+            receipt = json.loads(receipt_path.read_text())
+            self.assertEqual(receipt["schema"], self.cycle.RETIREMENT_SCHEMA)
+            self.assertEqual(receipt["reason"], "capacity: complete-byte-capacity")
+            self.assertEqual(set(receipt["retired"]), set(self.cycle.RETIRED_KEYS))
+            for key in self.cycle.RETIRED_KEYS:
+                self.assertEqual(receipt["retired"][key], memo[key])
+            durable = owner.load_memo()
+            for key in self.cycle.RETIRED_KEYS:
+                self.assertNotIn(key, durable)
+            self.assertEqual(live, durable)
+            self.assertEqual({k: v for k, v in memo.items() if k not in self.cycle.RETIRED_KEYS},
+                             durable)
+            self.assertFalse(owner._controller_source_present(durable))
+            self.assertFalse(owner._live_started(durable),
+                "a retired live lineage still counts as started")
+            for label, row in receipt["retired_files"].items():
+                self.assertFalse(os.path.exists(row["path"]))
+                self.assertTrue(os.path.isfile(row["retained_as"]))
+                with open(row["retained_as"], "rb") as stream:
+                    self.assertEqual(hashlib.sha256(stream.read()).hexdigest(), row["sha256"])
+            self.assertEqual(sorted(Path(directory).iterdir()), chain_files,
+                "retirement touched the chain directory")
+            if archive.exists():
+                self.assertEqual(sorted(archive.iterdir()), archive_files)
+            with self.assertRaises(source.SourceBatchRefusal) as again:
+                self.cycle.retire(vars(owner), memo=dict(durable), apply=True,
+                                  reason="operator", retired_at=1_790_000_000)
+            self.assertEqual(again.exception.reason, "controller-retirement-nothing-retained")
+
+    def test_capture_at_capacity_retires_the_lane_and_hands_the_pulse_back(self):
+        """A capacity refusal is final on this lane; the cycle retires it.
+
+        Any other refusal still propagates unchanged.
+        """
+        source = importlib.import_module("siasourcebatch")
+        with self.precompact() as (f, owner, directory):
+            self.assertEqual(owner._run_controller_source_cycle()["status"], "available")
+            refusal = source.SourceBatchRefusal("complete-byte-capacity")
+            trace = []
+            with mock.patch.object(self.cycle.transaction, "prepare_successor",
+                                   side_effect=refusal), \
+                    mock.patch.object(owner, "log", side_effect=trace.append), \
+                    mock.patch.object(owner, "_run_controller_source_transaction_v3",
+                                      return_value={"state": "ok"}) as legacy:
+                result = owner._run_controller_source_cycle()
+            self.assertEqual(result, {"state": "ok"})
+            legacy.assert_called_once()
+            durable = owner.load_memo()
+            for key in self.cycle.RETIRED_KEYS:
+                self.assertNotIn(key, durable)
+            retired = Path(owner.STATE) / self.cycle.RETIREMENT_DIRECTORY
+            receipts = [path for path in retired.iterdir()
+                        if path.name.startswith("retired-") and path.name.count(".") == 1]
+            self.assertEqual(len(receipts), 1, sorted(retired.iterdir()))
+            receipt = json.loads(receipts[0].read_text())
+            self.assertEqual(receipt["reason"], "capacity: complete-byte-capacity")
+            for row in receipt["retired_files"].values():
+                self.assertTrue(Path(row["retained_as"]).is_file())
+            self.assertTrue(any("retired at capacity" in line for line in trace))
+
+        with self.precompact() as (f, owner, directory):
+            self.assertEqual(owner._run_controller_source_cycle()["status"], "available")
+            other = source.SourceBatchRefusal("checkpoint-transaction-head-pin")
+            with mock.patch.object(self.cycle.transaction, "prepare_successor",
+                                   side_effect=other), \
+                    self.assertRaises(source.SourceBatchRefusal):
+                owner._run_controller_source_cycle()
+            for key in self.cycle.RETIRED_KEYS:
+                self.assertIn(key, owner.load_memo())
 
     def test_compact_completion_renders_the_durable_status_not_the_view(self):
         """A pulse consumer renders a status; the compact lane returns a view.

@@ -5761,6 +5761,15 @@ preflight_corpus locked
             self.assertNotEqual(probe(home, earlier.replace(
                 "version=0.47.6.0\n", "version=0.47.6.0\nrm -rf /\n")), 0)
 
+    def test_installer_retires_the_controller_lane_only_by_consent_before_first_light(self):
+        installer = _read("install.sh")
+        block = installer.split('if [ "${SIA_RETIRE_CONTROLLER_SOURCE:-0}" = 1 ]; then', 1)[1]
+        self.assertIn('python3 "$BINDIR/sia-cli" controller retire --yes', block.split("fi\n", 1)[0])
+        self.assertLess(installer.index('SIA_RETIRE_CONTROLLER_SOURCE:-0'),
+                        installer.index('SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse'))
+        self.assertGreater(installer.index('SIA_RETIRE_CONTROLLER_SOURCE:-0'),
+                           installer.index('python3 "$BINDIR/sia-cli" readmit --yes'))
+
     def test_existing_plugin_tree_is_named_before_the_first_mutation(self):
         """Step 8 refuses to replace a user-editable plugin tree without
         SIA_REPLACE_PLUGIN=1. On the maintainer machine that refusal came

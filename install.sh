@@ -10584,6 +10584,17 @@ else
     exit 1
   }
 fi
+# The opt-in controller-source lane has no rollover; once its retained
+# capture reaches a ceiling every later pulse refuses the same way. The
+# resident pulse retires it under a receipt by itself; an operator whose
+# install is stopped at that refusal can consent to the same retirement here.
+if [ "${SIA_RETIRE_CONTROLLER_SOURCE:-0}" = 1 ]; then
+  SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
+    python3 "$BINDIR/sia-cli" controller retire --yes || {
+    echo "controller-source retirement refused; nothing was released" >&2
+    exit 1
+  }
+fi
 SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \
   SIA_BACKFILL=1 python3 "$BINDIR/sia-cli" pulse
 SIA_INHERITED_LIFECYCLE_FD="$SIA_INSTALL_LOCK_FD" \

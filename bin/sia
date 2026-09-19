@@ -21,6 +21,7 @@ biological brain and does not establish cognition or neuroscience.
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
   sia readmit [--yes] [--json]
+  sia controller retire [--yes] [--json]
                         re-bind storage receipts after a filesystem move
                         (device/inode changed); --yes needs the daemon off
   sia repair-cortex-boundary [--regenerate-legacy-graph] [--json]
@@ -852,6 +853,60 @@ def _corpus_receipt_readmit(apply):
         raise RuntimeError("corpus root changed during readmission")
     result.update(status="readmitted", previous_root=recorded)
     return result
+
+
+def cmd_controller(args):
+    """Operator ceremonies for the opt-in controller-source lane."""
+    if not args or args[0] != "retire":
+        print("usage: sia controller retire [--yes] [--json]")
+        return 2
+    options = args[1:]
+    if len(options) != len(set(options)) or any(
+            item not in {"--yes", "--json"} for item in options):
+        print("usage: sia controller retire [--yes] [--json]")
+        return 2
+    apply = "--yes" in options
+    as_json = "--json" in options
+    import time
+    import siacheckpointcycle
+    import siasourcebatch
+    try:
+        with sialib.brainstem_owner(), sialib.corpus_owner():
+            report = siacheckpointcycle.retire(
+                sialib.__dict__, memo=sialib.load_memo(), apply=apply,
+                reason="operator", retired_at=int(time.time()))
+    except sialib.OwnerBusy:
+        report = {"schema": siacheckpointcycle.RETIREMENT_SCHEMA,
+                  "applied": False, "status": "refused", "reason": "runtime-owned"}
+        if as_json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print("SIA controller retire refused: runtime-owned — stop the "
+                  "resident daemon first:")
+            print("  systemctl --user stop sia-brainstem && sia controller retire"
+                  + (" --yes" if apply else "")
+                  + " && systemctl --user start sia-brainstem")
+        return 1
+    except siasourcebatch.SourceBatchRefusal as exc:
+        report = {"schema": siacheckpointcycle.RETIREMENT_SCHEMA,
+                  "applied": False, "status": "refused", "reason": exc.reason}
+        if as_json:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print("SIA controller retire refused: " + exc.reason)
+        return 1
+    if as_json:
+        print(json.dumps(report, sort_keys=True))
+        return 0
+    if apply:
+        print("controller-source lane retired; receipt " + report["receipt"])
+        print("released: " + ", ".join(report["released"]))
+    else:
+        print("controller-source lane would release: "
+              + ", ".join(report["released"]))
+        print("nothing changed; retire it with:  sia controller retire --yes")
+    print(siacheckpointcycle.RETIREMENT_NOTE)
+    return 0
 
 
 def cmd_readmit(args):
@@ -2604,6 +2659,8 @@ def _dispatch(argv, cmd):
         return cmd_ready()
     if cmd == "readmit":
         return cmd_readmit(argv[2:])
+    if cmd == "controller":
+        return cmd_controller(argv[2:])
     if cmd in ("ask", "query") and len(argv) > 2:
         ask_args = argv[2:]
         no_touch = "--no-touch" in ask_args
