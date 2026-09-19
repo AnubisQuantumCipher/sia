@@ -266,7 +266,12 @@ memfd files. `python3` must expose `os.pidfd_open`, `signal.pidfd_send_signal`,
 `os.waitid` with `waitid/WNOWAIT/WSTOPPED`, and `os.memfd_create`, and must have
 an Ed25519-capable Python-cryptography. The native lifetime owner also requires
 Linux `SCM_CREDENTIALS` and `SCM_RIGHTS`; absence of any core lifetime feature
-refuses before the mutating shell launches. SIA also requires `git`, `curl`, `tar`,
+refuses before the mutating shell launches. Bounded helper processes (chain
+keepers, gbrain) run inside a private user+PID namespace when the kernel
+permits unprivileged `unshare`; where it does not (Ubuntu 24.04's AppArmor
+default, hardened kernels) SIA announces once that it fell back to
+process-group isolation and keeps working — that fallback is weaker
+containment, not a failure. SIA also requires `git`, `curl`, `tar`,
 `unzip`, `bzip2`, `sha256sum`, `zstd`, `flock`, `ss` from `iproute2`, a systemd
 user session (`systemctl`), and roughly 2 GB of disk for Ollama. The bootstrap
 downloads Bun, Ollama, and SIA's private restic executable from pinned release

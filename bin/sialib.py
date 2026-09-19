@@ -1966,10 +1966,13 @@ def _stable_tail_chunk(path, cursors, key, max_read, *, source_fd=None):
             head_bytes = values["head_bytes"]
             observed_head, observed_guard = _cursor_fingerprints(
                 stream, size, min(offset, size), head_bytes)
+            # Content fingerprints, not the inode, decide replacement. A
+            # file whose device or inode changed but whose fixed head and
+            # cursor-boundary bytes still match is the same log moved or
+            # copied (rsync, btrfs subvolume, restore); re-reading it from
+            # byte zero would replay every source after every migration.
             replaced = (
-                values["device"] != before.st_dev
-                or values["inode"] != before.st_ino
-                or offset > size
+                offset > size
                 or observed_head != cursors[names["head"]]
                 or observed_guard != cursors[names["guard"]])
             if replaced:
@@ -3900,6 +3903,58 @@ MAX_EXTERNAL_OUTPUT_BYTES = MAX_STATE_JSON_BYTES
 MAX_GBRAIN_OUTPUT_BYTES = MAX_EXTERNAL_OUTPUT_BYTES
 
 
+_UNSHARE = "/usr/bin/unshare"
+_PROCESS_TREE_ISOLATION = None
+_PROCESS_TREE_ISOLATION_ANNOUNCED = False
+
+
+def _probe_process_tree_isolation():
+    """Whether an unprivileged user+PID namespace can be entered here.
+
+    Ubuntu 24.04 and hardened kernels refuse unprivileged user namespaces
+    (AppArmor ``userns`` restriction or ``kernel.unprivileged_userns_clone``),
+    and ``unshare`` then exits nonzero before the child runs. The probe runs
+    the exact namespace shape used for bounded children against ``/bin/true``
+    and never inspects or reuses its output.
+    """
+    if not os.access(_UNSHARE, os.X_OK) or not os.access("/bin/true", os.X_OK):
+        return False
+    try:
+        completed = subprocess.run(
+            [_UNSHARE, "--user", "--map-root-user", "--pid", "--fork",
+             "--kill-child", "--mount-proc", "--", "/bin/true"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=15, check=False,
+            start_new_session=True, close_fds=True)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def process_tree_isolation():
+    """Return the isolation a bounded child receives on this host.
+
+    ``pid-namespace``: descendants live in a private PID namespace that dies
+    with the child. ``process-group``: only the fresh session/process group is
+    signalled, so a descendant that calls ``setsid()`` can outlive the bounded
+    call. The result is probed once per process and announced once on stderr
+    when the weaker mode is in force; it is a host property, not a claim
+    about the child's correctness.
+    """
+    global _PROCESS_TREE_ISOLATION, _PROCESS_TREE_ISOLATION_ANNOUNCED
+    if _PROCESS_TREE_ISOLATION is None:
+        _PROCESS_TREE_ISOLATION = (
+            "pid-namespace" if _probe_process_tree_isolation()
+            else "process-group")
+    if _PROCESS_TREE_ISOLATION == "process-group" \
+            and not _PROCESS_TREE_ISOLATION_ANNOUNCED:
+        _PROCESS_TREE_ISOLATION_ANNOUNCED = True
+        print("SIA: unprivileged PID-namespace isolation is unavailable on "
+              "this host (unshare refused); bounded subprocesses fall back to "
+              "process-group isolation", file=sys.stderr, flush=True)
+    return _PROCESS_TREE_ISOLATION
+
+
 def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                               label="subprocess", output_limit=None,
                               isolate_process_tree=False,
@@ -3908,7 +3963,9 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
     """Run one external reader with bounded combined output and lifetime.
 
     Drain both pipes concurrently in a fresh process group. Optional PID
-    isolation also contains descendants that call ``setsid()``. Retained bytes
+    isolation also contains descendants that call ``setsid()`` where the host
+    permits an unprivileged PID namespace; otherwise process_tree_isolation()
+    announces the process-group fallback once. Retained bytes
     require strict UTF-8; discard mode only counts them. Progress output uses a
     constant caller label and never echoes child output.
     """
@@ -3943,9 +4000,9 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
         raise ValueError("invalid progress label")
     original_command = list(command)
     launch_command = original_command
-    if isolate_process_tree:
+    if isolate_process_tree and process_tree_isolation() == "pid-namespace":
         launch_command = [
-            "/usr/bin/unshare", "--user", "--map-root-user", "--pid",
+            _UNSHARE, "--user", "--map-root-user", "--pid",
             "--fork", "--kill-child", "--mount-proc", "--",
             *original_command]
     process = None
@@ -5552,6 +5609,61 @@ def think(store, memo, events, chains, salience, anomalies, event_day=None):
 
 STATUS_PATH = os.path.join(STATE, "status.json")
 GRAPH_PATH = os.path.join(STATE, "graph.json")
+# The last resident pulse failure, retained so operator surfaces (sia status,
+# sia ready, the cockpit gate) can name a refusal that SOURCE HEALTH cannot
+# publish while a controller-source transaction holds publication authority.
+# It is cleared by the next pulse that completes. Diagnostic only: it grants
+# nothing and is never read as memory.
+PULSE_FAILURE_PATH = os.path.join(STATE, "pulse-failure.json")
+PULSE_FAILURE_SCHEMA = "sia-pulse-failure-v1"
+
+
+def record_pulse_failure(seq, detail, *, failed_at=None):
+    """Retain one bounded, already-redacted pulse failure for operators."""
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+        raise ValueError("pulse failure sequence must be a non-negative integer")
+    if not isinstance(detail, str):
+        raise TypeError("pulse failure detail must be text")
+    # 240 characters keeps a named refusal AND its operator remedy (for
+    # example both storage identities plus "run: sia readmit") intact.
+    text = clip(inert_summary(redact(detail, "status-error")), 240)
+    when = (datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+            if failed_at is None else _canonical_utc_timestamp(failed_at))
+    record = {"schema": PULSE_FAILURE_SCHEMA, "v": 1, "pulse_seq": seq,
+              "detail": text, "failed_at": when,
+              "non_claims": [
+                  "A retained pulse failure is a diagnostic clause, not "
+                  "memory, readiness, or proof of the failure's cause."]}
+    atomic_write(PULSE_FAILURE_PATH, json.dumps(
+        record, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False) + "\n", mode=0o600)
+    return record
+
+
+def clear_pulse_failure():
+    try:
+        os.unlink(PULSE_FAILURE_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def read_pulse_failure():
+    """Return the retained failure record, or None when absent/unusable."""
+    try:
+        record = read_state_json(
+            PULSE_FAILURE_PATH, None, "pulse failure", expected_type=dict)
+    except (RuntimeError, ValueError):
+        return None
+    if record is None or record.get("schema") != PULSE_FAILURE_SCHEMA \
+            or not isinstance(record.get("pulse_seq"), int) \
+            or isinstance(record.get("pulse_seq"), bool) \
+            or not isinstance(record.get("detail"), str) \
+            or not isinstance(record.get("failed_at"), str):
+        return None
+    return {"pulse_seq": record["pulse_seq"],
+            "detail": clip(inert_summary(record["detail"]), 240),
+            "failed_at": clip(inert_summary(record["failed_at"]), 40)}
 GRAPH_PROJECTION_SCHEMA = "sia-graph-projection-v1"
 LEGACY_GRAPH_README_FAILURE = (
     "graph_page_refused:README:corpus slug is not canonical")

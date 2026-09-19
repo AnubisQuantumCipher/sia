@@ -577,6 +577,7 @@ def _run_owned(*, plugin_guard=None):
                     + _safe_failure_detail(exc))
             durable_memo = sialib.load_memo()
             seq, _durable_last_dream_day = _startup_state(durable_memo)
+            sialib.clear_pulse_failure()
             if st["events_pulse"] or st["errors"]:
                 sialib.log(f"pulse {seq}: {st['events_pulse']} events, "
                            f"state {st['state']}"
@@ -594,6 +595,12 @@ def _run_owned(*, plugin_guard=None):
                 pass
             detail = _safe_failure_detail(e)
             sialib.log(f"pulse {seq} FAILED: {detail}")
+            try:
+                sialib.record_pulse_failure(
+                    seq, sialib.redact(str(e), "status-error"))
+            except Exception as retain_exc:
+                sialib.log("pulse failure record REFUSED: "
+                           + _safe_failure_detail(retain_exc))
             _publish_failure(seq, detail)
         last_dream_day = _durable_dream_day(last_dream_day)
         now = datetime.datetime.now()

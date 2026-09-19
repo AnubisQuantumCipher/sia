@@ -106,6 +106,36 @@ class TailCursors(unittest.TestCase):
                          "replacement rows must not be silently skipped")
         self.assertEqual(self.cur["k"], 2)
 
+    def test_moved_file_with_matching_fingerprints_continues_without_replay(self):
+        """rsync, a btrfs subvolume change, or a restore by copy gives a log a
+        new device/inode with identical bytes; the cursor must continue at
+        its offset (and record the new identity) rather than replay."""
+        sialib = _load("sialib", os.path.join(BIN, "sialib.py"))
+        self._write(["a", "b", "c"])
+        sialib.tail_lines(self.path, self.cur, "k")
+        self.assertEqual(self.cur["k"], 3)
+        recorded = (self.cur["k.device"], self.cur["k.inode"])
+        copied = self.path + ".copy"
+        with open(self.path, "rb") as source, open(copied, "wb") as target:
+            target.write(source.read())
+        os.replace(copied, self.path)
+        moved = os.stat(self.path)
+        self.assertNotEqual(recorded, (moved.st_dev, moved.st_ino))
+        self.assertEqual(sialib.tail_lines(self.path, self.cur, "k"), [],
+                         "identical content under a new inode must not replay")
+        self.assertEqual(self.cur["k"], 3)
+        self.assertEqual(self.cur["k.generation"], 0)
+        self.assertEqual((self.cur["k.device"], self.cur["k.inode"]),
+                         (moved.st_dev, moved.st_ino))
+        self._write(["a", "b", "c", "d"])
+        self.assertEqual(sialib.tail_lines(self.path, self.cur, "k"), ["d"])
+        # Different content under a new inode is still a replacement.
+        with open(copied, "w", encoding="utf-8") as stream:
+            stream.write("x\ny\n")
+        os.replace(copied, self.path)
+        self.assertEqual(sialib.tail_lines(self.path, self.cur, "k"), ["x", "y"])
+        self.assertEqual(self.cur["k.generation"], 1)
+
     def test_same_or_larger_replacement_replays_after_digest_bootstrap(self):
         sialib = _load("sialib", os.path.join(BIN, "sialib.py"))
         self._write(["a", "b"])
@@ -1926,6 +1956,18 @@ class SessionMetadataPrivacy(unittest.TestCase):
                                 for event in later))
 
 
+
+def _requires_pid_namespace(method):
+    """Skip PID-namespace assertions where the host refuses unprivileged
+    user namespaces; the skip names the missing host feature and is not
+    proof of containment."""
+    import importlib
+    lib = importlib.import_module("sialib")
+    return unittest.skipUnless(
+        lib.process_tree_isolation() == "pid-namespace",
+        "host refuses unprivileged PID namespaces; namespace containment "
+        "NOT EXERCISED here")(method)
+
 class GbrainProcessBounds(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -2058,6 +2100,7 @@ class GbrainProcessBounds(unittest.TestCase):
                 time.sleep(0.01)
             self.assertFalse(alive, "gbrain descendant survived group kill")
 
+    @_requires_pid_namespace
     def test_private_pid_namespace_removes_new_session_descendant(self):
         with tempfile.TemporaryDirectory() as cwd:
             lock_file = os.path.join(cwd, "descendant.lock")
@@ -2085,6 +2128,7 @@ class GbrainProcessBounds(unittest.TestCase):
                 lock_file,
                 "new-session descendant survived namespace teardown")
 
+    @_requires_pid_namespace
     def test_private_pid_namespace_does_not_expose_host_parent_in_procfs(self):
         code = (
             "import os,sys\n"
@@ -2098,6 +2142,7 @@ class GbrainProcessBounds(unittest.TestCase):
                 isolate_process_tree=True)
         self.assertEqual(result.returncode, 0)
 
+    @_requires_pid_namespace
     def test_private_pid_namespace_timeout_removes_new_session_descendant(self):
         with tempfile.TemporaryDirectory() as cwd:
             lock_file = os.path.join(cwd, "descendant.lock")
@@ -2125,6 +2170,47 @@ class GbrainProcessBounds(unittest.TestCase):
             self._assert_lock_released(
                 lock_file,
                 "timed-out descendant survived namespace teardown")
+
+    def test_process_group_fallback_runs_isolated_children_without_unshare(self):
+        """When the host refuses user namespaces the bounded runner still
+        runs the child, without unshare, and still kills its process group."""
+        with tempfile.TemporaryDirectory() as cwd:
+            pid_file = os.path.join(cwd, "child.pid")
+            launches = []
+            real_popen = subprocess.Popen
+
+            def observing_popen(command, *args, **kwargs):
+                launches.append(list(command))
+                return real_popen(command, *args, **kwargs)
+
+            announced = io.StringIO()
+            with mock.patch.object(self.sialib, "_PROCESS_TREE_ISOLATION", None), \
+                    mock.patch.object(
+                        self.sialib, "_PROCESS_TREE_ISOLATION_ANNOUNCED", False), \
+                    mock.patch.object(
+                        self.sialib, "_probe_process_tree_isolation",
+                        return_value=False), \
+                    mock.patch.object(subprocess, "Popen", observing_popen), \
+                    contextlib.redirect_stderr(announced):
+                self.assertEqual(self.sialib.process_tree_isolation(),
+                                 "process-group")
+                self.assertEqual(self.sialib.process_tree_isolation(),
+                                 "process-group")
+                result = self.sialib._run_bounded_text_process(
+                    [sys.executable, "-c",
+                     "import os,sys;open(sys.argv[1],'w').write(str(os.getpid()))",
+                     pid_file],
+                    env=dict(os.environ), timeout=30, cwd=cwd,
+                    isolate_process_tree=True)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(len(launches), 1)
+            self.assertNotIn("/usr/bin/unshare", launches[0])
+            self.assertEqual(launches[0][0], sys.executable)
+            self.assertEqual(
+                announced.getvalue().count("process-group isolation"), 1,
+                "the fallback is announced exactly once per process")
+            with open(pid_file, encoding="utf-8") as stream:
+                self.assertTrue(stream.read().isdigit())
 
     def test_public_wrappers_share_the_bounded_runner(self):
         completed = subprocess.CompletedProcess(
