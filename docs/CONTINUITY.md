@@ -1,6 +1,6 @@
 # SIA continuity
 
-**Describes SIA v1.7.8 · 2026-09-04**
+**Describes SIA v1.8.0 · 2026-09-19**
 
 SIA continuity is the backup and clean-machine recovery boundary for SIA, the
 Omarchy Brain. “Brain” is a product metaphor for auditable local machine memory;

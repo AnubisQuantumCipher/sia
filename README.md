@@ -21,23 +21,25 @@ watch its generated-entry stream and query the memory it has admitted.
 You can audit every stored word because the corpus is markdown in git and the
 daemon signs its own acts.
 
-**Current release: v1.7.8.** The nightly judge audit had reported the same
-score for five days, and reading it as a limit of the grader was comfortable
-and wrong. SEKHMET really did restart wireplumber last August — four times,
-signed in its own ledger — and SIA ingested those rows as evidence and then
-deleted the page during a maintenance pass. Epoch exemplars were sampled by
-position, so the weekly summary kept the *intent* to heal and dropped every
-record that it *worked*; and the grading lane sorted both evidence lanes by
-path, so `epochs`
-sorted ahead of `events` and the epoch was never shown to the judge at all.
-Both are fixed, and so is a third: evidence excerpts took a page's first
-420 characters, which on an epoch is its frontmatter, so the judge was handed
-metadata and no evidence. And a fourth: both lanes cite the same page, and the excerpt was chosen
-first-wins, so a 220-character head beat the window that carried the answer.
-The audit that had scored 1/2 since it was written now scores 2/2 on the
-installed runtime. Twenty-one tests fail on a revert. The compacted
-originals were in git throughout; what changed is what live memory can answer
-from.
+**Current release: v1.8.0.** Two receipts bind storage by device and inode
+number — the installer's corpus receipt and the delivery epoch's adoption —
+and a btrfs subvolume change, an `rsync` of the home directory, or a restore
+by copy changes those numbers. After that every pulse refused, `sia ready`
+reported a pending migration, continuity reported only that it "failed
+without reporting repository credentials", and the installer refused with
+"existing corpus receipt is invalid". Issue #12 reported it on btrfs; the
+maintainer machine hit it after a VM migration. Nothing is guessed now:
+every refusal names both identities and the remedy, `sia readmit --yes`
+re-binds the unchanged adoption through a sealed receipt that retains the
+previous identity, and `SIA_READMIT_MOVED_STORAGE=1 ./install.sh` does the
+same under the installer's own journal. First light on a CPU-only host is
+bounded by a finite, named, progress-reporting ceiling instead of an
+unattributed 120-second gate (issue #10); the pulse never runs back to back
+(issue #13); a moved log with identical bytes continues instead of replaying;
+and bounded helpers fall back, announced, to process-group isolation where a
+kernel refuses unprivileged PID namespaces — the reason the suite was red on
+Ubuntu runners while green on Arch. The last pulse failure is retained and
+shown by `sia status`, not only in `journalctl`.
 
 Automatic Continuity never wakes the computer solely to run a backup. Its
 persistent timers catch up after the user session returns, serialize their

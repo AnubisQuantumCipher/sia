@@ -4158,6 +4158,11 @@ acquire_install_lifecycle() {
     fi
   done
   echo "active SIA clients did not leave the runtime generation" >&2
+  echo "processes still using the installed SIA runtime (best effort):" >&2
+  pgrep -af -- "$SHARE/bin/" 2>/dev/null | sed 's/^/  /' >&2 || true
+  echo "an hourly continuity run (sia-cli _continuity-worker) finishes on its" \
+    "own; an agent's sia MCP connection needs that client closed; then rerun" \
+    "install.sh" >&2
   return 1
 }
 

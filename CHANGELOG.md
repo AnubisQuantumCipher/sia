@@ -1,5 +1,153 @@
 # Changelog
 
+## 1.8.0 — 2026-09-19 · the receipts survive the move
+
+Four reporters and one migrated maintainer machine hit this release where
+1.7.8 had never been tested: a 2015 dual-core with no discrete GPU, an Arch
+desktop with 1,130 packages, a btrfs box whose subvolume moved, a home
+directory carried to a new VM by `rsync`, a GitHub Actions runner refusing
+unprivileged namespaces, a corpus outrunning nine journal shards. Each fix
+here is named against the value the report carried, and each refusal that
+stays now says which value it refused.
+
+### First light and install
+
+Issue #10 ([Enor75](https://github.com/Enor75)) reported first light unable
+to finish on a CPU-only 2015 Broadwell i5 with integrated Iris 6100: three
+nested deadlines (60s per-embedding gbrain, 300s subprocess, the installer's
+120s `sia ready` join) all sat below what a one-time backfill needs there,
+surfacing only as an unattributed `command exceeded its 120-second runtime
+deadline`. The reporter's own workaround measurement — 52.4s CPU-only vs
+22.5s with `OLLAMA_IGPU_ENABLE=1` for four ~1500-word inputs — is roughly a
+2.3x difference, by their own description, since Ollama silently drops the
+integrated GPU unless told. First light now gets a finite, larger completion
+ceiling separate from steady-state limits, CPU-only stages emit a
+content-free progress heartbeat instead of going silent, and deadline labels
+name the command that timed out. A maintainer install against a real
+2,191-page corpus completed without being killed — not reproduction on the
+reporter's own hardware.
+
+The same issue's item 4 reported that the installer's exact-match
+`DropInPaths` check on `ollama.service` left no way to set
+`OLLAMA_IGPU_ENABLE=1` without failing the install. One documented drop-in,
+`$SYSTEMD_USER_DIR/ollama.service.d/sia-operator.conf`, is now accepted — a
+regular, owned, 0644/0600, ≤4096-byte file of only
+`Environment=OLLAMA_<NAME>=<value>` lines (`OLLAMA_HOST`/`OLLAMA_MODELS`
+refused by name), which SIA itself never writes. A read-only notice reads
+the unit's recent journal and warns when Ollama runs CPU-only, without
+echoing journal content or touching hardware.
+
+Issue #9 ([Enor75](https://github.com/Enor75)) reported every fresh install
+landing in `state degraded`: the shipped `config.example.json` carries a
+`_comment` key inside `retrieval`, which the validator rejected — the
+installer's own example failed its own loader. `_comment` is now accepted
+there like other config blocks, with a regression loading the shipped
+example through the real loader.
+
+Issue #8 ([joniler](https://github.com/joniler)) reported `omarchy plugin
+remove` deleting `uninstall.sh` — the only documented teardown — while
+`sia-brainstem.service`, `ollama.service`, and both backup timers kept
+running; `llama-server` sat at ~172% CPU for hours on the reporting machine.
+`sia uninstall` and `sia uninstall --purge` now survive checkout removal via
+the stable launcher, and the brainstem checks the plugin manifest before
+every pulse, taking its existing non-restart exit and pointing at
+`sia uninstall` if registration is missing or unsafe.
+
+### Continuity
+
+Issue #12 ([m10ust](https://github.com/m10ust)) reported continuity failing
+every hourly run on an 1,818-page corpus, none of its three stacked errors
+naming the value that caused them. The capsule directory entry bound had
+been aliased to a 1,024-record limit meant for tailing sources, not a
+whole-corpus freeze — issue #7 ([ArdonisLLC](https://github.com/ArdonisLLC))
+hit the same aliasing independently at 1,130 package pages. The bound is now
+independent of source-tail sampling, still governed by capsule's own
+record/depth/path/link envelopes. A shard-key defect inspecting only the
+first digit of `-part-N` — rejecting `part-10`–`part-19` and `part-100`+ —
+is fixed across the parser, validator, and shard/benchmark readers. The
+corpus receipt's device-number binding, also reported here, is addressed
+under storage identity below.
+
+### The resident pulse
+
+Issue #13 ([m10ust](https://github.com/m10ust)) reported the pulse loop
+saturating a core: once a pulse's own work exceeds `PULSE_SEC`, the loop's
+`max(5.0, PULSE_SEC - elapsed)` wait collapses toward a 5-second floor. The
+reporter's own measurement — load average 2.44 and `llama-server` at 60.5%
+CPU for hours at the 60s default, settling to 0.40 load and ~10% CPU at a
+locally overridden 900s, for a derived per-pulse cost of roughly 145s
+(their figure, derived rather than measured) — is why an overrun cycle now
+waits the full configured interval, logging its own monotonic duration and
+any overrun wait.
+
+Two related fixes: the last pulse failure is retained in
+`~/.local/state/sia/pulse-failure.json` (redacted, 240 characters) and
+shown by `sia status`/`sia ready` — a pulse failing every four minutes for
+a week was previously visible only in `journalctl`. Continuity details now
+append a closed, named reason code for SIA's own capsule refusals
+(`corpus-receipt-root-mismatch`, `capsule-entry-bound`, others) instead of
+the unattributed message issue #12 described.
+
+### Storage identity after a move
+
+Two receipts bind device and inode: the installer's corpus receipt and the
+delivery epoch's adoption. A btrfs subvolume change, an `rsync`, or a
+restore by copy changes those numbers — issue #12's exact case — after which
+every pulse refused unattributed and reinstalling refused outright.
+Refusals now name both identities and the remedy. `sia readmit` reports the
+drift; `sia readmit --yes` (daemon stopped) rewrites the corpus receipt's
+root and publishes a sealed `readmission.json` beside the unchanged
+adoption. `install.sh` re-binds a moved v2 receipt through the existing CAS
+journal only under explicit consent
+(`SIA_READMIT_MOVED_STORAGE=1 ./install.sh`); without it, a drifted epoch
+still fails with the remedy named. A tailed log with matching fingerprints
+but a changed device/inode now continues at its saved offset instead of
+replaying from byte zero.
+
+### Portability (namespaces, CI)
+
+Bounded helper processes launched under `unshare --user --map-root-user
+--pid` unconditionally. Ubuntu 24.04's AppArmor default and other hardened
+kernels refuse unprivileged user namespaces, which errored 1,100 tests on
+the GitHub Actions runner while the same suite passed on Arch. The
+namespace shape is now probed once per process; where refused, a
+process-group fallback is announced once on stderr, and a new test proves
+the fallback launches without `unshare`.
+
+### The controller-source and delivery-epoch runtime lane
+
+Most of this release's ~250 commits are component and recovery-boundary
+progress on the durable controller-source construction in `ROADMAP.md`'s
+current mission amendment: a local transaction from an immutable retained
+batch through sealed page effects, a clean Git generation, receipt-bound
+gbrain sync, and graph/status/live publication and acknowledgment. This is
+component and recovery-boundary progress only — not a claim a resident
+pulse used the complete path, and not a cognitive-capability claim, which
+needs a front-door run with witnesses and a held-out measurement against a
+dense-retrieval baseline (`ROADMAP.md` §P1.0). Neither exists; no mechanism
+here carries a neurocognitive name on a measured win.
+
+### Docs
+
+`docs/MANUAL.md` gains the storage-identity section (`sia readmit`, the
+moved receipt state, the retained pulse failure), the operator drop-in
+contract, and two troubleshooting entries; `README.md`'s requirements name
+the drop-in and the namespace fallback; `docs/ARCHITECTURE.md` describes
+the controller-source lane that landed on this branch. The ROADMAP's
+marketplace freeze declaration is closed (`state=none`): verify issue #4078
+listed the bound commit on 2026-09-04, so the reason for the freeze ended
+then.
+
+### Delivery boundary
+
+This release does not reproduce issue #10's failure or fix on the
+reporter's own Broadwell hardware, and contains no held-out
+cognitive-measurement win for the controller-source lane. The Omarchy marketplace
+listing stays bound to the verified commit
+`8a624efc911457ae393a72758ade8729de5ba45d` (v1.7.8) until a new verification
+cycle binds this release; `omarchy plugin add` with the git URL installs
+current `main` regardless of that snapshot.
+
 ## 1.7.8 — 2026-09-03 · the audit passes, and it never had
 
 `sia judge-audit` has scored resolution 1/2 since the day it was written. The
