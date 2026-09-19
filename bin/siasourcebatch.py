@@ -19,6 +19,7 @@ serializers and validators.
 
 import base64
 import contextlib
+import copy
 import os
 import re
 import stat
@@ -2389,9 +2390,28 @@ def _validate_retained_projection(owner, batch, event_batches):
         refuse("intake-projection-binding")
 
 
+# Byte-identical retained batches validated earlier in this process (see the
+# capture memo in siasourcecheckpoint): the identity digest runs every call,
+# the derivation only for an image not yet validated under these constants.
+_VALIDATED_BATCHES = {}
+_VALIDATED_BATCHES_LIMIT = 8
+
+
 def validate_batch(owner, batch, expected_batch_sha256):
     """Validate a retained source batch without consulting current sources."""
     _json_size(owner, batch, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
+    memo_key = (expected_batch_sha256, native_sha(owner, batch),
+                owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
+    if memo_key in _VALIDATED_BATCHES:
+        return copy.deepcopy(_VALIDATED_BATCHES[memo_key][0])
+    result = _validate_batch_image(owner, batch, expected_batch_sha256)
+    if len(_VALIDATED_BATCHES) >= _VALIDATED_BATCHES_LIMIT:
+        _VALIDATED_BATCHES.clear()
+    _VALIDATED_BATCHES[memo_key] = (copy.deepcopy(result),)
+    return result
+
+
+def _validate_batch_image(owner, batch, expected_batch_sha256):
     delivery = type(batch) is dict and batch.get("schema") \
         == "sia-controller-source-batch-v3"
     successor = delivery or (type(batch) is dict and batch.get("schema")

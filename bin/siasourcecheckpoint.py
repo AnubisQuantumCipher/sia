@@ -196,8 +196,33 @@ def project_capture_entry(owner, *, epoch, expected_epoch_sha256, checkpoint, re
                    observed_at=observed_at)
 
 
+# Byte-identical retained images validated earlier in this process, keyed by
+# their pin, their native digest and the owner constants the validation
+# reads. A transaction re-validates the capture at every consistency check;
+# the identity digest (about a second on a 12 MB capture) still runs each
+# time, only the 78-second re-derivation of an unchanged image is skipped.
+_VALIDATED_CAPTURES = {}
+_VALIDATED_CAPTURES_LIMIT = 8
+
+
+def _capture_memo_key(owner, batch, expected_batch_sha256):
+    return (expected_batch_sha256, source.native_sha(owner, batch),
+            owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
+
+
 def validate_capture(owner, batch, expected_batch_sha256):
     """Pure retained-image validation; do not authenticate its root or archive."""
+    memo_key = _capture_memo_key(owner, batch, expected_batch_sha256)
+    if memo_key in _VALIDATED_CAPTURES:
+        return None
+    _validate_capture_image(owner, batch, expected_batch_sha256)
+    if len(_VALIDATED_CAPTURES) >= _VALIDATED_CAPTURES_LIMIT:
+        _VALIDATED_CAPTURES.clear()
+    _VALIDATED_CAPTURES[memo_key] = True
+    return None
+
+
+def _validate_capture_image(owner, batch, expected_batch_sha256):
     raw = _wire(owner, batch)
     with_delivery = type(batch) is dict and batch.get("schema") == "sia-controller-source-checkpoint-capture-v3"
     with_idle = with_delivery or type(batch) is dict and batch.get("schema") == "sia-controller-source-checkpoint-capture-v2"
