@@ -6333,6 +6333,13 @@ def _run_controller_source_cycle():
     the legacy source-state path. It returns None when the legacy lane
     should keep the pulse.
     """
+    # Every owner-dict consumer of the live publication helpers
+    # (owner["_live_graph_status"], owner["_live_files"], ...) bypasses the
+    # module __getattr__ that lazily binds them; a first-light or resident
+    # cycle that rejoins an archived receipt before any attribute access
+    # otherwise refuses with KeyError('_live_graph_status'). Bind first.
+    _load_live_publication()
+
     import siacheckpointcycle
     import siacontrollerepoch
     import siadelivery

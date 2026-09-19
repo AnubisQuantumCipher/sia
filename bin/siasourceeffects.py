@@ -655,6 +655,7 @@ def _initial_context(owner, source, live, memo, admitted_status):
         seal_legacy_public=True)
     graph_join_error = None
     try:
+        _live_helpers_bound(owner)
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
@@ -1014,6 +1015,7 @@ def _finalize(owner, source, live, memo, pending):
     if graph_generation != pending["graph_generation"]:
         _refuse(source, "source-effects-published-graph-differs")
     try:
+        _live_helpers_bound(owner)
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
@@ -1102,6 +1104,7 @@ def _completed(owner, source, live, memo, admitted_status, receipt,
             or receipt["graph_generation"] != graph_generation:
         _refuse(source, "source-effects-completed-artifacts")
     try:
+        _live_helpers_bound(owner)
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:
@@ -1227,6 +1230,18 @@ def checkpoint_committed_receipt(owner, *, memo, admitted_status, retained_batch
         expected_receipt_sha256=value["receipt_sha256"])
 
 
+def _live_helpers_bound(owner):
+    """Bind the lazily loaded live publication helpers into the owner dict.
+
+    Owner-dict access does not go through sialib's module __getattr__, so a
+    consumer that runs before any attribute access must ask for the binding
+    explicitly instead of failing with KeyError.
+    """
+    loader = owner.get("_load_live_publication")
+    if callable(loader) and "_live_graph_status" not in owner:
+        loader()
+
+
 def _validate_archived_receipt(owner, *, raw, retained_batch, memo, admitted_status,
                               expected_receipt_sha256, graph_artifact, checkpoint):
     """Rejoin a canonical archived receipt to current status/live authority.
@@ -1262,6 +1277,7 @@ def _validate_archived_receipt(owner, *, raw, retained_batch, memo, admitted_sta
             or receipt["graph_generation"] != graph_generation:
         _refuse(source, "source-effects-archive-artifacts")
     try:
+        _live_helpers_bound(owner)
         owner["_live_graph_status"](status, graph)
     except (TypeError, ValueError, RuntimeError, KeyError,
             OverflowError, RecursionError) as exc:

@@ -72,6 +72,8 @@ def _hold_live(owner, *, directory, committed, checkpoint):
                 or candidate["prepare_inputs_sha256"] != receipt["prepare_inputs_sha256"] \
                 or any(generation[key] != receipt[key] for key in ("state_sha256", "transition_sha256")):
             source.refuse("checkpoint-parent-live-archive-replay")
+        if "_live_graph_status" not in owner and callable(owner.get("_load_live_publication")):
+            owner["_load_live_publication"]()
         owner["_live_graph_status"](status, graph)
 
         def current():

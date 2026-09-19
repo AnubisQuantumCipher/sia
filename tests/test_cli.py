@@ -3477,3 +3477,24 @@ class RetainedStatusAcrossUpdates(unittest.TestCase):
                 self.assertEqual(admitted["version"], "1.7.8")
                 with self.assertRaisesRegex(ValueError, "exceeds the durable memo"):
                     lib._require_status_sequence_not_ahead(prior["pulse_seq"] - 1)
+
+
+class LivePublicationOwnerBinding(unittest.TestCase):
+    """Owner-dict consumers bypass sialib's lazy __getattr__; a fresh process
+    whose first live operation is an archived-receipt rejoin must still find
+    the helpers bound (the first-light pulse after an update is exactly that)."""
+
+    def test_fresh_core_binds_live_helpers_before_owner_dict_use(self):
+        fresh = _load_script("sialib_fresh_binding_probe",
+                             os.path.join(REPO, "bin", "sialib.py"))
+        self.assertNotIn("_live_graph_status", fresh.__dict__)
+        import siasourceeffects
+        siasourceeffects._live_helpers_bound(fresh.__dict__)
+        self.assertIn("_live_graph_status", fresh.__dict__)
+        self.assertTrue(callable(fresh.__dict__["_live_graph_status"]))
+        source = _read(os.path.join(REPO, "bin", "sialib.py"))
+        body = source.split("def _run_controller_source_cycle():", 1)[1]
+        body = body.split('"""', 2)[2]  # past the docstring
+        self.assertLess(body.index("_load_live_publication()"),
+                        body.index("siacheckpointcycle.route("),
+                        "the resident cycle binds live helpers before routing")
