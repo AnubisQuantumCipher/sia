@@ -89,6 +89,14 @@ def _load_sialib():
     return module
 
 
+
+def _newer_than(version):
+    """A canonical release one patch above ``version``: fixtures that mean
+    "newer than the runtime under test" must not hardcode a string that a
+    later release quietly turns into an older one."""
+    major, minor, patch = (int(part) for part in version.split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
 class MarketplaceFirstLightTests(unittest.TestCase):
     def _model_call(self, function_name, *arguments):
         node = shutil.which("node")
@@ -147,7 +155,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.9"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": _newer_than(RELEASE_VERSION)}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -185,10 +193,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.9"}, installing,
+                "guidedLifecycle", {"version": _newer_than(RELEASE_VERSION)}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.9", "state": "ready"}
+        newer_ready = {"v": 1, "version": _newer_than(RELEASE_VERSION), "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -1284,7 +1292,7 @@ process.stdout.write(JSON.stringify({
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.9")
+            write_runtime(resident, _newer_than(RELEASE_VERSION))
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
@@ -1304,7 +1312,7 @@ process.stdout.write(JSON.stringify({
                     "first-light completion", malformed_completion.stderr)
 
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.9", "state": "ready"}),
+                "v": 1, "version": _newer_than(RELEASE_VERSION), "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()

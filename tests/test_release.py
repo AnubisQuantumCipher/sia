@@ -2874,7 +2874,7 @@ retain_unowned_cli_before_fence
 
             _write(target, _read("bin/sia"), 0o644)
             for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
-                         "siarestoreadmit.py",
+                         "siarestoreadmit.py", "siacorpuslease.py", "siaprocess.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
@@ -3847,7 +3847,7 @@ retain_unowned_cli_before_fence
         with tempfile.TemporaryDirectory() as home:
             runtime = os.path.join(home, ".local/share/sia/bin")
             for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
-                         "siarestoreadmit.py",
+                         "siarestoreadmit.py", "siacorpuslease.py", "siaprocess.py",
                          "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
@@ -3932,6 +3932,8 @@ retain_unowned_cli_before_fence
             "_event_index_encoded", "_read_event_index_entry",
             "_preflight_event_index_entries", "_publish_event_index_entries",
             "_missing_event_index_expectations", "_other_event_occurrences",
+            "_retained_source_text", "_event_ids_in_source_text",
+            "_reconstructed_epoch_event_ids",
             "_preflight_event_lookup", "_preflight_event_path_plan",
             "_plan_event_day_update", "update_day_page",
             "_acknowledge_consolidation_claims",
