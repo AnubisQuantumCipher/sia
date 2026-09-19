@@ -5761,6 +5761,64 @@ preflight_corpus locked
             self.assertNotEqual(probe(home, earlier.replace(
                 "version=0.47.6.0\n", "version=0.47.6.0\nrm -rf /\n")), 0)
 
+    def test_existing_plugin_tree_is_named_before_the_first_mutation(self):
+        """Step 8 refuses to replace a user-editable plugin tree without
+        SIA_REPLACE_PLUGIN=1. On the maintainer machine that refusal came
+        after a thirty-minute first light and left the brainstem disabled.
+        A read-only preflight names it before step 1 and changes nothing."""
+        installer = _read("install.sh")
+        self.assertLess(installer.index("preflight_corpus read-only\npreflight_plugin_tree\n"),
+                        installer.index('step "1/9'))
+        function = "preflight_plugin_tree() {" + installer.split(
+            "preflight_plugin_tree() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        self.assertNotRegex(function, r"\b(rm|mv|cp|mkdir|ln|chmod|touch|>|>>)\b")
+
+        def run(home, *, original, replace=None, omarchy=True):
+            plugdir = os.path.join(home, ".config", "omarchy", "plugins", "khephri.sia")
+            script = (
+                "set -euo pipefail\n"
+                f"HOME={shlex.quote(home)}\n"
+                f"SIA_ORIGINAL_REPO={shlex.quote(original)}\n"
+                + (f"SIA_REPLACE_PLUGIN={replace}\n" if replace is not None
+                   else "unset SIA_REPLACE_PLUGIN\n")
+                + ("have() { [ \"$1\" = omarchy ]; }\n" if omarchy
+                   else "have() { return 1; }\n")
+                + function + "preflight_plugin_tree\n")
+            result = subprocess.run(
+                ["bash", "-s", "plugin-preflight-test"], input=script, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30)
+            return result, plugdir
+
+        with tempfile.TemporaryDirectory() as home:
+            checkout = os.path.join(home, "checkout")
+            os.makedirs(checkout)
+            absent, plugdir = run(home, original=checkout)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            os.makedirs(plugdir)
+            before = sorted(os.listdir(os.path.dirname(plugdir)))
+            refused, _ = run(home, original=checkout)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("existing Omarchy plugin tree is user-editable; preserved: " + plugdir,
+                          refused.stderr)
+            self.assertIn("SIA_REPLACE_PLUGIN=1 ./install.sh", refused.stderr)
+            self.assertIn("omarchy plugin update khephri.sia", refused.stderr)
+            self.assertEqual(sorted(os.listdir(os.path.dirname(plugdir))), before)
+            consented, _ = run(home, original=checkout, replace=1)
+            self.assertEqual(consented.returncode, 0, consented.stderr)
+            self.assertIn("replaced by operator consent", consented.stdout)
+            # The plugin's own install.sh (marketplace flow) is not gated.
+            own, _ = run(home, original=plugdir)
+            self.assertEqual(own.returncode, 0, own.stderr)
+            # Without omarchy there is no plugin step to gate.
+            headless, _ = run(home, original=checkout, omarchy=False)
+            self.assertEqual(headless.returncode, 0, headless.stderr)
+            # A symlink or file where the tree should be is refused as unsafe.
+            os.rmdir(plugdir)
+            os.symlink(checkout, plugdir)
+            unsafe, _ = run(home, original=checkout, replace=1)
+            self.assertNotEqual(unsafe.returncode, 0)
+            self.assertIn("existing Omarchy plugin path is unsafe", unsafe.stderr)
+
     def test_moved_corpus_receipt_is_named_and_rebound_only_by_consent(self):
         """A v2 receipt whose root no longer matches the live corpus (rsync,
         btrfs subvolume, restore by copy) is recognized as `moved`, named

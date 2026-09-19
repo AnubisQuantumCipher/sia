@@ -162,6 +162,10 @@ met every 1.7.8 user with a corpus older than a few weeks:
   could ever clear it. A fresh compact capture now converges interrupted
   natural-history and grade transactions and legacy take/intent provenance
   first, never inside a captured package's window.
+- The installer refused to replace an existing user-editable plugin tree
+  only at step 8, after first light, and left the brainstem disabled. A
+  read-only preflight names that gate (`SIA_REPLACE_PLUGIN=1`, or update
+  through `omarchy plugin update khephri.sia`) before step 1.
 - A sense refusal and a corpus-write refusal log their refusal chain
   (file:function:line) beside the 160-byte status string.
 - The lazily bound live-publication helpers were reached through the owner

@@ -5664,6 +5664,33 @@ preflight_corpus_read_only() {
   return 0
 }
 
+# Read-only preflight for the plugin snapshot. Step 8 refuses to replace an
+# existing user-editable plugin tree without SIA_REPLACE_PLUGIN=1; naming that
+# before the first mutation keeps a thirty-minute first light from ending in
+# "install failed after mutation" over a gate the operator could have answered
+# up front. The step keeps its own check; this one changes nothing.
+preflight_plugin_tree() {
+  local plugdir="$HOME/.config/omarchy/plugins/khephri.sia"
+  if [ "$SIA_ORIGINAL_REPO" = "$plugdir" ] || ! have omarchy; then
+    return 0
+  fi
+  if [ ! -e "$plugdir" ] && [ ! -L "$plugdir" ]; then
+    return 0
+  fi
+  if [ ! -d "$plugdir" ] || [ -L "$plugdir" ]; then
+    echo "existing Omarchy plugin path is unsafe; preserved" >&2
+    return 1
+  fi
+  if [ "${SIA_REPLACE_PLUGIN:-0}" != "1" ]; then
+    echo "existing Omarchy plugin tree is user-editable; preserved: $plugdir" >&2
+    echo "this checkout would replace that plugin snapshot after first light;" \
+      "consent up front:  SIA_REPLACE_PLUGIN=1 ./install.sh" >&2
+    echo "or update through the plugin itself:  omarchy plugin update khephri.sia" >&2
+    return 1
+  fi
+  echo "  existing Omarchy plugin tree will be replaced by operator consent"
+}
+
 preflight_corpus() {
   local mode="${1:-locked}" bootstrap_stage receipt_state
   if [ "$mode" = read-only ]; then
@@ -8816,6 +8843,7 @@ preflight_managed_filesystem_capabilities "$SHARE" \
 recover_publication_receipts_from_fence
 preflight_runtime
 preflight_corpus read-only
+preflight_plugin_tree
 preflight_owned_file "$SIA_STABLE_LAUNCHER" "$CLI_PATH" "$CLI_RECEIPT" \
   sia-cli SIA_REPLACE_SIA_CLI SIA_CLI_EXPECTED
 preflight_owned_file "$REPO/systemd/sia-backup.service" "$BACKUP_UNIT" \
