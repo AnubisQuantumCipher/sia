@@ -78,15 +78,18 @@ MODERN_V14_RUNTIME_ADDITIONS = (
 )
 MODERN_V14_RUNTIME_NAMES = MODERN_V13_RUNTIME_NAMES + MODERN_V14_RUNTIME_ADDITIONS
 MODERN_V15_RUNTIME_ADDITIONS = (
-    "siacheckpointcycle.py", "siacorpuslease.py", "siaprocess.py",
+    "siacheckpointcycle.py", "siacorpuslease.py",
 )
 MODERN_V15_RUNTIME_NAMES = MODERN_V14_RUNTIME_NAMES + MODERN_V15_RUNTIME_ADDITIONS
+MODERN_V16_RUNTIME_ADDITIONS = ("siaprocess.py",)
+MODERN_V16_RUNTIME_NAMES = MODERN_V15_RUNTIME_NAMES + MODERN_V16_RUNTIME_ADDITIONS
 
 # Ordered newest first.  Marker presence selects a rung even when the tree is
 # incomplete; hashing then refuses on the missing member instead of silently
 # falling back to an older, weaker receipt contract.  The empty marker tuple
 # is the legacy fallback and therefore must remain last.
 RUNTIME_LADDER = (
+    (b"sia-runtime-v16\0", MODERN_V16_RUNTIME_NAMES, MODERN_V16_RUNTIME_ADDITIONS),
     (b"sia-runtime-v15\0", MODERN_V15_RUNTIME_NAMES, MODERN_V15_RUNTIME_ADDITIONS),
     (b"sia-runtime-v14\0", MODERN_V14_RUNTIME_NAMES, MODERN_V14_RUNTIME_ADDITIONS),
     (b"sia-runtime-v13\0", MODERN_V13_RUNTIME_NAMES, MODERN_V13_RUNTIME_ADDITIONS),
