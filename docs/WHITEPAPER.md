@@ -1,6 +1,9 @@
-# SIA: An Evidence-Grounded Neurocognitive Memory for a Linux Desktop
+# SIA: An Evidence-Grounded Local Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-09-01 · v1.5**
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
+
+**Khephri Labs · open source (MIT) · 2026-09-19 · v1.8.0**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 
@@ -8,22 +11,22 @@
 
 ## Abstract
 
-SIA ("the Omarchy Brain") is a persistent, associative, self-consolidating
-memory system for an operating system. It fuses the machine's existing
+SIA ("the Omarchy Brain") is a persistent local memory system with semantic
+indexing and weekly compaction. It fuses the machine's existing
 evidence streams — cryptographically chained subsystem ledgers, bounded
 computation-record observations, package and journal logs, agent-session
 metadata — into a single knowledge graph over a git-versioned markdown
-corpus, indexed by gbrain (PGLite + local embeddings). On top of storage
-it implements a deterministic neurocognitive layer drawn from the memory
-literature: ACT-R activation, Hebbian co-activation, spreading-activation
-retrieval (HippoRAG), dopaminergic novelty gating, surprisal against
-learned baselines, a Global-Workspace attention model, sleep-cycle
-systems consolidation with flashbulb preservation, and outcome learning
-via Brier-scored predictions. Retrieval additionally uses non-destructive
-stability decay, and important memories receive transaction-safe scheduled
-rehearsal. An optional language model — disabled by default and available only
+corpus, indexed by gbrain (PGLite + local embeddings). On top of storage it
+implements deterministic local-memory policies: source-weighted usage
+salience; co-occurrence and co-return edge reinforcement; optional graph
+propagation over hybrid-query candidates (instrumented but shipping default-off
+since it measured below the unmodified hybrid query on 2026-09-02; §4.3); novelty and
+empirical intake-surprise scoring; a bounded attention window; crash-recoverable
+weekly epoch compaction with safety-day preservation; non-destructive stability
+decay; and transaction-safe scheduled rehearsal. Prediction calibration uses
+Brier-scored predictions. An optional language model — disabled by default and available only
 through an explicitly configured, tool-isolated Claude CLI model — is confined
-to two labeled roles, reflective synthesis and
+to two labeled roles, model-assisted synthesis and
 strict evidence judging, and never writes unlabeled memory. The design's governing
 principle is inherited from the host machine's evidence culture: every
 recall answer declares its origin and truth boundary, absence of recall is not
@@ -53,10 +56,10 @@ The operating system had evidence but no
 memory: no way to ask *what happened*, *what connects*, *what is
 unusual*, or *was I right*.
 
-SIA is that memory. Its goals, in order: (1) fidelity — never
-misrepresent the evidence class of what it knows; (2) association —
-connect across streams the way recall connects across experiences;
-(3) learning — importance and rhythm adapt with use, while judgment stays
+SIA supplies that local memory. Its goals, in order: (1) fidelity — never
+misrepresent the evidence class of a stored record; (2) linkage —
+connect records across streams by explicit and derived graph edges;
+(3) policy updates — importance and scheduling adapt with use, while judgment stays
 measured against outcomes;
 (4) locality — the memory of a machine belongs on the machine.
 
@@ -67,25 +70,29 @@ measured against outcomes;
  ───────────────────────────────                     ────────────────
  JACKAL record/file observations ─┐                  bar widget 󰧑 n
  SEKHMET / Custos / AEGIS     │                       cockpit (SUPER+SHIFT+B)
-   attest-v1 chains           │      ┌─ mind.json     sia CLI
- WORLDLINE causal sqlite      │      │  (ACT-R, Hebb, agents via `sia context`
+   attest-v1 chains           │      ┌─ mind.json*    sia CLI
+ WORLDLINE causal sqlite      │      │  (usage + edge weights, agents via `sia context`
  pacman · journald · guardian ├──►  pulse (60 s)      ▲
  git reflogs · notifications  │      │                │ atomic JSON snapshots
- agent sessions (metadata)    │      ▼                │ status/graph/thoughts
+ agent sessions (metadata)    │      ▼                │ status/graph/generated entries
  Quattro agents usage        ─┘   markdown corpus ────┘
                                   (git repo)   │
-              deterministic thoughts ▲         ▼ sync + link extraction
-              novelty · surprisal ───┘   gbrain brain (PGLite,
-              workspace · integrity      local 768-d embeddings,
+              deterministic entries  ▲         ▼ sync + link extraction
+              novelty · surprisal ───┘   gbrain index (PGLite,
+              attention · integrity      local 768-d embeddings,
                                          typed knowledge graph)
- nightly 03:33 dream: consolidation → rehearsal → musing → grading → slug-drift tripwire → gbrain cycle
+ nightly 03:33 maintenance: compaction → rehearsal → association walk → grading → slug-drift tripwire → gbrain cycle
+
+ * `mind.json`, `thought`, `dream`, `organ`, and `cortex` are persisted or API
+   compatibility names, not evidence of mental or biological mechanisms.
 ```
 
-**Single-owner discipline.** PGLite admits one connection. Every
-SIA-managed daemon, CLI, benchmark, and MCP-derived read enters through the
-same advisory cross-process lease. Whole pulse/dream cycles and explicit
-operator corpus mutations share a separate transaction lease, and a lifetime
-brainstem lease refuses a second resident daemon. The brainstem alone
+**Single-owner discipline.** PGLite admits one connection. Every SIA-managed
+PGLite operation, whether daemon, CLI, benchmark, or MCP-derived, enters
+through the same advisory cross-process lease. Whole pulse/maintenance cycles and
+explicit operator corpus mutations share a separate transaction lease. A
+lifetime brainstem lease refuses a second resident daemon and makes manual
+pulse/dream refuse while that daemon is active. The brainstem alone
 materializes agent notes. Agent notes do not share a mutable inbox: each caller
 publishes one immutable mode-0600 request through a fixed owner-private staging
 slot outside the spool, and the daemon removes that request only after the
@@ -96,19 +103,30 @@ digest-bound as a refusal before its suffix is repaired; complete malformed
 records remain claimed refusal debt.
 This discipline cannot constrain an unrelated program that bypasses SIA and
 opens the database directly, which is why owner errors remain visible rather
-than being treated as proof of serialization. All cursor state becomes durable
-only after the corresponding corpus writes succeed, and per-event ingestion
-into the cognitive layer is gated on the same durability (bullet-level
-idempotence), so crash replay does not double-count a memory.
+than being treated as proof of serialization. Brainstem failure-status
+journal/export also holds the corpus lease and overlays only an exact current
+status generation; otherwise it records a refusal rather than synthesizing a
+hybrid. All cursor state becomes durable only after the corresponding corpus
+writes succeed, and per-event ingestion into the policy state is gated on
+the same durability (bullet-level idempotence), so crash replay does not
+double-count a memory.
 
-**The corpus is the brain.** Every memory is a markdown page with YAML
+Cursor and transaction authorities are not best-effort caches. Absence has a
+defined bootstrap, but existing JSON authority must be bounded,
+current-user-owned, single-link regular state opened no-follow; its opened
+generation must still occupy the pathname after strict decoding. Damage,
+linking, or replacement refuses without rebaselining or advancing evidence.
+Best-effort exported snapshots keep the same generation boundary, but a
+rejected generation supplies diagnostics only, not current claims.
+
+**The corpus is authoritative.** Every memory is a markdown page with YAML
 frontmatter in a git repository; the database is a rebuildable derived index,
 but rebuilding it is an installer-controlled bootstrap rather than a delete-
 and-sync shortcut. A genuinely absent store is initialized off-path, source
 registration and sync run under the lifecycle/PGLite/corpus leases, the result
 is front-door health-probed, and only then is its generation published.
 Compaction is view-level: git history retains every
-original byte, and the consolidation pass refuses to unlink any file it
+original byte, and the compaction pass refuses to unlink any file it
 cannot prove committed (`git ls-files` + clean porcelain, gated behind a
 successful pre-consolidation commit). Agent and operator notes are explicit,
 origin-labeled prose exceptions to evidence-backed event memory; they are
@@ -134,8 +152,9 @@ shape check matches the v1.2 producer; those pages are compatibility-normalized
 and retain source-field digests plus corpus git history. A malformed legacy
 graded page refuses the cutover rather than receiving a guessed origin.
 
-The second exception exists before corpus publication. A legacy shared thought
-inbox can contain producer rows with neither queue identity nor queued time.
+The second exception exists before corpus publication. A legacy shared
+generated-entry inbox (`thought` is the compatibility name) can contain
+producer rows with neither queue identity nor queued time.
 After one bounded, no-follow, stable-file read, SIA derives each identity from
 the captured bytes, file modification time, and row position and derives the
 queued timestamp from that same file time. Renaming the inode into the draining
@@ -152,7 +171,14 @@ This is a publication protocol, not an in-place relabel. An owner-private
 journal under `~/.local/state/sia/take-migrations/` binds source and target
 digests. The ledger accepts the exact target under `MIGRATE:take-origin` with
 kind `model-inert-v1` or `legacy-v1-normalize` before `sync_needed` is made
-durable and the page is atomically replaced. Pulse then commits the corpus,
+durable and the page is atomically replaced. Separately bounded source bytes
+and portable target witnesses are first retained under the corpus-owned
+`.sia-take-provenance/` directory, outside the recall-page namespace. A new
+target declares its required witness without changing the origin policy.
+Reconciliation rechecks the source-to-target transformation and keeper
+membership, not an old Boolean grade flag; missing or altered required
+provenance refuses. Original source prose remains untrusted and its links
+do not become graph evidence. Pulse then commits the corpus,
 syncs PGLite, exports the graph, and clears the marker last. Crash recovery
 recognizes the exact signed target instead of appending a duplicate transition.
 Memory-dependent CLI and MCP reads refuse throughout the cutover.
@@ -166,7 +192,7 @@ write-ahead barrier, while take/intent/grade transitions invoke an explicit
 callback. The marker clears only after git accepts or verifies the corpus,
 PGLite sync succeeds, and graph export succeeds; any failure preserves debt.
 
-The pulse sequence reservation and its heartbeat share that lease, preventing
+The pulse sequence reservation and its pulse cycle share that lease, preventing
 a whole-memo reservation from overwriting publication state. DREAM inserts
 settlement barriers between memory-backed phases and around each grade, so a
 later phase never queries pre-mutation PGLite or graph state. Readiness also
@@ -186,13 +212,14 @@ integration or activation. A successful pulse exit is therefore necessary but
 not sufficient for installation success.
 
 **Truth-boundary contract.** Graph snapshots carry their own completeness
-declaration — failed reads, display omission counts, aged-out counts, per-kind totals
-— and the cockpit renders it as SOURCE HEALTH. A snapshot that fails
-open visually announces its incompleteness (a lesson taken directly from
-the Hermes Star Map review and the Microsoft Recall postmortem). Corpus read or
-edge-export gaps therefore produce a partial snapshot. If graph publication
-itself throws, the pulse keeps the error visible and signs its ingest result as
-`graph-fail` rather than claiming graph success.
+declaration — failed reads, display omission counts, aged-out counts, per-kind
+totals — and the cockpit renders it as SOURCE HEALTH. A structurally exact
+partial snapshot visually announces its incompleteness. An open or malformed
+envelope, or a status/graph publication mismatch, is rejected and every current
+combined claim is withdrawn. Corpus read or edge-export gaps therefore produce
+a diagnostic partial snapshot. If graph publication itself throws, the pulse
+keeps the error visible and signs its ingest result as `graph-fail` rather than
+claiming graph success.
 The exporter does not enumerate the resident corpus into memory. It advances
 an owner-private, generation-bound directory cursor, retains only the bounded
 cockpit candidate window, and then opens only those selected pages no-follow
@@ -234,7 +261,7 @@ keeper's verifier* (Custos via the SPARK-proved `attest` binary) on a rolling
 cadence;
 verification-state *transitions* — including pass→absent — become
 thoughts, and failures are urgent. SIA's ledger records its own acts
-(boot, pulse ingests, dreams, grades) under attest-ledger v1, so the
+(boot, pulse ingests, scheduled-maintenance runs, grades) under attest-ledger v1, so the
 memory system is auditable by the standards it audits others against.
 After keeper verification, a base lifecycle sense projects signed rows other
 than `PULSE:*` and `DREAM:bench` into retrievable `events/sia/` pages. The
@@ -245,49 +272,50 @@ Ledger rows and corpus pages are recall; the verifiers are the evidence
 path. The distinction is preserved end-to-end: even exact mathematics in
 memory remains labeled by the class its source declared.
 
-## 4. The neurocognitive core
+## 4. The associative policy layer
 
-Given the recorded state and captured operation timestamps, all mechanisms are
-deterministic. The single stochastic element (musing) binds activation to the
-dream transaction timestamp and seeds its shuffle from
-`SHA-256(date ‖ ledger head)`, making the selection replayable.
+Given the recorded state and captured operation timestamps, all policy updates
+are deterministic. The single stochastic element (the association walk) binds
+usage salience to the maintenance transaction timestamp and seeds its shuffle
+from `SHA-256(date ‖ ledger head)`, making the selection replayable.
 
-**4.1 Activation (ACT-R).** Each memory carries a touch history; its
-base-level activation is `B_i = ln(Σ_k w_k·t_k^{-d})` with the canonical
-`d = 0.5`, computed by the Petrov (2006) constant-space hybrid (five
-exact recent timestamps plus a closed-form tail). Every touch carries a
-source: world-originated touches (an organ observed something; the
+**4.1 Usage salience.** Each memory carries a touch history; its usage score
+is `B_i = ln(Σ_k w_k·t_k^{-d})` with the configured `d = 0.5`, computed by a
+constant-space recent-plus-tail approximation (five exact recent timestamps
+plus a closed-form tail). Every touch carries a
+source: world-originated touches (a source adapter observed something; the
 operator asked) count at full weight, while the system's references to
 its own products count at one-fifth — importance must come from the
-world, not from self-talk. With power-law forgetting, importance is
-learned from use without becoming an echo chamber.
+world, not from self-reference. The power-law decay makes this a deterministic
+use-history score, not a claim about a user's memory.
 
-**4.2 Hebbian bonding.** Edges strengthen only on typed co-occurrence
-within a single event (an event and its own extracted entities) and on
-co-recall in a query — never on mere clock adjacency across a pulse.
+**4.2 Co-occurrence and co-return reinforcement.** Accumulated edge weights can
+increase from typed co-occurrence within one event, co-return in an ordinary
+query, link sets on admitted generated entries, and successful rehearsal of
+incident edges — never from mere clock adjacency across a pulse.
 Nightly hygiene decays weights, sweeps dust, and caps node degree at 32
-(weakest bonds pruned first): spreading activation needs a sparse graph,
-not a hairball. Recall reshaping structure is reconsolidation
-(Nader et al. 2000), implemented as touch-on-retrieval plus co-recall
-bonding.
+(weakest weights pruned first), keeping graph propagation sparse and bounded.
+Touch-on-retrieval and co-return reinforcement are explicit state updates.
 
-**4.3 Retrieval.** `sia ask` ranks by dense similarity (nomic-embed-text,
-768-d, local) with two *gentle multiplicative tie-breakers*: graph
-spreading (Personalized PageRank seeded by the dense hits, damping 0.5,
-1/deg specificity, dangling mass returned to seeds) and activation, plus
+**4.3 Retrieval.** `sia ask` starts from gbrain's hybrid query (RRF plus
+expansion, with a declared keyword fallback when vector search is unavailable)
+and applies two *gentle multiplicative tie-breakers*: graph
+propagation (Personalized PageRank seeded by the hybrid-query hits, damping 0.5,
+1/deg specificity, dangling mass returned to seeds) and usage salience, plus
 origin weighting that demotes model prose below evidence and treats
 `legacy-unlabeled` with the same conservative weight as `model`. This shape is
 instrumented, not asserted: on the historical 13-probe heuristic slug set, an
 earlier additive blend scored slug match@5 0.77 versus 0.92 and was replaced;
-the tie-breaker blend matched dense at slug match@5 0.92 and did not beat it. Those probes
+the tie-breaker blend matched the unmodified hybrid query at slug match@5 0.92 and did not beat it. Those probes
 are a retrieval-drift tripwire, not answer ground truth.
 
 That warning fired, was investigated, and the policy moved with the data. On
 2026-09-02 the nightly tripwire showed the blend trailing keyword retrieval;
-the full three-system decomposition then separated the causes (dense exactly
-equalled keyword, so the deficit was the rerank, not the embedding lane), and
-after the probe set was extended from 13 to 22 organ-gated probes to cover the
-grown corpus, the blend measured uniformly below plain dense retrieval: slug
+the full three-system decomposition then showed that the hybrid-query ranking
+equalled keyword on that probe set. Because the query path is itself hybrid,
+that equality did not isolate the vector contribution. After the probe set
+was extended from 13 to 22 source-gated probes to cover the
+grown corpus, the blend measured uniformly below the unmodified hybrid query: slug
 match@5 0.86 versus 0.91, reciprocal slug rank 0.67 versus 0.71, match@1 0.50
 versus 0.59. Per the hypothesis-lane freeze rule (§11), graph influence in
 `sia ask` therefore ships **default-off** behind the validated
@@ -300,38 +328,44 @@ also measured and found unidentifiable on this stack (present/absent
 score distributions overlap); abstention therefore lives in the judge
 and the answer's truth-boundary footer, not in a cutoff.
 
-**4.4 Novelty (encoding gate).** Following Lisman & Grace (2005), novelty
-raises encoding strength: first-ever entities (+0.40), 30-day returns
-(+0.20, measured against a last-seen timestamp refreshed on *every*
-sighting), new (organ, event-type) shapes (+0.20), and a von Restorff
-isolation bonus (+0.15) for events unlike ≥90 % of a pulse batch containing
+**4.4 Novelty scoring and generated-entry threshold.** Novelty is scored after event
+admission. It can increase the initial stability of newly admitted state and
+control whether a novelty entry is emitted: first-recorded entities (+0.40),
+recurrence after a 30-day observation gap (+0.20, measured against a
+last-recorded timestamp refreshed on *every* observation), new (source,
+event-type) shapes (+0.20), and an isolation
+term (+0.15) for events unlike ≥90 % of a pulse batch containing
 at least five events.
-Scores ≥0.6 emit explainable novelty thoughts naming the firing terms.
+Scores ≥0.6 emit explainable novelty entries naming the firing terms.
 
 **4.5 Surprise.** Desktop evidence is bursty, so no Poisson model and no
-"bits" are claimed. Each (organ, weekday/weekend × 6-hour band) cohort
-keeps the empirical distribution of observed hourly counts (120-sample
-ring). After ≥30 observed hours, a spike requires both a new band maximum and
-at least five events; an absence fires only for paced bands — active in ≥90 %
-of their observed hours — when an hour closes at zero. Either alert starts a
-six-hour per-band cooldown. Silent hours are
-closed retroactively, so silence remains an observable and bursts join
-the band and stop being surprising. The thought reports exactly what was
-measured: the count, the band's previous maximum, and the sample size.
+"bits" are claimed. Each (source, weekday/weekend × 6-hour band) cohort
+keeps the empirical distribution of sampled hourly admission counts
+(120-sample ring). After ≥30 sampled buckets, a spike requires both a new
+band maximum and at least five admitted events. An explicitly sampled zero
+can be unusual for a band with nonzero intake in ≥90 % of its samples.
+Either alert starts a six-hour per-band cooldown. Missing sources and hours
+are unknown, never backfilled with zeros; a later sample closes only the
+previous recorded bucket for that source. Buckets describe intake time, not
+source-event time or complete source coverage. Current pulse callers supply
+positive newly admitted counts or no samples, so they do not certify quiet
+sources. The generated entry states the count, prior maximum and sample size, and
+warns that sampling may be incomplete. Unversioned derived baselines are
+reset because their synthetic zeros have no recoverable observation basis;
+historical corpus entries are not rewritten.
 
-**4.6 Attention (Global Workspace).** Seven slots; candidates are
-memories touched in 24 h scored by activation plus arousal; ignition
-threshold, lateral inhibition (two slots per bucket), and incumbent
-hysteresis yield stable, diverse conscious contents. The workspace appears in
-the cockpit and anchors `sia context` packs; `sia ask` ranking remains seeded
-by its dense retrieval hits.
+**4.6 Bounded attention window.** The window holds at most seven entries.
+Candidates are memories touched in 24 h, ranked by usage salience plus recorded
+safety priority; a score threshold, a two-entry per-bucket cap, and a small incumbent
+boost keep the list bounded and stable. The window appears in the cockpit and
+anchors `sia context` packs; `sia ask` ranking remains seeded by its hybrid-query
+retrieval hits.
 
-**4.7 Consolidation (sleep).** Nightly, day-memories older than 14 days
+**4.7 Weekly epoch compaction.** Nightly, day-memories older than 14 days
 compact into weekly epoch pages — merged with any existing epoch, never
 overwritten — preserving summed counts, dated exemplars, and the link
-structure (gist), per complementary-learning-systems theory. The
-McGaugh/Kensinger arousal rule ("flashbulb"): days tagged with
-declared safety-class arousal (crash, coredump, integrity failure, refusal,
+structure represented in those summaries. Days tagged with
+declared safety-priority tags (crash, coredump, integrity failure, refusal,
 collapse, failure) remain verbatim. Compacted originals remain in git.
 Discovery is a crash-resumable bounded directory generation, not a whole-tree
 glob. Before any epoch write or unlink, SIA durably claims the admitted day's
@@ -343,63 +377,100 @@ immutable property of the incomplete generation: UTC-day rollover cannot
 restart its prefix, and newly eligible days enter only after the prior cursor
 and claims have converged.
 
-**4.8 Mind-wandering (DMN).** Once nightly, a seeded walk selects two
-high-activation memories from different regions with no direct edge and
+Exemplar selection covers explicit action prefixes before spending remaining
+positions on chronological anchors, both within a day and across the merged
+week. An unrepresentable coverage set retains the sources instead of silently
+truncating classes. This is not a claim that arbitrary historical prose maps
+back to every semantic event kind, nor that every event instance survives in
+the epoch summary. After the tracked/clean checks, the actual source bytes are
+rebound to the durable claim so a concurrent append cannot be compacted under
+an older clean-status result.
+
+Each new epoch persists its complete admitted occurrence-ID set before index
+leaves and source cleanup. Bounded occurrence lookup checks missing leaves
+against those epoch declarations, so loss of a known leaf cannot manufacture
+a new event. An index-era epoch without completeness remains a named refusal
+on a missing lookup. Upgrading older lineage requires the complete retained
+source evidence; surviving index leaves are insufficient. Pre-index summaries
+remain outside this exact occurrence contract. Capacity retains the source
+pages. Neither this inventory nor a leaf proves absence after simultaneous
+loss of both the epoch and its index.
+
+**4.8 Seeded association walk.** Once nightly, a seeded walk selects two
+high-usage-salience memories from different regions with no direct edge and
 searches (≤4 hops) for a connecting path. Candidate routes are ordered by
-their summed learned edge traffic, then length and slug order, making the
-low-traffic preference deterministic across processes.
-The result is an *association* thought — explicitly a hypothesis, never
+their summed accumulated edge traffic, then length and slug order, making the
+low-traffic preference deterministic across processes. This negative premise
+requires an exact complete graph with zero omitted edges; a capped-away edge
+forces refusal. Node omissions alone do not invalidate a positive path retained
+inside the displayed graph.
+The result is an *association* generated entry — explicitly a hypothesis, never
 a causal claim.
 
-**4.9 Stability and rehearsal.** Each tracked node and learned edge carries
+**4.9 Stability and rehearsal.** Each tracked node and accumulated edge carries
 a stability horizon `S`; its retrieval lens is `R = exp(−Δt/S)`. Touches,
-arousal, and novelty can lengthen that horizon. Pins hold `R = 1`, and an
+safety priority, and novelty can lengthen that horizon. Pins hold `R = 1`, and an
 edge below the declared retention threshold stops contributing to graph
-spreading. Stability is capped at 36500 days; SM-2 intervals use the same cap,
+propagation. Stability is capped at 36500 days; SM-2 intervals use the same cap,
 and ease is capped at 5.0. Those are operational overflow bounds, not memory
-science claims. None of these transitions deletes or rewrites corpus evidence.
+quality claims. None of these transitions deletes or rewrites corpus evidence.
 
-Operator-pinned or high-arousal pages—including pages raised by safety-class
+Operator-pinned or safety-priority pages—including pages raised by safety-class
 and urgent signals—receive an SM-2 review record. The nightly scheduler uses
 SIA interaction signals as explicit quality adapters:
 a post-review user ask/rehearsal signal maps to `q=5`, a
-thought/ponder/muse/grade reference maps to `q=4`, and no qualifying signal
+generated-entry/ponder/seeded-walk/grade reference maps to `q=4`, and no qualifying signal
 maps to `q=0`. These are SIA interaction classes, not human-memory
 measurements. It
 then applies the published ease/interval recurrence and re-embeds
 the page: later intervals use the incoming E-Factor, the response updates ease
 for the next repetition, and a quality below three restarts the repetition
-sequence after that ease update. The scheduler state, recall touch, and incident-edge reinforcement
-commit only after that same page is successfully re-embedded; a missing page
-or failed engine call remains due. Removing the last pin removes a pin-only
-review record; a qualifying high-arousal signal remains independently eligible.
+sequence after that ease update. The scheduler state, recall touch, and
+incident-edge reinforcement commit only after that same page is successfully
+re-embedded; a missing page or failed engine call remains due. Removing the
+last pin removes a pin-only review record; a qualifying safety-priority signal
+remains independently eligible.
 These quality tiers are system-event proxies, not observed human recall
-scores, and the mechanism makes no claim that it improves human memory or
+scores, and the policy makes no claim that it improves human memory or
 semantic answer quality.
 
 Any currently pinned page and every safety-tagged day remain verbatim during
-systems consolidation. Removing a pin also removes its pin-only review record,
+weekly epoch compaction. Removing a pin also removes its pin-only review record,
 so the scheduler does not retain a due record for a day page that may later be
-consolidated.
+compacted.
 
-## 5. Outcome learning
+The `mind.json` policy state is bounded, private, single-link current-path
+authority; its last-good copy is recovery material rather than automatic
+fallback. Generated-entry projection stages exact per-record receipts in
+`thought-recovery-mind-replay.sqlite3` before reinforcement. A receipt becomes
+applied only after both policy and generated-entry snapshots are durable, and a native
+receipt remains until its exact producer request is durably gone. Pending or
+malformed receipts block readiness, so crash replay cannot reinforce the same
+generated entry twice.
+
+## 5. Prediction grading and calibration
 
 A **take** is a falsifiable prediction — claim, holder, confidence
 p ∈ (0,1), deadline, domain — stored as a corpus page (part of the
 graph, embedded, recallable). Takes originate from the user, from
-ponder syntheses (the model proposes at most two per reflection in a
+ponder syntheses (the model proposes at most two per synthesis in a
 strict grammar), or from deterministic evidence templates: a successful
 fabric heal auto-proposes "this heal will hold — no repeat within 7
 days," with confidence `clamp(held/judged, 0.55, 0.95)` computed from
 that action's own corpus history (prior 0.70 when fewer than three full
 windows exist). The history source is the sekhmet day pages, so its
-horizon is the episodic window plus verbatim (flashbulb) days — under
+horizon is the event-day window plus protected verbatim days — under
 that horizon the prior dominates by construction, which is the honest
-behavior for a young evidence base. Every origin lands in the same proposal queue; nothing
-becomes a take until a human runs `sia take --accept`. When due, a take
-is judged against deterministically gathered evidence (semantic recall and
-entity-matched event/epoch organ records; model notes, syntheses, takes,
-intents, entity descriptions, and thoughts are excluded) by the
+behavior for a young evidence base. Every origin lands in the same proposal
+queue; nothing becomes a take until a human runs `sia take --accept`. A
+content-addressed ID binds the selected proposal, while every producer and
+acceptor uses one bounded, no-follow locked read-modify-write. Acceptance
+revalidates selected content and its future deadline under that lock;
+corruption, replacement, duplication, or quota refusal preserves the prior
+queue. When due, a take is judged against deterministically gathered evidence
+(semantic recall and
+entity-matched event/epoch source records; model notes, syntheses, takes,
+intents, entity descriptions, and generated entries are excluded) by the
 configured judge under a strict rubric:
 TRUE / FALSE / UNRESOLVABLE, citations required, guessing forbidden. A
 completed lookup with insufficient admitted evidence can yield UNRESOLVABLE;
@@ -420,7 +491,7 @@ calculation: even after the gate, the stream remains an
 operator-selected, model-assisted descriptive population with no confidence
 interval, significance claim, or warrant about world truth. The record is
 surfaced in the CLI, the cockpit, and — closing the loop — in ponder's own
-context. The nightly dream grades up to three due takes; every grade uses a
+context. Scheduled maintenance grades up to three due takes; every grade uses a
 durable transaction journal and an exact content-bound signed ledger row.
 The published take becomes `origin: model`, and the model explanation is stored
 as `Model justification (inert prose): ...`; deterministic Brier computation
@@ -437,9 +508,17 @@ Overall calibration is an exact Decimal sufficient-statistic projection;
 domain statistics are sharded and their domain catalog is paginated. Every
 page repeats the complete overall population totals and exclusions; only the
 domain rows are cursor-paginated. Only a settled grade whose exact signed
-`GRADE:take` target is observable contributes to scored totals. UNRESOLVABLE,
+`GRADE:take` target is observable, or whose original signed grade and exact
+signed migration remain supported by retained corpus provenance, contributes
+to scored totals. UNRESOLVABLE,
 malformed, inconsistent, and unsigned legacy resolutions remain explicitly
 counted outside the score denominator.
+
+Event and catalog counters are reserved only after their containing journal
+has been durably published and reread against the requested intent. A missing
+or substituted journal prevents reservation and page publication. Diagnostic
+history and domain readers refuse catalog holes when their bounded traversal
+reaches them; an omitted row is never silently counted as an empty slot.
 
 Legacy pages are admitted through a fixed resumable baseline. Its Linux
 directory cookie is bound to device, inode, size, modification time, and change
@@ -455,12 +534,13 @@ event that tombstones the catalog target and subtracts its exact overall,
 domain, and open-set contribution. Replay guards on event sequence and domain
 sequence make a crash before or after subtraction idempotent. Page edits are
 reprojected from corpus bytes, and a resolved contribution is rebuilt only
-when the exact edited target is present in the signed grade ledger. Only a
+with exact target grade membership or freshly revalidated signed migration
+provenance. Only a
 stable completed scan/sweep publishes a directory checkpoint; readiness and
 calibration refuse incomplete, changed, or errored checkpoints. Thus long
 historical corpora affect the number of bounded reconciliation pages or
 history pages an operator may traverse, not the work of one pulse step. A
-bounded incomplete consolidation generation retains its originating DREAM
+bounded incomplete weekly-compaction generation retains its originating DREAM
 transaction marker and ledger binding. Each later pulse recovers one bounded
 unit of that same transaction, including exact claim application when reached;
 the marker is applied, signed, and cleared only after source removals and the
@@ -482,31 +562,31 @@ immediately. A same-inode in-place edit made after the final observation is an
 explicit nonclaim until a later pinned audit reaches it; the design does not
 claim instantaneous coherence against a hostile same-user writer.
 
-**Prospective memory.** Intents are dated commitments stored as corpus
-pages: the brain surfaces each one as its deadline approaches (a thought
+**Dated intents.** Intents are dated commitments stored as corpus
+pages: SIA surfaces each one as its deadline approaches (a generated notice
 inside 48 h, an urgent daily nag when overdue) and closes it only on the
-operator's word. This is deliberately a due-date lane, not a cognitive
-mechanism — no scores, no model, no auto-close — because the faculty a
-historian lacks is remembering *to do*, and that faculty needs a diary,
-not a dopamine analogue.
+operator's word. This is deliberately a due-date lane, not a scored retrieval
+policy — no scores, no model, and no automatic close.
 
-**Cross-organ coincidence.** When two or more organs exceed their own
-empirical bands (spikes) in the same detection window, the coincidence
-itself is recorded as a thought stating both counts and the pair's
-sighting ordinal — never a cause. Simultaneous *absences* are
-deliberately not paired: a suspend would pair every organ at once. Pair history accumulates deterministically;
+**Cross-source coincidence.** When two or more sources exceed their own
+empirical intake bands (spikes) in the same detection pass, the coincidence
+itself is recorded as a generated entry stating both counts and the pair's
+recorded-occurrence ordinal — never a cause or simultaneous source activity. Buckets
+from different hours may close in that pass. Explicit zero samples are
+deliberately not paired, and unknown hours produce no absence finding.
+Pair history accumulates deterministically;
 a future hypothesis lane would build on it only behind a measured gate,
 per the hypothesis-lane freeze rule stated in §11.
 
 ## 6. Model policy
 
-The cognitive core is deterministic. No judge is selected by default. When the
+The associative policy layer is deterministic. No judge is selected by default. When the
 operator explicitly opts in, exactly one chat model exists in the system —
 **the operator-configured judge**, reached through the operator's configured
 Claude CLI authentication/account/provider (whose normal billing/data terms
 apply) with built-in tools, MCP, customizations, session
 persistence, and project discovery disabled from an empty directory — and it holds
-exactly two offices: *reflective synthesis* (ponder/deep) and
+exactly two roles: *model-assisted synthesis* (ponder/deep) and
 *evidence judge* (take grading). Its output is stored under labeled
 types (`synthesis`, grade sections) naming the backend and explicit model
 identifier, and never
@@ -516,11 +596,16 @@ operator's chosen frontier model rather than whatever fits in RAM.
 Codex CLI is refused as a judge because its documented read-only sandbox still
 permits local reads and the installed CLI exposes no documented inference-only
 switch. This is a confidentiality boundary, not a model-quality preference.
+Opt-in is the exact bounded generation of the current-user-owned, single-link
+regular `config.json` at its current pathname, not the presence of a CLI.
+Symlinks, hard links, replacement during decoding, duplicate or unknown keys,
+malformed types, and a missing explicit model all disable the judge without
+spawning it.
 
 **What the judge is not.** A frontier model behind a VERDICT regex is
 not a verifier. It keeps score on *what the judge said about what recall
 returned* — never on reality. That is precisely why agents propose and
-only a human commits, why judge-grade and ponder thoughts are origin-class
+only a human commits, why judge-grade and ponder entries are origin-class
 `model`, and why
 abstention correctness is a first-class audited metric. No surface may
 imply the machine is keeping honest score on the world; it keeps
@@ -550,8 +635,9 @@ is a separate operator-configured CLI path that may send explicitly recalled
 context for synthesis or grading. MCP consumers are another
 operator-configured trust boundary: they receive requested memory over stdio
 and may forward it to their own model/provider, whose data terms apply.
-Deletion is never silent: consolidation is
-git-recoverable, and its enclosing dream transition is ledgered.
+Deletion is never silent: compaction is
+git-recoverable, and its enclosing scheduled-maintenance transition is ledgered
+under the compatibility action name `dream`.
 
 ## 8. Implementation
 
@@ -561,10 +647,12 @@ Host: Omarchy Linux 4.0 "Quattro" (aarch64). The daemon
 took ~6 minutes on CPU. The UI is a Quickshell plugin (`khephri.sia`):
 a bar widget and a full-screen layer-shell cockpit (Canvas force layout
 with radial-time constraint; ~260-node display cap with non-absence omission
-counts declared). Indexing is gbrain 0.47.6.0 with a custom schema pack (organ /
-event-day / epoch / thought / synthesis / take / intent / note / unit /
+counts declared). Indexing is gbrain 0.47.6.0 with a custom schema pack (`organ` /
+event-day / epoch / `thought` / synthesis / take / intent / note / unit /
 package / project / skill types, typed link verbs), graph-aware retrieval mode, and
 Ollama `nomic-embed-text` embeddings served at 127.0.0.1:11434.
+Here `organ` and `thought` are compatibility schema kinds for source adapters
+and generated entries.
 
 Installation is a journaled publication protocol rather than an in-place copy.
 Before the first dependency mutation, a launch-fence record binds the old CLI,
@@ -576,6 +664,14 @@ runtime/CLI preflight is repeated after the fence so its changed mode/change
 time cannot leave a stale publication token. Post-rename recovery accepts only
 the journal-bound old/new digest and the rename-induced metadata transition;
 independent replacements remain preserved refusals.
+
+Runtime-receipt measurement is rooted in one held, current-user-owned
+directory descriptor. Ladder markers and allowlisted members are inspected
+relative to that descriptor, each readable member has a fixed byte ceiling,
+and all held member generations plus the root's current named generation are
+revalidated before either ordinary digesting or fenced authorization returns.
+This prevents one receipt measurement from combining members of two directory
+generations during a concurrent rename.
 
 Tree CAS is descriptor-rooted and generation-bound. Parent, root, directories,
 and regular files must be current-user-owned and non-group/world-writable;
@@ -599,14 +695,14 @@ The build was adversarially reviewed twice by independent agent panels
 (find → verify-with-reproduction): 17 confirmed defects in the base
 system (notably: a sliding-window ledger defeating positional cursors;
 cursor persistence preceding durable writes; YAML-breaking titles) and
-12 in the cognitive core (notably: an unreachable absence-surprise
+12 in the associative policy layer (notably: an unreachable absence-surprise
 branch; a novelty test measuring first-sighting age rather than
 absence; epoch pages overwritten rather than merged; unlink without
 committed-ness proof; PPR dangling-mass leakage) — all fixed and
 re-verified, several by sandboxed reproduction (two-run epoch-merge
-idempotence; simulated silent-organ absence detection). End-to-end
+idempotence; simulated missing-source observation handling). End-to-end
 checks are live-fire: a real JACKAL call traced from MCP through the
-convenience ledger, pulse, corpus, graph, and widget within one heartbeat.
+convenience ledger, pulse, corpus, graph, and widget within one pulse cycle.
 That trace tested pipeline wiring, not the call's mathematical assurance;
 SIA deliberately labels the resulting memory unverified. The first take
 graded TRUE at Brier 0.01 while its sibling returned an honest
@@ -636,7 +732,7 @@ epoch-merge idempotence, ledger tamper-rejection, PPR mass
 conservation, novelty-as-absence, empirical surprise including absence,
 redaction fail-closure, exogenous/endogenous touch weighting, heal
 hold-rate arithmetic, proposal deduplication, intent lifecycle, and
-coincidence pair-counting. The dream additionally runs a nightly
+coincidence pair-counting. Scheduled maintenance additionally runs a nightly
 retrieval-drift tripwire (a date-seeded sample of heuristic
 corpus-conditioned slug probes) whose blend slug-match@5 trend the cockpit
 plots. It can detect rank drift; it does not establish that a page contains a
@@ -652,7 +748,7 @@ enumerated syntactic runtime-loading patterns and checks the currently
 enumerated runtime modules' import-time mutable paths beneath that fixture.
 Those module and path enumerations must be extended when the code adds another
 runtime module or import-time path constant. This contains covered test-state
-side effects away from the resident brain; it does not prove that arbitrary
+side effects away from the resident memory service; it does not prove that arbitrary
 test code cannot explicitly name another path. The recovery suite also exercises
 mode-`000` CAS interruption before and after rename, strict launch-fence
 schema/path validation, safe and escaping/dangling tree symlinks, stable legacy
@@ -665,11 +761,43 @@ and abstention. Signed ledger rows do not independently bind a session
 identity, so SIA labels their cross-row count ability as multi-event
 aggregation rather than multi-session reasoning. It is not LongMemEval and
 makes no cross-system comparability claim. Each registered keeper first accepts its
-own ledger. The generator observes ledger and verifier bytes through no-follow
-descriptors and requires inode, size, modification metadata, and digests to
-match across verification. This does not exclude a same-user in-place ABA
-completed between observations. Questions carry byte-selected row, entry-hash,
-ledger-head, chain-format, normalized source-excerpt answer witnesses, and
+own ledger. The generator observes ledger, verifier, and declared-input bytes
+through no-follow descriptors. Auxiliary files are an explicit,
+position-bound input manifest: each zero-based argv index names one absolute
+path and an optional empty or lowercase long-option prefix. Immediately before
+launch, ledger and declared-input bytes are copied from their pinned originals
+into owner-private launch files; the child receives the bound verifier/script
+descriptor and only private-copy descriptors for those data files. Original
+ledger/input descriptors remain parent-only for generation rechecks. Whole
+operands and `--option=/path` forms are rewritten to the copies' inherited
+descriptor names.
+Omission means zero auxiliary files; relative, missing, mismatched, or
+duplicated manifest entries refuse. Residual argv elements must fit a closed
+slashless flag/subcommand/literal grammar. This rejects obvious residual path
+shapes but cannot determine whether trusted verifier code interprets an
+accepted slashless literal as a filename. State-directory verifiers receive a
+private view copied from pinned ledger and sidecar descriptors. Every verifier
+also starts in a fresh empty private working directory with an allow-listed
+environment rather than inheriting ambient path selectors. Its stdout and
+stderr are drained and counted for bounds, not accumulated or returned by
+these verification calls. The generator requires inode, ancestry, size,
+modification metadata, and digests to match across verification and again after
+the complete chain batch. This does not exclude a same-user in-place ABA
+completed between observations. A private state view preserves captured bytes
+and mode bits, not other inode metadata, pathname identity, or lock leases seen
+by the verifier. The empty working directory, allow-listed environment,
+private input copies, and PID-descendant containment are launch hygiene, not a
+filesystem, network, same-user, or resource sandbox; verifier code must be
+trusted. Of verifier code and its dependencies, generation binding covers only
+the top-level executable or current-Python script bytes; registered inputs are
+bound separately as described above. The verifier-code binding does not cover
+a shebang interpreter, ELF loader or shared libraries, Python imports,
+subprocess dependencies, or data opened internally by verifier code.
+Descriptor-backed execution changes pathname semantics including Python
+`__file__` and `sys.path[0]`, shell `$0`, and ELF `$ORIGIN`; verifiers must
+tolerate those semantics. Questions carry
+byte-selected row, entry-hash, ledger-head, chain-format, normalized
+source-excerpt answer witnesses, and
 negative-witness provenance in a private key file. Custos
 entry hashes and heads retain its signed-line SHA-256 semantics rather than
 being reinterpreted as attest-entry hashes. Public questions omit answers,
@@ -693,10 +821,10 @@ must come from the bound page and contain its exact private excerpt witness;
 page slug or title alone cannot score. Aggregate questions require every
 contributing event excerpt. The built-in run reports evidence retrieval and
 non-abstention proxies separately from normalized reader-answer scoring.
-Every complete ledger/verifier snapshot, source-page set, parsed population,
-candidate cross-product, serialized dataset, and answer input is subject to an
-explicit implementation ceiling. Crossing a ceiling refuses the benchmark;
-no signed chain or witness is truncated into a weaker claim.
+Every complete ledger/verifier/declared-input snapshot, source-page set, parsed
+population, candidate cross-product, serialized dataset, and answer input is
+subject to an explicit implementation ceiling. Crossing a ceiling refuses the
+benchmark; no signed chain or witness is truncated into a weaker claim.
 Live evaluation re-opens every digest-bound source page before and after its
 queries while holding SIA's corpus-owner lease; a changed or symlinked page
 refuses the run rather than being scored against a newer slug target. The lease
@@ -711,41 +839,53 @@ evaluation, or capacity handling cannot recursively mint replacements.
 
 ## 10. Nomenclature
 
-The cognitive-science names in §4 are ancestry, not warrants. Every
-mechanism must survive a rename test — describable purely by behavior:
-importance decays with time and grows with world-originated use; the
-system's references to its own products count one-fifth; memories that
-occur together or are recalled together become easier to reach from one
-another; stale associations lose retrieval influence without losing their
+The policy names in §4 describe behavior. Literature ancestry remains in
+References and does not warrant stronger product names: usage salience decays
+with time and grows with world-originated use; the system's references to its
+own products count one-fifth; co-occurrence and co-return can update accumulated
+edge weights; stale associations lose retrieval influence without losing their
 records; important pages rehearse only after a successful re-embedding;
-silence of a paced organ is an event; declared safety-class days are
-not summarized away; the model may summarize and
-grade, never mint facts. If a mechanism cannot be defended in that
-vocabulary, it is not ready, whatever the citation says.
+unusual sampled intake can prompt a generated entry, but missing observations cannot
+establish source silence; declared safety-class days are not summarized away;
+the model may summarize and grade, never mint facts. A policy that cannot be
+defended in that vocabulary is not ready, whatever its citation says.
 
 ## 11. Limitations and operational boundaries
 
-**The hypothesis-lane freeze rule.** A mechanism in the cognitive lane
+**The hypothesis-lane freeze rule.** A candidate policy
 ships as deterministic policy with an instrument attached, and it is
 promoted — or a new hypothesis lane is opened — only when its instrument
 shows it beating the plain alternative, never on citation or plausibility.
-The shipped example is §4.3's associative tie-breaker: graph influence is
-the tested release-selected policy because it matched dense retrieval on
-the historical probe set, and a tripwire regression is an operator-visible
-warning that must be investigated before any future policy is accepted.
-Anything without that measured showing stays behind its gate.
+Matching the plain alternative is not promotion: a tie leaves the
+citation-motivated policy carrying unearned default authority, so the
+rule requires a win.
+
+The worked example is §4.3's associative tie-breaker, and it is an example
+of the rule *demoting* something. On 2026-09-02, over a probe set extended
+from 13 to 22 source-gated probes, the blend measured uniformly below plain
+hybrid query: slug match@5 0.86 versus 0.91, reciprocal slug rank 0.67
+versus 0.71, match@1 0.50 versus 0.59. Graph influence in `sia ask`
+therefore ships **default-off** behind the validated
+`retrieval.associative_rerank` key; the answer footer states the mode
+either way. The nightly tripwire still measures the blend lane regardless
+of the flag, so the hypothesis stays instrumented and can earn its default
+back — under the same rule that demoted it, which now means beating the
+unmodified hybrid query,
+not tying it. A tripwire regression is an operator-visible warning that
+must be investigated before any future policy is accepted. Anything
+without that measured showing stays behind its gate.
 
 Typed edge inference now has two deliberately separate deterministic lanes:
 gbrain runs its person/company entity gazetteer after each sync, while SIA
 applies every declared domain regex to explicit corpus wikilinks at
 Markdown-record scope.
 The latter masks entity names before matching, leaves entity-description pages
-and all `model` or `legacy-unlabeled` thoughts neutral, and permits typed
-thought edges only when a safety-lane integrity/healing/crash/refusal thought
+and all `model` or `legacy-unlabeled` generated entries neutral, and permits typed
+generated-entry edges only when a safety-lane integrity/healing/crash/refusal entry
 is explicitly persisted as `derived`. It prefers evidence-bearing typed
 occurrences over generic duplicates, and degrades to `mentions` with a partial snapshot when the pack
 cannot be safely loaded. That fallback is exclusive to the schema-regex lane;
-a failure in gbrain's separate gazetteer/NER extraction fails brain sync and
+a failure in gbrain's separate gazetteer/NER extraction fails memory-index sync and
 retains publication debt instead of crossing lanes. These relations are lexical
 inferences over explicit links, not proofs of the underlying relationship.
 Calibration data remain operator-selected and
@@ -772,10 +912,14 @@ name-only add or remove: missing registrations receive an exact manual command,
 while existing external registrations are preserved and guarded. Generic MCP
 clients must likewise be explicitly configured with SIA's stdio server command.
 The readiness gate likewise covers only SIA's memory-dependent CLI commands
-and the MCP tools/resources that invoke them. Status remains available: its
-readiness verdict is live, while its pulse/graph fields and the cockpit are
-diagnostic last-published snapshots. Note/proposal writes may still queue, and
-same-user code can read corpus files directly. Neither the gate nor a
+and the MCP tools/resources that invoke them. Status remains callable for
+diagnosis. Current status fields require an exact closed status envelope; a
+combined graph claim additionally requires an exact graph envelope with the
+same publication identity, and `sia status` refuses before live readiness
+output if that binding fails. A rejected generation withdraws current claims;
+retained last-good bytes and last-published fields are diagnostic only.
+Note/proposal writes may still queue, and same-user code can read corpus files
+directly. Neither the gate nor a
 `MIGRATE:take-origin` signature is an access-control boundary or evidence that
 a model judgment is correct.
 The server is dual-era: handshake-based revisions through `2025-11-25` and
@@ -784,16 +928,23 @@ same bounded dispatch, with batch framing enabled only for revisions that
 define it.
 
 The skills sense is intentionally shallower than a recursive skill search: it
-admits only real skill directories directly contained by configured roots and
-a real directly contained regular `SKILL.md`. Root, child, and manifest opens
-use no-follow semantics, so symlinked entries are not cataloged. A bounded
-manifest head is captured once and bound to before/after/current-path identity,
-head digest, metadata, and its sanitized description. The exact capture drives
-both the cursor diff and event text; no later rendering pass rereads the
-manifest. The manifest identities are revalidated after the root generation,
-and observed churn makes the root partial while retaining prior rows. This is
-an ingestion boundary, not a validation of the skill's instructions or a
-hostile same-user filesystem snapshot after the final observation.
+admits only real skill directories directly contained by configured,
+HOME-contained relative roots and a real directly contained regular
+`SKILL.md`. Absolute or lexically escaping roots are refused. Root, child, and
+manifest opens use no-follow semantics, so symlinked entries are not
+cataloged. Manifest opens are nonblocking and are admitted only after a
+regular-file check, so special nodes cannot stall ingestion or have their
+content read. A bounded
+manifest head is bound to before/after/current-path identity, head digest,
+metadata, and its sanitized description. The bounded continuation also retains
+every enumerated child name, including children whose manifest was absent or
+inadmissible, and each completed root generation. At aggregate completion it
+brackets one replay of those covered manifest paths with root-generation
+checks; any changed positive or negative observation makes the root partial
+while retaining prior rows. The exact admitted capture drives both the cursor
+diff and event text; no later rendering pass rereads the manifest. This is an
+ingestion boundary, not a validation of the skill's instructions or a hostile
+same-user filesystem snapshot after the final observation.
 
 The v1.5 plugin separates discoverability from lifecycle authority. Omarchy's
 standard add-and-enable command clones, validates, and loads the QML, but its
@@ -824,9 +975,14 @@ approval-gated update workflow in the
 [official publishing guide](https://plugins.omarchy.org/publish.html). A
 directory listing provides discovery and manifest compatibility, not a
 security review. Likewise, Omarchy's ordinary plugin removal deletes the QML
-checkout but does not uninstall SIA's resident runtime or user service; the
-SIA uninstaller remains the resident-runtime removal boundary, with its
-separate purge mode governing attempted erasure of retained brain data.
+checkout but does not uninstall SIA's resident runtime or user service. The
+current runtime therefore retains a sealed lifetime authority and uninstaller
+behind the stable `sia uninstall [--purge]` command. The brainstem observes
+the canonical plugin registration before each pulse and takes its systemd
+intentional-stop exit, with a ledger halt, before more work when registration
+disappears. The SIA uninstaller remains the resident-runtime removal boundary,
+with its separate purge mode governing attempted erasure of retained memory
+data.
 
 ## References
 

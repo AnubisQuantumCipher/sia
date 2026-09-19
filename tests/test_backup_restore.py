@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -67,6 +68,7 @@ class CapsuleBoundaryTests(unittest.TestCase):
                     "1 " + self.ledger_head + "\n")
         self._write(os.path.join(self.corpus, "memory.md"), "remember me\n")
         os.mkdir(os.path.join(self.corpus, ".git"), 0o700)
+
         self._write(os.path.join(self.corpus, ".git", "HEAD"),
                     "ref: refs/heads/main\n")
         self._write(os.path.join(self.corpus, "legitimate.lock"),
@@ -141,6 +143,92 @@ class CapsuleBoundaryTests(unittest.TestCase):
             patcher.start()
         self._publish_gbrain_fixture()
         self._publish_receipt()
+
+    def test_capsule_json_decoder_refuses_ambiguity_and_constants(self):
+        for raw in (
+                b'{"state":"safe","state":"private"}',
+                b'{"state":NaN}',
+                b'{"state":Infinity}',
+                b'{"state":-Infinity}'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                    ValueError, "^capsule fixture is not strict JSON$"):
+                siacapsule._strict_json(raw, "capsule fixture")
+
+    def test_first_light_quarantines_source_replay_before_memo_mutation(self):
+        marker = {"marker": True}
+        memo = {"pulse_seq": 7, "sync_needed": True,
+                "source_replay_pending": marker}
+        with mock.patch.object(sialib, "load_memo",
+                               return_value=dict(memo)), \
+                mock.patch.object(
+                    sialib, "_pending_source_replay_marker",
+                    return_value=marker), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(
+                    sialib, "_authorize_pending_source_replay",
+                    side_effect=sialib.SourceReplayQuarantine(
+                        "source replay quarantine")), \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaises(sialib.SourceReplayQuarantine):
+                siacapsule._native_first_light()
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_refuses_malformed_pulse_before_memo_mutation(self):
+        memo = {
+            "pulse_seq": 7, "sync_needed": True,
+            "pulse_publication": {"bad": True},
+        }
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    RuntimeError, "pulse publication recovery marker"):
+                siacapsule._native_first_light()
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_admits_retained_status_before_memo_mutation(self):
+        memo = {"pulse_seq": 7, "sync_needed": True}
+        refusal = ValueError("resident status cannot be admitted")
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors", return_value={}), \
+                mock.patch.object(
+                    sialib, "_require_status_sequence_not_ahead",
+                    side_effect=refusal) as admit, \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    ValueError, "resident status cannot be admitted"):
+                siacapsule._native_first_light()
+        admit.assert_called_once_with(memo["pulse_seq"])
+        write.assert_not_called()
+        pulse.assert_not_called()
+
+    def test_first_light_withdraws_ready_for_invalid_status_memo(self):
+        memo = {
+            "pulse_seq": 7, "redactions": "oops",
+            "ready": {
+                "v": 1, "completed_at": "2026-08-30T12:00:00Z",
+                "kind": "recovery", "identity": "0" * 32,
+            },
+        }
+        with mock.patch.object(
+                sialib, "load_memo", return_value=dict(memo)), \
+                mock.patch.object(sialib, "load_cursors") as cursors, \
+                mock.patch.object(sialib, "_write_memo") as write, \
+                mock.patch.object(sialib, "_pulse_transaction") as pulse:
+            with self.assertRaisesRegex(
+                    RuntimeError, "status memo fields are invalid"):
+                siacapsule._native_first_light()
+        cursors.assert_not_called()
+        write.assert_called_once()
+        self.assertNotIn("ready", write.call_args.args[0])
+        pulse.assert_not_called()
 
     def tearDown(self):
         for patcher in reversed(self.patches):
@@ -293,6 +381,42 @@ class CapsuleBoundaryTests(unittest.TestCase):
             path, "f" * 32, "snapshot-core-bound")
         self.assertEqual(prepared["schema"], siacapsule.PREPARED_SCHEMA)
 
+    def test_freeze_preserves_directory_beyond_source_tail_bound(self):
+        packages = os.path.join(self.corpus, "packages")
+        os.mkdir(packages, 0o700)
+        names = {
+            f"package-{index:05d}.md"
+            for index in range(sialib.MAX_SOURCE_SCAN_ENTRIES + 1)
+        }
+        for name in names:
+            self._write(os.path.join(packages, name), name + "\n")
+
+        coupled = os.path.join(self.output, "coupled-source-bound")
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_DIRECTORY_ENTRY_LIMIT",
+                sialib.MAX_SOURCE_SCAN_ENTRIES):
+            with self.assertRaisesRegex(ValueError, "entry bound"):
+                siacapsule.freeze(coupled)
+        self.assertFalse(os.path.lexists(coupled))
+        self.assertFalse(any(
+            name.startswith(".sia-capsule-stage-")
+            for name in os.listdir(self.output)))
+
+        path, result = self._freeze("large-package-directory")
+        verified = siacapsule.verify(path)
+        self.assertEqual(verified["capsule_id"], result["capsule_id"])
+        with open(os.path.join(path, "manifest.json"),
+                  encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        manifest_paths = {row["path"] for row in manifest["entries"]}
+        expected_paths = {
+            "share/corpus/packages/" + name for name in names
+        }
+        self.assertTrue(expected_paths.issubset(manifest_paths))
+        for name in names:
+            self.assertTrue(os.path.isfile(os.path.join(
+                path, "payload", "share", "corpus", "packages", name)))
+
     def test_verify_rejects_tampering_and_unsigned_empty_directory(self):
         path, _result = self._freeze()
         os.mkdir(os.path.join(path, "payload", "share", "unsigned"), 0o700)
@@ -387,6 +511,17 @@ class CapsuleBoundaryTests(unittest.TestCase):
             name.startswith(".sia-capsule-stage-")
             for name in os.listdir(self.output)))
 
+        record_destination = os.path.join(
+            self.output, "bounded-record-refusal")
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_TREE_RECORD_LIMIT", 1):
+            with self.assertRaisesRegex(ValueError, "record bound"):
+                siacapsule.freeze(record_destination)
+        self.assertFalse(os.path.lexists(record_destination))
+        self.assertFalse(any(
+            name.startswith(".sia-capsule-stage-")
+            for name in os.listdir(self.output)))
+
     def test_gbrain_substrate_refuses_managed_receipt_parent_symlink(self):
         managed = siacapsule.MANAGED_ROOT
         parked = managed + ".real"
@@ -439,6 +574,46 @@ class CapsuleBoundaryTests(unittest.TestCase):
             before)
         self.assertFalse(os.path.lexists(siacapsule.RESTORE_BARRIER))
         self.assertEqual(os.listdir(rollback_root), [])
+
+    def test_restore_confirmation_schema_version_is_exact_integer(self):
+        prepared = {"snapshot_id": "snapshot-confirmation-version"}
+        confirmation = {
+            "schema_version": 1,
+            "phrase": "RESTORE",
+            "snapshot_id": prepared["snapshot_id"],
+            "ledger_head": self.ledger_head,
+            "corpus_receipt_re_adopt": True,
+        }
+        siacapsule._validate_confirmation(
+            confirmation, prepared, self.ledger_head)
+        for ambiguous_version in (True, 1.0):
+            with self.subTest(schema_version=ambiguous_version), \
+                    self.assertRaisesRegex(ValueError, "confirmation"):
+                siacapsule._validate_confirmation(
+                    dict(confirmation, schema_version=ambiguous_version),
+                    prepared, self.ledger_head)
+
+    def test_projection_probe_schema_version_is_exact_integer(self):
+        expected = os.path.join(self.home, "projection-probe")
+        os.mkdir(expected, 0o700)
+        report = {
+            "schema_version": 1,
+            "effective_engine": "pglite",
+            "config_file_engine": "pglite",
+            "database_path": expected,
+            "thin_client": False,
+            "probe": {"ok": True},
+        }
+        for ambiguous_version in (True, 1.0):
+            mutated = dict(report, schema_version=ambiguous_version)
+            result = subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(mutated), stderr="")
+            with self.subTest(schema_version=ambiguous_version), \
+                    mock.patch.object(
+                        siacapsule, "_run_gbrain", return_value=result), \
+                    self.assertRaisesRegex(RuntimeError, "quiescent"):
+                siacapsule._probe_projection(
+                    self.home, expected, "test projection probe")
 
     def test_native_lock_cleanup_preserves_racing_replacement_holder(self):
         token = "a" * 32
@@ -827,6 +1002,24 @@ class CapsuleBoundaryTests(unittest.TestCase):
                     first_light=lambda **_kwargs: None)
         self.assertTrue(os.path.isfile(siacapsule.RESTORE_BARRIER))
 
+        with open(siacapsule.RESTORE_BARRIER, encoding="utf-8") as stream:
+            barrier = json.load(stream)
+        journal_path = barrier["journal"]
+        with open(journal_path, encoding="utf-8") as stream:
+            journal = json.load(stream)
+        siacapsule._atomic_json(
+            siacapsule.RESTORE_BARRIER,
+            {**barrier, "created": "not-a-timestamp"})
+        with self.assertRaisesRegex(ValueError, "barrier schema"):
+            siacapsule._barrier_journal_path()
+        siacapsule._atomic_json(siacapsule.RESTORE_BARRIER, barrier)
+
+        siacapsule._atomic_json(
+            journal_path, {**journal, "created": "not-a-timestamp"})
+        with self.assertRaisesRegex(ValueError, "not recoverable"):
+            siacapsule._load_thaw_journal(journal_path, rollback_root)
+        siacapsule._atomic_json(journal_path, journal)
+
         with mock.patch.object(siacapsule,
                                "validate_restore_capability",
                                return_value=True), \
@@ -1100,7 +1293,7 @@ class CapsuleBoundaryTests(unittest.TestCase):
             "schema": siacapsule.JOURNAL_SCHEMA,
             "journal": os.path.join(active, "journal.json"),
             "prepared_id": "a" * 32,
-            "created": "active",
+            "created": "2026-09-04T12:00:00Z",
         }
         self._write(siacapsule.RESTORE_BARRIER, json.dumps(
             barrier, sort_keys=True, separators=(",", ":")) + "\n", 0o600)
@@ -1341,7 +1534,8 @@ class CapsuleBoundaryTests(unittest.TestCase):
         os.makedirs(runtime, mode=0o700, exist_ok=True)
         for name in ("sia-brainstem", "sialib.py", "siamind.py",
                      "siatakes.py", "siaqueue.py", "siasenses.py",
-                     "siagraph.py", "siarestoreadmit.py"):
+                     "siagraph.py", "siathought.py",
+                     "siarestoreadmit.py"):
             source = os.path.join(BIN, name)
             target = os.path.join(
                 runtime, "sia-brainstem.py" if name == "sia-brainstem"
@@ -1390,5 +1584,174 @@ class CapsuleBoundaryTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
 
+class RestoreQuiescenceCapabilityTests(unittest.TestCase):
+    """Behavioural coverage for the four-descriptor quiescence proof.
+
+    ``validate_restore_capability`` is the central safety property of the
+    restore ceremony: before a single live byte moves it proves that this
+    process already holds the lifecycle, brainstem, corpus, and gbrain locks
+    exclusively.  Every thaw and recovery test in this file mocks it away, so
+    a regression that admitted an unheld, shared, or stale descriptor would
+    have passed the entire suite while leaving a live daemon writing into the
+    roots a restore is about to replace.  These tests take and release the
+    real flocks instead.
+    """
+
+    BINDINGS = (
+        ("lifecycle_fd", "LIFECYCLE_LOCK", "lifecycle"),
+        ("brainstem_fd", "BRAINSTEM_OWNER_LOCK", "brainstem"),
+        ("corpus_fd", "CORPUS_OWNER_LOCK", "corpus"),
+        ("gbrain_fd", "GBRAIN_OWNER_LOCK", "gbrain"),
+    )
+
+    def setUp(self):
+        self.fixture = tempfile.TemporaryDirectory(prefix="sia-quiesce-test-")
+        self.addCleanup(self.fixture.cleanup)
+        self.paths = {}
+        for key, constant, _label in self.BINDINGS:
+            path = os.path.join(self.fixture.name, key + ".lock")
+            with open(path, "wb"):
+                pass
+            os.chmod(path, 0o600)
+            self.paths[key] = path
+            patcher = mock.patch.object(sialib, constant, path)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _close(descriptor):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+    def _open(self, key):
+        descriptor = os.open(self.paths[key], os.O_RDWR)
+        self.addCleanup(self._close, descriptor)
+        return descriptor
+
+    def _held_capability(self):
+        """Hold all four locks exclusively, as a real worker already does."""
+        capability = {}
+        for key, _constant, _label in self.BINDINGS:
+            descriptor = self._open(key)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            capability[key] = descriptor
+        return capability
+
+    def test_quiescence_admits_only_while_every_lock_is_still_held(self):
+        capability = self._held_capability()
+        self.assertTrue(siacapsule.validate_restore_capability(capability))
+        # Each descriptor is released and retaken on its own so a regression
+        # that stopped checking one of the four is caught by name.
+        for key, _constant, label in self.BINDINGS:
+            with self.subTest(lock=label):
+                fcntl.flock(capability[key], fcntl.LOCK_UN)
+                with self.assertRaisesRegex(
+                        ValueError, label + " capability is not held"):
+                    siacapsule.validate_restore_capability(capability)
+                fcntl.flock(capability[key], fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertTrue(
+                    siacapsule.validate_restore_capability(capability))
+
+    def test_quiescence_refuses_a_shared_holder_beside_another_reader(self):
+        # A shared lease is what an ordinary reader holds.  Quiescence means
+        # nobody else can be reading either, so a downgraded descriptor with
+        # a live sibling reader must refuse rather than count as held.
+        capability = self._held_capability()
+        fcntl.flock(capability["corpus_fd"], fcntl.LOCK_SH)
+        sibling = self._open("corpus_fd")
+        fcntl.flock(sibling, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        with self.assertRaisesRegex(
+                ValueError, "corpus capability is not exclusive"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_a_descriptor_bound_to_a_replaced_lock(self):
+        # A descriptor can outlive its path.  Holding the old inode proves
+        # nothing about the lock a racing daemon would actually take today.
+        capability = self._held_capability()
+        replacement = self.paths["gbrain_fd"] + ".replacement"
+        with open(replacement, "wb"):
+            pass
+        os.chmod(replacement, 0o600)
+        os.rename(replacement, self.paths["gbrain_fd"])
+        with self.assertRaisesRegex(
+                ValueError, "gbrain capability does not bind its live lock"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_descriptors_bound_to_the_wrong_lock(self):
+        # Four held descriptors are not the proof; the proof is that each one
+        # binds its own root's lock.  Swapping two must refuse.
+        capability = self._held_capability()
+        capability["corpus_fd"], capability["gbrain_fd"] = (
+            capability["gbrain_fd"], capability["corpus_fd"])
+        with self.assertRaisesRegex(
+                ValueError, "corpus capability does not bind its live lock"):
+            siacapsule.validate_restore_capability(capability)
+
+    def test_quiescence_refuses_capabilities_of_the_wrong_shape(self):
+        capability = self._held_capability()
+        cases = (
+            None,
+            {key: value for key, value in capability.items()
+             if key != "corpus_fd"},
+            {**capability, "extra_fd": capability["corpus_fd"]},
+        )
+        for case in cases:
+            with self.subTest(capability=case):
+                with self.assertRaisesRegex(
+                        ValueError, "restore capability has invalid shape"):
+                    siacapsule.validate_restore_capability(case)
+
+    def test_quiescence_refuses_values_that_are_not_open_descriptors(self):
+        # ``True`` is the dangerous one: it is an int subclass, so a laxer
+        # check would treat it as descriptor 1 and validate the worker's own
+        # stdout as the lifecycle lock.
+        held = self._held_capability()
+        for value in (True, -1, "3", None):
+            with self.subTest(descriptor=value):
+                capability = dict(held, lifecycle_fd=value)
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "lifecycle capability descriptor is invalid"):
+                    siacapsule.validate_restore_capability(capability)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContinuityFailureNaming(unittest.TestCase):
+    """The continuity panel names WHICH of SIA's own capsule gates refused,
+    with its numeric-only clause, without ever echoing arbitrary exception
+    text that could carry a repository credential (issue #12)."""
+
+    def test_known_capsule_refusals_are_named_and_unknown_text_is_not_echoed(self):
+        import siabackup
+        clause = siabackup._named_failure_clause(ValueError(
+            "source corpus receipt does not bind the live corpus root "
+            "(receipt root=66306:3710730:16877:1000, live root=64768:1574983:16877:1000; "
+            "after a filesystem move run: sia readmit)"))
+        self.assertEqual(
+            clause,
+            " Reason: corpus-receipt-root-mismatch (receipt root=66306:3710730:16877:1000, "
+            "live root=64768:1574983:16877:1000; after a filesystem move run: sia readmit)")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError(
+                "capsule source directory exceeds its entry bound "
+                "(/home/x/.local/share/sia/corpus/packages: more than 65536 entries)")),
+            " Reason: capsule-entry-bound (/home/x/.local/share/sia/corpus/packages: "
+            "more than 65536 entries)")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError("capsule output already exists")),
+            " Reason: capsule-output-exists.")
+        # Unknown exceptions, and known prefixes with unsafe or oversized
+        # clauses, contribute nothing beyond the fixed sentence.
+        self.assertEqual(siabackup._named_failure_clause(
+            RuntimeError("restic: RESTIC_PASSWORD=hunter2 rejected")), "")
+        self.assertEqual(siabackup._named_failure_clause(ValueError(
+            "capsule output already exists <secret>")),
+            " Reason: capsule-output-exists.")
+        self.assertEqual(siabackup._named_failure_clause(ValueError(
+            "capsule output already exists " + "x" * 300)),
+            " Reason: capsule-output-exists.")

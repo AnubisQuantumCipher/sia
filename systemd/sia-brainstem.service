@@ -1,5 +1,5 @@
 [Unit]
-Description=SIA brainstem — the Omarchy Brain's resident daemon
+Description=SIA resident local-memory daemon
 Documentation=https://github.com/AnubisQuantumCipher/sia
 
 [Service]
@@ -10,6 +10,7 @@ NotifyAccess=main
 TimeoutStartSec=120
 ExecStart=/usr/bin/python3 %h/.local/share/sia/bin/sia-brainstem
 Restart=on-failure
+RestartPreventExitStatus=78
 RestartSec=10
 Nice=10
 IOSchedulingClass=idle

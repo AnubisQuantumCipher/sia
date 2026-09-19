@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sia-ledger — signed, hash-chained run ledger for the SIA Omarchy Brain.
+"""sia-ledger — signed, hash-chained run ledger for SIA local machine memory.
 
 Format: attest-ledger v1 (the injective, length-prefixed scheme SEKHMET uses and
 the SPARK-proved `Attest.Ledger` package specifies). Each row is 9 tab-separated

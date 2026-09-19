@@ -1,44 +1,45 @@
 # SIA — the Omarchy Brain
 
+“Brain” is a product metaphor for auditable local machine memory; it is not a
+biological brain and does not establish cognition or neuroscience.
+
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu and Heka.*
 
-**Give your machine a memory.** SIA is a persistent, associative,
-self-consolidating memory system for your Linux desktop. A resident daemon
+**Give your machine local memory.** SIA stores a persistent local corpus,
+indexes it semantically, and compacts older day pages into weekly summaries.
+A resident daemon
 tails the evidence your machine already produces — package installs, journal
 errors, git commits, optional Git-backed Obsidian vault records, agent
 sessions, notifications, and any log you point it at — into a git-versioned
 markdown corpus, indexed into a typed knowledge graph with **local**
 embeddings. It retains, links, and retrieves admitted memories, and runs a
-deterministic nightly "dream" consolidation cycle. It helps you propose and
+deterministic nightly maintenance and compaction cycle. It helps you propose and
 commit falsifiable predictions, then records how they are graded. You can
-watch its thought stream and ask it about the memory it has admitted.
+watch its generated-entry stream and query the memory it has admitted.
 
-The machine remembers. You can audit every word of what it remembers, because
-the corpus is markdown in git and the daemon signs its own acts.
+You can audit every stored word because the corpus is markdown in git and the
+daemon signs its own acts.
 
-**Current release: v1.7.8.** The nightly judge audit had reported the same
-score for five days, and reading it as a limit of the grader was comfortable
-and wrong. SEKHMET really did restart wireplumber last August — four times,
-signed in its own ledger — and SIA ingested those rows as evidence and then
-deleted the page during a dream. Epoch exemplars were sampled by position, so
-the week's gist kept the *intent* to heal and dropped every record that it
-*worked*; and the grading lane sorted both evidence lanes by path, so `epochs`
-sorted ahead of `events` and the epoch was never shown to the judge at all.
-Both are fixed, and so is a third: evidence excerpts took a page's first
-420 characters, which on an epoch is its frontmatter, so the judge was handed
-metadata and no evidence. And a fourth: both lanes cite the same page, and the excerpt was chosen
-first-wins, so a 220-character head beat the window that carried the answer.
-The audit that had scored 1/2 since it was written now scores 2/2 on the
-installed runtime. Twenty-one tests fail on a revert. The compacted
-originals were in git throughout; what changed is what live memory can answer
-from.
-
-![The live SIA cockpit showing recovery-ready Continuity, memory health, agent relay, thought stream, and a self-organizing knowledge graph](assets/cockpit.png)
-
-*The current cockpit after a verified repository round trip. **RECOVERY
-READY** reports a ready, identity-matching recovery copy; it is not a
-substitute for the clean-machine restore drill.*
+**Current release: v1.8.0.** Two receipts bind storage by device and inode
+number — the installer's corpus receipt and the delivery epoch's adoption —
+and a btrfs subvolume change, an `rsync` of the home directory, or a restore
+by copy changes those numbers. After that every pulse refused, `sia ready`
+reported a pending migration, continuity reported only that it "failed
+without reporting repository credentials", and the installer refused with
+"existing corpus receipt is invalid". Issue #12 reported it on btrfs; the
+maintainer machine hit it after a VM migration. Nothing is guessed now:
+every refusal names both identities and the remedy, `sia readmit --yes`
+re-binds the unchanged adoption through a sealed receipt that retains the
+previous identity, and `SIA_READMIT_MOVED_STORAGE=1 ./install.sh` does the
+same under the installer's own journal. First light on a CPU-only host is
+bounded by a finite, named, progress-reporting ceiling instead of an
+unattributed 120-second gate (issue #10); the pulse never runs back to back
+(issue #13); a moved log with identical bytes continues instead of replaying;
+and bounded helpers fall back, announced, to process-group isolation where a
+kernel refuses unprivileged PID namespaces — the reason the suite was red on
+Ubuntu runners while green on Arch. The last pulse failure is retained and
+shown by `sia status`, not only in `journalctl`.
 
 Automatic Continuity never wakes the computer solely to run a backup. Its
 persistent timers catch up after the user session returns, serialize their
@@ -46,6 +47,11 @@ work, and coalesce duplicate scheduled requests. The hourly job creates an
 encrypted recovery snapshot; the weekly job performs the deeper repository
 check and exact off-path restore verification. Inspect the live schedule at
 any time with `sia backup schedule`.
+
+![Example SIA cockpit](preview.png)
+
+Example SIA cockpit. This static preview is not current machine state, a live
+readiness result, or evidence of cognitive performance.
 
 ## Install (Omarchy)
 
@@ -57,7 +63,7 @@ Add its public plugin checkout with Omarchy's standard command:
 omarchy plugin add https://github.com/AnubisQuantumCipher/sia.git --enable
 ```
 
-The enabled surface detects that the resident brain is absent and presents a
+The enabled surface detects that the resident memory service is absent and presents a
 **SETUP** gate. Open the cockpit from the SIA bar item and choose **Begin
 first light**. That explicit action asks this desktop to open a terminal and
 run SIA's fail-closed `install.sh` in it — loading or enabling the QML never
@@ -95,8 +101,9 @@ boundary applies to any script or agent that captures `sia` CLI output.
 ## The whole system, in one view
 
 SIA is an owner-local, evidence-grounded memory architecture — not a cloud
-assistant and not an opaque database. The Markdown corpus and its Git history
-are the source of truth; gbrain/PGLite, local embeddings, and the cockpit
+assistant and not an opaque database. The corpus pages, retained non-page
+migration provenance, and their Git history are the source of truth;
+gbrain/PGLite, local embeddings, and the cockpit
 graph are rebuildable projections. The resident **brainstem** alone
 materializes agent notes, and it publishes a generation only after the corpus
 is committed, index sync succeeds, and graph export succeeds; otherwise
@@ -107,7 +114,7 @@ presenting stale memory as current.
 machine evidence + explicit owner / agent notes
           │  bounded senses · redaction · origin labels · immutable note queue
           ▼
-git-versioned Markdown corpus  ← source of truth / recoverable history
+git-versioned corpus + retained provenance  ← source of truth / recoverable history
           │  one SIA-managed PGLite lease · publication barrier · live readiness gate
           ▼
 local gbrain + PGLite + Ollama embeddings  ← rebuildable index + typed graph
@@ -122,11 +129,11 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
 | System layer | What SIA does now | What it does **not** silently claim |
 |---|---|---|
 | **Evidence and integrity** | Ingests bounded machine records and explicit notes; redacts secret-shaped spans; keeps `evidence`, `derived`, `model`, and `legacy-unlabeled` origins distinct; signs its lifecycle ledger; and gates memory-dependent reads behind `sia ready`. | Recall absence is never evidence of absence. A published graph snapshot is not a live readiness verdict. |
-| **Associative memory** | Builds local semantic recall and a typed graph; applies ACT-R salience, Hebbian co-recall, graph-aware retrieval, novelty/surprisal, workspace attention, consolidation, stability decay, pins, and SM-2 rehearsal. | These are named deterministic retrieval policies and lexical link inferences — not proof of human cognition or real-world relationships. |
-| **Prospective memory** | Keeps operator-created `sia intend` commitments, surfaces them as deadlines approach, and closes them only on the operator's word; a nightly slug-retrieval drift tripwire signals when to run the full benchmark. | It does not infer task completion, and its drift signal is a heuristic — not an answer-quality score. |
-| **Outcome learning** | Lets people commit future-dated predictions; optionally obtains tool-isolated evidence judgments; records signed grades and population-aware descriptive Brier calibration; and runs `sia bench`, a signed-ledger QA benchmark that scores abstention. | Calibration is not a representative population claim, and `sia bench` is a local regression instrument. |
+| **Local retrieval policy** | Builds local semantic recall and a typed graph; applies origin-weighted hybrid-query ranking, usage salience, co-return reinforcement, an optional graph reranker, novelty and intake-surprise scoring, a bounded attention window, weekly epoch compaction, stability decay, pins, and SM-2 scheduling. | These are deterministic policies and lexical link inferences — not evidence of human-like mental processes or real-world relationships. |
+| **Dated intents** | Keeps operator-created `sia intend` commitments, surfaces them as deadlines approach, and closes them only on the operator's word; a nightly slug-retrieval drift tripwire signals when to run the full benchmark. | It does not infer task completion, and its drift signal is a heuristic — not an answer-quality score. |
+| **Prediction calibration** | Lets people commit future-dated predictions; optionally obtains tool-isolated evidence judgments; records signed grades and population-aware descriptive Brier calibration; and runs `sia bench`, a signed-ledger QA benchmark that scores abstention. | Calibration is not a representative population claim, and `sia bench` is a local regression instrument. |
 | **Resident agents** | Exposes local memory through bounded stdio MCP tools/resources and `sia context` packs. Agents queue immutable note requests; the brainstem alone materializes and indexes them before acknowledgement. | Agents never receive a database handle. Their notes remain `model`-origin prose, and each MCP consumer is its own disclosure boundary. |
-| **Mission control** | Presents the graph, thought stream, evidence chain, source health, memory lens, agent relay, and an on-demand live-readiness check in the Quickshell cockpit. | The cockpit labels last-published diagnostics separately from an explicit live check, and labels bounded display omissions rather than implying memory is missing. |
+| **Mission control** | Presents the graph, generated-entry stream, evidence chain, source health, memory lens, agent relay, and an on-demand live-readiness check in the Quickshell cockpit. | The cockpit labels last-published diagnostics separately from an explicit live check, and labels bounded display omissions rather than implying memory is missing. |
 | **Continuity** | Freezes the documented SIA roots into a signed portable capsule, verifies repository copies by exact off-path round trip, and thaws only through a journaled, receipt-preserving restore ceremony. | The private signing key and `.gbrain` are not in routine capsules. No repository is pruned automatically, and a same-disk copy is not disaster protection. |
 
 **New here?** [Install](#install-omarchy) ·
@@ -135,8 +142,8 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
 
 ## What you get
 
-- **A memory that accretes.** Every admitted event becomes a durable record in
-  a git-versioned day page — *the corpus IS the brain*; the database is a
+- **A corpus that accretes.** Every admitted event becomes a durable record in
+  a git-versioned day page; the corpus is authoritative and the database is a
   rebuildable index — wired into a typed knowledge graph by
   [gbrain](https://github.com/garrytan/gbrain) with local
   `nomic-embed-text:v1.5` embeddings via Ollama. When a schema pack is unsafe
@@ -144,36 +151,37 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   debt keeps memory-dependent reads closed until a pulse publishes a complete
   snapshot. The exact two-lane link-inference rules and their refusal behavior
   are specified in the [Field Manual](docs/MANUAL.md).
-- **A mind, not just an index.** Mechanisms from the memory literature, all
-  deterministic, all behavior-defensible: importance decays with time and
-  grows with world-originated use (ACT-R); co-recalled memories bond (Hebbian,
-  with nightly decay and degree caps); recall spreads through the graph
-  (Personalized PageRank, measured on the tripwire probes and currently
+- **A policy layer, not just an index.** Deterministic policies adjust local
+  retrieval: usage salience decays with time and grows with world-originated
+  use; co-return edge weights increase when memories are returned together,
+  with nightly decay and degree caps; graph propagation uses Personalized
+  PageRank, measured on the tripwire probes and currently
   default-off in `sia ask` because the extended set showed it trailing
-  plain dense retrieval — the whitepaper records the numbers and the
-  re-promotion condition); a non-destructive
+  the unmodified hybrid query — the whitepaper records the numbers and the
+  re-promotion condition; a non-destructive
   stability lens demotes stale associations without deleting evidence, while
-  high-arousal or operator-pinned memories follow a nightly SM-2 rehearsal
-  schedule; genuine novelty — including the *silence* of a paced source —
-  becomes thoughts; a 7-slot workspace holds its current attention; old
-  episodes consolidate into weekly gists while declared safety-class days
-  remain verbatim. Every compacted original remains recoverable in git.
-- **Outcome learning.** Register falsifiable predictions with confidence and
+  safety-priority or operator-pinned pages follow a nightly SM-2 scheduling
+  schedule; novelty and unusual sampled event intake produce generated notices
+  without treating unobserved hours as source silence; a seven-entry attention
+  window holds recently used memories; old day pages compact into weekly epoch
+  summaries while declared safety-class days remain verbatim. Every compacted
+  original remains recoverable in git.
+- **Prediction calibration.** Register falsifiable predictions with confidence and
   strictly future UTC deadlines; a tool-free Claude judge (off by default)
   grades them strictly against recalled evidence without seeing your
   confidence — TRUE / FALSE / UNRESOLVABLE, abstention audited. Calibration
   reports are population-aware: a lone grade is labeled a single case, sparse
   bins are withheld, and the series stays descriptive because takes are not a
   random sample. Agents may *propose* predictions; only you commit them.
-- **Prospective memory.** `sia intend "rotate the keys" --by 2026-10-01`:
-  commitments the brain surfaces as deadlines near and nags about when
+- **Dated intents.** `sia intend "rotate the keys" --by 2026-10-01`:
+  commitments SIA surfaces as deadlines near and marks urgent when
   overdue, closing only on your word — a diary lane with no scoring and no
-  model, because remembering *to do* needs a diary, not a dopamine analogue.
+  model.
 - **A mission-control cockpit.** A full-screen Quickshell overlay (from the
-  bar widget, or `SUPER+SHIFT+B` when you opt into the binding): the living
+  bar widget, or `SUPER+SHIFT+B` when you opt into the binding): the animated
   graph with radial time, stable semantic sectors, collision-aware labels,
   replayable outward growth, hover neighborhoods, edge explanations, origin
-  labels, a thought stream, evidence-chain verdicts, and a SOURCE HEALTH truth
+  labels, a generated-entry stream, evidence-chain verdicts, and a SOURCE HEALTH truth
   boundary that admits incompleteness instead of hiding it. Its truth ribbon
   separates the last-published snapshot from an explicitly requested live
   `sia ready` check, and a reversible workspace lock keeps the cockpit on one
@@ -182,7 +190,8 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   CLI, and Grok integrations (plus compatible stdio MCP clients), and a skill
   for skill-reading harnesses. Tools cover reinforcing recall, a read-only
   search lane for audits, and carefully labeled writes; resources mount
-  status, thoughts, calibration, the cortex, and `sia://memory/{slug}` pages.
+  status, generated entries, calibration, the root page, and
+  `sia://memory/{slug}` pages (`thoughts` and `cortex` remain compatibility URIs).
   The clean client-visible tool surface is `sia.ask`, `sia.search`,
   `sia.recall`, `sia.status`, `sia.think`, `sia.note`, `sia.propose_take`, and
   `sia.calibration`; reconnect the client or open a new agent session after an
@@ -198,36 +207,38 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   are `model` and never mint facts. Secret-shaped spans are redacted at the
   sense boundary; *absence of recall is never evidence of absence*.
 
-### The historian is the product; the mind is the research program
+### The historian is the product; policy evaluation is the research program
 
 The historian half — origin-labeled capture, the git corpus, local recall,
 the signed ledger, the cockpit — is shipped, tested behavior you can use
-today. The cognitive half — activation, bonding, spreading recall, novelty,
-workspace, stability, rehearsal — is shipped as deterministic policy, and the
+today. The candidate policy layer — usage salience, co-return reinforcement,
+graph propagation, novelty scoring, a bounded attention window, stability,
+and rehearsal — is shipped as deterministic behavior, and the
 [whitepaper](docs/WHITEPAPER.md) is explicit about its evidentiary status:
-the associative tie-breaker matched dense retrieval on the historical probe
+the associative tie-breaker matched the unmodified hybrid query on the historical probe
 set and did not beat it, and this release contains no controlled evidence
-that rehearsal improves answer quality. The mechanisms are honest hypotheses
+that rehearsal improves answer quality. The policies are explicit hypotheses
 with instruments attached (`sia bench`, the nightly drift tripwire, the
-calibration record), not proven cognition. That split is the design, not an
-apology: keep evidence and model separate in the docs the way the corpus
-keeps them separate in memory.
+calibration record), not established improvements. Keep evidence and model
+separate in the docs the way the corpus keeps them separate in memory.
 
 ## Sixty seconds after install
 
 ```bash
-sia status                          # the brain's vitals
+sia status                          # current source and memory-index state
 sia ready                           # exit nonzero unless memory is reconciled
 sia ask "what happened today"       # semantic recall, cited + labeled
-sia think                           # its inner monologue
+sia think                           # recent generated entries
 sia context                         # bounded handoff pack for agents/sessions
 sia take "the build will go green" --confidence 0.8 --by 2026-09-05
-sia intend "rotate ledger keys" --by 2026-10-01   # prospective memory
+sia intend "rotate ledger keys" --by 2026-10-01   # dated commitment
 sia note "hard-won context" --from me    # a memory for future sessions
 sia memory                          # stability, pins, and reviews due
 sia memory --pin organs/journal     # protect/qualify a page for rehearsal
 sia calibration                     # population-aware descriptive scorecard
 sia bench generate --out /tmp/sia-qa  # signed-ledger QA + private MCP eval
+sia bench generate --cognitive-history --live-history --out /tmp/sia-history
+                                     # private signed + controller-use captures
 sia backup status                   # continuity adapter and verified-copy state
 sia backup schedule                 # authenticated automatic-timer state
 ```
@@ -244,17 +255,27 @@ Point it at your own programs in `~/.config/sia/config.json`:
 regular-expression operators are refused so a configured pattern cannot
 monopolize the resident writer. For `type: "jsonl"`, SIA admits only the
 exact configured `field`. A real Git repository at `~/Obsidian` is discovered
-as an optional organ with no configuration; for a different vault path, skill
+as an optional source adapter with no configuration; for a different vault path, skill
 discovery roots, and judge settings, see the
 [Field Manual](docs/MANUAL.md) — then restart the brainstem and check
 `sia status`.
 
 ## Requirements
 
-Linux (Omarchy/Arch tested; x86_64 or aarch64) with pollable pidfds, `python3`
-with an Ed25519-capable Python-cryptography, `git`, `curl`, `tar`, `unzip`,
-`bzip2`, `sha256sum`, `zstd`, `flock`, `ss` from `iproute2`, a systemd user
-session (`systemctl`), and roughly 2 GB of disk for Ollama. The bootstrap
+Linux (Omarchy/Arch tested; x86_64 or aarch64) with procfs mounted at `/proc`
+and kernel support for pollable pidfds, child-subreaper adoption, and sealed
+memfd files. `python3` must expose `os.pidfd_open`, `signal.pidfd_send_signal`,
+`os.waitid` with `waitid/WNOWAIT/WSTOPPED`, and `os.memfd_create`, and must have
+an Ed25519-capable Python-cryptography. The native lifetime owner also requires
+Linux `SCM_CREDENTIALS` and `SCM_RIGHTS`; absence of any core lifetime feature
+refuses before the mutating shell launches. Bounded helper processes (chain
+keepers, gbrain) run inside a private user+PID namespace when the kernel
+permits unprivileged `unshare`; where it does not (Ubuntu 24.04's AppArmor
+default, hardened kernels) SIA announces once that it fell back to
+process-group isolation and keeps working — that fallback is weaker
+containment, not a failure. SIA also requires `git`, `curl`, `tar`,
+`unzip`, `bzip2`, `sha256sum`, `zstd`, `flock`, `ss` from `iproute2`, a systemd
+user session (`systemctl`), and roughly 2 GB of disk for Ollama. The bootstrap
 downloads Bun, Ollama, and SIA's private restic executable from pinned release
 URLs and verifies their published SHA-256 digests before extraction; it checks
 out the full gbrain commit in `GBRAIN_PIN`, verifies the pinned `bun.lock`,
@@ -264,7 +285,14 @@ result. Managed filesystems must support atomic rename and
 for crash-closed signed-ledger publication — the installer probes both before
 activating anything. Optional: the Omarchy 4.x shell for the cockpit. Judge
 calls remain off until you set `judge.backend` to `claude` with an explicit
-`judge.model`.
+`judge.model`. ollama.service accepts exactly one operator-owned drop-in at
+`~/.config/systemd/user/ollama.service.d/sia-operator.conf` — a `[Service]`
+header followed only by `Environment=OLLAMA_<NAME>=<value>` lines, never
+`OLLAMA_HOST` or `OLLAMA_MODELS` (SIA manages those) — for hardware knobs
+Ollama does not otherwise expose, such as `OLLAMA_IGPU_ENABLE=1` when it
+would otherwise drop an integrated GPU ([issue #10](https://github.com/AnubisQuantumCipher/sia/issues/10)).
+SIA never writes this file or enables a hardware setting itself; any other
+drop-in, or a malformed one, refuses the install.
 
 ## Install, recovery, and removal boundaries
 
@@ -319,7 +347,7 @@ The short version of the contract; the full mechanics are in the
   proof. SIA's private restic adapter uploads a verified capsule hourly and
   round-trip-verifies weekly; it never prunes, and routine capsules exclude
   the private signing key. See [Continuity](docs/CONTINUITY.md). (In this
-  repository SIA means only the Omarchy Brain — not the Sia Foundation's
+  repository SIA means only the Omarchy Brain product — not the Sia Foundation's
   `sia.tech` storage network.)
 - **Plugin enablement refuses rather than guesses**: the installer requires an
   exact `khephri.sia` catalog entry after a rescan and refuses
@@ -328,23 +356,23 @@ The short version of the contract; the full mechanics are in the
 
 ## Documentation
 
-- [**Field Manual**](docs/MANUAL.md) — cockpit tour, full CLI, thought
+- [**Field Manual**](docs/MANUAL.md) — cockpit tour, full CLI, generated-entry
   glyphs, configuration, the exact operating and recovery paths,
   troubleshooting.
 - [**Continuity**](docs/CONTINUITY.md) — signed portable capsules, storage
   adapters, automatic verification, and clean-machine restore.
 - [**Whitepaper**](docs/WHITEPAPER.md) — architecture, the evidence model,
-  every cognitive mechanism with its formula and citation, the measurement
-  instruments, and the verification record.
+  every candidate policy with its formula and literature ancestry, the
+  measurement instruments, and the verification record.
 - [**Roadmap**](ROADMAP.md) — the measured state of every instrument, the
   feature freeze and its exit gates, the module-split schedule, and the
-  v2.0 decision rule for the cognitive lane.
+  v2.0 decision rule for the candidate-policy lane.
 - [**CHANGELOG**](CHANGELOG.md) — the complete release history. Recent
   highlights: the v1.5.1 rehearsal-grading fix with its real-gbrain contract
   test lane ([issue #3](https://github.com/AnubisQuantumCipher/sia/issues/3)),
   v1.5.0 marketplace-native guided first light, the v1.4.2 fresh-bootstrap
   recovery reported by [@m10ust](https://github.com/m10ust), and the v1.4.1
-  optional Obsidian organ proposed by
+  optional Obsidian source adapter proposed by
   [@webdevtodayjason](https://github.com/webdevtodayjason).
 
 ### Omarchy marketplace status
@@ -363,19 +391,25 @@ Marketplace validation and listing are not security reviews.
 
 ## Remove
 
-Run the uninstaller from the plugin/repository directory:
+Use the installed teardown command:
 
 ```bash
-./uninstall.sh           # removes code/UI; keeps corpus, ledger, keys, queues, config
-./uninstall.sh --purge   # also attempts to erase retained SIA data and config
+sia uninstall           # removes code/UI; keeps corpus, ledger, keys, queues, config
+sia uninstall --purge   # also attempts to erase retained SIA data and config
 ```
+
+The stable `sia` launcher and sealed uninstaller are runtime members, so this
+route remains available if Omarchy has already removed the plugin checkout.
+The resident brainstem observes the canonical plugin registration before each
+pulse and stops intentionally, before more memory work, when it disappears.
+Repository checkouts also retain `./uninstall.sh` as the source-tree entry.
 
 On success, either path disables the Quickshell surface
 and archives the plugin checkout, so a later `omarchy plugin remove` is
 normally unnecessary.
 A plain `omarchy plugin remove khephri.sia` used first removes only the
-checkout; it does not uninstall SIA's resident runtime or user service, and it
-removes the normal entry point for that teardown.
+checkout; it does not uninstall SIA's resident runtime or user service. Run
+`sia uninstall` afterward to finish the retained-data teardown.
 
 Default removal preserves the data categories — corpus, ledger, signing
 identity/head, queues and state snapshots, research, private toolchain, and
@@ -397,12 +431,10 @@ been backed up.
 ## What this is (and is not)
 
 A local, git-versioned, origin-labeled memory that refuses to pretend a
-language model is a witness. **It is not a brain** — it is a disciplined
-historian with a small associative index and a cockpit. That is better than a
-brain: a brain you cannot audit, a historian you can. The cognitive-science
-names in the design are *ancestry, not warrants* — every mechanism is a
-small, named, deterministic approximation, and the whitepaper's rename test
-governs them.
+language model is a witness. It is a disciplined machine-event historian with
+a small semantic index and a cockpit. Product policy names
+describe deterministic behavior; literature ancestry is kept in Credits and
+References and is not a warrant for stronger claims.
 
 ## Honesty principles (the actual design)
 
@@ -418,8 +450,8 @@ governs them.
    the file/field explicitly named in config and must not target secret or
    content stores. The separate ledger keeper necessarily reads SIA's own
    signing key when it signs an authorized transition.
-6. SIA does not silently delete or guess: consolidation is git-recoverable,
-   named lifecycle transitions (boot, pulse ingests, dreams, and grades) are
+6. SIA does not silently delete or guess: weekly compaction is git-recoverable,
+   named lifecycle transitions (boot, pulse ingests, maintenance runs, and grades) are
    ledgered, and refusal/partial states remain explicit. Graph read/export
    failures are visible in SOURCE HEALTH; a pulse that cannot publish its graph
    records the signed result `graph-fail`.
@@ -430,10 +462,10 @@ Built on [gbrain](https://github.com/garrytan/gbrain) by Garry Tan.
 The fresh-machine bootstrap recovery was reported by
 [@m10ust](https://github.com/m10ust) in
 [issue #2](https://github.com/AnubisQuantumCipher/sia/issues/2); the optional
-Git-backed Obsidian organ was proposed by
+Git-backed Obsidian source adapter was proposed by
 [@webdevtodayjason](https://github.com/webdevtodayjason) in
 [issue #1](https://github.com/AnubisQuantumCipher/sia/issues/1).
-Cognitive mechanisms trace to Anderson (ACT-R), Collins & Loftus, Nader,
+Candidate-policy ancestry includes Anderson (ACT-R), Collins & Loftus, Nader,
 Lisman & Grace, McGaugh, McClelland/McNaughton/O'Reilly, Dehaene, and to
 HippoRAG, Generative Agents, Zep, and Letta — citations in the whitepaper;
 the names are ancestry, the behavior is the contract.

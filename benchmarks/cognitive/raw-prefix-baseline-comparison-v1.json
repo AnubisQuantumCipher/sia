@@ -1,0 +1,59 @@
+{
+  "schema": "sia-cognitive-raw-prefix-comparison-policy-v1",
+  "split": "heldout",
+  "arms": ["bare", "nomic-search-prefixes"],
+  "classes": ["recency-heavy", "repetition-heavy", "novelty", "associative-multi-hop", "consolidation-gist"],
+  "cutoffs": [1, 3, 5, 10],
+  "metrics": ["recall_at_k", "mrr_at_k"],
+  "embedding_input_policies": {
+    "bare": {
+      "schema": "sia-embedding-input-policy-v1",
+      "mode": "bare-v1",
+      "document_prefix": "",
+      "query_prefix": "",
+      "encoding": "utf-8",
+      "document_stage": "after-lossless-chunking",
+      "query_stage": "original-query",
+      "overflow": "refuse"
+    },
+    "nomic-search-prefixes": {
+      "schema": "sia-embedding-input-policy-v1",
+      "mode": "nomic-prefix-v1",
+      "document_prefix": "search_document: ",
+      "query_prefix": "search_query: ",
+      "encoding": "utf-8",
+      "document_stage": "after-lossless-chunking",
+      "query_stage": "original-query",
+      "overflow": "refuse"
+    }
+  },
+  "pairing": "same-fresh-runner-model-source-query-roster-v1",
+  "source_fidelity": "unchanged-text-chunks-targets-and-origins-v1",
+  "selector": "equal-weight-nonempty-heldout-class-means-v1",
+  "selector_order": "recall-at-frozen-cutoffs-then-mrr-at-frozen-cutoffs-v1",
+  "direction": "nomic-search-prefixes-minus-bare-v1",
+  "selection": "first-unequal-coordinate-greater-arm-v1",
+  "full_tie": "adopt-nomic-search-prefixes-by-convention-not-superiority-v1",
+  "unavailable": "source-declared-before-results-retained-not-zero-v1",
+  "missing_or_refused": "adoption-unadmitted-no-fallback-v1",
+  "latency": "retain-separate-arm-observations-not-a-selector-v1",
+  "numeric_admission": "fresh-jackal-complete-expression-scope-request-bindings-v1",
+  "adoption": "separate-external-receipt-no-local-verdict-v1",
+  "chronology": "freeze-before-prefix-execution-or-either-arm-metric-evaluation-v1",
+  "downstream": "new-selected-baseline-identity-and-full-replay-no-retuning-v1",
+  "interpretation": "same-dataset-configuration-selection-not-independent-heldout-estimate-v1",
+  "non_claims": [
+    "This component prepares a source-frozen baseline-configuration comparison and unevaluated JACKAL requests, not numeric results, baseline adoption, statistical significance or a cognitive win.",
+    "The selected baseline will be selected using this frozen dataset; its performance here is not an independent heldout estimate, and the selection adjustment is not claimed automatically conservative.",
+    "Class balance and lexicographic metric precedence are declared engineering choices, not uniform dominance across classes, cutoffs, latency or future data.",
+    "All original query and class metrics, unavailable coverage, ties, losses and latency observations remain represented; no query-level or class-level winner splicing is authorized.",
+    "Exact equality of the complete selector vector permits the declared prefixed convention only after fresh numeric admission; it is a tie, not evidence that prefixes are stronger.",
+    "Original source/query text, chunk boundaries, target occurrences, qualifiers and origins remain unchanged; task prefixes belong only to separately identified embedding inputs.",
+    "Independent public replay checks represented source, contract and observation consistency, not current private archive bytes, historical model execution, loaded heap or hostile same-user immutability.",
+    "Original bare artifacts remain separate and immutable; a new selected baseline needs additive identity and downstream mechanism/fidelity/timing replay, never relabeling an old candidate pool.",
+    "Supplied pins and recorded freezes do not independently prove historical chronology or that no private outcome was inspected; no mechanism parameter retuning on these outcomes is authorized.",
+    "Compact identities and occurrence witnesses are not source archives; complete independently replayed source and raw documents, all upstream nonclaims and original refusals must remain retained.",
+    "No cognitive authorization follows from baseline selection; independent fidelity, new timed replay, and fresh JACKAL numeric/model admission remain separate prerequisites.",
+    "No model, index, resident corpus, filesystem, clock, JACKAL execution, durable publication or deletion is invoked by these pure APIs."
+  ]
+}

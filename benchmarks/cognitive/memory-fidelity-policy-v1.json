@@ -1,0 +1,40 @@
+{
+  "schema": "sia-cognitive-memory-fidelity-policy-v1",
+  "ordered_schema": "sia-cognitive-ordered-measurement-plan-v1",
+  "metric_protocol_sha256": "52b9820c7fbb2e2ff1f556edd319d4ea0a446c3695917fe285de33176cf9ffe7",
+  "arms": [
+    "raw-original",
+    "cue-only",
+    "cue-event-exposure"
+  ],
+  "predicates": [
+    "complete-captured-source-bindings",
+    "complete-returned-candidate-membership",
+    "unchanged-raw-chunk-and-score-values",
+    "unchanged-source-origins",
+    "complete-exposure-and-activation-traces",
+    "unchanged-native-targets-and-coverage",
+    "complete-fixed-arm-permutations",
+    "complete-upstream-nonclaims"
+  ],
+  "scope": {
+    "sources": "admitted-captured-history-only",
+    "candidates": "returned-raw-candidate-roster-only",
+    "storage": "identity-references-not-a-source-archive",
+    "resident_state": "not-observed"
+  },
+  "replay": "complete-independent-ordered-replay-v1",
+  "references": "complete-documents-and-subtrees-no-archive-claim-v1",
+  "chronology": "externally-pinned-before-heldout-v1",
+  "overflow": "refuse-complete-artifact-v1",
+  "resources": {
+    "max_input_bytes": 67108864,
+    "max_document_bytes": 16777216,
+    "max_output_bytes": 16777216,
+    "max_queries": 64,
+    "max_source_events": 65536,
+    "max_source_pages": 4096,
+    "max_candidates_per_query": 256,
+    "max_trace_bytes": 2097152
+  }
+}
