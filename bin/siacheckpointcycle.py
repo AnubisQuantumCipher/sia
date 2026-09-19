@@ -230,6 +230,20 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         # empty catalog is removed. Until then readiness names it pending,
         # so this runs after every completed compact pulse, notes or not.
         owner["_finalize_native_thought_mind_replay"]()
+        # The prelude's commits fence the corpus as externally mutated
+        # (sync_needed). A completed compact pulse has synchronized the
+        # corpus into the index through its effects, so the fence is
+        # released the way the legacy pulse releases it after publication;
+        # left set, `sia ready` refuses "a corpus publication is still
+        # pending" on every read.
+        memo.clear()
+        memo.update(owner["load_memo"]())
+        if memo.get("sync_needed") is True:
+            released = dict(memo)
+            released.pop("sync_needed", None)
+            owner["_write_memo"](released)
+            memo.clear()
+            memo.update(owner["load_memo"]())
     return view
 
 

@@ -348,6 +348,10 @@ class CheckpointBootstrap(unittest.TestCase):
             # so readiness is not closed by "recovery intents are pending".
             self.assertFalse(owner._siathought._thought_recovery_debt(),
                 "a materialized note left a thought page recovery intent pending")
+            # The prelude's commit fenced the corpus; the completed pulse
+            # synchronized it and released the fence.
+            self.assertIsNot(owner.load_memo().get("sync_needed"), True,
+                "a completed compact pulse left the corpus publication fence set")
 
         with self.precompact() as (f, owner, directory):
             self.assertEqual(owner._run_controller_source_cycle()["status"], "available")
