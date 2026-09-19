@@ -5663,13 +5663,16 @@ def refusal_chain(exc, *, limit=6):
                 parts.append(upstream)
             # The innermost refusal's code location (never data): which
             # module's gate spoke last.
+            frames = []
             frame = exc.__traceback__
-            while frame is not None and frame.tb_next is not None:
-                frame = frame.tb_next
-            if frame is not None:
+            while frame is not None:
                 code = frame.tb_frame.f_code
-                parts.append("at " + os.path.basename(code.co_filename)
-                             + ":" + code.co_name + ":" + str(frame.tb_lineno))
+                if not code.co_name.endswith("refuse"):
+                    frames.append(os.path.basename(code.co_filename) + ":"
+                                  + code.co_name + ":" + str(frame.tb_lineno))
+                frame = frame.tb_next
+            if frames:
+                parts.append("at " + " < ".join(reversed(frames[-3:])))
         exc = following
     return parts
 
