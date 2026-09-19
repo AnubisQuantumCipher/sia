@@ -10,6 +10,11 @@ import types
 import unittest
 from unittest import mock
 
+try:
+    import sia_test_home  # noqa: F401  (isolate paths before runtime imports)
+except ModuleNotFoundError:
+    from tests import sia_test_home  # type: ignore  # noqa: F401
+
 import siacheckpointcontent as content
 from tests import test_checkpoint_adoption as fixtures
 
