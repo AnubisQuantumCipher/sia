@@ -1064,6 +1064,61 @@ class ControllerSourceEffects(unittest.TestCase):
         self.assertIsNotNone(
             self.lib._recoverable_status_integrity(projected))
 
+    def test_projected_status_resolves_only_errors_this_pulse_reattempted(self):
+        """A completed pulse settles the errors it re-attempted, nothing else.
+
+        The compact lane carried predecessor errors forward forever: the
+        maintainer machine stayed `degraded` on `sense_skills` and
+        `corpus_write` strings from a 1.7.8 pulse ten days after every later
+        capture had admitted that sense and every corpus stage had
+        committed. A declared source in this batch resolves its own
+        `sense_*` error (and row-level ones when its refusal rows are
+        empty); a committed corpus stage resolves `corpus_write`. Unknown
+        keys and undeclared sources stay, as the retained-error rule says.
+        """
+        self.start()
+        declared = [row["source_id"] for row in self.batch["refusal_intents"]]
+        self.assertTrue(declared, "the fixture batch declares no source")
+        first = declared[0]
+        self.assertEqual(next(row for row in self.batch["refusal_intents"]
+                              if row["source_id"] == first)["record_refusals"], [])
+        admitted = copy.deepcopy(self.admitted_status)
+        admitted["errors"] = {
+            "sense_" + first[len("sense_"):] if first.startswith("sense_") else first:
+                "collector refused last pulse",
+            "source_record_refusal:" + first: "a row refused last pulse",
+            "corpus_write": "usage activation recent history is not chronological",
+            "fixture": "retained unresolved failure",
+            "sense_undeclared_organ": "a source this batch never ran",
+        }
+        admitted["state"] = "degraded"
+        graph = self.live._read("GRAPH_PATH")
+        module = importlib.import_module("siasourceeffects")
+        source = importlib.import_module("siasourcebatch")
+        live = importlib.import_module("sialiveloop")
+        args = (self.lib.__dict__, source, live, admitted, self.binding,
+                self.handoff, self.transition, graph,
+                self.live.memo["pulse_history"], STATUS_AT)
+        projected = module._project_status(
+            *args, batch=self.batch, corpus_committed=True)
+        self.assertEqual(projected["errors"], {
+            "fixture": "retained unresolved failure",
+            "sense_undeclared_organ": "a source this batch never ran"})
+        self.assertEqual(projected["state"], "degraded")
+        self.assertIsNotNone(
+            self.lib._recoverable_status_integrity(projected))
+        # A corpus stage that did not commit resolves nothing about it.
+        held = module._project_status(
+            *args, batch=self.batch, corpus_committed=False)
+        self.assertIn("corpus_write", held["errors"])
+        # Without the batch nothing is resolved (the retained-error rule).
+        self.assertEqual(module._project_status(*args)["errors"], admitted["errors"])
+        # And with every error resolved the state is no longer degraded.
+        admitted["errors"] = {"corpus_write": "x", "source_record_refusal:" + first: "y"}
+        clear = module._project_status(*args, batch=self.batch, corpus_committed=True)
+        self.assertEqual(clear["errors"], {})
+        self.assertNotEqual(clear["state"], "degraded")
+
     def test_each_durable_crash_prefix_recovers_without_repeating_effects(self):
         for crash_at in ("effects-pending", "live-published"):
             with self.subTest(crash_at=crash_at), self.fresh() as case:

@@ -117,7 +117,7 @@ replaying from byte zero.
 
 ### Updating from 1.7.8: every gate the first light hit, named and fixed
 
-The maintainer machine's update was run through the installer twenty-eight
+The maintainer machine's update was run through the installer thirty-odd
 times until first light completed, and each stop was a gate that would have
 met every 1.7.8 user with a corpus older than a few weeks:
 
@@ -142,6 +142,28 @@ met every 1.7.8 user with a corpus older than a few weeks:
   which left first light at 96% CPU for half an hour before it reached
   the engine; the count is now arithmetic over C-speed primitives with
   identical results, proven by a property test against the old loops.
+- `sia pulse` and the brainstem rendered `state` and `events_pulse` from
+  the cycle result; the compact lane returns the completed reader's view,
+  so both raised KeyError('state') after memory was already published and
+  first light was reported as failed. The compact completion is now
+  rendered from the status it published. The live view's post-projection
+  rejoin used the legacy reader on that lane and refused the checkpoint
+  capture; it uses the checkpoint reader like the first read.
+- The compact lane carried every predecessor status error forward forever:
+  the maintainer machine stayed `degraded` on `sense_skills` and
+  `corpus_write` strings from a 1.7.8 pulse ten days after every later
+  capture had admitted that sense and every corpus stage had committed. A
+  pulse now resolves exactly the errors it re-attempted (a declared source
+  settles its `sense_*` error, a committed corpus stage settles
+  `corpus_write`) and keeps the rest.
+- The compact lane never ran the legacy prelude's provenance convergence,
+  so after the filesystem move `sia ready` refused every memory surface
+  with "legacy model-grade provenance migration is pending" and no pulse
+  could ever clear it. A fresh compact capture now converges interrupted
+  natural-history and grade transactions and legacy take/intent provenance
+  first, never inside a captured package's window.
+- A sense refusal and a corpus-write refusal log their refusal chain
+  (file:function:line) beside the 160-byte status string.
 - The lazily bound live-publication helpers were reached through the owner
   dict before any attribute access had bound them; a moved gbrain overlay
   pin refused the update unless SIA_REPLACE_TOOLCHAIN=1 was passed; the

@@ -67,7 +67,8 @@ def stage(owner, *, memo, admitted_status, directory, expected_manifest_sha256, 
         owner["_export_graph_publication"]()
         graph_generation, graph = effects._graph_generation(owner, source, live)
         status = effects._project_status(owner, source, live, admitted_status, binding, handoff,
-            transition, graph, memo["pulse_history"], owner["_controller_source_effects_observed_at"]())
+            transition, graph, memo["pulse_history"], owner["_controller_source_effects_observed_at"](),
+            batch=batch, corpus_committed=indexed["committed"]["corpus_generation"] is not None)
         pages = indexed["committed"]["pages"]
         gist = pages["gist_publication"]
         pending = effects.prepare_checkpoint_pending(owner, admitted_status=admitted_status,

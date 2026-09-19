@@ -697,18 +697,64 @@ def _initial_context(owner, source, live, memo, admitted_status):
     return status, batch, binding, handoff, candidate, transition, prepared
 
 
+_SOURCE_ERROR_PREFIXES = ("source_refusal:", "source_budget:")
+_SOURCE_ROW_ERROR_PREFIXES = {
+    "source_record_refusal:": "record_refusals",
+    "source_entry_refusal:": "entry_refusals",
+}
+
+
+def _resolved_errors(errors, batch, corpus_committed):
+    """Keep every predecessor error this pulse did not re-attempt and settle.
+
+    A captured batch is an admitted successful return from every source it
+    declares (its `refusal_intents` rows), so a predecessor `sense_<id>`
+    error for a declared source is resolved, as are its row-level refusal
+    errors when the declared row lists are empty. `corpus_write` is resolved
+    only by a completed corpus stage of this pulse. Every other key stays,
+    exactly as the retained-error rule requires: no new activity relabels
+    an error nothing re-attempted.
+    """
+    if type(errors) is not dict:
+        return errors
+    intents = batch.get("refusal_intents") if type(batch) is dict else None
+    declared = {}
+    for row in intents if type(intents) is list else ():
+        if type(row) is dict and type(row.get("source_id")) is str:
+            declared[row["source_id"]] = row
+    kept = {}
+    for key, value in errors.items():
+        if key == "corpus_write" and corpus_committed:
+            continue
+        if key.startswith("sense_") and key in declared:
+            continue
+        if any(key.startswith(prefix) and key[len(prefix):] in declared
+               for prefix in _SOURCE_ERROR_PREFIXES):
+            continue
+        if any(key.startswith(prefix)
+               and key[len(prefix):] in declared
+               and declared[key[len(prefix):]].get(field) == []
+               for prefix, field in _SOURCE_ROW_ERROR_PREFIXES.items()):
+            continue
+        kept[key] = value
+    return kept
+
+
 def _project_status(owner, source, live, admitted, binding, handoff,
-                    transition, graph, history, observed_at):
+                    transition, graph, history, observed_at, *,
+                    batch=None, corpus_committed=False):
     snapshot = owner["_recoverable_graph_snapshot"](
         graph, observed_by=observed_at)
     if snapshot is None or graph.get("snapshot", {}).get("complete") is not True:
         _refuse(source, "source-effects-projected-graph")
     effects = handoff["effects"]
     verdict = admitted["integrity"]["verdict"]
+    errors = _resolved_errors(admitted["errors"], batch, corpus_committed)
     state = ("failed" if verdict == "fail" else
-             "degraded" if admitted["errors"] or verdict != "pass" else
+             "degraded" if errors or verdict != "pass" else
              "thinking" if effects["events_pulse"] else "ok")
     status = copy.deepcopy(admitted)
+    status["errors"] = errors
     status.update({
         "version": owner["VERSION"], "ts": observed_at,
         "pulse_seq": binding["seq"],
@@ -1401,7 +1447,8 @@ def publish(owner, *, memo, admitted_status):
         status = _project_status(
             owner, source, live, admitted, binding, handoff, transition,
             graph, memo["pulse_history"],
-            owner["_controller_source_effects_observed_at"]())
+            owner["_controller_source_effects_observed_at"](),
+            batch=batch, corpus_committed=corpus_generation is not None)
         if owner["_recoverable_status_integrity"](status) is None:
             _refuse(source, "source-effects-projected-status")
         status_generation = _status_generation_value(

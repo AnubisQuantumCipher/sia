@@ -190,11 +190,38 @@ def route(owner, *, memo, configured_directory, clock, journal_limits,
         configured_directory=configured_directory, **premises)
     if recovered is not None:
         return recovered
+    converge_legacy_authority(owner, memo)
     if chain_pending(owner, memo=memo):
         return advance(owner, memo=memo, clock=clock,
             configured_directory=configured_directory, **premises)
     return bootstrap(owner, memo=memo, clock=clock,
         configured_directory=configured_directory, **premises)
+
+
+def converge_legacy_authority(owner, memo):
+    """Advance take/intent provenance before a fresh compact link captures.
+
+    The legacy lane converged upgrade provenance in its recovery prelude on
+    every pulse: interrupted natural-history and grade transactions, then
+    legacy take migration and intent history. The compact lane never did,
+    so once it owned the resident pulse a filesystem move, an external
+    corpus edit or a runtime upgrade closed every memory surface behind
+    `take_migration_required` / `intent_history_required` with no pulse
+    that could ever clear them. This runs only ahead of a fresh capture,
+    never between a captured package and its completion, so nothing is
+    published inside a package's window. Refusals are the same closed
+    reason codes the legacy prelude raised.
+    """
+    takes = owner["siatakes"]
+    fence = lambda: owner["_mark_external_corpus_mutation"](memo)
+    _recovered, errors = takes.recover_natural_history_transactions(
+        before_publish=fence)
+    if errors:
+        raise RuntimeError(f"natural-history recovery refused: {errors}")
+    _recovered, errors = takes.recover_grade_transactions(before_publish=fence)
+    if errors:
+        raise RuntimeError(f"grade recovery refused: {errors}")
+    owner["_reconcile_legacy_memory_authority"](memo)
 
 
 def advance(owner, *, memo, configured_directory, clock, journal_limits,

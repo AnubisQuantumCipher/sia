@@ -133,6 +133,61 @@ class CheckpointBootstrap(unittest.TestCase):
             self.assertTrue(
                 (Path(directory) / ("root-" + pointer["root_sha256"] + ".json")).exists())
 
+    def converged(self, owner, trace):
+        """Trace the legacy-authority prelude and both compact capture preparers."""
+        stack = contextlib.ExitStack()
+        takes = owner.siatakes
+        for name in ("recover_natural_history_transactions", "recover_grade_transactions"):
+            stack.enter_context(mock.patch.object(takes, name,
+                side_effect=lambda before_publish=None, _n=name: (trace.append(_n), ([], []))[1]))
+        stack.enter_context(mock.patch.object(owner, "_reconcile_legacy_memory_authority",
+            side_effect=lambda memo: trace.append("reconcile")))
+        transaction = self.cycle.transaction
+        for name in ("prepare_root", "prepare_successor"):
+            original = getattr(transaction, name)
+            stack.enter_context(mock.patch.object(transaction, name,
+                side_effect=lambda *a, _o=original, _n=name, **k: (trace.append(_n), _o(*a, **k))[1]))
+        return stack
+
+    def test_fresh_link_converges_legacy_authority_before_it_captures(self):
+        """The compact lane runs the legacy prelude's provenance convergence.
+
+        Interrupted natural-history and grade transactions are finished and
+        legacy take/intent provenance advanced before a fresh capture, in
+        the legacy prelude's order. Without this the readiness gates
+        `take_migration_required` / `intent_history_required` stayed closed
+        forever once the compact lane owned the pulse (a moved takes
+        directory, an external corpus edit, or a runtime upgrade).
+        """
+        self.assertTrue(callable(getattr(self.cycle, "converge_legacy_authority", None)),
+            "missing compact legacy-authority convergence")
+        with self.precompact() as (f, owner, directory):
+            trace = []
+            with self.converged(owner, trace):
+                view = owner._run_controller_source_cycle()
+            self.assertEqual(view["status"], "available")
+            self.assertEqual(trace[:3], ["recover_natural_history_transactions",
+                                         "recover_grade_transactions", "reconcile"])
+            self.assertIn(trace[3], ("prepare_root", "prepare_successor"))
+            self.assertEqual(trace.count("reconcile"), 1)
+
+    def test_recovery_of_a_captured_package_does_not_converge(self):
+        """Nothing publishes between a capture and its completion."""
+        with self.precompact() as (f, owner, directory):
+            trace = []
+            sentinel = {"status": "available", "batch": {}, "committed": {}}
+            with self.converged(owner, trace), \
+                    mock.patch.object(self.cycle, "recover", return_value=sentinel):
+                self.assertIs(owner._run_controller_source_cycle(), sentinel)
+            self.assertEqual(trace, [])
+
+    def test_convergence_refusal_names_the_prelude_gate(self):
+        with self.precompact() as (f, owner, directory):
+            with mock.patch.object(owner.siatakes, "recover_natural_history_transactions",
+                    return_value=([], [{"kind": "take", "error": "fixture"}])), \
+                    self.assertRaisesRegex(RuntimeError, "natural-history recovery refused"):
+                owner._run_controller_source_cycle()
+
     def test_compact_completion_renders_the_durable_status_not_the_view(self):
         """A pulse consumer renders a status; the compact lane returns a view.
 

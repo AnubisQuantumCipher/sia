@@ -951,7 +951,11 @@ pulse-status handoff authorize recovery. SIA republishes and binds a fresh
 complete graph/status pair; it does not call the old pair joined.
 Predecessor errors remain visible in that status. New source activity cannot
 turn an unresolved error into `thinking`, or a failing integrity verdict into
-anything other than `failed`.
+anything other than `failed`. An error clears only when the pulse re-attempts
+the thing that reported it: a capture that admitted the source named by a
+`sense_*` error resolves it, and a committed corpus stage resolves
+`corpus_write`. `sia status` therefore stops saying `degraded` on the first
+completed pulse after the cause is gone, not before.
 
 Graph export and the projected status are then bound to the live candidate in
 a self-hashed effects WAL. The live generation is published and reread before
@@ -984,6 +988,13 @@ verdict through its process exit status. Use it in service dependencies,
 installer checks, or scripts that need a gate; use `sia status` when you need
 the broader diagnostic snapshot. A ready exit attests the observed SIA state
 during that lease, not protection against a same-user mutation afterward.
+
+A reason of `legacy model-grade provenance migration is pending` or `legacy
+intent history projection is pending` names take/intent provenance that the
+next pulse converges: the compact lane runs the same convergence the legacy
+lane ran before every capture, so after a filesystem move, a hand edit under
+the takes directory, or a runtime upgrade, one completed pulse clears it. It
+does not require a reinstall.
 
 Readiness also reports bounded graph-projection and consolidation-scan debt.
 `sia status` remains the diagnostic surface while that debt is active; memory

@@ -124,7 +124,19 @@ crash between those publications. The old pair is not relabeled as joined:
 the graph must still be independently canonical, and source effects replace it
 with a newly complete graph/status pair before writing their effects WAL.
 Unresolved predecessor errors and non-passing integrity remain visible; new
-event activity cannot relabel that state as `ok` or `thinking`.
+event activity cannot relabel that state as `ok` or `thinking`. An error is
+resolved only by the pulse that re-attempts it: a captured batch is an
+admitted return from every source it declares, so it settles that source's
+`sense_*` error (and its row-level refusal errors when the declared refusal
+rows are empty), and a committed corpus stage settles `corpus_write`. Every
+other key stays until something re-attempts it.
+
+Before a fresh compact capture, `siacheckpointcycle.converge_legacy_authority`
+runs the legacy prelude's provenance convergence — interrupted natural-history
+and grade transactions, then legacy take migration and intent history — so
+the readiness gates `take_migration_required` and `intent_history_required`
+clear on the compact lane exactly as they did on the legacy one. It never
+runs while a captured package is being finished.
 
 For v2, `siasourcegist` reconstructs the exact idle proposal roster and renders
 derived pages under `gists/live/`. Publication holds the corpus owner and
