@@ -115,6 +115,40 @@ still fails with the remedy named. A tailed log with matching fingerprints
 but a changed device/inode now continues at its saved offset instead of
 replaying from byte zero.
 
+### Updating from 1.7.8: every gate the first light hit, named and fixed
+
+The maintainer machine's update was run through the installer twenty-eight
+times until first light completed, and each stop was a gate that would have
+met every 1.7.8 user with a corpus older than a few weeks:
+
+- A retained `status.json` from the previous release refused admission
+  ("resident status cannot be admitted"); the integrity rule now admits an
+  earlier canonical release and still refuses a newer one, and the
+  live-publication rejoin and controller status admission rely on it.
+- Weekly epochs written by 1.7.x declare a source manifest but no event-id
+  roster; the completeness lookup refused every pulse on the first one.
+  The roster is reconstructed from the exact retained sources by lineage
+  digest (live page or corpus git history) and an unretained source
+  refuses by name.
+- The event page plan reserved raw bytes plus two base64 projections for
+  every day page the cross-day occurrence scan read, exhausting the 16 MiB
+  plan ceiling on an organ a few weeks old; scanned pages are bound by
+  digest and their bytes released after use.
+- The live policy admits 1 MiB of candidate content but a 64 KiB payload;
+  one day page past ~60 KB refused every pulse. Such a candidate is now
+  ineligible for a slot and the cycle proceeds.
+- Capacity admission counted non-ASCII strings character by character in
+  Python on every consistency check of a multi-megabyte retained batch,
+  which left first light at 96% CPU for half an hour before it reached
+  the engine; the count is now arithmetic over C-speed primitives with
+  identical results, proven by a property test against the old loops.
+- The lazily bound live-publication helpers were reached through the owner
+  dict before any attribute access had bound them; a moved gbrain overlay
+  pin refused the update unless SIA_REPLACE_TOOLCHAIN=1 was passed; the
+  gbrain self-upgrade check compared coloured stderr; the isolation probe
+  rebound library globals inside a checkpoint transaction. Each is fixed
+  and each refusal now names its clause.
+
 ### Portability (namespaces, CI)
 
 Bounded helper processes launched under `unshare --user --map-root-user
