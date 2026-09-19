@@ -7,6 +7,7 @@ before-view for validation. No source, index, cursor or delivery is committed.
 """
 
 import base64
+import json
 import os
 import re
 import stat
@@ -38,9 +39,49 @@ def _refuse(reason):
     raise error
 
 
+_CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
+
+
+def _utf8_length(value):
+    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    try:
+        return len(value.encode("utf-8", "strict"))
+    except UnicodeEncodeError:
+        return None
+
+
+def _json_string_bytes(value, utf8_length, *, ascii_only=False):
+    """Escaped JSON-string bytes (with quotes) from C-speed counts only.
+
+    Identical to serializing the string: ASCII short escapes cost one extra
+    byte, other control characters five extra, and under ensure_ascii every
+    non-ASCII BMP character is six bytes and every astral character twelve.
+    No serializer runs and no JSON text is allocated.
+    """
+    short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
+    long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
+    if not ascii_only:
+        return 2 + utf8_length + short + 5 * long_control
+    ascii_length = len(value.encode("ascii", "ignore"))
+    non_ascii = len(value) - ascii_length
+    astral = len(value.encode("utf-16-le")) // 2 - len(value)
+    delete = value.count("\x7f")
+    return (2 + ascii_length + short + 5 * long_control + 5 * delete
+            + 6 * (non_ascii - astral) + 12 * astral)
+
+
 def _text_size(value, limit, *, quoted=True):
     if type(value) is not str:
         _refuse("text-type")
+    # Fast path: arithmetic over C-speed string primitives, identical to the
+    # per-character accounting below (which stays as the reference and the
+    # surrogate refusal path); no serializer runs before the bound.
+    utf8_length = _utf8_length(value)
+    if utf8_length is not None:
+        size = (_json_string_bytes(value, utf8_length) if quoted else utf8_length)
+        if size > limit:
+            _refuse("complete-byte-capacity")
+        return size
     size = 2 if quoted else 0
     for character in value:
         code = ord(character)

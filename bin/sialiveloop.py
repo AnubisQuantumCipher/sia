@@ -136,15 +136,58 @@ _JSON_LONG_ASCII_ESCAPES = tuple(
     if chr(point) not in _JSON_SHORT_ESCAPES)
 
 
-def _count_ascii_json_string(item, add, *, ascii_only=False):
-    """Count ASCII with C string scans and no encoded-string allocation.
+_CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
 
-    Each character contributes its original byte first, then escape overhead.
-    Every addition still passes through the caller's complete-document cap.
-    Non-ASCII returns to the caller's original Unicode validation path.
+
+def _utf8_length(value):
+    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    try:
+        return len(value.encode("utf-8", "strict"))
+    except UnicodeEncodeError:
+        return None
+
+
+def _json_string_bytes(value, utf8_length, *, ascii_only=False):
+    """Escaped JSON-string bytes (with quotes) from C-speed counts only.
+
+    Identical to serializing the string: ASCII short escapes cost one extra
+    byte, other control characters five extra, and under ensure_ascii every
+    non-ASCII BMP character is six bytes and every astral character twelve.
+    No serializer runs and no JSON text is allocated.
+    """
+    short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
+    long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
+    if not ascii_only:
+        return 2 + utf8_length + short + 5 * long_control
+    ascii_length = len(value.encode("ascii", "ignore"))
+    non_ascii = len(value) - ascii_length
+    astral = len(value.encode("utf-16-le")) // 2 - len(value)
+    delete = value.count("\x7f")
+    return (2 + ascii_length + short + 5 * long_control + 5 * delete
+            + 6 * (non_ascii - astral) + 12 * astral)
+
+
+def _count_ascii_json_string(item, add, *, ascii_only=False):
+    """Count a JSON string's canonical bytes with C-speed scans.
+
+    ASCII contributes its original bytes first, then escape overhead, with no
+    encoded copy. Non-ASCII is counted arithmetically from C-speed string
+    primitives — exactly the bytes the document will carry; the per-character
+    Python loop this replaced made every consistency check of a multi-megabyte
+    retained batch take seconds, and a first light with a week's backlog take
+    hours. Every addition still passes through the caller's complete-document
+    cap. Only a lone surrogate returns to the caller's validation path.
     """
     if not item.isascii():
-        return False
+        # Non-ASCII is counted arithmetically from C-speed string primitives:
+        # exactly the escaped bytes the serializer will write, with no
+        # serializer call and no JSON text allocated before the bound. A
+        # lone surrogate returns to the caller's path, which refuses it.
+        utf8_length = _utf8_length(item)
+        if utf8_length is None:
+            return False
+        add(_json_string_bytes(item, utf8_length, ascii_only=ascii_only))
+        return True
     add(len('""'))
     add(len(item))
     if _JSON_ASCII_ESCAPABLE.search(item) is None:

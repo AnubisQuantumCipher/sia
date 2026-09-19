@@ -94,10 +94,50 @@ def _token(value, maximum, pattern):
         and pattern.fullmatch(value) is not None
 
 
+_CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
+
+
+def _utf8_length(value):
+    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    try:
+        return len(value.encode("utf-8", "strict"))
+    except UnicodeEncodeError:
+        return None
+
+
+def _json_string_bytes(value, utf8_length, *, ascii_only=False):
+    """Escaped JSON-string bytes (with quotes) from C-speed counts only.
+
+    Identical to serializing the string: ASCII short escapes cost one extra
+    byte, other control characters five extra, and under ensure_ascii every
+    non-ASCII BMP character is six bytes and every astral character twelve.
+    No serializer runs and no JSON text is allocated.
+    """
+    short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
+    long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
+    if not ascii_only:
+        return 2 + utf8_length + short + 5 * long_control
+    ascii_length = len(value.encode("ascii", "ignore"))
+    non_ascii = len(value) - ascii_length
+    astral = len(value.encode("utf-16-le")) // 2 - len(value)
+    delete = value.count("\x7f")
+    return (2 + ascii_length + short + 5 * long_control + 5 * delete
+            + 6 * (non_ascii - astral) + 12 * astral)
+
+
 def _text_length(value, maximum, *, json_string=False):
     """Count UTF-8 or canonical JSON-string bytes without an encoded copy."""
     if type(value) is not str or len(value) > maximum:
         _refuse("text-byte-capacity")
+    utf8_length = _utf8_length(value)
+    if utf8_length is not None:
+        # Arithmetic over C-speed string primitives; identical to the
+        # reference accounting below, which stays for the surrogate path.
+        consumed = (_json_string_bytes(value, utf8_length) if json_string
+                    else utf8_length)
+        if consumed > maximum:
+            _refuse("text-byte-capacity")
+        return consumed
     consumed = len('""') if json_string else 0
     for char in value:
         point = ord(char)
