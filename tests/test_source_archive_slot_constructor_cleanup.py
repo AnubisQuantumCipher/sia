@@ -104,11 +104,18 @@ class SourceArchiveSlotConstructorCleanup(unittest.TestCase):
                                 return held
 
                             def interrupt_decode(actual_owner, actual_source,
-                                                 actual_raw, actual_expected):
+                                                 actual_raw, actual_expected,
+                                                 *, checkpoint=False):
                                 self.assertIs(actual_owner, owner)
                                 self.assertIs(actual_source, source)
                                 self.assertEqual(actual_raw, raw)
                                 self.assertEqual(actual_expected, expected)
+                                # _ArchiveSlot forwards its own decoder
+                                # selection; this slot is built without one,
+                                # so the legacy decoder must be the one asked
+                                # for. Accepting the argument silently would
+                                # let a compact decoder slip through here.
+                                self.assertIs(checkpoint, False)
                                 self.assertTrue(acquired,
                                                 "decode ran without a completed real hold")
                                 held = acquired[-1]
@@ -140,7 +147,8 @@ class SourceArchiveSlotConstructorCleanup(unittest.TestCase):
                                               "constructor cleanup replaced the decode exception")
                                 constructor.assert_called_once_with(
                                     owner, source, str(selected), len(raw), allow_absent=False)
-                                decode.assert_called_once_with(owner, source, raw, expected)
+                                decode.assert_called_once_with(
+                                    owner, source, raw, expected, checkpoint=False)
                                 self.assertTrue(decoded_while_held)
                                 for descriptor, identity in caller.items():
                                     self.assertEqual(
