@@ -1541,7 +1541,14 @@ def _cmd_pulse_owned():
         if source_cycle:
             st = sialib._run_controller_source_cycle()
             import sialiveview
-            sialiveview.publish_cache(sialib.__dict__)
+            try:
+                sialiveview.publish_cache(sialib.__dict__)
+            except Exception as exc:
+                # The cache is a cockpit convenience published after the
+                # pulse; the brainstem logs its refusal and continues, and
+                # a completed first light must not be reported as failed.
+                sialib.log("live view cache REFUSED: "
+                           + " <- ".join(sialib.refusal_chain(exc)))
         else:
             sialib._settle_pending_brainstem_failure_publication(memo)
             sialib._require_status_memo_fields(memo)

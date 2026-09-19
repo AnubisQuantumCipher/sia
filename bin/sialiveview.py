@@ -365,14 +365,21 @@ def _source_authority(owner):
             _refuse("source-completion-pending")
         owner["_load_live_publication"]()
         status = _status(owner)
-        completed = acknowledgment.read_completed(
+        # On the compact lane (a retained chain pointer, exactly the
+        # selection siacheckpointdispatch.select_chain makes) the completed
+        # source is a checkpoint capture: read and rejoin it through the
+        # checkpoint-aware readers, as the checkpoint transaction does.
+        compact = type(memo.get("controller_checkpoint_chain")) is dict
+        completed = (acknowledgment.read_checkpoint_completed if compact
+                     else acknowledgment.read_completed)(
             owner, memo=memo, admitted_status=status)
         generation = _generation(owner, memo, status, completed)
         receipt_sha256 = \
             completed["committed"]["source_effects_receipt_sha256"]
         with contextlib.closing(acknowledgment._EffectsArchiveSlot(
                 owner, source, receipt_sha256, required=True)) as archive:
-            receipt = effects.validate_archived_receipt(
+            receipt = (effects.validate_checkpoint_archived_receipt if compact
+                       else effects.validate_archived_receipt)(
                 owner, raw=archive.raw, retained_batch=completed["batch"],
                 memo=memo, admitted_status=status,
                 expected_receipt_sha256=receipt_sha256)
