@@ -3788,7 +3788,22 @@ def _prepare_event_page_plan(*, organ, date, events):
     """Freeze observed event-page bytes under the real reentrant owner."""
     with corpus_owner():
         import siaeventplan
-        return siaeventplan.prepare(globals(), organ=organ, date=date, events=events)
+        try:
+            return siaeventplan.prepare(globals(), organ=organ, date=date, events=events)
+        except ValueError as exc:
+            if str(exc) != "event page plan refused: complete-byte-capacity":
+                raise
+            # Name the value: which day overflowed, how many events, and how
+            # much text they carry (weighted 4x in the reservation).
+            summary_bytes = sum(
+                len(getattr(event, "summary", "").encode("utf-8", "replace"))
+                for event in events if isinstance(event, Event))
+            named = ValueError(
+                f"{exc} (organ {organ}, day {date}, {len(events)} events, "
+                f"{summary_bytes} summary bytes; plan ceiling "
+                f"{MAX_STATE_JSON_BYTES} bytes)")
+            named.non_claims = list(getattr(exc, "non_claims", ()))
+            raise named from exc
 
 
 def _publish_event_page_plan(*, plan, expected_plan_sha256):
