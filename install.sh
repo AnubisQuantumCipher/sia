@@ -10408,10 +10408,13 @@ case "$GBRAIN_CONFIG_ACTION" in
     exit 1
     ;;
 esac
-# Under the sterile environment (NO_COLOR=1): gbrain colours its shadowed
-# DB-plane notice on a colour-capable stderr, which no exact match admits.
+# The installed engine's own home, but with colour off: gbrain wraps its
+# shadowed DB-plane notice in ANSI colour codes regardless of the terminal,
+# and no exact match admits those bytes. (The build-sandbox sterile
+# environment is wrong here: it would read the sandbox's config, not the
+# installed one.)
 if ! GBRAIN_SELF_UPGRADE_OUTPUT="$(bounded_command_capture \
-    "${GBRAIN_STERILE_ENV[@]}" "$GBRAIN_BIN" config get self_upgrade.mode)"; then
+    /usr/bin/env NO_COLOR=1 "$GBRAIN_BIN" config get self_upgrade.mode)"; then
   echo "could not verify that gbrain self-upgrade is disabled" >&2
   exit 1
 fi
