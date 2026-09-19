@@ -182,6 +182,48 @@ class SourceAuthorizedLiveView(unittest.TestCase):
             self.assertEqual(result["view_sha256"], capture_tests.digest({
                 key: value for key, value in result.items() if key != "view_sha256"}))
 
+    def test_compact_completion_is_read_and_rejoined_through_checkpoint_readers(self):
+        """On the compact lane every reader, including the rejoin, is checkpoint-aware.
+
+        A retained chain pointer means the completed source is a checkpoint
+        capture. The legacy readers refuse that shape (source-batch-shape),
+        which after a *successful* first light made the cache publication
+        that follows the pulse refuse. Both the read and the post-projection
+        rejoin must go through the checkpoint readers.
+        """
+        module = self.module()
+        acknowledgment = importlib.import_module("siasourceack")
+        effects = importlib.import_module("siasourceeffects")
+        with self.completed() as case:
+            # A retained chain pointer is what selects the compact lane; it is
+            # written durably so every reader sees the same memo.
+            case.lib._write_memo({**case.lib.load_memo(), "controller_checkpoint_chain": {}})
+            calls = []
+            original_read = acknowledgment.read_completed
+            original_validate = effects.validate_archived_receipt
+
+            def read(owner, *, memo, admitted_status):
+                calls.append("read")
+                return original_read(owner, memo=memo, admitted_status=admitted_status)
+
+            def validate(owner, **kwargs):
+                calls.append("validate")
+                return original_validate(owner, **kwargs)
+
+            def legacy(*_args, **_kwargs):
+                raise AssertionError("a compact completion reached a legacy reader")
+
+            with self.read_only(case), \
+                    mock.patch.object(acknowledgment, "read_checkpoint_completed",
+                                      side_effect=read), \
+                    mock.patch.object(effects, "validate_checkpoint_archived_receipt",
+                                      side_effect=validate), \
+                    mock.patch.object(acknowledgment, "read_completed", side_effect=legacy):
+                result = module.read_view(case.lib.__dict__)
+            self.assertEqual(result["status"], "available")
+            self.assertEqual(calls, ["read", "validate", "read"],
+                "the read, the receipt and the rejoin all use the checkpoint readers")
+
     def test_workspace_explains_retained_selection_and_current_activation_separately(self):
         module = self.module()
         with self.completed() as case, self.read_only(case):

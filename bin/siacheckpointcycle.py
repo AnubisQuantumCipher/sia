@@ -70,6 +70,25 @@ def _status(owner, memo):
     return runner._admit_status(owner, memo)
 
 
+_COMPLETED_VIEW_KEYS = frozenset({"status", "batch", "committed"})
+
+
+def pulse_status(owner, result):
+    """Return the admitted status a pulse consumer renders for a cycle result.
+
+    The legacy lane already returns the fresh admitted status. The compact
+    lane returns the completed reader's evidence view, the contract its own
+    tests pin, which names no pulse state at all; the status that completion
+    published is read again from durable state, never rebuilt from the view.
+    Anything else is passed through untouched, so a consumer that already
+    holds a status keeps it.
+    """
+    if type(result) is not dict or set(result) != _COMPLETED_VIEW_KEYS:
+        return result
+    memo = owner["load_memo"]()
+    return _status(owner, memo)
+
+
 def configured_adoption(memo):
     """Select only the closed persisted epoch marker's original adoption.
 

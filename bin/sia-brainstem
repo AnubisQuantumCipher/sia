@@ -373,7 +373,9 @@ def _reserved_pulse():
         memo = sialib.load_memo()
         if (sialib._controller_source_present(memo)
                 or sialib._controller_source_enabled()):
-            return sialib._run_controller_source_cycle()
+            import siacheckpointcycle
+            return siacheckpointcycle.pulse_status(
+                sialib.__dict__, sialib._run_controller_source_cycle())
         pending_failure = _pending_failure_publication(memo)
         if pending_failure is not None:
             _finish_failure_publication(memo, pending_failure)

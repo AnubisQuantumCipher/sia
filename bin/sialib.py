@@ -9608,6 +9608,7 @@ def _pulse_transaction_guarded(
         except Exception as e:
             _discard_pending_cursor_renames(rename_boundary)
             errors[sense_key] = str(e)[:160]
+            log(f"sense {sense_key} REFUSED: " + " <- ".join(refusal_chain(e)))
             continue
         try:
             record_refusals = _take_source_record_refusals(trial)
@@ -9888,6 +9889,7 @@ def _pulse_transaction_guarded(
         source_batch_identity = (source_marker["id"]
                                  if source_marker is not None else None)
         errors["corpus_write"] = str(e)[:160]
+        log("corpus write REFUSED: " + " <- ".join(refusal_chain(e)))
     if not write_ok:
         _discard_pending_cursor_renames()
 

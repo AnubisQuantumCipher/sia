@@ -1539,8 +1539,10 @@ def _cmd_pulse_owned():
         source_cycle = (sialib._controller_source_present(memo)
                         or sialib._controller_source_enabled())
         if source_cycle:
-            st = sialib._run_controller_source_cycle()
+            import siacheckpointcycle
             import sialiveview
+            st = siacheckpointcycle.pulse_status(
+                sialib.__dict__, sialib._run_controller_source_cycle())
             try:
                 sialiveview.publish_cache(sialib.__dict__)
             except Exception as exc:

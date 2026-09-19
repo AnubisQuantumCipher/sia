@@ -47,6 +47,7 @@ def _read(path):
 
 sia = _load_script("sia_cli_test", SIA_PATH)
 brainstem = _load_script("sia_brainstem_test", BRAINSTEM_PATH)
+import sialiveview  # noqa: E402  the launchers put the runtime on sys.path
 
 
 def _current_status_fixture(verdict="pass"):
@@ -2124,6 +2125,48 @@ class MutationBoundaries(unittest.TestCase):
         self.assertEqual(rendered["errors"], status["errors"])
         for claim in ("pages", "graph_nodes", "graph_edges"):
             self.assertNotIn(claim, rendered)
+
+    def test_compact_completion_is_rendered_from_the_durable_status(self):
+        """`sia pulse` and the brainstem consume the compact lane's view.
+
+        The compact lane completes a pulse and returns the completed
+        reader's view, not a status. Before the adapter, both consumers
+        raised KeyError('state') after memory had already been published,
+        so a completed first light was reported as a failed install.
+        """
+        view = {"status": "available", "batch": {"batch_sha256": "a" * 64},
+                "committed": {"source_batch_sha256": "a" * 64}}
+        memo = {"pulse_seq": 8, "controller_source_committed": {}}
+        status = self._complete_brainstem_status()
+        for runtime, module, entry in (
+                (sia.sialib, sia, sia._cmd_pulse_owned),
+                (brainstem.sialib, brainstem, brainstem._reserved_pulse)):
+            output = io.StringIO()
+            with self.subTest(entry=entry), \
+                    mock.patch.object(runtime, "corpus_owner",
+                                      return_value=contextlib.nullcontext()), \
+                    mock.patch.object(runtime, "load_memo",
+                                      return_value=copy.deepcopy(memo)), \
+                    mock.patch.object(runtime, "_controller_source_present",
+                                      return_value=True), \
+                    mock.patch.object(runtime, "read_state_json",
+                                      return_value=copy.deepcopy(status)), \
+                    mock.patch.object(runtime, "_run_controller_source_cycle",
+                                      return_value=copy.deepcopy(view)), \
+                    mock.patch.object(runtime, "_write_memo") as write, \
+                    mock.patch.object(runtime, "_pulse_transaction") as pulse, \
+                    mock.patch.object(sialiveview, "publish_cache"), \
+                    contextlib.redirect_stdout(output):
+                result = entry()
+            write.assert_not_called()
+            pulse.assert_not_called()
+            if entry is sia._cmd_pulse_owned:
+                self.assertEqual(result, 0)
+                rendered = json.loads(output.getvalue())
+                self.assertEqual(rendered["state"], status["state"])
+                self.assertEqual(rendered["events_pulse"], status["events_pulse"])
+            else:
+                self.assertEqual(result, status)
 
     def test_status_sequence_cannot_outrun_the_durable_allocator(self):
         memo = {"pulse_seq": 7}

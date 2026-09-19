@@ -400,7 +400,8 @@ def _source_authority(owner):
             if _raw(owner, owner["load_memo"]()) != originals["memo"] \
                     or _raw(owner, _status(owner)) != originals["status"]:
                 _refuse("view-authority-changed")
-            current = acknowledgment.read_completed(
+            current = (acknowledgment.read_checkpoint_completed if compact
+                       else acknowledgment.read_completed)(
                 owner, memo=memo, admitted_status=status)
             if _raw(owner, current) != originals["completed"] \
                     or _raw(owner, _generation(

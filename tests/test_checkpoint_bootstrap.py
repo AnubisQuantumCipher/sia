@@ -133,6 +133,35 @@ class CheckpointBootstrap(unittest.TestCase):
             self.assertTrue(
                 (Path(directory) / ("root-" + pointer["root_sha256"] + ".json")).exists())
 
+    def test_compact_completion_renders_the_durable_status_not_the_view(self):
+        """A pulse consumer renders a status; the compact lane returns a view.
+
+        The brainstem and `sia pulse` both read `state` and `events_pulse`
+        from the cycle result. The legacy lane returns the fresh admitted
+        status; the compact lane returns the completed reader's evidence
+        view, which has no such fields. The adapter reads the status that
+        completion published from durable state and passes any status
+        through untouched.
+        """
+        self.assertTrue(callable(getattr(self.cycle, "pulse_status", None)),
+            "missing compact pulse status adapter")
+        with self.precompact() as (f, owner, directory):
+            view = owner._run_controller_source_cycle()
+            self.assertEqual(set(view), {"status", "batch", "committed"})
+            self.assertNotIn("state", view)
+            status = self.cycle.pulse_status(vars(owner), view)
+            durable = owner.read_state_json(
+                owner.STATUS_PATH, None, "resident status", expected_type=dict)
+            self.assertEqual(status, durable)
+            self.assertEqual(status["pulse_seq"], owner.load_memo()["pulse_seq"])
+            for field in ("state", "events_pulse", "integrity", "errors"):
+                self.assertIn(field, status)
+            # A status already in hand is the caller's, not re-read.
+            legacy = {"state": "ok", "events_pulse": 0, "errors": {}}
+            with mock.patch.object(owner, "load_memo",
+                    side_effect=AssertionError("a status was re-read")):
+                self.assertIs(self.cycle.pulse_status(vars(owner), legacy), legacy)
+
     def test_capture_interruption_leaves_the_root_head_selection_recoverable(self):
         """Interruption BEFORE capture, resumed as a root package.
 
