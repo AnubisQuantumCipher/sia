@@ -672,7 +672,7 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             bound = self._readmit(case, apply=False)
             self.assertEqual(bound["status"], "bound")
             unmoved = self._hold_view(case, retained, committed, status, pin)
-            self.assertIsNone(unmoved["records_readmission"])
+            self.assertNotIn("records_readmission", unmoved)
             self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, unmoved))
             self.assertEqual(bound["adoption_sha256"], pin)
             self.assertFalse((directory / "readmission.json").exists())
@@ -715,14 +715,22 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             self.assertEqual(again, result)
             view = self._hold_view(case, retained, committed, status, pin)
             self.assertEqual(view["records_identity"], receipt["records_identity"])
-            self.assertEqual(view["records_readmission"], receipt)
+            self.assertNotIn("records_readmission", view)
             self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, view))
-            stale = copy.deepcopy(view)
-            stale["records_readmission"] = None
-            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, stale))
-            forged = copy.deepcopy(view)
-            forged["records_readmission"]["readmitted_at"] += 1
-            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, forged))
+            # The receipt is read from the epoch directory: a forged or
+            # missing receipt leaves a moved identity unbound.
+            genuine = receipt_path.read_bytes()
+            forged = copy.deepcopy(receipt)
+            forged["readmitted_at"] += 1
+            receipt_path.write_bytes(_wire(forged))
+            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, view))
+            receipt_path.unlink()
+            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, view))
+            receipt_path.write_bytes(genuine)
+            # A receipt that is not private is not admitted either.
+            self.assertFalse(self.module.view_identity_bound(case.lib.__dict__, view))
+            os.chmod(receipt_path, 0o600)
+            self.assertTrue(self.module.view_identity_bound(case.lib.__dict__, view))
             self.assertEqual(view["epoch_adoption"]["adoption"]["records_identity"],
                              result["adoption"]["records_identity"])
             self.assertEqual(self._readmit(case, apply=False)["status"], "bound")

@@ -32,7 +32,7 @@ NON_CLAIMS = (
 _VIEW_KEYS = frozenset({
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
-    "records_directory", "records_identity", "records_readmission", "non_claims",
+    "records_directory", "records_identity", "non_claims",
 })
 _BINDING_KEYS = frozenset({
     "schema", "status", "source_id", "expected_expectations_sha256",

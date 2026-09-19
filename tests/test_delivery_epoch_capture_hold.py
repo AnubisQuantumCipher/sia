@@ -38,7 +38,7 @@ FENCE_PARAMETERS = (
 VIEW_KEYS = {
     "schema", "status", "epoch_adoption", "parent_committed",
     "parent_generation", "expected_parent_generation_sha256",
-    "records_directory", "records_identity", "records_readmission", "non_claims",
+    "records_directory", "records_identity", "non_claims",
     "notification_baseline_attempt",
     "expected_notification_baseline_attempt_sha256",
 }

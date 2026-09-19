@@ -897,7 +897,6 @@ class _HeldEpoch:
                 tx.admitted["committed"]["live_generation_sha256"],
             "records_directory": tx.record_directory.path,
             "records_identity": copy.deepcopy(tx.effective_identity),
-            "records_readmission": copy.deepcopy(tx.readmission),
             "non_claims": list(HELD_NON_CLAIMS),
         }
 
@@ -1287,21 +1286,35 @@ def view_identity_bound(owner, view):
     """Whether a held view's records identity is the adopted one, or the one
     a valid readmission of that exact adoption names.
 
+    The readmission receipt is read from the epoch directory beside the
+    records directory the view names, so the view's wire shape is unchanged
+    and batches retained before a readmission still compare byte for byte.
     Consumers that compared the view's identity to the adoption's directly
     use this instead, so an operator readmission after a filesystem move is
     honoured everywhere the adoption pin is checked and nowhere else.
     """
     adoption = view["epoch_adoption"]["adoption"]
     if _same(owner, view["records_identity"], adoption["records_identity"]):
-        return view.get("records_readmission") is None
-    readmission = view.get("records_readmission")
-    if readmission is None:
+        return True
+    try:
+        path = source._canonical_path(owner, os.path.join(
+            os.path.dirname(view["records_directory"]), "readmission.json"))
+        held = source.HeldFile(owner, path, owner["MAX_STATE_JSON_BYTES"],
+                               allow_absent=True)
+    except _ERRORS:
         return False
     try:
-        _validate_readmission(_ReadmitScope(owner), adoption, readmission)
-    except ControllerDeliveryEpochRefusal:
-        return False
-    return _same(owner, view["records_identity"], readmission["records_identity"])
+        receipt = held.value
+        if receipt is None or held.generation is None \
+                or stat.S_IMODE(held.generation["mode"]) != 0o600:
+            return False
+        try:
+            _validate_readmission(_ReadmitScope(owner), adoption, receipt)
+        except ControllerDeliveryEpochRefusal:
+            return False
+        return _same(owner, view["records_identity"], receipt["records_identity"])
+    finally:
+        held.close()
 
 
 class _ReadmitScope:
