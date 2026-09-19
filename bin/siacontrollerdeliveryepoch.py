@@ -1296,13 +1296,17 @@ def view_identity_bound(owner, view):
     adoption = view["epoch_adoption"]["adoption"]
     if _same(owner, view["records_identity"], adoption["records_identity"]):
         return True
+    # A read that cannot even be attempted (a restricted owner, an unsafe
+    # path) is a refusal with a name, never a silent "unbound".
     try:
         path = source._canonical_path(owner, os.path.join(
             os.path.dirname(view["records_directory"]), "readmission.json"))
         held = source.HeldFile(owner, path, owner["MAX_STATE_JSON_BYTES"],
                                allow_absent=True)
-    except _ERRORS:
-        return False
+    except _ERRORS as exc:
+        raise ControllerDeliveryEpochRefusal(
+            "readmission-receipt-unreadable", upstream=exc,
+            detail=type(exc).__name__) from exc
     try:
         receipt = held.value
         if receipt is None or held.generation is None \

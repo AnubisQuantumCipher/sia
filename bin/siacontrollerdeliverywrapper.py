@@ -425,13 +425,18 @@ def _adoption(owner, request, generation):
         admitted={"expected_journal_limits_sha256": expected["limits_sha256"]},
         legacy=request["parent_source_schema"] in _LEGACY)
     epoch_api._validate_birth(context, birth, expected)
-    if adopted["expected_birth_sha256"] != birth["birth_sha256"] \
-            or not _same(owner, adoption,
-                         epoch_api._adoption(owner, birth, adoption["records_identity"])) \
-            or not epoch_api.view_identity_bound(owner, view) \
-            or not _same(owner, adopted, epoch_api._result(birth, adoption)) \
-            or adoption["adoption_sha256"] != request["expected_adoption_sha256"]:
-        _refuse("adoption-birth-identity-or-external-pin")
+    # One named clause per binding, so a refusal says which pin moved.
+    if adopted["expected_birth_sha256"] != birth["birth_sha256"]:
+        _refuse("adoption-birth-pin")
+    if not _same(owner, adoption,
+                 epoch_api._adoption(owner, birth, adoption["records_identity"])):
+        _refuse("adoption-document-binding")
+    if not epoch_api.view_identity_bound(owner, view):
+        _refuse("adoption-identity-binding")
+    if not _same(owner, adopted, epoch_api._result(birth, adoption)):
+        _refuse("adopted-result-binding")
+    if adoption["adoption_sha256"] != request["expected_adoption_sha256"]:
+        _refuse("adoption-external-pin")
     for value in (birth, adoption, adopted):
         epoch_api._wire(owner, value, birth["limits"])
     directory = source._canonical_path(owner, view["records_directory"])
