@@ -2020,14 +2020,18 @@ published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
 the install. The current `sia-runtime-v15` member set adds
-`siacheckpointcycle.py` and `siacorpuslease.py` to v14. The first is
-the resident routing that finishes a
+`siacheckpointcycle.py`, `siacorpuslease.py` and `siaprocess.py` to v14.
+The first is the resident routing that finishes a
 retained compact package, continues a retained chain, or starts one for
 an already enabled, already adopted and independently acknowledged
 controller, and otherwise leaves the legacy lane untouched. The second
 holds the inherited-corpus-lease checks, moved out of `sialib.py`
 unchanged so the marketplace per-file scan keeps its headroom;
 extraction is the repair that guard names, not a raised threshold. The
+third holds the bounded child-process runner, the PID-namespace probe,
+refusal-chain naming, the retained pulse-failure record and the
+retained-status version rule, moved out for the same reason; the library
+keeps the original names and delegates. The
 v14 member set adds the compact checkpoint family to v13 —
 `siahistoryblock.py`, `siahistoryblockstore.py`, `siahistoryroot.py`,
 `siaeventcheckpoint.py`, `siasourcecheckpoint.py`,

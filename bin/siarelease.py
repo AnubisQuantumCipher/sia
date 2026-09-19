@@ -78,7 +78,7 @@ MODERN_V14_RUNTIME_ADDITIONS = (
 )
 MODERN_V14_RUNTIME_NAMES = MODERN_V13_RUNTIME_NAMES + MODERN_V14_RUNTIME_ADDITIONS
 MODERN_V15_RUNTIME_ADDITIONS = (
-    "siacheckpointcycle.py", "siacorpuslease.py",
+    "siacheckpointcycle.py", "siacorpuslease.py", "siaprocess.py",
 )
 MODERN_V15_RUNTIME_NAMES = MODERN_V14_RUNTIME_NAMES + MODERN_V15_RUNTIME_ADDITIONS
 
