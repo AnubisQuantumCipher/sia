@@ -102,6 +102,9 @@ jobs:
       - name: real-gbrain contract lane
         env:
           PYTHONWARNINGS: error::ResourceWarning
+          # The skip gate below reads unittest's plain-text lines; keep them plain.
+          NO_COLOR: "1"
+          PYTHON_COLORS: "0"
         run: |
           set -euo pipefail
           output="$(python3 -m unittest tests.test_gbrain_contract -v 2>&1)" || {
@@ -111,9 +114,17 @@ jobs:
           # The one declared exception is GbrainCompiledRenderContract, which needs
           # operator-supplied pinned expectation artifacts (SIA_GBRAIN_COMPILED_*)
           # this runner does not hold; its skip message says so and is not proof.
-          if printf '%s' "$output" | grep 'skipped' \
-              | grep -v 'compiled render transport NOT EXERCISED' | grep -q .; then
-            echo 'contract lane skipped despite a provided binary' >&2; exit 1
+          # Only per-test skip lines are judged; unittest's own summary line
+          # ("OK (skipped=1)") names the count, not a reason, and the count must
+          # equal the declared skips so a second, undeclared skip cannot hide.
+          declared="$(printf '%s\n' "$output" \
+            | grep -c ' \.\.\. skipped .*compiled render transport NOT EXERCISED' || true)"
+          undeclared="$(printf '%s\n' "$output" | grep ' \.\.\. skipped' \
+            | grep -vc 'compiled render transport NOT EXERCISED' || true)"
+          summary="$(printf '%s\n' "$output" | sed -n 's/^OK (skipped=\([0-9]*\))$/\1/p')"
+          if [ "$undeclared" != 0 ] || [ "${summary:-0}" != "$declared" ]; then
+            echo "contract lane skipped despite a provided binary (declared=$declared undeclared=$undeclared summary=${summary:-0})" >&2
+            exit 1
           fi
 
   # ROADMAP's "`main` is frozen while marketplace verification is pending" was
