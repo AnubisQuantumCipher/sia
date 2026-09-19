@@ -108,7 +108,11 @@ jobs:
             printf '%s\n' "$output"; exit 1; }
           printf '%s\n' "$output"
           # A skip here would mean SIA_GBRAIN_BIN was ignored — the lane must actually run.
-          if printf '%s' "$output" | grep -q 'skipped'; then
+          # The one declared exception is GbrainCompiledRenderContract, which needs
+          # operator-supplied pinned expectation artifacts (SIA_GBRAIN_COMPILED_*)
+          # this runner does not hold; its skip message says so and is not proof.
+          if printf '%s' "$output" | grep 'skipped' \
+              | grep -v 'compiled render transport NOT EXERCISED' | grep -q .; then
             echo 'contract lane skipped despite a provided binary' >&2; exit 1
           fi
 

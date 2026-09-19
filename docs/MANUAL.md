@@ -3,7 +3,7 @@
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
-**Describes SIA v1.7.8 · 2026-09-04**
+**Describes SIA v1.8.0 · 2026-09-19**
 
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*
@@ -775,6 +775,44 @@ systemctl --user start sia-brainstem
 `dream` and uppercase `DREAM` are compatibility command, state, and ledger
 names for this scheduled-maintenance transaction; they do not name a sleep
 process.
+
+### Storage identity after a filesystem move (`sia readmit`)
+
+```
+sia readmit                   # report drift; exits 1 when a receipt has moved
+systemctl --user stop sia-brainstem
+sia readmit --yes             # re-bind by explicit consent (daemon must be off)
+systemctl --user start sia-brainstem
+```
+
+Two receipts bind storage by stable identity, not by path: the installer's
+corpus receipt (`~/.local/state/sia/managed-install/corpus`, `root=` is
+`dev:ino:mode:uid` of the corpus directory) and the delivery epoch's adoption
+(`records_identity` of its records directory). A btrfs subvolume change, an
+`rsync` of the home directory, or a restore by copy changes device and inode
+numbers, after which every pulse refuses with
+`adoption-directory-or-content-binding (records directory identity expected
+dev=A ino=B, observed dev=C ino=D; after a filesystem move run: sia
+readmit)`, `sia ready` reports pending migration debt, continuity reports
+`Reason: corpus-receipt-root-mismatch (receipt root=…, live root=…)`, and the
+installer's preflight names both roots and stops.
+
+`sia readmit --yes` rewrites only the receipt's `root=` line and publishes a
+sealed `readmission.json` beside the unchanged `adoption.json`. The adoption
+document, its pin and the memo marker never change; the readmission retains
+the previous identity, records the operator time and consent, and supersedes
+an earlier readmission by digest. It creates, repairs or replays no journal
+records and grants no writer authorization: the next pulse revalidates the
+retained journal content as usual. The installer performs the same two
+re-bindings under `SIA_READMIT_MOVED_STORAGE=1 ./install.sh` (the corpus
+receipt through its own CAS journal, the epoch through `sia-cli readmit
+--yes` before the first-light pulse) and otherwise refuses with the remedy
+named. Nothing re-binds silently.
+
+The last refused pulse is retained in `~/.local/state/sia/pulse-failure.json`
+(redacted, 240 characters) and printed by `sia status` and `sia ready` until
+a pulse completes, because SOURCE HEALTH cannot publish a failure while a
+controller-source transaction holds publication authority.
 
 ### Product-metaphor boundary repair
 
@@ -1624,6 +1662,18 @@ absence boundary instead of silently claiming equivalent retrieval.
 | A v1.3.0 brainstem becomes stale just after a restart with an existing agent-note queue | Its native replay finalizer can block on a second handle to its own queue lease after publishing the first status/memo image | The immutable request files and replay receipts remain durable retry input. After updating this checkout or plugin source to v1.3.1, rerun `./install.sh`; its lifecycle barrier replaces the blocked brainstem and the queue snapshot then takes one lease. |
 | Installer exits after arming its launch fence | Old CLI/brainstem/MCP launcher inodes remain mode `000`, the lifecycle tombstone and CAS journals remain, and the brainstem stays disabled/stopped behind its systemd barrier | The retained journal-bound generations and printed backups; rerun the same repaired installer rather than `chmod`-ing or deleting recovery state. |
 
+- **Every pulse fails with `adoption-directory-or-content-binding`, or the
+  installer says the corpus receipt binds a different root** — the home
+  directory was moved or copied (new device/inode). Run `sia readmit` to see
+  both identities, then `systemctl --user stop sia-brainstem && sia readmit
+  --yes && systemctl --user start sia-brainstem`, or rerun the installer
+  with `SIA_READMIT_MOVED_STORAGE=1`. `sia status` shows the retained
+  failure line until a pulse completes.
+- **`SIA: unprivileged PID-namespace isolation is unavailable on this host`**
+  — the kernel refuses unprivileged `unshare` (Ubuntu 24.04's AppArmor
+  default, hardened kernels). Bounded helpers run under process-group
+  isolation instead; a descendant that calls `setsid()` can outlive a
+  bounded call there. Nothing else changes.
 - **Bar icon dim / "brainstem not reporting"** —
   `systemctl --user status sia-brainstem`, then `journalctl --user -u
   sia-brainstem -n 30`.

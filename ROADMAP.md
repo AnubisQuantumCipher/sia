@@ -82,7 +82,9 @@ freeze ends on evidence, not on mood.
 
 **Standing gates (enforced, not aspirational):**
 - The full test suite (900+) and the real-gbrain contract lane green on every commit; a
-  contract-lane skip in CI is a failure. The shell-lint lane counts: shellcheck reported
+  contract-lane skip in CI is a failure, with one declared exception: the compiled-render
+  class needs operator-supplied pinned expectation artifacts the runner does not hold and
+  announces its own skip as "NOT EXERCISED", never as proof. The shell-lint lane counts: shellcheck reported
   one finding on `install.sh` between v1.7.2 and v1.7.5, and a red lane is a red gate.
 - `README.md` stays ≤ 500 lines (a shape test enforces this — a size ceiling like the
   marketplace's 512 KB cap, not a vocabulary assertion).
