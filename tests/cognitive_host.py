@@ -22,6 +22,10 @@ except ModuleNotFoundError:
     from tests import sia_test_home  # type: ignore  # noqa: F401
 
 
+# Module-local so a test can shim it without a process-wide os patch.
+_fstat = os.fstat
+
+
 def interpreter_refusal():
     """Return None when the running interpreter is admissible, else why not."""
     import siavectormodel as model_files
@@ -34,7 +38,7 @@ def interpreter_refusal():
         return (f"running interpreter {path} is not openable through the "
                 f"lane's no-follow chain ({exc})")
     try:
-        info = os.fstat(fd)
+        info = _fstat(fd)
         problems = []
         if not stat.S_ISREG(info.st_mode):
             problems.append("not a regular file")

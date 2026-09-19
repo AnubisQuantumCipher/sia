@@ -32,9 +32,10 @@ class CognitiveHostAdmission(unittest.TestCase):
         self.assertTrue(reason is None or reason.startswith("running interpreter "))
 
     def test_hard_linked_or_writable_interpreter_is_named_not_pinned(self):
-        real = os.fstat
         path = os.path.realpath(sys.executable)
-        info = real(os.open(path, os.O_RDONLY | os.O_CLOEXEC))
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        info = os.fstat(fd)
+        os.close(fd)
 
         class Info:
             def __init__(self, **over):
@@ -48,7 +49,7 @@ class CognitiveHostAdmission(unittest.TestCase):
         }
         for expected, fake in cases.items():
             with self.subTest(expected=expected), \
-                    mock.patch.object(os, "fstat", return_value=fake):
+                    mock.patch.object(cognitive_host, "_fstat", return_value=fake):
                 reason = cognitive_host.interpreter_refusal()
             self.assertIsNotNone(reason)
             self.assertIn(expected, reason)
