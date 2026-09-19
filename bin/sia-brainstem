@@ -180,6 +180,15 @@ def _safe_failure_detail(exc):
         sialib.redact(str(exc), "status-error")), 160)
 
 
+def _retained_failure_detail(exc):
+    """The refusal and the gates it wraps, for the retained failure record."""
+    chain = sialib.refusal_chain(exc)
+    text = sialib.redact(str(exc), "status-error")
+    if len(chain) > 1:
+        text += " because: " + " <- ".join(chain[1:])
+    return text
+
+
 def _checkpoint_failure_detail():
     if not sialib.REDACTIONS:
         return True
@@ -596,8 +605,7 @@ def _run_owned(*, plugin_guard=None):
             detail = _safe_failure_detail(e)
             sialib.log(f"pulse {seq} FAILED: {detail}")
             try:
-                sialib.record_pulse_failure(
-                    seq, sialib.redact(str(e), "status-error"))
+                sialib.record_pulse_failure(seq, _retained_failure_detail(e))
             except Exception as retain_exc:
                 sialib.log("pulse failure record REFUSED: "
                            + _safe_failure_detail(retain_exc))

@@ -5618,6 +5618,36 @@ PULSE_FAILURE_PATH = os.path.join(STATE, "pulse-failure.json")
 PULSE_FAILURE_SCHEMA = "sia-pulse-failure-v1"
 
 
+def refusal_chain(exc, *, limit=6):
+    """Name a refusal and every upstream refusal it wraps, innermost last.
+
+    Fail-closed layers wrap one another (source batch <- effects archive <-
+    live publication ...). Each layer's typed ``reason`` code and ``detail``
+    clause, or its clipped message, is listed so an operator sees WHICH gate
+    refused instead of only the outermost wrapper. Text is redacted and
+    clipped; nothing here is a claim about the cause.
+    """
+    parts = []
+    seen = set()
+    while exc is not None and len(parts) < limit and id(exc) not in seen:
+        seen.add(id(exc))
+        reason = getattr(exc, "reason", None)
+        detail = getattr(exc, "detail", None)
+        if isinstance(reason, str) and reason:
+            part = reason + (" (" + detail + ")" if isinstance(detail, str)
+                             and detail else "")
+        else:
+            part = clip(inert_summary(redact(str(exc), "status-error")), 120)
+        if part and (not parts or parts[-1] != part):
+            parts.append(part)
+        upstream = getattr(exc, "upstream_reason", None)
+        exc = exc.__cause__ if exc.__cause__ is not None else exc.__context__
+        if exc is None and isinstance(upstream, str) and upstream \
+                and (not parts or parts[-1] != upstream):
+            parts.append(upstream)
+    return parts
+
+
 def record_pulse_failure(seq, detail, *, failed_at=None):
     """Retain one bounded, already-redacted pulse failure for operators."""
     if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:

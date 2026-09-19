@@ -1479,6 +1479,9 @@ def cmd_pulse():
         return 1
     except ValueError as exc:
         print(f"manual pulse refused: {exc}")
+        chain = sialib.refusal_chain(exc)
+        if len(chain) > 1:
+            print("  because: " + " <- ".join(chain[1:]))
         return 1
 
 
