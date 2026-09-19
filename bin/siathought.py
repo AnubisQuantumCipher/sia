@@ -3692,6 +3692,110 @@ def _publish_event_index_entries(entries):
         atomic_write(path, encoded.decode("utf-8"))
 
 
+# Event-id rosters reconstructed from retained sources for epochs that
+# declared source lineage but not yet `sia_event_ids` (every 1.7.x epoch has
+# exactly this shape). Keyed by epoch slug and its observed file generation.
+_RECONSTRUCTED_EPOCH_EVENT_IDS = {}
+MAX_RETAINED_SOURCE_HISTORY = 64
+
+
+def _retained_source_text(rel, expected_sha256, slug):
+    """Exact text of a consolidated source page named by an epoch manifest.
+
+    The live page is used when its lineage digest (sha256 of ``rel``, NUL,
+    bytes) still matches; otherwise the corpus git history is searched, newest
+    first and bounded, for the retained original with that digest. Nothing
+    is guessed: an unretained source refuses by name.
+    """
+    _event_source_parts(rel)
+    if not isinstance(expected_sha256, str) \
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None:
+        raise ValueError(
+            f"event-index completeness is unavailable: {slug} "
+            f"(manifest digest for {rel} is malformed)")
+
+    def matches(raw):
+        return hashlib.sha256(
+            rel.encode("utf-8") + b"\0" + raw).hexdigest() == expected_sha256
+
+    path = os.path.join(CORPUS, rel)
+    try:
+        with open(path, "rb") as stream:
+            raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+    except (FileNotFoundError, NotADirectoryError):
+        raw = None
+    if raw is not None and len(raw) <= MAX_EVENT_PAGE_BYTES and matches(raw):
+        return raw.decode("utf-8", errors="strict")
+    history = _run_bounded_text_process(
+        ["git", "log", "--format=%H", f"-n{MAX_RETAINED_SOURCE_HISTORY}",
+         "--", rel], env=None, timeout=60, cwd=CORPUS,
+        label="git retained-source history")
+    if history.returncode == 0:
+        for commit in history.stdout.split():
+            if re.fullmatch(r"[0-9a-f]{40,64}", commit) is None:
+                continue
+            shown = _run_bounded_text_process(
+                ["git", "show", f"{commit}:{rel}"], env=None, timeout=60,
+                cwd=CORPUS, label="git retained-source read",
+                output_limit=MAX_EVENT_PAGE_BYTES + 1)
+            if shown.returncode != 0:
+                continue
+            raw = shown.stdout.encode("utf-8")
+            if len(raw) <= MAX_EVENT_PAGE_BYTES and matches(raw):
+                return shown.stdout
+    raise ValueError(
+        f"event-index completeness is unavailable: {slug} (retained source "
+        f"{rel} with lineage digest {expected_sha256[:12]} is in neither the "
+        "corpus tree nor its git history)")
+
+
+def _event_ids_in_source_text(text, rel):
+    match = FM_RE.match(text)
+    if match is None:
+        raise ValueError(
+            f"retained consolidation source lacks frontmatter: {rel}")
+    log_part = text[match.end():].split("## Timeline", 1)[0]
+    if "## Log" in log_part:
+        log_part = log_part.split("## Log", 1)[1]
+    found = set()
+    for line in (value for value in log_part.splitlines()
+                 if value.startswith("- ")):
+        marker = EVENT_MARKER_RE.fullmatch(line)
+        if marker is None:
+            if "sia-event:" in line:
+                raise ValueError(
+                    f"retained consolidation source has malformed event "
+                    f"identity: {rel}")
+            continue
+        found.add(marker.group("id"))
+        if len(found) > MAX_EVENT_INDEX_RECORDS:
+            raise ValueError(
+                f"retained consolidation source exceeds the event index "
+                f"bound: {rel}")
+    return found
+
+
+def _reconstructed_epoch_event_ids(epoch, expected_generation):
+    """The event-id roster of a manifest-only epoch, from its exact sources."""
+    key = (epoch["slug"], tuple(expected_generation))
+    cached = _RECONSTRUCTED_EPOCH_EVENT_IDS.get(key)
+    if cached is not None:
+        return cached
+    if len(epoch["source_manifest"]) > MAX_EVENT_INDEX_RECORDS:
+        raise ValueError(
+            f"event-index completeness is unavailable: {epoch['slug']} "
+            "(source manifest exceeds its bound)")
+    roster = set()
+    for record in epoch["source_manifest"]:
+        text = _retained_source_text(
+            record["rel"], record["sha256"], epoch["slug"])
+        roster |= _event_ids_in_source_text(text, record["rel"])
+    if len(_RECONSTRUCTED_EPOCH_EVENT_IDS) >= 4096:
+        _RECONSTRUCTED_EPOCH_EVENT_IDS.clear()
+    _RECONSTRUCTED_EPOCH_EVENT_IDS[key] = frozenset(roster)
+    return _RECONSTRUCTED_EPOCH_EVENT_IDS[key]
+
+
 def _missing_event_index_expectations(organ, wanted, *, dependency_capture=None):
     """Resolve missing leaves only from complete, bounded epoch manifests."""
     if not wanted:
@@ -3724,9 +3828,16 @@ def _missing_event_index_expectations(organ, wanted, *, dependency_capture=None)
             # completeness claim. They remain readable legacy summaries.
             continue
         if not epoch["event_ids_declared"]:
-            raise ValueError(
-                f"event-index completeness is unavailable: {slug}")
-        for event_id in wanted.intersection(epoch["event_ids"]):
+            # Source lineage declared, event roster not yet: the shape every
+            # 1.7.x epoch has. Its completeness claim is reconstructed from
+            # the exact retained sources the manifest names (live page or
+            # corpus git history by lineage digest); an unretained source
+            # refuses by name instead of blocking every later pulse.
+            epoch_ids = _reconstructed_epoch_event_ids(
+                epoch, expected_generation)
+        else:
+            epoch_ids = epoch["event_ids"]
+        for event_id in wanted.intersection(epoch_ids):
             prior = found.get(event_id)
             if prior is not None and prior != slug:
                 raise ValueError(

@@ -7654,7 +7654,7 @@ class EpochMerge(unittest.TestCase):
                 "org", "2026-08-29", [novel])
             self.assertEqual(appended, [novel])
 
-    def test_index_era_epoch_without_completeness_refuses_missing_lookup(self):
+    def test_manifest_only_epoch_reconstructs_completeness_from_retained_sources(self):
         sialib = _load("sialib_epoch_missing_completeness",
                        os.path.join(BIN, "sialib.py"))
         with tempfile.TemporaryDirectory() as d:
@@ -7697,11 +7697,52 @@ class EpochMerge(unittest.TestCase):
                 "org", later, "obs", "genuinely novel occurrence",
                 occurrence="native:completeness:unknown")
 
-            with self.assertRaisesRegex(
-                    ValueError, "event-index completeness is unavailable"):
-                sialib.update_day_page("org", "2026-08-29", [novel])
-            self.assertFalse(sialib.page_exists(
+            # An epoch that declares source lineage but no event roster is
+            # the shape every 1.7.x release wrote. Its completeness claim is
+            # reconstructed from the exact retained sources (here: the
+            # compacted day page in corpus git history), so a novel
+            # occurrence is admitted and the consolidated one is not
+            # re-admitted as new.
+            _pages, appended, _admitted = sialib.update_day_page(
+                "org", "2026-08-29", [novel])
+            self.assertEqual(appended, [novel])
+            self.assertTrue(sialib.page_exists(
                 sialib.day_slug("org", "2026-08-29")))
+            replayed = sialib.Event(
+                "org", stamp, "obs", "indexed occurrence",
+                occurrence="native:completeness:authority")
+            _pages, appended, _admitted = sialib.update_day_page(
+                "org", "2026-01-05", [replayed])
+            self.assertEqual(appended, [],
+                             "a consolidated occurrence must not be re-admitted")
+
+            # A manifest whose retained source cannot be found by lineage
+            # digest still refuses, naming the source, instead of guessing.
+            with open(epoch_path, encoding="utf-8") as stream:
+                epoch_text = stream.read()
+            digests = set(re.findall(r'"sha256":"([0-9a-f]{64})"', epoch_text))
+            self.assertEqual(len(digests), 1)
+            # The same lineage digest names the source in sia_sources and in
+            # the manifest; keep the page self-consistent but point it at a
+            # source that was never retained.
+            broken = epoch_text.replace(next(iter(digests)), "f" * 64)
+            self.assertNotEqual(broken, epoch_text)
+            with open(epoch_path, "w", encoding="utf-8") as stream:
+                stream.write(broken)
+            much_later = sialib.datetime.datetime(
+                2026, 8, 30, 20, tzinfo=sialib.datetime.timezone.utc)
+            second = sialib.Event(
+                "org", much_later, "obs", "second novel occurrence",
+                occurrence="native:completeness:second")
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "event-index completeness is unavailable: .*retained "
+                    "source events/org/2026-01-05.md with lineage digest "
+                    "ffffffffffff is in neither the corpus tree nor its git "
+                    "history"):
+                sialib.update_day_page("org", "2026-08-30", [second])
+            self.assertFalse(sialib.page_exists(
+                sialib.day_slug("org", "2026-08-30")))
 
     def test_pre_index_legacy_epoch_does_not_block_novel_occurrence(self):
         sialib = _load("sialib_epoch_pre_index_compatibility",
