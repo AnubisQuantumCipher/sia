@@ -101,13 +101,17 @@ _THAW_PHASES = frozenset({
 _INACTIVE_COMPLETE_PHASES = frozenset({
     "rolled-back", "committed", "retiring-rollback", "retiring-commit",
 })
-_CAPSULE_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
 _CAPSULE_TREE_DEPTH_LIMIT = sialib.MAX_CONFIG_TAGS
 _CAPSULE_TREE_RECORD_LIMIT = sialib.MAX_CONFIG_BYTES
+_CAPSULE_DIRECTORY_ENTRY_LIMIT = _CAPSULE_TREE_RECORD_LIMIT
 _CAPSULE_PATH_BYTE_LIMIT = sialib.MAX_CONFIG_BYTES
-# Reuse SIA's published finite scan/path ceilings.  Cleanup catalogs the whole
-# candidate before the first unlink, so an over-bound tree is preserved and
-# refused rather than partly erased.
+# Capsule traversal is an exact whole-tree operation, not a bounded source-tail
+# sample.  A directory may therefore use the capsule's existing whole-tree
+# record envelope; the shared budget below still refuses the first record past
+# that envelope before publication.
+# Cleanup may reuse SIA's published finite scan/path ceilings.  It catalogs the
+# whole candidate before the first unlink, so an over-bound tree is preserved
+# and refused rather than partly erased.
 _OPERATION_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
 # add rollback/capsule/staging prefixes around already-bounded portable roots,
 # so they need a separate finite deletion-preflight depth policy.
@@ -118,6 +122,13 @@ _OPERATION_TREE_RECORD_LIMIT = sialib.MAX_CONFIG_BYTES
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _valid_timestamp(value):
+    try:
+        return sialib._canonical_utc_timestamp(value) == value
+    except (TypeError, ValueError):
+        return False
 
 
 def _generation(value):
@@ -387,18 +398,9 @@ def _read_regular(path, label, *, maximum=MAX_DOCUMENT_BYTES,
 
 
 def _strict_json(raw, label):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"{label} contains a duplicate JSON key")
-            result[key] = value
-        return result
-
     try:
-        return json.loads(raw.decode("utf-8", "strict"),
-                          object_pairs_hook=unique)
-    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        return sialib._strict_json_loads(raw.decode("utf-8", "strict"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is not strict JSON") from exc
 
 
@@ -719,7 +721,9 @@ def _copy_tree(source, target, manifest_prefix, area, entries,
             children.append(child)
             if len(children) > _CAPSULE_DIRECTORY_ENTRY_LIMIT:
                 raise ValueError(
-                    "capsule source directory exceeds its entry bound")
+                    "capsule source directory exceeds its entry bound "
+                    f"({source}: more than {_CAPSULE_DIRECTORY_ENTRY_LIMIT} "
+                    "entries)")
     children.sort(key=lambda entry: entry.name)
     for child in children:
         budget["records"] += 1
@@ -923,8 +927,18 @@ def freeze(output_path):
                     corpus_info.st_mode, corpus_info.st_uid))
                 + "\n").encode("utf-8")
             if receipt_raw != expected_receipt:
+                recorded = "unrecognized"
+                for line in receipt_raw.decode("utf-8", "replace").splitlines():
+                    if line.startswith("root=") and re.fullmatch(
+                            r"root=[0-9]+:[0-9]+:[0-9]+:[0-9]+", line):
+                        recorded = line[len("root="):]
+                live_root = ":".join(str(value) for value in (
+                    corpus_info.st_dev, corpus_info.st_ino,
+                    corpus_info.st_mode, corpus_info.st_uid))
                 raise ValueError(
-                    "source corpus receipt does not bind the live corpus root")
+                    "source corpus receipt does not bind the live corpus root "
+                    f"(receipt root={recorded}, live root={live_root}; "
+                    "after a filesystem move run: sia readmit)")
             source_receipt = {
                 "sha256": hashlib.sha256(receipt_raw).hexdigest(),
                 "mode": stat.S_IMODE(receipt_info.st_mode),
@@ -1426,14 +1440,74 @@ def _target_ledger_head():
 def _validate_confirmation(confirmation, prepared, current_head):
     expected_keys = {"schema_version", "phrase", "snapshot_id",
                      "ledger_head", "corpus_receipt_re_adopt"}
-    if not isinstance(confirmation, dict) \
+    if not isinstance(prepared, dict) \
+            or not isinstance(confirmation, dict) \
             or set(confirmation) != expected_keys \
+            or type(confirmation.get("schema_version")) is not int \
             or confirmation.get("schema_version") != 1 \
             or confirmation.get("phrase") != "RESTORE" \
             or confirmation.get("snapshot_id") != prepared.get("snapshot_id") \
             or confirmation.get("ledger_head") != current_head \
             or confirmation.get("corpus_receipt_re_adopt") is not True:
         raise ValueError("restore confirmation does not bind the prepared restore")
+
+
+def _adoption_content(prepared, confirmation, target):
+    current_head = (confirmation.get("ledger_head")
+                    if isinstance(confirmation, dict) else None)
+    _validate_confirmation(
+        confirmation, prepared, current_head)
+    _validate_target_record(target)
+    confirmation_sha256 = hashlib.sha256(
+        _canonical_bytes(confirmation)).hexdigest()
+    return json.dumps({
+        "accepted_ledger_head": confirmation["ledger_head"],
+        "confirmation_sha256": confirmation_sha256,
+        "snapshot_id": prepared["snapshot_id"],
+        "manifest_sha256": prepared["manifest_sha256"],
+        "target": target,
+        "receipt_re_adopted": True,
+    }, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def adoption_binding(prepared, confirmation, target, *, order=None):
+    """Return the exact transition identity accepted before restore launch."""
+    if order is None:
+        order = time.time_ns()
+    if type(order) is not int or order < 0:
+        raise ValueError("restore adoption order is invalid")
+    content = _adoption_content(prepared, confirmation, target)
+    basis = {
+        "order": order,
+        "action": "RESTORE:adopt",
+        "arg1": prepared["prepared_id"],
+        "arg2": prepared["capsule_id"],
+        "content": content,
+    }
+    record_id = hashlib.sha256(json.dumps(
+        basis, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")).encode("utf-8")).hexdigest()
+    return {"order": order, "record_id": record_id, "target": target}
+
+
+def _adoption_transition(prepared, confirmation, adoption):
+    if not isinstance(adoption, dict) \
+            or set(adoption) != {"order", "record_id", "target"}:
+        raise ValueError("restore adoption binding is malformed")
+    expected = adoption_binding(
+        prepared, confirmation, adoption.get("target"),
+        order=adoption.get("order"))
+    if adoption != expected:
+        raise ValueError("restore adoption binding changed")
+    return {
+        "order": adoption["order"],
+        "action": "RESTORE:adopt",
+        "arg1": prepared["prepared_id"],
+        "arg2": prepared["capsule_id"],
+        "content": _adoption_content(
+            prepared, confirmation, adoption["target"]),
+        "record_id": adoption["record_id"],
+    }
 
 
 def _safe_children(path, area):
@@ -1575,22 +1649,14 @@ def _set_restored_sync_needed():
         memo, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n")
 
 
-def write_adoption_intent(path, *, prepared, confirmation, target):
-    transition_basis = {
-        "order": time.time_ns(),
-        "action": "RESTORE:adopt",
-        "arg1": prepared["prepared_id"],
-        "arg2": prepared["capsule_id"],
-        "content": json.dumps({
-            "snapshot_id": prepared["snapshot_id"],
-            "manifest_sha256": prepared["manifest_sha256"],
-            "target": target,
-            "receipt_re_adopted": True,
-        }, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
-    }
-    transition_id = hashlib.sha256(json.dumps(
-        transition_basis, ensure_ascii=False, sort_keys=True,
-        separators=(",", ":")).encode("utf-8")).hexdigest()
+def write_adoption_intent(path, *, prepared, confirmation, target,
+                          adoption=None):
+    if adoption is None:
+        adoption = adoption_binding(prepared, confirmation, target)
+    elif not isinstance(adoption, dict) \
+            or adoption.get("target") != target:
+        raise ValueError("restore adoption target changed")
+    transition = _adoption_transition(prepared, confirmation, adoption)
     document = {
         "schema": ADOPTION_SCHEMA,
         "created": _now(),
@@ -1601,7 +1667,7 @@ def write_adoption_intent(path, *, prepared, confirmation, target):
         "confirmation_sha256": hashlib.sha256(
             _canonical_bytes(confirmation)).hexdigest(),
         "target": target,
-        "transition": {**transition_basis, "record_id": transition_id},
+        "transition": transition,
         "state": "intent",
     }
     private = _private_key()
@@ -1656,7 +1722,10 @@ def _clear_barrier(journal_path):
             or set(barrier) != {
                 "schema", "journal", "prepared_id", "created"} \
             or barrier.get("schema") != JOURNAL_SCHEMA \
-            or barrier.get("journal") != os.path.abspath(journal_path):
+            or barrier.get("journal") != os.path.abspath(journal_path) \
+            or re.fullmatch(
+                r"[0-9a-f]{32}", barrier.get("prepared_id", "")) is None \
+            or not _valid_timestamp(barrier.get("created")):
         raise ValueError("restore barrier does not bind this thaw journal")
     os.unlink(RESTORE_BARRIER)
     _fsync_dir(os.path.dirname(RESTORE_BARRIER))
@@ -1781,8 +1850,7 @@ def _barrier_journal_path():
             or not isinstance(barrier.get("prepared_id"), str) \
             or re.fullmatch(r"[0-9a-f]{32}",
                             barrier["prepared_id"]) is None \
-            or not isinstance(barrier.get("created"), str) \
-            or not barrier["created"]:
+            or not _valid_timestamp(barrier.get("created")):
         raise ValueError("restore barrier schema is invalid")
     journal_path = os.path.abspath(barrier["journal"])
     if os.path.realpath(journal_path) != journal_path:
@@ -1870,8 +1938,7 @@ def _load_thaw_journal(journal_path, rollback_root=None):
     if not isinstance(journal, dict) or set(journal) != required \
             or journal.get("schema") != JOURNAL_SCHEMA \
             or journal.get("phase") not in _THAW_PHASES \
-            or not isinstance(journal.get("created"), str) \
-            or not journal["created"] \
+            or not _valid_timestamp(journal.get("created")) \
             or not isinstance(journal.get("snapshot_id"), str) \
             or not journal["snapshot_id"] \
             or not isinstance(journal.get("prepared_id"), str) \
@@ -2269,20 +2336,33 @@ def _verify_live_sia_ledger():
 
 
 def _native_first_light(*, full_sync=True):
-    """Run the ordinary brain heartbeat inside the worker's owner contexts."""
+    """Run the ordinary resident pulse inside the worker's owner contexts."""
     if full_sync is not True:
         raise ValueError("restore first light requires a full sync")
     memo = sialib.load_memo()
     if not isinstance(memo, dict):
         raise ValueError("restored memo is not an object")
+    sialib._require_status_memo_fields(memo)
+    cursors = sialib.load_cursors()
+    sialib._recover_notify_baseline_attempt(memo, cursors)
+    source_marker = sialib._pending_source_replay_marker(memo)
+    if source_marker is not None:
+        sialib._authorize_pending_source_replay(
+            source_marker, cursors)
+    sialib._pending_pulse_marker(memo)
+    sialib._pending_pulse_status_effects(memo)
     sequence = memo.get("pulse_seq", 0)
     if isinstance(sequence, bool) or not isinstance(sequence, int) \
             or sequence < 0:
         raise ValueError("restored pulse sequence is invalid")
+    if sequence >= sialib.MAX_JSON_SAFE_INTEGER:
+        raise ValueError("restored pulse sequence is exhausted")
+    admitted_status = sialib._require_status_sequence_not_ahead(sequence)
     memo["pulse_seq"] = sequence + 1
     memo["sync_needed"] = True
     sialib._write_memo(memo)
-    result = sialib._pulse_transaction(memo["pulse_seq"])
+    result = sialib._pulse_transaction(
+        memo["pulse_seq"], admitted_status=admitted_status)
     if not isinstance(result, dict):
         raise RuntimeError("restore first light did not publish status")
     return result
@@ -2626,6 +2706,7 @@ def _probe_projection(home, expected_path, label):
         home=home, label=label)
     report = _strict_json(result.stdout.encode("utf-8"), label)
     if not isinstance(report, dict) \
+            or type(report.get("schema_version")) is not int \
             or report.get("schema_version") != 1 \
             or report.get("effective_engine") != "pglite" \
             or report.get("config_file_engine") != "pglite" \
@@ -3344,8 +3425,16 @@ def _restore_target_gbrain(journal, failed_root):
                 _move_aside(live, os.path.join(failed_gbrain, name))
             _move_aside(saved, live)
         elif original is not None:
-            if not os.path.lexists(live) \
-                    or _gbrain_sidecar_record(live) != original:
+            restored = (_gbrain_sidecar_record(live)
+                        if os.path.lexists(live) else None)
+            # A completed saved-to-live rename changes ctime before the
+            # rollback journal can advance. Retry must still bind the same
+            # inode and exact contents, but cannot require that old ctime.
+            if restored is None \
+                    or restored["content"] != original["content"] \
+                    or any(restored["generation"][key] != value
+                           for key, value in original["generation"].items()
+                           if key != "changed_ns"):
                 raise ValueError("unmoved target gbrain sidecar changed")
         elif os.path.lexists(live):
             _move_aside(live, os.path.join(failed_gbrain, name))
@@ -3353,7 +3442,7 @@ def _restore_target_gbrain(journal, failed_root):
 
 
 def thaw(prepared, confirmation, *, capability, identity_key_file=None,
-         rollback_root, first_light=None):
+         rollback_root, first_light=None, adoption=None):
     """Transactionally adopt one verified capsule into the live SIA roots.
 
     ``capability`` has exactly four already-held exclusive descriptors:
@@ -3389,6 +3478,11 @@ def thaw(prepared, confirmation, *, capability, identity_key_file=None,
     target_before = target_identity()
     current_head = _target_ledger_head()
     _validate_confirmation(confirmation, prepared, current_head)
+    if adoption is not None:
+        if not isinstance(adoption, dict) \
+                or adoption.get("target") != target_before:
+            raise ValueError("restore adoption target changed")
+        _adoption_transition(prepared, confirmation, adoption)
 
     restore_identity = None
     matches = identity_matches(verified)
@@ -3417,7 +3511,7 @@ def thaw(prepared, confirmation, *, capability, identity_key_file=None,
         _atomic_json(journal_path, journal)
         adoption_intent = write_adoption_intent(
             adoption_path, prepared=prepared, confirmation=confirmation,
-            target=target_before)
+            target=target_before, adoption=adoption)
         barrier = {"schema": JOURNAL_SCHEMA,
                    "journal": journal_path,
                    "prepared_id": prepared["prepared_id"],

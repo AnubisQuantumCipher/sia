@@ -1,8 +1,10 @@
 # Security & privacy
 
 > [!IMPORTANT]
-> This policy covers **SIA, the Omarchy Brain**. It is unaffiliated with the
-> Sia Foundation, `sia.tech`, and the similarly named storage network.
+> This policy covers **SIA, the Omarchy Brain**.
+> “Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience.
+> SIA is unaffiliated with the Sia Foundation, `sia.tech`, and the similarly named
+> storage network.
 
 **Model**: SIA's built-in senses ingest *records, not content* — subsystem ledgers,
 logs, reflogs, notification summaries, and session file metadata (never agent
@@ -43,8 +45,34 @@ is defense in depth, not authorization to persist sensitive prose.
 MCP ownership markers and keep-runtime guards protect lifecycle decisions;
 they are not access-control or egress controls.
 
-The optional Obsidian organ is active only for a real no-follow vault `.git`
-directory at `~/Obsidian` or the bounded absolute `OBSIDIAN_VAULT_PATH`.
+Custom chain verifiers are trusted operator-supplied code, not sandboxed
+plugins. SIA pins the top-level verifier or current-Python script, ledger, and
+declared-input files with no-follow descriptors. For launch, it copies ledger
+and declared-input bytes from pinned originals into owner-private launch files
+and gives the child the bound verifier/script descriptor plus only private-copy
+descriptors for those data files. Original ledger/input descriptors remain
+parent-only for generation rechecks. A fresh empty working directory,
+allow-listed environment, and PID-descendant
+containment reduce ambient authority and bound descendant lifetime, but they
+are not a filesystem, network, same-user, or resource sandbox. The child can
+still name paths, use the network, consume resources, and invoke other
+same-user-accessible programs. Its stdout and stderr are drained and counted
+for bounds but are not accumulated or returned by chain verification calls.
+
+Of verifier code and its dependencies, the binding covers only the top-level
+executable or script bytes. The verifier-code binding does not cover a shebang
+interpreter, ELF loader or shared libraries, Python imports, subprocess
+dependencies, or data the verifier opens internally. Descriptor-backed
+execution changes pathname semantics such as Python `__file__` and
+`sys.path[0]`, shell `$0`, and ELF `$ORIGIN`; custom verifiers must tolerate
+that launch form. The explicit input manifest binds an absolute path to one
+argv location and an optional empty or lowercase long-option prefix. Residual
+argv elements must fit a closed slashless flag/subcommand/literal grammar,
+which rejects obvious path-shaped operands but cannot know whether trusted
+verifier code will interpret an accepted slashless literal as a filename.
+
+The optional Obsidian source adapter is active only for a real no-follow vault
+`.git` directory at `~/Obsidian` or the bounded absolute `OBSIDIAN_VAULT_PATH`.
 Symlinked ancestors, a symlinked `.git`, worktree pointer files, and invalid
 overrides do not activate it. A stable bounded `HEAD` reflog supplies complete
 SHA-1 or SHA-256 commit identities only; mutable reflog descriptions are not
@@ -156,7 +184,7 @@ accepted operation and restart phase; `restore-runtime-mask` records its
 brainstem runtime gate; and `restore-in-progress.json` is capsule core's thaw
 barrier bound to the rollback journal. The first two may exist even if a crash
 occurred before core thaw started. Any one is fail-closed recovery debt, so
-ordinary brain, backup, and restore entry points refuse until `sia restore
+ordinary SIA, backup, and restore entry points refuse until `sia restore
 recover` reacquires the exclusive leases and reconciles the exact phase. Core
 journal/capsule authentication is required when its barrier exists; a
 never-started or already-finished core phase is reconciled through the bound
@@ -174,7 +202,7 @@ after every restore-owned supervisor/runtime debt is durably gone. A successful
 restore is recorded in its correlated operation fields; it does not by itself
 establish repository-copy health. Overall `verified` additionally requires a
 concrete `latest` copy with `verified: true`, `readiness: "ready"`, and matching
-brain identity.
+SIA signing identity.
 
 After a committed or rolled-back outcome, capsule core durably retires known
 private-key copies and the bounded heavy rollback tree; the signed live
@@ -235,7 +263,7 @@ and legacy-unlabeled thoughts cannot mint typed domain relations. Only explicit
 `derived` safety thoughts can use that lane; other links remain `mentions`.
 The partial-graph `mentions` fallback applies only to SIA's schema-regex
 projector. Failure of gbrain's separate person/company gazetteer/NER extraction
-fails brain sync and retains publication debt rather than crossing lanes.
+fails index sync and retains publication debt rather than crossing lanes.
 
 The take cutover addresses a narrower historical risk: pre-origin judge prose
 could contain Markdown, wikilinks, or HTML-like controls. SIA's own graph
@@ -264,8 +292,54 @@ Failure to persist the marker prevents the mutation. The debt remains until git
 commit or clean verification, PGLite sync, and graph export all succeed; a
 commit, sync, or graph failure cannot be reported ready.
 
-The pulse sequence reservation shares the same lease as the heartbeat, so its
-whole-memo write cannot erase an existing marker. DREAM settles between
+The implemented, unreleased controller-source path adds a narrower
+acknowledgment transaction on top of that publication rule. Its immutable
+source batch and memo bindings precede page, index, graph, status, and live
+effects. The effects publisher accepts only the retained batch, live binding,
+status handoff, and replayed transition it was given; every object has a closed
+schema and self-hashed identity. It records a committed effects receipt only
+after reopening the graph, status, live candidate, and live generation and
+checking their joins. That receipt is not source acknowledgment and does not
+make readiness true.
+
+For a batch with page effects, `siasourcegit` holds the corpus root and
+`/usr/bin/git` executable through no-follow descriptors, disables repository
+hooks, signing, global/system configuration, prompts, and external diff, and
+admits only a clean retained commit/tree generation. This binds the observed
+top-level executable bytes and corpus-directory generation; it does not bind
+Git's loader, libraries, or arbitrary same-user state outside the admitted
+boundary.
+
+`siasourceengine` holds the corpus, managed gbrain executable, pin, pin
+receipt, runtime receipt, and every target page through descriptors. Its child
+receives an explicit environment allowlist rather than ambient database,
+mount, guardrail/preload, provider-credential, or proxy variables. The runner
+admits exact closed JSON from the supported sync, extraction, status, and
+no-migrate page-projection commands. It requires commit equality, zero
+unembedded chunks, zero unacknowledged failures, zero stale links remaining,
+and exact projections for the complete target roster before returning a
+self-hashed generation. The projection explicitly reports no retrieval
+bookkeeping update and no operation write. That is not a byte-for-byte claim
+about the PGLite directory: opening the engine may maintain storage lock or WAL
+files. These checks establish local publication correspondence only; they do
+not inspect vector values, prove ranking quality, authenticate source truth,
+or turn process coordination into a filesystem/network/resource sandbox.
+
+Only `siasourceack` can advance source authority. It revalidates the retained
+batch, effects receipt, live generation, status, notification fence, and all
+cursor generations, then durably orders batch archival, refusal settlement,
+journal cursor publication, main cursor publication, and the final memo/ready
+receipt. Recovery accepts only the exact recorded before image or target image
+at each prefix. Missing, changed, doubly present, or third-state authority
+refuses without advancing a cursor or synthesizing readiness. The archive and
+committed marker prove this local ordering, not delivery, complete machine
+history, hostile same-user immutability, retrieval quality, or biological
+cognition. Availability of these component APIs also does not prove a resident
+pulse invoked them; that requires front-door execution evidence.
+
+The pulse sequence reservation shares the same lease as the pulse cycle, so its
+whole-memo write cannot erase an existing marker. Scheduled maintenance
+(`DREAM` in compatibility ledger/state names) settles between
 memory-backed phases and around each grade before later PGLite/graph use.
 Readiness also blocks an unfinished journal under
 `~/.local/state/sia/grade-transactions/`, even if no page replacement is yet
@@ -417,7 +491,7 @@ and installed daemon still execute as the user. The owner-private
 record; it is not signed evidence and does not replace a fresh `sia ready`
 check when live readiness matters. PGLite admits one owner: all SIA-managed
 daemon, CLI, benchmark, and MCP-derived operations share an advisory
-cross-process lease. Whole pulse/dream cycles and explicit operator corpus
+cross-process lease. Whole pulse/scheduled-maintenance cycles and explicit operator corpus
 mutations share a separate transaction lease, and a lifetime brainstem lease
 refuses a second resident daemon. The brainstem alone materializes agent notes:
 they enter immutable mode-0600 request files and are acknowledged only after
@@ -463,7 +537,7 @@ may retain its **Manual setup** registry override until a maintainer removes
 it. Omarchy's ordinary plugin removal also cannot uninstall SIA's resident
 runtime or user service. Runtime/UI removal must begin with SIA's own
 `uninstall.sh` while the checkout remains available; only its explicit
-`--purge` mode attempts to erase the retained brain data and config as well.
+`--purge` mode attempts to erase the retained SIA data and config as well.
 The guided launcher removes ambient installer-consent variables and
 `BASH_ENV`/`ENV` before starting the installer terminal. After acquiring the
 lifecycle lease, the installer compares its source release with both the

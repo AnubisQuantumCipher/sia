@@ -32,6 +32,29 @@ def _load(name, path):
     return module
 
 
+def _graph_snapshot(slugs=()):
+    slugs = sorted(slugs)
+    return {
+        "v": 2, "ts": "2026-08-30T12:00:00Z",
+        "publication_id": "b" * 32,
+        "nodes": [{
+            "id": slug, "t": "note", "title": slug,
+            "ts": "2026-08-30T12:00:00Z", "origin": "derived",
+            "deg": 0, "din": 0, "dout": 0,
+        } for slug in slugs],
+        "edges": [], "pages_total": len(slugs),
+        "pages_total_complete": True,
+        "snapshot": {
+            "complete": True, "truncated": 0,
+            "omitted_nodes": 0, "omitted_edges": 0,
+            "omissions_imply_absence": False,
+            "aged_out": 0,
+            "counts_by_kind": ({"note": len(slugs)} if slugs else {}),
+            "failed_ops": [], "window_days": 14,
+        },
+    }
+
+
 class DreamPublication(unittest.TestCase):
     def setUp(self):
         self.sialib = _load("sialib_dream_test", os.path.join(BIN, "sialib.py"))
@@ -53,13 +76,17 @@ class DreamPublication(unittest.TestCase):
         self.sialib.LIFECYCLE_TOMBSTONE = os.path.join(
             self.state_root.name, "lifecycle-removed")
         self.memo = {
-            "dream": {"last": "previous-success"},
+            "dream": {"last": "2026-08-29T12:00:00Z",
+                      "status": "ok", "summary": "previous success"},
             "ready": {
                 "v": 1, "completed_at": "2026-08-30T12:00:00Z",
                 "kind": "recovery", "identity": "0" * 32,
             },
         }
         self.mind = {}
+        self.corpus_pages = set()
+        self.gbrain_calls = []
+        self.mind_saves = []
         self.written_memo = None
         self.ledger_rows = []
         self.thought_rows = []
@@ -74,8 +101,76 @@ class DreamPublication(unittest.TestCase):
          self.sialib.LIFECYCLE_TOMBSTONE) = self.old_state_paths
         self.state_root.cleanup()
 
+    def test_malformed_pulse_marker_precedes_dream_recovery(self):
+        memo = {
+            "pulse_seq": 7, "sync_needed": True,
+            "pulse_publication": {
+                "v": 1, "seq": 7, "id": "not-an-id",
+                "started_at": "2026-08-30T12:00:00Z",
+            },
+        }
+        with mock.patch.object(
+                self.sialib, "load_memo", return_value=copy.deepcopy(memo)), \
+                mock.patch.object(self.sialib, "load_cursors") as cursors, \
+                mock.patch.object(self.sialib, "ensure_dirs") as ensure, \
+                mock.patch.object(self.sialib, "_write_memo") as write:
+            with self.assertRaisesRegex(
+                    RuntimeError, "pulse publication recovery marker"):
+                self.sialib._dream_transaction()
+        cursors.assert_not_called()
+        ensure.assert_not_called()
+        write.assert_not_called()
+
+        with mock.patch.object(
+                self.sialib, "_recover_pending_thought_projection") \
+                as thought_recovery:
+            with self.assertRaisesRegex(
+                    RuntimeError, "pulse publication recovery marker"):
+                self.sialib._dream_transaction_guarded(
+                    True, None, copy.deepcopy(memo), cursors={})
+        thought_recovery.assert_not_called()
+
+    def _schedule_rehearsal(self, *slugs, when=0.0):
+        """Make pages genuinely due through the real usage/SM-2 planner.
+
+        Seeding the mind is what drags the real per-page embed into this
+        class' coverage instead of a hand-written report. Issue #3 shipped
+        because that embed named no --source, so gbrain answered "Page not
+        found" every night while the ledger recorded reviewed=0 for the
+        project's whole life; a stubbed rehearsal cannot see that at all.
+        """
+        mind = copy.deepcopy(self.mind)
+        mind.setdefault("nodes", {})
+        mind.setdefault("edges", {})
+        for slug in slugs:
+            # arousal >= SM2_IMPORTANCE_AROUSAL makes the node important;
+            # the second touch supplies the deterministic SM-2 quality
+            # signal. Both go through siamind so the node shape is the one
+            # production writes, not one this test invented.
+            self.sialib.siamind.touch(mind, slug, ts=when, src="organ",
+                                      arousal=0.8)
+            self.sialib.siamind.touch(mind, slug, ts=when + 1.0,
+                                      src="user-recall")
+            self.corpus_pages.add(slug)
+        self.mind = mind
+
+    def _embed_like_gbrain(self, args):
+        """Answer an embed the way the real gbrain binary answers it.
+
+        gbrain resolves a slug inside exactly one registered source, so a
+        missing --source is not a harmless argument difference: the binary
+        searches "default", finds nothing, and refuses. Reproducing that
+        refusal here means a dream cycle that ever loses --source again
+        fails these tests instead of quietly reporting reviewed=0.
+        """
+        if list(args[2:]) != ["--source", self.sialib.GBRAIN_SOURCE]:
+            return self._result(
+                1, f"Page not found: {args[1]} (source=default)\n")
+        return self._result(os.EX_OK)
+
     def _run(self, *, result, commit="clean", sync=(True, ""),
-             graph=(False, False, False), rehearse=None, ledger=None,
+             graph=(False, False, False), embed=None, ledger=None,
+             ledger_head=None,
              due_takes=None, grade_take=None, grade_summary=None,
              muse=None, save_mind=None, consolidate=None,
              add_thought=None, commit_grade=None):
@@ -102,15 +197,16 @@ class DreamPublication(unittest.TestCase):
                 ("page", self.memo.get("sync_needed", False)))
             self.thought_rows.append(args + ((kwargs,) if kwargs else ()))
 
-        def default_rehearsal(*, now=None, stage=None):
-            report = {
-                "reviewed": [], "embedded": 0, "failed": 0,
-                "missing": 0, "planned": [], "decay": {}}
-            mind = copy.deepcopy(self.mind)
-            if stage is not None:
-                stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            return report
+        # rehearse_memories is deliberately NOT stubbed in this class: the
+        # whole nightly rehearsal runs for real and only the subprocess
+        # boundary is faked here. Issue #3 lived for the project's entire
+        # life behind a stub at the function boundary, which reported a
+        # healthy shape while the real embed refused every night.
+        def call_gbrain(args, timeout=120, json_out=False):
+            self.gbrain_calls.append(list(args))
+            if args and args[0] == "embed":
+                return (embed or self._embed_like_gbrain)(list(args))
+            return result
 
         def load_mind(*_args, **_kwargs):
             return copy.deepcopy(self.mind)
@@ -119,6 +215,7 @@ class DreamPublication(unittest.TestCase):
             if save_mind is not None:
                 save_mind(mind)
             self.mind = copy.deepcopy(mind)
+            self.mind_saves.append(copy.deepcopy(mind))
 
         def queue_transition(_order, action, arg1, arg2, content):
             row = (action, arg1, arg2, content)
@@ -136,12 +233,14 @@ class DreamPublication(unittest.TestCase):
             "durable_ledger_append": ledger or capture_ledger,
             "queue_ledger_transition": queue_transition,
             "_settle_ledger_transition": None,
-            "rehearse_memories": rehearse or default_rehearsal,
-            "read_json": {},
-            "ledger_head": (False, ""),
+            "page_exists": lambda slug: slug in self.corpus_pages,
+            "read_json": lambda *_args, **_kwargs: _graph_snapshot(
+                self.mind.get("nodes", {})),
+            "ledger_head": ((1, "a" * 64) if ledger_head is None
+                            else ledger_head),
             "export_thoughts": None,
             "log": None,
-            "gbrain": result,
+            "gbrain": call_gbrain,
             "load_memo": self.memo,
             "add_thought": add_thought or capture_thought,
             "atomic_write": capture_write,
@@ -198,18 +297,87 @@ class DreamPublication(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "gbrain dream cycle failed"):
             self._run(result=self._result(os.EX_SOFTWARE, stderr="failed"))
         self.assertEqual(self.written_memo["dream"]["last"],
-                         "previous-success")
+                         "2026-08-29T12:00:00Z")
         self.assertEqual(self.written_memo["dream"]["status"], "failed")
         self.assertTrue(any(
             row[:3] == ("DREAM:cycle", "failed", "failed")
             for row in self.ledger_rows))
+
+    def test_failed_cycle_redacts_diagnostic_before_memo_and_ledger(self):
+        secret = "token=abcdefghijklmnop"
+        prior = copy.deepcopy(self.sialib.REDACTIONS)
+        self.sialib.REDACTIONS.clear()
+        try:
+            with self.assertRaisesRegex(
+                    RuntimeError, "gbrain dream cycle failed"):
+                self._run(result=self._result(
+                    os.EX_SOFTWARE, stderr="subprocess " + secret))
+        finally:
+            self.sialib.REDACTIONS.clear()
+            self.sialib.REDACTIONS.update(prior)
+        serialized = json.dumps(self.written_memo, ensure_ascii=False)
+        ledger = json.dumps(self.ledger_rows, ensure_ascii=False)
+        self.assertNotIn(secret, serialized)
+        self.assertNotIn(secret, ledger)
+        self.assertIn("⟦redacted⟧", serialized)
+        self.assertEqual(
+            self.written_memo["redactions"], {"status-error": 1})
+
+    def test_dream_marker_recovers_rebound_redactions_exactly_once(self):
+        secret = "token=abcdefghijklmnop"
+        memo = {
+            "sync_needed": True, "redactions": {},
+            "dream_publication": {
+                "v": 1, "id": "a" * 32,
+                "started_at": "2026-08-30T12:00:00Z",
+                "redactions": {},
+            },
+        }
+        durable = []
+        prior = copy.deepcopy(self.sialib.REDACTIONS)
+        self.sialib.REDACTIONS.clear()
+        try:
+            with mock.patch.object(
+                    self.sialib, "_write_memo",
+                    side_effect=lambda value:
+                        durable.append(copy.deepcopy(value))):
+                detail = self.sialib._dream_diagnostic(
+                    memo, "projection " + secret, 120)
+            self.assertNotIn(secret, detail)
+            crash_image = copy.deepcopy(durable[-1])
+            self.assertEqual(crash_image["redactions"], {})
+            self.assertEqual(
+                crash_image["dream_publication"]["redactions"],
+                {"status-error": 1})
+
+            with mock.patch.object(
+                    self.sialib, "_write_memo",
+                    side_effect=lambda value:
+                        durable.append(copy.deepcopy(value))), \
+                    mock.patch.object(
+                        self.sialib, "queue_ledger_transition",
+                        return_value="pending"), \
+                    mock.patch.object(
+                        self.sialib, "_settle_ledger_transition"):
+                self.assertTrue(
+                    self.sialib._recover_pending_dream_publication(
+                        crash_image))
+                self.assertFalse(
+                    self.sialib._recover_pending_dream_publication(
+                        crash_image))
+            self.assertEqual(
+                crash_image["redactions"], {"status-error": 1})
+            self.assertNotIn("dream_publication", crash_image)
+        finally:
+            self.sialib.REDACTIONS.clear()
+            self.sialib.REDACTIONS.update(prior)
 
     def test_skipped_cycle_preserves_last_success_and_refuses(self):
         report = {"status": "skipped", "reason": "owner busy"}
         with self.assertRaisesRegex(RuntimeError, "gbrain dream cycle skipped"):
             self._run(result=self._result(os.EX_OK, json.dumps(report)))
         self.assertEqual(self.written_memo["dream"]["last"],
-                         "previous-success")
+                         "2026-08-29T12:00:00Z")
         self.assertEqual(self.written_memo["dream"]["status"], "skipped")
 
     def test_commit_failure_refuses_before_sync(self):
@@ -222,7 +390,7 @@ class DreamPublication(unittest.TestCase):
         self.assertIs(self.written_memo.get("sync_needed"), True)
 
     def test_sync_failure_refuses_and_records_transition(self):
-        with self.assertRaisesRegex(RuntimeError, "brain sync failed"):
+        with self.assertRaisesRegex(RuntimeError, "index sync failed"):
             self._run(result=self._result(
                 os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
                 sync=(False, "sync refused"))
@@ -231,8 +399,10 @@ class DreamPublication(unittest.TestCase):
         self.assertIs(self.written_memo.get("sync_needed"), True)
 
     def test_graph_publication_exception_is_signed_and_refused(self):
+        secret = "token=abcdefghijklmnop"
+
         def graph_failure():
-            raise OSError("graph refused")
+            raise OSError("graph refused " + secret)
 
         with self.assertRaisesRegex(RuntimeError, "publication failed"):
             self._run(result=self._result(
@@ -240,6 +410,12 @@ class DreamPublication(unittest.TestCase):
                 graph=graph_failure)
         self.assertEqual(self.ledger_rows[-1][:2],
                          ("DREAM:publish", "error"))
+        self.assertNotIn(secret, json.dumps(
+            self.ledger_rows[-1], ensure_ascii=False))
+        self.assertIn("⟦redacted⟧", self.ledger_rows[-1][2])
+        self.assertEqual(
+            self.written_memo["dream_publication"]["redactions"],
+            {"status-error": 1})
         self.assertIs(self.written_memo.get("sync_needed"), True)
 
     def test_success_returns_report_and_records_publication(self):
@@ -264,32 +440,157 @@ class DreamPublication(unittest.TestCase):
                 if row == ("memo", False)),
             self.trace.index(("graph", True)))
 
-    def test_rehearsal_total_failure_emits_urgent_thought(self):
-        def rehearsal(*, now=None, stage=None):
-            report = {
-                "reviewed": [], "embedded": 0, "failed": 2, "missing": 0,
-                "planned": [
-                    {"slug": "events/a", "embed": "failed",
-                     "error": "Page not found: events/a (source=default)"},
-                    {"slug": "events/b", "embed": "failed",
-                     "error": "Page not found: events/b (source=default)"},
-                ], "decay": {}}
-            mind = copy.deepcopy(self.mind)
-            if stage is not None:
-                stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            return report
+    def test_dream_rehearsal_embeds_in_the_registered_source(self):
+        """The nightly embed must address gbrain's registered source.
+
+        This is issue #3 itself: the per-page embed named no --source for
+        the project's whole life, gbrain resolved the slug in "default",
+        answered "Page not found", and the ledger recorded reviewed=0 every
+        night while nobody read it. The cycle is driven end to end here so
+        losing --source again breaks a test instead of a year of sleep.
+        """
+        self._schedule_rehearsal("events/test/day")
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+        self.assertIn(
+            ["embed", "events/test/day", "--source",
+             self.sialib.GBRAIN_SOURCE], self.gbrain_calls)
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertEqual(rehearsed[-1][1], "reviewed=1")
+        self.assertIn("embedded=1 failed=0 missing=0", rehearsed[-1][2])
+        rested = [row for row in self.thought_rows
+                  if row[1] == "dream"
+                  and "Scheduled re-embedding completed for 1 priority pages" in row[2]]
+        self.assertEqual(len(rested), 1)
+        self.assertIs(rested[0][4], False)
+        # The SM-2 schedule only advances on a committed embed, so a
+        # persisted review record is the proof the real path ran.
+        self.assertEqual(
+            self.mind["nodes"]["events/test/day"]["review"]["reviews"], 1)
+
+    def test_bounded_rehearsal_deferral_is_signed_and_visible(self):
+        slugs = tuple(
+            f"events/deferred/page-{index}"
+            for index in range(self.sialib.siamind.WORKSPACE_K + 1))
+        self._schedule_rehearsal(*slugs)
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+
+        embeds = [call for call in self.gbrain_calls if call[0] == "embed"]
+        self.assertEqual(len(embeds), self.sialib.siamind.WORKSPACE_K)
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertIn(
+            f"deferred={len(slugs) - self.sialib.siamind.WORKSPACE_K}",
+            rehearsed[-1][2])
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "Scheduled re-embedding completed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn("due memory deferred", published[0][2])
+
+    def test_multiwindow_deferral_does_not_promise_the_next_window(self):
+        slugs = tuple(
+            f"events/multiwindow/page-{index}"
+            for index in range(self.sialib.siamind.WORKSPACE_K * 3))
+        self._schedule_rehearsal(*slugs)
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+
+        embeds = [call for call in self.gbrain_calls if call[0] == "embed"]
+        deferred = len(slugs) - len(embeds)
+        self.assertGreater(deferred, self.sialib.siamind.WORKSPACE_K)
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "Scheduled re-embedding completed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn(
+            "remain due for later rotating nightly windows", published[0][2])
+        self.assertNotIn("to the next nightly window", published[0][2])
+
+    def test_partial_rehearsal_failure_is_not_hidden_by_one_success(self):
+        self._schedule_rehearsal("events/partial/available",
+                                 "events/partial/refused")
+
+        def partial(args):
+            if args[1].endswith("/refused"):
+                return self._result(1, "embedding runtime refused\n")
+            return self._embed_like_gbrain(args)
 
         self._run(result=self._result(
             os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
-            rehearse=rehearsal)
+            embed=partial)
+        published = [row for row in self.thought_rows
+                     if row[1] == "dream" and "Scheduled re-embedding completed" in row[2]]
+        self.assertEqual(len(published), 1)
+        self.assertIn("1 embed failure", published[0][2])
+        self.assertIs(published[0][4], True)
+
+    def test_rehearsal_total_failure_emits_urgent_thought(self):
+        self._schedule_rehearsal("events/a", "events/b")
+
+        def refuse(args):
+            return self._result(
+                1, f"Page not found: {args[1]} (source=default)\n")
+
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
+            embed=refuse)
+        self.assertEqual(
+            [call for call in self.gbrain_calls if call[0] == "embed"],
+            [["embed", "events/a", "--source", self.sialib.GBRAIN_SOURCE],
+             ["embed", "events/b", "--source", self.sialib.GBRAIN_SOURCE]])
         failing = [row for row in self.thought_rows
-                   if row[1] == "dream" and "could not rehearse" in row[2]]
+                   if row[1] == "dream"
+                   and "re-embedding did not complete" in row[2]]
         self.assertEqual(len(failing), 1)
         self.assertIn("2 embed failure(s)", failing[0][2])
         self.assertIn("Page not found", failing[0][2])
         self.assertEqual(failing[0][3], ["events/a", "events/b"])
         self.assertIs(failing[0][4], True)
+        # A refused embed must not advance the schedule; the page stays due
+        # so tomorrow retries it rather than silently dropping it.
+        self.assertIsNone(
+            self.mind["nodes"]["events/a"]["review"]["last_quality"])
+
+    def test_missing_corpus_page_is_reported_without_an_embed(self):
+        """A page the corpus no longer holds is never handed to gbrain."""
+        self._schedule_rehearsal("events/test/day")
+        self.corpus_pages.clear()
+        self._run(result=self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
+        self.assertEqual(
+            [call for call in self.gbrain_calls if call[0] == "embed"], [])
+        failing = [row for row in self.thought_rows
+                   if row[1] == "dream"
+                   and "re-embedding did not complete" in row[2]]
+        self.assertEqual(len(failing), 1)
+        self.assertIn("1 missing page(s)", failing[0][2])
+        rehearsed = [row for row in self.ledger_rows
+                     if row[0] == "DREAM:rehearse"]
+        self.assertIn("embedded=0 failed=0 missing=1", rehearsed[-1][2])
+
+    def test_rehearsal_subprocess_failure_stays_in_its_own_domain(self):
+        """A crashing embed is signed and never blocks the dream cycle.
+
+        Rehearsal is one failure domain among several on purpose: a broken
+        embed must not cost the night its gbrain cycle or its publication.
+        """
+        def explode(_args):
+            raise OSError("gbrain binary vanished")
+
+        report = {"status": "ok", "totals": {}}
+        self._schedule_rehearsal("events/test/day")
+        self.assertEqual(
+            self._run(result=self._result(os.EX_OK, json.dumps(report)),
+                      embed=explode),
+            report)
+        errors = [row for row in self.ledger_rows
+                  if row[0] == "DREAM:rehearse" and row[1] == "error"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("gbrain binary vanished", errors[0][2])
+        self.assertEqual(self.ledger_rows[-1][:2],
+                         ("DREAM:publish", "ok"))
+        self.assertNotIn("dream_unit", self.mind)
 
     def test_write_ahead_marker_precedes_consolidation_mutation(self):
         def consolidate():
@@ -395,19 +696,8 @@ class DreamPublication(unittest.TestCase):
         self.assertTrue(write.called)
 
     def test_rehearsal_keeper_failure_cannot_save_and_retry_can_commit(self):
-        report = {
-            "reviewed": [{"slug": "events/test/day", "quality": 5}],
-            "embedded": 1, "failed": 0, "missing": 0,
-            "planned": [], "decay": {}}
-        state_saves = []
+        self._schedule_rehearsal("events/test/day")
         refuse_once = [True]
-
-        def rehearsal(*, now=None, stage=None):
-            mind = copy.deepcopy(self.mind)
-            stage(mind, report)
-            self.sialib.siamind.save_mind(mind)
-            state_saves.append("saved")
-            return report
 
         def keeper(*row):
             self.ledger_rows.append(row)
@@ -419,11 +709,16 @@ class DreamPublication(unittest.TestCase):
             os.EX_OK, json.dumps({"status": "ok", "totals": {}}))
         with self.assertRaisesRegex(
                 self.sialib.LedgerTransitionError, "keeper refused"):
-            self._run(result=cycle, rehearse=rehearsal, ledger=keeper)
-        self.assertEqual(state_saves, ["saved"])
+            self._run(result=cycle, ledger=keeper)
+        # Exactly one mind save: rehearsal's own. The settle that the
+        # keeper refused must not have written a second, unsigned one.
+        self.assertEqual(len(self.mind_saves), 1)
         self.assertEqual(self.mind["dream_unit"]["unit"], "rehearse")
+        self.assertEqual(
+            self.mind["nodes"]["events/test/day"]["review"]["last_quality"],
+            5)
 
-        self._run(result=cycle, rehearse=rehearsal, ledger=keeper)
+        self._run(result=cycle, ledger=keeper)
         self.assertNotIn("dream_unit", self.mind)
         attempts = [row for row in self.ledger_rows
                     if row[0] == "DREAM:rehearse"]
@@ -444,7 +739,9 @@ class DreamPublication(unittest.TestCase):
                 raise self.sialib.LedgerTransitionError("keeper refused")
 
         patches = (
-            mock.patch.object(self.sialib, "read_json", return_value={}),
+            mock.patch.object(
+                self.sialib, "read_json",
+                return_value=_graph_snapshot()),
             mock.patch.object(self.sialib, "page_exists", return_value=True),
             mock.patch.object(
                 self.sialib, "gbrain", return_value=self._result(os.EX_OK)),
@@ -473,7 +770,8 @@ class DreamPublication(unittest.TestCase):
             self.assertEqual(saved, [])
             self.sialib.rehearse_memories(now=1, stage=publish)
 
-        self.assertEqual(saved, [{"reviewed": "events/test/day"}])
+        self.assertEqual(saved, [{"reviewed": "events/test/day",
+                                  "rehearsal_cursor": 0}])
 
     def test_musing_keeper_failure_cannot_save_and_retry_can_commit(self):
         state_saves = []
@@ -507,6 +805,17 @@ class DreamPublication(unittest.TestCase):
         attempts = [row for row in self.ledger_rows
                     if row[0] == "DREAM:muse"]
         self.assertGreaterEqual(len(attempts), 2)
+
+    def test_musing_refuses_an_unobserved_ledger_head_before_model_work(self):
+        muse = mock.Mock(return_value=("association", ["sia/cortex"]))
+        cycle = self._result(
+            os.EX_OK, json.dumps({"status": "ok", "totals": {}}))
+        self._run(result=cycle, muse=muse, ledger_head=(0, ""))
+        muse.assert_not_called()
+        errors = [row for row in self.ledger_rows
+                  if row[:2] == ("DREAM:muse", "error")]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ledger head", errors[0][2])
 
     def test_due_grade_refusals_are_not_signed_as_none_due(self):
         report = {"status": "ok", "totals": {}}
@@ -593,7 +902,7 @@ class DreamPublication(unittest.TestCase):
 
         gbrain_cycle = mock.Mock(return_value=self._result(
             os.EX_OK, json.dumps({"status": "ok", "totals": {}})))
-        with self.assertRaisesRegex(RuntimeError, "pending brain sync failed"):
+        with self.assertRaisesRegex(RuntimeError, "pending index sync failed"):
             self._run(
                 result=gbrain_cycle, due_takes=takes,
                 grade_take=grade_take, commit_grade=commit_grade,
@@ -659,9 +968,12 @@ class DreamPublication(unittest.TestCase):
                 stream.write('{"date":"2026-08-28","hit5_blend":0.25}\n')
                 stream.write('not json\n')
                 stream.write('{"date":"2026-08-29","hit5_blend":true}\n')
+                stream.write('{"date":"2026-99-99",'
+                             '"slug_match_at_5_blend":0.5}\n')
                 stream.write('{"date":"2026-08-30",'
                              '"slug_match_at_5_blend":0.75}\n')
-            rows = self.sialib._bench_trend_snapshot(path)
+            rows, boundary = self.sialib._bench_trend_snapshot(
+                path, include_metadata=True)
 
         self.assertEqual(
             rows,
@@ -669,6 +981,8 @@ class DreamPublication(unittest.TestCase):
               "kind": "heuristic-slug-retrieval-drift-tripwire"},
              {"date": "2026-08-30", "slug_match_at_5": 0.75,
               "kind": "heuristic-slug-retrieval-drift-tripwire"}])
+        self.assertEqual(boundary, {"legacy_truncated": True})
+        self.assertTrue(self.sialib._status_bench_trend_shape(rows))
 
     def test_bench_trend_upgrade_reads_only_bounded_legacy_tail(self):
         with tempfile.TemporaryDirectory() as state:
@@ -814,9 +1128,17 @@ class DreamPublication(unittest.TestCase):
         self.assertTrue(rows)
         self.assertTrue(boundary["legacy_truncated"])
 
-        with mock.patch.object(
-                self.sialib, "corpus_owner",
-                return_value=nullcontext()), \
+        corpus = os.path.join(self.state_root.name, "corpus")
+        with mock.patch.object(self.sialib, "CORPUS", corpus), \
+                mock.patch.object(
+                    self.sialib, "CORTEX_BOUNDARY_REPAIR_JOURNAL",
+                    os.path.join(self.state_root.name, "cortex-journal.json")), \
+                mock.patch.object(
+                    self.sialib, "CORTEX_BOUNDARY_REPAIR_RECEIPT",
+                    os.path.join(self.state_root.name, "cortex-receipt.json")), \
+                mock.patch.object(
+                    self.sialib, "corpus_owner",
+                    return_value=nullcontext()), \
                 mock.patch.object(
                     self.sialib, "load_memo", return_value=self.memo), \
                 mock.patch.object(
@@ -828,6 +1150,9 @@ class DreamPublication(unittest.TestCase):
                 mock.patch.object(
                     self.sialib, "_graph_projection_debt",
                     return_value=""), \
+                mock.patch.object(
+                    self.sialib, "read_json",
+                    return_value=_graph_snapshot()), \
                 mock.patch.object(
                     self.sialib.siatakes,
                     "natural_history_recovery_required",
@@ -841,7 +1166,27 @@ class DreamPublication(unittest.TestCase):
                 mock.patch.object(
                     self.sialib.siatakes, "intent_history_required",
                     return_value=False):
+            ready, reason = self.sialib.memory_readiness()
+            self.assertFalse(ready)
+            self.assertIn("cortex product-metaphor boundary root is missing", reason)
+            root = self.sialib.corpus_path("sia/cortex")
+            os.makedirs(os.path.dirname(root))
+            self.sialib.atomic_write(
+                root, self.sialib._current_cortex_root_bytes().decode("utf-8"))
             self.assertEqual(self.sialib.memory_readiness(), (True, ""))
+
+    def test_dream_unit_receipt_version_requires_exact_json_integer(self):
+        mind = {}
+        self.sialib._stage_dream_unit(
+            mind, "muse", "DREAM:muse", "fixture", "", "fixture")
+        self.assertIsNotNone(self.sialib._pending_dream_unit(mind))
+        for replacement in (True, 1.0):
+            with self.subTest(replacement=replacement):
+                malformed = copy.deepcopy(mind)
+                malformed["dream_unit"]["v"] = replacement
+                with self.assertRaisesRegex(
+                        RuntimeError, "dream unit receipt is invalid"):
+                    self.sialib._pending_dream_unit(malformed)
 
 
 class ThoughtOrigins(unittest.TestCase):
@@ -904,6 +1249,82 @@ class ThoughtOrigins(unittest.TestCase):
         self.assertEqual(
             [row.get("origin") for row in loaded["thoughts"]],
             ["model", "model", "model", None])
+
+    def test_thought_store_version_requires_exact_json_integer(self):
+        for replacement in (True, 1.0):
+            with self.subTest(replacement=replacement), mock.patch.object(
+                    self.sialib, "read_state_json",
+                    return_value={"v": replacement, "thoughts": []}), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "thought store schema is invalid"):
+                self.sialib.load_thoughts()
+
+    def test_legacy_model_thought_kinds_are_one_shared_policy(self):
+        self.assertEqual(self.sialib.LEGACY_MODEL_THOUGHT_KINDS,
+                         frozenset({"grade", "ponder", "note", "take"}))
+        queued_at = "2026-01-02T03:04:05Z"
+
+        def queued(kind, queue_id):
+            return {"kind": kind, "text": "legacy model prose",
+                    "_queue_id": queue_id, "_queued_at": queued_at}
+
+        with mock.patch.object(
+                self.sialib, "LEGACY_MODEL_THOUGHT_KINDS",
+                frozenset({"take"})):
+            queued_take = self.sialib._canonical_thought_inbox_item(
+                queued("take", "a" * 32), queued=True)
+            queued_note = self.sialib._canonical_thought_inbox_item(
+                queued("note", "b" * 32), queued=True)
+            legacy = {"v": 1, "thoughts": [
+                {"kind": "take", "text": "operator prediction"},
+                {"kind": "note", "text": "agent prose"},
+            ]}
+            with mock.patch.object(
+                    self.sialib, "read_state_json", return_value=legacy):
+                loaded = self.sialib.load_thoughts()
+
+        self.assertEqual(queued_take["origin"], "model")
+        self.assertEqual(queued_note["origin"], "derived")
+        self.assertEqual(
+            [row.get("origin") for row in loaded["thoughts"]],
+            ["model", None])
+
+    def test_thought_store_refuses_unbounded_or_ambiguous_projection_rows(self):
+        minimal = {"kind": "note", "text": "bounded legacy prose"}
+        cases = (
+            {"v": 1, "thoughts": [minimal]
+             * (self.sialib.MAX_THOUGHT_INBOX_ITEMS + 1)},
+            {"v": 1, "thoughts": [{
+                "ts": "2026-01-02T03:04:05Z", "kind": "note",
+                "text": "missing modern projection fields",
+            }]},
+            {"v": 1, "thoughts": [minimal], "unexpected": True},
+        )
+        for value in cases:
+            with self.subTest(value=value), mock.patch.object(
+                    self.sialib, "read_state_json", return_value=value), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "thought store schema is invalid"):
+                self.sialib.load_thoughts()
+
+    def test_thought_store_refuses_noncanonical_modern_rows_and_duplicates(self):
+        row = {
+            "ts": "2026-01-02T03:04:05Z", "kind": "note",
+            "text": "canonical projection", "links": ["sia/cortex"],
+            "urgent": False, "origin": "model",
+            "slug": "thoughts/2026-01-02-0304-note",
+        }
+        cases = (
+            {"v": 1, "thoughts": [{**row, "text": "raw [link]"}]},
+            {"v": 1, "thoughts": [row, dict(row)]},
+            {"v": 1, "thoughts": [{**row, "unknown": "field"}]},
+        )
+        for value in cases:
+            with self.subTest(value=value), mock.patch.object(
+                    self.sialib, "read_state_json", return_value=value), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "thought store schema is invalid"):
+                self.sialib.load_thoughts()
 
     def test_write_thought_persists_origin_and_upgrades_exact_legacy_retry(self):
         thought = {
@@ -1206,7 +1627,8 @@ class RehearsalEmbedContract(unittest.TestCase):
             for name, replacement in (
                     ("gbrain", fake_gbrain),
                     ("page_exists", lambda _slug: True),
-                    ("read_json", lambda *_args, **_kwargs: {})):
+                    ("read_json", lambda *_args, **_kwargs:
+                     _graph_snapshot([plan["slug"]]))):
                 stack.enter_context(
                     mock.patch.object(self.sialib, name, replacement))
             for name, replacement in (

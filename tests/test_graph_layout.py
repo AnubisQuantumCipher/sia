@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Executable contracts for SIA's self-organizing cockpit graph."""
+"""Executable contracts for SIA's deterministic animated cockpit graph."""
 
 import json
 from pathlib import Path

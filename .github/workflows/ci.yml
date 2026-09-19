@@ -39,7 +39,7 @@ jobs:
           fi
           test -s schema-pack/pack.yaml
           test -s preview.png
-          git diff --check
+          git diff --check "$(git hash-object -t tree /dev/null)" HEAD --
       - name: shell semantics
         run: |
           docker run --rm --network none --cap-drop all \
@@ -102,12 +102,203 @@ jobs:
       - name: real-gbrain contract lane
         env:
           PYTHONWARNINGS: error::ResourceWarning
+          # The skip gate below reads unittest's plain-text lines; keep them plain.
+          NO_COLOR: "1"
+          PYTHON_COLORS: "0"
         run: |
           set -euo pipefail
           output="$(python3 -m unittest tests.test_gbrain_contract -v 2>&1)" || {
             printf '%s\n' "$output"; exit 1; }
           printf '%s\n' "$output"
           # A skip here would mean SIA_GBRAIN_BIN was ignored — the lane must actually run.
-          if printf '%s' "$output" | grep -q 'skipped'; then
-            echo 'contract lane skipped despite a provided binary' >&2; exit 1
+          # The one declared exception is GbrainCompiledRenderContract, which needs
+          # operator-supplied pinned expectation artifacts (SIA_GBRAIN_COMPILED_*)
+          # this runner does not hold; its skip message says so and is not proof.
+          # Only per-test skip lines are judged; unittest's own summary line
+          # ("OK (skipped=1)") names the count, not a reason, and the count must
+          # equal the declared skips so a second, undeclared skip cannot hide.
+          declared="$(printf '%s\n' "$output" \
+            | grep -c ' \.\.\. skipped .*compiled render transport NOT EXERCISED' || true)"
+          undeclared="$(printf '%s\n' "$output" | grep ' \.\.\. skipped' \
+            | grep -vc 'compiled render transport NOT EXERCISED' || true)"
+          summary="$(printf '%s\n' "$output" | sed -n 's/^OK (skipped=\([0-9]*\))$/\1/p')"
+          if [ "$undeclared" != 0 ] || [ "${summary:-0}" != "$declared" ]; then
+            echo "contract lane skipped despite a provided binary (declared=$declared undeclared=$undeclared summary=${summary:-0})" >&2
+            exit 1
           fi
+
+  # ROADMAP's "`main` is frozen while marketplace verification is pending" was
+  # enforced socially, and verify issue #4078 was retargeted three times because
+  # a push moved HEAD off the bound commit — the maintainer's constraint is not
+  # "bind a good commit" but "bind the commit that is currently HEAD". The rule
+  # is mechanical here: ROADMAP.md carries one machine-readable freeze
+  # declaration naming the frozen branch and the exact bound SHA, and a push to
+  # that branch which is not that commit is a red build. A declaration this job
+  # cannot read is a failure, never a silent pass, and a state it does not apply
+  # to is announced rather than quietly skipped.
+  marketplace-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # github.event.before can be older than HEAD^ when one push carries
+          # several commits. Keep that exact provenance available, along with
+          # HEAD^ for classifying a bookkeeping-only rebind.
+          fetch-depth: 0
+      - name: marketplace freeze gate
+        env:
+          SIA_FREEZE_EVENT: ${{ github.event_name }}
+          SIA_FREEZE_REF_TYPE: ${{ github.ref_type }}
+          SIA_FREEZE_REF_NAME: ${{ github.ref_name }}
+          SIA_FREEZE_HEAD: ${{ github.sha }}
+          SIA_FREEZE_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          count="$(grep -cE '^[[:space:]]*sia-freeze:' ROADMAP.md || true)"
+          [ -n "$count" ] || count=0
+          if [ "$count" != 1 ]; then
+            echo "refusing: ROADMAP.md must carry exactly one sia-freeze" \
+              "declaration; found $count" >&2
+            exit 1
+          fi
+          line="$(grep -E '^[[:space:]]*sia-freeze:' ROADMAP.md)"
+          state="$(printf '%s\n' "$line" | sed -n 's#.*state=\([a-z]*\).*#\1#p')"
+          branch="$(printf '%s\n' "$line" \
+            | sed -n 's#.*branch=\([A-Za-z0-9._/-]*\).*#\1#p')"
+          sha="$(printf '%s\n' "$line" | sed -n 's#.*sha=\([0-9a-f]*\).*#\1#p')"
+          case "$state" in
+            none|pending) ;;
+            *)
+              echo "refusing: unreadable sia-freeze state in ROADMAP.md" >&2
+              exit 1 ;;
+          esac
+          if [ -z "$branch" ] \
+             || ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "refusing: a pending sia-freeze declaration must name" \
+              "branch= and a full 40-hex sha=" >&2
+            exit 1
+          fi
+          if [ "${SIA_FREEZE_EVENT:-}" != push ] \
+             || [ "${SIA_FREEZE_REF_TYPE:-}" != branch ]; then
+            echo "::notice::the freeze gate guards pushes to '$branch' only;" \
+              "this is ${SIA_FREEZE_EVENT:-?} on" \
+              "${SIA_FREEZE_REF_TYPE:-?} ${SIA_FREEZE_REF_NAME:-?}," \
+              "so nothing about the binding was checked"
+            exit 0
+          fi
+          before="${SIA_FREEZE_BEFORE:-}"
+          if [ "$before" = 0000000000000000000000000000000000000000 ] \
+             && [ "${SIA_FREEZE_REF_NAME:-}" != "$branch" ]; then
+            echo "::notice::new unrelated branch has no prior frozen HEAD;" \
+              "nothing about the binding was checked"
+            exit 0
+          fi
+          if ! printf '%s' "$before" | grep -qE '^[0-9a-f]{40}$' \
+             || [ "$before" = 0000000000000000000000000000000000000000 ] \
+             || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "refusing: push provenance is missing, zero, or unavailable;" \
+              "the frozen branch cannot be checked safely" >&2
+            exit 1
+          fi
+          transition=rebinding
+          if [ "${SIA_FREEZE_REF_NAME:-}" != "$branch" ]; then
+            # A declaration in this push cannot erase the branch that the
+            # previous commit froze. Classify against that prior authority
+            # before granting the ordinary unrelated-branch exemption.
+            prior_count="$(git show "$before:ROADMAP.md" 2>/dev/null \
+              | grep -cE '^[[:space:]]*sia-freeze:' || true)"
+            [ -n "$prior_count" ] || prior_count=0
+            if [ "$prior_count" = 0 ]; then
+              echo "::notice::no prior freeze applies to this unrelated branch;" \
+                "nothing about the binding was checked"
+              exit 0
+            fi
+            if [ "$prior_count" != 1 ]; then
+              echo "refusing: prior ROADMAP freeze state is ambiguous;" \
+                "branch retargeting cannot be authorized" >&2
+              exit 1
+            fi
+            prior_line="$(git show "$before:ROADMAP.md" \
+              | grep -E '^[[:space:]]*sia-freeze:')"
+            if ! printf '%s\n' "$prior_line" | grep -qE \
+                '^[[:space:]]*sia-freeze: state=(pending|none) branch=[A-Za-z0-9._/-]+ sha=[0-9a-f]{40}[[:space:]]*$'; then
+              echo "refusing: prior ROADMAP freeze state is unreadable;" \
+                "branch retargeting cannot be authorized" >&2
+              exit 1
+            fi
+            prior_state="$(printf '%s\n' "$prior_line" \
+              | sed -n 's#.*state=\([a-z]*\).*#\1#p')"
+            prior_branch="$(printf '%s\n' "$prior_line" \
+              | sed -n 's#.*branch=\([A-Za-z0-9._/-]*\).*#\1#p')"
+            if [ "$prior_state" != pending ] \
+               || [ "${SIA_FREEZE_REF_NAME:-}" != "$prior_branch" ]; then
+              echo "::notice::neither declaration freezes this branch;" \
+                "nothing about the binding was checked"
+              exit 0
+            fi
+            branch="$prior_branch"
+            sha="$(printf '%s\n' "$prior_line" \
+              | sed -n 's#.*sha=\([0-9a-f]*\).*#\1#p')"
+            state=pending
+            transition=retargeting
+          fi
+          if [ "${SIA_FREEZE_HEAD:-}" = "$sha" ]; then
+            echo "::notice::HEAD is the bound commit $sha"
+            exit 0
+          fi
+          if [ "$state" = none ]; then
+            prior_count="$(git show "$before:ROADMAP.md" 2>/dev/null \
+              | grep -cE '^[[:space:]]*sia-freeze:' || true)"
+            [ -n "$prior_count" ] || prior_count=0
+            if [ "$prior_count" != 1 ]; then
+              echo "refusing: prior ROADMAP freeze state is unavailable or" \
+                "ambiguous; cycle closure cannot be authorized" >&2
+              exit 1
+            fi
+            prior_state="$(git show "$before:ROADMAP.md" \
+              | grep -E '^[[:space:]]*sia-freeze:' \
+              | sed -n 's#.*state=\([a-z]*\).*#\1#p')"
+            if [ "$prior_state" = none ]; then
+              echo "::notice::no marketplace verification is pending;" \
+                "the freeze gate does not apply"
+              exit 0
+            fi
+            if [ "$prior_state" != pending ]; then
+              echo "refusing: prior ROADMAP freeze state is unreadable;" \
+                "cycle closure cannot be authorized" >&2
+              exit 1
+            fi
+            transition="cycle-closing"
+          fi
+          # The one act that must stay possible on a frozen branch: no commit
+          # can name its own SHA, so rebinding is always a second commit. The
+          # exemption is the declaration replacement itself, not arbitrary
+          # prose smuggled through under the same filename.
+          parent="$(git rev-parse "${SIA_FREEZE_HEAD}^" 2>/dev/null || true)"
+          if [ -n "$parent" ] && [ "$before" = "$parent" ] \
+             && changed="$(git diff --name-only \
+                "${SIA_FREEZE_HEAD}^" "$SIA_FREEZE_HEAD" 2>/dev/null)" \
+             && [ "$changed" = ROADMAP.md ]; then
+            changed_lines="$(git diff --unified=0 --no-color \
+              "${SIA_FREEZE_HEAD}^" "$SIA_FREEZE_HEAD" -- ROADMAP.md \
+              | sed -n '/^[+-][^+-]/p')"
+            removed="$(printf '%s\n' "$changed_lines" \
+              | grep -cE '^-[[:space:]]*sia-freeze:' || true)"
+            added="$(printf '%s\n' "$changed_lines" \
+              | grep -cE '^\+[[:space:]]*sia-freeze:' || true)"
+            unrelated="$(printf '%s\n' "$changed_lines" \
+              | grep -vE '^[+-][[:space:]]*sia-freeze:' || true)"
+            if [ "$removed" = 1 ] && [ "$added" = 1 ] \
+               && [ -z "$unrelated" ]; then
+              echo "::notice::$transition commit: only the sia-freeze declaration changed"
+              exit 0
+            fi
+          fi
+          echo "refusing: marketplace verification is pending on $sha, but" \
+            "$branch HEAD is ${SIA_FREEZE_HEAD:-?}. The verify flow binds one" \
+            "exact SHA and refuses when it is no longer default-branch HEAD," \
+            "so this push invalidates the evidence chain the listing is" \
+            "waiting on. Queue the work on a branch, or close the cycle by" \
+            "setting state=none in the ROADMAP.md sia-freeze declaration." >&2
+          exit 1

@@ -16,6 +16,7 @@ import errno
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -34,6 +35,52 @@ _LEGACY_ENQUEUE_RE = re.compile(r"^\.enqueue-[A-Za-z0-9_-]{1,200}$")
 STAGING_DIR_SUFFIX = ".sia-stage"
 STAGING_LOCK_NAME = "publish.lock"
 STAGING_PAYLOAD_NAME = "payload"
+
+
+def regular_file_stream(descriptor, *, label="source", error_type=ValueError):
+    """Take ownership of a regular read descriptor, closing on refusal.
+
+    Callers must open potentially special leaves nonblocking. Rejecting their
+    type before fdopen also matters: fdopen rejects directory descriptors
+    without assuming ownership, so a failed conversion would otherwise leak.
+    """
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise error_type(f"{label} is not a regular file")
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _strict_json_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _reject_nonstandard_json_constant(value):
+    raise ValueError(f"nonstandard JSON constant {value!r}")
+
+
+def _finite_json_float(value):
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("JSON number is outside the finite float domain")
+    return parsed
+
+
+def strict_json_loads(value):
+    """Decode standards-only JSON without ambiguous object authority."""
+    if isinstance(value, (bytes, bytearray)):
+        value = bytes(value).decode("utf-8", errors="strict")
+    return json.loads(
+        value, object_pairs_hook=_strict_json_object,
+        parse_constant=_reject_nonstandard_json_constant,
+        parse_float=_finite_json_float)
 
 
 def _utc_stamp():
@@ -182,7 +229,11 @@ def _queue_usage(queue_dir):
 
 
 def _validate_record(record, filename=None):
-    if not isinstance(record, dict) or record.get("schema") != SCHEMA:
+    base_keys = {"schema", "request_id", "queued_at", "operation", "payload"}
+    if not isinstance(record, dict) \
+            or frozenset(record) not in {frozenset(base_keys),
+                                   frozenset(base_keys | {"redactions"})} \
+            or record.get("schema") != SCHEMA:
         raise ValueError("unsupported schema")
     request_id = record.get("request_id")
     if (not isinstance(request_id, str)
@@ -207,6 +258,15 @@ def _validate_record(record, filename=None):
             or len(author) > 40 or not isinstance(text, str)
             or not text.strip() or len(text) > 2000):
         raise ValueError("invalid note payload")
+    if "redactions" in record:
+        redactions = record["redactions"]
+        count = redactions.get("agent-note") \
+            if isinstance(redactions, dict) else None
+        if not isinstance(redactions, dict) \
+                or set(redactions) != {"agent-note"} \
+                or isinstance(count, bool) or not isinstance(count, int) \
+                or not 1 <= count <= MAX_REQUEST_BYTES:
+            raise ValueError("invalid note redaction accounting")
     if filename is not None:
         canonical = (queued_at.replace(":", "").replace("-", "") + "-"
                      + request_id + ".json")
@@ -268,6 +328,40 @@ def _open_owned_directory(path, label):
     return descriptor
 
 
+def _copy_bound_destination(path, descriptor):
+    """Own a duplicate joined to an entirely no-follow named directory."""
+    if type(descriptor) is not int or descriptor < 0:
+        raise ValueError("publication destination descriptor is invalid")
+    held = os.dup(descriptor)
+    named = None
+    try:
+        info = os.fstat(held)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() \
+                or stat.S_IMODE(info.st_mode) & 0o022:
+            raise ValueError("publication destination descriptor is not an owned directory")
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) \
+            | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        named = os.open(os.sep, flags)
+        for part in os.path.abspath(path).split(os.sep):
+            if not part:
+                continue
+            next_descriptor = os.open(part, flags, dir_fd=named)
+            os.close(named)
+            named = next_descriptor
+        current = os.fstat(named)
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                                  value.st_uid, value.st_gid)
+        if identity(current) != identity(info) or identity(os.fstat(held)) != identity(info):
+            raise ValueError("publication destination descriptor does not bind its named directory")
+        return held
+    except BaseException:
+        os.close(held)
+        raise
+    finally:
+        if named is not None:
+            os.close(named)
+
+
 def _ensure_staging_directory(path):
     """Create and durably bind one owner-private fixed staging directory."""
     parent = os.path.dirname(path) or os.curdir
@@ -287,7 +381,9 @@ def _ensure_staging_directory(path):
 
 
 @contextlib.contextmanager
-def _staging_lock(staging_descriptor):
+def _staging_lock(staging_descriptor, *, nonblocking=False):
+    if type(nonblocking) is not bool:
+        raise TypeError("publication lock mode must be a Boolean")
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(
@@ -298,7 +394,7 @@ def _staging_lock(staging_descriptor):
                 or info.st_nlink != 1:
             raise ValueError("publication staging lock is not an owned file")
         os.fchmod(descriptor, 0o600)
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | (fcntl.LOCK_NB if nonblocking else 0))
         try:
             held = os.fstat(descriptor)
             current = os.stat(
@@ -397,8 +493,18 @@ def _read_exact_at(directory_descriptor, name, expected_size, label):
     return b"".join(chunks)
 
 
+def _directory_identity(info):
+    return {
+        "device": info.st_dev, "inode": info.st_ino,
+        "size": info.st_size, "mtime_ns": info.st_mtime_ns,
+        "ctime_ns": info.st_ctime_ns,
+    }
+
+
 def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
-                         staging_dir=None, authority_roots=()):
+                         staging_dir=None, authority_roots=(),
+                         observe_destination=False, nonblocking=False,
+                         destination_dir_fd=None):
     """Publish bytes through one crash-reusable fixed payload slot.
 
     ``exclusive`` never replaces a destination.  An already-present exact
@@ -406,9 +512,20 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
     is refused.  A failed or killed attempt can leave only ``payload`` in the
     owner-private staging directory, and the next holder cleans that exact
     owned regular slot before proceeding.
+
+    ``nonblocking`` opts into immediate staging-lock contention refusal;
+    existing callers retain the blocking lock contract by default.
+
+    ``destination_dir_fd`` binds a caller-held directory before staging or
+    publication. Only a validated duplicate is used and closed here; leaf
+    operations cannot be redirected by replacing a named ancestor.
     """
     if not isinstance(data, bytes):
         raise TypeError("fixed publication payload must be bytes")
+    if type(observe_destination) is not bool:
+        raise TypeError("destination observation mode must be a Boolean")
+    if type(nonblocking) is not bool:
+        raise TypeError("publication lock mode must be a Boolean")
     target = os.path.abspath(path)
     directory = os.path.dirname(target) or os.curdir
     name = os.path.basename(target)
@@ -416,17 +533,22 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
         raise ValueError("fixed publication target name is invalid")
     staging_dir = staging_dir or staging_dir_for(
         target, authority_roots=authority_roots)
-    _ensure_staging_directory(staging_dir)
-    destination_descriptor = _open_owned_directory(
-        directory, "publication destination directory")
-    staging_descriptor = _open_owned_directory(
-        staging_dir, "publication staging directory")
+    destination_descriptor = None
+    staging_descriptor = None
     try:
+        if destination_dir_fd is not None:
+            destination_descriptor = _copy_bound_destination(directory, destination_dir_fd)
+        _ensure_staging_directory(staging_dir)
+        if destination_descriptor is None:
+            destination_descriptor = _open_owned_directory(
+                directory, "publication destination directory")
+        staging_descriptor = _open_owned_directory(
+            staging_dir, "publication staging directory")
         if os.fstat(destination_descriptor).st_dev \
                 != os.fstat(staging_descriptor).st_dev:
             raise ValueError(
                 "publication staging and destination are on different filesystems")
-        with _staging_lock(staging_descriptor):
+        with _staging_lock(staging_descriptor, nonblocking=nonblocking):
             try:
                 _owned_regular_at(
                     staging_descriptor, STAGING_PAYLOAD_NAME,
@@ -453,6 +575,11 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                     # exact destination as already published.
                     os.fsync(destination_descriptor)
                     _publish_boundary("target-directory-fsynced")
+                    if observe_destination:
+                        identity = _directory_identity(
+                            os.fstat(destination_descriptor))
+                        return {"status": "existing", "before": identity,
+                                "after": identity, "stable": True}
                     return "existing"
                 raise FileExistsError(path)
 
@@ -477,6 +604,8 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
             os.fsync(staging_descriptor)
             _publish_boundary("payload-linked")
 
+            directory_before = _directory_identity(
+                os.fstat(destination_descriptor))
             if exclusive:
                 _rename_noreplace(
                     staging_descriptor, STAGING_PAYLOAD_NAME,
@@ -486,16 +615,32 @@ def fixed_atomic_publish(path, data, *, mode=0o600, exclusive=False,
                     STAGING_PAYLOAD_NAME, name,
                     src_dir_fd=staging_descriptor,
                     dst_dir_fd=destination_descriptor)
+            directory_published = _directory_identity(
+                os.fstat(destination_descriptor))
             _publish_boundary("target-published")
+            directory_after_publish = _directory_identity(
+                os.fstat(destination_descriptor))
             os.fsync(destination_descriptor)
             _publish_boundary("target-directory-fsynced")
+            directory_after_fsync = _directory_identity(
+                os.fstat(destination_descriptor))
 
             os.fsync(staging_descriptor)
             _publish_boundary("staging-clean-fsynced")
+            directory_before_return = _directory_identity(
+                os.fstat(destination_descriptor))
+            if observe_destination:
+                stable = (directory_published == directory_after_publish
+                          == directory_after_fsync
+                          == directory_before_return)
+                return {"status": "published", "before": directory_before,
+                        "after": directory_published, "stable": stable}
             return "published"
     finally:
-        os.close(staging_descriptor)
-        os.close(destination_descriptor)
+        if staging_descriptor is not None:
+            os.close(staging_descriptor)
+        if destination_descriptor is not None:
+            os.close(destination_descriptor)
 
 
 def _identity(info, request_id, digest):
@@ -516,9 +661,9 @@ def _same_identity(info, expected, digest):
 def _read_open_request(path, name):
     linked = os.lstat(path)
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as f:
+    with regular_file_stream(fd, label="request") as f:
         opened = os.fstat(f.fileno())
         if (not stat.S_ISREG(opened.st_mode)
                 or opened.st_size > MAX_REQUEST_BYTES
@@ -547,7 +692,7 @@ def _read_open_request(path, name):
         raise ValueError("request exceeds byte limit")
     try:
         raw = raw_bytes.decode("utf-8")
-        record = json.loads(raw)
+        record = strict_json_loads(raw)
     except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("request is malformed JSON") from exc
     _validate_record(record, name)
@@ -562,7 +707,7 @@ def _canonical_spool_name(name):
     return match.group(1) if match else None
 
 
-def enqueue(state_dir, operation, payload):
+def enqueue(state_dir, operation, payload, *, redactions=None):
     """Durably enqueue one immutable request and return its public receipt."""
     if not isinstance(payload, dict):
         raise TypeError("payload must be an object")
@@ -579,6 +724,8 @@ def enqueue(state_dir, operation, payload):
         "operation": operation,
         "payload": payload,
     }
+    if redactions:
+        record["redactions"] = redactions
     _validate_record(record)
     encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True)
                + "\n").encode("utf-8")
@@ -601,9 +748,10 @@ def enqueue(state_dir, operation, payload):
             "operation": operation}
 
 
-def enqueue_note(state_dir, author, text):
+def enqueue_note(state_dir, author, text, *, redactions=None):
     return enqueue(state_dir, "note", {"author": str(author),
-                                        "text": str(text)})
+                                        "text": str(text)},
+                   redactions=redactions)
 
 
 def pending(state_dir):

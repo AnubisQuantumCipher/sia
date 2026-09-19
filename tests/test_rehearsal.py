@@ -2,6 +2,7 @@
 """Stability-decay and SM-2 rehearsal invariants (stdlib-only)."""
 
 import contextlib
+import copy
 import importlib.util
 import importlib.machinery
 import io
@@ -40,7 +41,134 @@ def _load_script(name, path):
 siamind = _load("siamind_rehearsal", os.path.join(BIN, "siamind.py"))
 
 
+def _graph_snapshot(slugs, edge_pairs=()):
+    incoming = {slug: 0 for slug in slugs}
+    outgoing = {slug: 0 for slug in slugs}
+    edges = []
+    for index, (source, destination) in enumerate(edge_pairs):
+        outgoing[source] += 1
+        incoming[destination] += 1
+        edges.append({
+            "s": source, "d": destination,
+            "t": f"related-{index}", "why": "fixture",
+        })
+    return {
+        "v": 2, "ts": "2026-08-30T12:00:00Z",
+        "publication_id": "b" * 32,
+        "nodes": [{
+            "id": slug, "t": "note", "title": slug,
+            "ts": "2026-08-30T12:00:00Z", "origin": "derived",
+            "deg": incoming[slug] + outgoing[slug],
+            "din": incoming[slug], "dout": outgoing[slug],
+        } for slug in slugs],
+        "edges": edges, "pages_total": len(slugs),
+        "pages_total_complete": True,
+        "snapshot": {
+            "complete": True, "truncated": 0,
+            "omitted_nodes": 0, "omitted_edges": 0,
+            "omissions_imply_absence": False,
+            "aged_out": 0,
+            "counts_by_kind": ({"note": len(slugs)} if slugs else {}),
+            "failed_ops": [], "window_days": 14,
+        },
+    }
+
+
 class Migration(unittest.TestCase):
+    def test_unknown_or_type_confused_mind_version_is_not_downgraded(self):
+        for version in (siamind.MIND_VERSION + 1, "future", True):
+            with self.subTest(version=version), self.assertRaisesRegex(
+                    ValueError, "mind state version"):
+                siamind.migrate_mind({
+                    "v": version, "nodes": {}, "edges": {}}, now=0)
+
+    def test_legacy_and_downgraded_familiarity_markers_are_not_trusted(self):
+        for version in (None, 1, 2, 3):
+            with self.subTest(version=version):
+                raw = {
+                    "nodes": {}, "edges": {},
+                    "seen": {"units/known": 100.0},
+                    "familiarity_complete": True,
+                }
+                if version is not None:
+                    raw["v"] = version
+                migrated = siamind.migrate_mind(raw, now=200.0)
+                self.assertEqual(migrated["v"], siamind.MIND_VERSION)
+                self.assertFalse(migrated["familiarity_complete"])
+                self.assertFalse(
+                    migrated["familiarity_bootstrap_pending"])
+
+    def test_current_familiarity_completeness_is_required_and_boolean(self):
+        for marker in (None, 1, "true"):
+            with self.subTest(marker=marker):
+                raw = {
+                    "v": siamind.MIND_VERSION,
+                    "nodes": {}, "edges": {}, "seen": {},
+                }
+                if marker is not None:
+                    raw["familiarity_complete"] = marker
+                with self.assertRaisesRegex(
+                        ValueError, "familiarity completeness"):
+                    siamind.migrate_mind(raw, now=200.0)
+
+    def test_current_familiarity_bootstrap_marker_is_required_and_boolean(self):
+        for marker in (None, 1, "true"):
+            with self.subTest(marker=marker):
+                raw = {
+                    "v": siamind.MIND_VERSION,
+                    "nodes": {}, "edges": {}, "seen": {},
+                    "familiarity_complete": False,
+                }
+                if marker is not None:
+                    raw["familiarity_bootstrap_pending"] = marker
+                with self.assertRaisesRegex(
+                        ValueError, "familiarity bootstrap"):
+                    siamind.migrate_mind(raw, now=200.0)
+
+    def test_persisted_familiarity_map_requires_strict_finite_timestamps(self):
+        bad_maps = (
+            [],
+            {"": 100.0},
+            {"../escape": 100.0},
+            {"pair:organ": 100.0},
+            {"pair:organ:kind:extra": 100.0},
+            {"units/example": True},
+            {"units/example": "100"},
+            {"units/example": float("inf")},
+        )
+        for version in (1, siamind.MIND_VERSION):
+            for seen in bad_maps:
+                with self.subTest(version=version, seen=seen):
+                    raw = {
+                        "v": version,
+                        "nodes": {}, "edges": {}, "seen": seen,
+                    }
+                    if version == siamind.MIND_VERSION:
+                        raw.update(
+                            familiarity_complete=False,
+                            familiarity_bootstrap_pending=False,
+                        )
+                    with self.assertRaisesRegex(
+                            ValueError, "familiarity"):
+                        siamind.migrate_mind(raw, now=200.0)
+
+    def test_persisted_familiarity_numbers_are_normalized_to_floats(self):
+        raw = {
+            "v": siamind.MIND_VERSION,
+            "nodes": {}, "edges": {},
+            "seen": {"units/integer": 100, "units/float": 200.5},
+            "familiarity_complete": True,
+            "familiarity_bootstrap_pending": False,
+        }
+        migrated = siamind.migrate_mind(raw, now=300.0)
+        self.assertEqual(
+            migrated["seen"],
+            {"units/integer": 100.0, "units/float": 200.5},
+        )
+        self.assertTrue(all(
+            type(value) is float for value in migrated["seen"].values()
+        ))
+
     def test_v1_weights_and_unknown_fields_survive(self):
         old = {"v": 1,
                "nodes": {"events/x/day": {"n": 2, "t0": 10,
@@ -81,6 +209,37 @@ class Migration(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             siamind.migrate_mind(corrupt_edge, now=100)
+
+    def test_persisted_sm2_discrete_fields_require_exact_json_integers(self):
+        review = {
+            "ef": 2.5, "reps": 1, "interval_days": 1,
+            "due_at": 100.0, "last_review": 50.0,
+            "reviews": 1, "last_quality": 5,
+        }
+        with tempfile.TemporaryDirectory() as state:
+            old_path = siamind.MIND_PATH
+            siamind.MIND_PATH = os.path.join(state, "mind.json")
+            try:
+                for field in ("reps", "interval_days", "reviews",
+                              "last_quality"):
+                    for confused in (True, 1.0, "1"):
+                        candidate = {
+                            "nodes": {"events/x/day": {
+                                "review": {**review, field: confused},
+                            }},
+                            "edges": {},
+                        }
+                        with open(siamind.MIND_PATH, "w",
+                                  encoding="utf-8") as stream:
+                            json.dump(candidate, stream)
+                        os.chmod(siamind.MIND_PATH, 0o600)
+                        with self.subTest(
+                                field=field, value=repr(confused)), \
+                                self.assertRaisesRegex(
+                                    ValueError, "SM-2 review integer"):
+                            siamind.load_mind(now=100)
+            finally:
+                siamind.MIND_PATH = old_path
 
     def test_corrupt_mind_refuses_overwrite_and_retains_last_good(self):
         with tempfile.TemporaryDirectory() as state:
@@ -136,6 +295,32 @@ class Migration(unittest.TestCase):
             finally:
                 siamind.MIND_PATH = old_path
 
+    def test_mind_loader_rejects_duplicate_keys_and_constants(self):
+        with tempfile.TemporaryDirectory() as state:
+            old_path = siamind.MIND_PATH
+            siamind.MIND_PATH = os.path.join(state, "mind.json")
+            valid_batch = "a" * 32
+            cases = (
+                '{"nodes":{},"edges":{},'
+                '"event_batch_applied":"' + valid_batch + '",'
+                '"event_batch_applied":null}',
+                '{"nodes":{},"edges":{},"private":NaN}',
+                '{"nodes":{},"edges":{},"private":Infinity}',
+                '{"nodes":{},"edges":{},"private":-Infinity}',
+            )
+            try:
+                for raw in cases:
+                    with self.subTest(raw=raw):
+                        with open(siamind.MIND_PATH, "w") as stream:
+                            stream.write(raw)
+                        os.chmod(siamind.MIND_PATH, 0o600)
+                        with self.assertRaisesRegex(
+                                ValueError,
+                                "^mind state is unreadable or malformed$"):
+                            siamind.load_mind(now=1)
+            finally:
+                siamind.MIND_PATH = old_path
+
     def test_save_refuses_an_oversized_existing_mind_without_reading_it_all(self):
         with tempfile.TemporaryDirectory() as state:
             old_path = siamind.MIND_PATH
@@ -167,6 +352,26 @@ class Migration(unittest.TestCase):
             try:
                 with self.assertRaises(OSError):
                     siamind.load_mind()
+            finally:
+                siamind.MIND_PATH = old_path
+
+    def test_mind_loader_and_writer_refuse_hardlinked_state(self):
+        with tempfile.TemporaryDirectory() as state:
+            old_path = siamind.MIND_PATH
+            siamind.MIND_PATH = os.path.join(state, "mind.json")
+            alias_path = os.path.join(state, "mind-alias.json")
+            try:
+                with open(siamind.MIND_PATH, "w", encoding="utf-8") \
+                        as stream:
+                    json.dump({"nodes": {}, "edges": {}}, stream)
+                os.chmod(siamind.MIND_PATH, 0o600)
+                os.link(siamind.MIND_PATH, alias_path)
+                with self.assertRaisesRegex(
+                        ValueError, "private single-link regular file"):
+                    siamind.load_mind()
+                with self.assertRaisesRegex(
+                        ValueError, "private single-link regular file"):
+                    siamind.save_mind({"nodes": {}, "edges": {}})
             finally:
                 siamind.MIND_PATH = old_path
 
@@ -208,6 +413,35 @@ class Migration(unittest.TestCase):
         self.assertTrue(set(mind["workspace"]).issubset(mind["nodes"]))
         self.assertGreaterEqual(
             mind["capacity"]["evicted_safety_nodes"], 1)
+
+    def test_node_only_compaction_preserves_independent_familiarity(self):
+        slug = "node-with-familiarity"
+        mind = siamind._empty_mind()
+        node = siamind.touch(mind, slug, ts=100, src="organ")
+        node["padding"] = "x" * 1024
+        mind["seen"][slug] = 100.0
+        expected = copy.deepcopy(mind)
+        expected["nodes"].pop(slug)
+        expected["capacity"] = {
+            "evicted_edges": 0,
+            "evicted_nodes": 1,
+            "evicted_safety_edges": 0,
+            "evicted_safety_nodes": 0,
+            "evicted_cache_entries": 0,
+        }
+        limit = len(siamind._mind_text(expected).encode("utf-8"))
+        self.assertGreater(
+            len(siamind._mind_text(mind).encode("utf-8")), limit)
+
+        removed = siamind.compact_mind_for_persistence(
+            mind, max_bytes=limit)
+
+        self.assertEqual(removed, {
+            "edges": 0, "nodes": 1, "cache_entries": 0})
+        self.assertNotIn(slug, mind["nodes"])
+        self.assertEqual(mind["seen"], {slug: 100.0})
+        self.assertTrue(mind["familiarity_complete"])
+        self.assertEqual(mind, expected)
 
     def test_capacity_refuses_to_evict_operator_pins(self):
         mind = siamind._empty_mind()
@@ -315,6 +549,25 @@ class Stability(unittest.TestCase):
             now=siamind.SECONDS_PER_DAY)
         self.assertEqual(ranked[0][0], "fresh")
         self.assertGreater(ranked[0][1], ranked[1][1])
+
+
+class Workspace(unittest.TestCase):
+    def test_equal_scores_use_canonical_slug_order(self):
+        slugs = ["units/zeta", "packages/alpha", "projects/middle"]
+        expected = sorted(slugs)
+
+        for order in (slugs, list(reversed(slugs))):
+            with self.subTest(order=order):
+                mind = {
+                    "nodes": {
+                        slug: {"n": 1.0, "t0": 100.0,
+                               "rt": [[100.0, 1.0]]}
+                        for slug in order
+                    },
+                    "workspace": [],
+                }
+                self.assertEqual(
+                    siamind.rebuild_workspace(mind, {}, now=100.0), expected)
 
 
 class SM2(unittest.TestCase):
@@ -431,7 +684,15 @@ graph = {{
         for index in range(len(node_ids))
     ],
 }}
-state = {{'nodes': {{}}, 'edges': {{}}, 'musing_day': ''}}
+state = {{
+    'nodes': {{
+        slug: {{'n': 1.0, 't0': 1999999000.0,
+                'rt': [[1999999990.0, 1.0]]}}
+        for slug in node_ids
+    }},
+    'edges': {{}},
+    'musing_day': '',
+}}
 print(json.dumps(mind_module.muse(
     state, graph, '2026-08-30', 'ledger-head', now=2000000000)))
 """
@@ -448,6 +709,19 @@ print(json.dumps(mind_module.muse(
 
 
 class Queue(unittest.TestCase):
+    def test_queue_writer_refuses_nonfinite_time_without_mutating_state(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "touches.jsonl")
+            prior = b'{"id":"prior","ts":10,"op":"pin","slug":"x"}\n'
+            for value in (float("nan"), float("inf"), float("-inf")):
+                with self.subTest(value=value):
+                    with open(path, "wb") as stream:
+                        stream.write(prior)
+                    self.assertFalse(siamind.queue_pin(
+                        "new", True, ts=value, queue_path=path))
+                    with open(path, "rb") as stream:
+                        self.assertEqual(stream.read(), prior)
+
     def test_unpin_uses_independent_recovery_lane(self):
         with tempfile.TemporaryDirectory() as root:
             old_queue = siamind.TOUCH_QUEUE
@@ -681,9 +955,14 @@ class MemoryReadiness(unittest.TestCase):
         with mock.patch.object(
                 runtime, "_consolidation_scan_debt", return_value=""), \
                 mock.patch.object(
+                    runtime, "_cortex_boundary_status",
+                    return_value=(True, "")), \
+                mock.patch.object(
                     runtime, "_thought_recovery_debt", return_value=""), \
                 mock.patch.object(
                     runtime, "_graph_projection_debt", return_value=""), \
+                mock.patch.object(
+                    runtime, "read_json", return_value=_graph_snapshot([])), \
                 mock.patch.object(
                     runtime.siamind, "load_mind", return_value={}), \
                 mock.patch.object(
@@ -693,6 +972,75 @@ class MemoryReadiness(unittest.TestCase):
                     runtime.siatakes, "intent_history_required",
                     return_value=False):
             yield
+
+    def test_invalid_graph_snapshot_blocks_memory_readiness(self):
+        runtime = _load(
+            "sialib_graph_readiness", os.path.join(BIN, "sialib.py"))
+        graph = _graph_snapshot(["forged/node"])
+        graph["unexpected"] = "open envelope"
+        with self._without_unrelated_recovery_debt(runtime), \
+                mock.patch.object(
+                    runtime.siatakes, "grade_recovery_required",
+                    return_value=False), \
+                mock.patch.object(
+                    runtime.siatakes, "take_migration_required",
+                    return_value=False), \
+                mock.patch.object(
+                    runtime, "corpus_owner",
+                    return_value=contextlib.nullcontext()), \
+                mock.patch.object(
+                    runtime, "load_memo", return_value=self._ready_memo()), \
+                mock.patch.object(
+                    runtime, "read_json", return_value=graph):
+            ready, reason = runtime.memory_readiness()
+        self.assertFalse(ready)
+        self.assertEqual(reason, "resident graph snapshot is invalid")
+
+    def test_partial_graph_snapshot_blocks_memory_readiness(self):
+        runtime = _load(
+            "sialib_partial_graph_readiness",
+            os.path.join(BIN, "sialib.py"))
+        graph = _graph_snapshot(["events/journal/visible"])
+        graph["pages_total_complete"] = False
+        graph["snapshot"]["complete"] = False
+        graph["snapshot"]["failed_ops"] = ["list_pages"]
+        with self._without_unrelated_recovery_debt(runtime), \
+                mock.patch.object(
+                    runtime.siatakes, "grade_recovery_required",
+                    return_value=False), \
+                mock.patch.object(
+                    runtime.siatakes, "take_migration_required",
+                    return_value=False), \
+                mock.patch.object(
+                    runtime, "corpus_owner",
+                    return_value=contextlib.nullcontext()), \
+                mock.patch.object(
+                    runtime, "load_memo", return_value=self._ready_memo()), \
+                mock.patch.object(
+                    runtime, "read_json", return_value=graph):
+            ready, reason = runtime.memory_readiness()
+        self.assertFalse(ready)
+        self.assertEqual(reason, "resident graph snapshot is incomplete")
+
+    def test_musing_refuses_a_capped_edge_window(self):
+        runtime = _load(
+            "sialib_omitted_edge_musing", os.path.join(BIN, "sialib.py"))
+        edge_count = runtime.MAX_GRAPH_EDGES
+        graph = _graph_snapshot(["events/journal/visible"])
+        graph["edges"] = [{
+            "s": "events/journal/visible",
+            "d": "events/journal/visible",
+            "t": f"relation-{index}", "why": "fixture",
+        } for index in range(edge_count)]
+        graph["nodes"][0].update({
+            "din": edge_count, "dout": edge_count,
+            "deg": edge_count + edge_count,
+        })
+        graph["snapshot"]["omitted_edges"] = 1
+        self.assertIsNotNone(runtime._recoverable_graph_snapshot(graph))
+        with self.assertRaisesRegex(
+                RuntimeError, "omits edges needed for the seeded walk"):
+            runtime._require_musing_graph_snapshot(graph)
 
     def test_marker_and_take_scan_share_the_corpus_transaction_lease(self):
         runtime = _load("sialib_readiness", os.path.join(BIN, "sialib.py"))
@@ -870,7 +1218,7 @@ class DreamIntegration(unittest.TestCase):
             sialib.GRAPH_PATH = os.path.join(state, "graph.json")
             sialib.siamind.MIND_PATH = os.path.join(state, "mind.json")
             sialib.atomic_write(sialib.GRAPH_PATH, json.dumps(
-                {"nodes": [{"id": "events/x/day"}], "edges": []}))
+                _graph_snapshot(["events/x/day"])))
             mind = {"nodes": {}, "edges": {}}
             sialib.siamind.touch(mind, "events/x/day", ts=0, src="organ",
                                  arousal=0.8)
@@ -904,8 +1252,9 @@ class DreamIntegration(unittest.TestCase):
             sialib.GRAPH_PATH = os.path.join(state, "graph.json")
             sialib.siamind.MIND_PATH = os.path.join(state, "mind.json")
             sialib.atomic_write(sialib.GRAPH_PATH, json.dumps(
-                {"nodes": [{"id": "events/x/day"}, {"id": "neighbor"}],
-                 "edges": [{"s": "events/x/day", "d": "neighbor"}]}))
+                _graph_snapshot(
+                    ["events/x/day", "neighbor"],
+                    [("events/x/day", "neighbor")])))
             mind = {"nodes": {}, "edges": {}}
             sialib.siamind.touch(mind, "events/x/day", ts=0, src="organ",
                                  arousal=0.8)
@@ -947,6 +1296,89 @@ class DreamIntegration(unittest.TestCase):
                 edge_before["w"])
             self.assertEqual(len(sialib.siamind.plan_rehearsal(
                 saved_missing, now=2)), 1)
+
+    def test_failed_rehearsals_are_bounded_deferred_and_rotated(self):
+        sialib = _load("sialib_rehearsal_rotation",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(corpus)
+            os.makedirs(state)
+            sialib.CORPUS = corpus
+            sialib.GRAPH_PATH = os.path.join(state, "graph.json")
+            sialib.siamind.MIND_PATH = os.path.join(state, "mind.json")
+
+            slugs = [f"events/fairness/page-{index}"
+                     for index in range(sialib.siamind.WORKSPACE_K * 2)]
+            for slug in slugs:
+                path = os.path.join(corpus, slug + ".md")
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as page:
+                    page.write("# due\n")
+            graph = _graph_snapshot(slugs)
+            sialib.atomic_write(sialib.GRAPH_PATH, json.dumps(graph))
+            mind = {"nodes": {}, "edges": {}}
+            for slug in slugs:
+                sialib.siamind.touch(
+                    mind, slug, ts=0, src="organ", arousal=0.8)
+                sialib.siamind.touch(
+                    mind, slug, ts=1, src="user-recall")
+            sialib.siamind.save_mind(mind)
+
+            calls = []
+
+            class Result:
+                returncode, stdout, stderr = 1, "", "still unavailable"
+
+            sialib.gbrain = lambda args, timeout=0: \
+                calls.append(args[1]) or Result()
+            first = sialib.rehearse_memories(now=2)
+            first_attempts = list(calls)
+            saved_first = sialib.siamind.load_mind(now=2)
+            calls.clear()
+            second = sialib.rehearse_memories(now=2)
+
+            self.assertEqual(len(first_attempts), sialib.siamind.WORKSPACE_K)
+            self.assertEqual(len(calls), sialib.siamind.WORKSPACE_K)
+            self.assertEqual(first["deferred"], sialib.siamind.WORKSPACE_K)
+            self.assertEqual(second["deferred"], sialib.siamind.WORKSPACE_K)
+            self.assertTrue(set(first_attempts).isdisjoint(calls))
+            self.assertNotEqual(saved_first["rehearsal_cursor"], 0)
+
+    def test_rehearsal_refuses_an_invalid_graph_before_mutating_mind(self):
+        sialib = _load("sialib_rehearsal_graph_refusal",
+                       os.path.join(BIN, "sialib.py"))
+        mind = {"nodes": {}, "edges": {}}
+        sialib.siamind.touch(
+            mind, "events/x/day", ts=0, src="organ", arousal=0.8)
+        sialib.siamind.touch(
+            mind, "events/x/day", ts=1, src="user-recall")
+        graph = _graph_snapshot(["events/x/day", "forged/node"])
+        graph["unexpected"] = "open envelope"
+        save = mock.Mock()
+        sync = mock.Mock()
+        embed = mock.Mock()
+        with mock.patch.object(
+                sialib.siamind, "load_mind", return_value=copy.deepcopy(mind)), \
+                mock.patch.object(
+                    sialib, "read_json", return_value=graph), \
+                mock.patch.object(
+                    sialib.siamind, "sync_graph_state", sync), \
+                mock.patch.object(sialib.siamind, "save_mind", save), \
+                mock.patch.object(sialib, "gbrain", embed), \
+                self.assertRaisesRegex(
+                    RuntimeError, "resident graph snapshot is invalid"):
+            sialib.rehearse_memories(now=2)
+        sync.assert_not_called()
+        save.assert_not_called()
+        embed.assert_not_called()
+
+    def test_rehearsal_cursor_is_validated_instead_of_reset(self):
+        broken = siamind._empty_mind()
+        broken["rehearsal_cursor"] = "first-page"
+        with self.assertRaisesRegex(ValueError, "rehearsal cursor"):
+            siamind.migrate_mind(broken, now=1)
 
 
 if __name__ == "__main__":

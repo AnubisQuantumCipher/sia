@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shutil
 import signal
 import stat
@@ -24,7 +25,8 @@ except ModuleNotFoundError:
 
 
 REPO = Path(__file__).resolve().parent.parent
-RELEASE_VERSION = "1.7.8"
+RELEASE_VERSION = json.loads(
+    (REPO / "manifest.json").read_text(encoding="utf-8"))["version"]
 
 
 def _read(relative):
@@ -87,6 +89,14 @@ def _load_sialib():
     return module
 
 
+
+def _newer_than(version):
+    """A canonical release one patch above ``version``: fixtures that mean
+    "newer than the runtime under test" must not hardcode a string that a
+    later release quietly turns into an older one."""
+    major, minor, patch = (int(part) for part in version.split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
 class MarketplaceFirstLightTests(unittest.TestCase):
     def _model_call(self, function_name, *arguments):
         node = shutil.which("node")
@@ -123,7 +133,9 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         legacy_status = {
             "v": 1,
             "ts": "2026-09-01T00:00:00Z",
-            "state": "ready",
+            "state": "ok",
+            "events_today": 0,
+            "errors": {},
             "publication_id": "legacy-publication",
             "projection_debt": {"graph": "", "consolidation": ""},
             "mind": {
@@ -143,7 +155,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 {"version": RELEASE_VERSION}, RELEASE_VERSION),
             "ready")
         self.assertEqual(
-            self._model_lifecycle({"version": "1.7.9"}, RELEASE_VERSION),
+            self._model_lifecycle({"version": _newer_than(RELEASE_VERSION)}, RELEASE_VERSION),
             "ahead")
         self.assertEqual(
             self._model_lifecycle({"version": "1.5"}, RELEASE_VERSION),
@@ -181,10 +193,10 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "ready")
         self.assertEqual(
             self._model_call(
-                "guidedLifecycle", {"version": "1.7.9"}, installing,
+                "guidedLifecycle", {"version": _newer_than(RELEASE_VERSION)}, installing,
                 RELEASE_VERSION),
             "ahead")
-        newer_ready = {"v": 1, "version": "1.7.9", "state": "ready"}
+        newer_ready = {"v": 1, "version": _newer_than(RELEASE_VERSION), "state": "ready"}
         self.assertEqual(
             self._model_call(
                 "guidedLifecycle", None, newer_ready, RELEASE_VERSION),
@@ -196,7 +208,11 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             model)
         for surface in ("Panel.qml", "Cockpit.qml"):
             source = _read(surface)
-            self.assertIn("Model.guidedLifecycle(", source, surface)
+            compact = " ".join(source.split())
+            self.assertIn(
+                "Model.guidedLifecycle(root.runtimeEvidence, "
+                "root.installCompletion, root.pluginVersion)",
+                compact, surface)
             self.assertIn('"setup"', source, surface)
             self.assertIn("update", source.casefold(), surface)
             self.assertIn("repair", source.casefold(), surface)
@@ -218,7 +234,11 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn("function installCompletionReady(", model)
         for surface in ("Panel.qml", "Cockpit.qml"):
             source = _read(surface)
-            self.assertIn("Model.guidedLifecycle(", source, surface)
+            compact = " ".join(source.split())
+            self.assertIn(
+                "Model.guidedLifecycle(root.runtimeEvidence, "
+                "root.installCompletion, root.pluginVersion)",
+                compact, surface)
             self.assertIn("managed-install/first-light.json", source, surface)
             self.assertIn("releaseLifecycle", source, surface)
 
@@ -228,7 +248,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         first_runtime_step = installer.index(
             'step "1/9 private restic + bun + pinned gbrain')
         final_ready = installer.rindex(
-            'run_with_deadline 120 "$CLI_PATH" ready')
+            'run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready')
         completion = installer.rindex(
             'publish_first_light_state "$BINDIR" ready')
         self.assertLess(installing, first_runtime_step)
@@ -237,6 +257,66 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn(
             "stat.S_IMODE(published.st_mode) != 0o600", installer)
         self.assertIn("remove_first_light_completion", _read("uninstall.sh"))
+
+    def test_cpu_only_first_light_has_distinct_bounded_sync_deadlines(self):
+        sialib = _load_sialib()
+        self.assertEqual(
+            sialib.GBRAIN_ENV["GBRAIN_AI_EMBED_TIMEOUT_MS"], "300000")
+        calls = []
+
+        def gbrain(arguments, timeout=120):
+            calls.append((arguments, timeout))
+            return subprocess.CompletedProcess(
+                arguments, 0, stdout="", stderr="")
+
+        with mock.patch.object(sialib, "gbrain", side_effect=gbrain):
+            self.assertEqual(sialib.brain_sync(), (True, ""))
+            steady = list(calls)
+            calls.clear()
+            self.assertEqual(sialib.first_light_brain_sync(), (True, ""))
+            first_light = list(calls)
+
+        self.assertEqual([timeout for _arguments, timeout in steady],
+                         [300, 300, 300])
+        self.assertEqual([timeout for _arguments, timeout in first_light],
+                         [1800, 1800, 1800])
+
+        installer = _read("install.sh")
+        self.assertIn(
+            'run_with_deadline 1800 --label "sia ready" "$CLI_PATH" ready',
+            installer)
+        pulse = _read("bin/sialib.py").split("def pulse(", 1)[1]
+        self.assertIn("publication_brain_sync(memo)", pulse)
+
+    def _status_change_observation(self, body):
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node is unavailable for executable QML handler check")
+        script = r'''
+const root = {
+  statusLoadValid: true, statusResolved: true, stale: false,
+  status: {state: "ok"}, statusBoundary: "",
+  clearVerification() {}, clearReadyCheck() {}
+}
+const statusFile = {refreshPending: false}
+const observations = []
+const statusApply = {restart() {
+  observations.push([root.statusLoadValid, root.statusResolved])
+}}
+const readyProc = {cancel() {}}
+new Function("root", "statusFile", "statusApply", "readyProc",
+             process.argv[1])(root, statusFile, statusApply, readyProc)
+process.stdout.write(JSON.stringify({
+  valid: root.statusLoadValid, resolved: root.statusResolved,
+  stale: root.stale, boundary: root.statusBoundary,
+  pending: statusFile.refreshPending, observations
+}))
+'''
+        result = subprocess.run(
+            [node, "-e", script, body], cwd=REPO, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
 
     def test_ready_generation_stays_visible_during_file_refresh(self):
         for surface in ("Panel.qml", "Cockpit.qml"):
@@ -254,9 +334,31 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 status_view.index("root.applyStatus(text())"),
                 status_view.index("root.statusResolved = true"))
             self.assertIn("onLoadFailed:", status_view)
+            status_failure = status_view[
+                status_view.index("onLoadFailed:"):]
+            compact_failure = " ".join(status_failure.split())
+            evidence_update = (
+                "root.runtimeEvidence = Model.runtimeLifecycleEvidence( "
+                "null, false, root.runtimeEvidence, root.pluginVersion)")
+            self.assertIn(evidence_update, compact_failure)
+            self.assertLess(
+                compact_failure.index(evidence_update),
+                compact_failure.index("root.statusResolved = true"))
             self.assertIn("onFileChanged:", status_view)
             self.assertIn("statusApply.restart()", status_view)
-            self.assertNotIn("root.statusResolved = false", status_view)
+            # A plain reload has no new authority to reject. A watched change
+            # does: the old status must withdraw before the reread is queued.
+            changed = _balanced_body(status_view, "onFileChanged:")
+            observation = self._status_change_observation(changed)
+            self.assertFalse(observation["valid"], surface)
+            self.assertFalse(observation["resolved"], surface)
+            self.assertTrue(observation["pending"], surface)
+            self.assertEqual(observation["observations"], [[False, False]],
+                             surface)
+            if surface == "Panel.qml":
+                self.assertTrue(observation["stale"], surface)
+            else:
+                self.assertIn("pending validation", observation["boundary"])
 
             completion_view = source[
                 source.index("id: installCompletionFile"):
@@ -265,7 +367,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             self.assertIn(
                 "root.installCompletionResolved = true", completion_view)
             self.assertLess(
-                completion_view.index("root.applyInstallCompletion(text())"),
+                completion_view.index("root.applyInstallCompletion("),
                 completion_view.index(
                     "root.installCompletionResolved = true"))
             self.assertIn("onLoadFailed:", completion_view)
@@ -367,7 +469,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         # hand its process image away and lose the ability to hold or report.
         self.assertNotIn("exec uwsm-app", compact)
         self.assertNotRegex(helper, r'exec\s+"\$INSTALLER"')
-        self.assertRegex(helper, r'(?m)^\s*"\$INSTALLER" &$')
+        self.assertRegex(helper, r'(?m)^\s*python3 -I "\$LIFETIME_OWNER" setup --caller "\$BASHPID" "\$setup_lock_fd" "\$INSTALLER" &$')
         self.assertRegex(helper, r'(?m)^\s*wait "\$setup_installer_pid"$')
         self.assertIn("trap hold_setup_terminal EXIT", helper)
         # Closing the first-light window delivers SIGHUP; untrapped, the hold
@@ -395,7 +497,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             "SIA_REPLACE_TOOLCHAIN",
         )
         unset_at = helper.index("unset BASH_ENV ENV")
-        installer_at = helper.index('    "$INSTALLER"')
+        installer_at = helper.index('    python3 -I "$LIFETIME_OWNER" setup')
         publish_at = helper.index(
             'publish_setup_presentation "$setup_attempt"')
         self.assertLess(unset_at, installer_at)
@@ -410,10 +512,13 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             helper_copy = plugin / "bin" / "sia-setup"
             helper_copy.parent.mkdir(parents=True)
             shutil.copy2(path, helper_copy)
+            shutil.copy2(REPO / "bin" / "sialifetime.py",
+                         helper_copy.parent / "sialifetime.py")
             checker = plugin / "install.sh"
             checker.write_text(
                 "#!/usr/bin/env bash\n"
                 "set -euo pipefail\n"
+                + self._release_bootstrap()
                 + "names=(" + " ".join(consent_variables) + ")\n"
                 + "for name in \"${names[@]}\"; do\n"
                 + "  if [[ -v \"$name\" ]]; then exit 3; fi\n"
@@ -443,12 +548,19 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             'step "9/9 agents', 1)[0]
         self.assertIn('"$SIA_PLUGIN_STAGE/bin/sia-setup"', desktop)
 
+    def _release_bootstrap(self):
+        return _read("install.sh").split(
+            "# BEGIN SIA RELEASE LIFETIME\n", 1)[1].split(
+                "# END SIA RELEASE LIFETIME\n", 1)[0]
+
     def _first_light_rig(self, root, installer_body, present_seconds=None):
         """Stage a helper copy beside a scripted installer."""
         plugin = Path(root) / "plugin"
         helper = plugin / "bin" / "sia-setup"
         helper.parent.mkdir(parents=True)
         shutil.copy2(REPO / "bin" / "sia-setup", helper)
+        shutil.copy2(REPO / "bin" / "sialifetime.py",
+                     helper.parent / "sialifetime.py")
         if present_seconds is not None:
             source = helper.read_text(encoding="utf-8")
             shortened = source.replace(
@@ -457,7 +569,9 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             self.assertNotEqual(source, shortened)
             helper.write_text(shortened, encoding="utf-8")
         installer = plugin / "install.sh"
-        installer.write_text(installer_body, encoding="utf-8")
+        first, body = installer_body.split("\n", 1)
+        installer.write_text(first + "\n" + self._release_bootstrap() + body,
+                             encoding="utf-8")
         installer.chmod(0o700)
         home = Path(root) / "home"
         runtime = Path(root) / "runtime"
@@ -467,6 +581,116 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         environment.update({
             "HOME": str(home), "XDG_RUNTIME_DIR": str(runtime)})
         return helper, runtime, environment
+
+    def test_setup_run_drops_inherited_agent_skill_consent(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if [[ -v SIA_INSTALL_AGENT_SKILL ]]; then\n'
+                '  printf "inherited agent-skill consent\\n" >&2\n'
+                '  exit 3\n'
+                'fi\n')
+            environment["SIA_INSTALL_AGENT_SKILL"] = "1"
+            result = subprocess.run(
+                [str(helper), "run"], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=120, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("inherited agent-skill consent", result.stderr)
+
+    @staticmethod
+    def _wait_for_path(path, process, timeout=10):
+        deadline = time.monotonic() + timeout
+        while not path.exists():
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                raise AssertionError(
+                    f"process exited before {path}: {stdout!r} {stderr!r}")
+            if time.monotonic() >= deadline:
+                raise AssertionError(f"timed out waiting for {path}")
+            time.sleep(0.01)
+
+    def test_setup_run_keeps_original_owner_and_installer_after_path_rebind(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf original > "$SIA_TEST_ORIGINAL"\n')
+            original = Path(root) / "original"
+            replacement = Path(root) / "replacement"
+            gate = Path(root) / "python-gate"
+            release = Path(root) / "python-release"
+            fake_bin = Path(root) / "fake-bin"
+            fake_bin.mkdir()
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'if mkdir "$SIA_TEST_PYTHON_CLAIM" 2>/dev/null; then\n'
+                '  printf ready > "$SIA_TEST_PYTHON_GATE"\n'
+                '  while [ ! -e "$SIA_TEST_PYTHON_RELEASE" ]; do '
+                'sleep 0.01; done\n'
+                "fi\n"
+                'exec "$SIA_TEST_REAL_PYTHON" "$@"\n',
+                encoding="utf-8")
+            fake_python.chmod(0o700)
+            environment.update({
+                "PATH": str(fake_bin) + os.pathsep + environment["PATH"],
+                "SIA_TEST_ORIGINAL": str(original),
+                "SIA_TEST_REPLACEMENT": str(replacement),
+                "SIA_TEST_PYTHON_CLAIM": str(Path(root) / "python-claim"),
+                "SIA_TEST_PYTHON_GATE": str(gate),
+                "SIA_TEST_PYTHON_RELEASE": str(release),
+                "SIA_TEST_REAL_PYTHON": sys.executable,
+            })
+            process = subprocess.Popen(
+                [str(helper), "run"], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            plugin = helper.parents[1]
+            retained = Path(root) / "retained-plugin"
+            try:
+                self._wait_for_path(gate, process)
+                plugin.rename(retained)
+                (plugin / "bin").mkdir(parents=True)
+                hostile_owner = plugin / "bin" / "sialifetime.py"
+                hostile_owner.write_text(
+                    "import os\n"
+                    "from pathlib import Path\n"
+                    "Path(os.environ['SIA_TEST_REPLACEMENT']).write_text("
+                    "'replacement', encoding='utf-8')\n",
+                    encoding="utf-8")
+                hostile_owner.chmod(0o700)
+                (plugin / "install.sh").write_text(
+                    "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+                (plugin / "install.sh").chmod(0o700)
+                release.write_text("go", encoding="utf-8")
+                stdout, stderr = process.communicate(timeout=30)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=30)
+            self.assertEqual(process.returncode, 0, (stdout, stderr))
+            self.assertTrue(original.is_file(), (stdout, stderr))
+            self.assertFalse(replacement.exists(), (stdout, stderr))
+
+    def test_setup_scrubs_every_declared_installer_consent_gate(self):
+        installer = _read("install.sh")
+        direct_gates = set(re.findall(
+            r"\$\{(SIA_(?:ADOPT|ALLOW|INSTALL|REPLACE)_[A-Z_]+):-0\}",
+            installer))
+        replacement_gates = set(re.findall(
+            r"\bSIA_REPLACE_[A-Z_]+\b", installer))
+        declared = direct_gates | replacement_gates
+        self.assertIn("SIA_INSTALL_AGENT_SKILL", declared)
+        helper = _read("bin/sia-setup")
+        scrub = helper.split("unset BASH_ENV ENV", 1)[1].split(
+            '    python3 -I "$LIFETIME_OWNER" setup', 1)[0]
+        scrubbed = set(re.findall(r"\bSIA_[A-Z_]+\b", scrub))
+        self.assertTrue(declared.issubset(scrubbed),
+                        sorted(declared - scrubbed))
 
     # A terminal that gives its child no pty is not a terminal, so the
     # presenting stand-in allocates a real one and answers the hold; the
@@ -495,16 +719,36 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         "    os.dup2(follower, stream)\n"
         "os.execvp(argv[0], argv)\n")
 
+    # uwsm-app serializes argv through the desktop daemon.  The eventual
+    # terminal therefore receives the command strings, but it is not a child
+    # that can inherit this client's private source descriptors or handoff
+    # environment.  Preserve that boundary in the stand-in: the optional gate
+    # holds the serialized argv while a test rebinds the old checkout paths.
+    _SERIALIZED_UWSM = (
+        "#!/usr/bin/env python3\n"
+        "import os, subprocess, sys, time\n"
+        "argv = sys.argv[1:]\n"
+        "if argv and argv[0] == '--':\n"
+        "    argv = argv[1:]\n"
+        "gate = os.environ.get('SIA_TEST_TERMINAL_GATE')\n"
+        "release = os.environ.get('SIA_TEST_TERMINAL_RELEASE')\n"
+        "if gate is not None:\n"
+        "    with open(gate, 'w', encoding='utf-8') as stream:\n"
+        "        stream.write('ready')\n"
+        "    while release is not None and not os.path.exists(release):\n"
+        "        time.sleep(0.01)\n"
+        "environment = {key: value for key, value in os.environ.items()\n"
+        "               if not key.startswith('SIA_SETUP_HANDOFF_')}\n"
+        "result = subprocess.run(argv, env=environment, close_fds=True,\n"
+        "                        check=False)\n"
+        "raise SystemExit(result.returncode)\n")
+
     def _stage_fake_terminal(self, root, environment, presents=True):
         """Stand in for uwsm-app and a terminal that ignores --hold."""
         fake_bin = Path(root) / "bin"
         fake_bin.mkdir()
         launcher = fake_bin / "uwsm-app"
-        launcher.write_text(
-            "#!/usr/bin/env bash\n"
-            "set -euo pipefail\n"
-            'if [ "${1:-}" = "--" ]; then shift; fi\n'
-            'exec "$@"\n', encoding="utf-8")
+        launcher.write_text(self._SERIALIZED_UWSM, encoding="utf-8")
         launcher.chmod(0o700)
         body = self._PTY_TERMINAL if presents else (
             "#!/usr/bin/env bash\n"
@@ -633,6 +877,62 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         # be read as this attempt's run stage.
         self.assertRegex(marker["attempt"], r"^[0-9a-f]{32}$")
 
+    def test_setup_launch_keeps_original_helper_after_path_rebind(self):
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf original > "$SIA_TEST_ORIGINAL"\n',
+                present_seconds=10)
+            original = Path(root) / "original"
+            replacement = Path(root) / "replacement"
+            gate = Path(root) / "terminal-gate"
+            release = Path(root) / "terminal-release"
+            environment.update({
+                "SIA_TEST_ORIGINAL": str(original),
+                "SIA_TEST_REPLACEMENT": str(replacement),
+                "SIA_TEST_TERMINAL_GATE": str(gate),
+                "SIA_TEST_TERMINAL_RELEASE": str(release),
+            })
+            self._stage_fake_terminal(root, environment)
+            process = subprocess.Popen(
+                [str(helper), "launch"], cwd=root, env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            plugin = helper.parents[1]
+            retained = Path(root) / "retained-plugin"
+            try:
+                self._wait_for_path(gate, process)
+                plugin.rename(retained)
+                (plugin / "bin").mkdir(parents=True)
+                hostile_helper = plugin / "bin" / "sia-setup"
+                hostile_helper.write_text(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    'printf replacement > "$SIA_TEST_REPLACEMENT"\n'
+                    'attempt="${2:-}"\n'
+                    'proof="$XDG_RUNTIME_DIR/khephri.sia-first-light/'
+                    'terminal.json.$attempt"\n'
+                    'printf \'{\"attempt\":\"%s\",\"tty\":true}\n\' '
+                    '"$attempt" > "$proof"\n'
+                    'chmod 600 "$proof"\n',
+                    encoding="utf-8")
+                hostile_helper.chmod(0o700)
+                shutil.copy2(retained / "bin" / "sialifetime.py",
+                             plugin / "bin" / "sialifetime.py")
+                (plugin / "install.sh").write_text(
+                    "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+                (plugin / "install.sh").chmod(0o700)
+                release.write_text("go", encoding="utf-8")
+                stdout, stderr = process.communicate(timeout=30)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=30)
+            self.assertEqual(process.returncode, 0, (stdout, stderr))
+            self.assertTrue(original.is_file(), (stdout, stderr))
+            self.assertFalse(replacement.exists(), (stdout, stderr))
+
     def test_setup_launch_refuses_when_the_run_stage_never_starts(self):
         with tempfile.TemporaryDirectory() as root:
             helper, _, environment = self._first_light_rig(
@@ -716,6 +1016,68 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertFalse(finished)
         self.assertLess(elapsed, 3.0)
         self.assertEqual(status, 143)
+
+    def test_setup_interruption_stops_the_actual_bounded_mutating_child(self):
+        source = _read("install.sh")
+        body = source.split("run_with_deadline() {", 1)[1].split(
+            "\n}\n", 1)[0]
+        runner = "run_with_deadline() {" + body + "\n}\n"
+        program = (
+            "import os,pathlib,time\n"
+            "started=pathlib.Path(os.environ['SIA_TEST_CHILD_STARTED'])\n"
+            "release=pathlib.Path(os.environ['SIA_TEST_CHILD_RELEASE'])\n"
+            "finished=pathlib.Path(os.environ['SIA_TEST_CHILD_FINISHED'])\n"
+            "started.write_text(str(os.getpid()))\n"
+            "while not release.exists():\n"
+            "    time.sleep(0.01)\n"
+            "finished.write_text('mutation after interruption')\n")
+        with tempfile.TemporaryDirectory() as root:
+            helper, _, environment = self._first_light_rig(
+                root, "#!/usr/bin/env bash\nset -euo pipefail\n"
+                + runner + '\nrun_with_deadline 120 "$SIA_TEST_PYTHON" '
+                '-c "$SIA_TEST_CHILD_PROGRAM"\n')
+            started = Path(root) / "child-started"
+            release = Path(root) / "child-release"
+            finished = Path(root) / "child-finished"
+            environment.update({
+                "SIA_TEST_PYTHON": sys.executable,
+                "SIA_TEST_CHILD_PROGRAM": program,
+                "SIA_TEST_CHILD_STARTED": str(started),
+                "SIA_TEST_CHILD_RELEASE": str(release),
+                "SIA_TEST_CHILD_FINISHED": str(finished),
+            })
+            process = subprocess.Popen(
+                [str(helper), "run", "c" * 32], cwd=root, env=environment,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            descriptor = None
+            watcher = selectors.DefaultSelector()
+            try:
+                deadline = time.monotonic() + 10
+                while not started.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(started.exists(), "bounded child did not start")
+                child_pid = int(started.read_text(encoding="utf-8"))
+                descriptor = os.pidfd_open(child_pid, 0)
+                watcher.register(descriptor, selectors.EVENT_READ)
+                process.send_signal(signal.SIGTERM)
+                status = process.wait(timeout=30)
+                stopped_when_helper_returned = bool(watcher.select(0))
+                release.write_text("release", encoding="utf-8")
+                watcher.select(2)
+                self.assertEqual(status, 143)
+                self.assertTrue(stopped_when_helper_returned,
+                                "bounded mutator survived setup interruption")
+                self.assertFalse(finished.exists())
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=30)
+                if descriptor is not None:
+                    if not watcher.select(0):
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                    watcher.unregister(descriptor)
+                    os.close(descriptor)
+                watcher.close()
 
     def test_a_refused_second_attempt_keeps_the_first_attempt_proof(self):
         first = "0" * 31 + "1"
@@ -829,7 +1191,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         self.assertIn("WlrLayershell.layer: WlrLayer.Overlay", cockpit)
         presence_apply = cockpit[
             cockpit.index("function applySetupPresence(text)"):
-            cockpit.index("function applyInstallCompletion(text)")]
+            cockpit.index("function applyInstallCompletion(")]
         self.assertIn("setupYield.restart()", presence_apply)
         yield_timer = cockpit[
             cockpit.index("id: setupYield"):
@@ -860,15 +1222,23 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
         # this click's window.
         attempt = "a1b2c3d4" * 4
         other = "0" * 32
-        base = {"v": 1, "ts": 1000, "tty": True, "attempt": attempt}
+        base = {
+            "v": 1, "ts": 1000, "tty": True, "attempt": attempt,
+            "pid": 1234}
         for marker, requested, wanted, expected in (
                 (base, 1000, attempt, "true"),
                 (dict(base, ts=1001), 1000, attempt, "true"),
+                (dict(base, ts=1002), 1000, attempt, "false"),
                 (dict(base, ts=999), 1000, attempt, "false"),
                 (dict(base, ts="1000"), 1000, attempt, "false"),
                 (dict(base, v=2), 1000, attempt, "false"),
-                ({"v": 1, "tty": True, "attempt": attempt}, 1000, attempt,
+                ({"v": 1, "tty": True, "attempt": attempt,
+                  "pid": 1234}, 1000, attempt,
                  "false"),
+                ({key: value for key, value in base.items()
+                  if key != "pid"}, 1000, attempt, "false"),
+                (dict(base, pid=0), 1000, attempt, "false"),
+                (dict(base, extra=True), 1000, attempt, "false"),
                 (dict(base, tty=False), 1000, attempt, "false"),
                 (dict(base, attempt=other), 1000, attempt, "false"),
                 (base, 1000, "not-hex", "false"),
@@ -876,7 +1246,8 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 (None, 1000, attempt, "false")):
             self.assertEqual(
                 self._model_call(
-                    "setupTerminalPresented", marker, requested, wanted),
+                    "setupTerminalPresented", marker, requested, wanted,
+                    1001),
                 expected, (marker, requested, wanted))
         # The id is drawn per click, so two clicks are never answered by one
         # marker.
@@ -921,14 +1292,27 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
             allowed = run_guard()
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
-            write_runtime(resident, "1.7.9")
+            write_runtime(resident, _newer_than(RELEASE_VERSION))
             refused_runtime = run_guard()
             self.assertEqual(refused_runtime.returncode, 2)
             self.assertIn("release downgrade refused", refused_runtime.stderr)
 
             resident.unlink()
+            for encoded_version in ("true", "1.0", "1e0"):
+                completion.write_text(
+                    '{"v":' + encoded_version + ',"version":"' +
+                    RELEASE_VERSION + '","state":"ready"}',
+                    encoding="utf-8")
+                completion.chmod(0o600)
+                malformed_completion = run_guard()
+                self.assertEqual(
+                    malformed_completion.returncode, 2,
+                    (encoded_version, malformed_completion.stderr))
+                self.assertIn(
+                    "first-light completion", malformed_completion.stderr)
+
             completion.write_text(json.dumps({
-                "v": 1, "version": "1.7.9", "state": "ready"}),
+                "v": 1, "version": _newer_than(RELEASE_VERSION), "state": "ready"}),
                 encoding="utf-8")
             completion.chmod(0o600)
             refused_completion = run_guard()
@@ -941,7 +1325,7 @@ process.stdout.write(String(context[process.argv[2]].apply(null, args)))
                 "download pinned restic, Bun, gbrain, and Ollama artifacts",
                 "build gbrain",
                 "pull the pinned local embedding model",
-                "only when no owned brain exists",
+                "only when no owned memory store exists",
                 "install or restart user services"):
             self.assertIn(phrase, cockpit)
         self.assertIn("Installation is disabled to prevent a downgrade", cockpit)
