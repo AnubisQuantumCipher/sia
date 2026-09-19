@@ -1021,7 +1021,11 @@ def _validate_event_replay_key(day_slug, event_id):
                 r"(?:-part-(?:[2-9]|[1-9][0-9]+))?", day_slug) is None \
             or not isinstance(event_id, str) \
             or re.fullmatch(r"[0-9a-f]{64}", event_id) is None:
-        raise ValueError("event replay identity is invalid")
+        shown = day_slug if isinstance(day_slug, str) else type(day_slug).__name__
+        raise ValueError(
+            "event replay identity is invalid: "
+            + repr(shown[:160]) + " (expected events/<source>/<YYYY-MM-DD>"
+            "[-part-N] and a 64-hex event id)")
 
 
 def hebb_hygiene(mind, decay=0.95, floor=0.4, degree_cap=32, now=None):

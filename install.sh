@@ -4211,6 +4211,9 @@ drain_legacy_launchers() {
     fi
   done
   echo "legacy SIA launchers did not become quiescent" >&2
+  echo "the pids named above are SIA MCP servers or CLIs another program keeps" \
+    "open (for example an agent session's sia MCP connection); close or" \
+    "restart those clients, then rerun install.sh" >&2
   return 1
 }
 

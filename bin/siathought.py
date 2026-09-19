@@ -3443,12 +3443,17 @@ def _event_day_shards(organ, date, *, dependency_capture=None):
             parts.append(part)
     if len(parts) != len(set(parts)) or len(parts) >= MAX_EVENT_SHARDS \
             or any(part > MAX_EVENT_SHARDS for part in parts):
-        raise ValueError("event day shard set is invalid or exceeds its bound")
+        raise ValueError(
+            "event day shard set is invalid or exceeds its bound "
+            f"({len(parts)} shards, bound {MAX_EVENT_SHARDS}, "
+            f"highest {max(parts) if parts else 0})")
     parts.sort()
     if base_present:
         if any(part != position for position, part in
                enumerate(parts, start=2)):
-            raise ValueError("event day shards are not contiguous")
+            raise ValueError(
+                "event day shards are not contiguous "
+                f"(observed parts {parts[:24]})")
         return [_event_page_state(
             organ, date, part, expected_generation=generations[part], **capture_kw)
             for part in [1] + parts]
