@@ -654,6 +654,21 @@ def exact_release_receipt(receipt, binary, prefix):
     return read_metadata(receipt) == expected
 
 
+def prior_release_receipt(receipt, binary):
+    """A genuine SIA receipt for some EARLIER pin of the same tool: it opens
+    with the managed-by line and ends by naming exactly the binary it sits
+    beside. A release that moves the pin then rebuilds without asking; only
+    an unreceipted, foreign or torn tree still needs explicit replacement."""
+    content = read_metadata(receipt)
+    digest = digest_owned_regular(binary)
+    lines = content.split(b"\n")
+    return len(lines) >= 4 and lines[0] == b"managed-by=khephri.sia" \
+        and lines[-1] == b"" \
+        and lines[-2] == f"binary_sha256={digest}".encode("utf-8") \
+        and all(re.fullmatch(rb"[a-z0-9_]+=[^\n]*", line) is not None
+                for line in lines[1:-2])
+
+
 def classify(path, pairs):
     if not pairs or len(pairs) % 2:
         raise ValueError("classification requires token/value pairs")
@@ -726,6 +741,8 @@ try:
         accepted = exact_skill_generations(*arguments)
     elif mode == "release":
         accepted = exact_release_receipt(*arguments)
+    elif mode == "prior-release":
+        accepted = prior_release_receipt(*arguments)
     elif mode == "digest":
         print(digest_owned_regular(arguments[0]))
         accepted = True
@@ -8964,7 +8981,10 @@ if ! restic_runtime_receipt_valid; then
       echo "refusing unsafe private restic receipt" >&2
       exit 1
     fi
-    if [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
+    if owned_metadata prior-release "$RESTIC_RECEIPT" "$RESTIC_BIN"; then
+      echo "  private restic tree carries a receipt for an earlier pin;" \\
+        "rebuilding for this release (prior tree is retained)"
+    elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private restic tree lacks an exact current release receipt; preserved" >&2
       echo "explicit replacement requires SIA_REPLACE_TOOLCHAIN=1 ./install.sh" >&2
       exit 1
@@ -9029,7 +9049,10 @@ if ! bun_runtime_receipt_valid; then
       echo "refusing unsafe private Bun receipt" >&2
       exit 1
     fi
-    if [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
+    if owned_metadata prior-release "$BUN_RECEIPT" "$BUN_BIN"; then
+      echo "  private Bun tree carries a receipt for an earlier pin;" \\
+        "rebuilding for this release (prior tree is retained)"
+    elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private Bun tree lacks an exact current release receipt; preserved" >&2
       echo "explicit replacement requires SIA_REPLACE_TOOLCHAIN=1 ./install.sh" >&2
       exit 1
@@ -9392,7 +9415,10 @@ if ! gbrain_runtime_receipt_valid; then
       echo "refusing unsafe private gbrain receipt" >&2
       exit 1
     fi
-    if [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
+    if owned_metadata prior-release "$GBRAIN_RECEIPT" "$GBRAIN_BIN"; then
+      echo "  private gbrain tree carries a receipt for an earlier pin;" \\
+        "rebuilding for this release (prior tree is retained)"
+    elif [ "${SIA_REPLACE_TOOLCHAIN:-0}" != "1" ]; then
       echo "existing private gbrain tree lacks an exact current release receipt; preserved" >&2
       echo "explicit replacement requires SIA_REPLACE_TOOLCHAIN=1 ./install.sh" >&2
       exit 1

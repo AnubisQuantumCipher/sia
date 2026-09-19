@@ -5699,6 +5699,50 @@ preflight_corpus locked
             resumed = run(home, extra_environment=consent)
             self.assertEqual(resumed.returncode, 0, resumed.stderr)
 
+    def test_earlier_pin_toolchain_receipt_rebuilds_without_replacement_consent(self):
+        """A release that moves the gbrain/bun/restic pin must rebuild a tree
+        that carries a genuine SIA receipt for the earlier pin; only an
+        unreceipted, foreign or torn tree still needs SIA_REPLACE_TOOLCHAIN=1."""
+        installer = _read("install.sh")
+        metadata = _owned_metadata_shell(installer)
+        for label in ("restic", "Bun", "gbrain"):
+            block = installer.split(
+                f'echo "existing private {label} tree lacks an exact current '
+                'release receipt; preserved" >&2', 1)[0][-700:]
+            self.assertIn("owned_metadata prior-release", block, label)
+            self.assertIn("rebuilding for this release", block, label)
+
+        def probe(home, receipt_text, *, binary_bytes=b"engine"):
+            root = os.path.join(home, "tool")
+            os.makedirs(os.path.join(root, "bin"))
+            binary = os.path.join(root, "bin", "tool")
+            with open(binary, "wb") as stream:
+                stream.write(binary_bytes)
+            os.chmod(binary, 0o755)
+            receipt = os.path.join(root, ".sia-release")
+            _write(receipt, receipt_text, 0o644)
+            script = (metadata + "\nowned_metadata prior-release "
+                      + shlex.quote(receipt) + " " + shlex.quote(binary) + "\n")
+            return subprocess.run(["bash", "-s"], input=script, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  check=False, timeout=30).returncode
+
+        digest = hashlib.sha256(b"engine").hexdigest()
+        earlier = ("managed-by=khephri.sia\ncommit=7b7921d8\nversion=0.47.6.0\n"
+                   "bun_lock_sha256=d9f9\noverlay_sha256=91ba1c7d\n"
+                   f"overlay_tree_oid=0436748d\nbinary_sha256={digest}\n")
+        with tempfile.TemporaryDirectory() as home:
+            self.assertEqual(probe(home, earlier), 0)
+        with tempfile.TemporaryDirectory() as home:
+            self.assertNotEqual(probe(home, earlier.replace("khephri.sia", "other")), 0)
+        with tempfile.TemporaryDirectory() as home:
+            self.assertNotEqual(probe(home, earlier, binary_bytes=b"replaced"), 0)
+        with tempfile.TemporaryDirectory() as home:
+            self.assertNotEqual(probe(home, earlier.rstrip("\n")), 0)
+        with tempfile.TemporaryDirectory() as home:
+            self.assertNotEqual(probe(home, earlier.replace(
+                "version=0.47.6.0\n", "version=0.47.6.0\nrm -rf /\n")), 0)
+
     def test_moved_corpus_receipt_is_named_and_rebound_only_by_consent(self):
         """A v2 receipt whose root no longer matches the live corpus (rsync,
         btrfs subvolume, restore by copy) is recognized as `moved`, named
