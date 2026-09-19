@@ -10418,6 +10418,10 @@ if ! GBRAIN_SELF_UPGRADE_OUTPUT="$(bounded_command_capture \
   echo "could not verify that gbrain self-upgrade is disabled" >&2
   exit 1
 fi
+# gbrain colours the shadowed-value notice even under NO_COLOR; compare the
+# text, not the terminal dressing.
+GBRAIN_SELF_UPGRADE_OUTPUT="$(printf '%s' "$GBRAIN_SELF_UPGRADE_OUTPUT" \
+  | sed "s/$(printf '\033')\[[0-9;]*m//g")"
 case "$GBRAIN_SELF_UPGRADE_OUTPUT" in
   $'off\n[config] source: file/env plane (~/.gbrain/config.json or env)' \
   |$'off\n[config] source: file/env plane (~/.gbrain/config.json or env) — a DB-plane value also exists and is shadowed at runtime')
