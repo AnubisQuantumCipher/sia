@@ -5656,10 +5656,21 @@ def refusal_chain(exc, *, limit=6):
         if part and (not parts or parts[-1] != part):
             parts.append(part)
         upstream = getattr(exc, "upstream_reason", None)
-        exc = exc.__cause__ if exc.__cause__ is not None else exc.__context__
-        if exc is None and isinstance(upstream, str) and upstream \
-                and (not parts or parts[-1] != upstream):
-            parts.append(upstream)
+        following = exc.__cause__ if exc.__cause__ is not None else exc.__context__
+        if following is None:
+            if isinstance(upstream, str) and upstream \
+                    and (not parts or parts[-1] != upstream):
+                parts.append(upstream)
+            # The innermost refusal's code location (never data): which
+            # module's gate spoke last.
+            frame = exc.__traceback__
+            while frame is not None and frame.tb_next is not None:
+                frame = frame.tb_next
+            if frame is not None:
+                code = frame.tb_frame.f_code
+                parts.append("at " + os.path.basename(code.co_filename)
+                             + ":" + code.co_name + ":" + str(frame.tb_lineno))
+        exc = following
     return parts
 
 
