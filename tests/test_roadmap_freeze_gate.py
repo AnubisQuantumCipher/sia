@@ -272,6 +272,23 @@ class MarketplaceFreezeGate(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("cycle-closing commit", result.stdout)
 
+    def test_a_declaration_introduced_by_the_push_has_no_prior_freeze_to_close(self):
+        """1.8.0 landed on a main frozen at 8a624ef, which predates the
+        declaration entirely: the merge push found zero prior declaration
+        lines and the closure path refused as ambiguous. A prior commit with
+        no declaration is the bootstrap, not an ambiguity, exactly as on an
+        unrelated branch; a prior commit with two remains refused."""
+        closed = "    sia-freeze: state=none branch=main sha=" + BOUND + "\n"
+        result = _run_gate(closed, second_commit=("ROADMAP.md", "work.txt"),
+                           initial_roadmap="", second_roadmap=closed)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no freeze declaration", result.stdout)
+        result = _run_gate(closed, second_commit=("ROADMAP.md", "work.txt"),
+                           initial_roadmap=PENDING + PREVIOUS_PENDING,
+                           second_roadmap=closed)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("unavailable or ambiguous", result.stderr)
+
     def test_closure_bundled_with_work_is_refused(self):
         closed = "    sia-freeze: state=none branch=main sha=" + BOUND + "\n"
         result = _run_gate(

@@ -251,6 +251,16 @@ jobs:
             prior_count="$(git show "$before:ROADMAP.md" 2>/dev/null \
               | grep -cE '^[[:space:]]*sia-freeze:' || true)"
             [ -n "$prior_count" ] || prior_count=0
+            if [ "$prior_count" = 0 ] \
+               && git cat-file -e "$before:ROADMAP.md" 2>/dev/null; then
+              # The commit before this push carries no declaration at all:
+              # the declaration was introduced by this push (1.8.0 landed on
+              # a main frozen at 8a624ef, which predates it). There is no
+              # prior freeze to close, exactly as on an unrelated branch.
+              echo "::notice::the prior commit has no freeze declaration;" \
+                "no marketplace verification is pending"
+              exit 0
+            fi
             if [ "$prior_count" != 1 ]; then
               echo "refusing: prior ROADMAP freeze state is unavailable or" \
                 "ambiguous; cycle closure cannot be authorized" >&2
