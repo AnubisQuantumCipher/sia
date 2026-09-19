@@ -34,6 +34,11 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
+
+try:
+    import cognitive_host
+except ModuleNotFoundError:
+    from tests import cognitive_host  # type: ignore
 from unittest import mock
 
 from tests import test_cognitive_event_exposure as exposure_tests
@@ -214,6 +219,7 @@ class CognitiveExposureTiming(unittest.TestCase):
                 self.assertEqual(value.kind, inspect.Parameter.KEYWORD_ONLY)
                 self.assertIs(value.default, inspect.Parameter.empty)
 
+    @cognitive_host.requires_admitted_interpreter
     def test_shared_target_blind_arm_worker_is_used_by_pure_and_timed_paths(self):
         module = self._module()
         self._inputs()
@@ -257,6 +263,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         self.assertEqual(trace, expected)  # Explicit mandatory replay, then timed schedule.
         self.assertEqual(canonical(observed["exposure"]), canonical(untimed))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_observation_binds_complete_schedule_worker_inputs_outputs_and_untimed_bytes(self):
         module = self._module()
         self._inputs()
@@ -289,6 +296,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         result["exposure"]["queries"].clear()
         self.assertEqual(self.kw, before)
 
+    @cognitive_host.requires_admitted_interpreter
     def test_empty_candidates_still_execute_each_arm_and_have_real_clock_readings(self):
         module = self._module()
         self._inputs(choices={})
@@ -350,6 +358,7 @@ class CognitiveExposureTiming(unittest.TestCase):
                 self._invoke(module, producer_expectations=producer,
                              expected_producer_sha256=sha(canonical(producer)))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_source_and_running_interpreter_generations_are_rechecked_after_timed_workers(self):
         module = self._module()
         self._inputs()
@@ -427,6 +436,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         with self.assertRaises(module.ExposureTimingRefusal):
             self._observe(module, clock=mock.Mock(side_effect=RuntimeError("clock unavailable")))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_late_timed_worker_failure_and_wrong_output_never_return_partial_receipt(self):
         module = self._module()
         self._inputs()
@@ -453,6 +463,7 @@ class CognitiveExposureTiming(unittest.TestCase):
                 self._observe(module, clock=clock)
             self.assertTrue(timed)
 
+    @cognitive_host.requires_admitted_interpreter
     def test_pure_receipt_preparation_emits_only_endpoint_differences_and_roster_class_means(self):
         module = self._module()
         self._inputs()
@@ -510,6 +521,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         self.assertTrue(all(row["tool"] == "jackal_exact" for row in plan["jackal_requests"]))
         self.assertTrue(all("result" not in row and "status" not in row for row in plan["jackal_requests"]))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_pure_receipt_shape_and_output_caps_refuse_without_copy_clock_or_io(self):
         module = self._module()
         self._inputs()
@@ -534,6 +546,7 @@ class CognitiveExposureTiming(unittest.TestCase):
                     self.assertRaises(module.ExposureTimingRefusal):
                 self._prepare(module, changed, **self._policy_override(policy))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_actual_distinct_clock_endpoints_are_retained_not_locally_subtracted(self):
         module = self._module()
         self._inputs()
@@ -551,6 +564,7 @@ class CognitiveExposureTiming(unittest.TestCase):
             for forbidden in ("duration", "elapsed_ns", "elapsed_ms", "result", "exact", "value"):
                 self.assertNotIn(forbidden, sample)
 
+    @cognitive_host.requires_admitted_interpreter
     def test_rehashed_receipt_substitution_does_not_replace_independent_replay(self):
         module = self._module()
         self._inputs()
@@ -593,6 +607,7 @@ class CognitiveExposureTiming(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(module.ExposureTimingRefusal):
                 self._prepare(module, observation)
 
+    @cognitive_host.requires_admitted_interpreter
     def test_external_receipt_pin_is_required_and_not_replaced_by_its_selfhash(self):
         module = self._module()
         self._inputs()
@@ -606,6 +621,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         with self.assertRaises(module.ExposureTimingRefusal):
             self._prepare(module, altered, expected_observation_sha256=observation["artifact_sha256"])
 
+    @cognitive_host.requires_admitted_interpreter
     def test_heldout_needs_policy_and_producer_pins_present_before_observation(self):
         module = self._module()
         for mode in ("missing-policy", "foreign-policy", "missing-producer", "foreign-producer"):
@@ -620,6 +636,7 @@ class CognitiveExposureTiming(unittest.TestCase):
         self.assertEqual(plan["split"], "heldout")
         self.assertEqual(plan["parameter_freeze_sha256"], self.exposure["parameter_freeze_sha256"])
 
+    @cognitive_host.requires_admitted_interpreter
     def test_all_raw_timings_origins_and_original_nonclaims_remain_unchanged(self):
         module = self._module()
         self._inputs()

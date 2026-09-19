@@ -13,6 +13,11 @@ this suite introduces no calculated score, duration, or arithmetic oracle.
 import copy
 import importlib
 import unittest
+
+try:
+    import cognitive_host
+except ModuleNotFoundError:
+    from tests import cognitive_host  # type: ignore
 from unittest import mock
 
 from tests import test_cognitive_baseline_prefix as prefix_tests
@@ -102,6 +107,7 @@ class CognitivePrefixDownstream(unittest.TestCase):
                 self.assertEqual(result["source_pins"]["parameter_freeze_sha256"],
                                  baseline["parameter_freeze_sha256"])
 
+    @cognitive_host.requires_admitted_interpreter
     def test_both_v2_modes_time_new_replay_and_prepare_endpoint_requests(self):
         for mode in MODES:
             with self.subTest(mode=mode):

@@ -33,6 +33,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+try:
+    import cognitive_host
+except ModuleNotFoundError:
+    from tests import cognitive_host  # type: ignore
 from unittest import mock
 
 try:
@@ -357,6 +362,7 @@ class CognitiveCommandRequest(unittest.TestCase):
             self._refused(self._run)
         runner.assert_not_called()
 
+    @cognitive_host.requires_admitted_interpreter
     def test_exact_owner_private_mode_and_absolute_request_path_are_required(self):
         with mock.patch.object(self.baseline, "run_baseline") as runner:
             for mode in (0o400, 0o640, 0o644, 0o700):

@@ -2,6 +2,11 @@
 import copy
 import importlib
 import unittest
+
+try:
+    import cognitive_host
+except ModuleNotFoundError:
+    from tests import cognitive_host  # type: ignore
 from unittest import mock
 
 import siacognitivemeasure as measurement
@@ -33,6 +38,7 @@ class CognitiveLiveTiming(unittest.TestCase):
             'producer_expectations': producer,
             'expected_producer_sha256': comparisons.live_tests.digest(producer), **overrides})
 
+    @cognitive_host.requires_admitted_interpreter
     def test_real_worker_observation_retains_comparison_without_composed_latency(self):
         result = self.call()
         self.assertEqual(result['comparison'], self.source)
@@ -59,6 +65,7 @@ class CognitiveLiveTiming(unittest.TestCase):
                 self.call(timing_policy=policy,
                           expected_timing_policy_sha256=comparisons.live_tests.digest(policy))
 
+    @cognitive_host.requires_admitted_interpreter
     def test_reversed_clock_is_rejected(self):
         with mock.patch('time.perf_counter_ns', side_effect=[130, 100]):
             with self.assertRaisesRegex(ValueError, 'clock'):
