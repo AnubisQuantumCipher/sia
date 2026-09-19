@@ -2269,8 +2269,16 @@ PY
 # Inspect one user unit through a single `show` query.  Unlike `is-active` and
 # `is-enabled`, this distinguishes a genuinely absent/inactive unit from an
 # unreachable user manager.  Callers must treat a refusal as fail-closed.
+#
+# The optional 4th argument overrides the RefuseManualStart requirement that
+# is otherwise derived from whether a drop-in is expected (see below). Pass
+# "yes"/"no" explicitly when a caller's drop-in is not the brainstem runtime
+# lifecycle barrier and therefore never arms RefuseManualStart itself (the
+# ollama.service operator drop-in is such a case); leave it unset to keep the
+# historical brainstem-barrier coupling.
 inspect_user_unit() {
   local unit="$1" prefix="$2" expected_drop_in_paths="${3:-}" output key count
+  local expected_refuse_manual_start="${4:-}"
   local load_state active_state fragment_path unit_file_state
   local drop_in_paths main_pid refuse_manual_start job
   if ! output="$(bounded_command_capture systemctl --user show "$unit" \
@@ -2323,7 +2331,14 @@ inspect_user_unit() {
     echo "systemd job is still pending for $unit: $job" >&2
     return 1
   }
-  if [ -n "$expected_drop_in_paths" ]; then
+  if [ -z "$expected_refuse_manual_start" ]; then
+    if [ -n "$expected_drop_in_paths" ]; then
+      expected_refuse_manual_start=yes
+    else
+      expected_refuse_manual_start=no
+    fi
+  fi
+  if [ "$expected_refuse_manual_start" = yes ]; then
     [ "$refuse_manual_start" = yes ] || {
       echo "systemd start refusal is not armed for $unit" >&2
       return 1
@@ -9462,6 +9477,7 @@ OLLAMA_RECEIPT="$HOME/opt/ollama/.sia-release"
 OLLAMA_RUNTIME_CHANGED=0
 OLLAMA_UNIT="$SYSTEMD_USER_DIR/ollama.service"
 OLLAMA_UNIT_CHANGED=0
+OLLAMA_OPERATOR_DROP_IN="$SYSTEMD_USER_DIR/ollama.service.d/sia-operator.conf"
 OLLAMA_RECEIPT_EXPECTED="managed-by=khephri.sia
 version=$OLLAMA_VERSION
 asset=$OLLAMA_ASSET
@@ -9478,7 +9494,144 @@ ollama_runtime_receipt_valid() {
   [ "$reported_version" = "$OLLAMA_VERSION" ] || return 1
 }
 
-inspect_user_unit ollama.service OLLAMA_INSPECT || exit 1
+# Validate SIA's owned operator drop-in for ollama.service (issue #10 item 4):
+# the one documented escape hatch for hardware knobs Ollama does not
+# otherwise expose, such as OLLAMA_IGPU_ENABLE=1. SIA never writes this file
+# itself; an operator does. On success this prints the accepted Environment
+# key names (space-separated; values are never printed or logged) to stdout
+# and exits 0. On refusal it prints exactly one reason line naming the path
+# to stderr and exits nonzero — never partial credit for a malformed file.
+ollama_operator_drop_in_valid() {
+  python3 - "$1" <<'PY'
+import os
+import re
+import stat
+import sys
+
+path = sys.argv[1]
+MAX_BYTES = 4096
+
+
+def open_regular(candidate):
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(candidate, flags)
+    except OSError as error:
+        raise SystemExit(
+            f"cannot open ollama operator drop-in: {candidate}: {error}"
+        ) from error
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode):
+        os.close(descriptor)
+        raise SystemExit(
+            "ollama operator drop-in is not a regular, non-symlink file: "
+            f"{candidate}")
+    return descriptor, metadata
+
+
+descriptor, before = open_regular(path)
+after = None
+try:
+    if before.st_uid != os.geteuid():
+        raise SystemExit(
+            f"ollama operator drop-in is not owned by the current user: {path}")
+    if stat.S_IMODE(before.st_mode) not in (0o644, 0o600):
+        raise SystemExit(
+            "ollama operator drop-in has an unsafe mode "
+            f"{oct(stat.S_IMODE(before.st_mode))} (need 0644 or 0600): {path}")
+    if before.st_size > MAX_BYTES:
+        raise SystemExit(
+            f"ollama operator drop-in exceeds the {MAX_BYTES}-byte ceiling: "
+            f"{path}")
+    with os.fdopen(descriptor, "rb") as stream:
+        descriptor = None
+        content = stream.read(MAX_BYTES + 1)
+        after = os.fstat(stream.fileno())
+finally:
+    if descriptor is not None:
+        os.close(descriptor)
+
+try:
+    current = os.stat(path, follow_symlinks=False)
+except OSError as error:
+    raise SystemExit(
+        f"ollama operator drop-in changed while reading: {path}") from error
+observed = (before.st_dev, before.st_ino, before.st_size,
+            before.st_mtime_ns, before.st_ctime_ns)
+finished = (after.st_dev, after.st_ino, after.st_size,
+            after.st_mtime_ns, after.st_ctime_ns)
+if len(content) != before.st_size or observed != finished \
+        or (current.st_dev, current.st_ino) != (after.st_dev, after.st_ino):
+    raise SystemExit(f"ollama operator drop-in changed while reading: {path}")
+
+try:
+    text = content.decode("utf-8")
+except UnicodeDecodeError as error:
+    raise SystemExit(
+        f"ollama operator drop-in is not valid UTF-8: {path}") from error
+
+environment_line = re.compile(
+    r"^Environment=OLLAMA_([A-Z0-9_]+)=([A-Za-z0-9_./:=,+-]+)$")
+managed = {"HOST", "MODELS"}
+saw_service = False
+keys = []
+for raw_line in text.split("\n"):
+    line = raw_line.rstrip("\r")
+    if line == "" or line.startswith("#"):
+        continue
+    if not saw_service:
+        if line != "[Service]":
+            raise SystemExit(
+                f"ollama operator drop-in must open with [Service]: {path}")
+        saw_service = True
+        continue
+    if line.startswith("[") and line.endswith("]"):
+        raise SystemExit(
+            "ollama operator drop-in must contain only one [Service] "
+            f"section: {path}")
+    match = environment_line.match(line)
+    if not match:
+        raise SystemExit(
+            f"ollama operator drop-in has an unsupported line: {path}")
+    name = match.group(1)
+    if name in managed:
+        raise SystemExit(
+            "ollama operator drop-in may not override SIA-managed "
+            f"OLLAMA_{name}: {path}")
+    keys.append(f"OLLAMA_{name}")
+
+if not saw_service:
+    raise SystemExit(
+        f"ollama operator drop-in has no [Service] section: {path}")
+
+print(" ".join(keys))
+PY
+}
+
+OLLAMA_OPERATOR_DROP_IN_EXPECTED=""
+if [ -e "$OLLAMA_OPERATOR_DROP_IN" ] || [ -L "$OLLAMA_OPERATOR_DROP_IN" ]; then
+  OLLAMA_OPERATOR_DROP_IN_KEYS=""
+  if ! OLLAMA_OPERATOR_DROP_IN_KEYS="$(ollama_operator_drop_in_valid \
+      "$OLLAMA_OPERATOR_DROP_IN")"; then
+    echo "the ollama.service operator drop-in must contain exactly:" >&2
+    echo "  [Service]" >&2
+    echo "  Environment=OLLAMA_<NAME>=<value>" >&2
+    echo "one Environment line per hardware knob, values with no spaces or" >&2
+    echo "shell metacharacters, and never OLLAMA_HOST or OLLAMA_MODELS" >&2
+    echo "(SIA manages those directly). Fix or remove" >&2
+    echo "  $OLLAMA_OPERATOR_DROP_IN" >&2
+    echo "and rerun install.sh." >&2
+    exit 1
+  fi
+  OLLAMA_OPERATOR_DROP_IN_EXPECTED="$OLLAMA_OPERATOR_DROP_IN"
+  echo "  ollama.service operator drop-in accepted: $OLLAMA_OPERATOR_DROP_IN"
+  echo "    environment overrides: $OLLAMA_OPERATOR_DROP_IN_KEYS"
+fi
+
+inspect_user_unit ollama.service OLLAMA_INSPECT \
+  "$OLLAMA_OPERATOR_DROP_IN_EXPECTED" no || exit 1
 if [ "$OLLAMA_INSPECT_LOAD_STATE" = loaded ] \
     && [ "$OLLAMA_INSPECT_FRAGMENT_PATH" != "$OLLAMA_UNIT" ]; then
   echo "ollama.service is loaded from an unowned path: $OLLAMA_INSPECT_FRAGMENT_PATH" >&2
@@ -9610,7 +9763,8 @@ elif [ "$OLLAMA_SERVER_VERSION" != "$OLLAMA_VERSION" ]; then
   fi
   echo "  WARNING: accepting unpinned Ollama server '${OLLAMA_SERVER_VERSION:-unavailable}'"
 fi
-inspect_user_unit ollama.service OLLAMA_LIVE || exit 1
+inspect_user_unit ollama.service OLLAMA_LIVE \
+  "$OLLAMA_OPERATOR_DROP_IN_EXPECTED" no || exit 1
 if [ "$OLLAMA_LIVE_LOAD_STATE" != loaded ] \
     || [ "$OLLAMA_LIVE_ACTIVE_STATE" != active ] \
     || [ "$OLLAMA_LIVE_FRAGMENT_PATH" != "$OLLAMA_UNIT" ]; then
@@ -9668,6 +9822,40 @@ then
   exit 1
 fi
 echo "  Ollama listener is owned by the service and loopback-only"
+
+# Best-effort, read-only notice (issue #10 item 3): SIA never enables a
+# hardware setting itself, but a CPU-only embedding backend can blow the
+# first-light deadline silently, so warn about it. Any journalctl/capture
+# problem yields silence — this must never fail the install, and it must
+# never echo a raw journal line (only fixed, pre-written text).
+ollama_inference_compute_notice() {
+  local journal last_compute
+  journal="$(bounded_command_capture \
+      journalctl --user -u ollama.service -n 400 --no-pager -o cat \
+      2>/dev/null)" || return 0
+  if printf '%s\n' "$journal" | grep -q 'dropping integrated GPU'; then
+    echo "  NOTE: ollama.service declined an integrated GPU (Ollama's"
+    echo "  default without OLLAMA_IGPU_ENABLE=1). First light will embed"
+    echo "  on the CPU, which can take much longer — it is bounded by the"
+    echo "  finite first-light deadline, not the old 120s startup gate."
+    echo "  To use the iGPU, create $OLLAMA_OPERATOR_DROP_IN with exactly:"
+    echo "    # SIA operator override for ollama.service"
+    echo "    [Service]"
+    echo "    Environment=OLLAMA_IGPU_ENABLE=1"
+    return 0
+  fi
+  last_compute="$(printf '%s\n' "$journal" \
+      | grep 'inference compute' | tail -n 1)"
+  if [ -n "$last_compute" ] \
+      && printf '%s\n' "$last_compute" | grep -q 'library=cpu' \
+      && ! printf '%s\n' "$journal" | grep -Eq \
+          'library=(cuda|rocm|vulkan|oneapi)'; then
+    echo "  NOTE: ollama.service is running CPU-only inference; first light"
+    echo "  may take much longer than on a GPU."
+  fi
+  return 0
+}
+ollama_inference_compute_notice
 
 OLLAMA_MODELS_DIR="$(effective_ollama_models_dir)"
 NOMIC_MANIFEST="$OLLAMA_MODELS_DIR/manifests/registry.ollama.ai/library/nomic-embed-text/v1.5"

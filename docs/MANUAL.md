@@ -1846,9 +1846,10 @@ the installer exercises the runtime's actual pidfd, Ed25519,
 `renameat2(RENAME_NOREPLACE)`, and share-
 filesystem `O_TMPFILE`/`linkat(AT_EMPTY_PATH)` capabilities; an import-only or
 kernel-version guess is not accepted. The local Ollama archive and runtime version are
-pinned, the user unit must have no drop-ins, its listener must be owned and
-loopback-only, and the effective model directory is read from the running user
-service. An unreceipted nonempty corpus is automatically recognized as legacy
+pinned, the unit's live `DropInPaths` must be empty or exactly the operator
+drop-in described below, its listener must be owned and loopback-only, and
+the effective model directory is read from the running user service. An
+unreceipted nonempty corpus is automatically recognized as legacy
 SIA only when `.git/` is a real directory, `README.md` is a regular non-symlink
 containing the exact `# SIA corpus — this machine's memory` marker line, and
 the release checkout's `bin/sia-ledger verify` accepts the share tree. Other
@@ -1912,6 +1913,32 @@ Replacing them with SIA's managed artifacts requires the separately printed
 `SIA_ALLOW_UNPINNED_OLLAMA=1` weakens only post-start executable
 identity/version checks and does not retain a custom unit/runtime; model,
 listener, and ownership verification still run.
+
+### Ollama operator drop-in (issue #10)
+
+ollama.service's exact-match `DropInPaths` check would otherwise leave no
+way to tune the embedding backend — for example, Ollama drops an integrated
+GPU by default (`dropping integrated GPU; to enable, set
+OLLAMA_IGPU_ENABLE=1`), which can force a much slower CPU-only embedding
+path. The installer therefore accepts exactly one owned, receipted-by-
+content escape hatch: `$SYSTEMD_USER_DIR/ollama.service.d/sia-operator.conf`.
+SIA never writes or edits this file — an operator does — and the installer
+refuses it unless it is a regular, non-symlink, current-user-owned file in
+mode `0644` or `0600` and at most 4096 bytes, whose non-blank, non-comment
+lines are exactly one `[Service]` header followed only by
+`Environment=OLLAMA_<NAME>=<value>` lines (`NAME` matching `[A-Z0-9_]+`,
+`<value>` matching `[A-Za-z0-9_./:=,+-]+` — no whitespace, quotes, or shell
+metacharacters). `OLLAMA_HOST` and `OLLAMA_MODELS` may never be overridden
+this way; SIA manages both directly. A present-but-invalid drop-in refuses
+the install with the validator's one-line reason and this contract; any
+other drop-in path still refuses as "unexpected systemd drop-ins" as before.
+On acceptance the installer prints the accepted Environment key names (never
+values). Separately, and only informationally, the installer reads the last
+400 lines of ollama.service's own journal after the live unit is verified
+and — without ever echoing a raw journal line — warns when Ollama declined
+an integrated GPU or is otherwise running CPU-only inference, since first
+light can then take much longer; it never enables `OLLAMA_IGPU_ENABLE` or
+any other hardware setting itself, and any journalctl failure is silent.
 
 On an empty share, `sia-ledger init` publishes only this exact durable prefix:
 `key.hex`, its matching `pub.hex`, one canonical signed `GENESIS:init` row in

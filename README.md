@@ -283,7 +283,14 @@ result. Managed filesystems must support atomic rename and
 for crash-closed signed-ledger publication — the installer probes both before
 activating anything. Optional: the Omarchy 4.x shell for the cockpit. Judge
 calls remain off until you set `judge.backend` to `claude` with an explicit
-`judge.model`.
+`judge.model`. ollama.service accepts exactly one operator-owned drop-in at
+`~/.config/systemd/user/ollama.service.d/sia-operator.conf` — a `[Service]`
+header followed only by `Environment=OLLAMA_<NAME>=<value>` lines, never
+`OLLAMA_HOST` or `OLLAMA_MODELS` (SIA manages those) — for hardware knobs
+Ollama does not otherwise expose, such as `OLLAMA_IGPU_ENABLE=1` when it
+would otherwise drop an integrated GPU ([issue #10](https://github.com/AnubisQuantumCipher/sia/issues/10)).
+SIA never writes this file or enables a hardware setting itself; any other
+drop-in, or a malformed one, refuses the install.
 
 ## Install, recovery, and removal boundaries
 

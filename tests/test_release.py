@@ -4631,7 +4631,7 @@ sia_install_cleanup
             "\n}\n\neffective_ollama_models_dir", 1)[0]
         version_function = "ollama_client_version() {" + version_body + "\n}\n"
         body = installer.split("ollama_runtime_receipt_valid() {", 1)[1].split(
-            "\n}\n\ninspect_user_unit ollama.service", 1)[0]
+            "\n}\n\n# Validate SIA's owned operator drop-in", 1)[0]
         function = "ollama_runtime_receipt_valid() {" + body + "\n}\n"
         with tempfile.TemporaryDirectory() as root:
             binary = os.path.join(root, "bin/ollama")
@@ -4693,6 +4693,230 @@ ollama_runtime_receipt_valid
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             self.assertNotEqual(modified.returncode, 0)
             self.assertFalse(os.path.exists(sentinel))
+
+    def test_ollama_operator_drop_in_valid_enforces_the_documented_contract(
+            self):
+        installer = _read("install.sh")
+        body = installer.split(
+            "ollama_operator_drop_in_valid() {", 1)[1].split(
+                '\nOLLAMA_OPERATOR_DROP_IN_EXPECTED=""', 1)[0]
+        function = "ollama_operator_drop_in_valid() {" + body
+
+        def check(content, mode=0o644, symlink_to=None):
+            with tempfile.TemporaryDirectory() as root:
+                path = os.path.join(root, "sia-operator.conf")
+                if symlink_to is not None:
+                    target = os.path.join(root, "target.conf")
+                    _write(target, symlink_to, 0o644)
+                    os.symlink(target, path)
+                else:
+                    _write(path, content, mode)
+                result = subprocess.run(
+                    ["bash", "-c",
+                     function + '\nollama_operator_drop_in_valid "$1"',
+                     "operator-drop-in-test", path],
+                    text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False, timeout=30)
+                return result
+
+        valid = check("[Service]\nEnvironment=OLLAMA_IGPU_ENABLE=1\n")
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        self.assertEqual(valid.stdout.strip(), "OLLAMA_IGPU_ENABLE")
+
+        symlinked = check(None, symlink_to="[Service]\n")
+        self.assertNotEqual(symlinked.returncode, 0)
+
+        loose_mode = check(
+            "[Service]\nEnvironment=OLLAMA_IGPU_ENABLE=1\n", mode=0o666)
+        self.assertNotEqual(loose_mode.returncode, 0)
+        self.assertIn("unsafe mode", loose_mode.stderr)
+
+        stray_directive = check("[Service]\nExecStart=/bin/sh\n")
+        self.assertNotEqual(stray_directive.returncode, 0)
+        self.assertIn("unsupported line", stray_directive.stderr)
+
+        managed_host = check(
+            "[Service]\nEnvironment=OLLAMA_HOST=0.0.0.0:11434\n")
+        self.assertNotEqual(managed_host.returncode, 0)
+        self.assertIn("SIA-managed", managed_host.stderr)
+
+        managed_models = check(
+            "[Service]\nEnvironment=OLLAMA_MODELS=/tmp/elsewhere\n")
+        self.assertNotEqual(managed_models.returncode, 0)
+        self.assertIn("SIA-managed", managed_models.stderr)
+
+        spaced_value = check(
+            "[Service]\nEnvironment=OLLAMA_FOO=has space\n")
+        self.assertNotEqual(spaced_value.returncode, 0)
+        self.assertIn("unsupported line", spaced_value.stderr)
+
+        command_substitution = check(
+            "[Service]\nEnvironment=OLLAMA_FOO=$(evil)\n")
+        self.assertNotEqual(command_substitution.returncode, 0)
+        self.assertIn("unsupported line", command_substitution.stderr)
+
+        second_section = check(
+            "[Service]\nEnvironment=OLLAMA_IGPU_ENABLE=1\n"
+            "[Unit]\nConditionPathExists=\n")
+        self.assertNotEqual(second_section.returncode, 0)
+        self.assertIn("only one [Service] section", second_section.stderr)
+
+        oversized = check("[Service]\n" + "a" * 5000 + "\n")
+        self.assertNotEqual(oversized.returncode, 0)
+        self.assertIn("4096-byte ceiling", oversized.stderr)
+
+        commented = check(
+            "# SIA operator override for ollama.service\n"
+            "[Service]\n"
+            "Environment=OLLAMA_IGPU_ENABLE=1\n")
+        self.assertEqual(commented.returncode, 0, commented.stderr)
+        self.assertEqual(commented.stdout.strip(), "OLLAMA_IGPU_ENABLE")
+
+    def test_ollama_operator_drop_in_caller_computes_expected_paths(self):
+        installer = _read("install.sh")
+        self.assertNotIn(
+            'inspect_user_unit ollama.service OLLAMA_INSPECT || exit 1',
+            installer)
+        self.assertNotIn(
+            'inspect_user_unit ollama.service OLLAMA_LIVE || exit 1',
+            installer)
+        self.assertIn(
+            'inspect_user_unit ollama.service OLLAMA_INSPECT \\\n'
+            '  "$OLLAMA_OPERATOR_DROP_IN_EXPECTED" no || exit 1',
+            installer)
+        self.assertIn(
+            'inspect_user_unit ollama.service OLLAMA_LIVE \\\n'
+            '  "$OLLAMA_OPERATOR_DROP_IN_EXPECTED" no || exit 1',
+            installer)
+        self.assertIn(
+            'OLLAMA_OPERATOR_DROP_IN="$SYSTEMD_USER_DIR/ollama.service.d/'
+            'sia-operator.conf"', installer)
+
+        validator = "ollama_operator_drop_in_valid() {" + installer.split(
+            "ollama_operator_drop_in_valid() {", 1)[1].split(
+                '\nOLLAMA_OPERATOR_DROP_IN_EXPECTED=""', 1)[0]
+        caller = installer.split(
+            'OLLAMA_OPERATOR_DROP_IN_EXPECTED=""', 1)[1].split(
+                '\n\ninspect_user_unit ollama.service OLLAMA_INSPECT', 1)[0]
+        caller = 'OLLAMA_OPERATOR_DROP_IN_EXPECTED=""' + caller
+
+        def run(home, drop_in_content=None, mode=0o644):
+            drop_in = os.path.join(
+                home, "ollama.service.d", "sia-operator.conf")
+            if drop_in_content is not None:
+                _write(drop_in, drop_in_content, mode)
+            script = (
+                'set -euo pipefail\n'
+                f'OLLAMA_OPERATOR_DROP_IN={shlex.quote(drop_in)}\n'
+                + validator + "\n" + caller +
+                '\necho "expected=$OLLAMA_OPERATOR_DROP_IN_EXPECTED"\n')
+            return subprocess.run(
+                ["bash", "-c", script], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False, timeout=30)
+
+        with tempfile.TemporaryDirectory() as home:
+            absent = run(home)
+            self.assertEqual(absent.returncode, 0, absent.stderr)
+            self.assertIn("expected=\n", absent.stdout)
+
+        with tempfile.TemporaryDirectory() as home:
+            accepted = run(
+                home, "[Service]\nEnvironment=OLLAMA_IGPU_ENABLE=1\n")
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn(
+                "operator drop-in accepted: "
+                + os.path.join(home, "ollama.service.d", "sia-operator.conf"),
+                accepted.stdout)
+            self.assertIn("environment overrides: OLLAMA_IGPU_ENABLE",
+                          accepted.stdout)
+            self.assertIn(
+                "expected=" + os.path.join(
+                    home, "ollama.service.d", "sia-operator.conf"),
+                accepted.stdout)
+
+        with tempfile.TemporaryDirectory() as home:
+            refused = run(home, "[Service]\nExecStart=/bin/sh\n")
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("must contain exactly", refused.stderr)
+            self.assertIn("[Service]", refused.stderr)
+            self.assertIn("Environment=OLLAMA_<NAME>=<value>", refused.stderr)
+
+    def test_ollama_inference_compute_notice_is_read_only_and_never_fails(
+            self):
+        installer = _read("install.sh")
+        bounded = _bounded_commands_shell(installer)
+        body = installer.split(
+            "ollama_inference_compute_notice() {", 1)[1].split(
+                "\n}\nollama_inference_compute_notice\n", 1)[0]
+        function = ("ollama_inference_compute_notice() {" + body
+                    + "\n}\n")
+        self.assertIn(
+            "\nollama_inference_compute_notice\n\nOLLAMA_MODELS_DIR=",
+            installer)
+
+        def run(fake_bin, home, mode):
+            script = (bounded + "\n" + function +
+                      'OLLAMA_OPERATOR_DROP_IN='
+                      + shlex.quote(os.path.join(
+                          home, "ollama.service.d", "sia-operator.conf"))
+                      + '\nollama_inference_compute_notice\n')
+            environment = os.environ.copy()
+            environment.update({
+                "PATH": fake_bin + os.pathsep + environment["PATH"],
+                "FAKE_JOURNAL_MODE": mode,
+            })
+            return subprocess.run(
+                ["bash", "-c", script], env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False, timeout=30)
+
+        with tempfile.TemporaryDirectory() as root:
+            home = os.path.join(root, "home")
+            fake_bin = os.path.join(root, "bin")
+            os.makedirs(fake_bin)
+            _fake_command(
+                fake_bin, "journalctl",
+                'case "$FAKE_JOURNAL_MODE" in\n'
+                '  igpu)\n'
+                '    echo \'msg="dropping integrated GPU; to enable, set '
+                'OLLAMA_IGPU_ENABLE=1"\'\n'
+                '    ;;\n'
+                '  cpu)\n'
+                '    echo \'msg="inference compute" library=cpu\'\n'
+                '    ;;\n'
+                '  gpu)\n'
+                '    echo \'msg="inference compute" library=cuda\'\n'
+                '    ;;\n'
+                '  fail)\n'
+                '    exit 1\n'
+                '    ;;\n'
+                'esac\n'
+                'exit 0\n')
+
+            igpu = run(fake_bin, home, "igpu")
+            self.assertEqual(igpu.returncode, 0, igpu.stderr)
+            self.assertIn("declined an integrated GPU", igpu.stdout)
+            self.assertIn("OLLAMA_IGPU_ENABLE=1", igpu.stdout)
+            self.assertIn("[Service]", igpu.stdout)
+            self.assertIn(os.path.join(
+                home, "ollama.service.d", "sia-operator.conf"), igpu.stdout)
+            self.assertNotIn("dropping integrated GPU", igpu.stdout)
+
+            cpu_only = run(fake_bin, home, "cpu")
+            self.assertEqual(cpu_only.returncode, 0, cpu_only.stderr)
+            self.assertIn("CPU-only inference", cpu_only.stdout)
+            self.assertNotIn("declined an integrated GPU", cpu_only.stdout)
+            self.assertNotIn("library=cpu", cpu_only.stdout)
+
+            gpu_present = run(fake_bin, home, "gpu")
+            self.assertEqual(gpu_present.returncode, 0, gpu_present.stderr)
+            self.assertEqual(gpu_present.stdout, "")
+
+            journal_failure = run(fake_bin, home, "fail")
+            self.assertEqual(journal_failure.returncode, 0,
+                             journal_failure.stderr)
+            self.assertEqual(journal_failure.stdout, "")
 
     def test_toolchain_receipts_are_validated_before_execution(self):
         installer = _read("install.sh")
