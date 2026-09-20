@@ -3,7 +3,7 @@
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
-**Describes SIA v1.8.0 · 2026-09-19**
+**Describes SIA v1.8.1 · 2026-09-20**
 
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*

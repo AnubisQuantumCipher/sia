@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "khephri.sia",
   "name": "SIA",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "author": "Khephri Labs",
   "license": "MIT",
   "description": "SIA — the Omarchy Brain. “Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience. Browse the local graph, generated records, and evidence-chain status.",

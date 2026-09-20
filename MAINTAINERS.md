@@ -3,6 +3,21 @@
 SIA is maintained by **Khephri Labs** ([@AnubisQuantumCipher](https://github.com/AnubisQuantumCipher)),
 who holds release authority and the marketplace verify chain.
 
+## Download and traffic reporting
+
+Run `python3 scripts/collect_github_metrics.py` with a `gh` login that can read
+this repository's traffic. It archives GitHub's aggregate clone/view windows
+and uploaded release-asset download counters under
+`~/.local/state/sia-maintainer/github-traffic/`. Schedule it daily to retain
+history beyond GitHub's rolling traffic window. It does not modify the SIA
+installer or collect reports from users' machines.
+
+Keep daily observations as observations: overlapping traffic windows and
+unique-cloner counts cannot be summed into lifetime people or installations.
+Uploaded release assets expose download counters; generated source archives
+are not uploaded assets. Neither clones nor downloads prove a successful
+installation. Failed API requests produce no partial snapshot.
+
 ## Credited reviewers
 
 Two outside contributors found SIA within a day of its marketplace listing and

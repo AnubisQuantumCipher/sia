@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.1 — 2026-09-20 · reviewable commitments and a steadier cockpit
 
 ### Cockpit
 

@@ -21,7 +21,12 @@ watch its generated-entry stream and query the memory it has admitted.
 You can audit every stored word because the corpus is markdown in git and the
 daemon signs its own acts.
 
-**Current release: v1.8.0.** Two receipts bind storage by device and inode
+**Current release: v1.8.1.** This maintenance update makes commitments
+reviewable from the cockpit, preserves the graph during status refreshes,
+and reduces entrance and idle rendering work. See [the changelog](CHANGELOG.md)
+for the complete changes.
+
+**Storage recovery introduced in v1.8.0.** Two receipts bind storage by device and inode
 number — the installer's corpus receipt and the delivery epoch's adoption —
 and a btrfs subvolume change, an `rsync` of the home directory, or a restore
 by copy changes those numbers. After that every pulse refused, `sia ready`
