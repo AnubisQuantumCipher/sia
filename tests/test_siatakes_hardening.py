@@ -53,6 +53,20 @@ class GradingEvidenceCanonicalization(unittest.TestCase):
                         self.assertFalse(
                             siatakes._admitted_evidence_slug(slug))
 
+    def test_judge_config_roster_admits_every_shipped_top_level_key(self):
+        """The judge reads config.json with its own top-level key roster and
+        fails closed to no judge on any unknown key. The shipped example
+        config carries a "mind" section the roster lacked, so grading
+        silently never ran on the maintainer machine (and any machine on
+        the example config): `sia grade` said "judge unavailable" with a
+        working Claude CLI. The roster must admit every key the runtime's
+        own loader admits and every key the example ships."""
+        example = json.load(open(os.path.join(REPO, "config.example.json"),
+                                 encoding="utf-8"))
+        self.assertEqual(set(example) - siatakes.CONFIG_TOP_LEVEL_KEYS, set())
+        self.assertEqual(sialib._CONFIG_TOP_LEVEL_KEYS - siatakes.CONFIG_TOP_LEVEL_KEYS,
+                         set())
+
     def test_option_shaped_claim_is_never_sent_to_the_engine(self):
         """A take whose claim is "--help" (registered before `sia take --help`
         was refused) made the engine print its usage text instead of a

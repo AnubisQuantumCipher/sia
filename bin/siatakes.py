@@ -64,9 +64,13 @@ HISTORY_TRANSACTION_KEYS = frozenset({
     "schema", "kind", "event", "source_sha256", "target_sha256",
     "target_size", "target_text", "retire",
 })
+# Every top-level key the runtime's own config loader admits. A key missing
+# here (the "mind" section the shipped config.example.json carries was one)
+# makes the judge read the whole config as malformed and fail closed to
+# none, silently: grading never ran for anyone on the example config.
 CONFIG_TOP_LEVEL_KEYS = frozenset({
     "_comment", "_egress_trust_boundary", "judge", "senses", "skills",
-    "custom_senses", "chains", "retrieval",
+    "custom_senses", "chains", "retrieval", "mind",
 })
 JUDGE_CONFIG_KEYS = frozenset({"_comment", "backend", "model"})
 # are deliberately much larger than the admitted grading excerpts while still
