@@ -1149,6 +1149,16 @@ def _unverified_jackal_slug(slug):
 
 
 def _recall(query, k=6):
+    if not isinstance(query, str) or not query.strip() \
+            or query.lstrip().startswith("-"):
+        # An option-shaped or empty claim cannot be recalled: the engine's
+        # CLI reads it as a flag and prints its usage text instead of a
+        # result list, which admission then refused on every nightly run,
+        # leaving the take due forever. Such takes exist from before
+        # `sia take --help` was refused. A completed recall with no
+        # admitted evidence is the documented path: the judge sees
+        # "(none)" and grades UNRESOLVABLE, which closes the take.
+        return RecallEvidence(True, "", frozenset())
     try:
         # Imported lazily to avoid the sialib -> siatakes module cycle. Every
         # shipped PGLite operation must enter the same cross-process owner

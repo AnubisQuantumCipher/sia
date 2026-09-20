@@ -53,6 +53,21 @@ class GradingEvidenceCanonicalization(unittest.TestCase):
                         self.assertFalse(
                             siatakes._admitted_evidence_slug(slug))
 
+    def test_option_shaped_claim_is_never_sent_to_the_engine(self):
+        """A take whose claim is "--help" (registered before `sia take --help`
+        was refused) made the engine print its usage text instead of a
+        result list; admission refused it and the take stayed due forever.
+        The claim is not recalled at all: a completed recall with no
+        admitted evidence lets the judge grade it UNRESOLVABLE."""
+        with mock.patch.object(sialib, "gbrain",
+                               side_effect=AssertionError("engine queried")):
+            for claim in ("--help", "  -h", "", "   "):
+                recall = siatakes._recall(claim)
+                self.assertTrue(recall.completed, claim)
+                self.assertEqual(recall.text, "")
+                self.assertEqual(recall.citations, frozenset())
+                self.assertEqual(recall.reason, "")
+
     def test_model_and_jackal_traversal_refuse_before_judging(self):
         aliases = (
             "events/../takes/model",
