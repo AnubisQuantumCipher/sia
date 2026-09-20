@@ -4,6 +4,16 @@
 
 ### Cockpit
 
+Opening no longer stacks a full-screen Qt fade on the desktop animation.
+Snapshot refresh and graph motion wait until arrival, and the graph image is
+painted before presentation to avoid exposing uninitialized pixels on remap.
+Native Qt rings replace the full-size transparent glow canvas; inspecting a
+settled node no longer keeps the layout simulation running. Routine status
+refreshes use the existing cockpit instead of flashing the first-install gate;
+snapshot admission and action guards remain unchanged. Status counts guard both
+the status and graph snapshots. Backup schedule details expand on demand, and
+generated entries use more readable prose typography and wrapped origin labels.
+
 The graph no longer vanishes for ten seconds a minute. The brainstem
 republishes `graph.json` up to four times a pulse (two partial scans, then the
 complete generation, then its post-source rebuild) and names the final one in
@@ -21,8 +31,8 @@ neighbourhoods, and a locked selection survive the republish; a running growth
 replay survives the beat between generations too.
 
 The remaining beat — the status reread itself — is one settle wait (60 ms, was
-150–200 ms) plus a frame; the returning graph and entry stream fade in over
-140 ms instead of snapping, and `current graph unavailable` is only said once
+150–200 ms) plus a frame; the entry stream fades in over 140 ms, while the graph
+paints directly without a full-image fade. `current graph unavailable` is only said once
 the graph has been absent for 400 ms. Boundaries that name a routine
 revalidation (`… pending validation`) render in the muted text colour; an
 unavailable or rejected source keeps the urgent colour.

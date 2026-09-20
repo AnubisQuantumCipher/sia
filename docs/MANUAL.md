@@ -262,6 +262,23 @@ activating its controller are separate deployment steps.
 
 ## 2. The cockpit
 
+The cockpit leaves entrance and dismissal motion to the compositor, avoiding
+a second full-screen fade in Qt. For a straight-down entrance on Omarchy's Lua
+Hyprland configuration, add this scoped rule to `~/.config/hypr/looknfeel.lua`:
+
+```lua
+hl.layer_rule({
+  name = "sia-cockpit-presentation",
+  match = { namespace = "^sia-cockpit$" },
+  animation = "slide top",
+})
+```
+
+Reload with `hyprctl reload` and check `hyprctl configerrors`. This only changes
+SIA's direction; desktop animation timing and reduced-motion preferences still
+apply. The continuity card's **Schedule & recovery details** control expands
+routine backup information without hiding warnings or recovery actions.
+
 Summoned from the bar (or with SUPER+SHIFT+B after an install using
 `SIA_INSTALL_KEYBINDING=1`); leaves with **Esc**, ✕, or
 `omarchy-shell shell hide khephri.sia`.

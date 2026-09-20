@@ -56,8 +56,10 @@ Item {
   // it sets it, and the frame loop clears it once the layout has settled.
   property bool layoutLive: true
   onPlayingChanged: layoutLive = true
-  onHoverIdChanged: layoutLive = true
-  onHiddenKindsChanged: layoutLive = true
+  // Inspection changes ink, not node positions. A stationary pointer must
+  // not keep the expensive graph/label canvas painting every display frame.
+  onEffIdChanged: graphCanvas.requestPaint()
+  onHiddenKindsChanged: graphCanvas.requestPaint()
   property string verifyMsg: ""
   property bool verifyOk: false
   property string graphBoundary: ""
@@ -72,6 +74,7 @@ Item {
   property var continuitySchedule: null
   property string continuityScheduleBoundary: ""
   property bool continuitySheetOpen: false
+  property bool continuityExpanded: false
   property string continuityPage: "overview"
   property bool restoreConfirmOpen: false
   property string continuityActionMsg: ""
@@ -141,6 +144,12 @@ Item {
       : Model.guidedLifecycle(root.runtimeEvidence,
                               root.installCompletion, root.pluginVersion)
   readonly property bool setupRequired: root.releaseLifecycle !== "ready"
+  // Remember presentation history only; this never admits data or actions.
+  // A watched-file refresh should show CHECKING in the existing cockpit,
+  // not replace an established session with the first-install screen.
+  property bool lifecycleWasReady: false
+  readonly property bool showSetupGate: root.setupRequired
+    && !(root.lifecycleWasReady && root.releaseLifecycle === "checking")
   // A caveat on the wording, never a lifecycle.  It cannot reach
   // releaseLifecycle, so no timeout can move this gate to ready, and it
   // asserts nothing about the installer beyond what SIA has observed.
@@ -200,6 +209,22 @@ Item {
       && root.focusedWorkspaceName !== root.workspaceLockName
   readonly property bool cockpitVisible:
     root.opened && !root.workspaceLockMismatch
+  // Let the compositor move the finished surface. Repainting a full-screen
+  // opacity/translation every frame stalls the software Qt renderer.
+  Timer {
+    id: presentationHold
+    interval: 450
+    onTriggered: {
+      // The keepLoaded file watchers already withdraw changed publications.
+      // Refresh again after arrival instead of parsing every snapshot while
+      // the first surface is being painted.
+      statusFile.reload(); installCompletionFile.reload()
+      graphFile.reload(); thoughtsFile.reload()
+      continuityFile.reload()
+      continuityScheduleRefresh.restart()
+      graphCanvas.requestPaint()
+    }
+  }
   readonly property bool continuityStale:
     Model.continuityStale(root.continuity, root.nowMs,
                           Model.continuityStaleAfterSec())
@@ -2262,15 +2287,9 @@ Item {
     // age on this screen, the installing horizon included, is measured
     // against it; re-read it before any of them are painted.
     nowMs = Date.now()
-    // Opening requests fresh bytes without discarding the last validated
-    // generation. Cold startup and every failed load still resolve fail-closed.
-    statusFile.reload(); installCompletionFile.reload()
-    graphFile.reload(); thoughtsFile.reload()
-    continuityFile.reload()
-    continuityScheduleRefresh.restart()
-    if (root.currentGraph && graphCanvas.width > 0 && graphCanvas.height > 0)
-      Model.syncGraph(
-        root.currentGraph, graphCanvas.width, graphCanvas.height)
+    // Watched publications and canvas resize handlers maintain the layout
+    // while closed. The presentation timer requests a fresh read on arrival.
+    presentationHold.restart()
     Qt.callLater(function() {
       if (payload.mode === "continuity") root.openContinuity("overview")
       else if (root.cockpitVisible && root.setupActionAllowed)
@@ -2309,7 +2328,11 @@ Item {
   }
 
   onCockpitVisibleChanged: {
-    if (!root.cockpitVisible) return
+    if (!root.cockpitVisible) {
+      presentationHold.stop()
+      return
+    }
+    presentationHold.restart()
     Qt.callLater(function() {
       if (!root.cockpitVisible) return
       if (root.setupActionAllowed) firstLightButton.forceActiveFocus()
@@ -2340,6 +2363,7 @@ Item {
   }
 
   onReleaseLifecycleChanged: {
+    if (root.releaseLifecycle === "ready") root.lifecycleWasReady = true
     // Ahead of the visibility guard on purpose.  The horizon has to keep
     // running while the cockpit is closed, which is where an installer
     // usually dies.
@@ -3779,7 +3803,7 @@ Item {
     id: win
     visible: root.cockpitVisible
     anchors { top: true; bottom: true; left: true; right: true }
-    color: Color.background
+    color: root.bg
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "sia-cockpit"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -3790,11 +3814,11 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
-      // The surface arrives on the shell's own beat (PopupCard fades over
-      // 140 ms); a summoned cockpit that snaps in reads as a glitch.
-      opacity: root.cockpitVisible ? 1 : 0
-      Behavior on opacity {
-        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      enabled: root.cockpitVisible
+      Rectangle {
+        anchors.fill: parent
+        color: root.bg
+        z: -1
       }
 
       // Sheets contain focusable controls, so Esc must remain available even
@@ -4346,6 +4370,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityWeeklyText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.56)
                 font.family: root.fontFamily
@@ -4356,6 +4381,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuitySleepText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.48)
                 font.family: root.fontFamily
@@ -4367,6 +4393,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityRepositoryText()
+                visible: root.continuityExpanded
                 elide: Text.ElideMiddle
                 color: Qt.alpha(root.fg, 0.7)
                 font.family: root.fontFamily
@@ -4377,6 +4404,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityLatestText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.52)
                 font.family: root.fontFamily
@@ -4396,6 +4424,14 @@ Item {
                     ? root.urgent : Qt.alpha(root.fg, 0.52)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+
+              Ui.Button {
+                text: root.continuityExpanded ? "Less detail ▴" : "Schedule & recovery details ▾"
+                fontSize: Style.font.caption
+                focusable: true
+                Accessible.name: text
+                onClicked: root.continuityExpanded = !root.continuityExpanded
               }
 
               Row {
@@ -4527,12 +4563,12 @@ Item {
                 rowSpacing: Style.space(2)
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.pages) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
@@ -5547,7 +5583,7 @@ Item {
           anchors.leftMargin: body.gap
           anchors.rightMargin: body.gap
           radius: Style.cornerRadius
-          color: Qt.alpha(root.fg, 0.03)
+          color: Qt.tint(root.bg, Qt.alpha(root.fg, 0.03))
           border.color: Qt.alpha(root.fg, 0.10)
           border.width: 1
           clip: true
@@ -5556,13 +5592,10 @@ Item {
             id: graphCanvas
             anchors.fill: parent
             anchors.margins: 2
-            renderStrategy: Canvas.Cooperative
-            // A returning generation fades in on the display's own beat; a
-            // withdrawn one is cleared at once by the repaint that withdrew it.
+            renderStrategy: Canvas.Immediate
+            // Finish the image before presenting the surface. Cooperative
+            // painting exposed an unpainted texture during remapping here.
             opacity: root.currentGraph ? 1 : 0
-            Behavior on opacity {
-              NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
             // The glow layer follows every graph frame, so it never shows
             // a halo where a node no longer is.
             onPainted: glowCanvas.requestPaint()
@@ -5586,7 +5619,8 @@ Item {
             // and every frame landed off the display's beat.
             FrameAnimation {
               id: graphFrames
-              running: root.opened && root.currentGraph !== null
+              running: root.cockpitVisible && !presentationHold.running
+                       && root.currentGraph !== null
                        && root.layoutLive
               onTriggered: {
                 // A slow frame advances the layout by the time it took, up
@@ -5606,7 +5640,7 @@ Item {
                            graphCanvas.width, graphCanvas.height,
                            root.revealT, ms)
                 graphCanvas.requestPaint()
-                if (!root.playing && root.hoverId === "" && Model.settled())
+                if (!root.playing && Model.settled())
                   root.layoutLive = false
               }
             }
@@ -5621,7 +5655,8 @@ Item {
               id: graphBreath
               interval: 200
               repeat: true
-              running: root.opened && root.currentGraph !== null
+              running: root.cockpitVisible && !presentationHold.running
+                       && root.currentGraph !== null
                        && !root.layoutLive
               onTriggered: {
                 Model.breathe(interval)
@@ -5633,6 +5668,8 @@ Item {
               var ctx = getContext("2d")
               ctx.reset()
               ctx.clearRect(0, 0, width, height)
+              ctx.fillStyle = graphCard.color
+              ctx.fillRect(0, 0, width, height)
               var graph = root.currentGraph
               if (!graph || !graph.nodes) return
               var now = root.nowMs > 0 ? root.nowMs : Date.now()
@@ -5828,52 +5865,55 @@ Item {
             }
           }
 
-          // The breath layer: fresh memories glow and the root keeps its
-          // halo. A settled graph repaints nothing else, so breathing costs
-          // a handful of arcs, not the whole graph. It does not take the
-          // pointer; the graph's own MouseArea beneath it keeps hover.
-          Canvas {
+          // Native rings avoid uploading a full transparent canvas for a
+          // small halo. They do not intercept graph inspection underneath.
+          Item {
             id: glowCanvas
             anchors.fill: graphCanvas
             opacity: graphCanvas.opacity
-            renderStrategy: Canvas.Cooperative
-            onPaint: {
-              var ctx = getContext("2d")
-              ctx.reset()
-              ctx.clearRect(0, 0, width, height)
+            property var rings: []
+            function requestPaint() {
+              var next = []
               var graph = root.currentGraph
-              if (!graph || !graph.nodes) return
-              var now = root.nowMs > 0 ? root.nowMs : Date.now()
-              var eff = root.effId
-              var nbrs = eff !== "" ? Model.neighbors(eff) : null
-              var nodes = graph.nodes
-              for (var i = 0; i < nodes.length; i++) {
-                var n = nodes[i]
-                if (!root.nodeVisible(n)) continue
-                var p = Model.posOf(n.id)
-                if (!p) continue
-                if (eff !== "" && n.id !== eff
-                    && !Model.hasNeighbor(nbrs, n.id)) continue
-                var r = Model.nodeRadius(n)
-                var fresh = Model.freshness(n, now)
-                if (fresh > 0.02) {
-                  var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
-                                                       + p.x * 0.05)
-                  ctx.fillStyle = Qt.alpha(root.accent, 0.28 * fresh * breathe)
-                  // A ring, not a disc: the node's own fill stays untinted.
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 5 + 4 * fresh, 0, 2 * Math.PI)
-                  ctx.arc(p.x, p.y, r, 0, 2 * Math.PI, true)
-                  ctx.fill()
+              if (graph && graph.nodes) {
+                var eff = root.effId
+                var nbrs = eff !== "" ? Model.neighbors(eff) : null
+                for (var i = 0; i < graph.nodes.length; i++) {
+                  var n = graph.nodes[i]
+                  var p = Model.posOf(n.id)
+                  if (!p || !root.nodeVisible(n)) continue
+                  if (eff !== "" && n.id !== eff
+                      && !Model.hasNeighbor(nbrs, n.id)) continue
+                  var r = Model.nodeRadius(n)
+                  var fresh = Model.freshness(n, root.nowMs)
+                  if (fresh > 0.02) {
+                    var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
+                                                         + p.x * 0.05)
+                    next.push({ x: p.x, y: p.y, radius: r + 5 + 4 * fresh,
+                      thickness: 5 + 4 * fresh,
+                      ink: Qt.alpha(root.accent, 0.28 * fresh * breathe) })
+                  }
+                  if (n.id === "sia/cortex")
+                    next.push({ x: p.x, y: p.y, radius: r + 3.5,
+                      thickness: 1.2,
+                      ink: Qt.alpha(root.fg, 0.35 + 0.20 * Math.sin(Model.phase())) })
                 }
-                if (n.id === "sia/cortex") {
-                  var halo = 0.35 + 0.20 * Math.sin(Model.phase())
-                  ctx.strokeStyle = Qt.alpha(root.fg, halo)
-                  ctx.lineWidth = 1.2
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 3.5, 0, 2 * Math.PI)
-                  ctx.stroke()
-                }
+              }
+              rings = next
+            }
+            Repeater {
+              model: glowCanvas.rings
+              delegate: Rectangle {
+                required property var modelData
+                x: modelData.x - modelData.radius
+                y: modelData.y - modelData.radius
+                width: modelData.radius * 2
+                height: width
+                radius: modelData.radius
+                color: "transparent"
+                border.width: modelData.thickness
+                border.color: modelData.ink
+                antialiasing: true
               }
             }
           }
@@ -6301,19 +6341,22 @@ Item {
                         width: parent.width
                         text: thoughtRow.modelData.text
                         wrapMode: Text.WordWrap
+                        lineHeight: 1.2
                         color: thoughtRow.urgencyState === "unrecorded"
                           ? Qt.alpha(root.fg, 0.6)
                           : thoughtRow.urgencyState === "urgent"
                             ? root.urgent : Qt.alpha(root.fg, 0.85)
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
+                        font.family: "sans-serif"
+                        font.pixelSize: Style.font.bodySmall
                       }
                       Text {
                         textFormat: Text.PlainText
                         renderType: Text.NativeRendering
                         text: root.thoughtRowMetadata(
                           thoughtRow.modelData, root.nowMs)
-                        color: Qt.alpha(root.fg, 0.35)
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: Qt.alpha(root.fg, 0.58)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
                       }
@@ -6332,7 +6375,7 @@ Item {
       Rectangle {
         id: firstLightGate
         anchors.fill: parent
-        visible: root.setupRequired
+        visible: root.showSetupGate
         z: 30
         color: Color.background
 

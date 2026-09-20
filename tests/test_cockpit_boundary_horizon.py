@@ -667,10 +667,10 @@ function strictStatusAccepted(text) {
     def test_vitals_withdraw_graph_counts_without_a_graph_generation(self):
         cockpit = " ".join(_read("Cockpit.qml").split())
         self.assertIn(
-            'root.currentGraph ? String(root.currentStatus.pages) : "—"',
+            'root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"',
             cockpit)
         self.assertIn(
-            'root.currentGraph ? String(root.currentStatus.graph_edges) : "—"',
+            'root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"',
             cockpit)
 
         frozen = self._snapshot()
