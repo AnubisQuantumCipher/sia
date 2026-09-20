@@ -1809,14 +1809,29 @@ function syncGraph(graph, w, h) {
 function step(graph, w, h, revealT, dtMs) {
   // Forces, damping and the speed cap were tuned per 40 ms tick. A frame
   // clock delivers uneven intervals (8 ms at 120 Hz, longer under load), so
-  // every per-tick quantity is scaled by the elapsed fraction of a tick and
-  // the trajectory stays the same at any frame rate. Velocity stays in px per
-  // tick, so the cap below keeps its meaning.
-  var s = (typeof dtMs === "number" && isFinite(dtMs) && dtMs > 0)
+  // the elapsed time is spent in sub-ticks of at most one tuned tick each:
+  // an explicit integrator fed a 2.5-tick step overshoots its own springs
+  // and never settles (under a software renderer with 100 ms frames the
+  // layout loop then runs at full frame rate forever, which is what a
+  // cockpit sitting still at 64% of a core was). Velocity stays in px per
+  // tick, so the cap below keeps its meaning; a settled graph still costs
+  // exactly one sub-tick to confirm it is settled.
+  var total = (typeof dtMs === "number" && isFinite(dtMs) && dtMs > 0)
     ? Math.min(2.5, dtMs / 40) : 1
-  var damp = Math.pow(0.82, s)
+  var parts = Math.max(1, Math.ceil(total - 1e-9))
   L.maxSpeed = 0
-  if (!graph || !graph.nodes || !L.seeded) return
+  for (var k = 0; k < parts; k++) {
+    var peak = stepOnce(graph, w, h, revealT, total / parts)
+    if (peak > L.maxSpeed) L.maxSpeed = peak
+  }
+}
+
+function stepOnce(graph, w, h, revealT, s) {
+  // One integration sub-tick of `s` tuned ticks (0 < s <= 1). Returns the
+  // fastest node's speed this sub-tick; step() keeps the maximum.
+  var damp = Math.pow(0.82, s)
+  var maxSpeed = 0
+  if (!graph || !graph.nodes || !L.seeded) return 0
   var nodes = graph.nodes, edges = graph.edges
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
   var i, j, a, b, dx, dy, d2, d, f
@@ -1891,13 +1906,14 @@ function step(graph, w, h, revealT, dtMs) {
     a.vx *= damp; a.vy *= damp
     var vm = Math.sqrt(a.vx * a.vx + a.vy * a.vy)
     if (vm > 6) { a.vx *= 6 / vm; a.vy *= 6 / vm }
-    if (vm > L.maxSpeed) L.maxSpeed = vm
+    if (vm > maxSpeed) maxSpeed = vm
     a.x += a.vx * s; a.y += a.vy * s
     var m = Math.max(12, nodeRadius(n) + 6)
     if (a.x < m) a.x = m; if (a.x > w - m) a.x = w - m
     if (a.y < m) a.y = m; if (a.y > h - m) a.y = h - m
   }
   L.phase += 0.03 * s
+  return maxSpeed
 }
 
 function breathe(dtMs) {

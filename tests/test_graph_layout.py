@@ -136,6 +136,73 @@ return {
                            metrics["startRadius"] + 100, metrics)
         self.assertTrue(metrics["deterministic"], metrics)
 
+    def test_long_frames_settle_instead_of_running_forever(self):
+        """The frame loop stops when the layout settles; long frames must let it.
+
+        The physics was tuned per 40 ms tick and scaled by the elapsed frame
+        time. Fed a 100 ms frame (the step scale's 2.5 cap, routine under a
+        software renderer), the explicit integrator overshot its own springs
+        and never crossed the settle threshold, so the cockpit's frame loop
+        ran at full rate forever: a graph sitting still cost 64% of a core.
+        Time is now spent in sub-ticks of at most one tuned tick, so a
+        100 ms frame settles in the same wall time as a 17 ms one, and a
+        frame of exactly 2.5 ticks follows the trajectory of 2.5 sub-ticks.
+        """
+        metrics = self._run_model(r'''
+function build() {
+  const nodes = [{id: "sia/cortex", t: "organ", ts: "", deg: 1}]
+  const edges = []
+  for (let o = 0; o < 8; o++) {
+    nodes.push({id: "organs/o" + o, t: "organ", ts: "", deg: 12})
+    edges.push({s: "organs/o" + o, d: "sia/cortex", t: "mentions"})
+    for (let k = 0; k < 60; k++) {
+      const id = "events/o" + o + "/d" + k
+      nodes.push({id, t: "event-day", deg: 2,
+        ts: "2026-09-" + String(1 + (k % 28)).padStart(2, "0") + "T00:00:00Z"})
+      edges.push({s: id, d: "organs/o" + o, t: "mentions"})
+      if (k) edges.push({s: id, d: "events/o" + o + "/d" + (k - 1), t: "mentions"})
+      // One cross-organ link per memory: the density at which a 2.5-tick
+      // step made the old integrator oscillate forever.
+      edges.push({s: id, d: "events/o" + ((o + 1) % 8) + "/d" + ((k * 7) % 60), t: "mentions"})
+    }
+  }
+  return {nodes, edges}
+}
+function scatter(graph) {
+  // Seeding places nodes near their targets; a real pulse's fresh nodes and
+  // a resized canvas do not. Start every memory far from where it belongs,
+  // deterministically, so the layout has real distance to travel.
+  let k = 0
+  for (const id in L.pos) {
+    if (id === "sia/cortex") continue
+    L.pos[id].x = 60 + ((k * 587) % 1880)
+    L.pos[id].y = 60 + ((k * 733) % 1680)
+    L.pos[id].vx = 0; L.pos[id].vy = 0
+    k++
+  }
+}
+function settleTime(dtMs) {
+  const graph = build()
+  // Each run seeds from nothing; the layout state is module-global.
+  L.pos = {}; L.seeded = false; L.maxSpeed = 0
+  syncGraph(graph, 2000, 1800)
+  for (let tick = 1; tick <= 5000; tick++) {
+    step(graph, 2000, 1800, 1.0, dtMs)
+    if (settled()) return tick * dtMs / 1000
+  }
+  return -1
+}
+const walls = {fast: settleTime(16.7), tick: settleTime(40), slow: settleTime(100)}
+return {walls, nodes: build().nodes.length}
+''')
+        walls = metrics["walls"]
+        for name in ("fast", "tick", "slow"):
+            self.assertGreater(walls[name], 0, metrics)
+            self.assertLess(walls[name], 30, metrics)
+        # Same order of wall-clock settle time across frame rates; the 100 ms
+        # case used to be -1 (never) on this exact graph.
+        self.assertLess(max(walls.values()), 3 * min(walls.values()), metrics)
+
     def test_label_candidates_begin_outward_and_ui_uses_collision_guard(self):
         candidates = self._run_model(r'''
 return {
@@ -148,7 +215,7 @@ return {
 
         cockpit = _read("Cockpit.qml")
         self.assertIn("Model.replayLayout", cockpit)
-        self.assertIn("root.revealT)", cockpit)
+        self.assertIn("root.revealT, ms)", cockpit)
         self.assertIn("nodeObstacles", cockpit)
         self.assertIn("placedLabels", cockpit)
         self.assertIn("Model.labelCandidates", cockpit)
