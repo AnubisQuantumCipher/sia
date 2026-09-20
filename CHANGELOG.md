@@ -9,7 +9,7 @@ republishes `graph.json` up to four times a pulse (two partial scans, then the
 complete generation, then its post-source rebuild) and names the final one in
 `status.json` about eleven seconds after the first write. The cockpit withdrew
 the graph the moment the file changed and, once reread, refused the newer
-generation because no status named it yet — so for a quarter of every minute
+generation because no status named it yet — so for about eleven seconds of every sixty
 the center card said `current graph unavailable`. The cockpit now keeps the
 generation the current status names on screen (`admittedGraph`) while a newer
 publication waits for the status that will name it, and the header says so:
