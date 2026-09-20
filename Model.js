@@ -1581,7 +1581,7 @@ function resetLayout() {
   L.pos = {}; L.seeded = false; L.replaySeed = false; L.phase = 0
   L.adj = {}; L.edgesByNode = {}; L.rings = []; L.targetAngle = {}
   L.sectorWidth = {}
-  L.width = 0; L.height = 0
+  L.width = 0; L.height = 0; L.maxSpeed = 0
 }
 
 function replayLayout(graph, w, h) {
@@ -1806,7 +1806,16 @@ function syncGraph(graph, w, h) {
   L.seeded = true
 }
 
-function step(graph, w, h, revealT) {
+function step(graph, w, h, revealT, dtMs) {
+  // Forces, damping and the speed cap were tuned per 40 ms tick. A frame
+  // clock delivers uneven intervals (8 ms at 120 Hz, longer under load), so
+  // every per-tick quantity is scaled by the elapsed fraction of a tick and
+  // the trajectory stays the same at any frame rate. Velocity stays in px per
+  // tick, so the cap below keeps its meaning.
+  var s = (typeof dtMs === "number" && isFinite(dtMs) && dtMs > 0)
+    ? Math.min(2.5, dtMs / 40) : 1
+  var damp = Math.pow(0.82, s)
+  L.maxSpeed = 0
   if (!graph || !graph.nodes || !L.seeded) return
   var nodes = graph.nodes, edges = graph.edges
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
@@ -1835,8 +1844,8 @@ function step(graph, w, h, revealT) {
       }
       f = K_REP / d2
       d = Math.sqrt(d2)
-      a.vx += (dx / d) * f; a.vy += (dy / d) * f
-      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f
+      a.vx += (dx / d) * f * s; a.vy += (dy / d) * f * s
+      b.vx -= (dx / d) * f * s; b.vy -= (dy / d) * f * s
     }
   }
   for (i = 0; i < edges.length; i++) {
@@ -1848,8 +1857,8 @@ function step(graph, w, h, revealT) {
     dx = b.x - a.x; dy = b.y - a.y
     d = Math.sqrt(dx * dx + dy * dy) || 1
     f = K_SPRING * (d - REST)
-    a.vx += (dx / d) * f; a.vy += (dy / d) * f
-    b.vx -= (dx / d) * f; b.vy -= (dy / d) * f
+    a.vx += (dx / d) * f * s; a.vy += (dy / d) * f * s
+    b.vx -= (dx / d) * f * s; b.vy -= (dy / d) * f * s
   }
   for (i = 0; i < nodes.length; i++) {
     var n = nodes[i]
@@ -1863,8 +1872,8 @@ function step(graph, w, h, revealT) {
       var organAngle = L.targetAngle[activeKey]
       var organX = cx + Math.cos(organAngle) * R_ORGAN * half
       var organY = cy + Math.sin(organAngle) * R_ORGAN * half
-      a.vx += (organX - a.x) * K_ORGAN
-      a.vy += (organY - a.y) * K_ORGAN
+      a.vx += (organX - a.x) * K_ORGAN * s
+      a.vy += (organY - a.y) * K_ORGAN * s
     } else {
       // Time owns radius; semantic ownership softly owns angle. The latter is
       // a tether, not a fixed point, so repulsion and links can still arrange
@@ -1872,22 +1881,34 @@ function step(graph, w, h, revealT) {
       dx = a.x - cx; dy = a.y - cy
       var r = Math.sqrt(dx * dx + dy * dy) || 1
       var want = targetRadius(n, half)
-      a.vx += (dx / r) * (want - r) * K_RAD
-      a.vy += (dy / r) * (want - r) * K_RAD
+      a.vx += (dx / r) * (want - r) * K_RAD * s
+      a.vy += (dy / r) * (want - r) * K_RAD * s
       var turn = angleDelta(L.targetAngle[activeKey], Math.atan2(dy, dx))
         * r * K_ANGLE
-      a.vx += (-dy / r) * turn
-      a.vy += (dx / r) * turn
+      a.vx += (-dy / r) * turn * s
+      a.vy += (dx / r) * turn * s
     }
-    a.vx *= DAMP; a.vy *= DAMP
+    a.vx *= damp; a.vy *= damp
     var vm = Math.sqrt(a.vx * a.vx + a.vy * a.vy)
     if (vm > 6) { a.vx *= 6 / vm; a.vy *= 6 / vm }
-    a.x += a.vx; a.y += a.vy
+    if (vm > L.maxSpeed) L.maxSpeed = vm
+    a.x += a.vx * s; a.y += a.vy * s
     var m = Math.max(12, nodeRadius(n) + 6)
     if (a.x < m) a.x = m; if (a.x > w - m) a.x = w - m
     if (a.y < m) a.y = m; if (a.y > h - m) a.y = h - m
   }
-  L.phase += 0.03
+  L.phase += 0.03 * s
+}
+
+function breathe(dtMs) {
+  // Advance only the glow phase, at the same rate a 40 ms tick advanced it.
+  L.phase += 0.03 * ((typeof dtMs === "number" && dtMs > 0) ? dtMs / 40 : 1)
+}
+
+function settled() {
+  // Motion below a fifth of a pixel per tick is not visible; the frame loop
+  // stops there and restarts on any input, so the settled graph costs nothing.
+  return (L.maxSpeed || 0) < 0.2
 }
 
 // Candidate label centers, ordered from the node's outward radial side to

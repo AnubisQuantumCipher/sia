@@ -44,6 +44,12 @@ Item {
   property var hiddenKinds: ({})
   property real revealT: 1.0
   property bool playing: false
+  // True while the graph has something to move; every input that can move
+  // it sets it, and the frame loop clears it once the layout has settled.
+  property bool layoutLive: true
+  onPlayingChanged: layoutLive = true
+  onHoverIdChanged: layoutLive = true
+  onHiddenKindsChanged: layoutLive = true
   property string verifyMsg: ""
   property bool verifyOk: false
   property string graphBoundary: ""
@@ -2278,6 +2284,7 @@ Item {
   }
 
   onCurrentGraphChanged: {
+    root.layoutLive = true
     if (root.currentGraph && graphCanvas.width > 0)
       Model.syncGraph(
         root.currentGraph, graphCanvas.width, graphCanvas.height)
@@ -5477,22 +5484,52 @@ Item {
             anchors.margins: 2
             renderStrategy: Canvas.Cooperative
 
-            onWidthChanged: if (root.currentGraph && width > 0)
+            onWidthChanged: if (root.currentGraph && width > 0) {
               Model.syncGraph(root.currentGraph, width, height)
-            onHeightChanged: if (root.currentGraph && width > 0)
+              root.layoutLive = true
+            }
+            onHeightChanged: if (root.currentGraph && width > 0) {
               Model.syncGraph(root.currentGraph, width, height)
+              root.layoutLive = true
+            }
 
-            Timer {
-              interval: 40
+            // The graph moves on the display's own frame clock and stops
+            // when nothing moves. A 40 ms Timer used to drive both the
+            // physics and the growth reveal: under the software-rendered
+            // canvas it fired late, so the 12-second replay stretched
+            // and every frame landed off the display's beat.
+            FrameAnimation {
+              id: graphFrames
               running: root.opened && root.currentGraph !== null
-              repeat: true
+                       && root.layoutLive
               onTriggered: {
+                var ms = frameTime * 1000
+                if (!(ms > 0) || ms > 100) ms = 40
                 if (root.playing) {
-                  root.revealT = Math.min(1, root.revealT + 40 / 12000)
+                  // Wall-clock reveal: twelve seconds regardless of frame rate.
+                  root.revealT = Math.min(1, root.revealT + ms / 12000)
                   if (root.revealT >= 1) root.playing = false
                 }
                 Model.step(root.currentGraph,
-                           graphCanvas.width, graphCanvas.height, root.revealT)
+                           graphCanvas.width, graphCanvas.height,
+                           root.revealT, ms)
+                graphCanvas.requestPaint()
+                if (!root.playing && root.hoverId === "" && Model.settled())
+                  root.layoutLive = false
+              }
+            }
+
+            // Settled: nothing moves, but fresh memories breathe and the root
+            // keeps its halo. Ten slow frames a second carry that; the
+            // physics does not run again until something changes.
+            Timer {
+              id: graphBreath
+              interval: 100
+              repeat: true
+              running: root.opened && root.currentGraph !== null
+                       && !root.layoutLive
+              onTriggered: {
+                Model.breathe(interval)
                 graphCanvas.requestPaint()
               }
             }
