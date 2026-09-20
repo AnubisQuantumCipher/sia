@@ -1511,7 +1511,7 @@ def cmd_rehearse(argv):
 
 
 def cmd_think():
-    _print_live_summary()
+    _print_live_status_section()
     store = sialib.load_thoughts()
     for t in store["thoughts"][-15:]:
         mark = "!" if t.get("urgent") else "·"
