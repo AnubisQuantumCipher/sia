@@ -371,8 +371,13 @@ the result responsive but legible. Nodes glow when freshly touched.
   gaps mark the snapshot partial in SOURCE HEALTH. If graph publication throws,
   the pulse exposes the error and signs `PULSE:ingest ... graph-fail` rather
   than reporting successful graph publication. Only a structurally exact
-  partial envelope remains a diagnostic graph: an open or malformed envelope,
-  or a status/graph publication mismatch, withdraws every current graph claim.
+  partial envelope remains a diagnostic graph: an open or malformed envelope
+  withdraws every current graph claim. The displayed graph is always the
+  generation the displayed status names: while a newer graph publication
+  waits for the status that will name it (the brainstem writes `graph.json`
+  seconds before `status.json`), the cockpit keeps the named generation on
+  screen and the snapshot line says `newer graph publication awaiting its
+  status`; a status naming neither generation withdraws the graph.
 - **The graph window is incrementally projected.** Publication advances a
   durable no-follow corpus directory cursor, retains only the capped cockpit
   candidates, and rereads only those selected pages under their observed

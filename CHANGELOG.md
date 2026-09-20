@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Cockpit
+
+The graph no longer vanishes for ten seconds a minute. The brainstem
+republishes `graph.json` up to four times a pulse (two partial scans, then the
+complete generation, then its post-source rebuild) and names the final one in
+`status.json` about eleven seconds after the first write. The cockpit withdrew
+the graph the moment the file changed and, once reread, refused the newer
+generation because no status named it yet — so for a quarter of every minute
+the center card said `current graph unavailable`. The cockpit now keeps the
+generation the current status names on screen (`admittedGraph`) while a newer
+publication waits for the status that will name it, and the header says so:
+`graph published 42s ago · complete · newer graph publication awaiting its
+status`. The combined claim is unchanged: the displayed graph is always the
+one the displayed status names, and a rejected or vanished resident graph still
+withdraws it. An unnamed generation never touches the layout, so hover,
+neighbourhoods, and a locked selection survive the republish; a running growth
+replay survives the beat between generations too.
+
+The remaining beat — the status reread itself — is one settle wait (60 ms, was
+150–200 ms) plus a frame; the returning graph and entry stream fade in over
+140 ms instead of snapping, and `current graph unavailable` is only said once
+the graph has been absent for 400 ms. Boundaries that name a routine
+revalidation (`… pending validation`) render in the muted text colour; an
+unavailable or rejected source keeps the urgent colour.
+
 ## 1.8.0 — 2026-09-19 · the receipts survive the move
 
 Four reporters and one migrated maintainer machine hit this release where

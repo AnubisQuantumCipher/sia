@@ -33,6 +33,14 @@ Item {
   property bool statusLoadValid: false
   property bool installCompletionResolved: false
   property var graph: null
+  // The graph generation the current status names.  `graph` holds the watched
+  // file's latest validated bytes and is withdrawn the instant that file
+  // changes; `admittedGraph` is the last graph a validated status named, and
+  // it is displayed only while that same status is still the current status.
+  // The brainstem republishes graph.json several times a pulse and names the
+  // final one in status.json seconds later; withholding the still-named
+  // generation in between blanked the graph for ten seconds a minute.
+  property var admittedGraph: null
   property var thoughts: []
   property bool thoughtsResolved: false
   property bool thoughtsLoadValid: false
@@ -223,9 +231,20 @@ Item {
   }
 
   function currentGraphSnapshot() {
-    return root.graphBoundary === ""
-      && Model.snapshotGenerationsMatch(root.currentStatus, root.graph)
-      ? root.graph : null
+    if (root.graphBoundary === ""
+        && Model.snapshotGenerationsMatch(root.currentStatus, root.graph))
+      return root.graph
+    // A newer graph publication is on disk — pending validation, or validated
+    // but not yet named by any status.  The current status still names the
+    // admitted generation, so that pair remains the combined snapshot claim.
+    var newerPublication = root.graphBoundary === ""
+      ? !!root.graph
+      : /pending validation$/.test(root.graphBoundary)
+    if (newerPublication
+        && Model.snapshotGenerationsMatch(root.currentStatus,
+                                          root.admittedGraph))
+      return root.admittedGraph
+    return null
   }
 
   function isPlainRecord(value) {
@@ -480,7 +499,24 @@ Item {
     return parts.join(" · ")
   }
 
+  // A boundary that names a routine revalidation beat is context, not an
+  // alarm; an unavailable or rejected source keeps the urgent colour.
+  function boundaryColor(text) {
+    return /pending validation$/.test(text)
+      ? Qt.alpha(root.fg, 0.55) : root.urgent
+  }
+
   function graphSnapshotText() {
+    var shown = root.currentGraph
+    if (shown && shown !== root.graph) {
+      // The admitted generation the current status names, while a newer
+      // graph publication waits for the status that will name it.
+      return "graph published "
+        + Model.timeAgo(shown.ts, root.nowMs) + " · "
+        + (shown.snapshot && shown.snapshot.complete === true
+           ? "complete" : "partial")
+        + " · newer graph publication awaiting its status"
+    }
     if (root.graphBoundary !== "") return root.graphBoundary
     if (!root.graph || !root.graph.ts) return "no graph snapshot"
     if (!root.currentStatus)
@@ -2289,10 +2325,16 @@ Item {
       Model.syncGraph(
         root.currentGraph, graphCanvas.width, graphCanvas.height)
     if (!root.currentGraph) {
+      // Withdrawn: hover is re-derived from the pointer, but a locked
+      // selection and a running replay survive the beat between one named
+      // generation and the next.
       root.hoverId = ""
-      root.selectedId = ""
-      root.playing = false
-      root.revealT = 1.0
+      graphGapTimer.restart()
+    } else {
+      graphGapTimer.stop()
+      root.graphGapSettled = false
+      if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
+        root.selectedId = ""
     }
     graphCanvas.requestPaint()
   }
@@ -2328,6 +2370,10 @@ Item {
       root.status = parsed
       root.statusLoadValid = true
       root.statusBoundary = ""
+      // A status that names the resident graph admits that generation.
+      if (root.graphBoundary === "" && root.graph
+          && Model.snapshotGenerationsMatch(root.status, root.graph))
+        root.admittedGraph = root.graph
       root.stale = Model.timestampStale(
         parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
@@ -2349,12 +2395,18 @@ Item {
         root.graphBoundary = root.graph
           || root.graphBoundary.indexOf("last good graph;") === 0
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+        root.admittedGraph = null
         return
       }
-      if (graphCanvas.width > 0 && graphCanvas.height > 0)
+      // Only a generation the current status names may touch the layout:
+      // syncing an unnamed newer publication would rebuild the rings and
+      // adjacency under the admitted graph still on screen.
+      var named = Model.snapshotGenerationsMatch(root.currentStatus, g)
+      if (named && graphCanvas.width > 0 && graphCanvas.height > 0)
         Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       root.graph = g
       root.graphBoundary = ""
+      if (named) root.admittedGraph = g
       if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
         root.selectedId = ""
       if (root.hoverId !== "" && !root.graphHasNode(root.hoverId))
@@ -2364,6 +2416,7 @@ Item {
       root.graphBoundary = root.graph
         || root.graphBoundary.indexOf("last good graph;") === 0
         ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+      root.admittedGraph = null
     }
   }
 
@@ -2776,8 +2829,17 @@ Item {
       statusApply.restart()
     }
   }
-  Timer { id: statusApply; interval: 150; repeat: false
+  // Every snapshot is published by one atomic rename, so the settle wait only
+  // has to outlast the watcher's own burst of events for that rename.  At
+  // 150-200 ms the beat between one named generation and the next was a
+  // visible blink; the reread itself validates whatever it finds.
+  Timer { id: statusApply; interval: 60; repeat: false
           onTriggered: statusFile.reload() }
+  // "current graph unavailable" is said only once the graph has been absent
+  // long enough to be a state, not the beat between two named generations.
+  property bool graphGapSettled: false
+  Timer { id: graphGapTimer; interval: 400; repeat: false
+          onTriggered: root.graphGapSettled = true }
 
   FileView {
     id: graphFile
@@ -2802,6 +2864,7 @@ Item {
       var hadLastGood = !!root.graph
         || root.graphBoundary.indexOf("last good graph;") === 0
       root.graph = null
+      root.admittedGraph = null
       root.selectedId = ""
       root.hoverId = ""
       graphCanvas.requestPaint()
@@ -2813,18 +2876,19 @@ Item {
       root.clearVerification()
       readyProc.cancel()
       root.clearReadyCheck()
-      root.graphBoundary = root.graph
+      // One rename can arrive as a burst of change events; the first already
+      // withdrew `graph`, but the admitted generation is still the last good
+      // graph on screen.
+      root.graphBoundary = root.graph || root.admittedGraph
         ? "last good graph; newer graph snapshot pending validation"
         : "resident graph snapshot pending validation"
       root.graph = null
-      root.selectedId = ""
-      root.hoverId = ""
       graphCanvas.requestPaint()
       graphFile.refreshPending = true
       graphApply.restart()
     }
   }
-  Timer { id: graphApply; interval: 200; repeat: false
+  Timer { id: graphApply; interval: 60; repeat: false
           onTriggered: graphFile.reload() }
 
   FileView {
@@ -2860,7 +2924,7 @@ Item {
       thoughtsApply.restart()
     }
   }
-  Timer { id: thoughtsApply; interval: 200; repeat: false
+  Timer { id: thoughtsApply; interval: 60; repeat: false
           onTriggered: thoughtsFile.reload() }
 
   FileView {
@@ -3726,6 +3790,12 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
+      // The surface arrives on the shell's own beat (PopupCard fades over
+      // 140 ms); a summoned cockpit that snaps in reads as a glitch.
+      opacity: root.cockpitVisible ? 1 : 0
+      Behavior on opacity {
+        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      }
 
       // Sheets contain focusable controls, so Esc must remain available even
       // when a field rather than this catcher owns active focus.
@@ -3987,9 +4057,10 @@ Item {
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             text: "PUBLISHED SNAPSHOT · " + root.graphSnapshotText()
-            color: root.graphBoundary !== "" || (root.snap
-              && root.snap.complete !== true)
-              ? root.urgent : Qt.alpha(root.fg, 0.5)
+            color: root.graphBoundary !== "" && !root.currentGraph
+              ? root.boundaryColor(root.graphBoundary)
+              : (root.snap && root.snap.complete !== true)
+                ? root.urgent : Qt.alpha(root.fg, 0.5)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
@@ -5346,7 +5417,10 @@ Item {
                 text: [root.graphBoundary, root.statusBoundary]
                   .filter(function(value) { return value !== "" }).join(" · ")
                 wrapMode: Text.WordWrap
-                color: root.urgent
+                color: [root.graphBoundary, root.statusBoundary].every(
+                  function(value) {
+                    return value === "" || /pending validation$/.test(value)
+                  }) ? Qt.alpha(root.fg, 0.55) : root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -5483,6 +5557,12 @@ Item {
             anchors.fill: parent
             anchors.margins: 2
             renderStrategy: Canvas.Cooperative
+            // A returning generation fades in on the display's own beat; a
+            // withdrawn one is cleared at once by the repaint that withdrew it.
+            opacity: root.currentGraph ? 1 : 0
+            Behavior on opacity {
+              NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
             // The glow layer follows every graph frame, so it never shows
             // a halo where a node no longer is.
             onPainted: glowCanvas.requestPaint()
@@ -5755,6 +5835,7 @@ Item {
           Canvas {
             id: glowCanvas
             anchors.fill: graphCanvas
+            opacity: graphCanvas.opacity
             renderStrategy: Canvas.Cooperative
             onPaint: {
               var ctx = getContext("2d")
@@ -5951,7 +6032,7 @@ Item {
                 + " of " + root.currentGraph.pages_total
                 + " memories · " + root.currentGraph.edges.length + " links · "
                 + (root.snap && root.snap.complete ? "complete" : "partial")
-              : "current graph unavailable"
+              : root.graphGapSettled ? "current graph unavailable" : ""
             color: Qt.alpha(root.fg, 0.45)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -6158,7 +6239,7 @@ Item {
                 width: thoughtHeader.width
                 text: root.thoughtsBoundary
                 wrapMode: Text.WordWrap
-                color: root.urgent
+                color: root.boundaryColor(root.thoughtsBoundary)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -6173,6 +6254,12 @@ Item {
               anchors.topMargin: Style.space(6)
               contentWidth: width
               contentHeight: thoughtCol.implicitHeight
+              // A revalidated stream fades back in; a withdrawn one empties
+              // at once.
+              opacity: root.thoughtsLoadValid ? 1 : 0
+              Behavior on opacity {
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+              }
               pixelAligned: true
               clip: true
               boundsBehavior: Flickable.StopAtBounds
