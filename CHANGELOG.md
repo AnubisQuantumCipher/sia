@@ -4,6 +4,14 @@
 
 ### Cockpit
 
+Commitments now show their full task and calendar due date, explain that overdue
+is a review reminder, and offer **Review commitment…**. The terminal review reads
+the current open task through the resident CLI and requires a written outcome
+and explicit confirmation before closing it. Cancelling leaves it open; stale
+or failed requests never claim completion. `sia intend --show <full-id>` exposes
+the full open task as JSON without internal storage paths. Review does not hold
+a corpus lock while waiting for the operator and never executes task prose.
+
 Opening no longer stacks a full-screen Qt fade on the desktop animation.
 Snapshot refresh and graph motion wait until arrival, and the graph image is
 painted before presentation to avoid exposing uninitialized pixels on remap.

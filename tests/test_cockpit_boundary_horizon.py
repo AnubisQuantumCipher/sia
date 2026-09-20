@@ -586,7 +586,7 @@ function strictStatusAccepted(text) {
         malformed.append(candidate)
         malformed.append(self._snapshot(workspace=["x" * 4097]))
         malformed.append(self._snapshot(intents=[{
-            "id": "0123456789", "text": "x" * 70 + "y",
+            "id": "0123456789", "text": "x" * 300 + "y",
             "due": "2026-09-04", "days_left": 0,
         }]))
         malformed.append(self._snapshot(intents=[{

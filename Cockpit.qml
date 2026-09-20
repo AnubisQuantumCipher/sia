@@ -75,6 +75,7 @@ Item {
   property string continuityScheduleBoundary: ""
   property bool continuitySheetOpen: false
   property bool continuityExpanded: false
+  property string intentReviewFeedback: ""
   property string continuityPage: "overview"
   property bool restoreConfirmOpen: false
   property string continuityActionMsg: ""
@@ -2102,6 +2103,20 @@ Item {
       return
     }
     root.setWorkspaceLock(root.focusedWorkspaceName)
+  }
+
+  function reviewIntent(iid) {
+    if (root.setupRequired || !root.currentStatus
+        || !/^[0-9a-f]{10}$/.test(iid)) return
+    var rows = root.currentStatus.intents || []
+    if (!rows.some(function(row) { return row.id === iid })) return
+    root.intentReviewFeedback = "Review terminal requested. If it did not open, check your desktop terminal launcher. No commitment is closed by this button."
+    // Only an admitted identity becomes an argument. Task prose is never code.
+    Quickshell.execDetached([
+      "/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV",
+      "omarchy-launch-terminal", "/usr/bin/python3", "-I",
+      root.pluginRoot + "/bin/sia-intent-review", iid])
+    root.close()
   }
 
   function launchSetup() {
@@ -5320,26 +5335,62 @@ Item {
                 font.pixelSize: Style.font.caption
                 font.bold: true
               }
+              Text {
+                textFormat: Text.PlainText
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "Past due means a task needs review, not that SIA is broken. Review the records, then record an outcome to close it."
+                color: Qt.alpha(root.fg, 0.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: root.intentReviewFeedback !== ""
+                textFormat: Text.PlainText
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: root.intentReviewFeedback
+                color: Qt.alpha(root.fg, 0.7)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
               Repeater {
                 model: root.currentStatus && root.currentStatus.intents
                   ? root.currentStatus.intents : []
-                delegate: Text {
+                delegate: Column {
                   required property var modelData
-                  textFormat: Text.PlainText
-                  renderType: Text.NativeRendering
                   width: intentCol.width
-                  wrapMode: Text.WordWrap
-                  text: (modelData.days_left < 0
-                          ? "➤ OVERDUE " + (-modelData.days_left) + "d — "
-                          : modelData.days_left === 0
-                            ? "➤ due today — "
-                            : "➤ in " + modelData.days_left + "d — ")
-                        + modelData.text
-                  color: modelData.days_left < 0 ? root.urgent
-                    : modelData.days_left <= 2 ? root.accent
-                    : Qt.alpha(root.fg, 0.7)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                  spacing: Style.space(4)
+                  Text {
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: modelData.text
+                    color: Qt.alpha(root.fg, 0.85)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Due " + modelData.due + (modelData.days_left < 0
+                      ? " · overdue — review needed"
+                      : modelData.days_left === 0 ? " · today" : "")
+                    color: modelData.days_left < 0 ? root.urgent : root.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Ui.Button {
+                    text: "Review commitment…"
+                    fontSize: Style.font.caption
+                    focusable: true
+                    enabled: !!root.currentStatus && !root.setupRequired
+                    Accessible.name: "Review commitment due " + modelData.due
+                    Accessible.description: "Opens the full task in a terminal. Closing requires an outcome and your confirmation."
+                    onClicked: root.reviewIntent(modelData.id)
+                  }
                 }
               }
             }

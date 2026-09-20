@@ -8710,7 +8710,7 @@ def _status_intents_shape(value):
                 or not isinstance(row.get("id"), str) \
                 or re.fullmatch(r"[0-9a-f]{10}", row["id"]) is None \
                 or not _status_display_string(
-                    row.get("text"), nonempty=True, limit=70) \
+                    row.get("text"), nonempty=True, limit=300) \
                 or not _status_calendar_date(row.get("due")) \
                 or isinstance(row.get("days_left"), bool) \
                 or not isinstance(row.get("days_left"), int) \
@@ -10408,7 +10408,7 @@ def _pulse_transaction_guarded(
                    "pinned": memory_state.get("pinned", 0)},
           "takes": takes_sum,
           "intents": [{"id": it.get("id", "?"),
-                       "text": clip(it.get("text", ""), 70),
+                       "text": clip(it.get("text", ""), 300),
                        "due": it.get("due", ""),
                        "days_left": it.get("days_left", 0)}
                       for it in intents_open[:MAX_STATUS_INTENTS]

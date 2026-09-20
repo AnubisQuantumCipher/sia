@@ -461,7 +461,7 @@ function residentIntentShape(intents) {
     var row = intents[i]
     if (!recordHasExactly(row, ["id", "text", "due", "days_left"])
         || typeof row.id !== "string" || !/^[0-9a-f]{10}$/.test(row.id)
-        || !redactionFreeStatusString(row.text, 70, true)
+        || !redactionFreeStatusString(row.text, 300, true)
         || !validCalendarDate(row.due)
         || !integerNumber(row.days_left)) return false
   }

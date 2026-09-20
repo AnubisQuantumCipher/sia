@@ -262,6 +262,17 @@ activating its controller are separate deployment steps.
 
 ## 2. The cockpit
 
+**Commitments:** a past due date means a task still needs review; it does not
+mean SIA is broken. **Review commitment…** opens the full task, holder, and due
+date in a terminal and closes the cockpit so the terminal is accessible. Check
+the relevant records first. To finish, type `done`, enter a short outcome or
+supporting record, then type `close`. Enter at either confirmation leaves the
+task open. Closing records your outcome; it does not verify predictions or
+repair a system problem. The reminder clears after the next successful SIA
+publication. If the terminal cannot launch, use `sia intend --list` and
+`sia intend --show <full-id>`; the latter reads the full open task as JSON.
+Existing installations need the matching updated runtime for this review flow.
+
 The cockpit leaves entrance and dismissal motion to the compositor, avoiding
 a second full-screen fade in Qt. For a straight-down entrance on Omarchy's Lua
 Hyprland configuration, add this scoped rule to `~/.config/hypr/looknfeel.lua`:
