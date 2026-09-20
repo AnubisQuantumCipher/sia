@@ -111,6 +111,12 @@ freeze ends on evidence, not on mood.
     first with a declaration-only `state=none` commit. That administrative closure is not
     the fix: the following push is the one permitted fix-only movement of `main`, and a
     later validation attempt must bind its resulting exact SHA separately.
+  - Operator-directed replacement: the operator explicitly requested that 1.8.1,
+    rather than the older commit, be reviewed. Retire issue #7719 before moving
+    `main`, merge the release through required checks, then submit its final
+    default-branch SHA for fresh review. This closes the old attempt; it does not
+    transfer its validation or approval to the replacement. Freeze `main` again
+    before submitting the replacement request.
   - The rule is mechanically checked by the `marketplace-freeze` job in
     `.github/workflows/ci.yml`, which reads the declaration below and turns a push
     to the frozen branch that is not the bound commit red. It cannot protect the
@@ -308,10 +314,12 @@ maintainer's constraint is not "bind a good commit" but "bind the commit that is
 currently HEAD" — and this repository kept moving HEAD.
 
 The correction is upstream of the verify form: **do not push to `main` while a
-verification is pending.** The current review binds `8a624ef…` with the form intact.
-Until the listing flips or the maintainer closes the cycle, releases queue on branches.
-After it flips, normal cadence resumes — one re-bind per release, after tagging, and
-never while validation is in flight.
+verification is pending.** The operator has directed replacement of the old
+`f9a2b9838926904fff236d0c74c3ebd8fa30e487` request (#7719) with SIA 1.8.1.
+Retire that request before merging release PR #20. Once required checks pass,
+merge the release, establish the final frozen default-branch HEAD, and request
+fresh verification of that exact commit. Do not reuse the old scan as evidence
+for 1.8.1. Keep subsequent changes on branches until the replacement review ends.
 
 The binding is declared here, in one machine-readable line, because a rule only a
 reader can see is the rule that was already broken three times. CI reads this exact
@@ -320,7 +328,7 @@ line (`.github/workflows/ci.yml`, job `marketplace-freeze`): while the state is
 Closing the cycle means editing the line to `state=none`; re-binding means editing
 `sha=` and nothing else in the same commit, because no commit can name its own SHA.
 
-    sia-freeze: state=pending branch=main sha=f9a2b9838926904fff236d0c74c3ebd8fa30e487
+    sia-freeze: state=none branch=main sha=f9a2b9838926904fff236d0c74c3ebd8fa30e487
 
 ---
 
