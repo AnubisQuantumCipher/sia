@@ -203,6 +203,97 @@ return {walls, nodes: build().nodes.length}
         # case used to be -1 (never) on this exact graph.
         self.assertLess(max(walls.values()), 3 * min(walls.values()), metrics)
 
+    def test_zero_size_canvas_never_seeds_the_layout(self):
+        """A canvas reports width before height; a zero dimension must not seed.
+
+        Seeding against height 0 placed every memory on one point (a ring of
+        radius zero). The layout then spent minutes of violent repulsion
+        escaping it, and on the shell's 240 ms software frames the frame loop
+        ran through every pulse: the cockpit sat at 63% of a core. Model now
+        refuses a zero-size canvas and the first real size seeds as fresh.
+        """
+        metrics = self._run_model(r"""
+function build() {
+  const nodes = [{id: "sia/cortex", t: "organ", ts: "", deg: 1}]
+  const edges = []
+  for (let o = 0; o < 6; o++) {
+    nodes.push({id: "organs/o" + o, t: "organ", ts: "", deg: 12})
+    edges.push({s: "organs/o" + o, d: "sia/cortex", t: "mentions"})
+    for (let k = 0; k < 30; k++) {
+      const id = "events/o" + o + "/d" + k
+      nodes.push({id, t: "event-day", deg: 2,
+        ts: "2026-09-" + String(1 + (k % 28)).padStart(2, "0") + "T00:00:00Z"})
+      edges.push({s: id, d: "organs/o" + o, t: "mentions"})
+      if (k) edges.push({s: id, d: "events/o" + o + "/d" + (k - 1), t: "mentions"})
+    }
+  }
+  return {nodes, edges}
+}
+function settleTicks(graph) {
+  for (let tick = 1; tick <= 5000; tick++) {
+    step(graph, 1040, 919, 1.0, 40)
+    if (settled()) return tick
+  }
+  return -1
+}
+const graph = build()
+L.pos = {}; L.seeded = false; L.maxSpeed = 0
+syncGraph(graph, 1040, 0)
+const zero = {seeded: L.seeded, positions: Object.keys(L.pos).length}
+step(graph, 1040, 919, 1.0, 40)
+zero.settledWhileUnseeded = settled()
+syncGraph(graph, 1040, 919)
+const ys = new Set(Object.values(L.pos).map(p => p.y.toFixed(0)))
+const afterResize = {seeded: L.seeded, distinctY: ys.size, ticks: settleTicks(graph)}
+const fresh = build()
+L.pos = {}; L.seeded = false; L.maxSpeed = 0
+syncGraph(fresh, 1040, 919)
+return {zero, afterResize, freshTicks: settleTicks(fresh)}
+""")
+        self.assertFalse(metrics["zero"]["seeded"], metrics)
+        self.assertEqual(metrics["zero"]["positions"], 0, metrics)
+        # An unseeded layout has nothing to move, so the frame loop rests.
+        self.assertTrue(metrics["zero"]["settledWhileUnseeded"], metrics)
+        self.assertTrue(metrics["afterResize"]["seeded"], metrics)
+        self.assertGreater(metrics["afterResize"]["distinctY"], 20, metrics)
+        self.assertGreater(metrics["afterResize"]["ticks"], 0, metrics)
+        self.assertEqual(
+            metrics["afterResize"]["ticks"], metrics["freshTicks"], metrics)
+
+    def test_pair_loop_keys_each_node_once_per_tick(self):
+        """The physics keys positions once per node, not once per node pair.
+
+        Building a string key inside the all-pairs repulsion loop allocated
+        two strings per pair (67 000 per tick on a 260-memory graph), and
+        under the shell's interpreter that allocation was most of a 240 ms
+        frame. The trajectory is unchanged; only the keying is hoisted.
+        """
+        metrics = self._run_model(r"""
+const graph = {nodes: [{id: "sia/cortex", t: "organ", ts: "", deg: 1}], edges: []}
+for (let o = 0; o < 4; o++) {
+  graph.nodes.push({id: "organs/o" + o, t: "organ", ts: "", deg: 8})
+  graph.edges.push({s: "organs/o" + o, d: "sia/cortex", t: "mentions"})
+  for (let k = 0; k < 50; k++) {
+    const id = "events/o" + o + "/d" + k
+    graph.nodes.push({id, t: "event-day", deg: 2,
+      ts: "2026-09-" + String(1 + (k % 28)).padStart(2, "0") + "T00:00:00Z"})
+    graph.edges.push({s: id, d: "organs/o" + o, t: "mentions"})
+  }
+}
+L.pos = {}; L.seeded = false; L.maxSpeed = 0
+syncGraph(graph, 1040, 919)
+const original = graphMapKey
+let calls = 0
+graphMapKey = function (value) { calls++; return original(value) }
+step(graph, 1040, 919, 1.0, 40)
+graphMapKey = original
+return {calls, nodes: graph.nodes.length, edges: graph.edges.length}
+""")
+        self.assertGreater(metrics["calls"], 0, metrics)
+        self.assertLessEqual(
+            metrics["calls"],
+            metrics["nodes"] + 2 * metrics["edges"], metrics)
+
     def test_label_candidates_begin_outward_and_ui_uses_collision_guard(self):
         candidates = self._run_model(r'''
 return {
@@ -216,6 +307,22 @@ return {
         cockpit = _read("Cockpit.qml")
         self.assertIn("Model.replayLayout", cockpit)
         self.assertIn("root.revealT, ms)", cockpit)
+        # A slow frame advances the layout by the time it took (to 250 ms),
+        # never by one tick.
+        self.assertIn("else if (ms > 250) ms = 250", cockpit)
+        self.assertNotIn("ms > 100) ms = 40", cockpit)
+        # The breath repaints only the glow layer, which follows every graph
+        # frame; a settled graph never repaints its 260-node canvas to breathe.
+        self.assertIn("id: glowCanvas", cockpit)
+        self.assertIn("onPainted: glowCanvas.requestPaint()", cockpit)
+        breath = cockpit[cockpit.index("id: graphBreath"):]
+        breath = breath[:breath.index("onPaint:")]
+        self.assertIn("glowCanvas.requestPaint()", breath)
+        self.assertNotIn("graphCanvas.requestPaint()", breath)
+        # Model refuses a zero-size canvas; the resize handlers wait for both.
+        self.assertIn(
+            "onHeightChanged: if (root.currentGraph && width > 0 && height > 0)",
+            cockpit)
         self.assertIn("nodeObstacles", cockpit)
         self.assertIn("placedLabels", cockpit)
         self.assertIn("Model.labelCandidates", cockpit)

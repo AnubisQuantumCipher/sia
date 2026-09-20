@@ -2232,7 +2232,7 @@ Item {
     graphFile.reload(); thoughtsFile.reload()
     continuityFile.reload()
     continuityScheduleRefresh.restart()
-    if (root.currentGraph && graphCanvas.width > 0)
+    if (root.currentGraph && graphCanvas.width > 0 && graphCanvas.height > 0)
       Model.syncGraph(
         root.currentGraph, graphCanvas.width, graphCanvas.height)
     Qt.callLater(function() {
@@ -2285,7 +2285,7 @@ Item {
 
   onCurrentGraphChanged: {
     root.layoutLive = true
-    if (root.currentGraph && graphCanvas.width > 0)
+    if (root.currentGraph && graphCanvas.width > 0 && graphCanvas.height > 0)
       Model.syncGraph(
         root.currentGraph, graphCanvas.width, graphCanvas.height)
     if (!root.currentGraph) {
@@ -2351,7 +2351,7 @@ Item {
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
         return
       }
-      if (graphCanvas.width > 0)
+      if (graphCanvas.width > 0 && graphCanvas.height > 0)
         Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       root.graph = g
       root.graphBoundary = ""
@@ -5483,12 +5483,18 @@ Item {
             anchors.fill: parent
             anchors.margins: 2
             renderStrategy: Canvas.Cooperative
+            // The glow layer follows every graph frame, so it never shows
+            // a halo where a node no longer is.
+            onPainted: glowCanvas.requestPaint()
 
-            onWidthChanged: if (root.currentGraph && width > 0) {
+            // Both dimensions, not just width: the first size a canvas
+            // reports has its width and a zero height, and Model refuses to
+            // seed a layout on a zero-size canvas.
+            onWidthChanged: if (root.currentGraph && width > 0 && height > 0) {
               Model.syncGraph(root.currentGraph, width, height)
               root.layoutLive = true
             }
-            onHeightChanged: if (root.currentGraph && width > 0) {
+            onHeightChanged: if (root.currentGraph && width > 0 && height > 0) {
               Model.syncGraph(root.currentGraph, width, height)
               root.layoutLive = true
             }
@@ -5503,8 +5509,14 @@ Item {
               running: root.opened && root.currentGraph !== null
                        && root.layoutLive
               onTriggered: {
+                // A slow frame advances the layout by the time it took, up
+                // to 250 ms (Model integrates it in sub-ticks). Treating a
+                // slow frame as one 40 ms tick made wall-clock convergence
+                // six times slower on the 220 ms frames of a software
+                // renderer, so the loop ran through every pulse.
                 var ms = frameTime * 1000
-                if (!(ms > 0) || ms > 100) ms = 40
+                if (!(ms > 0)) ms = 40
+                else if (ms > 250) ms = 250
                 if (root.playing) {
                   // Wall-clock reveal: twelve seconds regardless of frame rate.
                   root.revealT = Math.min(1, root.revealT + ms / 12000)
@@ -5520,17 +5532,20 @@ Item {
             }
 
             // Settled: nothing moves, but fresh memories breathe and the root
-            // keeps its halo. Ten slow frames a second carry that; the
-            // physics does not run again until something changes.
+            // keeps its halo. Five slow frames a second carry that, and only
+            // on glowCanvas: a full graph frame costs about 90 ms under a
+            // software renderer at 2x scale, and ten of those a second held
+            // a settled cockpit at 40% of a core. The physics does not run
+            // again until something changes.
             Timer {
               id: graphBreath
-              interval: 100
+              interval: 200
               repeat: true
               running: root.opened && root.currentGraph !== null
                        && !root.layoutLive
               onTriggered: {
                 Model.breathe(interval)
-                graphCanvas.requestPaint()
+                glowCanvas.requestPaint()
               }
             }
 
@@ -5601,27 +5616,10 @@ Item {
                   top: p.y - r - 3, bottom: p.y + r + 3
                 })
                 var col = Model.nodeColor(n, root.pal)
-                var fresh = Model.freshness(n, now)
-                if (fresh > 0.02 && !dimmed) {
-                  var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
-                                                       + p.x * 0.05)
-                  ctx.fillStyle = Qt.alpha(root.accent, 0.28 * fresh * breathe)
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 5 + 4 * fresh, 0, 2 * Math.PI)
-                  ctx.fill()
-                }
+                // The fresh glow and the root halo breathe on glowCanvas.
                 ctx.fillStyle = dimmed ? Qt.alpha(col, 0.22) : col
                 ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 2 * Math.PI)
                 ctx.fill()
-                if (n.id === "sia/cortex" && !dimmed) {
-                  var halo = 0.35 + 0.20 * Math.sin(Model.phase())
-                  ctx.strokeStyle = Qt.alpha(root.fg, halo)
-                  ctx.lineWidth = 1.2
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 3.5, 0, 2 * Math.PI)
-                  ctx.stroke()
-                  ctx.lineWidth = 1
-                }
                 if (n.id === eff) {
                   ctx.strokeStyle = root.fg
                   ctx.beginPath()
@@ -5746,6 +5744,55 @@ Item {
                 var hit = nearest(mouse.x, mouse.y)
                 root.selectedId = (hit === root.selectedId) ? "" : hit
                 graphCanvas.requestPaint()
+              }
+            }
+          }
+
+          // The breath layer: fresh memories glow and the root keeps its
+          // halo. A settled graph repaints nothing else, so breathing costs
+          // a handful of arcs, not the whole graph. It does not take the
+          // pointer; the graph's own MouseArea beneath it keeps hover.
+          Canvas {
+            id: glowCanvas
+            anchors.fill: graphCanvas
+            renderStrategy: Canvas.Cooperative
+            onPaint: {
+              var ctx = getContext("2d")
+              ctx.reset()
+              ctx.clearRect(0, 0, width, height)
+              var graph = root.currentGraph
+              if (!graph || !graph.nodes) return
+              var now = root.nowMs > 0 ? root.nowMs : Date.now()
+              var eff = root.effId
+              var nbrs = eff !== "" ? Model.neighbors(eff) : null
+              var nodes = graph.nodes
+              for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i]
+                if (!root.nodeVisible(n)) continue
+                var p = Model.posOf(n.id)
+                if (!p) continue
+                if (eff !== "" && n.id !== eff
+                    && !Model.hasNeighbor(nbrs, n.id)) continue
+                var r = Model.nodeRadius(n)
+                var fresh = Model.freshness(n, now)
+                if (fresh > 0.02) {
+                  var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
+                                                       + p.x * 0.05)
+                  ctx.fillStyle = Qt.alpha(root.accent, 0.28 * fresh * breathe)
+                  // A ring, not a disc: the node's own fill stays untinted.
+                  ctx.beginPath()
+                  ctx.arc(p.x, p.y, r + 5 + 4 * fresh, 0, 2 * Math.PI)
+                  ctx.arc(p.x, p.y, r, 0, 2 * Math.PI, true)
+                  ctx.fill()
+                }
+                if (n.id === "sia/cortex") {
+                  var halo = 0.35 + 0.20 * Math.sin(Model.phase())
+                  ctx.strokeStyle = Qt.alpha(root.fg, halo)
+                  ctx.lineWidth = 1.2
+                  ctx.beginPath()
+                  ctx.arc(p.x, p.y, r + 3.5, 0, 2 * Math.PI)
+                  ctx.stroke()
+                }
               }
             }
           }

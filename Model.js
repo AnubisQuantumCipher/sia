@@ -1623,6 +1623,12 @@ function targetRadius(n, half) {
 
 function syncGraph(graph, w, h) {
   if (!graph || !graph.nodes) return
+  // A canvas reports its width before its height while the overlay is laid
+  // out. Seeding against a zero dimension put every memory on one point (a
+  // ring of radius zero), and the layout then spent minutes of violent
+  // repulsion escaping it, one clamped tick per 240 ms software frame.
+  // Wait for a real canvas; the resize handlers seed once it has one.
+  if (!(w > 0) || !(h > 0)) return
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
   var i, n
 
@@ -1813,11 +1819,13 @@ function step(graph, w, h, revealT, dtMs) {
   // an explicit integrator fed a 2.5-tick step overshoots its own springs
   // and never settles (under a software renderer with 100 ms frames the
   // layout loop then runs at full frame rate forever, which is what a
-  // cockpit sitting still at 64% of a core was). Velocity stays in px per
-  // tick, so the cap below keeps its meaning; a settled graph still costs
-  // exactly one sub-tick to confirm it is settled.
+  // cockpit sitting still at 64% of a core was). Up to 250 ms of motion
+  // (6.25 ticks) is spent per call, so a 220 ms frame moves the layout by
+  // 220 ms of wall clock. Velocity stays in px per tick, so the cap below
+  // keeps its meaning; a settled graph still costs exactly one sub-tick to
+  // confirm it is settled.
   var total = (typeof dtMs === "number" && isFinite(dtMs) && dtMs > 0)
-    ? Math.min(2.5, dtMs / 40) : 1
+    ? Math.min(6.25, dtMs / 40) : 1
   var parts = Math.max(1, Math.ceil(total - 1e-9))
   L.maxSpeed = 0
   for (var k = 0; k < parts; k++) {
@@ -1836,18 +1844,29 @@ function stepOnce(graph, w, h, revealT, s) {
   var cx = w / 2, cy = h / 2, half = Math.min(w, h) / 2
   var i, j, a, b, dx, dy, d2, d, f
   var K_REP = 760, K_SPRING = 0.009, REST = 44
-  var K_RAD = 0.085, K_ANGLE = 0.032, K_ORGAN = 0.16, DAMP = 0.82
-  var active = {}
-  for (i = 0; i < nodes.length; i++)
-    active[graphMapKey(nodes[i].id)] = nodes[i].id === "sia/cortex"
+  var K_RAD = 0.085, K_ANGLE = 0.032, K_ORGAN = 0.16
+  // Index the graph once per sub-tick. The pair loop below visits every
+  // node pair, and keying L.pos by string inside it built and discarded two
+  // strings per pair: 67 000 per tick on a 260-memory graph. Under the
+  // shell's interpreter that allocation, not the arithmetic, was the tick,
+  // and a tick was most of a 240 ms frame. Keys are built once per node.
+  var count = nodes.length
+  var keys = new Array(count), pos = new Array(count)
+  var active = new Array(count), index = {}
+  for (i = 0; i < count; i++) {
+    keys[i] = graphMapKey(nodes[i].id)
+    index[keys[i]] = i
+    pos[i] = L.pos[keys[i]] || null
+    active[i] = nodes[i].id === "sia/cortex"
       || nodes[i].t === "organ" || revealT === undefined
       || (nodes[i].tsNorm || 0) <= revealT
-  for (i = 0; i < nodes.length; i++) {
-    if (!active[graphMapKey(nodes[i].id)]) continue
-    a = L.pos[graphMapKey(nodes[i].id)]; if (!a) continue
-    for (j = i + 1; j < nodes.length; j++) {
-      if (!active[graphMapKey(nodes[j].id)]) continue
-      b = L.pos[graphMapKey(nodes[j].id)]; if (!b) continue
+  }
+  for (i = 0; i < count; i++) {
+    if (!active[i]) continue
+    a = pos[i]; if (!a) continue
+    for (j = i + 1; j < count; j++) {
+      if (!active[j]) continue
+      b = pos[j]; if (!b) continue
       dx = a.x - b.x; dy = a.y - b.y
       d2 = dx * dx + dy * dy
       if (d2 > 26000) continue
@@ -1864,10 +1883,11 @@ function stepOnce(graph, w, h, revealT, s) {
     }
   }
   for (i = 0; i < edges.length; i++) {
-    if (!active[graphMapKey(edges[i].s)]
-        || !active[graphMapKey(edges[i].d)]) continue
-    a = L.pos[graphMapKey(edges[i].s)]
-    b = L.pos[graphMapKey(edges[i].d)]
+    var si = index[graphMapKey(edges[i].s)]
+    var di = index[graphMapKey(edges[i].d)]
+    if (si === undefined || di === undefined
+        || !active[si] || !active[di]) continue
+    a = pos[si]; b = pos[di]
     if (!a || !b) continue
     dx = b.x - a.x; dy = b.y - a.y
     d = Math.sqrt(dx * dx + dy * dy) || 1
@@ -1875,11 +1895,11 @@ function stepOnce(graph, w, h, revealT, s) {
     a.vx += (dx / d) * f * s; a.vy += (dy / d) * f * s
     b.vx -= (dx / d) * f * s; b.vy -= (dy / d) * f * s
   }
-  for (i = 0; i < nodes.length; i++) {
+  for (i = 0; i < count; i++) {
     var n = nodes[i]
-    var activeKey = graphMapKey(n.id)
-    a = L.pos[activeKey]; if (!a) continue
-    if (!active[activeKey]) { a.vx = 0; a.vy = 0; continue }
+    var activeKey = keys[i]
+    a = pos[i]; if (!a) continue
+    if (!active[i]) { a.vx = 0; a.vy = 0; continue }
     if (n.id === "sia/cortex") {
       a.x = cx; a.y = cy; a.vx = 0; a.vy = 0
       continue
