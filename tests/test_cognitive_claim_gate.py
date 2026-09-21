@@ -316,7 +316,7 @@ class FirstContactClaimSurfaces(unittest.TestCase):
             "docs/CONTINUITY.md": 1,
             "docs/MANUAL.md": 1,
             "docs/WHITEPAPER.md": 1,
-            "manifest.json": 2,
+            "manifest.json": 1,
             "skill/SKILL.md": 1,
         }
         for relative, expected in expected_occurrences.items():
@@ -327,11 +327,15 @@ class FirstContactClaimSurfaces(unittest.TestCase):
                     "changed",
                 )
 
-    def test_marketplace_descriptions_carry_the_exact_boundary(self):
+    def test_bar_widget_description_carries_the_exact_boundary(self):
+        # The top-level manifest description is the marketplace listing
+        # paragraph and carries the product tagline instead; the boundary
+        # rides every in-product surface a user actually reads on the
+        # desktop — this description, the Panel tooltip, and the Cockpit.
         manifest = json.loads(_read("manifest.json"))
-        self.assertIn(BRAIN_METAPHOR_BOUNDARY, manifest["description"])
         self.assertIn(
             BRAIN_METAPHOR_BOUNDARY, manifest["barWidget"]["description"])
+        self.assertNotIn(BRAIN_METAPHOR_BOUNDARY, manifest["description"])
 
     def test_panel_tooltip_always_carries_the_exact_boundary(self):
         panel = _read("Panel.qml")
