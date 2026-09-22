@@ -631,6 +631,131 @@ function basisFor(status) {
                 self.assertIn("readyProc.cancel()", block)
                 self.assertIn("root.clearReadyCheck()", block)
 
+    def test_current_graph_gate_keeps_the_generation_the_status_names(self):
+        # The brainstem republishes graph.json several times a pulse and names
+        # the final one in status.json seconds later.  A newer publication on
+        # disk never displaces the generation the current status still names:
+        # that pair is the combined snapshot claim until a status names another.
+        cockpit = _read("Cockpit.qml")
+        gate = _qml_function(cockpit, "currentGraphSnapshot")
+        wrapper = """
+var Model = { snapshotGenerationsMatch: snapshotGenerationsMatch }
+var root = {
+  currentStatus: null, graph: null, graphBoundary: "", admittedGraph: null,
+  currentGraphSnapshot: currentGraphSnapshot
+}
+function shown(status, graph, boundary, admitted) {
+  root.currentStatus = status
+  root.graph = graph
+  root.graphBoundary = boundary
+  root.admittedGraph = admitted
+  return root.currentGraphSnapshot()
+}
+""" + gate
+        admitted = {"publication_id": "a" * 32, "nodes": [], "edges": [],
+                    "snapshot": {"complete": True}}
+        newer = {"publication_id": "b" * 32, "nodes": [], "edges": [],
+                 "snapshot": {"complete": False}}
+        names_admitted = {"graph_publication_id": "a" * 32}
+        pending = "last good graph; newer graph snapshot pending validation"
+        for status, graph, boundary, expected in (
+                # validated newer publication, not yet named by any status
+                (names_admitted, newer, "", admitted),
+                # newer publication still pending validation
+                (names_admitted, None, pending, admitted),
+                # a burst of change events for one rename: the second event
+                # found `graph` already withdrawn by the first
+                (names_admitted, None,
+                 "resident graph snapshot pending validation", admitted),
+                # the status advanced to name the newer publication
+                ({"graph_publication_id": "b" * 32}, newer, "", newer)):
+            with self.subTest(boundary=boundary, status=status):
+                self.assertEqual(self._run(
+                    wrapper, "shown", [status, graph, boundary, admitted],
+                    sources=("Model.js",)), expected)
+        for status, graph, boundary, retained in (
+                # a rejected or vanished resident graph withdraws the claim
+                (names_admitted, newer,
+                 "last good graph; latest graph rejected", admitted),
+                (names_admitted, None,
+                 "last good graph; resident graph snapshot unavailable",
+                 admitted),
+                # a status naming neither generation, or no status at all
+                ({"graph_publication_id": "c" * 32}, newer, "", admitted),
+                (None, newer, "", admitted),
+                ({"graph_publication_id": ""}, newer, "", admitted),
+                # nothing was ever admitted
+                (names_admitted, newer, "", None),
+                (names_admitted, None, pending, None)):
+            with self.subTest(boundary=boundary, status=status,
+                              retained=retained):
+                self.assertIsNone(self._run(
+                    wrapper, "shown", [status, graph, boundary, retained],
+                    sources=("Model.js",)))
+
+    def test_only_a_named_generation_is_admitted_or_touches_the_layout(self):
+        cockpit = _read("Cockpit.qml")
+        apply_graph = _qml_function(cockpit, "applyGraph")
+        # The layout singleton (rings, adjacency, tsNorm) belongs to the
+        # generation on screen; an unnamed newer publication must not rebuild
+        # it underneath the admitted graph.
+        self.assertIn(
+            "var named = Model.snapshotGenerationsMatch(root.currentStatus, g)",
+            apply_graph)
+        self.assertIn("if (named && graphCanvas.width > 0", apply_graph)
+        self.assertIn("if (named) root.admittedGraph = g", apply_graph)
+        rejection = apply_graph[:apply_graph.index("var named")]
+        self.assertIn("root.admittedGraph = null", rejection)
+        self.assertIn(
+            "root.admittedGraph = null",
+            apply_graph[apply_graph.index("catch (e)"):])
+        apply_status = _qml_function(cockpit, "applyStatus")
+        self.assertIn("root.admittedGraph = root.graph", apply_status)
+        self.assertIn(
+            "Model.snapshotGenerationsMatch(root.status, root.graph)",
+            apply_status)
+        graph_file = _qml_element(cockpit, "id: graphFile")
+        failed = graph_file[graph_file.index("onLoadFailed:"):
+                            graph_file.index("onFileChanged:")]
+        self.assertIn("root.admittedGraph = null", failed)
+        changed = graph_file[graph_file.index("onFileChanged:"):]
+        self.assertNotIn("root.admittedGraph =", changed)
+        self.assertIn("root.graph || root.admittedGraph", changed)
+        # The admitted generation stays on screen through the change, so a
+        # locked selection survives it.
+        self.assertNotIn("root.selectedId", changed)
+        summary = _qml_function(cockpit, "graphSnapshotText")
+        self.assertIn("shown !== root.graph", summary)
+        self.assertIn("newer graph publication awaiting its status", summary)
+
+    def test_snapshot_settle_waits_are_one_beat(self):
+        cockpit = _read("Cockpit.qml")
+        for timer_id in ("id: statusApply", "id: graphApply",
+                         "id: thoughtsApply"):
+            with self.subTest(timer=timer_id):
+                self.assertIn("interval: 60", _qml_element(cockpit, timer_id))
+
+    def test_revalidation_boundaries_are_context_not_alarms(self):
+        cockpit = _read("Cockpit.qml")
+        tone = _qml_function(cockpit, "boundaryColor")
+        self.assertIn("/pending validation$/.test(text)", tone)
+        self.assertIn("root.urgent", tone)
+        self.assertIn("color: root.boundaryColor(root.thoughtsBoundary)",
+                      cockpit)
+        self.assertIn("root.boundaryColor(root.graphBoundary)", cockpit)
+        for boundary in (
+                "last good graph; newer graph snapshot pending validation",
+                "last good status; newer resident status pending validation",
+                "last good generated-entry stream; newer stream pending validation",
+                "last good continuity status; newer update pending validation"):
+            self.assertIn(boundary, cockpit)
+            self.assertTrue(boundary.endswith("pending validation"))
+        for boundary in (
+                "last good graph; latest graph rejected",
+                "resident graph snapshot unavailable",
+                "resident status unavailable"):
+            self.assertFalse(boundary.endswith("pending validation"))
+
 
 if __name__ == "__main__":
     unittest.main()

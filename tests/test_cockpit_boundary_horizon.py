@@ -586,7 +586,7 @@ function strictStatusAccepted(text) {
         malformed.append(candidate)
         malformed.append(self._snapshot(workspace=["x" * 4097]))
         malformed.append(self._snapshot(intents=[{
-            "id": "0123456789", "text": "x" * 70 + "y",
+            "id": "0123456789", "text": "x" * 300 + "y",
             "due": "2026-09-04", "days_left": 0,
         }]))
         malformed.append(self._snapshot(intents=[{
@@ -667,10 +667,10 @@ function strictStatusAccepted(text) {
     def test_vitals_withdraw_graph_counts_without_a_graph_generation(self):
         cockpit = " ".join(_read("Cockpit.qml").split())
         self.assertIn(
-            'root.currentGraph ? String(root.currentStatus.pages) : "—"',
+            'root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"',
             cockpit)
         self.assertIn(
-            'root.currentGraph ? String(root.currentStatus.graph_edges) : "—"',
+            'root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"',
             cockpit)
 
         frozen = self._snapshot()

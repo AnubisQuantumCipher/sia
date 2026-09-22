@@ -26,7 +26,7 @@ jobs:
           python -m pip install --only-binary=:all: --require-hashes \
             -r "$RUNNER_TEMP/sia-ci-requirements.txt"
       - name: compile all python
-        run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp
+        run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp bin/sia-intent-review
       - name: shell syntax
         run: bash -n install.sh uninstall.sh bin/sia-setup
       - name: release artifact contracts

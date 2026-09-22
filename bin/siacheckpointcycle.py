@@ -254,7 +254,8 @@ CAPACITY_REASONS = frozenset({
 RETIRED_KEYS = ("controller_source_committed", "controller_checkpoint_chain",
                 "controller_delivery_epoch", "live_loop_committed")
 RETIRED_FILES = (("live_generation", "LIVE_STATE_PATH"),
-                 ("live_candidate", "LIVE_CANDIDATE_PATH"))
+                 ("live_candidate", "LIVE_CANDIDATE_PATH"),
+                 ("live_view", "LIVE_VIEW_CACHE_PATH"))
 RETIREMENT_SCHEMA = "sia-controller-source-retirement-v1"
 RETIREMENT_DIRECTORY = "controller-source-superseded"
 RETIREMENT_NOTE = ("the checkpoint chain has no rollover; its archives, chain "
@@ -312,7 +313,11 @@ def retire(owner, *, memo, apply, reason, retired_at):
     retired = {key: memo[key] for key in RETIRED_KEYS if key in memo}
     files = {}
     for label, name in RETIRED_FILES:
-        path = owner[name]
+        # The cached live view is the cockpit's copy of the retired lane's
+        # last generation; left in place, `sia status` on the released lane
+        # keeps printing a retained pulse that is no longer being advanced.
+        path = os.path.join(owner["STATE"], "live-view.json") \
+            if name == "LIVE_VIEW_CACHE_PATH" else owner[name]
         if owner["_live_present"](path):
             with open(path, "rb") as stream:
                 digest = owner["hashlib"].sha256(stream.read()).hexdigest()

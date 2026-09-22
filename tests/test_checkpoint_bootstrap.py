@@ -229,7 +229,12 @@ class CheckpointBootstrap(unittest.TestCase):
             # segment's initial batch, not the retired lane in flight.
             fresh = {k: v for k, v in held.items() if k != "controller_source_committed"}
             self.assertIsNone(self.cycle.retirement_pending(vars(owner), fresh))
-            live_files = [owner.LIVE_STATE_PATH, owner.LIVE_CANDIDATE_PATH]
+            live_files = [owner.LIVE_STATE_PATH, owner.LIVE_CANDIDATE_PATH,
+                          os.path.join(owner.STATE, "live-view.json")]
+            import sialiveview
+            sialiveview.publish_cache(vars(owner))
+            self.assertTrue(os.path.exists(os.path.join(owner.STATE, "live-view.json")),
+                "the fixture published no cached live view")
             present = [path for path in live_files if os.path.exists(path)]
             self.assertTrue(present, "the fixture published no live generation")
 
@@ -256,6 +261,7 @@ class CheckpointBootstrap(unittest.TestCase):
             self.assertFalse(owner._controller_source_present(durable))
             self.assertFalse(owner._live_started(durable),
                 "a retired live lineage still counts as started")
+            self.assertIn("live_view", receipt["retired_files"])
             for label, row in receipt["retired_files"].items():
                 self.assertFalse(os.path.exists(row["path"]))
                 self.assertTrue(os.path.isfile(row["retained_as"]))

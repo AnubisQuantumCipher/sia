@@ -3,7 +3,7 @@
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
-**Describes SIA v1.8.0 · 2026-09-19**
+**Describes SIA v1.8.1 · 2026-09-20**
 
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*
@@ -262,6 +262,34 @@ activating its controller are separate deployment steps.
 
 ## 2. The cockpit
 
+**Commitments:** a past due date means a task still needs review; it does not
+mean SIA is broken. **Review commitment…** opens the full task, holder, and due
+date in a terminal and closes the cockpit so the terminal is accessible. Check
+the relevant records first. To finish, type `done`, enter a short outcome or
+supporting record, then type `close`. Enter at either confirmation leaves the
+task open. Closing records your outcome; it does not verify predictions or
+repair a system problem. The reminder clears after the next successful SIA
+publication. If the terminal cannot launch, use `sia intend --list` and
+`sia intend --show <full-id>`; the latter reads the full open task as JSON.
+Existing installations need the matching updated runtime for this review flow.
+
+The cockpit leaves entrance and dismissal motion to the compositor, avoiding
+a second full-screen fade in Qt. For a straight-down entrance on Omarchy's Lua
+Hyprland configuration, add this scoped rule to `~/.config/hypr/looknfeel.lua`:
+
+```lua
+hl.layer_rule({
+  name = "sia-cockpit-presentation",
+  match = { namespace = "^sia-cockpit$" },
+  animation = "slide top",
+})
+```
+
+Reload with `hyprctl reload` and check `hyprctl configerrors`. This only changes
+SIA's direction; desktop animation timing and reduced-motion preferences still
+apply. The continuity card's **Schedule & recovery details** control expands
+routine backup information without hiding warnings or recovery actions.
+
 Summoned from the bar (or with SUPER+SHIFT+B after an install using
 `SIA_INSTALL_KEYBINDING=1`); leaves with **Esc**, ✕, or
 `omarchy-shell shell hide khephri.sia`.
@@ -371,8 +399,13 @@ the result responsive but legible. Nodes glow when freshly touched.
   gaps mark the snapshot partial in SOURCE HEALTH. If graph publication throws,
   the pulse exposes the error and signs `PULSE:ingest ... graph-fail` rather
   than reporting successful graph publication. Only a structurally exact
-  partial envelope remains a diagnostic graph: an open or malformed envelope,
-  or a status/graph publication mismatch, withdraws every current graph claim.
+  partial envelope remains a diagnostic graph: an open or malformed envelope
+  withdraws every current graph claim. The displayed graph is always the
+  generation the displayed status names: while a newer graph publication
+  waits for the status that will name it (the brainstem writes `graph.json`
+  seconds before `status.json`), the cockpit keeps the named generation on
+  screen and the snapshot line says `newer graph publication awaiting its
+  status`; a status naming neither generation withdraws the graph.
 - **The graph window is incrementally projected.** Publication advances a
   durable no-follow corpus directory cursor, retains only the capped cockpit
   candidates, and rereads only those selected pages under their observed

@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.8.1 — 2026-09-20 · reviewable commitments and a steadier cockpit
+
+### Grading and configuration
+
+A claim the engine's CLI would read as a flag is no longer reported as a
+completed corpus search. It never ran, so the recall now says so and the take
+stays open, which is what `GradingEvidenceUnavailable` has always specified:
+"only a completed evidence read may be judged UNRESOLVABLE". Previously such a
+take was closed and scored from the organ half of the evidence lane alone, while
+its published page still said it had been judged against a signed evidence
+snapshot. The guard is also narrower: it rejected every claim opening with a
+dash, which silently removed the recall lane from legitimate takes like
+"-1 regressions will land by March" that `sia take -- …` exists to let you
+register. Measured against the shipped engine, those run as ordinary searches.
+
+`mind` is accepted as a top-level configuration section, which the shipped
+`config.example.json` already carried.
+
+### Cockpit
+
+Commitments now show their full task and calendar due date, explain that overdue
+is a review reminder, and offer **Review commitment…**. The terminal review reads
+the current open task through the resident CLI and requires a written outcome
+and explicit confirmation before closing it. Cancelling leaves it open; stale
+or failed requests never claim completion. `sia intend --show <full-id>` exposes
+the full open task as JSON without internal storage paths. Review does not hold
+a corpus lock while waiting for the operator and never executes task prose.
+
+Snapshot refresh and graph motion now wait until arrival, and the graph image is
+painted before presentation to avoid exposing uninitialized pixels on remap.
+The freshness glow and the root halo move off the main graph canvas onto a
+dedicated lighter one driven by native Qt rings, so animating them no longer
+forces a full graph repaint. Inspecting a settled node no longer keeps the
+layout simulation running. Routine status
+refreshes use the existing cockpit instead of flashing the first-install gate;
+snapshot admission and action guards remain unchanged. Status counts guard both
+the status and graph snapshots. Backup schedule details expand on demand, and
+generated entries use more readable prose typography and wrapped origin labels.
+
+The graph no longer vanishes for ten seconds a minute. The brainstem
+republishes `graph.json` up to four times a pulse (two partial scans, then the
+complete generation, then its post-source rebuild) and names the final one in
+`status.json` about eleven seconds after the first write. The cockpit withdrew
+the graph the moment the file changed and, once reread, refused the newer
+generation because no status named it yet — so for about eleven seconds of every sixty
+the center card said `current graph unavailable`. The cockpit now keeps the
+generation the current status names on screen (`admittedGraph`) while a newer
+publication waits for the status that will name it, and the header says so:
+`graph published 42s ago · complete · newer graph publication awaiting its
+status`. The combined claim is unchanged: the displayed graph is always the
+one the displayed status names, and a rejected or vanished resident graph still
+withdraws it. An unnamed generation never touches the layout, so hover,
+neighbourhoods, and a locked selection survive the republish; a running growth
+replay survives the beat between generations too.
+
+The remaining beat — the status reread itself — is one settle wait (60 ms, was
+150–200 ms) plus a frame; the entry stream fades in over 140 ms, while the graph
+paints directly without a full-image fade. `current graph unavailable` is only said once
+the graph has been absent for 400 ms. Boundaries that name a routine
+revalidation (`… pending validation`) render in the muted text colour; an
+unavailable or rejected source keeps the urgent colour.
+
 ## 1.8.0 — 2026-09-19 · the receipts survive the move
 
 Four reporters and one migrated maintainer machine hit this release where

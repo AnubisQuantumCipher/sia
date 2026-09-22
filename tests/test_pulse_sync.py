@@ -342,7 +342,7 @@ class PulseSyncRetry(unittest.TestCase):
         mutations.append(bad)
         bad = copy.deepcopy(valid)
         bad["intents"] = [{
-            "id": "0123456789", "text": "x" * 70 + "y",
+            "id": "0123456789", "text": "x" * 300 + "y",
             "due": "2026-08-30", "days_left": 0,
         }]
         mutations.append(bad)

@@ -1186,6 +1186,42 @@ class HonestStatusLanguage(unittest.TestCase):
             self.assertEqual(sia.cmd_status(), 1)
         self.assertIn("config-invalid-json", output.getvalue())
 
+    def test_status_omits_the_live_view_when_the_opt_in_lane_is_off(self):
+        """On the released lane `sia status` said "live refused ·
+        live-view-cache-unavailable" followed by seven boundary lines: an
+        absence described as a failure. With the opt-in off and nothing
+        retained it now prints one line; a retained lane still reports."""
+        import sialiveview
+        status = _current_status_fixture()
+        with tempfile.TemporaryDirectory() as state, \
+                mock.patch.object(sia.sialib, "STATE", state), \
+                mock.patch.object(sia.sialib, "corpus_owner",
+                                  return_value=contextlib.nullcontext()), \
+                mock.patch.object(sia, "_corpus_owner_nowait",
+                                  return_value=contextlib.nullcontext()), \
+                mock.patch.object(sia.sialib, "load_thoughts", return_value={"thoughts": []}), \
+                mock.patch.object(sia.sialib, "memory_readiness", return_value=(True, "")), \
+                mock.patch.object(sia.sialib, "_controller_source_enabled", return_value=False):
+            with mock.patch.object(sia.sialib, "load_memo", return_value={"pulse_seq": 8}), \
+                    mock.patch.object(sia.sialib, "read_state_json",
+                                      side_effect=(copy.deepcopy(status), _current_graph_fixture(), None)):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    sia.cmd_status()
+                text = output.getvalue()
+                self.assertIn("live     off", text)
+                self.assertNotIn("live-view-cache-unavailable", text)
+                self.assertNotIn("boundary This view reports", text)
+            with mock.patch.object(sia.sialib, "load_memo",
+                                   return_value={"pulse_seq": 8, "live_loop_committed": {}}), \
+                    mock.patch.object(sia.sialib, "read_state_json",
+                                      side_effect=(copy.deepcopy(status), _current_graph_fixture(), None)):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    sia.cmd_status()
+                self.assertIn("refused", output.getvalue().lower())
+                self.assertNotIn("live     off", output.getvalue())
+
     def test_status_latest_thought_carries_origin(self):
         status = _current_status_fixture()
         status["thought"] = {

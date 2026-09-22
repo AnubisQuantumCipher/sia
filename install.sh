@@ -8790,7 +8790,7 @@ SIA_RELEASE_FILES=(
   bin/sialifetime.py
   manifest.json preview.png Panel.qml Cockpit.qml LiveView.qml Model.js README.md ROADMAP.md LICENSE
   SECURITY.md CHANGELOG.md GBRAIN_PIN GBRAIN_OVERLAY.patch config.example.json install.sh
-  uninstall.sh bin/sia bin/sia-setup bin/sia-brainstem bin/sia-ledger
+  uninstall.sh bin/sia bin/sia-setup bin/sia-intent-review bin/sia-brainstem bin/sia-ledger
   bin/sia-mcp bin/sia-continuity-worker bin/siabench.py bin/siabackup.py
   bin/siacapsule.py bin/sialib.py bin/siagraph.py bin/siathought.py bin/siasenses.py bin/siarestoreadmit.py
   bin/siamind.py bin/siaqueue.py bin/siarelease.py bin/siaactivation.py

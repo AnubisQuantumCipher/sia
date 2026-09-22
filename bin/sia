@@ -42,7 +42,8 @@ biological brain and does not establish cognition or neuroscience.
   sia takes             list predictions and their status
   sia intend "task" --by YYYY-MM-DD
                         dated commitment that SIA surfaces
-                        as its deadline nears (--list · --done <id> [note]);
+                        as its deadline nears (--list · --show <full-id>
+                        · --done <id> [note]);
                         -- ends options here too
   sia grade [id]        grade due predictions now (configured judge,
                         deterministic Brier); with id, grade that one
@@ -573,6 +574,36 @@ def _live_view_text(value):
     return result
 
 
+def _live_lane_present():
+    """Whether this machine has a live loop for `sia status` to report on.
+
+    The live loop belongs to the opt-in controller-source lane. With the
+    opt-in off and no retained lane state or cached view, there is nothing
+    to inspect, and a refusal plus its boundaries would describe an absence
+    as a failure. Anything unreadable reports as present, so a real refusal
+    is never hidden.
+    """
+    try:
+        import sialiveview
+        memo = sialib.load_memo()
+        return (sialib._controller_source_enabled()
+                or sialib._controller_source_present(memo)
+                or any(key in memo for key in (
+                    "live_loop_committed", "live_loop_pending",
+                    "controller_checkpoint_chain", "controller_delivery_epoch"))
+                or os.path.lexists(sialiveview._cache_path(sialib.__dict__)))
+    except Exception:
+        return True
+
+
+def _print_live_status_section():
+    """The live section of `sia status`: the retained view, or one line saying off."""
+    if _live_lane_present():
+        return _print_live_summary()
+    print("  live     off · mind.controller_source is false and no live loop is retained")
+    return {"status": "off"}
+
+
 def _print_live_summary(value=None):
     selected = _read_live_view_result() if value is None else value
     try:
@@ -652,7 +683,7 @@ def cmd_status():
     except sialib.OwnerBusy:
         print("SIA · resident pulse in progress · readiness check deferred")
         _print_pulse_failure()
-        selected = _print_live_summary()
+        selected = _print_live_status_section()
         return 1 if selected["status"] == "refused" else 0
 
 
@@ -758,7 +789,7 @@ def _cmd_status_owned():
         print(f"  errors   {st['errors']}")
     if sialib.CONFIG_ERRORS:
         print(f"  config   {sialib.CONFIG_ERRORS}")
-    _print_live_summary()
+    _print_live_status_section()
     return 0
 
 
@@ -1481,7 +1512,7 @@ def cmd_rehearse(argv):
 
 
 def cmd_think():
-    _print_live_summary()
+    _print_live_status_section()
     store = sialib.load_thoughts()
     for t in store["thoughts"][-15:]:
         mark = "!" if t.get("urgent") else "·"
@@ -2519,6 +2550,20 @@ def cmd_ledger():
 def cmd_intend(argv):
     """Manage dated commitments that SIA surfaces near their deadlines."""
     import siatakes
+    if argv and argv[0] == "--show":
+        if len(argv) != 2 or re.fullmatch(r"[0-9a-f]{10}", argv[1]) is None:
+            print("usage: sia intend --show <full-id>")
+            return 2
+        matches = [it for it in siatakes.open_intents()
+                   if it["id"] == argv[1]]
+        if len(matches) != 1:
+            print("No unique open commitment matches that id.")
+            return 1
+        it = matches[0]
+        print(json.dumps({key: it[key] for key in
+                          ("id", "text", "due", "holder", "created")},
+                         ensure_ascii=True))
+        return 0
     if argv and argv[0] == "--history":
         cursor = argv[2] if len(argv) >= 3 and argv[1] == "--cursor" else None
         if len(argv) not in (1, 3) or len(argv) == 3 and argv[1] != "--cursor":
@@ -2541,7 +2586,7 @@ def cmd_intend(argv):
             d = it["days_left"]
             when = (f"OVERDUE {-d}d" if d < 0 else
                     "due today" if d == 0 else f"due in {d}d")
-            print(f"  {it['id'][:6]}  [{when:>11}]  "
+            print(f"  {it['id']}  [{when:>11}]  "
                   f"{sialib.clip(it['text'], 70)}")
         return 0
     if argv[0] == "--done":

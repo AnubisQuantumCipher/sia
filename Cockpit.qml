@@ -33,6 +33,14 @@ Item {
   property bool statusLoadValid: false
   property bool installCompletionResolved: false
   property var graph: null
+  // The graph generation the current status names.  `graph` holds the watched
+  // file's latest validated bytes and is withdrawn the instant that file
+  // changes; `admittedGraph` is the last graph a validated status named, and
+  // it is displayed only while that same status is still the current status.
+  // The brainstem republishes graph.json several times a pulse and names the
+  // final one in status.json seconds later; withholding the still-named
+  // generation in between blanked the graph for ten seconds a minute.
+  property var admittedGraph: null
   property var thoughts: []
   property bool thoughtsResolved: false
   property bool thoughtsLoadValid: false
@@ -44,6 +52,14 @@ Item {
   property var hiddenKinds: ({})
   property real revealT: 1.0
   property bool playing: false
+  // True while the graph has something to move; every input that can move
+  // it sets it, and the frame loop clears it once the layout has settled.
+  property bool layoutLive: true
+  onPlayingChanged: layoutLive = true
+  // Inspection changes ink, not node positions. A stationary pointer must
+  // not keep the expensive graph/label canvas painting every display frame.
+  onEffIdChanged: graphCanvas.requestPaint()
+  onHiddenKindsChanged: graphCanvas.requestPaint()
   property string verifyMsg: ""
   property bool verifyOk: false
   property string graphBoundary: ""
@@ -58,6 +74,8 @@ Item {
   property var continuitySchedule: null
   property string continuityScheduleBoundary: ""
   property bool continuitySheetOpen: false
+  property bool continuityExpanded: false
+  property string intentReviewFeedback: ""
   property string continuityPage: "overview"
   property bool restoreConfirmOpen: false
   property string continuityActionMsg: ""
@@ -127,6 +145,12 @@ Item {
       : Model.guidedLifecycle(root.runtimeEvidence,
                               root.installCompletion, root.pluginVersion)
   readonly property bool setupRequired: root.releaseLifecycle !== "ready"
+  // Remember presentation history only; this never admits data or actions.
+  // A watched-file refresh should show CHECKING in the existing cockpit,
+  // not replace an established session with the first-install screen.
+  property bool lifecycleWasReady: false
+  readonly property bool showSetupGate: root.setupRequired
+    && !(root.lifecycleWasReady && root.releaseLifecycle === "checking")
   // A caveat on the wording, never a lifecycle.  It cannot reach
   // releaseLifecycle, so no timeout can move this gate to ready, and it
   // asserts nothing about the installer beyond what SIA has observed.
@@ -186,6 +210,22 @@ Item {
       && root.focusedWorkspaceName !== root.workspaceLockName
   readonly property bool cockpitVisible:
     root.opened && !root.workspaceLockMismatch
+  // Let the compositor move the finished surface. Repainting a full-screen
+  // opacity/translation every frame stalls the software Qt renderer.
+  Timer {
+    id: presentationHold
+    interval: 450
+    onTriggered: {
+      // The keepLoaded file watchers already withdraw changed publications.
+      // Refresh again after arrival instead of parsing every snapshot while
+      // the first surface is being painted.
+      statusFile.reload(); installCompletionFile.reload()
+      graphFile.reload(); thoughtsFile.reload()
+      continuityFile.reload()
+      continuityScheduleRefresh.restart()
+      graphCanvas.requestPaint()
+    }
+  }
   readonly property bool continuityStale:
     Model.continuityStale(root.continuity, root.nowMs,
                           Model.continuityStaleAfterSec())
@@ -217,9 +257,20 @@ Item {
   }
 
   function currentGraphSnapshot() {
-    return root.graphBoundary === ""
-      && Model.snapshotGenerationsMatch(root.currentStatus, root.graph)
-      ? root.graph : null
+    if (root.graphBoundary === ""
+        && Model.snapshotGenerationsMatch(root.currentStatus, root.graph))
+      return root.graph
+    // A newer graph publication is on disk — pending validation, or validated
+    // but not yet named by any status.  The current status still names the
+    // admitted generation, so that pair remains the combined snapshot claim.
+    var newerPublication = root.graphBoundary === ""
+      ? !!root.graph
+      : /pending validation$/.test(root.graphBoundary)
+    if (newerPublication
+        && Model.snapshotGenerationsMatch(root.currentStatus,
+                                          root.admittedGraph))
+      return root.admittedGraph
+    return null
   }
 
   function isPlainRecord(value) {
@@ -474,7 +525,24 @@ Item {
     return parts.join(" · ")
   }
 
+  // A boundary that names a routine revalidation beat is context, not an
+  // alarm; an unavailable or rejected source keeps the urgent colour.
+  function boundaryColor(text) {
+    return /pending validation$/.test(text)
+      ? Qt.alpha(root.fg, 0.55) : root.urgent
+  }
+
   function graphSnapshotText() {
+    var shown = root.currentGraph
+    if (shown && shown !== root.graph) {
+      // The admitted generation the current status names, while a newer
+      // graph publication waits for the status that will name it.
+      return "graph published "
+        + Model.timeAgo(shown.ts, root.nowMs) + " · "
+        + (shown.snapshot && shown.snapshot.complete === true
+           ? "complete" : "partial")
+        + " · newer graph publication awaiting its status"
+    }
     if (root.graphBoundary !== "") return root.graphBoundary
     if (!root.graph || !root.graph.ts) return "no graph snapshot"
     if (!root.currentStatus)
@@ -2037,6 +2105,20 @@ Item {
     root.setWorkspaceLock(root.focusedWorkspaceName)
   }
 
+  function reviewIntent(iid) {
+    if (root.setupRequired || !root.currentStatus
+        || !/^[0-9a-f]{10}$/.test(iid)) return
+    var rows = root.currentStatus.intents || []
+    if (!rows.some(function(row) { return row.id === iid })) return
+    root.intentReviewFeedback = "Review terminal requested. If it did not open, check your desktop terminal launcher. No commitment is closed by this button."
+    // Only an admitted identity becomes an argument. Task prose is never code.
+    Quickshell.execDetached([
+      "/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV",
+      "omarchy-launch-terminal", "/usr/bin/python3", "-I",
+      root.pluginRoot + "/bin/sia-intent-review", iid])
+    root.close()
+  }
+
   function launchSetup() {
     // This is the sole UI launch edge.  It is reached only from an explicit
     // click/key action; loading or enabling the plugin never executes setup.
@@ -2192,6 +2274,7 @@ Item {
     if (root.workspaceLockMismatch) root.clearWorkspaceLock()
     opened = true
     workspaceLockFeedback = ""
+    intentReviewFeedback = ""
     root.clearVerification()
     continuityActionMsg = ""
     continuityActionOk = false
@@ -2220,15 +2303,9 @@ Item {
     // age on this screen, the installing horizon included, is measured
     // against it; re-read it before any of them are painted.
     nowMs = Date.now()
-    // Opening requests fresh bytes without discarding the last validated
-    // generation. Cold startup and every failed load still resolve fail-closed.
-    statusFile.reload(); installCompletionFile.reload()
-    graphFile.reload(); thoughtsFile.reload()
-    continuityFile.reload()
-    continuityScheduleRefresh.restart()
-    if (root.currentGraph && graphCanvas.width > 0)
-      Model.syncGraph(
-        root.currentGraph, graphCanvas.width, graphCanvas.height)
+    // Watched publications and canvas resize handlers maintain the layout
+    // while closed. The presentation timer requests a fresh read on arrival.
+    presentationHold.restart()
     Qt.callLater(function() {
       if (payload.mode === "continuity") root.openContinuity("overview")
       else if (root.cockpitVisible && root.setupActionAllowed)
@@ -2259,6 +2336,7 @@ Item {
     root.clearContinuityInputs()
     root.clearWorkspaceLock()
     workspaceLockFeedback = ""
+    intentReviewFeedback = ""
   }
 
   function dismiss() {
@@ -2267,7 +2345,11 @@ Item {
   }
 
   onCockpitVisibleChanged: {
-    if (!root.cockpitVisible) return
+    if (!root.cockpitVisible) {
+      presentationHold.stop()
+      return
+    }
+    presentationHold.restart()
     Qt.callLater(function() {
       if (!root.cockpitVisible) return
       if (root.setupActionAllowed) firstLightButton.forceActiveFocus()
@@ -2278,19 +2360,27 @@ Item {
   }
 
   onCurrentGraphChanged: {
-    if (root.currentGraph && graphCanvas.width > 0)
+    root.layoutLive = true
+    if (root.currentGraph && graphCanvas.width > 0 && graphCanvas.height > 0)
       Model.syncGraph(
         root.currentGraph, graphCanvas.width, graphCanvas.height)
     if (!root.currentGraph) {
+      // Withdrawn: hover is re-derived from the pointer, but a locked
+      // selection and a running replay survive the beat between one named
+      // generation and the next.
       root.hoverId = ""
-      root.selectedId = ""
-      root.playing = false
-      root.revealT = 1.0
+      graphGapTimer.restart()
+    } else {
+      graphGapTimer.stop()
+      root.graphGapSettled = false
+      if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
+        root.selectedId = ""
     }
     graphCanvas.requestPaint()
   }
 
   onReleaseLifecycleChanged: {
+    if (root.releaseLifecycle === "ready") root.lifecycleWasReady = true
     // Ahead of the visibility guard on purpose.  The horizon has to keep
     // running while the cockpit is closed, which is where an installer
     // usually dies.
@@ -2321,6 +2411,10 @@ Item {
       root.status = parsed
       root.statusLoadValid = true
       root.statusBoundary = ""
+      // A status that names the resident graph admits that generation.
+      if (root.graphBoundary === "" && root.graph
+          && Model.snapshotGenerationsMatch(root.status, root.graph))
+        root.admittedGraph = root.graph
       root.stale = Model.timestampStale(
         parsed.ts, Date.now(), root.staleAfterSec)
     } catch (e) {
@@ -2342,12 +2436,18 @@ Item {
         root.graphBoundary = root.graph
           || root.graphBoundary.indexOf("last good graph;") === 0
           ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+        root.admittedGraph = null
         return
       }
-      if (graphCanvas.width > 0)
+      // Only a generation the current status names may touch the layout:
+      // syncing an unnamed newer publication would rebuild the rings and
+      // adjacency under the admitted graph still on screen.
+      var named = Model.snapshotGenerationsMatch(root.currentStatus, g)
+      if (named && graphCanvas.width > 0 && graphCanvas.height > 0)
         Model.syncGraph(g, graphCanvas.width, graphCanvas.height)
       root.graph = g
       root.graphBoundary = ""
+      if (named) root.admittedGraph = g
       if (root.selectedId !== "" && !root.graphHasNode(root.selectedId))
         root.selectedId = ""
       if (root.hoverId !== "" && !root.graphHasNode(root.hoverId))
@@ -2357,6 +2457,7 @@ Item {
       root.graphBoundary = root.graph
         || root.graphBoundary.indexOf("last good graph;") === 0
         ? "last good graph; latest graph rejected" : "no valid graph snapshot"
+      root.admittedGraph = null
     }
   }
 
@@ -2769,8 +2870,17 @@ Item {
       statusApply.restart()
     }
   }
-  Timer { id: statusApply; interval: 150; repeat: false
+  // Every snapshot is published by one atomic rename, so the settle wait only
+  // has to outlast the watcher's own burst of events for that rename.  At
+  // 150-200 ms the beat between one named generation and the next was a
+  // visible blink; the reread itself validates whatever it finds.
+  Timer { id: statusApply; interval: 60; repeat: false
           onTriggered: statusFile.reload() }
+  // "current graph unavailable" is said only once the graph has been absent
+  // long enough to be a state, not the beat between two named generations.
+  property bool graphGapSettled: false
+  Timer { id: graphGapTimer; interval: 400; repeat: false
+          onTriggered: root.graphGapSettled = true }
 
   FileView {
     id: graphFile
@@ -2795,6 +2905,7 @@ Item {
       var hadLastGood = !!root.graph
         || root.graphBoundary.indexOf("last good graph;") === 0
       root.graph = null
+      root.admittedGraph = null
       root.selectedId = ""
       root.hoverId = ""
       graphCanvas.requestPaint()
@@ -2806,18 +2917,19 @@ Item {
       root.clearVerification()
       readyProc.cancel()
       root.clearReadyCheck()
-      root.graphBoundary = root.graph
+      // One rename can arrive as a burst of change events; the first already
+      // withdrew `graph`, but the admitted generation is still the last good
+      // graph on screen.
+      root.graphBoundary = root.graph || root.admittedGraph
         ? "last good graph; newer graph snapshot pending validation"
         : "resident graph snapshot pending validation"
       root.graph = null
-      root.selectedId = ""
-      root.hoverId = ""
       graphCanvas.requestPaint()
       graphFile.refreshPending = true
       graphApply.restart()
     }
   }
-  Timer { id: graphApply; interval: 200; repeat: false
+  Timer { id: graphApply; interval: 60; repeat: false
           onTriggered: graphFile.reload() }
 
   FileView {
@@ -2853,7 +2965,7 @@ Item {
       thoughtsApply.restart()
     }
   }
-  Timer { id: thoughtsApply; interval: 200; repeat: false
+  Timer { id: thoughtsApply; interval: 60; repeat: false
           onTriggered: thoughtsFile.reload() }
 
   FileView {
@@ -3708,7 +3820,7 @@ Item {
     id: win
     visible: root.cockpitVisible
     anchors { top: true; bottom: true; left: true; right: true }
-    color: Color.background
+    color: root.bg
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "sia-cockpit"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -3719,6 +3831,12 @@ Item {
       id: keyCatcher
       anchors.fill: parent
       focus: true
+      enabled: root.cockpitVisible
+      Rectangle {
+        anchors.fill: parent
+        color: root.bg
+        z: -1
+      }
 
       // Sheets contain focusable controls, so Esc must remain available even
       // when a field rather than this catcher owns active focus.
@@ -3980,9 +4098,10 @@ Item {
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             text: "PUBLISHED SNAPSHOT · " + root.graphSnapshotText()
-            color: root.graphBoundary !== "" || (root.snap
-              && root.snap.complete !== true)
-              ? root.urgent : Qt.alpha(root.fg, 0.5)
+            color: root.graphBoundary !== "" && !root.currentGraph
+              ? root.boundaryColor(root.graphBoundary)
+              : (root.snap && root.snap.complete !== true)
+                ? root.urgent : Qt.alpha(root.fg, 0.5)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
@@ -4268,6 +4387,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityWeeklyText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.56)
                 font.family: root.fontFamily
@@ -4278,6 +4398,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuitySleepText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.48)
                 font.family: root.fontFamily
@@ -4289,6 +4410,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityRepositoryText()
+                visible: root.continuityExpanded
                 elide: Text.ElideMiddle
                 color: Qt.alpha(root.fg, 0.7)
                 font.family: root.fontFamily
@@ -4299,6 +4421,7 @@ Item {
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 text: root.continuityLatestText()
+                visible: root.continuityExpanded
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.52)
                 font.family: root.fontFamily
@@ -4318,6 +4441,14 @@ Item {
                     ? root.urgent : Qt.alpha(root.fg, 0.52)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+              }
+
+              Ui.Button {
+                text: root.continuityExpanded ? "Less detail ▴" : "Schedule & recovery details ▾"
+                fontSize: Style.font.caption
+                focusable: true
+                Accessible.name: text
+                onClicked: root.continuityExpanded = !root.continuityExpanded
               }
 
               Row {
@@ -4449,12 +4580,12 @@ Item {
                 rowSpacing: Style.space(2)
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.pages) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
+                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
                 Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
@@ -5206,26 +5337,62 @@ Item {
                 font.pixelSize: Style.font.caption
                 font.bold: true
               }
+              Text {
+                textFormat: Text.PlainText
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "Past due means a task needs review, not that SIA is broken. Review the records, then record an outcome to close it."
+                color: Qt.alpha(root.fg, 0.6)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: root.intentReviewFeedback !== ""
+                textFormat: Text.PlainText
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: root.intentReviewFeedback
+                color: Qt.alpha(root.fg, 0.7)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
               Repeater {
                 model: root.currentStatus && root.currentStatus.intents
                   ? root.currentStatus.intents : []
-                delegate: Text {
+                delegate: Column {
                   required property var modelData
-                  textFormat: Text.PlainText
-                  renderType: Text.NativeRendering
                   width: intentCol.width
-                  wrapMode: Text.WordWrap
-                  text: (modelData.days_left < 0
-                          ? "➤ OVERDUE " + (-modelData.days_left) + "d — "
-                          : modelData.days_left === 0
-                            ? "➤ due today — "
-                            : "➤ in " + modelData.days_left + "d — ")
-                        + modelData.text
-                  color: modelData.days_left < 0 ? root.urgent
-                    : modelData.days_left <= 2 ? root.accent
-                    : Qt.alpha(root.fg, 0.7)
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                  spacing: Style.space(4)
+                  Text {
+                    textFormat: Text.PlainText
+                    renderType: Text.NativeRendering
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: modelData.text
+                    color: Qt.alpha(root.fg, 0.85)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Text {
+                    textFormat: Text.PlainText
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Due " + modelData.due + (modelData.days_left < 0
+                      ? " · overdue — review needed"
+                      : modelData.days_left === 0 ? " · today" : "")
+                    color: modelData.days_left < 0 ? root.urgent : root.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                  Ui.Button {
+                    text: "Review commitment…"
+                    fontSize: Style.font.caption
+                    focusable: true
+                    enabled: !!root.currentStatus && !root.setupRequired
+                    Accessible.name: "Review commitment due " + modelData.due
+                    Accessible.description: "Opens the full task in a terminal. Closing requires an outcome and your confirmation."
+                    onClicked: root.reviewIntent(modelData.id)
+                  }
                 }
               }
             }
@@ -5339,7 +5506,10 @@ Item {
                 text: [root.graphBoundary, root.statusBoundary]
                   .filter(function(value) { return value !== "" }).join(" · ")
                 wrapMode: Text.WordWrap
-                color: root.urgent
+                color: [root.graphBoundary, root.statusBoundary].every(
+                  function(value) {
+                    return value === "" || /pending validation$/.test(value)
+                  }) ? Qt.alpha(root.fg, 0.55) : root.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -5466,7 +5636,7 @@ Item {
           anchors.leftMargin: body.gap
           anchors.rightMargin: body.gap
           radius: Style.cornerRadius
-          color: Qt.alpha(root.fg, 0.03)
+          color: Qt.tint(root.bg, Qt.alpha(root.fg, 0.03))
           border.color: Qt.alpha(root.fg, 0.10)
           border.width: 1
           clip: true
@@ -5475,25 +5645,75 @@ Item {
             id: graphCanvas
             anchors.fill: parent
             anchors.margins: 2
-            renderStrategy: Canvas.Cooperative
+            renderStrategy: Canvas.Immediate
+            // Finish the image before presenting the surface. Cooperative
+            // painting exposed an unpainted texture during remapping here.
+            opacity: root.currentGraph ? 1 : 0
+            // The glow layer follows every graph frame, so it never shows
+            // a halo where a node no longer is.
+            onPainted: glowCanvas.requestPaint()
 
-            onWidthChanged: if (root.currentGraph && width > 0)
+            // Both dimensions, not just width: the first size a canvas
+            // reports has its width and a zero height, and Model refuses to
+            // seed a layout on a zero-size canvas.
+            onWidthChanged: if (root.currentGraph && width > 0 && height > 0) {
               Model.syncGraph(root.currentGraph, width, height)
-            onHeightChanged: if (root.currentGraph && width > 0)
+              root.layoutLive = true
+            }
+            onHeightChanged: if (root.currentGraph && width > 0 && height > 0) {
               Model.syncGraph(root.currentGraph, width, height)
+              root.layoutLive = true
+            }
 
-            Timer {
-              interval: 40
-              running: root.opened && root.currentGraph !== null
-              repeat: true
+            // The graph moves on the display's own frame clock and stops
+            // when nothing moves. A 40 ms Timer used to drive both the
+            // physics and the growth reveal: under the software-rendered
+            // canvas it fired late, so the 12-second replay stretched
+            // and every frame landed off the display's beat.
+            FrameAnimation {
+              id: graphFrames
+              running: root.cockpitVisible && !presentationHold.running
+                       && root.currentGraph !== null
+                       && root.layoutLive
               onTriggered: {
+                // A slow frame advances the layout by the time it took, up
+                // to 250 ms (Model integrates it in sub-ticks). Treating a
+                // slow frame as one 40 ms tick made wall-clock convergence
+                // six times slower on the 220 ms frames of a software
+                // renderer, so the loop ran through every pulse.
+                var ms = frameTime * 1000
+                if (!(ms > 0)) ms = 40
+                else if (ms > 250) ms = 250
                 if (root.playing) {
-                  root.revealT = Math.min(1, root.revealT + 40 / 12000)
+                  // Wall-clock reveal: twelve seconds regardless of frame rate.
+                  root.revealT = Math.min(1, root.revealT + ms / 12000)
                   if (root.revealT >= 1) root.playing = false
                 }
                 Model.step(root.currentGraph,
-                           graphCanvas.width, graphCanvas.height, root.revealT)
+                           graphCanvas.width, graphCanvas.height,
+                           root.revealT, ms)
                 graphCanvas.requestPaint()
+                if (!root.playing && Model.settled())
+                  root.layoutLive = false
+              }
+            }
+
+            // Settled: nothing moves, but fresh memories breathe and the root
+            // keeps its halo. Five slow frames a second carry that, and only
+            // on glowCanvas: a full graph frame costs about 90 ms under a
+            // software renderer at 2x scale, and ten of those a second held
+            // a settled cockpit at 40% of a core. The physics does not run
+            // again until something changes.
+            Timer {
+              id: graphBreath
+              interval: 200
+              repeat: true
+              running: root.cockpitVisible && !presentationHold.running
+                       && root.currentGraph !== null
+                       && !root.layoutLive
+              onTriggered: {
+                Model.breathe(interval)
+                glowCanvas.requestPaint()
               }
             }
 
@@ -5501,6 +5721,8 @@ Item {
               var ctx = getContext("2d")
               ctx.reset()
               ctx.clearRect(0, 0, width, height)
+              ctx.fillStyle = graphCard.color
+              ctx.fillRect(0, 0, width, height)
               var graph = root.currentGraph
               if (!graph || !graph.nodes) return
               var now = root.nowMs > 0 ? root.nowMs : Date.now()
@@ -5564,27 +5786,10 @@ Item {
                   top: p.y - r - 3, bottom: p.y + r + 3
                 })
                 var col = Model.nodeColor(n, root.pal)
-                var fresh = Model.freshness(n, now)
-                if (fresh > 0.02 && !dimmed) {
-                  var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
-                                                       + p.x * 0.05)
-                  ctx.fillStyle = Qt.alpha(root.accent, 0.28 * fresh * breathe)
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 5 + 4 * fresh, 0, 2 * Math.PI)
-                  ctx.fill()
-                }
+                // The fresh glow and the root halo breathe on glowCanvas.
                 ctx.fillStyle = dimmed ? Qt.alpha(col, 0.22) : col
                 ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 2 * Math.PI)
                 ctx.fill()
-                if (n.id === "sia/cortex" && !dimmed) {
-                  var halo = 0.35 + 0.20 * Math.sin(Model.phase())
-                  ctx.strokeStyle = Qt.alpha(root.fg, halo)
-                  ctx.lineWidth = 1.2
-                  ctx.beginPath()
-                  ctx.arc(p.x, p.y, r + 3.5, 0, 2 * Math.PI)
-                  ctx.stroke()
-                  ctx.lineWidth = 1
-                }
                 if (n.id === eff) {
                   ctx.strokeStyle = root.fg
                   ctx.beginPath()
@@ -5709,6 +5914,59 @@ Item {
                 var hit = nearest(mouse.x, mouse.y)
                 root.selectedId = (hit === root.selectedId) ? "" : hit
                 graphCanvas.requestPaint()
+              }
+            }
+          }
+
+          // Native rings avoid uploading a full transparent canvas for a
+          // small halo. They do not intercept graph inspection underneath.
+          Item {
+            id: glowCanvas
+            anchors.fill: graphCanvas
+            opacity: graphCanvas.opacity
+            property var rings: []
+            function requestPaint() {
+              var next = []
+              var graph = root.currentGraph
+              if (graph && graph.nodes) {
+                var eff = root.effId
+                var nbrs = eff !== "" ? Model.neighbors(eff) : null
+                for (var i = 0; i < graph.nodes.length; i++) {
+                  var n = graph.nodes[i]
+                  var p = Model.posOf(n.id)
+                  if (!p || !root.nodeVisible(n)) continue
+                  if (eff !== "" && n.id !== eff
+                      && !Model.hasNeighbor(nbrs, n.id)) continue
+                  var r = Model.nodeRadius(n)
+                  var fresh = Model.freshness(n, root.nowMs)
+                  if (fresh > 0.02) {
+                    var breathe = 0.75 + 0.25 * Math.sin(Model.phase() * 2
+                                                         + p.x * 0.05)
+                    next.push({ x: p.x, y: p.y, radius: r + 5 + 4 * fresh,
+                      thickness: 5 + 4 * fresh,
+                      ink: Qt.alpha(root.accent, 0.28 * fresh * breathe) })
+                  }
+                  if (n.id === "sia/cortex")
+                    next.push({ x: p.x, y: p.y, radius: r + 3.5,
+                      thickness: 1.2,
+                      ink: Qt.alpha(root.fg, 0.35 + 0.20 * Math.sin(Model.phase())) })
+                }
+              }
+              rings = next
+            }
+            Repeater {
+              model: glowCanvas.rings
+              delegate: Rectangle {
+                required property var modelData
+                x: modelData.x - modelData.radius
+                y: modelData.y - modelData.radius
+                width: modelData.radius * 2
+                height: width
+                radius: modelData.radius
+                color: "transparent"
+                border.width: modelData.thickness
+                border.color: modelData.ink
+                antialiasing: true
               }
             }
           }
@@ -5867,7 +6125,7 @@ Item {
                 + " of " + root.currentGraph.pages_total
                 + " memories · " + root.currentGraph.edges.length + " links · "
                 + (root.snap && root.snap.complete ? "complete" : "partial")
-              : "current graph unavailable"
+              : root.graphGapSettled ? "current graph unavailable" : ""
             color: Qt.alpha(root.fg, 0.45)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -6074,7 +6332,7 @@ Item {
                 width: thoughtHeader.width
                 text: root.thoughtsBoundary
                 wrapMode: Text.WordWrap
-                color: root.urgent
+                color: root.boundaryColor(root.thoughtsBoundary)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -6089,6 +6347,12 @@ Item {
               anchors.topMargin: Style.space(6)
               contentWidth: width
               contentHeight: thoughtCol.implicitHeight
+              // A revalidated stream fades back in; a withdrawn one empties
+              // at once.
+              opacity: root.thoughtsLoadValid ? 1 : 0
+              Behavior on opacity {
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+              }
               pixelAligned: true
               clip: true
               boundsBehavior: Flickable.StopAtBounds
@@ -6130,19 +6394,22 @@ Item {
                         width: parent.width
                         text: thoughtRow.modelData.text
                         wrapMode: Text.WordWrap
+                        lineHeight: 1.2
                         color: thoughtRow.urgencyState === "unrecorded"
                           ? Qt.alpha(root.fg, 0.6)
                           : thoughtRow.urgencyState === "urgent"
                             ? root.urgent : Qt.alpha(root.fg, 0.85)
                         font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
+                        font.pixelSize: Style.font.bodySmall
                       }
                       Text {
                         textFormat: Text.PlainText
                         renderType: Text.NativeRendering
                         text: root.thoughtRowMetadata(
                           thoughtRow.modelData, root.nowMs)
-                        color: Qt.alpha(root.fg, 0.35)
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: Qt.alpha(root.fg, 0.58)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
                       }
@@ -6161,7 +6428,7 @@ Item {
       Rectangle {
         id: firstLightGate
         anchors.fill: parent
-        visible: root.setupRequired
+        visible: root.showSetupGate
         z: 30
         color: Color.background
 
