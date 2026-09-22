@@ -1,5 +1,7 @@
 # SIA — the Omarchy Brain
 
+SIA — the Omarchy Brain: a persistent, associative, self-consolidating memory for your Linux desktop. Local embeddings, typed knowledge graph, deterministic cognitive core, outcome learning with an audited judge, mission-control cockpit, MCP for every agent.
+
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
