@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import unittest
 from unittest import mock
@@ -93,7 +94,13 @@ class IntentReview(unittest.TestCase):
         self.assertTrue(sia.sialib._status_intents_shape([dict(id=IID, text='x' * 300, due='2026-09-08', days_left=-12)]))
         self.assertFalse(sia.sialib._status_intents_shape([dict(id=IID, text='x' * 301, due='2026-09-08', days_left=-12)]))
         script = "const fs=require('fs'),vm=require('vm');let s=fs.readFileSync('Model.js','utf8').replace(/^\\.pragma.*$/mg,'');let c={};vm.createContext(c);vm.runInContext(s,c);for(let n of [300,301])console.log(c.residentIntentShape([{id:'5e1a06cc61',text:'x'.repeat(n),due:'2026-09-08',days_left:-12}]));"
-        run = subprocess.run(['node', '-e', script], cwd=REPO, capture_output=True, text=True, check=True)
+        node = shutil.which("node")
+        if node is None:
+            # Every other JS-contract test in this repo skips when Node is
+            # absent rather than failing: a toolchain that is missing is not a
+            # contract that broke.
+            self.skipTest("Node is unavailable for executable Model.js logic")
+        run = subprocess.run([node, '-e', script], cwd=REPO, capture_output=True, text=True, check=True)
         self.assertEqual(run.stdout.splitlines(), ['true', 'false'])
 
 

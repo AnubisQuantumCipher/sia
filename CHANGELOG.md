@@ -2,6 +2,22 @@
 
 ## 1.8.1 — 2026-09-20 · reviewable commitments and a steadier cockpit
 
+### Grading and configuration
+
+A claim the engine's CLI would read as a flag is no longer reported as a
+completed corpus search. It never ran, so the recall now says so and the take
+stays open, which is what `GradingEvidenceUnavailable` has always specified:
+"only a completed evidence read may be judged UNRESOLVABLE". Previously such a
+take was closed and scored from the organ half of the evidence lane alone, while
+its published page still said it had been judged against a signed evidence
+snapshot. The guard is also narrower: it rejected every claim opening with a
+dash, which silently removed the recall lane from legitimate takes like
+"-1 regressions will land by March" that `sia take -- …` exists to let you
+register. Measured against the shipped engine, those run as ordinary searches.
+
+`mind` is accepted as a top-level configuration section, which the shipped
+`config.example.json` already carried.
+
 ### Cockpit
 
 Commitments now show their full task and calendar due date, explain that overdue
@@ -12,11 +28,12 @@ or failed requests never claim completion. `sia intend --show <full-id>` exposes
 the full open task as JSON without internal storage paths. Review does not hold
 a corpus lock while waiting for the operator and never executes task prose.
 
-Opening no longer stacks a full-screen Qt fade on the desktop animation.
-Snapshot refresh and graph motion wait until arrival, and the graph image is
+Snapshot refresh and graph motion now wait until arrival, and the graph image is
 painted before presentation to avoid exposing uninitialized pixels on remap.
-Native Qt rings replace the full-size transparent glow canvas; inspecting a
-settled node no longer keeps the layout simulation running. Routine status
+The freshness glow and the root halo move off the main graph canvas onto a
+dedicated lighter one driven by native Qt rings, so animating them no longer
+forces a full graph repaint. Inspecting a settled node no longer keeps the
+layout simulation running. Routine status
 refreshes use the existing cockpit instead of flashing the first-install gate;
 snapshot admission and action guards remain unchanged. Status counts guard both
 the status and graph snapshots. Backup schedule details expand on demand, and

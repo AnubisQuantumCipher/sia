@@ -1152,17 +1152,50 @@ def _unverified_jackal_slug(slug):
         ("events/jackal/", "epochs/jackal/"))
 
 
+def _option_shaped(query):
+    """Whether the engine's CLI would read this claim as a flag, not as text.
+
+    Measured against the shipped engine rather than reasoned about.  `--help`
+    and `-h` make `gbrain query` print its usage text instead of results.
+    `-1 regressions will land by March` runs an ordinary search and returns
+    them.  The engine has no end-of-options escape: passing `--` consumes the
+    text and fails with `invalid_params`, so it would break the recall rather
+    than rescue it.  Token shape is the only safe discrimination.
+
+    A leading dash followed by a letter is a flag.  A leading dash followed by
+    a digit or a decimal point is a negative number, which is a legitimate
+    claim that `sia take -- …` deliberately exists to let a caller register.
+    """
+    q = query.lstrip()
+    if not q.startswith("-"):
+        return False
+    rest = q.lstrip("-")
+    return not (rest[:1].isdigit() or rest.startswith("."))
+
+
 def _recall(query, k=6):
-    if not isinstance(query, str) or not query.strip() \
-            or query.lstrip().startswith("-"):
-        # An option-shaped or empty claim cannot be recalled: the engine's
-        # CLI reads it as a flag and prints its usage text instead of a
-        # result list, which admission then refused on every nightly run,
-        # leaving the take due forever. Such takes exist from before
-        # `sia take --help` was refused. A completed recall with no
-        # admitted evidence is the documented path: the judge sees
-        # "(none)" and grades UNRESOLVABLE, which closes the take.
-        return RecallEvidence(True, "", frozenset())
+    if not isinstance(query, str) or not query.strip():
+        return RecallEvidence(
+            False, "", frozenset(),
+            "claim is empty, so no recall was attempted")
+    if _option_shaped(query):
+        # The engine's CLI reads this claim as a flag and prints usage text
+        # instead of a result list, which admission then refuses.  That is an
+        # evidence lane that DID NOT RUN, and `GradingEvidenceUnavailable`
+        # states the consequence: the take stays open, because "only a
+        # completed evidence read may be judged UNRESOLVABLE".
+        #
+        # Reporting `completed=True` here closed the take on a corpus search
+        # that never happened.  The judge still received organ snapshots, could
+        # return TRUE or FALSE from that half of the lane, and the published
+        # page said it was "judged against a signed evidence snapshot" with
+        # nothing to distinguish "recall ran and admitted nothing" from "recall
+        # never ran".  A take left open is a visible junk claim; a take closed
+        # that way is a scored one.
+        return RecallEvidence(
+            False, "", frozenset(),
+            "claim is option-shaped, so the engine CLI would read it as a "
+            "flag and no recall was attempted")
     try:
         # Imported lazily to avoid the sialib -> siatakes module cycle. Every
         # shipped PGLite operation must enter the same cross-process owner

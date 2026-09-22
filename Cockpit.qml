@@ -2274,6 +2274,7 @@ Item {
     if (root.workspaceLockMismatch) root.clearWorkspaceLock()
     opened = true
     workspaceLockFeedback = ""
+    intentReviewFeedback = ""
     root.clearVerification()
     continuityActionMsg = ""
     continuityActionOk = false
@@ -2335,6 +2336,7 @@ Item {
     root.clearContinuityInputs()
     root.clearWorkspaceLock()
     workspaceLockFeedback = ""
+    intentReviewFeedback = ""
   }
 
   function dismiss() {
@@ -6397,7 +6399,7 @@ Item {
                           ? Qt.alpha(root.fg, 0.6)
                           : thoughtRow.urgencyState === "urgent"
                             ? root.urgent : Qt.alpha(root.fg, 0.85)
-                        font.family: "sans-serif"
+                        font.family: root.fontFamily
                         font.pixelSize: Style.font.bodySmall
                       }
                       Text {

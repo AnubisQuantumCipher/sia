@@ -67,20 +67,46 @@ class GradingEvidenceCanonicalization(unittest.TestCase):
         self.assertEqual(sialib._CONFIG_TOP_LEVEL_KEYS - siatakes.CONFIG_TOP_LEVEL_KEYS,
                          set())
 
-    def test_option_shaped_claim_is_never_sent_to_the_engine(self):
-        """A take whose claim is "--help" (registered before `sia take --help`
-        was refused) made the engine print its usage text instead of a
-        result list; admission refused it and the take stayed due forever.
-        The claim is not recalled at all: a completed recall with no
-        admitted evidence lets the judge grade it UNRESOLVABLE."""
+    def test_unrecallable_claim_reports_a_read_that_did_not_complete(self):
+        """A claim the engine CLI would read as a flag is never sent to it, and
+        the recall is reported as NOT completed.
+
+        This assertion is the inverse of the one it replaces, which required
+        `completed is True` for a corpus search that never ran.  That closed the
+        take as UNRESOLVABLE on half an evidence lane, while the published page
+        still said it had been judged against a signed evidence snapshot.
+        `GradingEvidenceUnavailable` states the rule: "only a completed evidence
+        read may be judged UNRESOLVABLE"."""
         with mock.patch.object(sialib, "gbrain",
                                side_effect=AssertionError("engine queried")):
             for claim in ("--help", "  -h", "", "   "):
                 recall = siatakes._recall(claim)
-                self.assertTrue(recall.completed, claim)
+                self.assertFalse(recall.completed, claim)
                 self.assertEqual(recall.text, "")
                 self.assertEqual(recall.citations, frozenset())
-                self.assertEqual(recall.reason, "")
+                self.assertTrue(recall.reason, claim)
+
+    def test_a_negative_number_claim_still_reaches_the_engine(self):
+        """`-1 regressions will land by March` is a legitimate take, which
+        `sia take -- …` exists to let a caller register, and the engine runs it
+        as an ordinary search.  The guard used to reject every claim opening
+        with a dash, silently removing the semantic recall lane from takes the
+        CLI deliberately supports."""
+        self.assertFalse(siatakes._option_shaped("-1 regressions will land"))
+        self.assertFalse(siatakes._option_shaped("-.5 drop in latency"))
+        self.assertTrue(siatakes._option_shaped("--help"))
+        self.assertTrue(siatakes._option_shaped("  -h"))
+
+        seen = []
+
+        def _fake_gbrain(args, **kw):
+            seen.append(args)
+            raise RuntimeError("stop after dispatch")
+
+        with mock.patch.object(sialib, "gbrain", _fake_gbrain):
+            siatakes._recall("-1 regressions will land by March")
+        self.assertTrue(seen, "the claim must reach the engine")
+        self.assertIn("-1 regressions will land by March", seen[0])
 
     def test_model_and_jackal_traversal_refuse_before_judging(self):
         aliases = (
