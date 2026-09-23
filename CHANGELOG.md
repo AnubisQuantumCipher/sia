@@ -21,6 +21,22 @@ retract one refuses with a named reason instead of silently lowering what a
 publication promised. Every other redaction writer already derived its total
 from the marker's projection; this was the one that did not.
 
+### A stuck daemon now shows as failed
+
+The outage was also invisible. The running daemon stayed `active` for seven
+hours while 427 pulses failed on the same saved marker; after a reboot it
+restarted every ten seconds, which never reaches the unit's start limit, so it
+never entered `failed`. Anything watching `systemctl --user --failed` — SEKHMET's
+services probe on the reference machine — reported nothing for thirteen hours.
+
+When a pulse or a startup fails and the saved pending pulse marker itself refuses
+validation, nothing a retry does can clear it: the marker is checked before any
+work that could repair it. The daemon now stops with the exit status the unit
+already reserves for durable operator-action barriers (`RestartPreventExitStatus=78`),
+after logging and publishing the failure exactly as before. The unit lands in
+`failed`, where health monitoring sees it. Any other failure keeps the ordinary
+retry behaviour.
+
 ### Diagnosis
 
 The recovery refusal now says which count disagreed, for example
