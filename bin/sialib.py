@@ -636,7 +636,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.8.2"
+VERSION = "1.8.3"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -7096,6 +7096,28 @@ def _pulse_redactions_at_least_memo(memo, value):
     return candidate
 
 
+def _redaction_binding_reason(memo, value):
+    """Name the organ whose marker target falls behind the durable total.
+
+    `_recoverable_pulse_redactions` is total by design and returns None for
+    every failure; without this, the only thing an operator saw was
+    "binding is invalid" with no hint of which count disagreed.
+    """
+    try:
+        current = _canonical_pulse_redactions(memo.get("redactions", {}))
+    except RuntimeError:
+        return "durable redaction totals are malformed"
+    try:
+        candidate = _canonical_pulse_redactions(value)
+    except RuntimeError:
+        return "marker redaction target is malformed"
+    behind = sorted(
+        f"{organ}: marker {candidate.get(organ, 'absent')} < durable {count}"
+        for organ, count in current.items()
+        if candidate.get(organ, -1) < count)
+    return "; ".join(behind) if behind else "target does not validate"
+
+
 def _recoverable_pulse_redactions(memo, value):
     """Total redaction-target validator for retained status recovery."""
     try:
@@ -7177,7 +7199,8 @@ def _pending_pulse_marker(memo):
             and _recoverable_pulse_redactions(
                 memo, marker["redactions"]) is None:
         raise RuntimeError(
-            "pulse publication redactions binding is invalid")
+            "pulse publication redactions binding is invalid: "
+            + _redaction_binding_reason(memo, marker["redactions"]))
     return marker
 
 
@@ -7922,7 +7945,8 @@ def _pending_dream_marker(memo):
             and _recoverable_pulse_redactions(
                 memo, marker["redactions"]) is None:
         raise RuntimeError(
-            "dream publication redactions binding is invalid")
+            "dream publication redactions binding is invalid: "
+            + _redaction_binding_reason(memo, marker["redactions"]))
     if "ledger" in marker:
         ledger = marker["ledger"]
         if not isinstance(ledger, dict) or set(ledger) != {

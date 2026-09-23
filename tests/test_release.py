@@ -3882,6 +3882,7 @@ retain_unowned_cli_before_fence
             "_account_agent_note_redactions",
             "_forget_agent_note_redaction_receipt",
             "_read_existing_agent_note",
+            "_rebind_pending_redaction_targets",
             "acknowledge_agent_notes",
             "materialize_agent_notes",
         ),

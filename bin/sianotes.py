@@ -108,9 +108,41 @@ def _account_agent_note_redactions(memo, requests, queue_errors):
         updated["agent_note_redaction_receipts"] = receipts
     else:
         updated.pop("agent_note_redaction_receipts", None)
+    # A pulse or dream publication already in flight carries a redaction
+    # TARGET, and crash recovery refuses any marker whose target is below the
+    # durable totals.  This function raises those totals mid-pulse (agent notes
+    # are materialized after the pulse marker is written), so it must advance
+    # every pending target in the SAME memo write.  Before this, the first
+    # counted agent-note redaction left the pulse marker at its old target while
+    # the durable total moved past it, and every later start refused the marker:
+    # the resident daemon could never start again.
+    _rebind_pending_redaction_targets(updated)
     _write_memo(updated)
     memo.clear()
     memo.update(updated)
+
+
+def _rebind_pending_redaction_targets(memo):
+    """Advance pending publication redaction targets to cover durable totals.
+
+    The target a pending marker binds is the cumulative total it will publish:
+    the durable totals plus this process's not-yet-folded increments -- exactly
+    `_projected_pulse_redactions`.  A target only ever moves forward; if the
+    projection would retract any organ's target the state is inconsistent and
+    this refuses rather than silently lowering what a publication promised.
+    """
+    target = _projected_pulse_redactions(memo)
+    for key in ("pulse_publication", "dream_publication"):
+        marker = memo.get(key)
+        if not isinstance(marker, dict) or "redactions" not in marker:
+            continue
+        bound = _canonical_pulse_redactions(marker["redactions"])
+        if any(target.get(organ, 0) < count for organ, count in bound.items()):
+            raise RuntimeError(
+                f"{key.split('_')[0]} publication redactions would retract: "
+                f"bound {bound} exceeds projected {target}")
+        if bound != target:
+            memo[key] = dict(marker, redactions=copy.deepcopy(target))
 
 
 def materialize_agent_notes(store, memo=None):
