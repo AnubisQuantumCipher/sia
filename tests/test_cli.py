@@ -2409,7 +2409,15 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(
                     brainstem.sialib,
                     "durable_ledger_append") as ledger:
-            self.assertEqual(brainstem._run_owned(), 1)
+            # 1.8.3: a saved marker that refuses validation is a durable
+            # barrier, so this now stops with INTENTIONAL_STOP_EXIT instead of
+            # returning 1 (restart). Retrying cannot repair it -- the marker is
+            # checked before any work that could -- and a ten-second restart
+            # loop never reaches the start limit, so the unit never showed as
+            # failed. Everything else this test pins is unchanged: it still
+            # refuses before READY and publishes the failure exactly once.
+            self.assertEqual(
+                brainstem._run_owned(), brainstem.INTENTIONAL_STOP_EXIT)
         ensure_dirs.assert_not_called()
         ready.assert_not_called()
         recover.assert_not_called()
