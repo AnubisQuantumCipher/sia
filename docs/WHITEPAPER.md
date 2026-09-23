@@ -3,7 +3,7 @@
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
-**Khephri Labs · open source (MIT) · 2026-09-23 · v1.8.2**
+**Khephri Labs · open source (MIT) · 2026-09-23 · v1.8.3**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 

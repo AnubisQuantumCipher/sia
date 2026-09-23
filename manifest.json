@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "khephri.sia",
   "name": "SIA",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "author": "Khephri Labs",
   "license": "MIT",
   "description": "SIA — the Omarchy Brain: a persistent, associative, self-consolidating memory for your Linux desktop. Local embeddings, typed knowledge graph, deterministic cognitive core, outcome learning with an audited judge, mission-control cockpit, MCP for every agent.",

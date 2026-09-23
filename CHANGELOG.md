@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.8.3 — 2026-09-23 · a redacted note can no longer stop the daemon
+
+### Resident daemon
+
+A pulse writes its publication marker, including the cumulative redaction total
+it will publish, before its first corpus byte, and materializes the agent-note
+queue after that. When a queued note carried a counted redaction, the accounting
+raised the durable total and wrote the memo but left the pending marker at its
+old target. Crash recovery requires every pending target to cover the durable
+totals, so from then on the marker failed validation on every start and the
+resident daemon could never start again. On the reference machine one note did
+exactly that: the brainstem refused 962 starts over 13 hours, and memory reads
+were unavailable for all of it.
+
+The accounting now advances every pending pulse and dream target to the
+projected total — durable totals plus this process's not-yet-folded increments —
+in the same memo write. A target only moves forward: a projection that would
+retract one refuses with a named reason instead of silently lowering what a
+publication promised. Every other redaction writer already derived its total
+from the marker's projection; this was the one that did not.
+
+### A stuck daemon now shows as failed
+
+The outage was also invisible. The running daemon stayed `active` for seven
+hours while 427 pulses failed on the same saved marker; after a reboot it
+restarted every ten seconds, which never reaches the unit's start limit, so it
+never entered `failed`. Anything watching `systemctl --user --failed` — SEKHMET's
+services probe on the reference machine — reported nothing for thirteen hours.
+
+When a pulse or a startup fails and the saved pending pulse marker itself refuses
+validation, nothing a retry does can clear it: the marker is checked before any
+work that could repair it. The daemon now stops with the exit status the unit
+already reserves for durable operator-action barriers (`RestartPreventExitStatus=78`),
+after logging and publishing the failure exactly as before. The unit lands in
+`failed`, where health monitoring sees it. Any other failure keeps the ordinary
+retry behaviour.
+
+### Diagnosis
+
+The recovery refusal now says which count disagreed, for example
+`pulse publication redactions binding is invalid: agent-note: marker absent <
+durable 1`. The validator it wraps is total by design and returned nothing on
+failure, so the only thing an operator could see before was "binding is invalid".
+
+### Recovering a machine that is already stuck
+
+Installing this release prevents the defect; it does not by itself free a
+machine the defect has already stopped. The daemon validates its pending marker
+before any accounting runs, so the fixed code never gets to advance it, and the
+installer's final `sia ready` refuses for the same reason. The symptom is
+`brainstem startup REFUSED: pulse publication redactions binding is invalid` in
+`journalctl --user -u sia-brainstem`, repeating every few seconds.
+
+Re-bind the stranded target once, from this release's checkout, with the daemon
+stopped, then install:
+
+    systemctl --user stop sia-brainstem
+    cp -a ~/.local/state/sia ~/.local/state/sia.before-rebind
+    cd <checkout>/bin && python3 - <<'EOF'
+    import sialib
+    with sialib.corpus_owner():
+        memo = sialib.load_memo()
+        sialib._rebind_pending_redaction_targets(memo)
+        sialib._pending_pulse_marker(memo)   # refuses if anything else is wrong
+        sialib._write_memo(memo)
+    EOF
+    cd .. && ./install.sh
+
+The re-bind changes only the pending marker's redaction target, to the value
+the fixed accounting would have written; `sia ready` then confirms the memory.
+
 ## 1.8.2 — 2026-09-23 · the agent-note lane moves out
 
 ### Runtime structure
