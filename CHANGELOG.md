@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.8.2 — 2026-09-23 · the agent-note lane moves out
+
+### Runtime structure
+
+The multi-writer agent-note lane — note materialization, exactly-once
+redaction accounting and post-commit acknowledgement — now lives in
+`bin/sianotes.py`. It moved verbatim, behind the same bind/invoke facade as
+`siasenses` and `siagraph`: `sialib` binds its namespace into the child and keeps
+every original name as a delegate, so each caller, and each test that patches
+one of those names, still reaches the same code. Nothing about what the lane does
+has changed.
+
+The reason is the marketplace's per-file scan limit. `sialib.py` had 1,269 bytes
+left before the release guard's 95% headroom line, so the next fix to the library
+would have tripped it; the guard names extraction as the repair, not a raised
+threshold. The library drops from 496,804 to 488,067 bytes.
+
+`sianotes.py` is its own `sia-runtime-v17` rung rather than a new member of v16,
+so an installed v16 tree still hashes under v16 and the update stages the new
+member. The release contract pins the child's exact export set, as it does for
+every facade child.
+
+This release carries nothing else, per the extraction rule in
+`docs/ARCHITECTURE.md`.
+
 ## 1.8.1 — 2026-09-20 · reviewable commitments and a steadier cockpit
 
 ### Grading and configuration

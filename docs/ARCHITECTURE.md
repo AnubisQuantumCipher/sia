@@ -16,6 +16,7 @@ or are implemented in the current tree, and are the pattern to follow:
 |---|---|
 | `bin/siasenses.py` | sensing subsystem (extracted in v1.3.7) |
 | `bin/siagraph.py` | graph/domain projection (extracted in v1.6.0) |
+| `bin/sianotes.py` | multi-writer agent-note lane: materialization, exactly-once redaction accounting, acknowledgement (extracted in v1.8.2) |
 | `bin/siathought.py` | event-day admission/indexing, durable generated-entry/epoch pages, weekly compaction and recovery/legacy replay (implemented, unreleased; filename is compatibility) |
 | `bin/siaeventplan.py` | bounded frozen-page planning and retryable publication with an explicit core owner (implemented, unreleased) |
 | `bin/siaeventintake.py` | pure collector-return/page-version projection for the live loop (implemented, unreleased) |
@@ -910,6 +911,18 @@ Source/display admission, delivery composition and configured activation
 remain separate gates. No retained observation is fresh authority after its
 descriptor lifetime ends, and this context does not validate later exits of
 an enclosing caller-owned scope.
+
+**v1.8.2 — DONE: the agent-note lane → `bin/sianotes.py`.** The headroom
+guard had 1,269 bytes left on `sialib.py`, so the next fix to the library would
+trip it by design. The agent-note lane was chosen by the same measure that
+picked the exports lane: five contiguous functions that call one another, one
+parent caller (the pulse transaction), no class, no import-time execution, and
+every outside user (`siacheckpointcycle`) reaching it through the bound
+namespace. It moved verbatim behind the `siasenses`/`siagraph` bind/invoke
+facade as its own `sia-runtime-v17` rung, with nothing else in the release;
+`sialib.py` dropped from 496,804 to 488,067 bytes. It was also the lane a live
+defect sat in (a counted note redaction stranded the pending pulse marker), so
+extracting it first lets that repair ship on its own as the next release.
 
 **Unscheduled — the cursors lane** remains last, because it is the substrate the
 already-extracted `siasenses` child calls ~95× through the bound namespace;

@@ -2875,7 +2875,7 @@ retain_unowned_cli_before_fence
             _write(target, _read("bin/sia"), 0o644)
             for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py", "siacorpuslease.py", "siaprocess.py",
-                         "siamind.py", "siatakes.py", "siaqueue.py"):
+                         "sianotes.py", "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
             result = subprocess.run(
@@ -3848,7 +3848,7 @@ retain_unowned_cli_before_fence
             runtime = os.path.join(home, ".local/share/sia/bin")
             for name in ("sialib.py", "siagraph.py", "siathought.py", "siasenses.py",
                          "siarestoreadmit.py", "siacorpuslease.py", "siaprocess.py",
-                         "siamind.py", "siatakes.py", "siaqueue.py"):
+                         "sianotes.py", "siamind.py", "siatakes.py", "siaqueue.py"):
                 _write(os.path.join(runtime, name), _read("bin/" + name),
                        0o644)
             environment = os.environ.copy()
@@ -3878,6 +3878,13 @@ retain_unowned_cli_before_fence
     # not a smaller module.  Pin the exact set; the next extraction adds its
     # module here and inherits every façade guard below.
     FACADE_CHILD_EXPORTS = {
+        "sianotes": (
+            "_account_agent_note_redactions",
+            "_forget_agent_note_redaction_receipt",
+            "_read_existing_agent_note",
+            "acknowledge_agent_notes",
+            "materialize_agent_notes",
+        ),
         "sialivepublication": (
             "_live_authority_memo",
             "_live_bytes",

@@ -3,7 +3,7 @@
 “Brain” is a product metaphor for auditable local machine memory; it is not a
 biological brain and does not establish cognition or neuroscience.
 
-**Describes SIA v1.8.1 · 2026-09-20**
+**Describes SIA v1.8.2 · 2026-09-23**
 
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*
@@ -2105,7 +2105,14 @@ Runtime modules are assembled as a complete sibling tree and
 published through a durable generation-bound no-clobber journal. Only the
 exact observed prior tree may be archived, and the staged tree may claim only
 an absent canonical name; a concurrent replacement is preserved and refuses
-the install. The current `sia-runtime-v16` member set adds
+the install. The current `sia-runtime-v17` member set adds
+`sianotes.py` to v16: the multi-writer agent-note lane — note
+materialization, exactly-once redaction accounting and post-commit
+acknowledgement — moved out of `sialib.py` through the same bind/invoke
+facade as `siasenses` and `siagraph`, so the marketplace per-file scan keeps
+its headroom; the library keeps every original name as a delegate. It is its
+own rung because a v16 tree that lacks the member must still hash under v16.
+The v16 member set added
 `siaprocess.py` to v15: the bounded child-process runner, the
 PID-namespace probe, refusal-chain naming, the retained pulse-failure
 record and the retained-status version rule, moved out of `sialib.py` so
