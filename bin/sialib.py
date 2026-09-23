@@ -636,7 +636,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -6610,214 +6610,31 @@ def memory_readiness():
     return True, ""
 
 
-def _read_existing_agent_note(slug):
-    """Read one deterministic note page through a bounded stable handle."""
-    slug = _canonical_corpus_slug(slug)
-    path = corpus_path(slug)
-    fd = _open_source_nofollow(path, os.O_RDONLY)
-    with siaqueue.regular_file_stream(fd, label="agent note") as stream:
-        before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) \
-                or before.st_uid != os.geteuid() \
-                or before.st_size > MAX_THOUGHT_INBOX_BYTES:
-            raise ValueError(
-                "deterministic note page is not a bounded owner file")
-        raw = stream.read(MAX_THOUGHT_INBOX_BYTES + 1)
-        after = os.fstat(stream.fileno())
-        try:
-            target = _source_path_identity(path, os.O_RDONLY)
-        except FileNotFoundError as exc:
-            raise RuntimeError(
-                "deterministic note page changed while reading") from exc
-    observed = (before.st_dev, before.st_ino, before.st_size,
-                before.st_mtime_ns, before.st_ctime_ns)
-    finished = (after.st_dev, after.st_ino, after.st_size,
-                after.st_mtime_ns, after.st_ctime_ns)
-    current = (target.st_dev, target.st_ino, target.st_size,
-               target.st_mtime_ns, target.st_ctime_ns)
-    if observed != finished or finished != current \
-            or len(raw) > MAX_THOUGHT_INBOX_BYTES:
-        raise RuntimeError("deterministic note page changed while reading")
-    try:
-        return raw.decode("utf-8", errors="strict")
-    except UnicodeError as exc:
-        raise ValueError("deterministic note page is not valid UTF-8") \
-            from exc
+# The multi-writer agent-note lane (materialize, redaction accounting,
+# acknowledgement) lives in the bounded child module `sianotes`; see its
+# docstring and docs/ARCHITECTURE.md.  The same bind/invoke facade siasenses
+# and siagraph use keeps one runtime state under dynamic test aliases and
+# mirrors explicit test patches of these helpers into intra-module calls.
+import sianotes as _sianotes
 
 
-def _account_agent_note_redactions(memo, requests, queue_errors):
-    """Move queue-bound secret omissions into cumulative memo state once."""
-    if memo is None:
-        if any(request.get("redactions") for _path, request, _identity
-               in requests):
-            raise RuntimeError(
-                "agent-note redaction accounting needs the durable memo")
-        return
-    receipts = _agent_note_redaction_receipts(
-        memo.get("agent_note_redaction_receipts"))
-    active = {request["request_id"] for _path, request, _identity in requests}
-    changed = False
-    if not queue_errors:
-        retained = {request_id: count for request_id, count in receipts.items()
-                    if request_id in active}
-        if retained != receipts:
-            receipts = retained
-            changed = True
-    totals = _canonical_pulse_redactions(memo.get("redactions", {}))
-    for _path, request, _identity in requests:
-        bound = request.get("redactions")
-        count = bound.get("agent-note") if isinstance(bound, dict) else None
-        request_id = request["request_id"]
-        payload = request.get("payload", {})
-        if count is not None and any(
-                _redaction_projection(payload.get(field, ""))[1]
-                for field in ("author", "text")):
-            raise RuntimeError(
-                "counted agent-note request still contains secret material")
-        if count is None:
-            if request_id in receipts:
-                raise RuntimeError(
-                    "agent-note redaction receipt conflicts with its request")
-            continue
-        if request_id in receipts:
-            if receipts[request_id] != count:
-                raise RuntimeError(
-                    "agent-note redaction receipt conflicts with its request")
-            continue
-        current = totals.get("agent-note", 0)
-        if current > MAX_JSON_SAFE_INTEGER - count:
-            raise RuntimeError("pulse publication redactions are invalid")
-        totals["agent-note"] = current + count
-        receipts[request_id] = count
-        changed = True
-    if not changed:
-        return
-    updated = dict(memo, redactions=totals)
-    if receipts:
-        updated["agent_note_redaction_receipts"] = receipts
-    else:
-        updated.pop("agent_note_redaction_receipts", None)
-    _write_memo(updated)
-    memo.clear()
-    memo.update(updated)
+def _sialib_notes_delegate(name):
+    """Return a facade that binds this sialib instance before every call."""
+    target = _sianotes._ORIGINAL_CHILD_FUNCTIONS[name]
+
+    @functools.wraps(target)
+    def delegated(*args, **kwargs):
+        return _sianotes.invoke(globals(), name, *args, **kwargs)
+
+    delegated._sia_senses_delegate = True
+    return delegated
 
 
-def materialize_agent_notes(store, memo=None):
-    """Materialize valid agent-note requests without acknowledging them.
-
-    The caller acknowledges returned paths only after corpus commit and gbrain
-    sync succeed. Existing deterministic pages make retry idempotent if a
-    daemon dies after writing but before acknowledgment.
-    """
-    requests, queue_errors = siaqueue.pending(STATE)
-    _account_agent_note_redactions(memo, requests, queue_errors)
-    processed, pages, thoughts, errors = [], [], [], list(queue_errors)
-    for path, request, identity in requests:
-        try:
-            payload = request["payload"]
-            author = clip(redact(payload["author"], "agent-note"), 40)
-            body = redact(payload["text"], "agent-note").strip()[:2000]
-            if not body:
-                raise ValueError("note is empty after redaction")
-            # Notes are intentionally model-origin prose. Keep their body
-            # visually readable while making Markdown/wiki-link syntax inert,
-            # so a resident agent cannot mint graph edges or page structure.
-            inert_body = html.escape(body, quote=False) \
-                .replace("[", "&#91;").replace("]", "&#93;")
-            queued = datetime.datetime.strptime(
-                request["queued_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
-                    tzinfo=datetime.timezone.utc)
-            slug = (f"notes/{queued.strftime('%Y-%m-%d-%H%M%S')}-"
-                    f"{sanitize_slugpart(author)}-{request['request_id']}")
-            request_digest = identity.get("sha256", "")
-            if not re.fullmatch(r"[0-9a-f]{64}", request_digest):
-                raise ValueError("agent request has no observed content digest")
-            frontmatter_lines = [
-                "type: note", fm_title(clip(body, 70)),
-                f"tags: [note, agent, {sanitize_slugpart(author)}]",
-                f"date: {queued.strftime('%Y-%m-%d')}",
-                "origin: model",
-                f"request_id: {request['request_id']}",
-                f"request_sha256: {request_digest}",
-            ]
-            page_body = (
-                f"# note · from {author} · "
-                f"{queued.strftime('%Y-%m-%d %H:%MZ')}\n\n"
-                f"**Agent-authored memory — model-origin, not evidence. "
-                f"A message from one session to the next.**\n\n"
-                f"<pre class=\"sia-agent-note\">{inert_body}</pre>\n\n"
-                f"[[organs/agents]] [[sia/cortex]]\n")
-            expected_page = ("---\n" + "\n".join(frontmatter_lines)
-                             + "\n---\n" + page_body)
-            if page_exists(slug):
-                existing = _read_existing_agent_note(slug)
-                legacy_lines = [line for line in frontmatter_lines
-                                if line != "origin: model"]
-                legacy_page = ("---\n" + "\n".join(legacy_lines)
-                               + "\n---\n" + page_body)
-                if existing == legacy_page:
-                    _before_corpus_mutation()
-                    atomic_write(corpus_path(slug), expected_page)
-                elif existing != expected_page:
-                    raise ValueError(
-                        "deterministic note page differs from exact request")
-            else:
-                ensure_durable_directory(
-                    os.path.dirname(corpus_path(slug)))
-                _before_corpus_mutation()
-                atomic_write(corpus_path(slug), expected_page)
-            already_materialized = any(
-                item.get("queue_id") == request["request_id"]
-                for item in store.get("thoughts", []))
-            thought = add_thought(
-                store, "note",
-                f"{author} left a note for future sessions: "
-                f"{clip(body, 100)} (⟦{slug}⟧)",
-                [slug, "organs/agents"], queue_id=request["request_id"],
-                thought_ts=request["queued_at"], origin="model")
-            if not already_materialized:
-                thoughts.append(thought)
-            processed.append((path, identity))
-            pages.append(slug)
-        except Exception as exc:
-            errors.append({"file": os.path.basename(path),
-                           "error": str(exc)})
-    return processed, pages, thoughts, errors
-
-
-def acknowledge_agent_notes(paths, commit_status, synced, after_ack=None):
-    """Acknowledge only requests whose corpus transaction reached gbrain.
-
-    Return the successful count and per-request errors so a partial unlink
-    failure remains visible and retryable rather than being reported as an
-    all-or-nothing result.
-    """
-    if commit_status == "error" or not synced:
-        return 0, []
-    acknowledged, errors = 0, []
-    for path, identity in paths:
-        try:
-            siaqueue.acknowledge(path, identity)
-            if after_ack is not None:
-                after_ack(identity)
-            acknowledged += 1
-        except Exception as exc:
-            errors.append({"file": os.path.basename(path),
-                           "error": str(exc)})
-    return acknowledged, errors
-
-
-def _forget_agent_note_redaction_receipt(memo, identity):
-    """Retire an accounted request only after its durable queue unlink."""
-    request_id = identity.get("request_id") \
-        if isinstance(identity, dict) else None
-    receipts = memo.get("agent_note_redaction_receipts") \
-        if isinstance(memo, dict) else None
-    if not isinstance(receipts, dict) or request_id not in receipts:
-        return
-    receipts.pop(request_id)
-    if not receipts:
-        memo.pop("agent_note_redaction_receipts", None)
+_sianotes.bind(globals())
+for _sialib_notes_name in _sianotes._EXPORTED_FUNCTIONS:
+    globals()[_sialib_notes_name] = _sialib_notes_delegate(
+        _sialib_notes_name)
+del _sialib_notes_name
 
 def coincidence_findings(mind, findings, now=None):
     """Cross-source coincidence: two or more DISTINCT sources exceeding
