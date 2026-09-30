@@ -41,6 +41,9 @@ def main():
         run('truncate', '-s', '256M', str(image))
         run('mkfs.btrfs', '-f', str(image))
         mounted = False
+        reservation = root / 'anonymous-device-reservation'
+        reservation.mkdir()
+        reserved = False
 
         def mount_image(*options):
             nonlocal mounted
@@ -81,11 +84,18 @@ def main():
                 assert sia._btrfs_readmit(enroll=True)['status'] == 'enrolled'
                 binding = sia._btrfs_directory_identity(str(corpus))
                 unmount_image()
+                # Occupy a freed anonymous device number so this tests an
+                # actual renumbering, not only an unchanged remount. No data
+                # is written to this disposable tmpfs.
+                run('sudo', '-n', 'mount', '-t', 'tmpfs', '-o', 'size=1M',
+                    'sia-device-reservation', str(reservation))
+                reserved = True
                 mount_image('subvol=primary')
                 current = sia._corpus_root_identity()
+                assert current.split(':')[0] != original.split(':')[0], 'kernel did not renumber the subvolume'
                 assert sia._btrfs_directory_identity(str(corpus)) == binding
                 observed = sia._btrfs_readmit(enroll=False)
-                assert observed['status'] == ('bound' if current == original else 'readmitted')
+                assert observed['status'] == 'readmitted'
                 assert sia._corpus_receipt_readmit(False)['status'] == 'bound'
                 print('real btrfs remount:', original, '->', current, observed['status'])
                 unmount_image()
@@ -101,8 +111,12 @@ def main():
                 assert receipt.read_bytes() == previous
                 print('replacement btrfs subvolume refused; receipt preserved')
         finally:
-            if mounted:
-                unmount_image()
+            try:
+                if mounted:
+                    unmount_image()
+            finally:
+                if reserved:
+                    run('sudo', '-n', 'umount', str(reservation))
 
 
 if __name__ == '__main__':
