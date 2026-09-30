@@ -1155,7 +1155,7 @@ def cmd_readmit(args):
             print("SIA readmit refused: runtime-owned — stop the resident "
                   "daemon first:")
             print("  systemctl --user stop sia-brainstem && sia readmit"
-                  + (" --yes" if apply else "")
+                  + (" " + " ".join(args) if args else "")
                   + " && systemctl --user start sia-brainstem")
         return 1
     except epochs.ControllerDeliveryEpochRefusal as exc:

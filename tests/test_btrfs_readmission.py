@@ -200,6 +200,14 @@ class BtrfsReadmission(unittest.TestCase):
             sia._btrfs_readmit(enroll=False)
         self.assertEqual(self.read_receipt(), before)
 
+    def test_busy_runtime_retry_preserves_enrollment_intent(self):
+        with mock.patch.object(sia.sialib, 'brainstem_owner',
+                               side_effect=sia.sialib.OwnerBusy('owned')), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(sia.cmd_readmit(['--enroll-btrfs', '--yes']), 1)
+        self.assertIn('sia readmit --enroll-btrfs --yes &&', out.getvalue())
+        self.assertFalse(os.path.exists(sia._btrfs_enrollment_path()))
+
     def test_service_orders_opt_in_check_before_daemon(self):
         from pathlib import Path
         text = (Path(__file__).resolve().parents[1] / 'systemd/sia-brainstem.service').read_text()
