@@ -1356,7 +1356,7 @@ class _ReadmitScope:
         self.owner = owner
 
 
-def readmit_epoch(owner, *, memo, readmitted_at, apply):
+def readmit_epoch(owner, *, memo, readmitted_at, apply, authorize=None):
     """Observe, and with ``apply`` publish, an operator storage readmission.
 
     The caller must already hold the brainstem and corpus owner leases; a
@@ -1463,6 +1463,9 @@ def readmit_epoch(owner, *, memo, readmitted_at, apply):
             if not apply:
                 result["status"] = "drifted"
                 return result
+            if authorize is not None:
+                result["status"] = "drifted"
+                authorize(result)
             receipt = _readmission(owner, adoption, observed, effective, readmitted_at)
             _validate_readmission(scope, adoption, receipt)
             raw = _raw(owner, receipt, ceiling=ceiling) + b"\n"

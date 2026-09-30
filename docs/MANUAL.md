@@ -860,7 +860,7 @@ sia readmit --yes             # re-bind by explicit consent (daemon must be off)
 systemctl --user start sia-brainstem
 ```
 
-Two receipts bind storage by stable identity, not by path: the installer's
+Two receipts bind storage by directory identity, not by path: the installer's
 corpus receipt (`~/.local/state/sia/managed-install/corpus`, `root=` is
 `dev:ino:mode:uid` of the corpus directory) and the delivery epoch's adoption
 (`records_identity` of its records directory). A btrfs subvolume change, an
@@ -883,6 +883,53 @@ re-bindings under `SIA_READMIT_MOVED_STORAGE=1 ./install.sh` (the corpus
 receipt through its own CAS journal, the epoch through `sia-cli readmit
 --yes` before the first-light pulse) and otherwise refuses with the remedy
 named. Nothing re-binds silently.
+
+On **btrfs**, `st_dev` is an anonymous device number and may change after
+reboot even when the directory has not moved. For that case, enroll the
+supported device-only readmission path once, with the daemon stopped:
+
+```sh
+systemctl --user stop sia-brainstem
+sia readmit --yes
+sia readmit --enroll-btrfs --yes
+systemctl --user start sia-brainstem
+sia ready
+```
+
+Upgrade to a version containing this feature first. If the existing receipt
+already drifted, use `SIA_READMIT_MOVED_STORAGE=1 ./install.sh` for that
+operator-approved upgrade, then enroll. Remove any locally added
+`ExecStartPre=…sia readmit --yes` workaround and reload the user manager;
+foreign drop-ins also conflict with managed-unit attestation.
+
+Enrollment records the filesystem UUID, subvolume ID and UUID, canonical
+path, inode, mode, uid and gid of the corpus and any adopted delivery records
+directory in `~/.local/state/sia/managed-install/btrfs-readmission.json`.
+The managed service runs `sia readmit --btrfs-boot` before the resident daemon
+acquires its lease. Without enrollment this is a no-op. With enrollment it
+can refresh only the device fields, after checking that durable binding and
+the existing receipt/adoption. A changed filesystem, snapshot, subvolume,
+directory or adoption requires explicit operator inspection and re-enrollment.
+A newly adopted delivery epoch also requires re-enrollment. Unsupported or
+failed btrfs ioctls refuse; there is no stat-only fallback.
+
+Each attempted refresh writes a sealed, private
+`managed-install/btrfs-readmission-<id>.json` intent before changing receipts,
+and marks it completed afterward. An interrupted attempt retains its intent;
+a retry can finish the remaining refresh. Delivery readmission retains its
+existing sealed `readmission.json` and unchanged adoption pin. The seals are
+checksums, not authentication against the same user. These identities cannot
+distinguish a block-for-block clone preserving filesystem/subvolume UUIDs,
+and readmission does not validate journal content or prove backup completion.
+
+A refused startup check is logged without preventing memory startup; the
+unchanged receipt continues to refuse continuity. `sia ready` now also exits
+nonzero for a mismatched or unreadable installed corpus receipt even if memory
+itself is reconciled. A successful `sia ready` is still not proof of a recent
+off-site copy: inspect `sia continuity status`. To revoke enrollment, stop the
+daemon and remove only `~/.local/state/sia/managed-install/btrfs-readmission.json`;
+retained event files remain available for inspection. Enrollment is local
+machine policy and is not transported in continuity capsules.
 
 The last refused pulse is retained in `~/.local/state/sia/pulse-failure.json`
 (redacted, 240 characters) and printed by `sia status` and `sia ready` until
