@@ -63,6 +63,32 @@ DREAM_RETRY_SEC = max(
 # a deliberate pre-READY stop into a restart loop.
 INTENTIONAL_STOP_EXIT = getattr(os, "EX_CONFIG", 78)
 
+
+def _durable_marker_barrier():
+    """Whether the saved state itself refuses every future pulse and start.
+
+    A pending pulse publication marker that fails validation stays invalid
+    across retries: it is validated before any work that could repair it. On
+    the reference machine one did (a counted agent-note redaction outran it).
+    The unit stayed `active` for seven hours while 427 pulses failed, then
+    restarted every ten seconds after a reboot -- never fast enough to reach
+    the start limit, so it never entered `failed` and the system health probe
+    reported nothing for thirteen hours. Stopping with INTENTIONAL_STOP_EXIT
+    puts the unit in `failed`, where `systemctl --user --failed` shows it.
+
+    The predicate is the saved state, not an error string: an unreadable memo
+    is some other problem, and a marker that validates is not this barrier.
+    """
+    try:
+        memo = sialib.load_memo()
+    except Exception:
+        return False
+    try:
+        sialib._pending_pulse_marker(memo)
+    except RuntimeError:
+        return True
+    return False
+
 _stop = False
 
 
@@ -542,6 +568,11 @@ def _run_owned(*, plugin_guard=None):
         detail = _safe_failure_detail(exc)
         sialib.log(f"brainstem startup REFUSED: {detail}")
         _publish_failure(0, detail)
+        if _durable_marker_barrier():
+            sialib.log("brainstem stopped: the saved pending pulse marker "
+                       "refuses validation, so retrying cannot clear it; "
+                       "operator action is needed")
+            return INTENTIONAL_STOP_EXIT
         return 1
     sialib.ensure_dirs()
     sialib.log(f"sia-brainstem {sialib.VERSION} starting "
@@ -612,6 +643,11 @@ def _run_owned(*, plugin_guard=None):
                 sialib.log("pulse failure record REFUSED: "
                            + _safe_failure_detail(retain_exc))
             _publish_failure(seq, detail)
+            if _durable_marker_barrier():
+                sialib.log(f"pulse {seq} stopped: the saved pending pulse "
+                           "marker refuses validation, so retrying cannot "
+                           "clear it; operator action is needed")
+                return INTENTIONAL_STOP_EXIT
         last_dream_day = _durable_dream_day(last_dream_day)
         now = datetime.datetime.now()
         if _dream_due(now, last_dream_day, next_dream_attempt):

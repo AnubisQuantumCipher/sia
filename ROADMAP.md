@@ -116,7 +116,9 @@ freeze ends on evidence, not on mood.
     `main`, merge the release through required checks, then submit its final
     default-branch SHA for fresh review. This closes the old attempt; it does not
     transfer its validation or approval to the replacement. Freeze `main` again
-    before submitting the replacement request.
+    before submitting the replacement request. The same route replaced #8074
+    (1.8.1 at `282f84e`) with 1.8.3 after a defect was found in the bound commit:
+    one redacted agent note could leave the resident daemon unable to start.
   - The rule is mechanically checked by the `marketplace-freeze` job in
     `.github/workflows/ci.yml`, which reads the declaration below and turns a push
     to the frozen branch that is not the bound commit red. It cannot protect the
@@ -314,12 +316,16 @@ maintainer's constraint is not "bind a good commit" but "bind the commit that is
 currently HEAD" — and this repository kept moving HEAD.
 
 The correction is upstream of the verify form: **do not push to `main` while a
-verification is pending.** The operator has directed replacement of the old
-`f9a2b9838926904fff236d0c74c3ebd8fa30e487` request (#7719) with SIA 1.8.1.
-Retire that request before merging release PR #20. Once required checks pass,
-merge the release, establish the final frozen default-branch HEAD, and request
-fresh verification of that exact commit. Do not reuse the old scan as evidence
-for 1.8.1. Keep subsequent changes on branches until the replacement review ends.
+verification is pending.** The operator directed replacement of the old
+`f9a2b9838926904fff236d0c74c3ebd8fa30e487` request (#7719) with SIA 1.8.1, which
+was submitted as #8074 against `282f84e5ee4079329ab85ba84eac1108562994b8`. A
+defect was then found in that commit — a counted agent-note redaction stranded the
+pending pulse marker and the resident daemon refused every start — so #8074 was
+retired the same way, before `main` moved, and SIA 1.8.3 replaces it: 1.8.2 (the
+agent-note lane extraction the size guard required first) and 1.8.3 (the fix)
+merge through required checks, and the final default-branch HEAD is submitted
+once for fresh verification. Do not reuse #8074's scan as evidence for 1.8.3.
+Keep subsequent changes on branches until the replacement review ends.
 
 The binding is declared here, in one machine-readable line, because a rule only a
 reader can see is the rule that was already broken three times. CI reads this exact

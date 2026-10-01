@@ -2409,7 +2409,15 @@ class MutationBoundaries(unittest.TestCase):
                 mock.patch.object(
                     brainstem.sialib,
                     "durable_ledger_append") as ledger:
-            self.assertEqual(brainstem._run_owned(), 1)
+            # 1.8.3: a saved marker that refuses validation is a durable
+            # barrier, so this now stops with INTENTIONAL_STOP_EXIT instead of
+            # returning 1 (restart). Retrying cannot repair it -- the marker is
+            # checked before any work that could -- and a ten-second restart
+            # loop never reaches the start limit, so the unit never showed as
+            # failed. Everything else this test pins is unchanged: it still
+            # refuses before READY and publishes the failure exactly once.
+            self.assertEqual(
+                brainstem._run_owned(), brainstem.INTENTIONAL_STOP_EXIT)
         ensure_dirs.assert_not_called()
         ready.assert_not_called()
         recover.assert_not_called()
@@ -2716,6 +2724,117 @@ class MutationBoundaries(unittest.TestCase):
         self.assertIn(
             "pulse 0 source_replay_quarantine",
             log.call_args.args[0])
+
+    def _startup_patches(self, stack, memo_marker):
+        """Mocks shared by the durable-marker startup tests."""
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "load_memo", return_value={"pulse_seq": 0}))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "load_cursors", return_value={}))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "_pending_pulse_marker", side_effect=memo_marker))
+        publish = stack.enter_context(
+            mock.patch.object(brainstem, "_publish_failure"))
+        log = stack.enter_context(mock.patch.object(brainstem.sialib, "log"))
+        ready = stack.enter_context(
+            mock.patch.object(brainstem, "_systemd_ready"))
+        return publish, log, ready
+
+    def test_stranded_marker_at_startup_stops_instead_of_looping(self):
+        # The saved marker refuses on every start; restarting every ten seconds
+        # never reached the unit's start limit, so it never entered `failed`
+        # and the health probe saw nothing for thirteen hours.
+        stranded = RuntimeError(
+            "pulse publication redactions binding is invalid: "
+            "agent-note: marker absent < durable 1")
+        with contextlib.ExitStack() as stack:
+            publish, log, ready = self._startup_patches(stack, stranded)
+            result = brainstem._run_owned()
+        self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
+        publish.assert_called_once()          # still published, as before
+        ready.assert_not_called()
+        lines = [call.args[0] for call in log.call_args_list]
+        self.assertTrue(any("brainstem startup REFUSED" in l for l in lines))
+        self.assertTrue(any("retrying cannot clear it" in l for l in lines))
+
+    def test_other_startup_refusal_still_retries(self):
+        # Only a saved marker that refuses validation is a durable barrier;
+        # any other startup refusal keeps the ordinary restart behaviour.
+        with contextlib.ExitStack() as stack:
+            publish, log, _ready = self._startup_patches(stack, None)
+            stack.enter_context(mock.patch.object(
+                brainstem.sialib, "_require_status_memo_fields",
+                side_effect=RuntimeError("transient")))
+            result = brainstem._run_owned()
+        self.assertEqual(result, 1)
+        publish.assert_called_once()
+        self.assertFalse(any("retrying cannot clear it" in c.args[0]
+                             for c in log.call_args_list))
+
+    def _loop_patches(self, stack, marker_effects, guard):
+        stack.enter_context(mock.patch.object(brainstem, "_stop", False))
+        stack.enter_context(mock.patch.object(brainstem.signal, "signal"))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "load_memo", return_value={"pulse_seq": 0}))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "load_cursors", return_value={}))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "_pending_pulse_marker",
+            side_effect=marker_effects))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "_require_status_sequence_not_ahead"))
+        stack.enter_context(mock.patch.object(brainstem.sialib, "ensure_dirs"))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "recover_ledger_transitions",
+            return_value=(False, [])))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "durable_ledger_append"))
+        stack.enter_context(mock.patch.object(brainstem, "_systemd_ready"))
+        stack.enter_context(mock.patch.object(
+            brainstem.sialib, "record_pulse_failure"))
+        stack.enter_context(mock.patch.object(brainstem, "_publish_failure"))
+        stack.enter_context(mock.patch.object(brainstem.time, "sleep"))
+        pulse = stack.enter_context(mock.patch.object(
+            brainstem, "_reserved_pulse",
+            side_effect=RuntimeError(
+                "pulse publication redactions binding is invalid")))
+        log = stack.enter_context(mock.patch.object(brainstem.sialib, "log"))
+        return pulse, log
+
+    def test_stranded_marker_in_the_loop_stops_instead_of_failing_forever(self):
+        # The running daemon stayed `active` for seven hours while 427 pulses
+        # failed on the same saved marker.
+        # Bounded: the plugin guard ends the loop after three pulses, so a
+        # regression that retries forever fails this test instead of hanging
+        # the suite (which is what the unbounded version did against 1.8.1).
+        registration = mock.Mock(side_effect=[True, True, True, False])
+        marker = RuntimeError("binding is invalid")
+        with contextlib.ExitStack() as stack:
+            pulse, log = self._loop_patches(
+                stack,
+                [None, marker, marker, marker],   # startup validates, saved state refuses
+                guard=registration)
+            result = brainstem._run_owned(plugin_guard=registration)
+        self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
+        # Stopped after the FIRST failed pulse, not after the guard ran out.
+        pulse.assert_called_once_with()
+        lines = [call.args[0] for call in log.call_args_list]
+        self.assertTrue(any(l.startswith("pulse 0 FAILED") for l in lines))
+        self.assertTrue(any("retrying cannot clear it" in l for l in lines))
+
+    def test_a_pulse_failure_with_a_valid_marker_keeps_the_daemon_running(self):
+        registration = mock.Mock(side_effect=[True, True, False])
+        with contextlib.ExitStack() as stack:
+            pulse, log = self._loop_patches(
+                stack, lambda memo: None, guard=registration)
+            result = brainstem._run_owned(plugin_guard=registration)
+        # It pulsed, failed, kept going, and stopped only for the plugin guard.
+        self.assertGreaterEqual(pulse.call_count, 1)
+        lines = [call.args[0] for call in log.call_args_list]
+        self.assertTrue(any("FAILED" in l for l in lines))
+        self.assertFalse(any("retrying cannot clear it" in l for l in lines))
+        self.assertTrue(any("sia uninstall" in l for l in lines))
+        self.assertEqual(result, brainstem.INTENTIONAL_STOP_EXIT)
 
     def test_failed_dream_attempt_is_rate_limited(self):
         now = datetime.datetime.now().replace(

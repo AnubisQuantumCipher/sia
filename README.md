@@ -21,9 +21,9 @@ watch its generated-entry stream and query the memory it has admitted.
 You can audit every stored word because the corpus is markdown in git and the
 daemon signs its own acts.
 
-**Current release: v1.8.2.** This maintenance update moves the agent-note lane
-out of the resident library into its own module, with no change in behavior, so
-the library keeps headroom under the marketplace's per-file scan limit. See
+**Current release: v1.8.3.** This fix keeps a redacted agent note from stopping
+the resident daemon: before it, one note whose text tripped the secret-redaction
+patterns during a pulse could leave SIA unable to start again. See
 [the changelog](CHANGELOG.md) for the complete changes.
 
 **Storage recovery introduced in v1.8.0.** Two receipts bind storage by device and inode
