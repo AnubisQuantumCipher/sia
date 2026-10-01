@@ -1,0 +1,30 @@
+{
+  "schema": "sia-cognitive-event-exposure-timing-policy-v1",
+  "exposure_schema": "sia-cognitive-event-exposure-v1",
+  "metric_protocol_sha256": "52b9820c7fbb2e2ff1f556edd319d4ea0a446c3695917fe285de33176cf9ffe7",
+  "arms": [
+    "raw-original",
+    "cue-only",
+    "cue-event-exposure"
+  ],
+  "schedule": "query-major-fixed-arm-order-once-v1",
+  "clock": "time.perf_counter_ns",
+  "unit": "ns",
+  "worker_scope": "admitted-target-blind-arm-call-through-return-v1",
+  "pipeline_scope": "not-measured-v1",
+  "admission": "complete-before-first-clock-v1",
+  "pre_observation": "complete-untimed-exposure-replay-v1",
+  "warmup": "no-additional-warmup-cache-state-uncontrolled-v1",
+  "aggregation": "macro-query-within-class-v1",
+  "numbers": "bounded-json-integer-endpoints-unevaluated-difference-v1",
+  "raw_timings": "retain-original-separate-no-total-composition-v1",
+  "missing": "refuse-complete-run-v1",
+  "chronology": "externally-pinned-before-heldout-v1",
+  "resources": {
+    "max_input_bytes": 67108864,
+    "max_document_bytes": 16777216,
+    "max_output_bytes": 16777216,
+    "max_queries": 64,
+    "max_clock_ns": 9007199254740991
+  }
+}

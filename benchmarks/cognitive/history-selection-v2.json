@@ -1,0 +1,37 @@
+{
+  "schema": "sia-mission-history-selection-freeze-v1",
+  "producer_checkout_commit": "86df68f",
+  "capture_sha256": "8db421fa76e2878f1488fb56bedccf74ab971709195161ce7ca390ba1b57fd9a",
+  "selection_policy_sha256": "b08f02a09391f17a53a50480ed3ead17c3d3878864882380efe9791049a6eb6f",
+  "selection_sha256": "aa82aa03624db6418b09bb3de862b0b6cb433900d579c2b54175fa4ebbed994f",
+  "selection_wire_sha256": "da984fb67eb7cfc049e6e4bd75961956d2fc1776c0965ece5f41d6952ad72673",
+  "pages_sha256": "8e5226d85ffe2a8e45b6c48bbc9ed20080c8bd859c315cc756b9f05b951494e3",
+  "chronology": "selection-frozen-before-mechanism-tuning-and-heldout-evaluation",
+  "private_selection": "/home/sicarii/.local/state/sia-mission-evidence/history-seed.2yoCp89f/selection-v2.json",
+  "split_coverage": [
+    {"class": "recency-heavy", "groups": 1, "queries": 2, "split": "calibration"},
+    {"class": "repetition-heavy", "groups": 1, "queries": 1, "split": "calibration"},
+    {"class": "novelty", "groups": 5, "queries": 6, "split": "calibration"},
+    {"class": "associative-multi-hop", "groups": 0, "queries": 0, "split": "calibration"},
+    {"class": "consolidation-gist", "groups": 0, "queries": 0, "split": "calibration"},
+    {"class": "recency-heavy", "groups": 4, "queries": 4, "split": "heldout"},
+    {"class": "repetition-heavy", "groups": 6, "queries": 7, "split": "heldout"},
+    {"class": "novelty", "groups": 37, "queries": 44, "split": "heldout"},
+    {"class": "associative-multi-hop", "groups": 0, "queries": 0, "split": "heldout"},
+    {"class": "consolidation-gist", "groups": 0, "queries": 0, "split": "heldout"}
+  ],
+  "non_claims": [
+    "This is a grouped query-level split, not a temporal or source-page holdout.",
+    "Shared source pages and signed-chain authentication anchors can occur across splits.",
+    "Class names describe engineering tasks, not demonstrated cognitive mechanisms or wins.",
+    "Novelty is first occurrence of an exact action and raw subject within a complete named signed chain, not machine-wide novelty.",
+    "Latest event-time occurrence uses the complete exact action/raw-subject population, a unique maximum native timestamp, and the nearest strictly older occurrence on a distinct witnessed page; event time is not signed sequence order or a measured memory-use time.",
+    "Unsupported associative and gist classes are not supplied by relabeling generic ledger QA.",
+    "Excluded or unavailable witnesses remain declared; retained subsets do not establish complete-history answers.",
+    "Selection hashes bind represented bytes; external capture and policy authentication remain caller obligations.",
+    "No retrieval scores, tuned parameters, statistical power, or cognitive improvement are established.",
+    "All capture and generator nonclaims retained in the private dataset-freeze-v2.json remain controlling.",
+    "Recorded chronology and a local commit do not independently authenticate historical tuning behavior.",
+    "The original v1 outcome-change task remains refused; this is a distinct event-time task."
+  ]
+}

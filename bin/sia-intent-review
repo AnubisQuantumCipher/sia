@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Terminal review UI; all reads/writes pass through the resident SIA CLI.
+
+No corpus lease is held while the operator considers a commitment. The final
+CLI call re-admits readiness and closes only a still-open, exact identity.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def display(text):
+    # Stored prose must never become terminal control sequences.
+    return "".join(c if c.isprintable() else " " for c in str(text))
+
+
+def run_cli(args):
+    return subprocess.run(
+        [os.path.expanduser("~/.local/bin/sia"), "intend", *args],
+        capture_output=True, text=True, timeout=120, check=False)
+
+
+def review(iid):
+    result = run_cli(["--show", iid])
+    if result.returncode:
+        print("Unable to read this commitment. It may be closed, or SIA may need an update or recovery.")
+        print(display(result.stdout or result.stderr))
+        return 1
+    row = json.loads(result.stdout)
+    if (not isinstance(row, dict) or row.get("id") != iid
+            or not all(isinstance(row.get(k), str)
+                       for k in ("text", "due", "holder", "created"))):
+        raise ValueError("Commitment response did not match the request")
+    print("\nREVIEW COMMITMENT\n")
+    print(display(row["text"]))
+    print("\nDue: " + display(row["due"]) + " · Holder: " + display(row["holder"]))
+    print("Recorded: " + display(row["created"]))
+    print("\nA passed due date is a reminder, not a system failure.")
+    print("Review the relevant records before closing this task.")
+    print("Closing records your outcome; it does not verify a prediction or repair a problem.")
+    if input("\nType done to record completion, or press Enter to leave open: ").strip() != "done":
+        print("Left open. Nothing changed.")
+        return 0
+    note = input("Outcome or supporting record (required, at most 200 characters): ").strip()
+    if not note or len(note) > 200 or any(not c.isprintable() for c in note):
+        print("A printable outcome of at most 200 characters is required. Left open.")
+        return 2
+    print("\nOutcome: " + display(note))
+    if input("Type close to save this outcome and close the commitment: ").strip() != "close":
+        print("Left open. Nothing changed.")
+        return 0
+    result = run_cli(["--done", iid, note])
+    print(display(result.stdout or result.stderr))
+    if result.returncode == 0:
+        print("Closed. The cockpit updates after SIA's next successful publication.")
+    return result.returncode
+
+
+def main(argv):
+    if len(argv) != 1 or re.fullmatch(r"[0-9a-f]{10}", argv[0]) is None:
+        print("usage: sia-intent-review <full-id>")
+        return 2
+    if not sys.stdin.isatty():
+        print("Review requires an interactive terminal; nothing changed.")
+        return 2
+    try:
+        return review(argv[0])
+    except (EOFError, KeyboardInterrupt):
+        print("\nReview interrupted. No completion is claimed; check SIA before retrying.")
+        return 1
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        print("Review stopped: " + display(exc))
+        print("No completion is claimed. Check SIA before retrying.")
+        return 1
+    finally:
+        try:
+            input("\nPress Enter to return to the desktop.")
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

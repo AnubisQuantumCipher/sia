@@ -156,6 +156,30 @@ class FixedSlotPublication(unittest.TestCase):
                 self.assertEqual(
                     set(os.listdir(staging)), {siaqueue.STAGING_LOCK_NAME})
 
+    def test_destination_observation_marks_boundary_mutation_unstable(self):
+        with tempfile.TemporaryDirectory() as root:
+            authority = os.path.join(root, "authority")
+            staging = os.path.join(root, "staging")
+            os.mkdir(authority)
+            target = os.path.join(authority, "state.json")
+
+            def mutate(name):
+                if name == "target-published":
+                    with open(os.path.join(authority, "unprojected.json"),
+                              "wb") as stream:
+                        stream.write(b"unprojected\n")
+
+            with mock.patch.object(
+                    siaqueue, "_publish_boundary", side_effect=mutate):
+                observed = siaqueue.fixed_atomic_publish(
+                    target, b"durable\n", staging_dir=staging,
+                    observe_destination=True)
+
+            self.assertEqual(observed["status"], "published")
+            self.assertFalse(observed["stable"])
+            with open(target, "rb") as stream:
+                self.assertEqual(stream.read(), b"durable\n")
+
     def test_nested_authority_uses_outer_sibling_on_same_filesystem(self):
         with tempfile.TemporaryDirectory() as root:
             outer = os.path.join(root, "share")

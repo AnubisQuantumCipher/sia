@@ -6,6 +6,7 @@ import copy
 import contextlib
 import datetime
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -54,6 +55,67 @@ def _read_path(path):
 
 siatakes = _load("siatakes_calibration", os.path.join(BIN, "siatakes.py"))
 siabench = _load("siabench_signed", os.path.join(BIN, "siabench.py"))
+
+# The takes directory siatakes resolved at import, before any test patched
+# it.  Fixture helpers that write through the module globals compare against
+# this to refuse writing into the operator's own corpus.
+_UNPATCHED_TAKES_DIR = siatakes.TAKES_DIR
+
+
+def _current_graph_fixture():
+    return {
+        "v": 2, "ts": "2026-08-30T12:00:00Z",
+        "publication_id": "b" * 32,
+        "nodes": [], "edges": [], "pages_total": 0,
+        "pages_total_complete": True,
+        "snapshot": {
+            "complete": True, "truncated": 0,
+            "omitted_nodes": 0, "omitted_edges": 0,
+            "omissions_imply_absence": False,
+            "aged_out": 0, "counts_by_kind": {},
+            "failed_ops": [], "window_days": 14,
+        },
+    }
+
+
+def _confidence_renderings(confidence):
+    """Every plausible spelling of a leaked confidence value.
+
+    A prompt can hand the judge the holder's belief without ever saying the
+    word "confidence" — "the holder puts this at 0.7", "belief 70%", "odds
+    7/10".  Anchoring is caused by the number, not by the label, so the
+    blindness check has to look for the number in each form a leak would
+    realistically take.
+    """
+    percent = round(confidence * 100, 6)
+    decimal = f"{confidence}"
+    return sorted({
+        decimal,
+        decimal.lstrip("0") or decimal,
+        f"{confidence:.2f}",
+        f"{confidence:.3f}",
+        f"{percent:g}",
+        f"{percent:g}%",
+        f"{percent:g} percent",
+        f"{round(confidence * 10, 6):g}/10",
+        f"{percent:g}/100",
+    })
+
+
+def _confidence_leaks(prompt, confidence):
+    """Renderings of ``confidence`` this prompt exposes; empty means blind.
+
+    INVARIANT: the judge grades the claim against admitted evidence and must
+    not learn how sure the holder was — knowing it is a thumb on the scale
+    that turns an independent verdict into an agreement.  Both the word and
+    the number are disqualifying.
+    """
+    folded = prompt.casefold()
+    leaks = [form for form in _confidence_renderings(confidence)
+             if form.casefold() in folded]
+    if "confidence" in folded:
+        leaks.append("word:confidence")
+    return leaks
 
 
 def _write_projected_event_pages(corpus, chain, rows):
@@ -183,6 +245,43 @@ def _take(confidence, outcome, domain="general", status=None, **extra):
 
 
 class JsonParserBoundaries(unittest.TestCase):
+    def test_proposal_queue_refuses_replaced_or_hardlinked_authority(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "proposals.json")
+            replacement = os.path.join(root, "replacement.json")
+            _write(path, "[]")
+            _write(replacement, "[]")
+            os.chmod(path, 0o600)
+            os.chmod(replacement, 0o600)
+            strict_loads = siatakes.siaqueue.strict_json_loads
+
+            def replace_while_decoding(raw):
+                os.replace(replacement, path)
+                return strict_loads(raw)
+
+            with mock.patch.object(
+                    siatakes.siaqueue, "strict_json_loads",
+                    side_effect=replace_while_decoding), \
+                    self.assertRaisesRegex(ValueError, "changed while read"):
+                siatakes._load_proposal_queue(path)
+
+            alias = os.path.join(root, "proposal-alias.json")
+            os.link(path, alias)
+            with self.assertRaisesRegex(
+                    ValueError, "single-link regular file"):
+                siatakes._load_proposal_queue(path)
+
+    def test_private_transaction_reader_refuses_hardlinked_authority(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "transaction.json")
+            alias = os.path.join(root, "transaction-alias.json")
+            _write(path, "{}")
+            os.chmod(path, 0o600)
+            os.link(path, alias)
+            with self.assertRaisesRegex(
+                    ValueError, "owned single-link regular file"):
+                siatakes._read_transaction_json(path)
+
     def test_take_authority_parser_limits_are_named_and_retain_files(self):
         with tempfile.TemporaryDirectory() as root:
             proposal_path = os.path.join(root, "proposals.json")
@@ -230,6 +329,45 @@ class JsonParserBoundaries(unittest.TestCase):
             self.assertTrue(all(os.path.exists(path) for path in (
                 proposal_path, transaction_path, history_path, record_path)))
 
+    def test_take_authority_refuses_ambiguous_json(self):
+        with tempfile.TemporaryDirectory() as root:
+            proposal_path = os.path.join(root, "proposals.json")
+            transaction_path = os.path.join(root, "transaction.json")
+            record_path = os.path.join(root, "record.json")
+            cases = (
+                (proposal_path, '[{"claim":"safe","claim":"private"}]',
+                 lambda: siatakes._load_proposal_queue(proposal_path),
+                 "proposal queue is invalid JSON"),
+                (transaction_path,
+                 '{"phase":"safe","phase":"private"}',
+                 lambda: siatakes._read_transaction_json(transaction_path),
+                 "transaction journal is malformed"),
+                (record_path, '{"key":"safe","key":"private"}',
+                 lambda: siatakes._read_history_json(
+                     record_path, "natural-history record"),
+                 "natural-history record is malformed"),
+            )
+            for path, raw, call, expected in cases:
+                with self.subTest(expected=expected):
+                    _write(path, raw)
+                    os.chmod(path, 0o600)
+                    with self.assertRaisesRegex(ValueError, expected):
+                        call()
+                    self.assertTrue(os.path.exists(path))
+
+    def test_take_proposal_queue_refuses_non_utf8_json_encoding(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "proposals.json")
+            with open(path, "wb") as stream:
+                stream.write('[{"claim":"private"}]'.encode("utf-16"))
+            os.chmod(path, 0o600)
+
+            with self.assertRaisesRegex(
+                    ValueError, "proposal queue is invalid JSON"):
+                siatakes._load_proposal_queue(path)
+
+            self.assertTrue(os.path.exists(path))
+
     def test_benchmark_parser_limits_are_clean_refusals(self):
         completed = mock.Mock(returncode=0, stdout="[]", stderr="")
         for parser_error in (ValueError, RecursionError):
@@ -271,6 +409,28 @@ class JsonParserBoundaries(unittest.TestCase):
             self.assertEqual(
                 str(manifest_refusal.exception),
                 "benchmark dataset manifests are malformed")
+
+    def test_benchmark_json_boundaries_refuse_ambiguous_records(self):
+        completed = mock.Mock(
+            returncode=0,
+            stdout='[{"slug":"safe","slug":"private","score":1}]',
+            stderr="")
+        with mock.patch.object(siabench.sialib, "gbrain",
+                               return_value=completed), \
+                self.assertRaisesRegex(
+                    siabench.BenchmarkRefusal,
+                    "gbrain retrieval output could not be admitted"):
+            siabench._engine(["query", "fixture"])
+
+        for raw in (
+                '{"id":"safe","id":"private"}\n',
+                '{"id":"safe","answer":NaN}\n',
+                '{"id":"safe","answer":Infinity}\n',
+                '{"id":"safe","answer":-Infinity}\n'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(
+                    siabench.BenchmarkRefusal,
+                    "benchmark JSONL row is malformed"):
+                siabench._parse_jsonl(raw, "predictions.jsonl")
 
 
 class JudgeIsolation(unittest.TestCase):
@@ -326,7 +486,21 @@ class JudgeIsolation(unittest.TestCase):
         _write(path, text)
         return meta, path, text
 
-    def _legacy_resolved_take(self, takes_dir, justification):
+    def _legacy_resolved_take(self, justification):
+        """Seed one pre-origin-label resolved take in the patched TAKES_DIR.
+
+        INVARIANT: this helper writes through siatakes' module globals —
+        create_take, load_takes and _render_take_page all read TAKES_DIR —
+        so the caller must already have pointed siatakes.TAKES_DIR at a
+        temporary directory.  It used to accept a ``takes_dir`` argument it
+        never read, advertising a targeting it did not have: a caller who
+        trusted the parameter instead of patching the global would have
+        seeded fixture takes into the operator's real corpus.  The argument
+        is gone and the precondition is now checked instead of implied.
+        """
+        if siatakes.TAKES_DIR == _UNPATCHED_TAKES_DIR:
+            raise AssertionError(
+                "legacy-take fixture refuses an unpatched TAKES_DIR")
         siatakes.create_take(
             "legacy model grade", deadline="2099-01-01",
             links=("operator/source",))
@@ -365,6 +539,14 @@ class JudgeIsolation(unittest.TestCase):
                 '{"judge":{"backend":""}}',
                 '{"judge":{"backend":"unknown","model":"x"}}',
                 '{"judge":{"backend":"claude","model":3}}',
+                '{"judge":{"backend":"claude","model":"private"},'
+                '"unexpected":true}',
+                '{"judge":{"backend":"claude","model":"private",'
+                '"modle":"public"}}',
+                '{"judge":{"backend":"none"},"judge":'
+                '{"backend":"claude","model":"private"}}',
+                '{"judge":{"backend":"none","backend":"claude",'
+                '"model":"private"}}',
             )
             try:
                 for content in cases:
@@ -396,6 +578,36 @@ class JudgeIsolation(unittest.TestCase):
                 _write(outside, json.dumps({
                     "judge": {"backend": "claude", "model": "secret"}}))
                 os.symlink(outside, config)
+                self.assertEqual(siatakes._judge_config(), ("none", ""))
+            finally:
+                siatakes.HOME = old_home
+
+    def test_judge_config_refuses_replaced_or_hardlinked_consent(self):
+        with tempfile.TemporaryDirectory() as home:
+            old_home = siatakes.HOME
+            siatakes.HOME = home
+            config = os.path.join(home, ".config/sia/config.json")
+            replacement = os.path.join(home, "replacement.json")
+            enabled = json.dumps({
+                "judge": {"backend": "claude", "model": "private"}})
+            disabled = json.dumps({"judge": {"backend": "none"}})
+            try:
+                _write(config, enabled)
+                _write(replacement, disabled)
+                strict_loads = siatakes.siaqueue.strict_json_loads
+
+                def replace_while_decoding(raw):
+                    os.replace(replacement, config)
+                    return strict_loads(raw)
+
+                with mock.patch.object(
+                        siatakes.siaqueue, "strict_json_loads",
+                        side_effect=replace_while_decoding):
+                    self.assertEqual(siatakes._judge_config(), ("none", ""))
+
+                _write(config, enabled)
+                alias = os.path.join(home, "config-alias.json")
+                os.link(config, alias)
                 self.assertEqual(siatakes._judge_config(), ("none", ""))
             finally:
                 siatakes.HOME = old_home
@@ -450,9 +662,21 @@ class JudgeIsolation(unittest.TestCase):
             siatakes._bounded_judge_process(
                 command, "prompt", timeout=30, cwd=cwd, env=os.environ)
 
+    def test_judge_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=siatakes.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        with mock.patch.object(siatakes, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            siatakes._signal_and_reap_child_group(process)
+        os_shim.killpg.assert_not_called()
+
     def test_judge_process_refuses_oversized_prompt_before_spawn(self):
         with mock.patch.object(siatakes, "MAX_JUDGE_INPUT_BYTES", 64), \
-                mock.patch.object(siatakes.subprocess, "Popen") as popen, \
+                mock.patch.object(
+                    siatakes.subprocess, "Popen",
+                    side_effect=AssertionError(
+                        "oversized prompt fixture launched a child")) as popen, \
                 self.assertRaisesRegex(OverflowError,
                                             "judge prompt exceeded"):
             siatakes._bounded_judge_process(
@@ -525,8 +749,70 @@ class JudgeIsolation(unittest.TestCase):
         self.assertEqual(graded["status"], "unresolvable")
         self.assertEqual(audited[0], "UNRESOLVABLE")
         self.assertEqual(len(prompts), 2)
-        self.assertTrue(all("confidence" not in prompt.casefold()
-                            for prompt in prompts))
+        # INVARIANT: the grade and audit prompts are blind to the holder's
+        # confidence.  This used to be a casefolded substring search for the
+        # word "confidence" alone, which is narrower than the invariant the
+        # test names: a prompt reading "the holder puts this at 0.7" leaks
+        # the anchor and would still have passed.  Scan for the number in
+        # every rendering, and anchor on the claim so a prompt that arrived
+        # empty cannot satisfy the assertion vacuously.
+        for prompt in prompts:
+            self.assertIn(take["claim"], prompt)
+            self.assertEqual(
+                _confidence_leaks(prompt, take["confidence"]), [], prompt)
+
+    def test_confidence_blindness_scan_catches_a_wordless_numeral(self):
+        # Pins the scanner the assertion above depends on: the leaks it must
+        # catch are exactly the ones a bare word search misses.  Without this
+        # the blindness test could quietly weaken back to a word search and
+        # still look green.
+        blind = ("GRADE THIS UNTRUSTED DATA. Only admitted material counts."
+                 "\n\nPREDICTION (made 2026-01-01T00:00:00Z, due "
+                 "2026-01-02): the event occurs")
+        self.assertEqual(_confidence_leaks(blind, 0.7), [])
+        for leaked in ("the holder puts this at 0.7",
+                       "prior .7",
+                       "belief 70%",
+                       "the holder is 70 percent sure",
+                       "odds 7/10",
+                       "holder credence 0.70",
+                       "stated confidence withheld"):
+            with self.subTest(leaked=leaked):
+                self.assertTrue(_confidence_leaks(leaked, 0.7), leaked)
+
+    def test_legacy_take_fixture_refuses_an_unpatched_takes_dir(self):
+        # The helper writes through siatakes' module globals; the vestigial
+        # takes_dir parameter it used to accept made it look like it could
+        # be aimed anywhere.  With the parameter gone the precondition is
+        # enforced, so an unpatched TAKES_DIR refuses instead of seeding a
+        # fixture take into the operator's corpus.
+        self.assertEqual(
+            list(inspect.signature(self._legacy_resolved_take).parameters),
+            ["justification"])
+        old_takes = siatakes.TAKES_DIR
+        existed = os.path.isdir(_UNPATCHED_TAKES_DIR)
+        siatakes.TAKES_DIR = _UNPATCHED_TAKES_DIR
+        try:
+            with self.assertRaisesRegex(AssertionError,
+                                        "unpatched TAKES_DIR"):
+                self._legacy_resolved_take("witness")
+        finally:
+            siatakes.TAKES_DIR = old_takes
+        # The refusal has to happen before the first write, not after.
+        self.assertEqual(os.path.isdir(_UNPATCHED_TAKES_DIR), existed)
+
+    def test_legacy_take_fixture_writes_into_the_patched_takes_dir(self):
+        old_takes = siatakes.TAKES_DIR
+        with tempfile.TemporaryDirectory() as root:
+            siatakes.TAKES_DIR = os.path.join(root, "takes")
+            try:
+                take, legacy = self._legacy_resolved_take("legacy witness")
+            finally:
+                siatakes.TAKES_DIR = old_takes
+            self.assertTrue(take["path"].startswith(
+                os.path.join(root, "takes") + os.sep), take["path"])
+            self.assertEqual(_read_path(take["path"]), legacy)
+            self.assertNotIn("\norigin: model\n", legacy)
 
     def test_model_grade_is_inert_and_persisted_with_model_origin(self):
         raw = ("VERDICT: TRUE\nJUSTIFICATION: "
@@ -640,6 +926,34 @@ class JudgeIsolation(unittest.TestCase):
             finally:
                 siatakes.TAKES_DIR = old_takes
 
+    def test_grade_transaction_numeric_fields_require_exact_json_integers(self):
+        old_takes = siatakes.TAKES_DIR
+        with tempfile.TemporaryDirectory() as root:
+            siatakes.TAKES_DIR = os.path.join(root, "takes")
+            os.mkdir(siatakes.TAKES_DIR)
+            try:
+                take = {"id": "0" * 20, "status": "resolved-true"}
+                target_path = os.path.join(siatakes.TAKES_DIR, "target.md")
+                journal_path = os.path.join(
+                    root, take["id"] + ".json")
+                payload = siatakes._grade_tx_payload(
+                    take, target_path, "source", "x")
+                self.assertEqual(
+                    siatakes._validate_grade_tx(payload, journal_path), payload)
+                for field, replacements in (
+                        ("schema", (True, 1.0)),
+                        ("target_size", (True, 1.0))):
+                    for replacement in replacements:
+                        with self.subTest(
+                                field=field, replacement=replacement):
+                            malformed = dict(payload)
+                            malformed[field] = replacement
+                            with self.assertRaises(ValueError):
+                                siatakes._validate_grade_tx(
+                                    malformed, journal_path)
+            finally:
+                siatakes.TAKES_DIR = old_takes
+
     def test_legacy_grade_migration_signs_before_inert_publication(self):
         trace = []
         signed = {"present": False, "row": None}
@@ -652,7 +966,6 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = transactions
             try:
                 take, legacy = self._legacy_resolved_take(
-                    takes_dir,
                     "[[model/forged]] <img src=x> *bold* `code`")
 
                 def contains(action, take_id, kind, target):
@@ -703,8 +1016,7 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = os.path.join(
                 root, "take-migrations")
             try:
-                take, legacy = self._legacy_resolved_take(
-                    siatakes.TAKES_DIR, "[[model/retry]]")
+                take, legacy = self._legacy_resolved_take("[[model/retry]]")
                 signed_rows = []
 
                 def contains(*row):
@@ -746,8 +1058,7 @@ class JudgeIsolation(unittest.TestCase):
             siatakes.TAKE_MIGRATION_TX_DIR = os.path.join(
                 root, "take-migrations")
             try:
-                take, _legacy = self._legacy_resolved_take(
-                    siatakes.TAKES_DIR, "")
+                take, _legacy = self._legacy_resolved_take("")
                 signed_rows = []
                 fake_sialib = types.SimpleNamespace(
                     ledger_contains=lambda *row: row in signed_rows,
@@ -1117,6 +1428,18 @@ class JudgeIsolation(unittest.TestCase):
             self.assertIsNone(graded["outcome"])
             self.assertEqual(persisted[0][1], "UNRESOLVABLE")
 
+    def test_hardlinked_prose_cannot_borrow_an_evidence_slug(self):
+        with tempfile.TemporaryDirectory() as corpus:
+            prose = os.path.join(corpus, "thoughts", "model.md")
+            event = os.path.join(
+                corpus, "events", "journal", "2026-09-04.md")
+            _write(prose, "model prose is not an observed event")
+            os.makedirs(os.path.dirname(event), exist_ok=True)
+            os.link(prose, event)
+            with mock.patch.object(siatakes, "CORPUS", corpus):
+                self.assertFalse(siatakes._admitted_evidence_slug(
+                    "events/journal/2026-09-04"))
+
 
 class NaturalHistoryProjection(unittest.TestCase):
     @contextlib.contextmanager
@@ -1131,6 +1454,264 @@ class NaturalHistoryProjection(unittest.TestCase):
                     siatakes, "TAKE_MIGRATION_TX_DIR",
                     os.path.join(root, "migrations")):
             yield
+
+    def test_transaction_sizes_require_exact_json_integers(self):
+        digest = hashlib.sha256(b"x").hexdigest()
+        event = {
+            "schema": siatakes.HISTORY_EVENT_SCHEMA,
+            "kind": "take", "page_sha256": digest,
+        }
+        history = {
+            "schema": siatakes.HISTORY_TX_SCHEMA,
+            "kind": "take", "event": event,
+            "source_sha256": None, "target_sha256": digest,
+            "target_size": 1, "target_text": "x", "retire": False,
+        }
+        self.assertEqual(
+            siatakes._validate_history_tx(history, "take"), history)
+        for replacement in (True, 1.0):
+            with self.subTest(surface="history", replacement=replacement):
+                malformed = copy.deepcopy(history)
+                malformed["target_size"] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "transaction target is invalid"):
+                    siatakes._validate_history_tx(malformed, "take")
+
+        retired = copy.deepcopy(history)
+        retired.update({
+            "event": {**event, "operation": "authority-retire"},
+            "source_sha256": digest, "target_sha256": None,
+            "target_size": 0, "target_text": None, "retire": True,
+        })
+        self.assertEqual(
+            siatakes._validate_history_tx(retired, "take"), retired)
+        for replacement in (False, 0.0):
+            with self.subTest(
+                    surface="history-retire", replacement=replacement):
+                malformed = copy.deepcopy(retired)
+                malformed["target_size"] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "retirement transaction is invalid"):
+                    siatakes._validate_history_tx(malformed, "take")
+
+        old_takes = siatakes.TAKES_DIR
+        with tempfile.TemporaryDirectory() as root:
+            siatakes.TAKES_DIR = os.path.join(root, "takes")
+            os.mkdir(siatakes.TAKES_DIR)
+            try:
+                target_path = os.path.join(siatakes.TAKES_DIR, "target.md")
+                take = {"id": "0" * 20, "path": target_path}
+                journal_path = os.path.join(root, take["id"] + ".json")
+                migration = siatakes._take_migration_payload(
+                    take, "source", "x", "model-inert-v1")
+                self.assertEqual(
+                    siatakes._validate_take_migration(
+                        migration, journal_path), migration)
+                for replacement in (True, 1.0):
+                    with self.subTest(
+                            surface="take-migration",
+                            replacement=replacement):
+                        malformed = copy.deepcopy(migration)
+                        malformed["target_size"] = replacement
+                        with self.assertRaisesRegex(
+                                ValueError, "target digest is invalid"):
+                            siatakes._validate_take_migration(
+                                malformed, journal_path)
+            finally:
+                siatakes.TAKES_DIR = old_takes
+
+    def test_natural_history_event_sequence_rejects_boolean_alias(self):
+        event = {
+            "schema": siatakes.HISTORY_EVENT_SCHEMA,
+            "kind": "take", "operation": "authority-retire",
+            "sequence": True, "path": os.path.join(
+                siatakes.TAKES_DIR, "retired.md"),
+        }
+        event["event_id"] = hashlib.sha256(json.dumps(
+            event, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False).encode()).hexdigest()
+        with mock.patch.object(
+                siatakes, "_history_project_retirement") as retire, \
+                self.assertRaisesRegex(
+                    ValueError, "natural-history event is invalid"):
+            siatakes._history_project_event(event)
+        retire.assert_not_called()
+
+    def test_persisted_calibration_stats_and_legacy_state_are_strict(self):
+        state = siatakes._history_initial_state("take")
+        self.assertEqual(
+            siatakes._validate_history_state(copy.deepcopy(state), "take"),
+            state)
+        self.assertEqual(
+            siatakes._history_stats_report(state["overall"])["resolved"],
+            0)
+
+        aggregate_aliases = (
+            ("resolved", True), ("resolved", 0.0),
+            ("resolved", "0"), ("sum_p", 0),
+            ("sum_p", False),
+        )
+        for field, replacement in aggregate_aliases:
+            with self.subTest(field=field, replacement=replacement):
+                malformed = copy.deepcopy(state)
+                malformed["overall"][field] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history aggregate is invalid"):
+                    siatakes._validate_history_state(malformed, "take")
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history aggregate is invalid"):
+                    siatakes._history_stats_report(malformed["overall"])
+
+        bin_aliases = (("n", True), ("n", 0.0),
+                       ("sum_p", 0), ("sum_o", False))
+        for field, replacement in bin_aliases:
+            with self.subTest(bin_field=field, replacement=replacement):
+                malformed = copy.deepcopy(state)
+                malformed["overall"]["bins"][0][field] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history aggregate is invalid"):
+                    siatakes._validate_history_state(malformed, "take")
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history aggregate is invalid"):
+                    siatakes._history_stats_report(malformed["overall"])
+
+        inconsistent = copy.deepcopy(state)
+        inconsistent["overall"].update({
+            "resolved": 1, "true": 1, "hits": 1,
+            "sum_p": "0.8", "sum_o": "1", "sum_brier": "0.04",
+        })
+        with self.assertRaisesRegex(
+                ValueError, "natural-history aggregate is inconsistent"):
+            siatakes._validate_history_state(inconsistent, "take")
+        with self.assertRaisesRegex(
+                ValueError, "natural-history aggregate is inconsistent"):
+            siatakes._history_stats_report(inconsistent["overall"])
+
+        mismatched_open = copy.deepcopy(state)
+        mismatched_open["overall"]["open"] = 1
+        with self.assertRaisesRegex(
+                ValueError, "natural-history state is inconsistent"):
+            siatakes._validate_history_state(mismatched_open, "take")
+
+        for field, replacement in (
+                ("pass_added", True), ("pass_added", 0.0),
+                ("pass_added", "0"), ("external_debt", 0)):
+            with self.subTest(legacy_field=field, replacement=replacement):
+                malformed = copy.deepcopy(state)
+                malformed["legacy"][field] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history legacy state is invalid"):
+                    siatakes._validate_history_state(malformed, "take")
+
+    def test_persisted_open_projection_identity_requires_exact_integers(self):
+        state = siatakes._history_initial_state("take")
+        key = "0" * 20
+        state["overall"]["open"] = 1
+        state["open"][key] = {
+            "key": key, "due": "2099-01-01",
+            "path": os.path.join(siatakes.TAKES_DIR, "open.md"),
+            "page_sha256": hashlib.sha256(b"open").hexdigest(),
+            "device": 1, "inode": 2, "size": 3,
+            "mtime_ns": 4, "ctime_ns": 5,
+        }
+        self.assertEqual(
+            siatakes._validate_history_state(copy.deepcopy(state), "take"),
+            state)
+        for replacement in (True, 3.0, "3"):
+            with self.subTest(replacement=replacement):
+                malformed = copy.deepcopy(state)
+                malformed["open"][key]["size"] = replacement
+                with self.assertRaisesRegex(
+                        ValueError,
+                        "natural-history open projection is invalid"):
+                    siatakes._validate_history_state(malformed, "take")
+
+    def test_domain_records_and_catalogs_require_exact_integer_identity(self):
+        state = siatakes._history_initial_state("take")
+        state["next_domain"] = 1
+        stats = siatakes._empty_history_stats()
+        catalog = {
+            "schema": siatakes.HISTORY_SCHEMA, "kind": "take",
+            "domain": "general", "index": 0,
+        }
+        domain = {
+            "schema": siatakes.HISTORY_SCHEMA, "kind": "take",
+            "domain": "general", "catalog_index": 0,
+            "last_event": -1, "stats": stats,
+        }
+
+        def report(candidate_catalog, candidate_domain):
+            with mock.patch.object(
+                    siatakes, "natural_history_debt", return_value=False), \
+                    mock.patch.object(
+                        siatakes, "_load_history_state",
+                        return_value=copy.deepcopy(state)), \
+                    mock.patch.object(
+                        siatakes, "_read_history_json",
+                        side_effect=[candidate_catalog, candidate_domain]):
+                return siatakes.list_calibration_domains_page()
+
+        self.assertEqual(report(catalog, domain)["items"][0]["domain"],
+                         "general")
+        ahead = copy.deepcopy(domain)
+        ahead["last_event"] = 0
+        with self.assertRaisesRegex(
+                ValueError, "natural-history domain record is inconsistent"):
+            report(catalog, ahead)
+        for surface, field, replacement in (
+                ("catalog", "index", False),
+                ("catalog", "index", 0.0),
+                ("domain", "catalog_index", False),
+                ("domain", "catalog_index", 0.0),
+                ("domain", "last_event", -1.0)):
+            with self.subTest(
+                    surface=surface, field=field, replacement=replacement):
+                malformed_catalog = copy.deepcopy(catalog)
+                malformed_domain = copy.deepcopy(domain)
+                target = (malformed_catalog if surface == "catalog"
+                          else malformed_domain)
+                target[field] = replacement
+                with self.assertRaisesRegex(
+                        ValueError, "natural-history .* is invalid"):
+                    report(malformed_catalog, malformed_domain)
+
+    def test_primary_catalog_index_requires_an_exact_integer(self):
+        state = siatakes._history_initial_state("take")
+        state["next_catalog"] = 1
+        catalog = {
+            "schema": siatakes.HISTORY_SCHEMA, "kind": "take",
+            "index": 0, "key": "0" * 20,
+        }
+        self.assertEqual(
+            siatakes._validate_history_catalog(catalog, "take", 0),
+            catalog)
+        legacy_take = {**catalog, "key": "b" * 10}
+        self.assertEqual(
+            siatakes._validate_history_catalog(legacy_take, "take", 0),
+            legacy_take)
+        invalid_intent = {
+            "schema": siatakes.HISTORY_SCHEMA, "kind": "intent",
+            "index": 0, "key": "invalid-" + "a" * 64,
+        }
+        self.assertEqual(
+            siatakes._validate_history_catalog(
+                invalid_intent, "intent", 0),
+            invalid_intent)
+        for replacement in (False, 0.0):
+            with self.subTest(replacement=replacement):
+                with mock.patch.object(
+                            siatakes, "_load_history_state",
+                            return_value=copy.deepcopy(state)), \
+                        mock.patch.object(
+                            siatakes, "_read_history_json",
+                            return_value={**catalog, "index": replacement}), \
+                        mock.patch.object(
+                            siatakes, "_history_direct") as direct:
+                    with self.assertRaisesRegex(
+                            ValueError,
+                            "natural-history catalog entry is invalid"):
+                        siatakes.list_takes_page()
+                    direct.assert_not_called()
 
     def graded_take(self, claim="authority fixture"):
         made = siatakes.create_take(
@@ -1529,6 +2110,37 @@ class NaturalHistoryProjection(unittest.TestCase):
             os.unlink(pending)
             self.settle_authority("intent")
             self.assertFalse(siatakes.natural_history_debt("intent"))
+
+    def test_history_wal_precedes_catalog_allocation_and_recovers_save_crash(self):
+        with tempfile.TemporaryDirectory() as root, \
+                self.projection_roots(root):
+            before = siatakes._load_history_state("intent", create=True)
+            with mock.patch.object(
+                    siatakes, "_save_history_state",
+                    side_effect=RuntimeError("simulated allocation-save crash")), \
+                    self.assertRaisesRegex(
+                        RuntimeError, "allocation-save crash"):
+                siatakes.create_intent(
+                    "durable catalog reservation", "2099-01-01")
+
+            pending_path = siatakes._history_paths("intent")["pending"]
+            self.assertTrue(os.path.exists(pending_path))
+            pending = siatakes._read_history_json(
+                pending_path, "natural-history transaction")
+            intent_id = pending["event"]["after"]["metadata"]["id"]
+            after_crash = siatakes._load_history_state("intent")
+            self.assertEqual(after_crash["next_event"], before["next_event"])
+            self.assertEqual(
+                after_crash["next_catalog"], before["next_catalog"])
+
+            recovered, errors = \
+                siatakes.recover_natural_history_transactions()
+            self.assertEqual(errors, [])
+            self.assertEqual(recovered, [intent_id])
+            self.assertFalse(siatakes.natural_history_debt("intent"))
+            self.assertEqual(
+                siatakes.get_intent(intent_id)["text"],
+                "durable catalog reservation")
 
     def test_supported_mutation_dirties_authority_before_page_write(self):
         with tempfile.TemporaryDirectory() as root, \
@@ -2135,27 +2747,43 @@ class NaturalHistoryProjection(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "page.md")
             _write(path, "stable bytes")
-            real_fstat = siatakes.os.fstat
-            calls = []
+            real_stream = siatakes.siaqueue.regular_file_stream
+            observed = []
 
-            def changed_after_read(fd):
-                info = real_fstat(fd)
-                calls.append(True)
-                if len(calls) == 2:
-                    return types.SimpleNamespace(
-                        st_mode=info.st_mode, st_uid=info.st_uid,
-                        st_dev=info.st_dev, st_ino=info.st_ino,
-                        st_size=info.st_size,
-                        st_mtime_ns=info.st_mtime_ns, st_ctime_ns=-1)
-                return info
+            class ChangedAfterRead:
+                def __init__(self, stream):
+                    self.stream = stream
 
-            with mock.patch.object(
-                    siatakes.os, "fstat",
-                    side_effect=changed_after_read):
+                def __enter__(self):
+                    self.stream.__enter__()
+                    return self
+
+                def __exit__(self, *args):
+                    return self.stream.__exit__(*args)
+
+                def fileno(self):
+                    return self.stream.fileno()
+
+                def read(self, *args):
+                    raw = self.stream.read(*args)
+                    observed.append(raw)
+                    before = os.stat(path)
+                    with open(path, "wb") as writer:
+                        writer.write(raw.replace(b"s", b"x", 1))
+                    os.utime(path, ns=(before.st_atime_ns,
+                                       before.st_mtime_ns))
+                    return raw
+
+            local_queue = types.SimpleNamespace(**vars(siatakes.siaqueue))
+            local_queue.regular_file_stream = lambda *args, **kwargs: \
+                ChangedAfterRead(real_stream(*args, **kwargs))
+            with mock.patch.object(siatakes, "siaqueue", local_queue):
                 with self.assertRaisesRegex(RuntimeError,
                                             "changed while reading"):
                     siatakes._read_bounded_regular_text(
                         path, siatakes.MAX_TAKE_PAGE_BYTES, "fixture page")
+            self.assertEqual(observed, [b"stable bytes"])
+            self.assertIs(siatakes.siaqueue.regular_file_stream, real_stream)
 
     def test_bounded_page_read_refuses_replaced_leaf(self):
         with tempfile.TemporaryDirectory() as root:
@@ -2279,7 +2907,7 @@ class CalibrationPopulation(unittest.TestCase):
 
     def test_natural_history_report_forwards_domain_cursor(self):
         state = {
-            "overall": {},
+            "overall": siatakes._empty_history_stats(),
             "legacy": {"complete": True},
             "authority": {"generation": 9},
         }
@@ -2294,6 +2922,8 @@ class CalibrationPopulation(unittest.TestCase):
             report = siatakes.calibration_report(domain_cursor="17")
         domains.assert_called_once_with(cursor="17")
         self.assertEqual(report["domains"], {})
+        self.assertEqual(report["overall"]["population_status"],
+                         "no-resolved-outcomes")
 
     def test_history_cursor_has_a_digit_bound(self):
         with self.assertRaisesRegex(ValueError, "cursor is invalid"):
@@ -2421,13 +3051,22 @@ class LegacySlugTripwire(unittest.TestCase):
         return [{"slug": "integrity/failure", "score": 1.0,
                  "type": "event-day"}]
 
+    def test_query_system_names_the_upstream_hybrid_front_door(self):
+        with mock.patch.object(
+                siabench, "_engine", side_effect=self._retrieval_row):
+            result = siabench._query_systems(
+                "question", _current_graph_fixture(),
+                {"nodes": {}, "edges": {}})
+        self.assertIn("hybrid_query", result)
+        self.assertNotIn("dense", result)
+
     def test_nightly_fields_refuse_answer_metric_names(self):
         with tempfile.TemporaryDirectory() as corpus, \
                 mock.patch.object(siabench, "CORPUS", corpus), \
                 mock.patch.object(siabench, "_engine",
                                   side_effect=self._retrieval_row), \
                 mock.patch.object(siabench.sialib, "read_json",
-                                  return_value={}), \
+                                  return_value=_current_graph_fixture()), \
                 mock.patch.object(siabench.siamind, "load_mind",
                                   return_value={"nodes": {}, "edges": {}}):
             result = siabench.run_quick(day="2026-08-30")
@@ -2518,7 +3157,7 @@ class LegacySlugTripwire(unittest.TestCase):
                     mock.patch.object(siabench, "_atomic_text",
                                       side_effect=publish), \
                     mock.patch.object(siabench.sialib, "read_json",
-                                      return_value={}), \
+                                      return_value=_current_graph_fixture()), \
                     mock.patch.object(siabench.siamind, "load_mind",
                                       return_value={"nodes": {},
                                                     "edges": {}}), \
@@ -2533,6 +3172,32 @@ class LegacySlugTripwire(unittest.TestCase):
         self.assertNotIn("provably hold the answer", report)
         self.assertNotIn("correct answer = abstain", report)
         self.assertNotIn("hit@5", report)
+
+    def test_graph_consuming_measurements_refuse_an_invalid_open_envelope(self):
+        graph = _current_graph_fixture()
+        graph["unexpected"] = "claim"
+        present = [("where is memory", ["events/test/day"])]
+        for operation in (
+                lambda: siabench.run_quick(day="2026-08-30"),
+                siabench.run_legacy):
+            with self.subTest(operation=operation), \
+                    mock.patch.object(
+                        siabench, "build_questions",
+                        return_value=(present, [])), \
+                    mock.patch.object(
+                        siabench.sialib, "read_json", return_value=graph), \
+                    self.assertRaisesRegex(
+                        siabench.BenchmarkRefusal,
+                        "resident graph snapshot is invalid"):
+                operation()
+
+        with mock.patch.object(siabench, "_verify_source_pages"), \
+                mock.patch.object(
+                    siabench.sialib, "read_json", return_value=graph), \
+                self.assertRaisesRegex(
+                    siabench.BenchmarkRefusal,
+                    "resident graph snapshot is invalid"):
+            siabench.evaluate_retrieval({"questions": []})
 
     def test_engine_failure_refuses_instead_of_scoring_a_miss(self):
         failed = mock.Mock(returncode=1, stdout="", stderr="engine failed")
@@ -2564,6 +3229,14 @@ class SignedLedgerDataset(unittest.TestCase):
     def _bundle(self):
         return siabench.build_ledger_dataset(
             corpus=self.corpus, chain_registry=self.registry)
+
+    def _registry_with_declared_policy(self, policy):
+        ledger, verifier, command = self.registry["aegis"]
+        index = len(command)
+        return {"aegis": (
+            ledger, verifier, [*command, f"--policy={policy}"],
+            ({"argv_index": index, "path": policy,
+              "prefix": "--policy="},))}
 
     def _signed_rows(self):
         with open(self.registry["aegis"][0], encoding="utf-8") as stream:
@@ -2678,6 +3351,33 @@ class SignedLedgerDataset(unittest.TestCase):
         with self.assertRaisesRegex(
                 siabench.BenchmarkRefusal, "chain intake refused"):
             siabench._require_usable_bundle(bundle)
+
+    def test_declared_input_bytes_count_toward_snapshot_aggregate_bound(self):
+        policy = os.path.join(self.temp.name, "bounded-policy.json")
+        policy_bytes = b'{"policy":"trusted"}\n'
+        _write(policy, policy_bytes.decode("utf-8"))
+        registry = self._registry_with_declared_policy(policy)
+        ledger, verifier, _command, _inputs = registry["aegis"]
+        aggregate_limit = (
+            os.path.getsize(ledger) + os.path.getsize(verifier)
+            + len(policy_bytes) - 1)
+
+        with mock.patch.object(
+                siabench, "MAX_BENCH_AGGREGATE_BYTES", aggregate_limit), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    return_value=mock.Mock(returncode=0)):
+            baseline, baseline_diagnostics = siabench._snapshot_chains(
+                chain_registry=self.registry)
+            snapshots, diagnostics = siabench._snapshot_chains(
+                chain_registry=registry)
+
+        self.assertTrue(baseline)
+        self.assertEqual(baseline_diagnostics[0]["status"], "verified")
+        self.assertEqual(snapshots, [])
+        self.assertEqual(diagnostics[0]["status"], "refused")
+        self.assertEqual(
+            diagnostics[0]["reason"], "aggregate-snapshot-capacity")
 
     def test_source_page_aggregate_ceiling_is_an_explicit_refusal(self):
         with mock.patch.object(siabench, "MAX_BENCH_SOURCE_BYTES", 1), \
@@ -3141,6 +3841,145 @@ class SignedLedgerDataset(unittest.TestCase):
         self.assertNotEqual(before["manifest"]["dataset_id"],
                             after["manifest"]["dataset_id"])
 
+    def test_dataset_identity_binds_declared_chain_input_bytes(self):
+        policy = os.path.join(self.temp.name, "identity-policy.json")
+        first_bytes = b"allow\n"
+        second_bytes = b"deny!\n"
+        self.assertEqual(len(first_bytes), len(second_bytes))
+        _write(policy, first_bytes.decode("utf-8"))
+        registry = self._registry_with_declared_policy(policy)
+
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process",
+                return_value=mock.Mock(returncode=0)):
+            first = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=registry)
+            _write(policy, second_bytes.decode("utf-8"))
+            second = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=registry)
+
+        first_chain = first["manifest"]["chains"][0]
+        second_chain = second["manifest"]["chains"][0]
+        self.assertEqual(first_chain["ledger_sha256"],
+                         second_chain["ledger_sha256"])
+        self.assertEqual(first_chain["verifier_sha256"],
+                         second_chain["verifier_sha256"])
+        self.assertEqual(first["manifest"]["source_pages"],
+                         second["manifest"]["source_pages"])
+        self.assertEqual(first_chain["inputs"], [{
+            "argv_index": registry["aegis"][3][0]["argv_index"],
+            "prefix": "--policy=",
+            "bytes": len(first_bytes),
+            "sha256": hashlib.sha256(first_bytes).hexdigest(),
+        }])
+        self.assertEqual(second_chain["inputs"][0]["sha256"],
+                         hashlib.sha256(second_bytes).hexdigest())
+        self.assertNotEqual(first["manifest"]["dataset_id"],
+                            second["manifest"]["dataset_id"])
+
+    def test_dataset_identity_binds_canonical_verifier_argv_contract(self):
+        ledger, verifier, command = self.registry["aegis"]
+        first_registry = {"aegis": (
+            ledger, verifier, [*command, "mode-alpha"])}
+        second_registry = {"aegis": (
+            ledger, verifier, [*command, "mode-beta"])}
+
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process",
+                return_value=mock.Mock(returncode=0)):
+            first = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=first_registry)
+            second = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=second_registry)
+
+        first_chain = first["manifest"]["chains"][0]
+        second_chain = second["manifest"]["chains"][0]
+        self.assertEqual(first_chain["ledger_sha256"],
+                         second_chain["ledger_sha256"])
+        self.assertEqual(first_chain["verifier_sha256"],
+                         second_chain["verifier_sha256"])
+        self.assertNotEqual(first_chain["launch_contract_sha256"],
+                            second_chain["launch_contract_sha256"])
+        self.assertNotEqual(first["manifest"]["dataset_id"],
+                            second["manifest"]["dataset_id"])
+
+    def test_declared_input_snapshot_reads_pinned_descriptor(self):
+        policy = os.path.join(self.temp.name, "pinned-policy.json")
+        replacement = policy + ".replacement"
+        held = policy + ".held"
+        trusted = b"trusted-policy\n"
+        forged = b"forged-policy!\n"
+        _write(policy, trusted.decode("utf-8"))
+        registry = self._registry_with_declared_policy(policy)
+        real_bound = siabench.sialib._bound_chain_verification
+        real_matches = siabench.sialib._chain_generation_matches
+        real_still_named = siabench.sialib._chain_generation_still_named
+        real_read = siabench._read_nofollow_regular
+
+        def no_policy_path_reopen(path, *args, **kwargs):
+            self.assertNotEqual(
+                os.fspath(path), policy,
+                "benchmark reopened a declared input instead of its pinned fd")
+            return real_read(path, *args, **kwargs)
+
+        with mock.patch.object(
+                siabench, "_read_nofollow_regular",
+                side_effect=no_policy_path_reopen), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    return_value=mock.Mock(returncode=0)):
+            expected = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=registry)
+
+        _write(replacement, forged.decode("utf-8"))
+
+        @contextlib.contextmanager
+        def replace_after_binding(*args, **kwargs):
+            with real_bound(*args, **kwargs) as launch:
+                os.replace(policy, held)
+                os.replace(replacement, policy)
+                try:
+                    yield launch
+                finally:
+                    os.replace(policy, replacement)
+                    os.replace(held, policy)
+
+        def accept_pinned_policy(record, *, rebind=True):
+            if record["path"] == policy:
+                return True
+            return real_matches(record, rebind=rebind)
+
+        def accept_restored_policy(record):
+            if record["path"] == policy:
+                return True
+            return real_still_named(record)
+
+        with mock.patch.object(
+                siabench, "_read_nofollow_regular",
+                side_effect=no_policy_path_reopen), \
+                mock.patch.object(
+                    siabench.sialib, "_bound_chain_verification",
+                    side_effect=replace_after_binding), \
+                mock.patch.object(
+                    siabench.sialib, "_chain_generation_matches",
+                    side_effect=accept_pinned_policy), \
+                mock.patch.object(
+                    siabench.sialib, "_chain_generation_still_named",
+                    side_effect=accept_restored_policy), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    return_value=mock.Mock(returncode=0)):
+            observed = siabench.build_ledger_dataset(
+                corpus=self.corpus, chain_registry=registry)
+
+        self.assertTrue(
+            observed["manifest"]["chains"], observed["diagnostics"])
+        self.assertEqual(
+            observed["manifest"]["chains"][0]["inputs"][0]["sha256"],
+            hashlib.sha256(trusted).hexdigest())
+        self.assertEqual(observed["manifest"]["dataset_id"],
+                         expected["manifest"]["dataset_id"])
+
     def test_page_slug_or_title_without_exact_excerpt_cannot_score(self):
         bundle = self._bundle()
         question = next(
@@ -3286,7 +4125,8 @@ class SignedLedgerDataset(unittest.TestCase):
     def test_explicitly_disabled_chain_config_is_omitted_without_refusal(self):
         original = siabench.sialib.CONFIG
         siabench.sialib.CONFIG = {**original, "chains": [
-            {"name": "example", "enabled": False}
+            {"_comment": "documented inert entry",
+             "name": "example", "enabled": False}
         ]}
         try:
             registry = siabench.sialib._chain_cmds()
@@ -3294,6 +4134,27 @@ class SignedLedgerDataset(unittest.TestCase):
             siabench.sialib.CONFIG = original
         self.assertFalse(any(name.startswith("config-error-")
                              for name in registry))
+
+    def test_mistyped_chain_disable_is_an_explicit_refusal(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        original = siabench.sialib.CONFIG
+        siabench.sialib.CONFIG = {**original, "chains": [{
+            "name": "must-remain-inert", "ledger": ledger,
+            "verifier": verifier,
+            "verify": [verifier, ledger, "--quiet"],
+            "enable": False,
+        }]}
+        try:
+            registry = siabench.sialib._chain_cmds()
+        finally:
+            siabench.sialib.CONFIG = original
+        self.assertNotIn("must-remain-inert", registry)
+        errors = [binding[2][1]
+                  for name, binding in registry.items()
+                  if name.startswith("config-error-")]
+        self.assertTrue(errors)
+        self.assertIn("unknown keys", errors[0])
 
     def test_partial_known_chain_remains_in_scope_as_a_refusal(self):
         original = (siabench.sialib.HOME, siabench.sialib.ATTEST,
@@ -3331,6 +4192,8 @@ class SignedLedgerDataset(unittest.TestCase):
             }]}
             direct = siabench.sialib._chain_cmds()
             self.assertIn("custom", direct)
+            self.assertEqual(len(direct["custom"]), 4)
+            self.assertEqual(direct["custom"][3], ())
 
             siabench.sialib.CONFIG = {**original, "chains": [{
                 **base, "verify": [sys.executable, verifier, "verify",
@@ -3338,6 +4201,166 @@ class SignedLedgerDataset(unittest.TestCase):
             }]}
             interpreted = siabench.sialib._chain_cmds()
             self.assertIn("custom", interpreted)
+            self.assertEqual(len(interpreted["custom"]), 4)
+            self.assertEqual(interpreted["custom"][3], ())
+        finally:
+            siabench.sialib.CONFIG = original
+
+    def test_custom_chain_declared_inputs_rewrite_whole_and_prefixed_argv(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        policy = os.path.join(self.temp.name, "policy.json")
+        _write(policy, '{"policy":"trusted"}\n')
+        original = siabench.sialib.CONFIG
+        cases = (
+            (policy, ""),
+            (f"--policy={policy}", "--policy="),
+        )
+        try:
+            for argument, prefix in cases:
+                with self.subTest(prefix=prefix):
+                    siabench.sialib.CONFIG = {**original, "chains": [{
+                        "name": "custom", "ledger": ledger,
+                        "verifier": verifier,
+                        "verify": [verifier, ledger, argument, "--quiet"],
+                        "inputs": [{
+                            "argv_index": 2,
+                            "path": policy,
+                            **({"prefix": prefix} if prefix else {}),
+                        }],
+                    }]}
+                    registry = siabench.sialib._chain_cmds()
+                    self.assertIn("custom", registry)
+                    observed = {}
+
+                    def execute(command, **_kwargs):
+                        observed["command"] = list(command)
+                        return mock.Mock(returncode=0)
+
+                    with mock.patch.object(
+                            siabench.sialib, "_chain_cmds",
+                            return_value={"custom": registry["custom"]}), \
+                            mock.patch.object(
+                                siabench.sialib, "_run_bounded_text_process",
+                                side_effect=execute):
+                        verdicts = siabench.sialib.verify_chains()
+
+                    self.assertEqual(verdicts, {"custom": "pass"})
+                    rewritten = observed["command"][2]
+                    self.assertTrue(rewritten.startswith(
+                        prefix + "/proc/self/fd/"))
+                    self.assertNotIn(policy, observed["command"])
+        finally:
+            siabench.sialib.CONFIG = original
+
+    def test_custom_chain_input_manifest_validation_is_fail_closed(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        policy = os.path.join(self.temp.name, "policy.json")
+        other = os.path.join(self.temp.name, "other.json")
+        _write(policy, "trusted\n")
+        base = {
+            "name": "custom", "ledger": ledger, "verifier": verifier,
+            "verify": [verifier, ledger, policy, "--quiet"],
+        }
+        valid = {"argv_index": 2, "path": policy}
+        cases = (
+            ({"inputs": {}}, "inputs must be a list"),
+            ({"inputs": ["policy"]}, "input entry must be an object"),
+            ({"inputs": [{**valid, "unknown": True}]},
+             "input entry has unknown keys"),
+            ({"inputs": [{**valid, "argv_index": True}]},
+             "argv_index must be an integer"),
+            ({"inputs": [{**valid, "argv_index": 4}]},
+             "argv_index is out of range"),
+            ({"inputs": [valid, valid]}, "argv_index is duplicated"),
+            ({"verify": [verifier, ledger, "policy.json", "--quiet"],
+              "inputs": [{"argv_index": 2, "path": "policy.json"}]},
+             "input path must be absolute"),
+            ({"inputs": [{"argv_index": 2, "path": other}]},
+             "does not match verify argv"),
+            ({"verify": [verifier, ledger, f"--policy={policy}", "--quiet"],
+              "inputs": [{"argv_index": 2, "path": policy,
+                           "prefix": "--config="}]},
+             "does not match verify argv"),
+            ({"verify": [verifier, ledger,
+                         f"--policy=/unbound/{policy}", "--quiet"],
+              "inputs": [{"argv_index": 2, "path": policy,
+                           "prefix": "--policy=/unbound/"}]},
+             "input prefix must be empty or match --long-option="),
+            ({"verify": [verifier, ledger, f"policy={policy}", "--quiet"],
+              "inputs": [{"argv_index": 2, "path": policy,
+                           "prefix": "policy="}]},
+             "input prefix must be empty or match --long-option="),
+            ({"inputs": [{"argv_index": 1, "path": ledger}]},
+             "input index is reserved"),
+        )
+        original = siabench.sialib.CONFIG
+        try:
+            for override, refusal in cases:
+                with self.subTest(refusal=refusal):
+                    siabench.sialib.CONFIG = {**original, "chains": [{
+                        **base, **override,
+                    }]}
+                    registry = siabench.sialib._chain_cmds()
+                    errors = [binding[2][1]
+                              for name, binding in registry.items()
+                              if name.startswith("config-error-")]
+                    self.assertTrue(errors)
+                    self.assertIn(refusal, errors[0])
+                    self.assertNotIn("custom", registry)
+        finally:
+            siabench.sialib.CONFIG = original
+
+    def test_custom_chain_input_manifest_is_canonical_by_argv_index(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        first = os.path.join(self.temp.name, "first-policy.json")
+        second = os.path.join(self.temp.name, "second-policy.json")
+        _write(first, "first\n")
+        _write(second, "second\n")
+        command = [verifier, ledger, first, f"--policy={second}", "--quiet"]
+        declarations = (
+            {"argv_index": 2, "path": first},
+            {"argv_index": 3, "path": second, "prefix": "--policy="},
+        )
+
+        forward = siabench.sialib._canonical_chain_launch_contract(
+            "custom", ledger, verifier, command, declarations)[1]
+        reverse = siabench.sialib._canonical_chain_launch_contract(
+            "custom", ledger, verifier, command,
+            tuple(reversed(declarations)))[1]
+
+        self.assertEqual(forward, reverse)
+        self.assertEqual(
+            [entry["argv_index"] for entry in forward], [2, 3])
+
+    def test_custom_chain_extra_path_operands_require_input_manifest(self):
+        verifier = os.path.join(BIN, "sia-ledger")
+        ledger = os.path.join(self.state, "ledger.tsv")
+        policy = os.path.join(self.temp.name, "policy.json")
+        _write(policy, "trusted\n")
+        commands = (
+            [verifier, ledger, policy, "--quiet"],
+            [verifier, ledger, f"--policy={policy}", "--quiet"],
+            [verifier, ledger, "relative/policy.json", "--quiet"],
+            [verifier, ledger, "policy.json", "--quiet"],
+        )
+        original = siabench.sialib.CONFIG
+        try:
+            for command in commands:
+                with self.subTest(command=command):
+                    siabench.sialib.CONFIG = {**original, "chains": [{
+                        "name": "custom", "ledger": ledger,
+                        "verifier": verifier, "verify": command,
+                    }]}
+                    registry = siabench.sialib._chain_cmds()
+                    errors = [binding[2][1]
+                              for name, binding in registry.items()
+                              if name.startswith("config-error-")]
+                    self.assertTrue(errors)
+                    self.assertIn("must be declared in inputs", errors[0])
+                    self.assertNotIn("custom", registry)
         finally:
             siabench.sialib.CONFIG = original
 
@@ -3371,13 +4394,42 @@ class SignedLedgerDataset(unittest.TestCase):
         finally:
             siabench.sialib.CONFIG = original
 
+    def test_custom_chain_ledger_role_cannot_alias_executed_verifier(self):
+        verifier = os.path.join(self.temp.name, "ledger-and-verifier")
+        _write(verifier, "#!/bin/sh\nexit 0\n")
+        os.chmod(verifier, 0o700)
+        commands = (
+            [verifier, "--quiet"],
+            [sys.executable, verifier, "--quiet"],
+        )
+        original = siabench.sialib.CONFIG
+        try:
+            for command in commands:
+                with self.subTest(command=command):
+                    siabench.sialib.CONFIG = {**original, "chains": [{
+                        "name": "custom", "ledger": verifier,
+                        "verifier": verifier, "verify": command,
+                    }]}
+                    registry = siabench.sialib._chain_cmds()
+                    errors = [binding[2][1]
+                              for name, binding in registry.items()
+                              if name.startswith("config-error-")]
+                    self.assertTrue(errors)
+                    self.assertIn(
+                        "ledger argv occurrence collides with executable",
+                        errors[0])
+                    self.assertNotIn("custom", registry)
+        finally:
+            siabench.sialib.CONFIG = original
+
     def test_unsafe_injected_verifier_binding_refuses_before_execution(self):
         ledger = os.path.join(self.state, "ledger.tsv")
         verifier = os.path.join(BIN, "sia-ledger")
         command = [shutil.which("true"), ledger, verifier]
         registry = {"fixture": (ledger, verifier, command)}
 
-        with mock.patch.object(siabench.subprocess, "run") as execute:
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process") as execute:
             snapshots, diagnostics = siabench._snapshot_chains(
                 chain_registry=registry)
         self.assertEqual(snapshots, [])
@@ -3387,8 +4439,9 @@ class SignedLedgerDataset(unittest.TestCase):
 
         with mock.patch.object(siabench.sialib, "_chain_cmds",
                                return_value=registry), \
-                mock.patch.object(siabench.sialib.subprocess,
-                                  "run") as execute:
+                mock.patch.object(
+                    siabench.sialib,
+                    "_run_bounded_text_process") as execute:
             verdicts = siabench.sialib.verify_chains()
         self.assertEqual(verdicts, {"fixture": "fail"})
         execute.assert_not_called()
@@ -3398,36 +4451,723 @@ class SignedLedgerDataset(unittest.TestCase):
         verifier = os.path.join(BIN, "sia-ledger")
         command = [sys.executable, verifier, "verify", ledger]
         registry = {"fixture": (ledger, verifier, command)}
+        observed = {}
+
+        def execute(bound_command, **kwargs):
+            observed["cwd"] = kwargs["cwd"]
+            observed["cwd_entries"] = os.listdir(kwargs["cwd"])
+            observed["env"] = dict(kwargs["env"])
+            observed["home_exists"] = os.path.isdir(kwargs["env"]["HOME"])
+            observed["tmp_exists"] = os.path.isdir(kwargs["env"]["TMPDIR"])
+            return mock.Mock(returncode=0)
+
         with open(ledger, "w"):
             pass
         with mock.patch.object(siabench.sialib, "_chain_cmds",
                                return_value=registry), \
+                mock.patch.dict(
+                    os.environ,
+                    {"SIA_TEST_AMBIENT_VERIFIER_SECRET": "must-not-pass"}), \
                 mock.patch.object(
                     siabench.sialib, "_run_bounded_text_process",
-                    return_value=mock.Mock(returncode=0)) \
+                    side_effect=execute) \
                 as execute:
             verdicts = siabench.sialib.verify_chains()
         self.assertEqual(verdicts, {"fixture": "pass"})
         _args, kwargs = execute.call_args
-        self.assertEqual(_args[0], command)
+        self.assertEqual(_args[0][2], "verify")
+        self.assertTrue(all(
+            _args[0][index].startswith("/proc/self/fd/")
+            for index in (0, 1, 3)))
+        self.assertNotIn(verifier, _args[0])
+        self.assertNotIn(ledger, _args[0])
         self.assertEqual(kwargs["output_limit"],
                          siabench.sialib.MAX_CONFIG_BYTES)
-        self.assertIsNone(kwargs["cwd"])
+        self.assertTrue(os.path.isabs(observed["cwd"]))
+        self.assertEqual(observed["cwd_entries"], [])
+        self.assertEqual(set(observed["env"]), {
+            "HOME", "TMPDIR", "PATH", "LANG", "LC_ALL",
+        })
+        self.assertTrue(observed["home_exists"])
+        self.assertTrue(observed["tmp_exists"])
+        self.assertEqual(observed["env"]["PATH"], os.defpath)
+        self.assertEqual(observed["env"]["LANG"], "C.UTF-8")
+        self.assertEqual(observed["env"]["LC_ALL"], "C.UTF-8")
+        self.assertNotIn(
+            "SIA_TEST_AMBIENT_VERIFIER_SECRET", observed["env"])
+        self.assertTrue(kwargs["pass_fds"])
+        self.assertTrue(kwargs["isolate_process_tree"])
 
-    def test_benchmark_snapshot_never_captures_verifier_output(self):
+    def test_chain_verification_drains_without_returning_verifier_output(self):
+        ledger = os.path.join(self.temp.name, "output-ledger")
+        verifier = os.path.join(self.temp.name, "output-verifier")
+        _write(ledger, "ledger\n")
+        _write(
+            verifier,
+            "#!/bin/sh\n"
+            "printf VERIFIER-PRIVATE-STDOUT\n"
+            "printf VERIFIER-PRIVATE-STDERR >&2\n")
+        os.chmod(verifier, 0o700)
+        registry = {"fixture": (ledger, verifier, [verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+        returned = []
+
+        def observe(*args, **kwargs):
+            result = real_run(*args, **kwargs)
+            returned.append((result.stdout, result.stderr))
+            return result
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=observe):
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertEqual(verdicts, {"fixture": "pass"})
+        self.assertEqual(returned, [("", "")])
+
+    def test_chain_verification_refuses_transient_verifier_path_replacement(self):
+        ledger = os.path.join(self.temp.name, "stable-ledger")
+        verifier = os.path.join(self.temp.name, "fixture-verifier")
+        replacement = verifier + ".replacement"
+        held = verifier + ".held"
+        _write(ledger, "stable\n")
+        _write(verifier, "#!/bin/sh\nexit 1\n")
+        _write(replacement, "#!/bin/sh\nexit 0\n")
+        os.chmod(verifier, 0o700)
+        os.chmod(replacement, 0o700)
+        registry = {"fixture": (ledger, verifier, [verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(verifier, held)
+            os.replace(replacement, verifier)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(verifier, replacement)
+                os.replace(held, verifier)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_chain_verification_refuses_transient_ledger_path_replacement(self):
+        ledger = os.path.join(self.temp.name, "fixture-ledger")
+        verifier = os.path.join(self.temp.name, "fixture-verifier")
+        replacement = ledger + ".replacement"
+        held = ledger + ".held"
+        _write(ledger, "refuse\n")
+        _write(replacement, "accept\n")
+        _write(verifier, "#!/bin/sh\n[ \"$(cat \"$1\")\" = accept ]\n")
+        os.chmod(verifier, 0o700)
+        registry = {"fixture": (ledger, verifier, [verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(ledger, held)
+            os.replace(replacement, ledger)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(ledger, replacement)
+                os.replace(held, ledger)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_chain_verification_refuses_transient_parent_generation(self):
+        parent = os.path.join(self.temp.name, "chain-generation")
+        replacement = parent + ".replacement"
+        held = parent + ".held"
+        os.makedirs(parent)
+        os.makedirs(replacement)
+        ledger = os.path.join(parent, "ledger")
+        verifier = os.path.join(parent, "verifier")
+        _write(ledger, "refuse\n")
+        _write(verifier, "#!/bin/sh\nexit 1\n")
+        _write(os.path.join(replacement, "ledger"), "accept\n")
+        _write(os.path.join(replacement, "verifier"),
+               "#!/bin/sh\nexit 0\n")
+        os.chmod(verifier, 0o700)
+        os.chmod(os.path.join(replacement, "verifier"), 0o700)
+        registry = {"fixture": (ledger, verifier, [verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(parent, held)
+            os.replace(replacement, parent)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(parent, replacement)
+                os.replace(held, parent)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_direct_verifier_consumes_pinned_executable_and_ledger(self):
+        parent = os.path.join(self.temp.name, "direct-generation")
+        replacement = parent + ".replacement"
+        held = parent + ".held"
+        os.makedirs(parent)
+        os.makedirs(replacement)
+        ledger = os.path.join(parent, "ledger")
+        verifier = os.path.join(parent, "verifier")
+        _write(ledger, "accept\n")
+        _write(verifier, "#!/bin/sh\n[ \"$(cat \"$1\")\" = accept ]\n")
+        _write(os.path.join(replacement, "ledger"), "refuse\n")
+        _write(os.path.join(replacement, "verifier"),
+               "#!/bin/sh\nexit 1\n")
+        os.chmod(verifier, 0o700)
+        os.chmod(os.path.join(replacement, "verifier"), 0o700)
+        registry = {"fixture": (ledger, verifier, [verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(parent, held)
+            os.replace(replacement, parent)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(parent, replacement)
+                os.replace(held, parent)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "pass"})
+
+    def test_python_verifier_consumes_pinned_script_and_ledger(self):
+        parent = os.path.join(self.temp.name, "python-generation")
+        replacement = parent + ".replacement"
+        held = parent + ".held"
+        os.makedirs(parent)
+        os.makedirs(replacement)
+        ledger = os.path.join(parent, "ledger")
+        verifier = os.path.join(parent, "verifier.py")
+        _write(ledger, "accept\n")
+        _write(verifier,
+               "import pathlib,sys\n"
+               "raise SystemExit(pathlib.Path(sys.argv[1]).read_text() "
+               "!= 'accept\\n')\n")
+        _write(os.path.join(replacement, "ledger"), "refuse\n")
+        _write(os.path.join(replacement, "verifier.py"),
+               "raise SystemExit(1)\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, ledger])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(parent, held)
+            os.replace(replacement, parent)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(parent, replacement)
+                os.replace(held, parent)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "pass"})
+
+    def test_declared_sidecar_consumes_pinned_generation(self):
+        ledger = os.path.join(self.temp.name, "explicit-ledger")
+        public_parent = os.path.join(self.temp.name, "explicit-public")
+        replacement = public_parent + ".replacement"
+        held = public_parent + ".held"
+        os.makedirs(public_parent)
+        os.makedirs(replacement)
+        public = os.path.join(public_parent, "pub.hex")
+        verifier = os.path.join(self.temp.name, "explicit-verifier.py")
+        _write(ledger, "accept\n")
+        _write(public, "trusted\n")
+        _write(os.path.join(replacement, "pub.hex"), "changed\n")
+        _write(verifier,
+               "import pathlib,sys\n"
+               "raise SystemExit(not ("
+               "pathlib.Path(sys.argv[1]).read_text() == 'accept\\n' and "
+               "pathlib.Path(sys.argv[2]).read_text() == 'trusted\\n'))\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, ledger, public],
+            ({"argv_index": 3, "path": public, "prefix": ""},))}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(public_parent, held)
+            os.replace(replacement, public_parent)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(public_parent, replacement)
+                os.replace(held, public_parent)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "pass"})
+
+    def test_declared_absent_input_refuses_before_runner_is_called(self):
+        ledger = os.path.join(self.temp.name, "declared-absent-ledger")
+        policy = os.path.join(self.temp.name, "declared-absent-policy")
+        verifier = os.path.join(self.temp.name, "declared-absent-verifier.py")
+        _write(ledger, "ledger\n")
+        _write(verifier, "raise SystemExit(0)\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, ledger, policy],
+            ({"argv_index": 3, "path": policy, "prefix": ""},))}
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process") as execute:
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertEqual(verdicts, {"fixture": "fail"})
+        self.assertFalse(os.path.lexists(policy))
+        execute.assert_not_called()
+
+    def test_relative_verifier_input_is_refused_before_child_execution(self):
+        ledger = os.path.join(self.temp.name, "relative-input-ledger")
+        policy = os.path.join(self.temp.name, "relative-input-policy")
+        verifier = os.path.join(self.temp.name, "relative-input-verifier.py")
+        marker = os.path.join(self.temp.name, "relative-input-launched")
+        _write(ledger, "ledger\n")
+        _write(policy, "trusted\n")
+        _write(
+            verifier,
+            "import pathlib,sys\n"
+            f"pathlib.Path({marker!r}).write_text('launched')\n"
+            "raise SystemExit(pathlib.Path(sys.argv[2]).read_text() "
+            "!= 'trusted\\n')\n")
+        relative = os.path.relpath(policy, os.getcwd())
+        self.assertFalse(os.path.isabs(relative))
+        registry = {"fixture": (
+            ledger, verifier,
+            [sys.executable, verifier, ledger, relative])}
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry):
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertFalse(
+            os.path.exists(marker),
+            "verifier consumed an input through the ambient working directory")
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_absent_absolute_verifier_input_is_refused_before_execution(self):
+        ledger = os.path.join(self.temp.name, "absent-input-ledger")
+        policy = os.path.join(self.temp.name, "absent-input-policy")
+        verifier = os.path.join(self.temp.name, "absent-input-verifier.py")
+        marker = os.path.join(self.temp.name, "absent-input-launched")
+        _write(ledger, "ledger\n")
+        _write(
+            verifier,
+            "import pathlib,sys\n"
+            "policy=pathlib.Path(sys.argv[2])\n"
+            "policy.write_text('created\\n')\n"
+            f"pathlib.Path({marker!r}).write_text('launched')\n"
+            "raise SystemExit(policy.read_text() != 'created\\n')\n")
+        self.assertFalse(os.path.exists(policy))
+        registry = {"fixture": (
+            ledger, verifier,
+            [sys.executable, verifier, ledger, policy])}
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry):
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertFalse(
+            os.path.exists(marker),
+            "verifier created and consumed an input absent during binding")
+        self.assertFalse(os.path.exists(policy))
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_state_verifier_uses_bound_view_but_refuses_changed_ancestry(self):
+        parent = os.path.join(self.temp.name, "state-generation")
+        replacement = parent + ".replacement"
+        held = parent + ".held"
+        os.makedirs(parent)
+        os.makedirs(replacement)
+        ledger = os.path.join(parent, "ledger.tsv")
+        verifier = os.path.join(self.temp.name, "state-verifier.py")
+        _write(ledger, "accept\n")
+        _write(os.path.join(parent, "pub.hex"), "trusted\n")
+        _write(os.path.join(parent, "head.pin"), "head\n")
+        _write(os.path.join(replacement, "ledger.tsv"), "refuse\n")
+        _write(os.path.join(replacement, "pub.hex"), "changed\n")
+        _write(os.path.join(replacement, "head.pin"), "head\n")
+        _write(verifier,
+               "import pathlib,sys\n"
+               "state=pathlib.Path(sys.argv[1])\n"
+               "raise SystemExit(not ("
+               "(state/'ledger.tsv').read_text() == 'accept\\n' and "
+               "(state/'pub.hex').read_text() == 'trusted\\n'))\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, parent])}
+        real_run = siabench.sialib._run_bounded_text_process
+        child_statuses = []
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(parent, held)
+            os.replace(replacement, parent)
+            try:
+                result = real_run(*args, **kwargs)
+                child_statuses.append(result.returncode)
+                return result
+            finally:
+                os.replace(parent, replacement)
+                os.replace(held, parent)
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=replace_only_while_child_runs):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(child_statuses, [0])
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_state_verifier_cannot_reach_resident_state_via_inherited_fds(self):
+        state = os.path.join(self.temp.name, "resident-state")
+        os.makedirs(state)
+        ledger = os.path.join(state, "ledger.tsv")
+        verifier = os.path.join(self.temp.name, "fd-scanning-verifier.py")
+        resident_only = os.path.join(state, "resident-only")
+        _write(ledger, "accept\n")
+        _write(os.path.join(state, "pub.hex"), "trusted\n")
+        _write(os.path.join(state, "head.pin"), "head\n")
+        _write(resident_only, "resident-secret\n")
+        _write(
+            verifier,
+            "import os,pathlib,sys\n"
+            "private=pathlib.Path(sys.argv[1])\n"
+            "if (private/'resident-only').exists(): raise SystemExit(2)\n"
+            "escaped=False\n"
+            "for name in os.listdir('/proc/self/fd'):\n"
+            "    try:\n"
+            "        candidate=pathlib.Path('/proc/self/fd')/name/"
+            "'resident-only'\n"
+            "        if candidate.read_text() == 'resident-secret\\n':\n"
+            "            escaped=True\n"
+            "            break\n"
+            "    except (OSError,UnicodeError):\n"
+            "        pass\n"
+            "raise SystemExit(0 if escaped else 1)\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, state])}
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry):
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertEqual(
+            verdicts, {"fixture": "fail"},
+            "verifier reached resident state through an inherited descriptor")
+
+    def test_child_fds_exclude_original_ledger_and_declared_input_authority(self):
+        ledger = os.path.join(self.temp.name, "original-ledger.tsv")
+        policy = os.path.join(self.temp.name, "original-policy.json")
+        verifier = os.path.join(self.temp.name, "verifier.py")
+        _write(ledger, "ledger\n")
+        _write(policy, "policy\n")
+        _write(verifier, "raise SystemExit(0)\n")
+        command = [sys.executable, verifier, ledger, f"--policy={policy}"]
+        inputs = ({"argv_index": 3, "path": policy,
+                   "prefix": "--policy="},)
+        original_authorities = {
+            (os.stat(ledger).st_dev, os.stat(ledger).st_ino),
+            (os.stat(policy).st_dev, os.stat(policy).st_ino),
+        }
+        executable_authorities = {
+            (os.stat(verifier).st_dev, os.stat(verifier).st_ino),
+            (os.stat(os.path.realpath(sys.executable)).st_dev,
+             os.stat(os.path.realpath(sys.executable)).st_ino),
+        }
+
+        with siabench.sialib._bound_chain_verification(
+                "fixture", ledger, verifier, command, inputs) as launch:
+            inherited = {
+                (os.fstat(descriptor).st_dev, os.fstat(descriptor).st_ino)
+                for descriptor in launch["pass_fds"]
+            }
+            self.assertTrue(executable_authorities.issubset(inherited))
+            self.assertTrue(original_authorities.isdisjoint(inherited))
+            with open(launch["command"][2], "rb") as stream:
+                self.assertEqual(stream.read(), b"ledger\n")
+            with open(launch["command"][3].split("=", 1)[1], "rb") \
+                    as stream:
+                self.assertEqual(stream.read(), b"policy\n")
+
+    def test_verifier_can_mutate_only_private_ledger_and_input_copies(self):
+        ledger = os.path.join(self.temp.name, "immutable-ledger.tsv")
+        policy = os.path.join(self.temp.name, "immutable-policy.json")
+        verifier = os.path.join(self.temp.name, "copy-mutator.py")
+        ledger_bytes = b"original-ledger\n"
+        policy_bytes = b"original-policy\n"
+        _write(ledger, ledger_bytes.decode("utf-8"))
+        _write(policy, policy_bytes.decode("utf-8"))
+        _write(
+            verifier,
+            "import pathlib,sys\n"
+            "pathlib.Path(sys.argv[1]).write_text('child-ledger\\n')\n"
+            "pathlib.Path(sys.argv[2]).write_text('child-policy\\n')\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, ledger, policy],
+            ({"argv_index": 3, "path": policy},))}
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry):
+            verdicts = siabench.sialib.verify_chains()
+
+        self.assertEqual(verdicts, {"fixture": "fail"})
+        with open(ledger, "rb") as stream:
+            self.assertEqual(stream.read(), ledger_bytes)
+        with open(policy, "rb") as stream:
+            self.assertEqual(stream.read(), policy_bytes)
+
+    def test_state_sidecar_change_refuses_verifier_pass(self):
+        parent = os.path.join(self.temp.name, "sidecar-generation")
+        os.makedirs(parent)
+        ledger = os.path.join(parent, "ledger.tsv")
+        public = os.path.join(parent, "pub.hex")
+        verifier = os.path.join(self.temp.name, "sidecar-verifier.py")
+        _write(ledger, "accept\n")
+        _write(public, "trusted\n")
+        _write(os.path.join(parent, "head.pin"), "head\n")
+        _write(verifier,
+               "import pathlib,sys\n"
+               "state=pathlib.Path(sys.argv[1])\n"
+               "raise SystemExit((state/'pub.hex').read_text() "
+               "!= 'trusted\\n')\n")
+        registry = {"fixture": (
+            ledger, verifier, [sys.executable, verifier, parent])}
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def mutate_sidecar_after_child(*args, **kwargs):
+            result = real_run(*args, **kwargs)
+            _write(public, "changed\n")
+            return result
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=mutate_sidecar_after_child):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"fixture": "fail"})
+
+    def test_implicit_state_verifier_gets_private_generation(self):
+        home = os.path.join(self.temp.name, "implicit-home")
+        state = os.path.join(home, ".local", "share", "sekhmet")
+        binary = os.path.join(home, ".local", "bin", "sekhmet")
+        os.makedirs(state)
+        os.makedirs(os.path.dirname(binary))
+        ledger = os.path.join(state, "ledger.tsv")
+        public = os.path.join(state, "pub.hex")
+        pin = os.path.join(state, "head.pin")
+        _write(ledger, "accept\n")
+        _write(public, "trusted\n")
+        _write(pin, "original\n")
+        _write(binary,
+               "#!/bin/sh\n"
+               "state=$HOME/.local/share/sekhmet\n"
+               "[ \"$(cat \"$state/ledger.tsv\")\" = accept ] || exit 1\n"
+               "[ \"$(cat \"$state/pub.hex\")\" = trusted ] || exit 1\n"
+               "printf 'advanced\\n' > \"$state/head.pin\"\n")
+        os.chmod(binary, 0o700)
+        registry = {"sekhmet": (
+            ledger, binary, [binary, "ledger", "verify", "--quiet"])}
+        with mock.patch.object(siabench.sialib, "HOME", home), \
+                mock.patch.object(
+                    siabench.sialib, "_chain_cmds", return_value=registry):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"sekhmet": "pass"})
+        with open(pin, encoding="utf-8") as stream:
+            self.assertEqual(stream.read(), "original\n")
+
+    def test_later_chain_change_invalidates_earlier_pass(self):
+        first_ledger = os.path.join(self.temp.name, "first-ledger")
+        later_ledger = os.path.join(self.temp.name, "later-ledger")
+        verifier = shutil.which("true")
+        _write(first_ledger, "first\n")
+        _write(later_ledger, "later\n")
+        registry = {
+            "first": (first_ledger, verifier,
+                      [verifier, first_ledger]),
+            "later": (later_ledger, verifier,
+                      [verifier, later_ledger]),
+        }
+        real_run = siabench.sialib._run_bounded_text_process
+        first_finished = False
+
+        def mutate_after_later_child(*args, **kwargs):
+            nonlocal first_finished
+            result = real_run(*args, **kwargs)
+            if first_finished:
+                _write(first_ledger, "changed\n")
+            else:
+                first_finished = True
+            return result
+
+        with mock.patch.object(
+                siabench.sialib, "_chain_cmds", return_value=registry), \
+                mock.patch.object(
+                    siabench.sialib, "_run_bounded_text_process",
+                    side_effect=mutate_after_later_child):
+            verdicts = siabench.sialib.verify_chains()
+        self.assertEqual(verdicts, {"first": "fail", "later": "pass"})
+
+    def test_benchmark_refuses_replaced_state_ancestry(self):
+        replacement = self.state + ".replacement"
+        held = self.state + ".held"
+        os.makedirs(replacement)
+        _write(os.path.join(replacement, "ledger.tsv"), "invalid\n")
+        _write(os.path.join(replacement, "pub.hex"), "changed\n")
+        _write(os.path.join(replacement, "head.pin"), "changed\n")
+        real_run = siabench.sialib._run_bounded_text_process
+
+        def replace_only_while_child_runs(*args, **kwargs):
+            os.replace(self.state, held)
+            os.replace(replacement, self.state)
+            try:
+                return real_run(*args, **kwargs)
+            finally:
+                os.replace(self.state, replacement)
+                os.replace(held, self.state)
+
         with mock.patch.object(
                 siabench.sialib, "_run_bounded_text_process",
-                return_value=mock.Mock(returncode=0)) as execute:
+                side_effect=replace_only_while_child_runs):
+            snapshots, diagnostics = siabench._snapshot_chains(
+                chain_registry=self.registry)
+        self.assertEqual(snapshots, [])
+        self.assertEqual(diagnostics[0]["status"], "refused")
+        self.assertEqual(
+            diagnostics[0]["reason"],
+            "chain-input-changed-during-verification")
+
+    def test_benchmark_rechecks_earlier_generation_after_later_chain(self):
+        first_state, _first_corpus, first_registry = _signed_fixture(
+            os.path.join(self.temp.name, "batch-first"))
+        _later_state, _later_corpus, later_registry = _signed_fixture(
+            os.path.join(self.temp.name, "batch-later"))
+        first_ledger = os.path.join(first_state, "ledger.tsv")
+        registry = {
+            "first": first_registry["aegis"],
+            "later": later_registry["aegis"],
+        }
+        real_run = siabench.sialib._run_bounded_text_process
+        first_finished = False
+
+        def mutate_after_later_child(*args, **kwargs):
+            nonlocal first_finished
+            result = real_run(*args, **kwargs)
+            if first_finished:
+                with open(first_ledger, "a", encoding="utf-8") as stream:
+                    stream.write("\n")
+            else:
+                first_finished = True
+            return result
+
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process",
+                side_effect=mutate_after_later_child):
+            snapshots, diagnostics = siabench._snapshot_chains(
+                chain_registry=registry)
+        self.assertEqual(
+            [snapshot["chain"] for snapshot in snapshots], ["later"])
+        first_diagnostic = next(
+            row for row in diagnostics if row["chain"] == "first")
+        self.assertEqual(
+            first_diagnostic["reason"],
+            "chain-generation-changed-before-batch-complete")
+
+    def test_benchmark_snapshot_never_captures_verifier_output(self):
+        observed = {}
+
+        def execute(_command, **kwargs):
+            observed["cwd"] = kwargs["cwd"]
+            observed["cwd_entries"] = os.listdir(kwargs["cwd"])
+            observed["env"] = dict(kwargs["env"])
+            return mock.Mock(returncode=0)
+
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process",
+                side_effect=execute) as execute:
             snapshots, diagnostics = siabench._snapshot_chains(
                 chain_registry=self.registry)
         self.assertTrue(snapshots)
         self.assertEqual(diagnostics[0]["status"], "verified")
         _args, kwargs = execute.call_args
-        self.assertEqual(_args[0], self.registry["aegis"][2])
+        self.assertEqual(_args[0][2], "verify")
+        self.assertTrue(all(
+            _args[0][index].startswith("/proc/self/fd/")
+            for index in (0, 1)))
+        self.assertNotIn(self.registry["aegis"][1], _args[0])
+        self.assertNotIn(self.registry["aegis"][0], _args[0])
         self.assertEqual(kwargs["output_limit"],
                          siabench.sialib.MAX_CONFIG_BYTES)
-        self.assertIsNone(kwargs["cwd"])
+        self.assertTrue(os.path.isabs(observed["cwd"]))
+        self.assertEqual(observed["cwd_entries"], [])
+        self.assertEqual(set(observed["env"]), {
+            "HOME", "TMPDIR", "PATH", "LANG", "LC_ALL",
+        })
+        self.assertTrue(kwargs["pass_fds"])
+        self.assertTrue(kwargs["isolate_process_tree"])
         self.assertNotIn("text", kwargs)
+
+    def test_benchmark_rewrites_declared_prefixed_input_descriptor(self):
+        ledger, verifier, command = self.registry["aegis"]
+        policy = os.path.join(self.temp.name, "benchmark-policy.json")
+        _write(policy, '{"policy":"trusted"}\n')
+        policy_index = len(command)
+        registry = {"aegis": (
+            ledger, verifier, [*command, f"--policy={policy}"],
+            ({"argv_index": policy_index, "path": policy,
+              "prefix": "--policy="},))}
+        observed = {}
+
+        def execute(bound_command, **_kwargs):
+            observed["command"] = list(bound_command)
+            return mock.Mock(returncode=0)
+
+        with mock.patch.object(
+                siabench.sialib, "_run_bounded_text_process",
+                side_effect=execute):
+            snapshots, diagnostics = siabench._snapshot_chains(
+                chain_registry=registry)
+
+        self.assertTrue(snapshots)
+        self.assertEqual(diagnostics[0]["status"], "verified")
+        self.assertTrue(observed["command"][policy_index].startswith(
+            "--policy=/proc/self/fd/"))
+        self.assertNotIn(policy, observed["command"])
 
     def test_attest_snapshot_splits_only_on_literal_lf(self):
         state = os.path.join(self.temp.name, "unicode-ledger")

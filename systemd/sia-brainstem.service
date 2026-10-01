@@ -1,5 +1,5 @@
 [Unit]
-Description=SIA brainstem — the Omarchy Brain's resident daemon
+Description=SIA resident local-memory daemon
 Documentation=https://github.com/AnubisQuantumCipher/sia
 
 [Service]
@@ -8,8 +8,12 @@ NotifyAccess=main
 # JACKAL status=exact, parsed=2*60, exact=120. Exact rational arithmetic
 # outside the Lean certificate chain (NOT formal-bounded).
 TimeoutStartSec=120
+# Opt-in durable btrfs binding; absent enrollment is a no-op. A refusal
+# remains visible in the journal and readiness without blocking memory startup.
+ExecStartPre=-/usr/bin/python3 %h/.local/share/sia/bin/sia-cli readmit --btrfs-boot
 ExecStart=/usr/bin/python3 %h/.local/share/sia/bin/sia-brainstem
 Restart=on-failure
+RestartPreventExitStatus=78
 RestartSec=10
 Nice=10
 IOSchedulingClass=idle

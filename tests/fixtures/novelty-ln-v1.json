@@ -1,0 +1,198 @@
+{
+  "schema": "sia-novelty-numeric-fixtures-v1",
+  "non_claims": [
+    "These retained JACKAL observations constrain supplied fixture arithmetic only, not Python execution, biological correspondence, or held-out improvement."
+  ],
+  "ln": {
+    "1/2": {
+      "status": "formal-bounded",
+      "request": {
+        "canonical_hi": "1/2",
+        "canonical_lo": "1/2",
+        "command": "range-bound-cert",
+        "expression": "ln(x)",
+        "input_hi": "1/2",
+        "input_lo": "1/2",
+        "request_commitment_b64": "ZWQ4NTEwNDE4YzcxMjRmNjllYzhkNmU3M2NkMzU2NWQzNzVjNGQ4N2ExMmUyMzMyYWZjZDU5ODg0YWUzOTgxNA=="
+      },
+      "result": {
+        "cert_status": "bounded",
+        "enclosure_hi": "-17328679489/25000000000",
+        "enclosure_lo": "-17328679539/25000000000",
+        "status": "formal-bounded"
+      },
+      "receipt_sha256": "f8480e37284611a6e6acc3fd282812cc2efbe5c162efd6c399f9b5e25986fa3c",
+      "non_claims": [
+        "NOT universal correctness across all operators or expressions",
+        "ln_rat admits ONLY the exact form `ln(x)` on a canonical rational interval with 0 < lo",
+        "Nonpositive lower endpoints FAIL CLOSED (log domain)",
+        "Every other transcendental operator FAIL CLOSED on this variant",
+        "The Python ln_rat producer is untrusted; formal release requires independent checker ACCEPT",
+        "SHA-256 identifies bytes; it does NOT authenticate an author",
+        "The artifact is unsigned and has not received an independent external proof audit"
+      ],
+      "assumptions": [
+        "Range interval ordering and release-fragment ModelTCB are derived inside the proved checker from requestMatches and checkCert acceptance",
+        "The ln_rat cert node bypasses every LibmModel obligation (Runs.logRat: inverse exponential bracket, pure ℚ via Gaussian.expUBQ/expLBQ)",
+        "The Lean releaseNodeOp allowlist admits the `ln_rat` constructor with zero libm TCB",
+        "Lean 4 kernel + pinned Mathlib toolchain that compiled jackal_cert_check",
+        "Canonical exact-rational request/certificate codecs compiled into jackal_cert_check",
+        "The pinned ln_rat producer and checker bytes executed as their hashes describe",
+        "Lean native code generation, the C/C++ compiler and linker, and the dynamic loader preserve the checker semantics",
+        "The operating system, CPU, memory, and storage execute and retain the pinned bytes correctly"
+      ]
+    },
+    "2/3": {
+      "status": "formal-bounded",
+      "request": {
+        "canonical_hi": "2/3",
+        "canonical_lo": "2/3",
+        "command": "range-bound-cert",
+        "expression": "ln(x)",
+        "input_hi": "2/3",
+        "input_lo": "2/3",
+        "request_commitment_b64": "Yzc3MTljOTI3ZTRkMzgyMjA1ZjEyZDBjMmY1MTNhMzE4MDE0YmQyMzJlNDZhNzRjODU0YWE2MWQ3NGI2ODk3ZA=="
+      },
+      "result": {
+        "cert_status": "bounded",
+        "enclosure_hi": "-101366276777/250000000000",
+        "enclosure_lo": "-101366277277/250000000000",
+        "status": "formal-bounded"
+      },
+      "receipt_sha256": "b4d11af0c7f24edfb2982abfb7183eda8ff5c5c4fb8e7577432a908739ec70fe",
+      "non_claims": [
+        "NOT universal correctness across all operators or expressions",
+        "ln_rat admits ONLY the exact form `ln(x)` on a canonical rational interval with 0 < lo",
+        "Nonpositive lower endpoints FAIL CLOSED (log domain)",
+        "Every other transcendental operator FAIL CLOSED on this variant",
+        "The Python ln_rat producer is untrusted; formal release requires independent checker ACCEPT",
+        "SHA-256 identifies bytes; it does NOT authenticate an author",
+        "The artifact is unsigned and has not received an independent external proof audit"
+      ],
+      "assumptions": [
+        "Range interval ordering and release-fragment ModelTCB are derived inside the proved checker from requestMatches and checkCert acceptance",
+        "The ln_rat cert node bypasses every LibmModel obligation (Runs.logRat: inverse exponential bracket, pure ℚ via Gaussian.expUBQ/expLBQ)",
+        "The Lean releaseNodeOp allowlist admits the `ln_rat` constructor with zero libm TCB",
+        "Lean 4 kernel + pinned Mathlib toolchain that compiled jackal_cert_check",
+        "Canonical exact-rational request/certificate codecs compiled into jackal_cert_check",
+        "The pinned ln_rat producer and checker bytes executed as their hashes describe",
+        "Lean native code generation, the C/C++ compiler and linker, and the dynamic loader preserve the checker semantics",
+        "The operating system, CPU, memory, and storage execute and retain the pinned bytes correctly"
+      ]
+    },
+    "1/4": {
+      "status": "formal-bounded",
+      "request": {
+        "canonical_hi": "1/4",
+        "canonical_lo": "1/4",
+        "command": "range-bound-cert",
+        "expression": "ln(x)",
+        "input_hi": "1/4",
+        "input_lo": "1/4",
+        "request_commitment_b64": "OGMxYTVkOTlhN2IwMGVjYzUzYWIyNTFiNWEyYjEwYjYwMGYwNmFhZDBiMjQ0ZjYyNTFjNjU0ZDhkZjcxOGVmMw=="
+      },
+      "result": {
+        "cert_status": "bounded",
+        "enclosure_hi": "-34657359003/25000000000",
+        "enclosure_lo": "-34657359053/25000000000",
+        "status": "formal-bounded"
+      },
+      "receipt_sha256": "e21c13b23f12f26a897f1b91ebbc97dee7641a63003d75aaa6c0b6b98beb9b9e",
+      "non_claims": [
+        "NOT universal correctness across all operators or expressions",
+        "ln_rat admits ONLY the exact form `ln(x)` on a canonical rational interval with 0 < lo",
+        "Nonpositive lower endpoints FAIL CLOSED (log domain)",
+        "Every other transcendental operator FAIL CLOSED on this variant",
+        "The Python ln_rat producer is untrusted; formal release requires independent checker ACCEPT",
+        "SHA-256 identifies bytes; it does NOT authenticate an author",
+        "The artifact is unsigned and has not received an independent external proof audit"
+      ],
+      "assumptions": [
+        "Range interval ordering and release-fragment ModelTCB are derived inside the proved checker from requestMatches and checkCert acceptance",
+        "The ln_rat cert node bypasses every LibmModel obligation (Runs.logRat: inverse exponential bracket, pure ℚ via Gaussian.expUBQ/expLBQ)",
+        "The Lean releaseNodeOp allowlist admits the `ln_rat` constructor with zero libm TCB",
+        "Lean 4 kernel + pinned Mathlib toolchain that compiled jackal_cert_check",
+        "Canonical exact-rational request/certificate codecs compiled into jackal_cert_check",
+        "The pinned ln_rat producer and checker bytes executed as their hashes describe",
+        "Lean native code generation, the C/C++ compiler and linker, and the dynamic loader preserve the checker semantics",
+        "The operating system, CPU, memory, and storage execute and retain the pinned bytes correctly"
+      ]
+    },
+    "3/5": {
+      "status": "formal-bounded",
+      "request": {
+        "canonical_hi": "3/5",
+        "canonical_lo": "3/5",
+        "command": "range-bound-cert",
+        "expression": "ln(x)",
+        "input_hi": "3/5",
+        "input_lo": "3/5",
+        "request_commitment_b64": "NTY3M2M1MGIxMmZjMWI3NzBkNmNkNTVlMDljM2Y1MGFiY2EzZWRjNmUxZDU2ZTFiZDZjMjdmOTFlMmMxMTcxYw=="
+      },
+      "result": {
+        "cert_status": "bounded",
+        "enclosure_hi": "-255412811383/500000000000",
+        "enclosure_lo": "-255412812383/500000000000",
+        "status": "formal-bounded"
+      },
+      "receipt_sha256": "aef71d6457a6406680ee38d737724296f21adfa3dc91bcf3a444ff3135ff8201",
+      "non_claims": [
+        "NOT universal correctness across all operators or expressions",
+        "ln_rat admits ONLY the exact form `ln(x)` on a canonical rational interval with 0 < lo",
+        "Nonpositive lower endpoints FAIL CLOSED (log domain)",
+        "Every other transcendental operator FAIL CLOSED on this variant",
+        "The Python ln_rat producer is untrusted; formal release requires independent checker ACCEPT",
+        "SHA-256 identifies bytes; it does NOT authenticate an author",
+        "The artifact is unsigned and has not received an independent external proof audit"
+      ],
+      "assumptions": [
+        "Range interval ordering and release-fragment ModelTCB are derived inside the proved checker from requestMatches and checkCert acceptance",
+        "The ln_rat cert node bypasses every LibmModel obligation (Runs.logRat: inverse exponential bracket, pure ℚ via Gaussian.expUBQ/expLBQ)",
+        "The Lean releaseNodeOp allowlist admits the `ln_rat` constructor with zero libm TCB",
+        "Lean 4 kernel + pinned Mathlib toolchain that compiled jackal_cert_check",
+        "Canonical exact-rational request/certificate codecs compiled into jackal_cert_check",
+        "The pinned ln_rat producer and checker bytes executed as their hashes describe",
+        "Lean native code generation, the C/C++ compiler and linker, and the dynamic loader preserve the checker semantics",
+        "The operating system, CPU, memory, and storage execute and retain the pinned bytes correctly"
+      ]
+    },
+    "3/4": {
+      "status": "formal-bounded",
+      "request": {
+        "canonical_hi": "3/4",
+        "canonical_lo": "3/4",
+        "command": "range-bound-cert",
+        "expression": "ln(x)",
+        "input_hi": "3/4",
+        "input_lo": "3/4",
+        "request_commitment_b64": "YmI2ZTRmMGQzNWQ4YjViZDRlYmRiYzFhOGQ2ZjllYTZjZmU1MTcwOGUyM2RkYmQ5OWM3MmE3NmFjYzE3ZmYzYw=="
+      },
+      "result": {
+        "cert_status": "bounded",
+        "enclosure_hi": "-71920517863/250000000000",
+        "enclosure_lo": "-71920518363/250000000000",
+        "status": "formal-bounded"
+      },
+      "receipt_sha256": "661f6d8eeea24d6be44d266566286b6b8a8d0f091cad9482d2fd60cd1a61448e",
+      "non_claims": [
+        "NOT universal correctness across all operators or expressions",
+        "ln_rat admits ONLY the exact form `ln(x)` on a canonical rational interval with 0 < lo",
+        "Nonpositive lower endpoints FAIL CLOSED (log domain)",
+        "Every other transcendental operator FAIL CLOSED on this variant",
+        "The Python ln_rat producer is untrusted; formal release requires independent checker ACCEPT",
+        "SHA-256 identifies bytes; it does NOT authenticate an author",
+        "The artifact is unsigned and has not received an independent external proof audit"
+      ],
+      "assumptions": [
+        "Range interval ordering and release-fragment ModelTCB are derived inside the proved checker from requestMatches and checkCert acceptance",
+        "The ln_rat cert node bypasses every LibmModel obligation (Runs.logRat: inverse exponential bracket, pure ℚ via Gaussian.expUBQ/expLBQ)",
+        "The Lean releaseNodeOp allowlist admits the `ln_rat` constructor with zero libm TCB",
+        "Lean 4 kernel + pinned Mathlib toolchain that compiled jackal_cert_check",
+        "Canonical exact-rational request/certificate codecs compiled into jackal_cert_check",
+        "The pinned ln_rat producer and checker bytes executed as their hashes describe",
+        "Lean native code generation, the C/C++ compiler and linker, and the dynamic loader preserve the checker semantics",
+        "The operating system, CPU, memory, and storage execute and retain the pinned bytes correctly"
+      ]
+    }
+  }
+}

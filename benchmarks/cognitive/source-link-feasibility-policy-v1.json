@@ -1,0 +1,52 @@
+{
+  "schema": "sia-cognitive-source-link-policy-v1",
+  "seed": "source-link-retained-feasibility-v1",
+  "population": "complete-captured-signed-rows-v1",
+  "relations": {
+    "projection": "sekhmet-native-arg1-unit-link-v1",
+    "native_subject": "exact-chain-arg1-v1",
+    "link_provenance": "deterministic-signed-row-projection-v1",
+    "collision": "refuse-distinct-native-subjects-sharing-bridge-v1",
+    "unsupported": "declare-source-and-row-roster-v1"
+  },
+  "split": {
+    "kind": "dependency-components-before-eligibility-v1",
+    "dependencies": "bridge-chain-arg1-native-source-page-v1",
+    "calibration_modulus": 5,
+    "calibration_residue": 0
+  },
+  "queries": {
+    "template": "seed-event-id-counterpart-action-v1",
+    "targets": "all-complete-exact-subject-counterpart-occurrences-v1",
+    "actions": "different-from-seed-native-action-v1",
+    "witnesses": "exact-native-line-and-generated-link-v1",
+    "origin": "evidence-only-support-v1",
+    "page_relation": "every-seed-target-page-distinct-v1",
+    "shortcuts": "exclude-whole-query-v1"
+  },
+  "pages": {
+    "order": "seeded-slug-sha256-v1",
+    "title": "slug-v1",
+    "max_pages": 256,
+    "max_page_bytes": 131072,
+    "max_total_page_bytes": 4194304,
+    "max_chunks": 4096
+  },
+  "protocol": {
+    "chunking": "utf8-contiguous-codepoint-v1",
+    "max_chunk_bytes": 2048,
+    "page_pooling": "single-chunk-per-slug",
+    "max_query_bytes": 8000
+  },
+  "resources": {
+    "max_capture_bytes": 16777216,
+    "max_policy_bytes": 2097152,
+    "max_selection_bytes": 16777216,
+    "max_events": 65536,
+    "max_relations": 65536,
+    "max_dependency_groups": 65536,
+    "max_queries": 64,
+    "overflow": "refuse-complete-request-v1"
+  },
+  "require_queries": false
+}

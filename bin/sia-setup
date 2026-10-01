@@ -81,7 +81,7 @@ hold_setup_terminal() {
 # explicitly: without that, "interrupted" would be printed over an install
 # that in fact ran to completion.
 setup_interrupted() {
-  trap - INT TERM HUP
+  trap '' INT TERM HUP
   setup_hold_armed=0
   if [ -n "$setup_installer_pid" ]; then
     kill -TERM "$setup_installer_pid" 2>/dev/null || true
@@ -180,10 +180,66 @@ trap 'setup_interrupted TERM 143' TERM
 # would run with a status the installer never produced.
 trap 'setup_interrupted HUP 129' HUP
 
-# Only the run stage owns a terminal.  Arm its hold before the first refusal
-# can fire, so a named refusal is readable too and not just the installer's
-# own exit.
-if [ "${1:-}" = run ]; then
+# uwsm-app serializes argv through a desktop daemon, so neither this process's
+# descriptors nor its environment reach the terminal.  A launch therefore
+# names the still-live launcher's admitted descriptors in argv.  The terminal
+# side duplicates them immediately and reconstructs the private, local-only
+# handoff consumed by sialifetime.py.  No ordinary caller can select this path:
+# the script itself must be executing through the named launcher descriptor.
+setup_handoff_worker=0
+if [ "${1:-}" = --sia-setup-handoff=1 ]; then
+  setup_hold_armed=1
+  [ "$#" -eq 9 ] || refuse "the serialized setup handoff is malformed"
+  setup_handoff_launcher_pid="$2"
+  setup_handoff_remote_root_fd="$3"
+  setup_handoff_remote_helper_fd="$4"
+  setup_handoff_remote_installer_fd="$5"
+  setup_handoff_remote_owner_fd="$6"
+  setup_handoff_root_path="$7"
+  [ "$8" = run ] || refuse "the serialized setup handoff is not a run"
+  case "$setup_handoff_launcher_pid" in
+    ""|0|0*|*[!0-9]*) refuse "the setup launcher pid is malformed" ;;
+  esac
+  for setup_source_fd in \
+      "$setup_handoff_remote_root_fd" \
+      "$setup_handoff_remote_helper_fd" \
+      "$setup_handoff_remote_installer_fd" \
+      "$setup_handoff_remote_owner_fd"; do
+    case "$setup_source_fd" in
+      ""|*[!0-9]*|0*) refuse "the serialized setup descriptor is malformed" ;;
+    esac
+  done
+  setup_handoff_remote_prefix="/proc/$setup_handoff_launcher_pid/fd"
+  [ "${BASH_SOURCE[0]}" = \
+      "$setup_handoff_remote_prefix/$setup_handoff_remote_helper_fd" ] \
+    || refuse "the serialized setup handoff names another helper"
+  case "$setup_handoff_root_path" in
+    /*) ;;
+    *) refuse "the setup source root display is invalid" ;;
+  esac
+  unset SIA_SETUP_HANDOFF_ABI SIA_SETUP_HANDOFF_ROOT_PATH \
+    SIA_SETUP_HANDOFF_ROOT_FD SIA_SETUP_HANDOFF_HELPER_FD \
+    SIA_SETUP_HANDOFF_INSTALLER_FD SIA_SETUP_HANDOFF_OWNER_FD
+  exec {SIA_SETUP_HANDOFF_ROOT_FD}<\
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_root_fd" \
+    || refuse "cannot duplicate the serialized plugin root"
+  exec {SIA_SETUP_HANDOFF_HELPER_FD}<\
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_helper_fd" \
+    || refuse "cannot duplicate the serialized setup helper"
+  exec {SIA_SETUP_HANDOFF_INSTALLER_FD}<\
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_installer_fd" \
+    || refuse "cannot duplicate the serialized plugin installer"
+  exec {SIA_SETUP_HANDOFF_OWNER_FD}<\
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_owner_fd" \
+    || refuse "cannot duplicate the serialized lifetime owner"
+  SIA_SETUP_HANDOFF_ROOT_PATH="$setup_handoff_root_path"
+  SIA_SETUP_HANDOFF_ABI=1
+  setup_handoff_worker=1
+  shift 7
+elif [ "${1:-}" = run ]; then
+  # Only the run stage owns a terminal.  Arm its hold before the first refusal
+  # can fire, so a named refusal is readable too and not just the installer's
+  # own exit.
   setup_hold_armed=1
 fi
 
@@ -199,19 +255,169 @@ case "${XDG_RUNTIME_DIR:-}" in
   *) refuse "XDG_RUNTIME_DIR must be an absolute path" ;;
 esac
 
-SELF_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
-  || refuse "cannot resolve the plugin helper"
-PLUGIN_ROOT="$(cd -P -- "$SELF_DIR/.." && pwd)" \
-  || refuse "cannot resolve the plugin checkout"
-HELPER="$SELF_DIR/sia-setup"
-INSTALLER="$PLUGIN_ROOT/install.sh"
-if [ ! -f "$HELPER" ] || [ -L "$HELPER" ] || [ ! -x "$HELPER" ]; then
-  refuse "the plugin setup helper is unsafe"
+assert_setup_source_descriptor() {
+  local descriptor="$1" label="$2" executable="$3"
+  local target="/proc/self/fd/$descriptor" mode
+  if [ ! -f "$target" ] || [ ! -O "$target" ] \
+      || [ "$(stat -Lc '%h' -- "$target")" != 1 ]; then
+    refuse "$label descriptor is not an owned single-link regular file"
+  fi
+  mode="$(stat -Lc '%a' -- "$target")" \
+    || refuse "$label descriptor mode is unavailable"
+  if [ $((8#$mode & 0022)) -ne 0 ]; then
+    refuse "$label descriptor is writable outside its owner"
+  fi
+  if [ "$executable" = 1 ] && [ ! -x "$target" ]; then
+    refuse "$label descriptor is not executable"
+  fi
+}
+
+assert_setup_root_descriptor() {
+  local descriptor="$1" target="/proc/self/fd/$1" mode
+  if [ ! -d "$target" ] || [ ! -O "$target" ]; then
+    refuse "the plugin root descriptor is not an owned directory"
+  fi
+  mode="$(stat -Lc '%a' -- "$target")" \
+    || refuse "the plugin root descriptor mode is unavailable"
+  if [ $((8#$mode & 0022)) -ne 0 ]; then
+    refuse "the plugin root descriptor is writable outside its owner"
+  fi
+}
+
+assert_setup_directory_path() {
+  local path="$1" label="$2" mode
+  if [ -L "$path" ] || [ ! -d "$path" ] || [ ! -O "$path" ]; then
+    refuse "$label is not an owned non-link directory"
+  fi
+  mode="$(stat -c '%a' -- "$path")" \
+    || refuse "$label mode is unavailable"
+  if [ $((8#$mode & 0022)) -ne 0 ]; then
+    refuse "$label is writable outside its owner"
+  fi
+}
+
+assert_setup_binding() {
+  local descriptor="$1" path="$2" label="$3"
+  if [ -L "$path" ] || [ ! -e "$path" ]; then
+    refuse "$label binding is not a present non-link source"
+  fi
+  [ "$(stat -Lc '%d:%i' -- "/proc/self/fd/$descriptor")" = \
+      "$(stat -c '%d:%i' -- "$path")" ] \
+    || refuse "$label changed while binding"
+}
+
+assert_setup_remote_copy() {
+  local descriptor="$1" remote="$2" label="$3"
+  [ "$(stat -Lc '%d:%i' -- "/proc/self/fd/$descriptor")" = \
+      "$(stat -Lc '%d:%i' -- "$remote")" ] \
+    || refuse "$label changed during serialized handoff"
+}
+
+if [ "$setup_handoff_worker" = 1 ]; then
+  for setup_source_fd in \
+      "${SIA_SETUP_HANDOFF_ROOT_FD:-}" \
+      "${SIA_SETUP_HANDOFF_HELPER_FD:-}" \
+      "${SIA_SETUP_HANDOFF_INSTALLER_FD:-}" \
+      "${SIA_SETUP_HANDOFF_OWNER_FD:-}"; do
+    case "$setup_source_fd" in
+      ""|*[!0-9]*) refuse "the setup descriptor handoff is malformed" ;;
+    esac
+  done
+  case "${SIA_SETUP_HANDOFF_ROOT_PATH:-}" in
+    /*) ;;
+    *) refuse "the setup source root display is invalid" ;;
+  esac
+else
+  unset SIA_SETUP_HANDOFF_ABI SIA_SETUP_HANDOFF_ROOT_PATH \
+    SIA_SETUP_HANDOFF_ROOT_FD SIA_SETUP_HANDOFF_HELPER_FD \
+    SIA_SETUP_HANDOFF_INSTALLER_FD SIA_SETUP_HANDOFF_OWNER_FD
+  SELF_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+    || refuse "cannot resolve the plugin helper"
+  PLUGIN_ROOT="$(cd -P -- "$SELF_DIR/.." && pwd)" \
+    || refuse "cannot resolve the plugin checkout"
+  HELPER="$SELF_DIR/sia-setup"
+  INSTALLER="$PLUGIN_ROOT/install.sh"
+  LIFETIME_OWNER="$SELF_DIR/sialifetime.py"
+  if [ ! -f "$HELPER" ] || [ -L "$HELPER" ] || [ ! -x "$HELPER" ]; then
+    refuse "the plugin setup helper is unsafe"
+  fi
+  if [ ! -f "$INSTALLER" ] || [ -L "$INSTALLER" ] \
+      || [ ! -x "$INSTALLER" ]; then
+    refuse "the plugin installer is missing or unsafe"
+  fi
+  if [ ! -f "$LIFETIME_OWNER" ] || [ -L "$LIFETIME_OWNER" ] \
+      || [ ! -O "$LIFETIME_OWNER" ]; then
+    refuse "the release lifetime owner is missing or unsafe"
+  fi
+  exec {SIA_SETUP_HANDOFF_ROOT_FD}<"$PLUGIN_ROOT" \
+    || refuse "cannot bind the plugin root descriptor"
+  exec {SIA_SETUP_HANDOFF_HELPER_FD}<"$HELPER" \
+    || refuse "cannot bind the setup helper descriptor"
+  exec {SIA_SETUP_HANDOFF_INSTALLER_FD}<"$INSTALLER" \
+    || refuse "cannot bind the plugin installer descriptor"
+  exec {SIA_SETUP_HANDOFF_OWNER_FD}<"$LIFETIME_OWNER" \
+    || refuse "cannot bind the lifetime owner descriptor"
+  SIA_SETUP_HANDOFF_ROOT_PATH="$PLUGIN_ROOT"
+  SIA_SETUP_HANDOFF_ABI=1
+  [ "$(stat -Lc '%d:%i' -- \
+      "/proc/self/fd/$SIA_SETUP_HANDOFF_ROOT_FD")" = \
+      "$(stat -c '%d:%i' -- "$PLUGIN_ROOT")" ] \
+    || refuse "the plugin root changed while binding"
+  [ "$(stat -Lc '%d:%i' -- \
+      "/proc/self/fd/$SIA_SETUP_HANDOFF_HELPER_FD")" = \
+      "$(stat -c '%d:%i' -- "$HELPER")" ] \
+    || refuse "the setup helper changed while binding"
+  [ "$(stat -Lc '%d:%i' -- \
+      "/proc/self/fd/$SIA_SETUP_HANDOFF_INSTALLER_FD")" = \
+      "$(stat -c '%d:%i' -- "$INSTALLER")" ] \
+    || refuse "the plugin installer changed while binding"
+  [ "$(stat -Lc '%d:%i' -- \
+      "/proc/self/fd/$SIA_SETUP_HANDOFF_OWNER_FD")" = \
+      "$(stat -c '%d:%i' -- "$LIFETIME_OWNER")" ] \
+    || refuse "the lifetime owner changed while binding"
 fi
-if [ ! -f "$INSTALLER" ] || [ -L "$INSTALLER" ] \
-    || [ ! -x "$INSTALLER" ]; then
-  refuse "the plugin installer is missing or unsafe"
+
+assert_setup_root_descriptor "$SIA_SETUP_HANDOFF_ROOT_FD"
+assert_setup_source_descriptor \
+  "$SIA_SETUP_HANDOFF_HELPER_FD" "the setup helper" 1
+assert_setup_source_descriptor \
+  "$SIA_SETUP_HANDOFF_INSTALLER_FD" "the plugin installer" 1
+assert_setup_source_descriptor \
+  "$SIA_SETUP_HANDOFF_OWNER_FD" "the lifetime owner" 0
+if [ "$setup_handoff_worker" = 1 ]; then
+  assert_setup_remote_copy \
+    "$SIA_SETUP_HANDOFF_ROOT_FD" \
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_root_fd" \
+    "the plugin root"
+  assert_setup_remote_copy \
+    "$SIA_SETUP_HANDOFF_HELPER_FD" \
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_helper_fd" \
+    "the setup helper"
+  assert_setup_remote_copy \
+    "$SIA_SETUP_HANDOFF_INSTALLER_FD" \
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_installer_fd" \
+    "the plugin installer"
+  assert_setup_remote_copy \
+    "$SIA_SETUP_HANDOFF_OWNER_FD" \
+    "$setup_handoff_remote_prefix/$setup_handoff_remote_owner_fd" \
+    "the lifetime owner"
 fi
+setup_bound_root="/proc/self/fd/$SIA_SETUP_HANDOFF_ROOT_FD"
+assert_setup_directory_path "$setup_bound_root/bin" \
+  "the plugin bin directory"
+assert_setup_binding "$SIA_SETUP_HANDOFF_HELPER_FD" \
+  "$setup_bound_root/bin/sia-setup" "the setup helper"
+assert_setup_binding "$SIA_SETUP_HANDOFF_INSTALLER_FD" \
+  "$setup_bound_root/install.sh" "the plugin installer"
+assert_setup_binding "$SIA_SETUP_HANDOFF_OWNER_FD" \
+  "$setup_bound_root/bin/sialifetime.py" "the lifetime owner"
+export SIA_SETUP_HANDOFF_ABI SIA_SETUP_HANDOFF_ROOT_PATH \
+  SIA_SETUP_HANDOFF_ROOT_FD SIA_SETUP_HANDOFF_HELPER_FD \
+  SIA_SETUP_HANDOFF_INSTALLER_FD SIA_SETUP_HANDOFF_OWNER_FD
+PLUGIN_ROOT="$SIA_SETUP_HANDOFF_ROOT_PATH"
+HELPER="/proc/self/fd/$SIA_SETUP_HANDOFF_HELPER_FD"
+INSTALLER="/proc/self/fd/$SIA_SETUP_HANDOFF_INSTALLER_FD"
+LIFETIME_OWNER="/proc/self/fd/$SIA_SETUP_HANDOFF_OWNER_FD"
 
 setup_runtime_dir="$XDG_RUNTIME_DIR/khephri.sia-first-light"
 setup_marker_path="$setup_runtime_dir/terminal.json"
@@ -255,9 +461,16 @@ case "${1:-}" in
     # stage holds first, so on such a terminal the operator closes a window
     # that is already finished; on Alacritty --hold is dropped and the run
     # stage is the only hold there is.
+    setup_handoff_launcher_pid="$BASHPID"
+    setup_handoff_launch_prefix="/proc/$setup_handoff_launcher_pid/fd"
     uwsm-app -- xdg-terminal-exec \
       --app-id=org.omarchy.sia-first-light \
-      --title="SIA first light" --hold -- "$HELPER" run "$attempt_id" &
+      --title="SIA first light" --hold -- \
+      "$setup_handoff_launch_prefix/$SIA_SETUP_HANDOFF_HELPER_FD" \
+      --sia-setup-handoff=1 "$setup_handoff_launcher_pid" \
+      "$SIA_SETUP_HANDOFF_ROOT_FD" "$SIA_SETUP_HANDOFF_HELPER_FD" \
+      "$SIA_SETUP_HANDOFF_INSTALLER_FD" "$SIA_SETUP_HANDOFF_OWNER_FD" \
+      "$SIA_SETUP_HANDOFF_ROOT_PATH" run "$attempt_id" &
     waited=0
     while [ "$waited" -lt "$SETUP_PRESENT_SECONDS" ]; do
       if setup_presented "$attempt_id"; then
@@ -299,7 +512,7 @@ case "${1:-}" in
     flock -n "$setup_lock_fd" \
       || refuse "another SIA installer is already running"
     printf '\nSIA first light\n'
-    printf 'The SIA installer will create or advance this machine\047s local brain.\n'
+    printf 'The SIA installer will create or advance this machine\047s local memory store.\n'
     printf 'Keep this terminal open; success is not declared until sia ready passes.\n\n'
     # A Marketplace click is fresh consent for the documented default path,
     # not consent inherited from a prior shell.  Operators who deliberately
@@ -307,7 +520,7 @@ case "${1:-}" in
     # variable set at that explicit command boundary.
     unset BASH_ENV ENV \
       SIA_ADOPT_EXISTING_CORPUS SIA_ALLOW_UNPINNED_OLLAMA \
-      SIA_INSTALL_KEYBINDING SIA_REPLACE_AGENT_SKILL \
+      SIA_INSTALL_KEYBINDING SIA_INSTALL_AGENT_SKILL SIA_REPLACE_AGENT_SKILL \
       SIA_REPLACE_BRAINSTEM_UNIT SIA_REPLACE_CONTINUITY_UNITS \
       SIA_REPLACE_GBRAIN_PIN SIA_REPLACE_NOMIC_LATEST \
       SIA_REPLACE_OLLAMA_RUNTIME SIA_REPLACE_OLLAMA_UNIT \
@@ -321,7 +534,7 @@ case "${1:-}" in
     # Nothing captures the status: errexit makes the installer's own exit
     # status this helper's exit status, and the EXIT hold reports it without
     # replacing it.
-    "$INSTALLER" &
+    python3 -I "$LIFETIME_OWNER" setup --caller "$BASHPID" "$setup_lock_fd" "$INSTALLER" &
     setup_installer_pid=$!
     wait "$setup_installer_pid"
     setup_installer_done=1

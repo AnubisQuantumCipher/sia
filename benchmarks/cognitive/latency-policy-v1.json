@@ -1,0 +1,11 @@
+{
+  "schema": "sia-cognitive-latency-policy-v1",
+  "samples": "adapter-query-embedding-search-v1",
+  "aggregation": "macro-query-within-class-v1",
+  "numbers": "retained-json-roundtrip-decimal-as-given-v1",
+  "units": "producer-ms-no-conversion-v1",
+  "roster": "same-admitted-query-roster-v1",
+  "missing": "refuse-sample-drop-v1",
+  "operation_timings": "retain-separate-no-query-allocation-v1",
+  "chronology": "externally-pinned-before-heldout-v1"
+}

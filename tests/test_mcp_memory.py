@@ -2,6 +2,7 @@
 """Multi-writer queue and MCP resource contract tests."""
 
 import concurrent.futures
+import copy
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -132,6 +133,39 @@ class AgentSpool(unittest.TestCase):
                 self.assertEqual(errors[0]["error"],
                                  "request is malformed JSON")
                 self.assertTrue(os.path.exists(path))
+
+    def test_request_parser_refuses_ambiguous_and_nonstandard_json(self):
+        with tempfile.TemporaryDirectory() as state:
+            receipt = siaqueue.enqueue_note(
+                state, "safe", "safe request")
+            queue_dir = os.path.join(state, siaqueue.QUEUE_DIRNAME)
+            path = next(
+                os.path.join(queue_dir, name)
+                for name in os.listdir(queue_dir)
+                if name.endswith(".json"))
+            prefix = (
+                '{"schema":"' + siaqueue.SCHEMA + '","request_id":"'
+                + receipt["request_id"] + '","queued_at":"'
+                + receipt["queued_at"]
+                + '","operation":"note","payload":')
+            cases = (
+                prefix + '{"author":"safe","text":"safe request"},'
+                '"payload":{"author":"private","text":"private"}}',
+                prefix + '{"author":"safe","text":NaN}}',
+                prefix + '{"author":"safe","text":Infinity}}',
+                prefix + '{"author":"safe","text":-Infinity}}',
+            )
+            for raw in cases:
+                with self.subTest(raw=raw):
+                    with open(path, "w", encoding="utf-8") as stream:
+                        stream.write(raw)
+                    os.chmod(path, 0o600)
+                    pending, errors = siaqueue.pending(state)
+                    self.assertEqual(pending, [])
+                    self.assertEqual(errors[0]["error"],
+                                     "request is malformed JSON")
+                    self.assertNotIn("private", str(errors))
+                    self.assertTrue(os.path.exists(path))
 
     def test_symlink_request_is_refused_without_reading_target(self):
         with tempfile.TemporaryDirectory() as state:
@@ -321,6 +355,77 @@ class PgliteOwnership(unittest.TestCase):
 
 
 class NoteMaterialization(unittest.TestCase):
+    def test_counted_queue_record_with_secret_bytes_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(state)
+            os.makedirs(corpus)
+            old_state, old_corpus = sialib.STATE, sialib.CORPUS
+            sialib.STATE, sialib.CORPUS = state, corpus
+            memo = {"redactions": {}}
+            try:
+                siaqueue.enqueue_note(
+                    state, "codex", "token=abcdefghijklmnop",
+                    redactions={"agent-note": 1})
+                with mock.patch.object(sialib, "_write_memo") as write, \
+                        self.assertRaisesRegex(
+                            RuntimeError, "still contains secret material"):
+                    sialib.materialize_agent_notes(
+                        {"v": 1, "thoughts": []}, memo)
+                write.assert_not_called()
+                self.assertEqual(memo, {"redactions": {}})
+            finally:
+                sialib.STATE, sialib.CORPUS = old_state, old_corpus
+
+    def test_queue_bound_redactions_are_accounted_once_across_retry(self):
+        with tempfile.TemporaryDirectory() as root:
+            state = os.path.join(root, "state")
+            corpus = os.path.join(root, "corpus")
+            os.makedirs(state)
+            os.makedirs(corpus)
+            old_state, old_corpus = sialib.STATE, sialib.CORPUS
+            sialib.STATE, sialib.CORPUS = state, corpus
+            memo = {"redactions": {"notify": 1}}
+            store = {"v": 1, "thoughts": []}
+            written = []
+            try:
+                receipt = siaqueue.enqueue_note(
+                    state, "codex", "already ⟦redacted⟧",
+                    redactions={"agent-note": 2})
+                with mock.patch.object(
+                        sialib, "_write_memo",
+                        side_effect=lambda value: written.append(
+                            copy.deepcopy(value))):
+                    paths, _pages, _thoughts, errors = \
+                        sialib.materialize_agent_notes(store, memo)
+                    self.assertEqual(errors, [])
+                    self.assertEqual(memo["redactions"], {
+                        "notify": 1, "agent-note": 2,
+                    })
+                    self.assertEqual(
+                        memo["agent_note_redaction_receipts"],
+                        {receipt["request_id"]: 2})
+                    writes_after_first = len(written)
+                    retry, _pages, repeated, errors = \
+                        sialib.materialize_agent_notes(store, memo)
+                    self.assertEqual(errors, [])
+                    self.assertEqual(retry, paths)
+                    self.assertEqual(repeated, [])
+                    self.assertEqual(len(written), writes_after_first)
+
+                    acknowledged, errors = sialib.acknowledge_agent_notes(
+                        paths, "committed", True,
+                        after_ack=lambda identity:
+                            sialib._forget_agent_note_redaction_receipt(
+                                memo, identity))
+                    self.assertEqual((acknowledged, errors), (1, []))
+                    self.assertNotIn(
+                        "agent_note_redaction_receipts", memo)
+                    self.assertEqual(memo["redactions"]["agent-note"], 2)
+            finally:
+                sialib.STATE, sialib.CORPUS = old_state, old_corpus
+
     def test_agent_markup_cannot_mint_corpus_links_or_terminal_controls(self):
         with tempfile.TemporaryDirectory() as root:
             state = os.path.join(root, "state")
@@ -537,6 +642,15 @@ class McpResources(unittest.TestCase):
             siamcp.SIA = old_sia
         self.assertNotEqual(returncode, 0)
         self.assertIn("not valid UTF-8", output)
+
+    def test_cli_cleanup_refuses_non_real_pid_before_signal(self):
+        process = mock.MagicMock()
+        os_shim = mock.Mock(wraps=siamcp.os)
+        os_shim.killpg.side_effect = AssertionError("unsafe signal")
+        with mock.patch.object(siamcp, "os", os_shim), \
+                self.assertRaisesRegex(RuntimeError, "process identity"):
+            siamcp._signal_and_reap_group(process)
+        os_shim.killpg.assert_not_called()
 
     def test_cli_timeout_kills_descendant_after_parent_exits(self):
         old_sia = siamcp.SIA
@@ -1215,6 +1329,38 @@ class McpResources(unittest.TestCase):
             (None, "init", "bad", "params", "after"),
             "a valid JSON-RPC notification gets no reply")
 
+    def test_stdio_parser_refuses_ambiguous_and_nonstandard_json(self):
+        params = (
+            '"params":{"protocolVersion":"2025-03-26",'
+            '"capabilities":{},"clientInfo":{"name":"unit",'
+            '"version":"1"}}')
+        ambiguous = (
+            '{"jsonrpc":"2.0","id":"ambiguous","method":"ping",'
+            '"method":"initialize",' + params + '}')
+        nonstandard = (
+            '{"jsonrpc":"2.0","id":"nonstandard","method":NaN}')
+        initialize = (
+            '{"jsonrpc":"2.0","id":"init","method":"initialize",'
+            + params + '}')
+        incoming = io.StringIO(
+            ambiguous + "\n" + nonstandard + "\n" + initialize + "\n")
+        outgoing = io.StringIO()
+        old_stdin, old_stdout = siamcp.sys.stdin, siamcp.sys.stdout
+        try:
+            siamcp.sys.stdin, siamcp.sys.stdout = incoming, outgoing
+            siamcp.main()
+        finally:
+            siamcp.sys.stdin, siamcp.sys.stdout = old_stdin, old_stdout
+
+        rows = [json.loads(line) for line in outgoing.getvalue().splitlines()]
+        self.assertEqual(
+            [row.get("error", {}).get("code") for row in rows[:2]],
+            [-32700, -32700])
+        self.assertIsNone(rows[0].get("id"))
+        self.assertIsNone(rows[1].get("id"))
+        self.assertEqual(rows[2]["id"], "init")
+        self.assertIn("result", rows[2])
+
     def test_hostile_json_scalars_and_parser_limits_do_not_kill_stdio(self):
         initialize = json.dumps({
             "jsonrpc": "2.0", "id": "init", "method": "initialize",
@@ -1274,11 +1420,11 @@ class McpResources(unittest.TestCase):
         real_loads = json.loads
         calls = iter((RecursionError("nesting ceiling"), None))
 
-        def bounded_parser(value):
+        def bounded_parser(value, **kwargs):
             failure = next(calls)
             if failure is not None:
                 raise failure
-            return real_loads(value)
+            return real_loads(value, **kwargs)
 
         try:
             siamcp.sys.stdin, siamcp.sys.stdout = incoming, outgoing

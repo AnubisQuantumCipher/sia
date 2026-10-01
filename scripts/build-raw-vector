@@ -1,0 +1,528 @@
+#!/usr/bin/env python3
+"""Construct the raw-vector adapter from explicit, byte-pinned inputs.
+
+The output directory is new, private, and retained, including failed build
+scratch. Nothing is installed into the resident SIA runtime. A receipt records
+an observed build; it does not certify compiler correctness or reproducibility.
+"""
+
+import argparse
+import contextlib
+import hashlib
+import json
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import re
+import selectors
+import signal
+import stat
+import subprocess
+import sys
+import tarfile
+import time
+
+
+MAX_METADATA_BYTES = 1_048_576
+MAX_SOURCE_BYTES = 536_870_912
+MAX_CLOSURE_BYTES = 2_147_483_648
+MAX_CLOSURE_ENTRIES = 100_000
+MAX_COMMAND_OUTPUT_BYTES = 8_388_608
+COMMAND_TIMEOUT_SECONDS = 1800
+STAGED_ADAPTER = "src/sia-raw-vector.ts"
+
+
+class Refusal(Exception):
+    pass
+
+
+def refuse(reason):
+    raise Refusal(reason)
+
+
+def canonical(value):
+    return json.dumps(value, ensure_ascii=True, sort_keys=True,
+                      separators=(",", ":")).encode("ascii")
+
+
+def token(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def file_bytes(path, label, *, limit=MAX_METADATA_BYTES, destination=None):
+    """Read a stable no-follow regular file; large copies never accumulate."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as exc:
+        raise Refusal(label + "-unsafe-file") from exc
+    digest = hashlib.sha256()
+    chunks = []
+    written = 0
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() \
+                or before.st_nlink != 1 or before.st_mode & 0o022 \
+                or before.st_size > limit:
+            refuse(label + "-unsafe-file")
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            while block := source.read(65_536):
+                written += len(block)
+                if written > limit:
+                    refuse(label + "-byte-budget")
+                digest.update(block)
+                if destination is None:
+                    chunks.append(block)
+                else:
+                    destination.write(block)
+        after = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if token(before) != token(after) or token(after) != token(current):
+            refuse(label + "-generation-changed")
+        return b"".join(chunks), digest.hexdigest(), before
+    finally:
+        os.close(descriptor)
+
+
+def metadata(path, label):
+    raw, digest, _ = file_bytes(path, label)
+    try:
+        result = {}
+        for line in raw.decode("utf-8", "strict").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            if key in result or not key or not value:
+                refuse(label + "-invalid")
+            result[key] = value
+        return result, digest
+    except (ValueError, UnicodeError) as exc:
+        raise Refusal(label + "-invalid") from exc
+
+
+def digest_file(path, label, *, limit=MAX_CLOSURE_BYTES):
+    with open(os.devnull, "wb") as sink:
+        _, digest, info = file_bytes(path, label, limit=limit, destination=sink)
+    return digest, info
+
+
+def write_json(path, value):
+    with open(path, "xb") as stream:
+        stream.write(canonical(value) + b"\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    sync_directory(path.parent)
+
+
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+class Build:
+    def __init__(self, args):
+        self.args = args
+        self.output = Path(args.output_dir).absolute()
+        self.commands = []
+        self.environment = None
+        self.output_created = False
+
+    def command_event(self, event, record):
+        with open(self.output / "build-commands.jsonl", "ab") as journal:
+            journal.write(canonical({"event": event, "command": record}) + b"\n")
+            journal.flush()
+            os.fsync(journal.fileno())
+        sync_directory(self.output)
+
+    def failure(self, reason):
+        # An existing caller directory was never ours to annotate.
+        if not self.output_created:
+            return
+        current = self.output.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(current.st_mode) \
+                or (current.st_dev, current.st_ino) != self.output_identity:
+            refuse("failure-output-generation-changed")
+        write_json(self.output / "build-failure.json", {
+            "schema": "sia-raw-vector-build-failure-v1",
+            "reason": reason, "commands": self.commands,
+            "environment": self.environment,
+        })
+
+    def command(self, argv, *, cwd, timeout=COMMAND_TIMEOUT_SECONDS):
+        """Retain bounded output as it arrives, including before abrupt exit."""
+        record = {"argv": list(map(str, argv)), "cwd": str(cwd)}
+        self.commands.append(record)
+        log_stem = "command-logs/" + str(len(self.commands)).zfill(4)
+        record.update({"stdout_path": log_stem + ".stdout",
+                       "stderr_path": log_stem + ".stderr"})
+        with contextlib.ExitStack() as stack:
+            stdout_log = stack.enter_context(open(
+                self.output / record["stdout_path"], "xb"))
+            stderr_log = stack.enter_context(open(
+                self.output / record["stderr_path"], "xb"))
+            sync_directory(self.output / "command-logs")
+            self.command_event("started", record)
+            try:
+                process = subprocess.Popen(
+                    record["argv"], cwd=cwd, env=self.environment,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, start_new_session=True)
+            except OSError as exc:
+                record["refusal"] = "command-launch-failed"
+                self.command_event("failed", record)
+                raise Refusal("command-launch-failed") from exc
+            deadline = time.monotonic() + timeout
+            selector = selectors.DefaultSelector()
+            stdout = bytearray()
+            stderr = bytearray()
+            size = 0
+            try:
+                selector.register(process.stdout, selectors.EVENT_READ,
+                                  (stdout, stdout_log))
+                selector.register(process.stderr, selectors.EVENT_READ,
+                                  (stderr, stderr_log))
+                while selector.get_map():
+                    if time.monotonic() >= deadline:
+                        refuse("command-timeout")
+                    for key, _ in selector.select(timeout=0.2):
+                        block = os.read(key.fileobj.fileno(), 65_536)
+                        if not block:
+                            selector.unregister(key.fileobj)
+                            continue
+                        accepted = block[:MAX_COMMAND_OUTPUT_BYTES - size]
+                        size += len(accepted)
+                        buffer, log = key.data
+                        buffer.extend(accepted)
+                        log.write(accepted)
+                        log.flush()
+                        os.fsync(log.fileno())
+                        if len(accepted) != len(block):
+                            record["output_truncated"] = True
+                            refuse("command-output-byte-budget")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    refuse("command-timeout")
+                try:
+                    returncode = process.wait(timeout=remaining)
+                except subprocess.TimeoutExpired as exc:
+                    raise Refusal("command-timeout") from exc
+                if returncode:
+                    refuse("command-failed: " + str(argv[0]))
+                return bytes(stdout)
+            except (Refusal, OSError) as exc:
+                record["refusal"] = str(exc)
+                raise
+            finally:
+                selector.close()
+                # Descendants can retain pipe writers after the leader exits.
+                # Retire this command's process group in that case as well.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                process.stdout.close()
+                process.stderr.close()
+                for log in (stdout_log, stderr_log):
+                    log.flush()
+                    os.fsync(log.fileno())
+                record.update({
+                    "returncode": process.returncode,
+                    "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                    "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                })
+                self.command_event("failed" if "refusal" in record else "completed",
+                                   record)
+
+    def git(self, *arguments):
+        return self.command([
+            "/usr/bin/git", "-c", "core.fsmonitor=false", "-c",
+            "core.hooksPath=/dev/null", "-C", self.args.gbrain_source,
+            *arguments,
+        ], cwd=self.work)
+
+    def source_archive(self, commit, destination):
+        archive = self.work / "gbrain-source.tar"
+        self.git("archive", "--format=tar", "--output=" + str(archive), commit)
+        archive_digest, _ = digest_file(
+            archive, "source-archive", limit=MAX_SOURCE_BYTES)
+        total = 0
+        count = 0
+        with tarfile.open(archive, "r|") as stream:
+            for member in stream:
+                count += 1
+                total += member.size
+                if count > MAX_CLOSURE_ENTRIES or total > MAX_SOURCE_BYTES:
+                    refuse("source-archive-budget")
+                relative = PurePosixPath(member.name)
+                if relative.is_absolute() or ".." in relative.parts \
+                        or not relative.parts:
+                    refuse("source-archive-unsafe-path")
+                target = destination.joinpath(*relative.parts)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+                elif member.isfile():
+                    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    source = stream.extractfile(member)
+                    if source is None:
+                        refuse("source-archive-unreadable")
+                    with source, open(target, "xb") as output:
+                        while block := source.read(65_536):
+                            output.write(block)
+                    target.chmod(0o700 if member.mode & 0o111 else 0o600)
+                else:
+                    # Exact source archives must contain ordinary source files.
+                    # Dependency links are handled by closure(), after install.
+                    refuse("source-archive-unsupported-member")
+        return archive_digest
+
+    def closure(self, root, path, *, exclude=()):
+        """Stream the complete deterministic inventory without file buffering."""
+        state = {"entries": 0, "bytes": 0}
+        root = root.resolve(strict=True)
+        with open(path, "xb") as output:
+            output.write(b'{"entries":[')
+
+            def emit(entry):
+                if state["entries"]:
+                    output.write(b",")
+                state["entries"] += 1
+                if state["entries"] > MAX_CLOSURE_ENTRIES:
+                    refuse("closure-entry-budget")
+                output.write(canonical(entry))
+
+            def descend(directory, prefix=""):
+                with os.scandir(directory) as iterator:
+                    entries = sorted(iterator, key=lambda item: item.name)
+                for entry in entries:
+                    relative = prefix + entry.name
+                    if not prefix and entry.name in exclude:
+                        continue
+                    before = entry.stat(follow_symlinks=False)
+                    item = {"path": relative,
+                            "mode": stat.S_IMODE(before.st_mode)}
+                    if stat.S_ISDIR(before.st_mode):
+                        item["type"] = "directory"
+                        emit(item)
+                        descend(Path(entry.path), relative + "/")
+                    elif stat.S_ISREG(before.st_mode):
+                        state["bytes"] += before.st_size
+                        if state["bytes"] > MAX_CLOSURE_BYTES:
+                            refuse("closure-byte-budget")
+                        digest, stable = digest_file(entry.path, "closure")
+                        item.update({"type": "file", "sha256": digest,
+                                     "bytes": stable.st_size})
+                        emit(item)
+                    elif stat.S_ISLNK(before.st_mode):
+                        target = os.readlink(entry.path)
+                        try:
+                            resolved = Path(entry.path).resolve(strict=True)
+                        except (OSError, RuntimeError) as exc:
+                            raise Refusal("closure-unsafe-link") from exc
+                        if not resolved.is_relative_to(root):
+                            refuse("closure-escaping-link")
+                        item.update({"type": "symlink", "target": target})
+                        emit(item)
+                    else:
+                        refuse("closure-unsupported-file")
+                    after = os.stat(entry.path, follow_symlinks=False)
+                    if token(before) != token(after):
+                        refuse("closure-generation-changed")
+
+            descend(root)
+            output.write(b"]}\n")
+            output.flush()
+            os.fsync(output.fileno())
+        digest, _ = digest_file(path, "closure-manifest")
+        return {"manifest_sha256": digest, "entries": state["entries"],
+                "file_bytes": state["bytes"]}
+
+    def run(self):
+        builder_path = Path(__file__).absolute()
+        builder_digest, builder_info = digest_file(builder_path, "builder")
+        if self.output.exists() or self.output.is_symlink():
+            refuse("output-already-exists")
+        if not self.output.parent.is_dir() \
+                or self.output.parent.resolve() != self.output.parent:
+            refuse("output-parent-unsafe")
+        self.output.mkdir(mode=0o700)
+        output_info = self.output.stat(follow_symlinks=False)
+        self.output_identity = (output_info.st_dev, output_info.st_ino)
+        self.output_created = True
+        sync_directory(self.output.parent)
+        (self.output / "command-logs").mkdir(mode=0o700)
+        self.work = self.output / "build-work"
+        self.work.mkdir(mode=0o700)
+        private_home = self.work / "home"
+        private_cache = self.work / "bun-cache"
+        private_tmp = self.work / "tmp"
+        for directory in (private_home, private_cache, private_tmp):
+            directory.mkdir(mode=0o700)
+        self.environment = {
+            "HOME": str(private_home), "PATH": "/usr/bin:/bin",
+            "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
+            "TMPDIR": str(private_tmp),
+            "BUN_INSTALL_CACHE_DIR": str(private_cache),
+            "BUN_CONFIG_NO_CLEAR_TERMINAL": "1",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        pin, pin_digest = metadata(self.args.pin, "gbrain-pin")
+        if not re.fullmatch(r"[0-9a-f]{40}", pin.get("commit", "")) \
+                or not re.fullmatch(r"[0-9a-f]{64}", pin.get("bun_lock_sha256", "")) \
+                or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", pin.get("version", "")):
+            refuse("gbrain-pin-invalid")
+        source = Path(self.args.gbrain_source).absolute()
+        if not source.is_dir() or source.resolve() != source:
+            refuse("source-unsafe-directory")
+        if self.git("rev-parse", "HEAD").decode("ascii").strip() != pin["commit"]:
+            refuse("source-commit-mismatch")
+        if self.git("status", "--porcelain=v1", "--untracked-files=all",
+                    "--ignore-submodules=all"):
+            refuse("source-worktree-dirty")
+        lock_digest, _ = digest_file(source / "bun.lock", "source-lock")
+        if lock_digest != pin["bun_lock_sha256"]:
+            refuse("source-lock-mismatch")
+        adapter_raw, adapter_digest, _ = file_bytes(self.args.adapter, "adapter")
+        receipt, bun_receipt_digest = metadata(self.args.bun_receipt, "bun-receipt")
+        if set(receipt) != {"managed-by", "version", "asset", "sha256",
+                           "binary_sha256"} \
+                or receipt["managed-by"] != "khephri.sia" \
+                or receipt["version"] != self.args.bun_version \
+                or not re.fullmatch(r"[0-9a-f]{64}", receipt["sha256"]) \
+                or not re.fullmatch(r"[A-Za-z0-9._-]+", receipt["asset"]):
+            refuse("bun-receipt-invalid")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.args.bun_sha256):
+            refuse("bun-digest-invalid")
+        bun = self.work / "bun"
+        with open(bun, "xb") as target:
+            _, bun_digest, bun_info = file_bytes(
+                self.args.bun, "bun", limit=MAX_SOURCE_BYTES, destination=target)
+        if not bun_info.st_mode & 0o111:
+            refuse("bun-not-executable")
+        if bun_digest != self.args.bun_sha256 \
+                or bun_digest != receipt["binary_sha256"]:
+            refuse("bun-digest-mismatch")
+        bun.chmod(0o700)
+        if self.command([bun, "--version"], cwd=private_home).decode(
+                "utf-8", "strict").strip() != self.args.bun_version:
+            refuse("bun-version-mismatch")
+
+        staged_source = self.work / "gbrain-source"
+        staged_source.mkdir(mode=0o700)
+        archive_digest = self.source_archive(pin["commit"], staged_source)
+        if digest_file(staged_source / "bun.lock", "source-lock")[0] \
+                != pin["bun_lock_sha256"]:
+            refuse("source-lock-mismatch")
+        staged_adapter = staged_source / STAGED_ADAPTER
+        if staged_adapter.exists() or staged_adapter.is_symlink():
+            refuse("adapter-source-collision")
+        staged_adapter.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open(staged_adapter, "xb") as stream:
+            stream.write(adapter_raw)
+        source_closure = self.closure(
+            staged_source, self.output / "source-closure.json", exclude=("node_modules",))
+        self.command([
+            bun, "install", "--cwd", staged_source, "--frozen-lockfile",
+            "--production", "--ignore-scripts", "--no-progress", "--backend=copyfile",
+        ], cwd=private_home)
+        after_install = self.closure(
+            staged_source, self.work / "source-after-install.json", exclude=("node_modules",))
+        if after_install != source_closure:
+            refuse("source-closure-changed")
+        dependencies = staged_source / "node_modules"
+        if not dependencies.is_dir() or dependencies.is_symlink():
+            refuse("dependency-closure-missing")
+        dependency_closure = self.closure(
+            dependencies, self.output / "dependency-closure.json")
+        binary = self.output / "sia-raw-vector"
+        self.command([
+            bun, "build", "--compile", "--outfile", binary, staged_adapter,
+        ], cwd=staged_source)
+        if self.closure(staged_source, self.work / "source-after-build.json",
+                        exclude=("node_modules",)) != source_closure:
+            refuse("source-closure-changed")
+        if self.closure(dependencies, self.work / "dependencies-after-build.json") \
+                != dependency_closure:
+            refuse("dependency-closure-changed")
+        if digest_file(bun, "bun")[0] != bun_digest:
+            refuse("bun-generation-changed")
+        binary_digest, binary_info = digest_file(binary, "output")
+        if not binary_info.st_mode & 0o111:
+            refuse("output-not-executable")
+        with open(binary, "rb") as stream:
+            if stream.read(4) != b"\x7fELF":
+                refuse("output-not-elf")
+        final_builder_digest, final_builder_info = digest_file(builder_path, "builder")
+        if final_builder_digest != builder_digest \
+                or token(final_builder_info) != token(builder_info):
+            refuse("builder-generation-changed")
+        record = {
+            "schema": "sia-raw-vector-build-v1",
+            "builder": {"sha256": builder_digest, "bytes": builder_info.st_size},
+            "limits": {
+                "metadata_bytes": MAX_METADATA_BYTES,
+                "source_archive_bytes": MAX_SOURCE_BYTES,
+                "closure_bytes": MAX_CLOSURE_BYTES,
+                "closure_entries": MAX_CLOSURE_ENTRIES,
+                "command_output_bytes": MAX_COMMAND_OUTPUT_BYTES,
+                "command_timeout_seconds": COMMAND_TIMEOUT_SECONDS,
+            },
+            "gbrain": {"commit": pin["commit"], "version": pin["version"],
+                       "pin_sha256": pin_digest,
+                       "bun_lock_sha256": pin["bun_lock_sha256"],
+                       "archive_sha256": archive_digest},
+            "source": source_closure,
+            "adapter": {"sha256": adapter_digest, "staged_path": STAGED_ADAPTER},
+            "bun": {"version": self.args.bun_version,
+                    "binary_sha256": bun_digest,
+                    "receipt_sha256": bun_receipt_digest,
+                    "release_asset": receipt["asset"],
+                    "release_archive_sha256": receipt["sha256"]},
+            "dependencies": dependency_closure,
+            "platform": {"system": platform.system(), "machine": platform.machine(),
+                         "release": platform.release(), "python": platform.python_version()},
+            "environment": self.environment,
+            "commands": self.commands,
+            "output": {"path": "sia-raw-vector", "sha256": binary_digest,
+                       "bytes": binary_info.st_size},
+            "non_claims": [
+                "Build observation is not a reproducible-build proof.",
+                "The compiler digest is an explicit operator expectation; the release receipt is not independently authenticated here.",
+                "Dependency files are exhaustively inventoried; the manifest does not prove package authorship or harmlessness.",
+                "Private build paths and a closed environment are not a filesystem, network, same-user, or resource sandbox.",
+                "The host kernel, system libraries, git, and Python interpreter are not byte-bound by this receipt.",
+                "A compiled output digest does not prove the adapter's retrieval, embedding, index, or ranked-row contract.",
+            ],
+        }
+        write_json(self.output / "build-receipt.json", record)
+        return record
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ("gbrain-source", "pin", "adapter", "bun", "bun-sha256",
+                 "bun-version", "bun-receipt", "output-dir"):
+        parser.add_argument("--" + name, required=True)
+    args = parser.parse_args()
+    build = Build(args)
+    try:
+        record = build.run()
+    except (Refusal, OSError, ValueError, tarfile.TarError) as exc:
+        print("refused: " + str(exc), file=sys.stderr)
+        try:
+            build.failure(str(exc))
+        except (Refusal, OSError, ValueError) as diagnostic_error:
+            print("failure diagnostics unavailable: " + str(diagnostic_error),
+                  file=sys.stderr)
+        return 1
+    print(json.dumps({"receipt": str(build.output / "build-receipt.json"),
+                      "output_sha256": record["output"]["sha256"]}, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

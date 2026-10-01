@@ -1,7 +1,7 @@
 api_version: gbrain-schema-pack-v1
 name: sia-pack
 version: "1.1.0"
-description: SIA — the Omarchy Brain. Machine-evidence ontology over gbrain-base-v2.
+description: SIA local machine-memory evidence ontology over gbrain-base-v2; organ and thought are compatibility type names for sources and generated entries.
 extends: gbrain-base-v2
 
 page_types:
@@ -72,6 +72,8 @@ link_types:
       regex: "refus(ed|al)|declined to"
 
 # phases are NOT inherited — declare exactly the deterministic set SIA runs.
-# The optional, tool-free Claude grading lane is separate from gbrain's dream
-# phases; nothing here should silently wait on a model.
+# The optional, tool-free Claude grading lane is separate from gbrain's `dream`
+# compatibility action; nothing here should silently wait on a model.
+# `recompute_emotional_weight` is likewise a gbrain compatibility phase name,
+# not a measurement of emotion.
 phases: [lint, backlinks, sync, extract, recompute_emotional_weight, embed, orphans, purge]

@@ -3,6 +3,7 @@
 
 import importlib.util
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -167,6 +168,33 @@ class LedgerRecovery(unittest.TestCase):
         self.assertTrue(errors)
         self.assertIn("keeper refused", errors[0]["error"])
         self.assertTrue(os.path.exists(path))
+
+    def test_persisted_recovery_order_requires_an_exact_json_integer(self):
+        directory = sialib._ensure_ledger_pending_dir()
+        basis = {
+            "order": 1, "action": "PULSE:ingest",
+            "arg1": "pulse=1 fixture", "arg2": "ok",
+            "content": '["events/fixture"]',
+        }
+        identity = sialib._pending_identity(basis)
+        path = os.path.join(directory, identity + ".json")
+        for confused in (True, 1.0, "1"):
+            record = {
+                "schema": sialib.LEDGER_PENDING_SCHEMA,
+                "record_id": identity,
+                "queued_at": "2026-09-05T12:00:00Z",
+                **basis,
+            }
+            record["order"] = confused
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump(record, stream, sort_keys=True,
+                          separators=(",", ":"))
+            os.chmod(path, 0o600)
+            with self.subTest(order=repr(confused)), \
+                    self.assertRaisesRegex(
+                        ValueError, "ledger recovery order is invalid"):
+                sialib._read_pending_record(path)
+            os.unlink(path)
 
     def test_symlink_record_is_reported_without_reading_target(self):
         directory = sialib._ensure_ledger_pending_dir()
