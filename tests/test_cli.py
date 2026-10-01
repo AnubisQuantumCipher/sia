@@ -3561,7 +3561,7 @@ class CommandLineSmoke(unittest.TestCase):
 
     def test_cli_process_dispatches_usage_before_any_runtime_lease(self):
         for arguments, code, expected in (
-                (["readmit", "--bogus"], 2, "usage: sia readmit [--yes] [--json]"),
+                (["readmit", "--bogus"], 2, "usage: sia readmit [--yes] [--json] [--enroll-btrfs]"),
                 (["version"], 0, sia.sialib.VERSION)):
             with self.subTest(arguments=arguments):
                 completed = subprocess.run(

@@ -47,6 +47,11 @@ jobs:
             -v "$PWD:/mnt:ro" \
             koalaman/shellcheck-alpine@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
             shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup
+      - name: real btrfs remount readmission
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends btrfs-progs
+          python3 tests/btrfs_remount_smoke.py --run
       - name: unit and contract tests
         env:
           PYTHONWARNINGS: error::ResourceWarning

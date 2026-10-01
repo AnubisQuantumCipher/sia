@@ -663,6 +663,71 @@ class ControllerDeliveryEpoch(unittest.TestCase):
             self.assertIn("(" + refusal.detail + ")", str(refusal))
             self.assertNotIn("\n", str(refusal))
 
+    def test_btrfs_boot_readmission_preserves_adoption_and_rebinds_device_only(self):
+        from tests.test_cli import sia
+        with self.completed() as (case, retained, committed, status, _generation, root):
+            adopted = self.prepare(case, retained, committed, status)
+            _key, directory, _birth, adoption_path, records = self.paths(retained, root)
+            original_adoption = adoption_path.read_bytes()
+            original_memo = copy.deepcopy(case.lib.load_memo())
+            managed = Path(case.lib.STATE) / "managed-install"
+            managed.mkdir(exist_ok=True)
+            receipt = managed / "corpus"
+            with mock.patch.object(sia, "sialib", case.lib):
+                original_root = sia._corpus_root_identity()
+                receipt.write_text("managed-by=khephri.sia\nkind=corpus-v2\npath="
+                                   + case.lib.CORPUS + "\nroot=" + original_root + "\n")
+                receipt.chmod(0o600)
+
+                def durable(path):
+                    info = os.stat(path)
+                    return {"path": path, "fsid": "f" * 32,
+                            "subvolume_id": 257, "subvolume_uuid": "a" * 32,
+                            "inode": info.st_ino, "mode": info.st_mode,
+                            "uid": info.st_uid, "gid": info.st_gid}
+
+                with self.idle.source_owner(case), case.lib.brainstem_owner(), \
+                        case.lib.corpus_owner(), \
+                        mock.patch.object(sia, "_btrfs_directory_identity", side_effect=durable):
+                    self.assertEqual(sia._btrfs_readmit(enroll=True)["status"], "enrolled")
+                    identify = self.module._identity
+
+                    def rebooted(info):
+                        value = identify(info)
+                        if info.st_ino == records.stat().st_ino:
+                            value["dev"] = 999999
+                        return value
+
+                    new_root = "999999:" + original_root.split(":", 1)[1]
+                    with mock.patch.object(self.module, "_identity", side_effect=rebooted), \
+                            mock.patch.object(sia, "_corpus_root_identity", return_value=new_root):
+                        result = sia._btrfs_readmit(enroll=False)
+                        self.assertEqual(result["status"], "readmitted")
+                        self.assertEqual(sia._btrfs_readmit(enroll=False)["status"], "bound")
+                    self.assertEqual(adoption_path.read_bytes(), original_adoption)
+                    self.assertEqual(case.lib.load_memo(), original_memo)
+                    event = json.loads(Path(result["audit"]).read_text())
+                    self.assertEqual(event["phase"], "completed")
+                    readmission = json.loads((directory / "readmission.json").read_text())
+                    self.assertEqual(readmission["adoption_sha256"], adopted["expected_adoption_sha256"])
+                    self.assertEqual(readmission["records_identity"]["dev"], 999999)
+
+    def test_automatic_authorizer_refusal_cannot_publish_epoch_readmission(self):
+        with self.completed() as (case, retained, committed, status, _generation, root):
+            self.prepare(case, retained, committed, status)
+            self._move_records(retained, root, "automatic-refusal")
+            before = _tree(root)
+
+            def reject(_result):
+                raise ValueError("durable identity mismatch")
+
+            with self.idle.source_owner(case), case.lib.brainstem_owner(), case.lib.corpus_owner():
+                with self.assertRaises(self.module.ControllerDeliveryEpochRefusal):
+                    self.module.readmit_epoch(case.lib.__dict__, memo=case.lib.load_memo(),
+                                             readmitted_at=1_700_000_000, apply=True,
+                                             authorize=reject)
+            self.assertEqual(_tree(root), before)
+
     def test_operator_readmission_rebinds_the_same_adoption_without_changing_its_pin(self):
         with self.completed() as (case, retained, committed, status, _generation, root):
             self.assertEqual(self._readmit(case, apply=False)["status"], "absent")

@@ -20,7 +20,7 @@ biological brain and does not establish cognition or neuroscience.
   sia graph             graph statistics
   sia context           bounded context pack for agents and sessions
   sia pulse             run one brainstem pulse by hand (daemon must be off)
-  sia readmit [--yes] [--json]
+  sia readmit [--yes] [--json] [--enroll-btrfs]
   sia controller retire [--yes] [--json]
                         re-bind storage receipts after a filesystem move
                         (device/inode changed); --yes needs the daemon off
@@ -797,6 +797,15 @@ def cmd_ready():
     """Machine-readable health gate for installers and operators."""
     with sialib.corpus_owner():
         ready, reason = sialib.memory_readiness()
+        if ready:
+            try:
+                receipt = _corpus_receipt_readmit(False)
+                if receipt["status"] not in {"bound", "absent"}:
+                    ready = False
+                    reason = "corpus-receipt-root-mismatch; run sia readmit"
+            except (OSError, ValueError, RuntimeError):
+                ready = False
+                reason = "corpus-receipt-observation-refused; run sia readmit"
     if ready:
         print("SIA memory ready")
         return 0
@@ -829,7 +838,7 @@ def _corpus_root_identity():
         info.st_dev, info.st_ino, info.st_mode, info.st_uid))
 
 
-def _corpus_receipt_readmit(apply):
+def _corpus_receipt_readmit(apply, *, authorize=None):
     """Observe, and with ``apply`` re-bind, the installer's corpus receipt.
 
     The receipt is `managed-by=khephri.sia / kind=corpus-v2 / path= / root=`.
@@ -875,6 +884,9 @@ def _corpus_receipt_readmit(apply):
     if not apply:
         result["status"] = "drifted"
         return result
+    if authorize is not None:
+        result["status"] = "drifted"
+        authorize(result)
     payload = "\n".join(expected_head + ["root=" + observed]) + "\n"
     sialib.atomic_write(receipt_path, payload, mode=0o600)
     with open(receipt_path, encoding="utf-8") as stream:
@@ -884,6 +896,169 @@ def _corpus_receipt_readmit(apply):
         raise RuntimeError("corpus root changed during readmission")
     result.update(status="readmitted", previous_root=recorded)
     return result
+
+
+# Linux UAPI <linux/btrfs.h>, verified with sizeof/offsetof and the ioctl
+# macros on the supported Linux aarch64/x86_64 ABI. No external btrfs command
+# or mount-table parsing participates in authority.
+def _btrfs_directory_identity(path):
+    import struct
+    import siasourcebatch
+    chain = siasourcebatch._DirectoryChain(sialib.__dict__, path)
+    try:
+        before = os.fstat(chain.fd)
+        fs = bytearray(1024)
+        subvol = bytearray(504)
+        fcntl.ioctl(chain.fd, 2214630431, fs, True)  # BTRFS_IOC_FS_INFO
+        fcntl.ioctl(chain.fd, 2180551740, subvol, True)  # GET_SUBVOL_INFO
+        fsid = bytes(fs[16:32]).hex()
+        treeid = struct.unpack_from("=Q", subvol)[0]
+        subvol_uuid = bytes(subvol[296:312]).hex()
+        if fsid == "00" * 16 or treeid == 0:
+            raise ValueError("btrfs identity unavailable")
+        chain.current()
+        after = os.fstat(chain.fd)
+        fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid")
+        if any(getattr(before, key) != getattr(after, key) for key in fields):
+            raise ValueError("btrfs directory changed during observation")
+        return {"path": path, "fsid": fsid, "subvolume_id": treeid,
+                "subvolume_uuid": subvol_uuid, "inode": before.st_ino,
+                "mode": before.st_mode, "uid": before.st_uid,
+                "gid": before.st_gid}
+    finally:
+        chain.close()
+
+
+def _btrfs_enrollment_path():
+    return os.path.join(sialib.STATE, "managed-install", "btrfs-readmission.json")
+
+
+def _read_btrfs_enrollment():
+    import hashlib
+    import siasourcebatch
+    path = _btrfs_enrollment_path()
+    with contextlib.ExitStack() as stack:
+        held = siasourcebatch.HeldFile(sialib.__dict__, path, 16384,
+                                      allow_absent=True)
+        stack.callback(held.close)
+        if held.generation is None:
+            return None
+        if stat.S_IMODE(held.generation["mode"]) != 0o600:
+            raise ValueError("btrfs enrollment must be private")
+        value = held.value
+        if type(value) is not dict or set(value) != {
+                "schema", "consent", "binding", "sha256"} \
+                or value["schema"] != "sia-btrfs-readmission-v1" \
+                or value["consent"] != "operator-enrolled-device-only":
+            raise ValueError("unrecognized btrfs enrollment")
+        unsigned = {key: item for key, item in value.items() if key != "sha256"}
+        if value["sha256"] != hashlib.sha256(
+                _btrfs_json(unsigned).encode("utf-8")).hexdigest():
+            raise ValueError("btrfs enrollment seal mismatch")
+        held.current()
+        return value
+
+
+def _btrfs_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      allow_nan=False) + "\n"
+
+
+def _btrfs_binding(epoch):
+    binding = {"corpus": _btrfs_directory_identity(sialib.CORPUS),
+               "delivery_epoch": None}
+    if epoch["status"] != "absent":
+        binding["delivery_epoch"] = {
+            "adoption_sha256": epoch["adoption_sha256"],
+            "directory": _btrfs_directory_identity(epoch["records_directory"])}
+    return binding
+
+
+def _btrfs_device_only(corpus, epoch):
+    if corpus["status"] not in {"bound", "drifted"}:
+        raise ValueError("btrfs readmission requires a recognized corpus receipt")
+    if corpus["recorded_root"].split(":")[1:] != \
+            corpus["observed_root"].split(":")[1:]:
+        raise ValueError("corpus changed beyond its device number; run sia readmit")
+    if epoch["status"] != "absent":
+        old, new = epoch["effective_identity"], epoch["observed_identity"]
+        if any(old[key] != new[key] for key in old if key != "dev"):
+            raise ValueError("delivery directory changed beyond its device number; "
+                             "run sia readmit")
+
+
+def _btrfs_readmit(*, enroll):
+    """Called under both owner leases. Opt-in binds durable btrfs identities;
+    automatic work can only refresh device observations within that binding.
+    Write-ahead audit survives partial publication and permits an idempotent retry.
+    """
+    import hashlib
+    import time
+    import uuid
+    import siacontrollerdeliveryepoch as epochs
+    enrollment = _read_btrfs_enrollment()
+    if not enroll and enrollment is None:
+        return {"status": "disabled", "detail": "btrfs readmission not enrolled"}
+    memo = sialib.load_memo()
+    now = int(time.time())
+    corpus = _corpus_receipt_readmit(False)
+    epoch = epochs.readmit_epoch(sialib.__dict__, memo=memo,
+                                readmitted_at=now, apply=False)
+    _btrfs_device_only(corpus, epoch)
+    binding = _btrfs_binding(epoch)
+    if not enroll and enrollment["binding"] != binding:
+        raise ValueError("btrfs durable identity changed; explicit re-enrollment required")
+    if enroll:
+        # Enrollment never grants retroactive consent to drift. The operator
+        # must use the ordinary manual readmit first, then bind current storage.
+        if corpus["status"] != "bound" or epoch["status"] not in {"bound", "absent"}:
+            raise ValueError("readmit existing drift with sia readmit --yes before enrollment")
+        value = {"schema": "sia-btrfs-readmission-v1",
+                 "consent": "operator-enrolled-device-only", "binding": binding}
+        value["sha256"] = hashlib.sha256(_btrfs_json(value).encode("utf-8")).hexdigest()
+        sialib.atomic_write(_btrfs_enrollment_path(), _btrfs_json(value), mode=0o600)
+        if _read_btrfs_enrollment() != value:
+            raise RuntimeError("btrfs enrollment readback differs")
+        return {"status": "enrolled", "binding": binding,
+                "detail": "btrfs device-only readmission enrolled"}
+    if corpus["status"] == "bound" and epoch["status"] in {"bound", "absent"}:
+        return {"status": "bound", "detail": "enrolled storage is bound"}
+
+    def authorize_epoch(current):
+        # Re-observe durable identity at each publication boundary. Do not
+        # authorize a new adoption, inode, mode, owner, path or subvolume.
+        _btrfs_device_only(corpus, current)
+        if _btrfs_binding(current) != binding \
+                or _read_btrfs_enrollment() != enrollment:
+            raise ValueError("btrfs authority changed during readmission")
+
+    def authorize_corpus(current):
+        _btrfs_device_only(current, epoch)
+        authorize_epoch(epoch)
+
+    event = {"schema": "sia-btrfs-readmission-event-v1", "phase": "intent",
+             "enrollment_sha256": enrollment["sha256"], "observed_at": now,
+             "corpus_receipt": corpus, "delivery_epoch": epoch,
+             "non_claims": ["Identity readmission does not validate journal content.",
+                            "The seal is a checksum, not authentication against the owner."]}
+    event_path = os.path.join(sialib.STATE, "managed-install",
+                              "btrfs-readmission-" + uuid.uuid4().hex + ".json")
+
+    def publish_event():
+        value = dict(event)
+        value["sha256"] = hashlib.sha256(_btrfs_json(value).encode("utf-8")).hexdigest()
+        sialib.atomic_write(event_path, _btrfs_json(value), mode=0o600)
+
+    publish_event()
+    corpus_result = _corpus_receipt_readmit(True, authorize=authorize_corpus)
+    epoch_result = epochs.readmit_epoch(sialib.__dict__, memo=memo,
+                                       readmitted_at=now, apply=True,
+                                       authorize=authorize_epoch)
+    event.update(phase="completed", corpus_receipt=corpus_result,
+                 delivery_epoch=epoch_result)
+    publish_event()
+    return {"status": "readmitted", "audit": event_path,
+            "detail": "enrolled btrfs device observations readmitted"}
 
 
 def cmd_controller(args):
@@ -948,9 +1123,12 @@ def cmd_readmit(args):
     installer's corpus receipt and the delivery epoch's records directory.
     Both stay refused until an operator readmits them; nothing is guessed.
     """
-    if len(args) != len(set(args)) or any(
-            item not in {"--yes", "--json"} for item in args):
-        print("usage: sia readmit [--yes] [--json]")
+    btrfs_boot = args == ["--btrfs-boot"]
+    enroll = "--enroll-btrfs" in args
+    if not btrfs_boot and (len(args) != len(set(args)) or any(
+            item not in {"--yes", "--json", "--enroll-btrfs"} for item in args)
+            or (enroll and "--yes" not in args)):
+        print("usage: sia readmit [--yes] [--json] [--enroll-btrfs]")
         return 2
     apply = "--yes" in args
     as_json = "--json" in args
@@ -959,6 +1137,11 @@ def cmd_readmit(args):
     report = {"schema": "sia-readmit-v1", "applied": apply}
     try:
         with sialib.brainstem_owner(), sialib.corpus_owner():
+            if btrfs_boot or enroll:
+                result = _btrfs_readmit(enroll=enroll)
+                print(json.dumps(result, sort_keys=True) if as_json else
+                      "SIA " + result["detail"])
+                return 0
             report["corpus_receipt"] = _corpus_receipt_readmit(apply)
             report["delivery_epoch"] = epochs.readmit_epoch(
                 sialib.__dict__, memo=sialib.load_memo(),
@@ -972,7 +1155,7 @@ def cmd_readmit(args):
             print("SIA readmit refused: runtime-owned — stop the resident "
                   "daemon first:")
             print("  systemctl --user stop sia-brainstem && sia readmit"
-                  + (" --yes" if apply else "")
+                  + (" " + " ".join(args) if args else "")
                   + " && systemctl --user start sia-brainstem")
         return 1
     except epochs.ControllerDeliveryEpochRefusal as exc:
@@ -997,7 +1180,8 @@ def cmd_readmit(args):
         return 1
     states = {report["corpus_receipt"]["status"],
               report["delivery_epoch"]["status"]}
-    report["status"] = ("drifted" if "drifted" in states
+    report["status"] = ("unrecognized" if "unrecognized" in states
+                        else "drifted" if "drifted" in states
                         else "readmitted" if "readmitted" in states
                         else "bound")
     if as_json:
@@ -1014,11 +1198,13 @@ def cmd_readmit(args):
         elif report["status"] == "readmitted":
             print("storage receipts readmitted; the next pulse revalidates the "
                   "retained journal content and republishes memory.")
+        elif report["status"] == "unrecognized":
+            print("storage receipt unrecognized; rerun install.sh for recovery.")
         else:
             print("storage identity is bound; nothing to readmit.")
         for line in epochs.READMISSION_NON_CLAIMS:
             print("  boundary " + line)
-    return 1 if report["status"] == "drifted" else 0
+    return 1 if report["status"] in {"drifted", "unrecognized"} else 0
 
 
 def _gbrain_read(args, timeout=None):
