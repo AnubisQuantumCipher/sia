@@ -1,6 +1,4 @@
 // SIA COCKPIT — full-screen mission control for the Omarchy Brain.
-// “Brain” is a product metaphor for auditable local machine memory; it is not a
-// biological brain and does not establish cognition or neuroscience.
 // Overlay kind: summoned from the bar widget or SUPER+SHIFT+B, dismissed
 // with Esc / ✕ / click on the header brand. Pixels only — renders the
 // brainstem service snapshots; authoritative state is gbrain + the signed corpus.
@@ -3886,7 +3884,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: Style.space(16)
-        height: Style.space(52) + brainBoundaryText.implicitHeight
+        height: Style.space(52)
 
         Row {
           anchors.left: parent.left
@@ -3900,17 +3898,6 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             font.bold: true
-            Text {
-              id: brainBoundaryText
-              anchors.left: parent.left
-              anchors.top: parent.bottom
-              width: header.width
-              text: "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience."
-              wrapMode: Text.WordWrap
-              color: Qt.alpha(root.fg, 0.55)
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
           }
           Rectangle {
             anchors.verticalCenter: parent.verticalCenter
@@ -6501,7 +6488,7 @@ Item {
                 anchors.margins: Style.space(8)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-              text: "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience. LOCAL BOUNDARY · SIA is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
+                text: "LOCAL BOUNDARY · SIA is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.65)
                 font.family: root.fontFamily

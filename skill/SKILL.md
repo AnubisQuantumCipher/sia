@@ -5,9 +5,6 @@ description: Use SIA, this machine's persistent local memory, from any agent ses
 
 # SIA — the Omarchy Brain
 
-“Brain” is a product metaphor for auditable local machine memory; it is not a
-biological brain and does not establish cognition or neuroscience.
-
 This machine has persistent local memory with semantic indexing. A daemon
 (`sia-brainstem`) tails the enabled evidence streams available here (base
 pacman/journal/git/session/notification sources plus optional JACKAL,

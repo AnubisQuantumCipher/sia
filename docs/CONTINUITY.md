@@ -3,9 +3,7 @@
 **Describes SIA v1.8.3 · 2026-09-23**
 
 SIA continuity is the backup and clean-machine recovery boundary for SIA, the
-Omarchy Brain. “Brain” is a product metaphor for auditable local machine memory;
-it is not a biological brain and does not establish cognition or neuroscience.
-SIA exposes a storage-independent freeze/thaw contract: freeze creates a signed
+Omarchy Brain. SIA exposes a storage-independent freeze/thaw contract: freeze creates a signed
 portable capsule from documented authoritative roots; verify authenticates and
 inspects it off-path; thaw applies it only under SIA's lifecycle and receipt
 invariants. Repository adapters operate outside that contract.

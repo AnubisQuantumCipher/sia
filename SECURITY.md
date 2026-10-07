@@ -2,7 +2,6 @@
 
 > [!IMPORTANT]
 > This policy covers **SIA, the Omarchy Brain**.
-> “Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience.
 > SIA is unaffiliated with the Sia Foundation, `sia.tech`, and the similarly named
 > storage network.
 

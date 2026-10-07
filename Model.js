@@ -1,6 +1,4 @@
 // SIA Model — pure logic for the Omarchy Brain panel.
-// “Brain” is a product metaphor for auditable local machine memory; it is not a
-// biological brain and does not establish cognition or neuroscience.
 // Pixels only: everything shown is read from the brainstem service snapshots
 // (~/.local/state/sia/*.json); authoritative state lives in gbrain + the
 // signed corpus. Nothing here is evidence.
