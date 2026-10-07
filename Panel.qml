@@ -1,7 +1,5 @@
 // SIA bar widget — product glyph + today's event count, colored by service
-// state. “Brain” is a product metaphor for auditable local machine memory; it
-// is not a biological brain and does not establish cognition or neuroscience.
-// Clicking summons the full-screen SIA cockpit (Cockpit.qml). Pixels only:
+// state. Clicking summons the full-screen SIA cockpit (Cockpit.qml). Pixels only:
 // reads the brainstem and continuity workers' published state.
 
 import QtQuick
@@ -180,20 +178,18 @@ BarWidget {
   }
 
   function tooltip() {
-    var brainBoundary = "“Brain” is a product metaphor for auditable local machine memory; it is not a biological brain and does not establish cognition or neuroscience."
     if (root.releaseLifecycle === "checking")
-      return "SIA — checking the resident installation\n" + brainBoundary
+      return "SIA — checking the resident installation"
     if (root.releaseLifecycle === "setup")
-      return "SIA — first light required · click to install\n" + brainBoundary
+      return "SIA — first light required · click to install"
     if (root.releaseLifecycle === "installing") {
       var installing = root.installerProgressUnobserved
         ? "SIA — first light has not reported progress · click for status or retry"
         : "SIA — first light is in progress · click for status or retry"
-      return installing + "\n" + brainBoundary
+      return installing
     }
     if (root.releaseLifecycle === "repair")
-      return "SIA — installation state needs repair · click to continue safely\n"
-        + brainBoundary
+      return "SIA — installation state needs repair · click to continue safely"
     if (root.releaseLifecycle === "ahead") {
       var resident = Model.aheadVersion(
         root.runtimeEvidence, root.pluginVersion)
@@ -201,13 +197,13 @@ BarWidget {
         ? "SIA — resident " + resident + " is newer than cockpit "
           + root.pluginVersion + " · update the plugin checkout"
         : "SIA — a newer resident runtime is present · update the plugin checkout"
-      return ahead + "\n" + brainBoundary
+      return ahead
     }
     if (root.releaseLifecycle === "update") {
       var installed = root.status && typeof root.status.version === "string"
         ? root.status.version : "legacy runtime"
       return "SIA — finish update " + installed + " → "
-        + root.pluginVersion + " · click to continue\n" + brainBoundary
+        + root.pluginVersion + " · click to continue"
     }
     var brain = root.cockpitWorkspace !== ""
       ? "SIA — cockpit locked to workspace " + root.cockpitWorkspace
@@ -221,7 +217,7 @@ BarWidget {
           + " events today"
     return brain + " · " + root.continuityText()
       + " · click for cockpit · right-click for continuity\n"
-      + liveLoopView.summary + "\n" + brainBoundary
+      + liveLoopView.summary
   }
 
   function applyStatus(text) {

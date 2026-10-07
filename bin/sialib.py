@@ -1,8 +1,5 @@
 """sialib — core of SIA, the Omarchy Brain.
 
-“Brain” is a product metaphor for auditable local machine memory; it is not a
-biological brain and does not establish cognition or neuroscience.
-
 The brainstem daemon tails enabled base/optional/configured evidence streams
 into a markdown corpus, syncs it into SIA's local gbrain (PGLite) index, checks
 configured signed chains through their keeper verifiers, and derives

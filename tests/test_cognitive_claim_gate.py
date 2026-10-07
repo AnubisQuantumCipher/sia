@@ -278,96 +278,55 @@ def _brain_boundary_occurrences(text):
 
 
 class FirstContactClaimSurfaces(unittest.TestCase):
-    def assert_boundary_near_first_claim(self, relative, claim, radius=4):
-        lines = _read(relative).splitlines()
-        claim_line = next(
-            index for index, line in enumerate(lines) if claim in line)
-        boundary_lines = []
-        for index in range(len(lines)):
-            nearby = " ".join(" ".join(lines[index:index + 4]).split())
-            if BRAIN_METAPHOR_BOUNDARY in nearby:
-                boundary_lines.append(index)
-        self.assertTrue(
-            any(abs(index - claim_line) <= radius for index in boundary_lines),
-            f"{relative}: exact Brain-metaphor boundary is not adjacent to "
-            f"the first-contact claim",
+    def test_operator_surfaces_omit_the_brain_metaphor_line(self):
+        surfaces = (
+            "Cockpit.qml",
+            "Model.js",
+            "Panel.qml",
+            "README.md",
+            "SECURITY.md",
+            "bin/sia",
+            "bin/sia-brainstem",
+            "bin/sia-mcp",
+            "bin/siatakes.py",
+            "docs/CONTINUITY.md",
+            "docs/MANUAL.md",
+            "docs/WHITEPAPER.md",
+            "manifest.json",
+            "skill/SKILL.md",
         )
-
-    def test_markdown_titles_carry_the_exact_adjacent_boundary(self):
-        for relative, claim in (
-                ("README.md", "# SIA — the Omarchy Brain"),
-                ("docs/MANUAL.md", "# SIA — The Omarchy Brain"),
-                ("docs/WHITEPAPER.md", "# SIA:")):
-            with self.subTest(path=relative):
-                self.assert_boundary_near_first_claim(relative, claim)
-
-    def test_every_changed_brain_boundary_surface_is_censused(self):
-        expected_occurrences = {
-            "Cockpit.qml": 3,
-            "Model.js": 1,
-            "Panel.qml": 2,
-            "README.md": 1,
-            "SECURITY.md": 1,
-            "bin/sia": 1,
-            "bin/sia-brainstem": 1,
-            "bin/sia-mcp": 1,
-            "bin/sialib.py": 2,
-            "bin/siatakes.py": 1,
-            "docs/CONTINUITY.md": 1,
-            "docs/MANUAL.md": 1,
-            "docs/WHITEPAPER.md": 1,
-            "manifest.json": 1,
-            "skill/SKILL.md": 1,
-        }
-        for relative, expected in expected_occurrences.items():
+        for relative in surfaces:
             with self.subTest(path=relative):
                 self.assertEqual(
-                    _brain_boundary_occurrences(_read(relative)), expected,
-                    f"{relative}: exact Brain-boundary occurrence census "
-                    "changed",
+                    _brain_boundary_occurrences(_read(relative)), 0,
+                    f"{relative}: the brain-metaphor line is back",
                 )
 
-    def test_bar_widget_description_carries_the_exact_boundary(self):
-        # The top-level manifest description is the marketplace listing
-        # paragraph and carries the product tagline instead; the boundary
-        # rides every in-product surface a user actually reads on the
-        # desktop — this description, the Panel tooltip, and the Cockpit.
+    def test_runtime_boundary_constant_stays_in_sialib(self):
+        # Readiness still witnesses this exact sentence on the cortex page.
+        # That check is not a cockpit caption.
+        self.assertEqual(
+            _brain_boundary_occurrences(_read("bin/sialib.py")), 1)
+
+    def test_bar_widget_description_omits_the_brain_metaphor_line(self):
         manifest = json.loads(_read("manifest.json"))
-        self.assertIn(
+        self.assertNotIn(
             BRAIN_METAPHOR_BOUNDARY, manifest["barWidget"]["description"])
         self.assertNotIn(BRAIN_METAPHOR_BOUNDARY, manifest["description"])
 
-    def test_panel_tooltip_always_carries_the_exact_boundary(self):
+    def test_panel_tooltip_omits_the_brain_metaphor_line(self):
         panel = _read("Panel.qml")
         tooltip = panel.split("function tooltip()", 1)[1].split(
             "function applyStatus", 1)[0]
-        self.assertIn(BRAIN_METAPHOR_BOUNDARY, tooltip)
+        self.assertNotIn(BRAIN_METAPHOR_BOUNDARY, tooltip)
+        self.assertNotIn("brainBoundary", tooltip)
 
-    def test_every_panel_tooltip_branch_appends_the_boundary(self):
-        panel = _read("Panel.qml")
-        tooltip = panel.split("function tooltip()", 1)[1].split(
-            "function applyStatus", 1)[0]
-        markers = (
-            'if (root.releaseLifecycle === "checking")',
-            'if (root.releaseLifecycle === "setup")',
-            'if (root.releaseLifecycle === "installing")',
-            'if (root.releaseLifecycle === "repair")',
-            'if (root.releaseLifecycle === "ahead")',
-            'if (root.releaseLifecycle === "update")',
-            'var brain = root.cockpitWorkspace',
-        )
-        starts = [tooltip.index(marker) for marker in markers]
-        for index, marker in enumerate(markers):
-            end = starts[index + 1] if index + 1 < len(starts) \
-                else len(tooltip)
-            branch = tooltip[starts[index]:end]
-            with self.subTest(branch=marker):
-                self.assertIn("return", branch)
-                self.assertIn("brainBoundary", branch)
-
-    def test_cockpit_header_carries_the_exact_adjacent_boundary(self):
-        self.assert_boundary_near_first_claim(
-            "Cockpit.qml", "SIA — THE OMARCHY BRAIN", radius=12)
+    def test_cockpit_header_omits_the_brain_metaphor_line(self):
+        cockpit = _read("Cockpit.qml")
+        header = cockpit.split("SIA — THE OMARCHY BRAIN", 1)[1].split(
+            "id: stateText", 1)[0]
+        self.assertNotIn(BRAIN_METAPHOR_BOUNDARY, header)
+        self.assertNotIn("brainBoundaryText", header)
 
     def test_unearned_names_are_absent_outside_labeled_evidence_contexts(self):
         patterns = {

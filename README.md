@@ -1,8 +1,5 @@
 # SIA — the Omarchy Brain
 
-“Brain” is a product metaphor for auditable local machine memory; it is not a
-biological brain and does not establish cognition or neuroscience.
-
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu and Heka.*
 

@@ -1,8 +1,5 @@
 """siatakes — prediction outcomes and calibration for SIA, the Omarchy Brain.
 
-“Brain” is a product metaphor for auditable local machine memory; it is not a
-biological brain and does not establish cognition or neuroscience.
-
 A *take* is a falsifiable prediction: claim, holder, confidence p∈(0,1),
 deadline, domain. When due, the take is graded against recalled evidence —
 an explicitly configured inference-isolated judge grades it, and

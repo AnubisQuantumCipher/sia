@@ -2,9 +2,6 @@
 """sia-mcp — MCP stdio server exposing SIA, the Omarchy Brain, to any
 agent harness (Claude Code, Codex, Grok, OMP, anything MCP-capable).
 
-“Brain” is a product metaphor for auditable local machine memory; it is not a
-biological brain and does not establish cognition or neuroscience.
-
 Architecture contract: this server NEVER opens the local memory index.
 Reads shell out to the `sia` CLI (which retries around the daemon's
 brief ownership lease); writes go to serialized filesystem queues
