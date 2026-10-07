@@ -324,8 +324,7 @@ class LiveWorkspaceQmlWiring(unittest.TestCase):
         self.assertNotIn('" OF 7"', cockpit)
         tooltip = _qml_function(panel, "tooltip")
         self.assertIn("liveLoopView.summary", tooltip)
-        # Existing honest product boundary remains close to the new view.
-        self.assertIn("not a biological brain", tooltip)
+        self.assertNotIn("not a biological brain", tooltip)
 
 
 if __name__ == "__main__":
