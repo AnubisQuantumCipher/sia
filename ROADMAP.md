@@ -334,7 +334,7 @@ line (`.github/workflows/ci.yml`, job `marketplace-freeze`): while the state is
 Closing the cycle means editing the line to `state=none`; re-binding means editing
 `sha=` and nothing else in the same commit, because no commit can name its own SHA.
 
-    sia-freeze: state=none branch=main sha=0f09d3ff527ccef932cf9a31febf83ecfe642975
+    sia-freeze: state=pending branch=main sha=a6054496097f293c4101dd38b5d4dc0997e68283
 
 ---
 
