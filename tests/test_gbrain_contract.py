@@ -287,6 +287,45 @@ class GbrainContract(unittest.TestCase):
         self.assertIn(SCHEMA_PACK, _output(result))
 
 
+    def test_13_private_temp_bypasses_real_poisoned_extension_archives(self):
+        from pathlib import Path
+        import tempfile
+        from unittest import mock
+
+        # Populate a disposable cache using the actual pinned engine, then
+        # replace its archives with same-size invalid bytes. Never touch the
+        # shared /tmp cache or the operator's resident brain.
+        with tempfile.TemporaryDirectory(
+                prefix="poisoned-assets-", dir=sia_test_home.ISOLATED_HOME) as root:
+            environment = dict(self.sialib.GBRAIN_ENV, TMPDIR=root)
+            arguments = ["engine", "status", "--probe", "--json"]
+            def direct():
+                return self.sialib._run_bounded_text_process(
+                    [self.binary, *arguments], env=environment,
+                    timeout=60, cwd=self.sialib.CORPUS,
+                    output_limit=self.sialib.MAX_GBRAIN_OUTPUT_BYTES)
+            with self.sialib.gbrain_owner():
+                clean = direct()
+                self.assertEqual(clean.returncode, 0, _output(clean)[-400:])
+                archives = list((Path(root) / "gbrain-pglite-assets").glob("*.tar.gz"))
+                self.assertTrue(archives, "real embedded asset path was not exercised")
+                for archive in archives:
+                    archive.write_bytes(bytes(len(archive.read_bytes())))
+                poisoned = direct()
+                # The pinned engine can still report a healthy database while
+                # logging extension-load errors. The relevant negative control
+                # is that it consumed our corrupt archive, not its exit code.
+                self.assertIn("Failed to fetch extension: vector", poisoned.stderr)
+                self.assertIn("incorrect header check", poisoned.stderr)
+                with mock.patch.object(self.sialib, "GBRAIN_ENV", environment):
+                    protected = self.sialib.gbrain(arguments, timeout=60)
+                self.assertEqual(protected.returncode, 0, _output(protected)[-400:])
+                self.assertTrue(json.loads(protected.stdout)["probe"]["ok"])
+                self.assertNotIn("Failed to fetch extension", protected.stderr)
+                for archive in archives:
+                    self.assertEqual(archive.read_bytes(), bytes(archive.stat().st_size))
+
+
 # ------------------------------------------------------- ROADMAP gate 3
 #
 # "Any new gbrain invocation shape lands with a probe in
