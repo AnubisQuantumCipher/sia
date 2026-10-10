@@ -1820,7 +1820,12 @@ ARCH="$(uname -m)"; case "$ARCH" in
 esac
 preflight_python_capabilities
 
-SIA_INSTALL_TMP="$(mktemp -d)"
+# The pinned gbrain caches embedded extensions under TMPDIR and trusts a
+# same-size existing archive. Ignore ambient temp parents and keep every
+# installer child (including bootstrap/probe/config/source/schema calls)
+# inside this fresh owner-only directory until lifetime_quiesce completes.
+SIA_INSTALL_TMP="$(mktemp -d /tmp/sia-install.XXXXXXXXXX)"
+export TMPDIR="$SIA_INSTALL_TMP"
 SIA_BRAINSTEM_WAS_ACTIVE=0
 SIA_BRAINSTEM_ENABLE_STATE=disabled
 SIA_INSTALL_MUTATED=0

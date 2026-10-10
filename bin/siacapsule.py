@@ -2680,10 +2680,11 @@ def _gbrain_environment(home):
 
 
 def _run_gbrain(args, *, home, label):
-    result = sialib._run_bounded_text_process(
-        [sialib.GBRAIN, *args], env=_gbrain_environment(home),
-        timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=sialib.CORPUS,
-        label=label, output_limit=sialib.MAX_GBRAIN_OUTPUT_BYTES)
+    with sialib.private_gbrain_environment(_gbrain_environment(home)) as environment:
+        result = sialib._run_bounded_text_process(
+            [sialib.GBRAIN, *args], env=environment,
+            timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=sialib.CORPUS,
+            label=label, output_limit=sialib.MAX_GBRAIN_OUTPUT_BYTES)
     if result.returncode != 0:
         raise RuntimeError(label + " failed")
     return result

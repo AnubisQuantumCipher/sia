@@ -1930,11 +1930,12 @@ def _gbrain_pin_check(pin_paths=None):
         return
     ver = ""
     try:
-        r = sialib._run_bounded_text_process(
-            [sialib.GBRAIN, "--version"], env=sialib.GBRAIN_ENV,
-            timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=None,
-            label="gbrain version",
-            output_limit=sialib.MAX_GBRAIN_OUTPUT_BYTES)
+        with sialib.private_gbrain_environment(sialib.GBRAIN_ENV) as environment:
+            r = sialib._run_bounded_text_process(
+                [sialib.GBRAIN, "--version"], env=environment,
+                timeout=sialib.JOURNAL_TIMEOUT_SECONDS, cwd=None,
+                label="gbrain version",
+                output_limit=sialib.MAX_GBRAIN_OUTPUT_BYTES)
         reported = (r.stdout or r.stderr or "").strip().splitlines()
         ver = reported[-1] if reported else ""
     except Exception:

@@ -137,6 +137,12 @@ import json
 import os
 import sys
 
+# Every extracted bootstrap/probe invocation must retain the installer's
+# owner-only temporary directory, including when ambient TMPDIR is hostile.
+import stat
+scratch = os.environ["TMPDIR"]
+assert stat.S_IMODE(os.stat(scratch).st_mode) == 0o700
+assert scratch == os.environ["EXPECTED_INSTALL_TMP"]
 home = os.environ["GBRAIN_HOME"]
 store = os.path.join(home, ".gbrain")
 if sys.argv[1:2] == ["init"]:
@@ -199,6 +205,10 @@ raise SystemExit(21)
         os.makedirs(share, exist_ok=True)
         os.makedirs(managed, exist_ok=True)
         fake = self._fake_gbrain(home)
+        scratch = os.path.join(home, "private-install-tmp")
+        os.makedirs(scratch, mode=0o700, exist_ok=True)
+        temp_export = next(line for line in self.installer.splitlines()
+                           if line.startswith("export TMPDIR="))
         variables = textwrap.dedent(f'''
             SIA_LIFETIME_SOURCE={shlex.quote(os.path.join(REPO, "bin", "sialifetime.py"))}
             readonly SIA_LIFETIME_SOURCE
@@ -206,6 +216,9 @@ raise SystemExit(21)
             STATE={shlex.quote(state)}
             MANAGED_DIR={shlex.quote(managed)}
             GBRAIN_BIN={shlex.quote(fake)}
+            SIA_INSTALL_TMP={shlex.quote(scratch)}
+            {temp_export}
+            export EXPECTED_INSTALL_TMP="$SIA_INSTALL_TMP"
             GBRAIN_BOOTSTRAP_INTENT="$MANAGED_DIR/gbrain-bootstrap"
             GBRAIN_BOOTSTRAP_HOME="$SHARE/.gbrain-bootstrap-home"
             GBRAIN_BOOTSTRAP_STAGE="$SHARE/.gbrain-bootstrap-tree"

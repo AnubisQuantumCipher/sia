@@ -3987,6 +3987,20 @@ def gbrain_owner():
         finally:
             _GBRAIN_OWNER_FD.reset(token)
 
+@contextlib.contextmanager
+def private_gbrain_environment(environment):
+    """Keep embedded extension archives out of shared/ambient temp caches.
+
+    The pinned engine trusts existing same-size archives beneath TMPDIR.
+    mkdtemp creates an unpredictable owner-only directory; explicitly using
+    /tmp also prevents an inherited TMPDIR from choosing an attacker-owned
+    parent. Keep it alive until the bounded child has exited, including on
+    timeout, then remove its disposable assets. The caller's env is unchanged.
+    """
+    with tempfile.TemporaryDirectory(prefix="sia-gbrain-", dir="/tmp") as root:
+        yield dict(environment, TMPDIR=root)
+
+
 def gbrain(args, timeout=120, json_out=False):
     import siasourceengine
     return siasourceengine.compatibility_gbrain(

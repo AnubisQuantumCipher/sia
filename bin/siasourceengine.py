@@ -113,9 +113,10 @@ def compatibility_gbrain(owner, args, *, timeout=120, json_out=False):
     """Run the compatibility engine CLI through the caller's owned boundary."""
     GBRAIN = owner["GBRAIN"]
     try:
-        with owner["gbrain_owner"]() as owner_fd:
+        with owner["gbrain_owner"]() as owner_fd, \
+                owner["private_gbrain_environment"](owner["GBRAIN_ENV"]) as environment:
             result = owner["_run_bounded_text_process"](
-                [GBRAIN] + args, env=owner["GBRAIN_ENV"],
+                [GBRAIN] + args, env=environment,
                 timeout=timeout, cwd=owner["CORPUS"], pass_fds=(owner_fd,),
                 label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"],
                 progress_interval=(30 if timeout == 1800 else None),
@@ -145,12 +146,13 @@ def compatibility_gbrain_call_unlocked(owner, op, params, *, timeout=120,
     """Run one compatibility call while the parent retains the engine lease."""
     GBRAIN = owner["GBRAIN"]
     try:
-        result = owner["_run_bounded_text_process"](
-            [GBRAIN, "call", "--source", owner["GBRAIN_SOURCE"], op,
-             json.dumps(params)], env=owner["GBRAIN_ENV"], timeout=timeout,
-            cwd=owner["CORPUS"],
-            pass_fds=((owner_fd,) if owner_fd is not None else ()),
-            label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"])
+        with owner["private_gbrain_environment"](owner["GBRAIN_ENV"]) as environment:
+            result = owner["_run_bounded_text_process"](
+                [GBRAIN, "call", "--source", owner["GBRAIN_SOURCE"], op,
+                 json.dumps(params)], env=environment, timeout=timeout,
+                cwd=owner["CORPUS"],
+                pass_fds=((owner_fd,) if owner_fd is not None else ()),
+                label="gbrain", output_limit=owner["MAX_GBRAIN_OUTPUT_BYTES"])
     except Exception:
         return None
     if result.returncode != 0:
