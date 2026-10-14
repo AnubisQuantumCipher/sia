@@ -1955,6 +1955,71 @@ class SessionMetadataPrivacy(unittest.TestCase):
             self.assertTrue(all("private" not in event.summary
                                 for event in later))
 
+    def test_grok_session_sense_never_opens_jsonl_payload(self):
+        sialib = _load("sialib_grok_metadata",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home:
+            directory = os.path.join(
+                home, ".grok", "sessions", "demo",
+                "01abcdef-1234-5678-9abc-def012345678")
+            os.makedirs(directory)
+            session = os.path.join(directory, "updates.jsonl")
+            with open(session, "w") as stream:
+                stream.write('{"type":"user","message":"private"}\n')
+            sibling = os.path.join(directory, "chat_history.jsonl")
+            with open(sibling, "w") as stream:
+                stream.write('{"type":"user","message":"private-sibling"}\n')
+            old_home = sialib.HOME
+            sialib.HOME = home
+            cursors = {}
+            original_open = os.open
+
+            def metadata_open(path, *args, **kwargs):
+                if os.fsdecode(path).endswith(".jsonl"):
+                    raise AssertionError("session payload must remain unopened")
+                return original_open(path, *args, **kwargs)
+
+            @contextlib.contextmanager
+            def metadata_only():
+                with mock.patch("builtins.open", side_effect=AssertionError(
+                        "session payload must remain unopened")), \
+                        mock.patch("io.open", side_effect=AssertionError(
+                            "session payload must remain unopened")), \
+                        mock.patch("os.open", side_effect=metadata_open):
+                    yield
+
+            try:
+                with metadata_only():
+                    first = sialib.sense_grok(cursors)
+                self.assertTrue(first)
+                with open(session, "a") as stream:
+                    stream.write(
+                        '{"type":"assistant","message":"also private"}\n')
+                with metadata_only():
+                    later = sialib.sense_grok(cursors)
+            finally:
+                sialib.HOME = old_home
+            self.assertTrue(later)
+            self.assertTrue(all("private" not in event.summary
+                                for event in later))
+            self.assertTrue(all(event.organ == "grok" for event in later))
+            sid = sialib._source_entity_token(
+                "01abcdef-1234-5678-9abc-def012345678", "grok-session")
+            self.assertEqual(list(cursors["grok.sessions"][1]), [sid])
+
+    def test_grok_registration_requires_source_and_honors_disable(self):
+        sialib = _load("sialib_grok_registration",
+                       os.path.join(BIN, "sialib.py"))
+        with tempfile.TemporaryDirectory() as home, \
+                mock.patch.object(sialib, "HOME", home), \
+                mock.patch.object(sialib, "CONFIG", {}):
+            self.assertNotIn("grok", sialib._build_organs())
+            os.makedirs(os.path.join(home, ".grok", "sessions"))
+            self.assertIn("grok", sialib._build_organs())
+            self.assertIn(sialib.sense_grok, sialib._ALL_SENSES)
+            sialib.CONFIG = {"senses": {"disable": ["grok"]}}
+            self.assertNotIn("grok", sialib._build_organs())
+
 
 
 def _requires_pid_namespace(method):
@@ -3004,24 +3069,186 @@ class BuiltinSourceBounds(unittest.TestCase):
             finally:
                 self.sialib.HOME = old_home
 
+    def test_grok_restored_nested_frame_cannot_authorize_prune(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".grok", "sessions")
+            active = os.path.join(root, "live-cwd", "live-sid")
+            restored = os.path.join(root, "old-cwd")
+            os.makedirs(active)
+            os.makedirs(os.path.join(restored, "restored"))
+            with open(os.path.join(active, "updates.jsonl"), "w"):
+                pass
+            with open(os.path.join(restored, "restored", "updates.jsonl"),
+                      "w"):
+                pass
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            cursors = {}
+            try:
+                self.sialib.sense_grok(cursors)
+                restored_id = self.sialib._source_entity_token(
+                    "restored", "grok-session")
+                generation = cursors["source.grok.tree"]["generation"]
+                directory_relatives = ["", "live-cwd", "old-cwd",
+                                        "old-cwd/restored"]
+                cursors["source.grok.tree"] = {
+                    "schema": self.sialib.SOURCE_TREE_SCHEMA,
+                    "generation": generation, "phase": "scan",
+                    "coverage": True,
+                    "queue": [{"relative": "live-cwd/live-sid",
+                               "levels": 0, "page": {}}],
+                    "directories": [{
+                        "relative": relative,
+                        "generation": self.sialib
+                            ._source_tree_path_generation(
+                                os.path.join(root, relative))}
+                        for relative in directory_relatives],
+                    "validation_cursor": 0,
+                }
+                held = os.path.join(home, "grok-restored-held")
+                original = self.sialib._bounded_source_entries
+                changed = []
+
+                def disappear(directory, page=None, limit=None):
+                    if directory == active and not changed:
+                        changed.append(True)
+                        os.replace(restored, held)
+                        try:
+                            return original(directory, page, limit)
+                        finally:
+                            os.replace(held, restored)
+                    return original(directory, page, limit)
+
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 8), \
+                        mock.patch.object(
+                            self.sialib, "_bounded_source_entries",
+                            side_effect=disappear):
+                    events = self.sialib.sense_grok(cursors)
+                sessions = cursors["grok.sessions"][1]
+                self.assertTrue(changed)
+                self.assertIn(restored_id, sessions)
+                self.assertTrue(any(event.kind == "source-entry-refused"
+                                    for event in events))
+            finally:
+                self.sialib.HOME = old_home
+
+    def test_grok_nested_rename_never_false_prunes_and_reappears(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(home, ".grok", "sessions")
+            project = os.path.join(root, "project")
+            existing_dir = os.path.join(project, "existing")
+            os.makedirs(existing_dir)
+            with open(os.path.join(existing_dir, "updates.jsonl"), "w"):
+                pass
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            cursors = {}
+            try:
+                self.sialib.sense_grok(cursors)
+                existing = self.sialib._source_entity_token(
+                    "existing", "grok-session")
+                sessions = cursors["grok.sessions"][1]
+                self.assertIn(existing, sessions)
+                generation = cursors["source.grok.tree"]["generation"]
+                cursors["source.grok.tree"] = {
+                    "schema": self.sialib.SOURCE_TREE_SCHEMA,
+                    "generation": generation, "phase": "scan",
+                    "coverage": True,
+                    "queue": [{"relative": "project/existing", "levels": 0,
+                               "page": {}}],
+                    "directories": [{
+                        "relative": "", "generation":
+                            self.sialib._source_tree_path_generation(root)}],
+                    "validation_cursor": 0,
+                }
+                held = os.path.join(home, "grok-project-held")
+                os.replace(project, held)
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 8):
+                    refused = self.sialib.sense_grok(cursors)
+                    self.assertTrue(any(event.kind == "source-entry-refused"
+                                        for event in refused))
+                    self.assertIn(existing, sessions)
+                    os.replace(held, project)
+                    new_dir = os.path.join(project, "new")
+                    os.makedirs(new_dir)
+                    with open(os.path.join(new_dir, "updates.jsonl"), "w"):
+                        pass
+                    target_generation = cursors[
+                        "source.grok.tree"]["generation"]
+                    for _attempt in range(20):
+                        if cursors["source.grok.tree"]["generation"] \
+                                != target_generation:
+                            break
+                        self.sialib.sense_grok(cursors)
+                    self.assertNotEqual(
+                        cursors["source.grok.tree"]["generation"],
+                        target_generation)
+                new = self.sialib._source_entity_token(
+                    "new", "grok-session")
+                sessions = cursors["grok.sessions"][1]
+                self.assertIn(existing, sessions)
+                self.assertIn(new, sessions)
+            finally:
+                self.sialib.HOME = old_home
+
+    def test_grok_paginated_clean_generation_prunes_by_durable_marks(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = os.path.join(
+                home, ".grok", "sessions", "demo", "live")
+            os.makedirs(root)
+            with open(os.path.join(root, "updates.jsonl"), "w"):
+                pass
+            old_home = self.sialib.HOME
+            self.sialib.HOME = home
+            stale = self.sialib._source_entity_token(
+                "stale", "grok-session")
+            live = self.sialib._source_entity_token(
+                "live", "grok-session")
+            cursors = {"grok.sessions": [
+                "sia-source-entity-state-v1",
+                {stale: {"size": 0, "announced": False,
+                         "generation": 0}}]}
+            try:
+                with mock.patch.object(
+                        self.sialib, "MAX_SOURCE_SCAN_ENTRIES", 8):
+                    for _attempt in range(20):
+                        self.sialib.sense_grok(cursors)
+                        if cursors["source.grok.tree"]["generation"]:
+                            break
+                    self.assertTrue(
+                        cursors["source.grok.tree"]["generation"])
+                sessions = cursors["grok.sessions"][1]
+                self.assertIn(live, sessions)
+                self.assertNotIn(stale, sessions)
+            finally:
+                self.sialib.HOME = old_home
+
     def test_session_senses_refuse_type_confused_persisted_rows(self):
         with tempfile.TemporaryDirectory() as home:
             claude_root = os.path.join(home, ".claude", "projects", "demo")
             codex_root = os.path.join(
                 home, ".codex", "sessions", "year", "month", "day")
+            grok_root = os.path.join(home, ".grok", "sessions", "demo",
+                                     "session")
             os.makedirs(claude_root)
             os.makedirs(codex_root)
+            os.makedirs(grok_root)
             with open(os.path.join(claude_root, "session.jsonl"), "w"):
                 pass
             with open(os.path.join(
                     codex_root, "rollout-session.jsonl"), "w"):
+                pass
+            with open(os.path.join(grok_root, "updates.jsonl"), "w"):
                 pass
             old_home = self.sialib.HOME
             self.sialib.HOME = home
             try:
                 for key, sense in (
                         ("claude.sessions", self.sialib.sense_claude),
-                        ("codex.sessions", self.sialib.sense_codex)):
+                        ("codex.sessions", self.sialib.sense_codex),
+                        ("grok.sessions", self.sialib.sense_grok)):
                     cursors = {key: [
                         "sia-source-entity-state-v1", {
                             "session": {
@@ -3036,7 +3263,11 @@ class BuiltinSourceBounds(unittest.TestCase):
     def test_future_session_mtime_is_not_reported_as_fresh(self):
         source = {"path": "/source/session.jsonl", "size": 0,
                   "mtime": 1}
-        for sense in (self.sialib.sense_claude, self.sialib.sense_codex):
+        for sense in (self.sialib.sense_claude, self.sialib.sense_codex,
+                      self.sialib.sense_grok):
+            if sense.__name__ == "sense_grok":
+                source = {"path": "/source/cwd/session/updates.jsonl",
+                          "size": 0, "mtime": 1}
             cursors = {}
             with self.subTest(sense=sense.__name__), \
                     mock.patch.object(
@@ -3301,19 +3532,23 @@ class BuiltinSourceBounds(unittest.TestCase):
             receipts = os.path.join(
                 home, ".local/state/jackal/receipts")
             claude = os.path.join(home, ".claude/projects/demo")
+            grok = os.path.join(
+                home, ".grok/sessions/demo/01abcdef-1234-5678-9abc-def0")
             codex = os.path.join(home, ".codex/sessions/2026/08/30")
             notify = os.path.join(
                 home, ".local/state/omarchy/notifications/history")
             git_log = os.path.join(
                 home, "Projects/demo/.git/logs/HEAD")
-            for directory in (guardian, agents, receipts, claude, codex,
-                              notify, os.path.dirname(git_log)):
+            for directory in (guardian, agents, receipts, claude, grok,
+                              codex, notify, os.path.dirname(git_log)):
                 os.makedirs(directory)
             with open(os.path.join(guardian, "checkpoint"), "w"):
                 pass
             with open(os.path.join(receipts, "receipt.json"), "w"):
                 pass
             with open(os.path.join(claude, "session.jsonl"), "w"):
+                pass
+            with open(os.path.join(grok, "updates.jsonl"), "w"):
                 pass
             with open(os.path.join(codex, "rollout-session.jsonl"), "w"):
                 pass
@@ -3337,6 +3572,7 @@ class BuiltinSourceBounds(unittest.TestCase):
                     self.sialib.sense_git({})
                     self.sialib.sense_claude({})
                     self.sialib.sense_codex({})
+                    self.sialib.sense_grok({})
                     self.sialib.sense_notify({})
                     self.sialib.sense_agents({})
             finally:

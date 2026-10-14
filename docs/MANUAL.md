@@ -17,8 +17,11 @@ runs scheduled maintenance, records predictions, and grades them only through
 the configured evidence boundary.
 
 **Senses.** Base senses cover SIA's own signed lifecycle ledger, pacman, the
-systemd journal, git repos under `~/Projects`, agent-session metadata,
-desktop notifications, and Quattro's agent usage meters. The lifecycle sense
+systemd journal, git repos under `~/Projects`, Claude Code session metadata,
+desktop notifications, and Quattro's agent usage meters. Optional Codex and
+Grok session organs activate when `~/.codex/sessions` or `~/.grok/sessions`
+exist; like Claude, they record existence and growth only, never transcript
+bodies. The lifecycle sense
 keeper-verifies the ledger before projecting non-`PULSE:*`, non-`DREAM:bench`
 rows into `events/sia/`; those exclusions prevent ingestion/evaluation
 feedback. Optional

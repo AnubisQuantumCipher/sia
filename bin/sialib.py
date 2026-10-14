@@ -512,6 +512,8 @@ OPTIONAL_ORGANS = {
                   ".local/state/omarchy-guardian"),
     "codex":     ("Codex",     "Codex CLI sessions on this box",
                   ".codex/sessions"),
+    "grok":      ("Grok",      "Grok agent sessions on this box",
+                  ".grok/sessions"),
     "skills":    ("Skills",    "agent skills installed on this box",
                   ".claude/skills"),
     # Records, not note bodies: the vault's git history only.  ``None`` is a
@@ -3106,14 +3108,15 @@ _SENSE_ORGAN = {
     "sense_pacman": "pacman", "sense_journal": "journal",
     "sense_git": "projects", "sense_obsidian": "obsidian",
     "sense_claude": "claude-code",
-    "sense_codex": "codex", "sense_notify": "notify",
+    "sense_codex": "codex", "sense_grok": "grok",
+    "sense_notify": "notify",
     "sense_agents": "agents", "sense_skills": "skills",
 }
 
 _ALL_SENSES = [sense_sia, sense_jackal, sense_sekhmet, sense_custos, sense_aegis,
                sense_worldline, sense_pacman, sense_journal,
                sense_guardian, sense_git, sense_obsidian,
-               sense_claude, sense_codex,
+               sense_claude, sense_codex, sense_grok,
                sense_notify, sense_agents, sense_skills]
 
 # Only senses whose source is active on this machine run.
