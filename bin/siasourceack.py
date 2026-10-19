@@ -358,6 +358,10 @@ class _EffectsArchiveSlot:
             _refuse(self.source, "ack-effects-archive-payload")
         if self.state == "archive":
             self.current()
+            # Visibility is not durability: a previous publisher may have
+            # died after rename and before synchronizing this directory.
+            os.fsync(self.held.directories.fd)
+            self.current()
             return
         self.current()
         owner = self.owner

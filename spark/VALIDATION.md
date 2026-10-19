@@ -91,3 +91,22 @@ signed-refusal crash persistence, and correspondence between modeled durable
 actions and runtime filesystem operations. The fixture controls Git/index
 observations and recovers in the parent's fixture. No production runtime code
 or installed service authority changed in this checkpoint.
+
+## Release hold: interrupted archive publication
+
+A subsequent deeper cut reproduced a durability gap. Killing the ACK child at
+`siaqueue`'s `target-published` hook left a visible effects archive before its
+parent-directory fsync. Recovery reached `effects-receipt-archive-durable`
+without synchronizing that directory. The negative run is retained in
+`ack-archive-durability-red.log`. This is an ordering failure, not observed
+power-loss data loss.
+
+The local repair synchronizes the pinned effects-archive parent and revalidates
+the held generation before reporting the archive durable. The regression then
+passed 29 tests (`ack-archive-durability-green.log`). Independent GPT-6.1 source
+review confirmed equivalent recovery omissions in source archival and cursor
+publication; those still require repair and failure controls. This checkpoint
+is incomplete and must not be released. The prior final-main target is on hold
+even if its existing CI passes. A qualified runtime fix and refreshed release
+freeze are required before tagging. Completed read-only validation must remain
+effectless; synchronization belongs in pending ACK recovery only.

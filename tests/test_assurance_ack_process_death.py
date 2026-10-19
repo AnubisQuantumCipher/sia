@@ -18,12 +18,14 @@ from tests import sia_test_home  # noqa: F401 -- isolate before runtime imports
 from tests import test_controller_source_ack as ack_tests
 
 
-def _die_at_boundary(case, selected):
+def _die_at_boundary(case, selected, queue_boundary=False):
     def boundary(phase):
         if phase == selected:
             os.kill(os.getpid(), signal.SIGKILL)
 
-    with mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
+    target = case.lib.siaqueue if queue_boundary else case.lib
+    name = "_publish_boundary" if queue_boundary else ack_tests.BOUNDARY
+    with mock.patch.object(target, name, side_effect=boundary):
         case.acknowledge()
     raise AssertionError("requested process-death boundary was not reached")
 
@@ -37,9 +39,9 @@ class AssuranceAckProcessDeath(unittest.TestCase):
         case.setUp()
         return case
 
-    def kill_at(self, case, phase):
+    def kill_at(self, case, phase, *, queue_boundary=False):
         child = multiprocessing.get_context("fork").Process(
-            target=_die_at_boundary, args=(case, phase))
+            target=_die_at_boundary, args=(case, phase, queue_boundary))
         child.start()
         try:
             child.join(timeout=30)
@@ -101,6 +103,33 @@ class AssuranceAckProcessDeath(unittest.TestCase):
                 case.assert_final()
                 self.assert_effectless_retry(case)
                 case.doCleanups()
+
+    def test_archive_recovery_syncs_directory_before_declaring_durable(self):
+        case = self.fixture()
+        case.start_empty()
+        # The first fixed publication in ACK is the effects receipt archive.
+        self.kill_at(case, "target-published", queue_boundary=True)
+        self.reload_memo(case, "target-published")
+        self.assertTrue(case.effects_archive_path().is_file())
+        directory = os.stat(case.effects_archive_dir)
+        expected = (directory.st_dev, directory.st_ino)
+        synced = []
+        real_fsync = os.fsync
+
+        def fsync(fd):
+            info = os.fstat(fd)
+            real_fsync(fd)
+            synced.append((info.st_dev, info.st_ino))
+
+        def boundary(phase):
+            if phase == "effects-receipt-archive-durable":
+                self.assertIn(expected, synced,
+                              "recovered archive declared durable without directory fsync")
+
+        with mock.patch.object(os, "fsync", side_effect=fsync), \
+                mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
+            self.assertIsNone(case.acknowledge())
+        case.assert_final()
 
     def test_foreign_cursor_after_process_death_cannot_become_ready(self):
         case = self.fixture()
