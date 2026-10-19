@@ -68,3 +68,26 @@ Those requirements and tests are included. The reviewer did not independently
 run GNATprove. Raw attempts and the accepted summary are retained in the same
 operator-local evidence directory. Real crash/replay, signing protection,
 IPC, model checking and integration acceptance remain UNRUN.
+
+## Subsequent bounded-model and ACK process-death checkpoints
+
+The bounded model and its negative/reachability controls subsequently passed;
+see `model/README.md` and `model/RUNTIME-MAPPING.md` for exact scope and remaining
+refinement obligations. This supersedes only the earlier model-checking UNRUN
+status, not system integration acceptance.
+
+TESTED: `python3 -m unittest tests.test_assurance_ack_process_death
+tests.test_controller_source_ack
+tests.test_controller_source_resident_v3_effects_prefix -v` passed 28 tests.
+The new module contributes three tests covering real child SIGKILL at core and
+journal ACK hooks, artifact-preserving completed retries, and a foreign cursor
+negative control after child death. Independent GPT-6.1 source review identified
+missing effects-archive snapshots and journal retry checks; both were added
+before the accepted regression run. Raw output is retained as
+`ack-process-death-reviewed.log` in the operator evidence directory.
+
+UNPROVEN: power-loss durability, fresh resident/interpreter recovery, actual
+signed-refusal crash persistence, and correspondence between modeled durable
+actions and runtime filesystem operations. The fixture controls Git/index
+observations and recovers in the parent's fixture. No production runtime code
+or installed service authority changed in this checkpoint.
