@@ -30,6 +30,112 @@ def _write(path, text):
 
 
 class GradingEvidenceCanonicalization(unittest.TestCase):
+    def test_blocked_legacy_retention_refuses_without_capping_valid_deadlines(self):
+        take = {"created": "2026-08-01T00:00:00Z", "deadline": "9999-12-31",
+                "claim": "journal grows"}
+        with mock.patch.object(siatakes, "natural_history_debt", return_value=False), \
+                mock.patch.object(siatakes, "_history_open_rows", return_value=[take]):
+            self.assertEqual(siatakes.open_take_evidence_windows()[0][2],
+                             "9999-12-31")
+            take["legacy_v1"] = {"deadline_state": "invalid-open-blocked"}
+            with self.assertRaisesRegex(siatakes.GradingEvidenceUnavailable,
+                                        "blocked legacy take"):
+                siatakes.open_take_evidence_windows()
+
+    def test_grading_retries_rotate_past_permanently_refusing_takes(self):
+        due = [{"id": key} for key in ("a", "b", "c", "d", "e")]
+        first = siatakes.next_grade_batch(due)
+        second = siatakes.next_grade_batch(due, first[-1]["id"])
+        self.assertEqual([row["id"] for row in first], ["a", "b", "c"])
+        self.assertEqual([row["id"] for row in second], ["d", "e", "a"])
+        self.assertEqual(siatakes.next_grade_batch([], "c"), [])
+        with self.assertRaisesRegex(ValueError, "cursor"):
+            siatakes.next_grade_batch(due, {})
+
+    def test_dated_grade_receives_all_window_days_and_full_hourly_evidence(self):
+        take = {"claim": "journal will exceed the hourly threshold",
+                "created": "2026-08-01T12:00:00Z", "deadline": "2026-08-05",
+                "confidence": 0.7, "status": "open"}
+        slug = "events/journal/2026-08-02"
+        with tempfile.TemporaryDirectory() as corpus:
+            for day in ("2026-07-31", "2026-08-01", "2026-08-02",
+                        "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06"):
+                _write(os.path.join(corpus, "events/journal", day + ".md"),
+                       "---\ntype: event-day\n---\n" + "context " * 100 +
+                       f" Hourly evidence for {day}: 13:00 threshold exceeded.")
+            _write(os.path.join(corpus, "epochs/journal/2026-w32.md"),
+                   "weekly exemplars")
+            with mock.patch.object(siatakes, "CORPUS", corpus), \
+                    mock.patch.object(siatakes, "_recall", return_value=
+                                      siatakes.RecallEvidence(True, "", frozenset())), \
+                    mock.patch.object(siatakes, "_judge_run", return_value=(
+                        f"VERDICT: TRUE\nJUSTIFICATION: [{slug}] records the hour.",
+                        None, "fixture")) as judge:
+                persist = mock.Mock()
+                result = siatakes.grade_take(take, persist=persist)
+            prompt = judge.call_args.args[0]
+            for day in ("01", "02", "03", "04", "05"):
+                self.assertIn(f"Hourly evidence for 2026-08-{day}", prompt)
+            self.assertNotIn("2026-07-31", prompt)
+            self.assertNotIn("2026-08-06", prompt)
+            self.assertEqual(result["status"], "resolved-true")
+            self.assertTrue(persist.call_args.args[3])
+
+    def test_complete_window_over_budget_refuses_before_judge(self):
+        with tempfile.TemporaryDirectory() as corpus:
+            _write(os.path.join(corpus, "events/journal/2026-08-02.md"),
+                   "evidence " * 100)
+            with mock.patch.object(siatakes, "CORPUS", corpus), \
+                    mock.patch.object(siatakes, "MAX_WINDOW_EVIDENCE_BYTES", 20), \
+                    mock.patch.object(siatakes, "_recall", return_value=
+                                      siatakes.RecallEvidence(True, "", frozenset())), \
+                    mock.patch.object(siatakes, "_judge_run") as judge, \
+                    self.assertRaisesRegex(siatakes.GradingEvidenceUnavailable,
+                                           "byte budget"):
+                siatakes._grading_evidence(
+                    "journal", created="2026-08-01T00:00:00Z", deadline="2026-08-03")
+            judge.assert_not_called()
+
+    def test_window_append_between_selection_and_snapshot_is_not_partial_evidence(self):
+        with tempfile.TemporaryDirectory() as corpus:
+            path = os.path.join(corpus, "events/journal/2026-08-02.md")
+            _write(path, "original hour")
+            read = siatakes._read_regular_text
+            calls = []
+
+            def append_before_second_read(filename):
+                calls.append(filename)
+                if len(calls) == 2:
+                    _write(path, "original hour plus later hour")
+                return read(filename)
+
+            with mock.patch.object(siatakes, "CORPUS", corpus), \
+                    mock.patch.object(siatakes, "_read_regular_text",
+                                      side_effect=append_before_second_read), \
+                    mock.patch.object(siatakes, "_recall", return_value=
+                                      siatakes.RecallEvidence(True, "", frozenset())), \
+                    self.assertRaisesRegex(siatakes.GradingEvidenceUnavailable,
+                                           "changed while reading"):
+                siatakes._grading_evidence(
+                    "journal", created="2026-08-01T00:00:00Z", deadline="2026-08-03")
+
+    def test_judge_failure_preserves_reason_and_never_persists(self):
+        for output, error, expected in (
+                (None, "service not ready", "service not ready"),
+                ("malformed", None, "missing exact verdict")):
+            with self.subTest(error=error), \
+                    mock.patch.object(siatakes, "_grading_evidence",
+                                      return_value=("", set(), [])), \
+                    mock.patch.object(siatakes, "_judge_run",
+                                      return_value=(output, error, "fixture")), \
+                    self.assertRaisesRegex(siatakes.GradingJudgeUnavailable, expected):
+                persist = mock.Mock()
+                try:
+                    siatakes.grade_take({"claim": "a claim", "deadline": "2026-08-03"},
+                                       persist=persist)
+                finally:
+                    persist.assert_not_called()
+
     def test_only_canonical_real_event_and_epoch_paths_are_admitted(self):
         with tempfile.TemporaryDirectory() as corpus:
             _write(os.path.join(corpus, "events/journal/day.md"),
@@ -61,8 +167,8 @@ class GradingEvidenceCanonicalization(unittest.TestCase):
         the example config): `sia grade` said "judge unavailable" with a
         working Claude CLI. The roster must admit every key the runtime's
         own loader admits and every key the example ships."""
-        example = json.load(open(os.path.join(REPO, "config.example.json"),
-                                 encoding="utf-8"))
+        with open(os.path.join(REPO, "config.example.json"), encoding="utf-8") as stream:
+            example = json.load(stream)
         self.assertEqual(set(example) - siatakes.CONFIG_TOP_LEVEL_KEYS, set())
         self.assertEqual(sialib._CONFIG_TOP_LEVEL_KEYS - siatakes.CONFIG_TOP_LEVEL_KEYS,
                          set())

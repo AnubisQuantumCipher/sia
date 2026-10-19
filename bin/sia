@@ -2249,6 +2249,7 @@ def cmd_take(argv):
     if argv and argv[0] == "--accept":
         which = argv[1] if len(argv) > 1 else "all"
         committed = []
+        expired = []
 
         # accept under the same flock every proposal writer holds, so a
         # daemon auto-proposal landing mid-accept is neither lost nor
@@ -2257,7 +2258,11 @@ def cmd_take(argv):
             if not pending:
                 return pending
             if which == "all":
-                idxs = set(range(len(pending)))
+                today = siatakes._utc_date().isoformat()
+                expired.extend(row for row in pending
+                               if row["deadline"] <= today)
+                idxs = {i for i, row in enumerate(pending)
+                        if row["deadline"] > today}
             else:
                 if not re.fullmatch(r"[0-9a-f]{6,20}", which):
                     raise ValueError(
@@ -2294,8 +2299,12 @@ def cmd_take(argv):
         except (OSError, TypeError, ValueError) as exc:
             print(f"proposal acceptance refused: {exc}")
             return 2
+        for row in expired:
+            print(f"skipped expired proposal {row['proposal_id']} "
+                  f"(due {row['deadline']}); retained in queue")
         if not committed:
-            print("no pending proposals")
+            print("no eligible pending proposals" if expired
+                  else "no pending proposals")
             return 0
         for meta in committed:
             print(f"committed {meta['id']} (conf "
@@ -2504,12 +2513,20 @@ def cmd_grade(tid=None):
               "with the judge…")
         try:
             gt = siatakes.grade_take(t, persist=_persist_grade)
+        except (siatakes.GradingEvidenceUnavailable,
+                siatakes.GradingJudgeUnavailable) as exc:
+            detail = sialib.strip_controls(sialib.redact(str(exc), "status-error"))
+            print(f"  grading refused; take remains open: {detail}")
+            grade_failed = True
+            continue
         except (OSError, RuntimeError, ValueError) as exc:
-            print(f"  grade not completed or publication pending: {exc}")
+            detail = sialib.strip_controls(sialib.redact(str(exc), "status-error"))
+            print(f"  grade not completed or publication pending: {detail}")
             grade_failed = True
             break
         if not gt:
             print("  grading failed (judge unavailable)")
+            grade_failed = True
             continue
         mark = {"resolved-true": "TRUE", "resolved-false": "FALSE"}.get(
             gt["status"], "UNRESOLVABLE")

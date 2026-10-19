@@ -18,9 +18,10 @@ watch its generated-entry stream and query the memory it has admitted.
 You can audit every stored word because the corpus is markdown in git and the
 daemon signs its own acts.
 
-**Current release: v1.8.3.** This fix keeps a redacted agent note from stopping
-the resident daemon: before it, one note whose text tripped the secret-redaction
-patterns during a pulse could leave SIA unable to start again. See
+**Current release: v1.8.4.** Dated grading retains its evidence, refused grades
+retry with diagnostics, and expired proposals no longer block bulk acceptance.
+Maintenance preserves phase clocks and explicitly limits gbrain to its declared
+local maintenance phases. See
 [the changelog](CHANGELOG.md) for the complete changes.
 
 **Storage recovery introduced in v1.8.0.** Two receipts bind storage by device and inode

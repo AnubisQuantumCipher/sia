@@ -22,13 +22,16 @@ the embedding runtime, never page resolution).
 """
 
 import ast
+import http.server
 import importlib.machinery
 import importlib.util
 import json
 import os
 import re
 import subprocess
+import threading
 import unittest
+from unittest import mock
 
 try:
     import sia_test_home  # test-only import-time path isolation
@@ -251,7 +254,10 @@ class GbrainContract(unittest.TestCase):
                          "source-scoping contract has regressed")
 
     def test_10_dream_reports_an_honest_status(self):
-        result = self.sialib.gbrain(["dream", "--json"], timeout=300)
+        result = self.sialib.gbrain(["dream", "--json", "--phase", "lint", "--phase", "backlinks",
+                          "--phase", "sync", "--phase", "extract",
+                          "--phase", "recompute_emotional_weight",
+                          "--phase", "embed", "--phase", "orphans", "--phase", "purge"], timeout=300)
         self.assertEqual(result.returncode, 0, _output(result)[-300:])
         # Mirror sialib's own dream parse: stdout, from the first "{". If gbrain ever moves
         # log lines onto stdout after the JSON, production would read the cycle as
@@ -259,6 +265,82 @@ class GbrainContract(unittest.TestCase):
         report = json.loads(result.stdout[result.stdout.index("{"):])
         self.assertIn(report.get("status"), {"ok", "clean", "partial"},
                       f"dream status outside the accepted set: {report.get('status')}")
+
+        self.assertEqual([phase["phase"] for phase in report["phases"]],
+                         ["lint", "backlinks", "sync", "extract",
+                          "recompute_emotional_weight", "embed", "orphans", "purge"])
+
+    def test_10b_dream_excludes_provider_calls_even_with_credentials(self):
+        requests = []
+
+        class Provider(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 65536 or len(requests) >= 16:
+                    self.send_error(413)
+                    return
+                requests.append(self.rfile.read(length))
+                payload = json.dumps({
+                    "id": "msg_fixture", "type": "message", "role": "assistant",
+                    "model": "claude-sonnet-4-6", "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "content": [{"type": "text", "text": "[]"}],
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *_args):
+                pass
+
+        with http.server.HTTPServer(("127.0.0.1", 0), Provider) as server:
+            server.timeout = 1
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with mock.patch.dict(self.sialib.GBRAIN_ENV, {
+                    "ANTHROPIC_API_KEY": "sia-fake-contract-key",
+                    "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                    "GBRAIN_CHAT_MODEL": "anthropic:claude-sonnet-4-6",
+                    "GBRAIN_AI_CHAT_TIMEOUT_MS": "5000",
+                }):
+                    self.test_10_dream_reports_an_honest_status()
+                    self.assertEqual(requests, [], "maintenance sent model context")
+                    # Positive exposure control: the excluded phase really sends
+                    # this disposable page through the pinned engine's gateway.
+                    result = self.sialib.gbrain(
+                        ["dream", "--json", "--phase", "propose_takes"], timeout=60)
+                    self.assertEqual(result.returncode, 0, _output(result)[-300:])
+                    self.assertTrue(any(PAGE_TOKEN.encode() in body
+                                        for body in requests),
+                                    "exposure control never reached the provider")
+                    requests.clear()
+                    # The engine also loads its own .env. Restrict phases,
+                    # rather than assuming credential stripping closes egress.
+                    env_file = os.path.join(self.sialib.SHARE, ".gbrain", ".env")
+                    with open(env_file, "x", encoding="utf-8") as stream:
+                        stream.write(
+                            "ANTHROPIC_API_KEY=sia-fake-file-key\n"
+                            f"ANTHROPIC_BASE_URL=http://127.0.0.1:{server.server_port}\n"
+                            "GBRAIN_CHAT_MODEL=anthropic:claude-sonnet-4-6\n")
+                    try:
+                        environment = dict(self.sialib.GBRAIN_ENV)
+                        for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+                                    "GBRAIN_CHAT_MODEL"):
+                            environment.pop(key, None)
+                        with mock.patch.dict(self.sialib.GBRAIN_ENV,
+                                             environment, clear=True):
+                            self.test_10_dream_reports_an_honest_status()
+                        self.assertEqual(requests, [])
+                    finally:
+                        os.unlink(env_file)
+            finally:
+                server.shutdown()
+                worker.join(timeout=5)
+                self.assertFalse(worker.is_alive())
 
     def test_11_query_returns_a_json_list_on_stdout(self):
         # The hybrid-query result shape, unprobed until the argv gate below caught

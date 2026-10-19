@@ -1,6 +1,6 @@
 # SIA: An Evidence-Grounded Local Memory for a Linux Desktop
 
-**Khephri Labs · open source (MIT) · 2026-09-23 · v1.8.3**
+**Khephri Labs · open source (MIT) · 2026-10-19 · v1.8.4**
 
 *Measurements and deployment details herein are from the reference deployment: an Omarchy Linux 4.0 (aarch64) machine running the full optional-integration set.*
 

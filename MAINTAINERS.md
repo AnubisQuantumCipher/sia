@@ -45,6 +45,13 @@ invitations for the lanes they know best:
   proposal and working sidecar reference
   ([#1](https://github.com/AnubisQuantumCipher/sia/issues/1)).
 
+## Credited issue contributors
+
+- **[@Jasonmst](https://github.com/Jasonmst)** — reproduced the dated-evidence
+  omission, silent dream grading refusals, and expired-proposal batch blockage
+  in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33), providing the
+  expected behavior that guided their fixes.
+
 ## The ladder
 
 Trust here grows by earned scope, in the open, on the contributor's own

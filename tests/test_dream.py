@@ -173,7 +173,8 @@ class DreamPublication(unittest.TestCase):
              ledger_head=None,
              due_takes=None, grade_take=None, grade_summary=None,
              muse=None, save_mind=None, consolidate=None,
-             add_thought=None, commit_grade=None):
+             add_thought=None, commit_grade=None, validate_mind=False,
+             settle_signals=None, now=None):
         def capture_write(path, content, mode=None):
             if path != self.sialib.MEMO_PATH:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -208,8 +209,12 @@ class DreamPublication(unittest.TestCase):
                 return (embed or self._embed_like_gbrain)(list(args))
             return result
 
-        def load_mind(*_args, **_kwargs):
-            return copy.deepcopy(self.mind)
+        def load_mind(*_args, **kwargs):
+            value = copy.deepcopy(self.mind)
+            if validate_mind:
+                return self.sialib.siamind.migrate_mind(
+                    value, now=kwargs.get("now"))
+            return value
 
         def persist_mind(mind):
             if save_mind is not None:
@@ -247,7 +252,7 @@ class DreamPublication(unittest.TestCase):
             "corpus_commit": commit,
             "brain_sync": sync,
             "export_graph": graph,
-            "_settle_thought_page_signals": (0, 0),
+            "_settle_thought_page_signals": settle_signals or (0, 0),
         }
         with ExitStack() as stack:
             stack.enter_context(mock.patch.dict(sys.modules,
@@ -287,7 +292,52 @@ class DreamPublication(unittest.TestCase):
                     return_value=value)
                 stack.enter_context(mock.patch.object(
                     self.sialib, name, replacement))
-            return self.sialib._dream_transaction()
+            return self.sialib._dream_transaction(now=now)
+
+    def _run_with_interphase_memory(self, *, fixed_clock=False):
+        """Publication writes newer uses before subsequent maintenance reads."""
+        clock = [1792308839.0]
+        initial = clock[0]
+        self._schedule_rehearsal("events/test/day")
+        for index in range(9):
+            self.sialib.siamind.touch(
+                self.mind, f"notes/history-{index}", ts=1.0, src="organ")
+        self.sialib.siamind.touch(
+            self.mind, "notes/new-maintenance", ts=1.0, src="organ")
+        real_muse = self.sialib.siamind.muse
+
+        def publish_signals(_store):
+            clock[0] += 20.0
+            self.sialib.siamind.touch(
+                self.mind, "notes/new-maintenance", ts=clock[0], src="organ")
+            self.corpus_pages.add("notes/new-maintenance")
+            return 1, 0
+
+        with mock.patch.object(
+                self.sialib.time, "time", side_effect=lambda: clock[0]):
+            self._run(
+                result=self._result(
+                    os.EX_OK, json.dumps({"status": "ok", "totals": {}})),
+                validate_mind=True, settle_signals=publish_signals,
+                muse=real_muse, now=initial if fixed_clock else None)
+
+    def test_live_dream_reads_memory_at_each_phase_clock(self):
+        self._run_with_interphase_memory()
+        failures = [row for row in self.ledger_rows
+                    if row[0] in ("DREAM:rehearse", "DREAM:muse")
+                    and row[1] == "error"]
+        self.assertEqual(failures, [])
+        self.assertIn(
+            ["embed", "events/test/day", "--source", self.sialib.GBRAIN_SOURCE],
+            self.gbrain_calls)
+
+    def test_explicit_dream_clock_still_refuses_later_memory(self):
+        self._run_with_interphase_memory(fixed_clock=True)
+        failures = {row[0]: row[2] for row in self.ledger_rows
+                    if row[0] in ("DREAM:rehearse", "DREAM:muse")
+                    and row[1] == "error"}
+        self.assertIn("chronological", failures["DREAM:rehearse"])
+        self.assertIn("chronological", failures["DREAM:muse"])
 
     @staticmethod
     def _result(returncode, stdout="", stderr=""):
@@ -819,15 +869,105 @@ class DreamPublication(unittest.TestCase):
 
     def test_due_grade_refusals_are_not_signed_as_none_due(self):
         report = {"status": "ok", "totals": {}}
-        self._run(
-            result=self._result(os.EX_OK, json.dumps(report)),
-            due_takes=[{"id": "due-take"}],
-            grade_take=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(
+                result=self._result(os.EX_OK, json.dumps(report)),
+                due_takes=[{"id": "due-take"}],
+                grade_take=lambda *_args, **_kwargs: None)
         grade_rows = [row for row in self.ledger_rows
                       if row[0] == "DREAM:grade"]
         self.assertEqual(grade_rows, [
             ("DREAM:grade", "refused",
              "attempted=1 completed=0 refused=1")])
+        self.assertEqual(self.written_memo["dream"]["last"],
+                         "2026-08-29T12:00:00Z")
+        self.assertEqual(self.written_memo["dream"]["status"], "grading-pending")
+        self.assertIn(("DREAM:grade-refused", "due-take",
+                       "grader returned no completed result"), self.ledger_rows)
+
+    def test_judge_refusal_reason_is_logged_and_next_take_is_attempted(self):
+        attempts = []
+
+        def refuse(row, **_kwargs):
+            attempts.append(row["id"])
+            raise self.sialib.siatakes.GradingJudgeUnavailable(
+                "judge service unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(
+                result=self._result(os.EX_OK, json.dumps({"status": "ok"})),
+                due_takes=[{"id": "first"}, {"id": "second"}],
+                grade_take=refuse)
+        self.assertEqual(attempts, ["first", "second"])
+        self.assertIn(("DREAM:grade-refused", "first",
+                       "judge service unavailable"), self.ledger_rows)
+
+    def test_durable_retry_cursor_rotates_after_restart_and_clears_on_success(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "ok"}))
+        due = [{"id": name} for name in ("first", "second", "third", "fourth")]
+        attempted = []
+
+        def refuse(row, **_kwargs):
+            attempted.append(row["id"])
+            return None
+
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=due, grade_take=refuse)
+        self.assertEqual(attempted, ["first", "second", "third"])
+        self.assertEqual(self.written_memo["grade_retry_after"], "third")
+        self.assertTrue(self.sialib._status_dream_shape(self.written_memo["dream"]))
+        self.assertNotIn("dream_publication", self.written_memo)
+        self.memo = copy.deepcopy(self.written_memo)
+        attempted.clear()
+        def forbid_compaction():
+            self.fail("grading retry reran compaction")
+
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=due, grade_take=refuse,
+                      consolidate=forbid_compaction)
+        self.assertEqual(attempted, ["fourth", "first", "second"])
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json", "--phase", "lint", "--phase", "backlinks",
+                          "--phase", "sync", "--phase", "extract",
+                          "--phase", "recompute_emotional_weight",
+                          "--phase", "embed", "--phase", "orphans", "--phase", "purge"]])
+        self.memo = copy.deepcopy(self.written_memo)
+        self._run(result=report, due_takes=[], consolidate=forbid_compaction)
+        self.assertEqual(self.written_memo["dream"]["status"], "ok")
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json", "--phase", "lint", "--phase", "backlinks",
+                          "--phase", "sync", "--phase", "extract",
+                          "--phase", "recompute_emotional_weight",
+                          "--phase", "embed", "--phase", "orphans", "--phase", "purge"]])
+
+    def test_persistent_grade_refusal_does_not_starve_next_days_maintenance(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "ok"}))
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.memo = copy.deepcopy(self.written_memo)
+        tomorrow = self.sialib.utcnow() + self.sialib.datetime.timedelta(days=1)
+        with mock.patch.object(self.sialib, "utcnow", return_value=tomorrow), \
+                self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json", "--phase", "lint", "--phase", "backlinks",
+                          "--phase", "sync", "--phase", "extract",
+                          "--phase", "recompute_emotional_weight",
+                          "--phase", "embed", "--phase", "orphans", "--phase", "purge"], ["dream", "--json", "--phase", "lint", "--phase", "backlinks",
+                          "--phase", "sync", "--phase", "extract",
+                          "--phase", "recompute_emotional_weight",
+                          "--phase", "embed", "--phase", "orphans", "--phase", "purge"]])
+
+    def test_grading_retry_does_not_promote_partial_maintenance_to_ok(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "partial"}))
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.assertEqual(self.written_memo["grade_retry_cycle_status"], "partial")
+        self.memo = copy.deepcopy(self.written_memo)
+        self.assertEqual(self._run(result=report, due_takes=[]),
+                         {"status": "partial", "grading_only": True})
+        self.assertEqual(self.written_memo["dream"]["status"], "partial")
+        self.assertNotIn("grade_retry_cycle_status", self.written_memo)
 
     def test_multigrade_publishes_before_next_gbrain_grade(self):
         takes = [

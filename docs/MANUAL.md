@@ -1,6 +1,6 @@
 # SIA — The Omarchy Brain · User's Manual
 
-**Describes SIA v1.8.3 · 2026-09-23**
+**Describes SIA v1.8.4 · 2026-10-19**
 
 *Sia: the Egyptian personification of perception, who rode the solar barque
 beside Hu (utterance) and Heka (magic).*

@@ -1707,6 +1707,37 @@ class HonestStatusLanguage(unittest.TestCase):
 
 
 class MutationBoundaries(unittest.TestCase):
+    def test_accept_all_skips_expired_and_retains_them(self):
+        today = datetime.datetime(2026, 10, 19, tzinfo=datetime.timezone.utc)
+        proposals = [siatakes.validate_proposal({
+            "claim": "claim " + deadline, "confidence": 0.7,
+            "deadline": deadline, "domain": "ops"})
+            for deadline in ("2026-10-18", "2026-10-19", "2026-10-20")]
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as state, \
+                mock.patch.object(sia.sialib, "STATE", state), \
+                mock.patch.object(siatakes, "_utcnow", return_value=today), \
+                mock.patch.object(sia.sialib, "corpus_owner",
+                                  side_effect=contextlib.nullcontext), \
+                mock.patch.object(sia.sialib, "corpus_publication",
+                                  side_effect=contextlib.nullcontext), \
+                mock.patch.object(siatakes, "create_take",
+                                  return_value={"id": "accepted", **proposals[2]}) as create, \
+                contextlib.redirect_stdout(output):
+            siatakes.locked_proposals(state, lambda _: proposals)
+            self.assertEqual(sia.cmd_take(["--accept", "all"]), 0)
+            create.assert_called_once()
+            self.assertEqual(create.call_args.args[0], proposals[2]["claim"])
+            self.assertEqual(siatakes.read_proposals(state), proposals[:2])
+            create.reset_mock()
+            self.assertEqual(sia.cmd_take(["--accept", "all"]), 0)
+            create.assert_not_called()
+            self.assertEqual(sia.cmd_take([
+                "--accept", proposals[0]["proposal_id"]]), 2)
+            self.assertEqual(siatakes.read_proposals(state), proposals[:2])
+        self.assertIn("skipped expired proposal", output.getvalue())
+        self.assertIn("no eligible pending proposals", output.getvalue())
+
     def _complete_brainstem_status(self, verdict="pass"):
         return _current_status_fixture(verdict)
 
@@ -3279,6 +3310,36 @@ class MutationBoundaries(unittest.TestCase):
         self.assertIn(("graph", True), between)
         self.assertIn(("memo", False), between)
         self.assertNotIn("sync_needed", memo)
+
+    def test_manual_grade_refusal_continues_and_returns_failure(self):
+        takes = [{"id": name, "status": "open", "claim": name}
+                 for name in ("first", "second")]
+        for refusal in (siatakes.GradingJudgeUnavailable,
+                        siatakes.GradingEvidenceUnavailable):
+            output = io.StringIO()
+            result = {"status": "resolved-true", "brier": None,
+                      "claim": "second", "slug": "takes/second"}
+            with self.subTest(refusal=refusal), \
+                    mock.patch.object(sia.sialib, "corpus_owner",
+                                      return_value=contextlib.nullcontext()), \
+                    mock.patch.object(sia.sialib, "corpus_publication",
+                                      return_value=contextlib.nullcontext(None)), \
+                    mock.patch.object(sia.sialib, "load_memo", return_value={}), \
+                    mock.patch.object(sia.sialib, "_settle_pending_publication"), \
+                    mock.patch.object(siatakes, "recover_natural_history_transactions",
+                                      return_value=([], [])), \
+                    mock.patch.object(siatakes, "recover_grade_transactions",
+                                      return_value=([], [])), \
+                    mock.patch.object(siatakes, "due_takes", return_value=takes), \
+                    mock.patch.object(siatakes, "grade_take",
+                                      side_effect=[refusal("unavailable"), result]) as grade, \
+                    mock.patch.object(sia.sialib, "append_thought_inbox") as inbox, \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_grade(), 1)
+            self.assertEqual([call.args[0]["id"] for call in grade.call_args_list],
+                             ["first", "second"])
+            self.assertIn("take remains open", output.getvalue())
+            self.assertEqual(inbox.call_args.args[0]["links"], ["takes/second"])
 
     def test_manual_multigrade_publication_failure_aborts_later_judge(self):
         memo, judged = {}, []

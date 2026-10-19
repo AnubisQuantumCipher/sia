@@ -24,7 +24,10 @@ use a loopback-only Ollama socket. External-network paths owned by this
 repository are the installer's downloads, the optional judge through your
 configured Claude CLI authentication/account/provider, and the optional
 continuity adapter when the operator configures a remote recovery repository;
-each service's normal billing and data terms apply. The judge runs from an
+each service's normal billing and data terms apply. Maintenance passes the schema
+pack's deterministic phase list explicitly to the pinned engine; the pack
+alone does not gate every upstream phase. Engine proposal, model grading and
+synthesis phases are excluded even when provider credentials are inherited. The judge runs from an
 empty directory with
 built-in tools, MCP, customizations, session persistence, slash commands, and
 browser integration disabled; an explicit model identifier is required and
