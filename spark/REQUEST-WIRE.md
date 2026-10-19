@@ -6,8 +6,9 @@ observed length. A future transport must bound reads before allocation, measure
 actual bytes, reject excess/trailing input, and authenticate the peer. This
 package cannot establish that a caller supplied the real observed length.
 The experimental Linux packet receiver in `transport/` now measures and bounds
-one actual packet, with socket tests. It is not yet connected to this decoder
-or installed as a service; peer credentials do not grant mutation authority.
+one actual packet, with socket tests. A test-only subprocess adapter now passes
+those bytes through this decoder and checks canonical field serialization.
+It is not installed as a service; peer credentials do not grant mutation authority.
 
 | Byte positions | Field | Encoding |
 | --- | --- | --- |
@@ -51,7 +52,7 @@ adequate for the stated syntax-only scope. The fresh archived-source run at
 the policy, reducer, decoder and harness units, with none justified or unproved.
 The test helper precondition must be proved at every fixture call; its own
 acceptance assertion is not a second independent proof. Missing acceptance includes
-decoder/transport integration, expanded boundary/adversarial cases,
+production decoder/transport integration, expanded boundary/adversarial cases,
 authenticated witness creation, shadow differential tests
 and Linux-enforced authority separation. Do not describe this prototype as
 fulfilling the entire IPC or resource-authority requirement.

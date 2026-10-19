@@ -236,3 +236,23 @@ and toolchain. It does not prove the new Python packet intake, transport handoff
 protected actuator, physical durability, signature implementation or system
 isolation. The earlier timeout and incomplete/warning-failed runs remain
 retained negative evidence.
+
+## Test-only socket-to-decoder boundary
+
+Commit `5dc570d08194459140ffbfe67d24f6cd52be52b2` was archived into a fresh
+`request-probe-reproduction-v1` directory, built under strict warnings and
+tested there: build and all 26 Python test methods passed. The manifest binds
+the source archive, actual adapter binary, tool executable paths/hashes,
+commands and logs. This includes the prior packet and summary tests plus the
+new socket-to-Ada integration cases. The pure proof source is unchanged.
+
+The initial stream-file implementation failed on pipes with DEVICE_ERROR; its
+failed test log is retained. The replacement descriptor adapter checks all
+read/write results and limits reads to the frame plus one sentinel byte.
+Independent review identified a masked raw-length oracle; tests now use valid
+frame prefixes and a valid frame with trailing bytes, with a matching positive
+control. Real descriptor read/write failure controls also pass. Small-chunk
+writes may coalesce and are not deterministic syscall-fragmentation evidence.
+
+This is TESTED integration through an isolated test subprocess, not a proved
+I/O adapter, resident shadow policy, capability admission or installed authority.
