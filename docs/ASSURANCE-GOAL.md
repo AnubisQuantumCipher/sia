@@ -25,7 +25,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A02 | Provenance authority | SPARK contracts and proofs rejecting escalation of model, derived or legacy content; independently tested legitimate transitions | PARTIAL: pure admission predicate proved/tested; authenticated origin producer and enforcement UNRUN |
 | A03 | Publication and acknowledgment authority | Generation-bound durability, corpus/index/graph/ledger joins, no recovery debt; proofs plus real adapter evidence | PARTIAL: pure joined-publication/ACK predicates proved/tested; temporal protocol and adapter evidence UNRUN |
 | A04 | Disclosure authority | Narrow recipient/evidence/byte/operation authorization; local indexing denied provider-network access by Linux; positive and negative controls | UNRUN |
-| A05 | Recovery and continuity authority | Exact predecessor/successor admission, crash/replay model and fault-injection receipts | UNRUN |
+| A05 | Recovery and continuity authority | Exact predecessor/successor admission, crash/replay model and fault-injection receipts | PARTIAL: pure reducer proved; bounded single-transaction crash model checked with negative/reachability controls; real fault injection and restore UNRUN |
 | A06 | Identity and receipt authority | Rejected replay, tampering, mismatched generations and unauthorized transitions; protected signing authority | UNRUN |
 | A07 | Resource authority | Proved bounds for requests, counters, queues and admission; exhaustion tests and OS limits | UNRUN |
 | A08 | Cognitive claim admission | Frozen held-out evaluation against dense baseline; independent reproduction; no unearned improvement claims | UNRUN |
