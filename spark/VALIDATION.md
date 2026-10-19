@@ -380,3 +380,10 @@ rollover pin. This is not an approved relaxation or a required compatibility
 guarantee for the future protected service. Pending-request reauthorization,
 revocation and recovery grant lifetime remain UNIMPLEMENTED / unresolved there.
 The separately documented policy-supersession path remains distinct.
+
+Both before/after-adoption worker cases subsequently passed from the full
+committed archive at `4388ca0c5111a440cb605c40ed6d0a50678b18e6`, retained as
+`resident-reproduction-v3`. The manifest binds archive, command, log and exit;
+all archived regular source files match their post-run contents. This remains
+fork-worker characterization with controlled external observers, not fresh
+service execution or full transaction recovery acceptance.
