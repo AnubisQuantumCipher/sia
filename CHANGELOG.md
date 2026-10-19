@@ -34,6 +34,10 @@ expected behavior in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33)
   batch so permanently refusing takes cannot starve later ones.
 - `sia take --accept all` reports and skips expired proposals while retaining
   them in the queue. Explicit acceptance of an expired proposal still refuses.
+- Agent guidance now accounts for recall waiting behind daemon transactions:
+  use a bounded request budget rather than killing recall after 20 seconds,
+  and distinguish caller timeouts from engine failures. Consistency leases
+  remain required; this is not a latency guarantee.
 
 Grades remain model-assisted. This does not restore already consolidated day
 pages, revise historical grades, or claim that a model must return TRUE. The
