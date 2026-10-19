@@ -24,8 +24,8 @@ states and an all-zero-epoch publication with matching witnesses. The renamed
 `Publication_Joined` cannot be confused with the runtime's complete ready gate.
 The reviewer did not independently execute the proof or tests.
 
-Retained local evidence is under
-`/home/sicarii/Work/sia-assurance-evidence-20261019/`: source SHA256 manifest,
+Retained operator-local evidence directory `sia-assurance-evidence-20261019`
+contains the source SHA256 manifest,
 initial/revised proof logs and revised detailed summary. This path is an
 operator evidence location, not a portable offline acceptance bundle.
 
