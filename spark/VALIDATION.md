@@ -218,3 +218,21 @@ single-receive scope and requested cleanup continuation after a close error;
 that repair and negative control are included. The eight summary-gate tests
 also pass. These are Python/Linux tests, not SPARK proofs, protected capability
 admission, a complete service resource bound or decoder integration evidence.
+
+## Complete decoder contract reproduction
+
+The fresh `wire-reproduction-v2` archive at commit
+`3ccb545245799c4d4018addbfb110c96ee2ece50` completed with exit 0 for strict
+build, all three runtime harnesses, proof and the coverage gate. The report
+contains all six units, all reported subprograms/packages analyzed, 195 checks,
+zero justified checks and zero unproved checks. Every detailed flow entry
+reports zero warnings and zero `pragma Assume` statements. The dependency
+report relates the pure functions and their harnesses; it does not authenticate
+external witnesses. Source archive, commands, executable hashes, outputs, exit
+statuses and a SHA-256 manifest are retained in the evidence directory.
+
+This accepts the stated pure policy/reducer/decoder contracts for that source
+and toolchain. It does not prove the new Python packet intake, transport handoff,
+protected actuator, physical durability, signature implementation or system
+isolation. The earlier timeout and incomplete/warning-failed runs remain
+retained negative evidence.

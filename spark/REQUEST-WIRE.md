@@ -46,11 +46,13 @@ Each digest field independently receives a nonuniform pattern while other
 fields remain distinct. Both generation fields exercise multi-byte, zero,
 maximum-value and overflow vectors.
 Independent source review found the accepted-field contracts and test oracles
-adequate for the stated syntax-only scope. Modular proof is still pending.
+adequate for the stated syntax-only scope. The fresh archived-source run at
+`3ccb545245799c4d4018addbfb110c96ee2ece50` passed all 195 checks across
+the policy, reducer, decoder and harness units, with none justified or unproved.
 The test helper precondition must be proved at every fixture call; its own
 acceptance assertion is not a second independent proof. Missing acceptance includes
-completed semantic-contract proof, expanded boundary/adversarial cases, executable
-bounded transport, authenticated witness creation, shadow differential tests
+decoder/transport integration, expanded boundary/adversarial cases,
+authenticated witness creation, shadow differential tests
 and Linux-enforced authority separation. Do not describe this prototype as
 fulfilling the entire IPC or resource-authority requirement.
 
