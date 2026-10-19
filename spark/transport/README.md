@@ -1,7 +1,7 @@
 # Experimental Linux packet intake
 
 `request_packet.py` receives one fixed-size proposal packet without waiting.
-It is not installed, does not call the Ada decoder yet, and does not grant
+It is not installed and does not grant
 capabilities, publish state or sign receipts. Python holds no new authority.
 
 The caller supplies a connected, nonblocking Unix `SOCK_SEQPACKET` socket
@@ -44,3 +44,38 @@ Acceptance still requires the Ada decoder handoff and differential tests,
 capability-bound dispatcher, protected observations, Linux ownership/isolation,
 exhaustion tests and the complete resident recovery campaign. This module is
 not a security boundary against an unrestricted process under its own UID.
+
+## Test-only decoder integration
+
+`ada/request_probe.adb` is a separate, non-SPARK executable I/O adapter for
+testing the receiver's actual bytes against `SIA_Request_Wire.Decode`. It reads
+at most the frame plus one sentinel byte, requires EOF for an exact frame,
+and emits a fixed response: acceptance byte followed by canonical encoding
+of the decoded fields, or an all-zero refusal response. Read/write errors
+return a failing process status. Serialization uses decoded fields, not an
+input echo. This is a syntax result, not authorization or shadow policy.
+
+The initial Stream_IO adapter failed with DEVICE_ERROR on Linux pipes; its
+failed integration output is retained. The replacement uses GNAT.OS_Lib
+descriptor calls over fixed, in-scope byte storage. Those raw-address calls,
+the GNAT runtime and this serializer are outside the proved package boundary.
+Blocking calls require an external process deadline. This adapter must not be
+installed as a resident authority or used as an unrestricted subprocess broker.
+
+Build and test (source the GNAT environment first):
+
+```sh
+gprbuild -p -P spark/transport/request_probe.gpr
+timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p 'test_*.py' -v
+```
+
+The test driver exercises every supported action/phase pair with reproducible
+nonuniform field bytes, integer boundaries, reserved/header refusals, valid
+prefixes and valid frames with trailing bytes, EOF waiting and actual descriptor
+error returns. The small-chunk writer test permits kernel coalescing; it is not
+a controlled proof of syscall fragmentation. Output capture is bounded by this
+specific fixed-output test executable, not by a generic subprocess limiter.
+Acceptance evidence must build the executable from a fresh committed archive
+and retain binary/source hashes and commands; mere binary presence is not
+source-binding evidence. The production handoff, authenticated dispatch and
+actual shadow policy comparison remain unimplemented.
