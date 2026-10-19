@@ -329,8 +329,10 @@ ownership and production authority remain outside this result.
 
 CI now explicitly discovers the Python proof-summary, packet and experimental
 export controls with finite deadlines and ResourceWarning errors. Their local
-runs passed (respectively eight, ten and nine tests); the new CI step itself
-requires remote execution. This does not run GNATprove or the Ada I/O adapter,
+runs passed (respectively eight, ten and nine tests). The step subsequently
+passed remotely in run 39342037544. Cgroup result-oracle controls were then
+added and the combined step passed in run 39343912214 at commit
+`93eda658e7910b5a134690896c749918dc5a9380`; its full workflow remains pending. This does not run GNATprove or the Ada I/O adapter,
 and does not replace their separate committed-source acceptance lanes.
 
 
@@ -387,3 +389,30 @@ committed archive at `4388ca0c5111a440cb605c40ed6d0a50678b18e6`, retained as
 all archived regular source files match their post-run contents. This remains
 fork-worker characterization with controlled external observers, not fresh
 service execution or full transaction recovery acceptance.
+
+
+## Disposable cgroup process and memory controls
+
+The committed-source reproduction at
+`93eda658e7910b5a134690896c749918dc5a9380`, retained as
+`cgroup-reproduction-v2`, passed the result-oracle tests and four real transient
+service cases: bounded process admission, positive allocation, single-process
+memory exhaustion and coordinated parent/child memory exhaustion. Each workload
+checks effective kernel limits before allocating. The descendant case joins
+distinct PIDs and their independently checked cgroup, child readiness before
+parent allocation, local OOM/group-kill counters and manager OOM/SIGKILL status.
+Retention follows the reviewed probe control flow; a readiness message alone
+is not an independent memory measurement. All four cleanup records end with
+absent transient units.
+
+Independent GPT-6.1 review checked the source archive, unchanged before/after
+inventories, manifest hashes, commands, exits and results without rerunning
+workloads. Accepted status is TESTED within that disposable experiment. Four
+result-oracle tests reject missing/foreign child evidence, missing local kernel
+events and non-OOM or successful termination. The initial unsupported transient
+property attempt and v6 pre-workload syntax failure remain retained failures.
+
+This does not establish production sizing, arbitrary descendant-tree behavior,
+aggregate disk/output budgets, hostile same-user isolation or a SPARK resource
+authority. The earlier engine experiment still used its recorded per-process
+limits; these later cgroup observations do not retroactively change its scope.
