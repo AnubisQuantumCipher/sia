@@ -1,12 +1,4 @@
 package body SIA_Request_Wire with SPARK_Mode is
-   function Valid (Bytes : Frame; Length : Natural) return Boolean is
-     (Length = Frame'Length and then Bytes (1) = 1 and then
-      Bytes (2) in 1 .. 2 and then Bytes (3) <= 10 and then
-      Bytes (4) <= 10 and then
-      (for all I in 5 .. 8 => Bytes (I) = 0) and then
-      (for all I in 185 .. 192 => Bytes (I) = 0) and then
-      Bytes (169) <= 127 and then Bytes (177) <= 127);
-
    procedure Decode
      (Bytes : Frame; Length : Natural; Accepted : out Boolean;
       Item : out Request)
