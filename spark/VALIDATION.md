@@ -292,3 +292,26 @@ Earlier checkout runs are retained as development evidence; independent review
 required the committed-source reproduction and direct effective-state checks.
 This is TESTED platform feasibility, not production engine egress containment,
 protected source ownership, a real embedding broker or whole-host isolation.
+
+## Real offline engine and committed export
+
+`engine-boundary-v2` is retained FAILED evidence: the actual installed gbrain
+indexed an untracked page from a read-only working-tree mount. The experiment
+was corrected to expose a clean detached checkout of the exact fixture commit.
+The origin retained both an untracked page and modified tracked page. The
+corrected lane retrieves the committed body exactly and neither dirty token
+appears in the tested source-scoped search before or after resync. Inventoried
+file paths/content hashes remain unchanged; metadata/tree identity is not
+claimed. Existing source Git/engine generation regression tests also pass
+(13 tests). The misleading walker comment in the earlier contract fixture was
+corrected; no released-runtime bypass was established.
+
+Source `c6539dfd157e880495c3a5d055fee6401913aa1a` was archived and executed
+under `engine-reproduction-v1`. The copied engine matches the installed binary
+receipt; receipt source/version/lock/overlay identities match archived GBRAIN_PIN.
+The manifest binds archive, source inventory, engine/receipt, commands, outputs,
+exit records and fixture inventory files. Initialization, source registration,
+sync, database probe, retrieval/search and resync all passed. No embedding,
+provider transmission, protected production exporter or installed-service
+authority is established. Per-file/descriptor/CPU/time limits are configured;
+aggregate memory/disk and descendant resource budgets remain UNPROVEN.

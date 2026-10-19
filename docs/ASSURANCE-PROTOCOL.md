@@ -23,6 +23,14 @@ does not make an unverified broker trustworthy.
 Indexing receives a read-only export for one authorized generation and writes
 only its disposable projection area. It cannot modify the authoritative
 corpus, transaction journal or signing identity. Its Linux confinement must
+materialize and validate the exact committed tree before exposing it. A
+read-only mount of a dirty working tree is insufficient: the installed gbrain
+walker indexed an uncommitted fixture in the retained engine-boundary-v2
+negative control. The production exporter must bind the commit/tree and page
+identities, reject unsupported links or path escapes, enforce resource bounds
+and retain its export receipt through indexing. The experimental detached
+fixture checkout is evidence of the design direction, not that full exporter.
+Its Linux confinement must
 deny provider egress while allowing only the intended local embedding path.
 Ordinary loopback TCP is not selective authority: a network namespace with a
 deliberately exposed embedding endpoint or equivalent enforced broker is
