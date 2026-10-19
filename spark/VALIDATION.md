@@ -176,3 +176,19 @@ generation relation. A nonuniform digest and JACKAL-checked multi-byte numeric
 vector strengthen the initial tests. Proof log `wire-proof-semantic.log` is
 pending at this checkpoint. No decoder proof completion, authenticated IPC,
 transport bounds or integrated authority is claimed. See `REQUEST-WIRE.md`.
+
+The semantic attempt was subsequently stopped with exit 143 to expose the
+syntax predicate for modular callers. `wire-proof-modular.log` then completed
+with exit 1: its analyzed units had no unproved checks, but no-effect warnings
+violated the strict gate and the decoder implementation was absent from the
+coverage report. It is failed, incomplete verification, not accepted proof.
+The helpers now declare explicit `Global => null` and `Always_Terminates`
+contracts. Every original case remains, with per-digest nonuniform vectors and
+zero/maximum/multi-byte/overflow generation cases added. Strict build and all
+three runtime harnesses pass. Independent review found the contracts/oracles
+adequate within syntax-only scope; it did not execute the tests.
+
+A fresh archived-source run of commit
+`16986c7` is retained under `wire-reproduction-v1`. It must show complete
+implementation and harness coverage as well as zero unresolved obligations
+before acceptance. Its proof process remains pending at this checkpoint.
