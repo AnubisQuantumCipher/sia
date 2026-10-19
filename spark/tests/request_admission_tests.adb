@@ -27,6 +27,7 @@ procedure Request_Admission_Tests with SPARK_Mode is
       pragma Assert (Classify (Changed, 1000, 20, Base) = Denied);
       Changed.Not_Before := Tick'Last;
       pragma Assert (Classify (Changed, 1000, Tick'Last, Base) = Denied);
+      Changed.Not_Before := 0;
       Changed.Expires := 0;
       pragma Assert (Classify (Changed, 1000, 0, Base) = Denied);
       Changed.Not_Before := 0;
