@@ -46,3 +46,19 @@ exercise nonempty and refusal-bearing sources, and retain crash/replay receipts.
 It must also test stale persisted readiness. Systemd service readiness is not
 the memory-publication readiness predicate. None of these component results
 authorizes transferring authority to the proposed SPARK service.
+
+## Interruptions inside namespace publication
+
+The extended component campaign now interrupts source archival immediately
+after the real rename, and effects/main/journal publication at the queue's
+`target-published` hook before directory synchronization. Recovery must fsync
+each relevant parent before its corresponding ACK durable hook. Observations
+are cleared after each hook so an earlier stage cannot satisfy a later stage.
+Source archival requires both old and new parents; cursor and effects archive
+recovery require the retained destination parent.
+
+Synchronization-failure controls are armed only at the selected stage, require
+the exact injected exception, and check pending authority and absent readiness.
+Both source-archive parents receive separate failure injections. These tests
+establish recovery ordering and error propagation under process interruption;
+they still do not establish power-loss survival or filesystem refinement.

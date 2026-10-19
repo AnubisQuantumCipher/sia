@@ -110,3 +110,26 @@ is incomplete and must not be released. The prior final-main target is on hold
 even if its existing CI passes. A qualified runtime fix and refreshed release
 freeze are required before tagging. Completed read-only validation must remain
 effectless; synchronization belongs in pending ACK recovery only.
+
+## Source and cursor synchronization repair
+
+The subsequent patch repairs both remaining recovery paths. Source archival
+holds the old source parent through an explicit absence check, synchronizes
+both rename parents, and rechecks the held generations. Exact-target cursor
+recovery synchronizes its retained parent and revalidates before returning.
+Fsync errors propagate without authorizing ACK completion.
+
+TESTED: the extended targeted regression passed 31 tests, including real
+process-death cuts inside source rename and main/system/user cursor publication.
+Stage-specific failure controls verify the exact injected fsync error, both
+source parents separately, and retained pending authority without readiness.
+The accepted output is `ack-all-recovery-reviewed.log`; earlier failing
+reproductions are retained in `ack-all-recovery-red.log`.
+
+Independent GPT-6.1 source review found no correctness blocker in the repair
+and confirmed completed-reader paths remain effectless. Its test-precision
+feedback was incorporated before the accepted run. This closes the identified
+component repair obligation, not release qualification: isolated runtime PR,
+full CI, installed-machine verification, refreshed freeze and publication
+readback remain required. Power-loss survival and the full assurance mission
+remain unproved.

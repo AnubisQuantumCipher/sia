@@ -10,6 +10,7 @@ Only the root orchestrator runs this composed test module, sequentially.
 import copy
 import multiprocessing
 import os
+from pathlib import Path
 import signal
 import unittest
 from unittest import mock
@@ -30,6 +31,33 @@ def _die_at_boundary(case, selected, queue_boundary=False):
     raise AssertionError("requested process-death boundary was not reached")
 
 
+def _die_inside_publication(case, path):
+    queue = case.lib.siaqueue
+    publish = queue.fixed_atomic_publish
+    rename = queue._rename_noreplace
+
+    def cut(phase):
+        if phase == "target-published":
+            os.kill(os.getpid(), signal.SIGKILL)
+
+    def publishing(target, *args, **kwargs):
+        if os.fspath(target) == os.fspath(path):
+            with mock.patch.object(queue, "_publish_boundary", side_effect=cut):
+                return publish(target, *args, **kwargs)
+        return publish(target, *args, **kwargs)
+
+    def moving(src_fd, src_name, dst_fd, dst_name):
+        result = rename(src_fd, src_name, dst_fd, dst_name)
+        if path == case.archive_path() and dst_name == path.name:
+            os.kill(os.getpid(), signal.SIGKILL)
+        return result
+
+    with mock.patch.object(queue, "fixed_atomic_publish", side_effect=publishing), \
+            mock.patch.object(queue, "_rename_noreplace", side_effect=moving):
+        case.acknowledge()
+    raise AssertionError("selected publication was not reached")
+
+
 @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(),
                      "Linux fork process-death fixture required")
 class AssuranceAckProcessDeath(unittest.TestCase):
@@ -39,9 +67,11 @@ class AssuranceAckProcessDeath(unittest.TestCase):
         case.setUp()
         return case
 
-    def kill_at(self, case, phase, *, queue_boundary=False):
+    def kill_at(self, case, phase, *, queue_boundary=False, path=None):
+        target = _die_at_boundary if path is None else _die_inside_publication
+        args = (case, phase, queue_boundary) if path is None else (case, path)
         child = multiprocessing.get_context("fork").Process(
-            target=_die_at_boundary, args=(case, phase, queue_boundary))
+            target=target, args=args)
         child.start()
         try:
             child.join(timeout=30)
@@ -130,6 +160,93 @@ class AssuranceAckProcessDeath(unittest.TestCase):
                 mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
             self.assertIsNone(case.acknowledge())
         case.assert_final()
+
+    def recovery_case(self, kind):
+        case = self.fixture()
+        case.start_journal() if kind.startswith("journal") else case.start_empty()
+        choices = {
+            "source": (case.archive_path(), "archive-durable"),
+            "effects": (case.effects_archive_path(), "effects-receipt-archive-durable"),
+            "main": (case.source.cursors_path, "cursor-state-durable"),
+            "journal-sys": (case.source_state / "journal-sys.cursor", "journal-sys-durable"),
+            "journal-user": (case.source_state / "journal-user.cursor", "journal-user-durable"),
+        }
+        path, phase = choices[kind]
+        self.kill_at(case, phase, path=path)
+        self.reload_memo(case, "interrupted-publication")
+        parents = [path.parent]
+        if kind == "source":
+            parents.append(Path(case.producer.source_path).parent)
+        identities = [(os.stat(p).st_dev, os.stat(p).st_ino) for p in parents]
+        return case, phase, identities
+
+    def test_recovery_completes_each_interrupted_directory_sync(self):
+        for kind in ("source", "main", "journal-sys", "journal-user"):
+            with self.subTest(kind=kind):
+                case, phase, expected = self.recovery_case(kind)
+                synced = set()
+                real = os.fsync
+
+                def fsync(fd):
+                    info = os.fstat(fd)
+                    real(fd)
+                    synced.add((info.st_dev, info.st_ino))
+
+                def boundary(current):
+                    if current == phase:
+                        self.assertTrue(set(expected) <= synced,
+                                        "missing recovered directory synchronization")
+                    synced.clear()
+
+                with mock.patch.object(os, "fsync", side_effect=fsync), \
+                        mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
+                    case.acknowledge()
+                case.assert_final()
+                self.assert_effectless_retry(case)
+                case.doCleanups()
+
+    def check_sync_failure(self, kind, parent_index):
+        case, phase, expected = self.recovery_case(kind)
+        predecessor = {
+            "effects": None,
+            "source": "effects-receipt-archive-durable",
+            "main": "refusals-durable",
+            "journal-sys": "refusals-durable",
+            "journal-user": "journal-sys-durable",
+        }[kind]
+        real = os.fsync
+        reached = []
+        injected = []
+        failure = OSError("injected directory synchronization failure")
+
+        def fsync(fd):
+            info = os.fstat(fd)
+            armed = predecessor is None or reached and reached[-1] == predecessor
+            if armed and (info.st_dev, info.st_ino) == expected[parent_index]:
+                injected.append(expected[parent_index])
+                raise failure
+            return real(fd)
+
+        with mock.patch.object(os, "fsync", side_effect=fsync), \
+                mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=reached.append):
+            with self.assertRaises(OSError) as caught:
+                case.acknowledge()
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(injected, [expected[parent_index]])
+        if predecessor is not None:
+            self.assertEqual(reached[-1], predecessor)
+        self.assertNotIn(phase, reached)
+        durable = case.lib.load_memo()
+        self.assertIn("controller_source_pending", durable)
+        self.assertNotIn("ready", durable)
+        case.doCleanups()
+
+    def test_recovery_sync_failure_keeps_ack_pending(self):
+        cases = (("effects", 0), ("source", 0), ("source", 1),
+                 ("main", 0), ("journal-sys", 0), ("journal-user", 0))
+        for kind, parent_index in cases:
+            with self.subTest(kind=kind, parent_index=parent_index):
+                self.check_sync_failure(kind, parent_index)
 
     def test_foreign_cursor_after_process_death_cannot_become_ready(self):
         case = self.fixture()
