@@ -276,3 +276,19 @@ proved checks with none justified/unproved. Independent GPT-6.1 evidence review
 checked all manifest hashes, exact archive-to-commit and extracted-source
 equality, coverage and exits; no blocker for pure-contract acceptance was found.
 No protected deployment claim follows from this result.
+
+## Disposable indexer isolation
+
+The experiment at `67becc0bc3678202e812b8326fb0bfe51c6ecf9b` was run from
+a retained committed archive under `indexer-reproduction-v1`. Pre-run source
+hashes match post-run files; the outer manifest binds the archive, commands,
+child/driver output, exits and report. The host-listener positive control,
+isolated refusal, read-only export, hidden actual host fixture and explicit
+Unix test endpoint all passed. User/PID/IPC/UTS/network namespace identities
+differed, effective/permitted/ambient capabilities were zero and NoNewPrivs was
+set. User-namespace creation succeeded outside and failed inside the sandbox.
+
+Earlier checkout runs are retained as development evidence; independent review
+required the committed-source reproduction and direct effective-state checks.
+This is TESTED platform feasibility, not production engine egress containment,
+protected source ownership, a real embedding broker or whole-host isolation.
