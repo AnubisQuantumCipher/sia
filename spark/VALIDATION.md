@@ -256,3 +256,16 @@ writes may coalesce and are not deterministic syscall-fragmentation evidence.
 
 This is TESTED integration through an isolated test subprocess, not a proved
 I/O adapter, resident shadow policy, capability admission or installed authority.
+
+## Exact-grant classifier checkpoint
+
+The new pure classifier builds with strict warnings and its runtime harness
+passes. An initial unused-context warning failed the strict build and was
+corrected by removing that unused context, without weakening flags. Independent
+GPT-6.1 source review found no blocker for comparison/classification scope.
+Its zero-expiry control was tightened to remove a masking not-before failure;
+the original test remains in history. A fresh archived run of
+`a967012cc0caaac2715ff7efd3c62436eef4b885` is retained under
+`admission-reproduction-v1`; complete proof is pending at this checkpoint.
+No grant-store authentication, replay consumption, disclosure permission or
+protected mutation is established. See `REQUEST-ADMISSION.md` and `ASSUMPTIONS.md`.

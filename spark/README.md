@@ -40,6 +40,9 @@ No download, installation, network access or automatic acceptance decision is
 performed by the runner. Inspect the retained obligations and assumptions;
 this is a reproducibility aid, not the completed offline system verifier.
 
+See `ASSUMPTIONS.md` for the explicit boundary and enforcement ledger, and
+`REQUEST-ADMISSION.md` for the experimental exact-grant comparison policy.
+
 Keep runtime assertions enabled. The abstract input domain and proof result
 do not validate hostile IPC representations, external processes, physical
 durability, cryptography or Linux isolation. See `docs/ASSURANCE-GOAL.md`.
