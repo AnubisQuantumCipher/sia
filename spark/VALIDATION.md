@@ -332,3 +332,27 @@ export controls with finite deadlines and ResourceWarning errors. Their local
 runs passed (respectively eight, ten and nine tests); the new CI step itself
 requires remote execution. This does not run GNATprove or the Ada I/O adapter,
 and does not replace their separate committed-source acceptance lanes.
+
+
+## Resident worker death at durable successor WAL
+
+`tests/test_assurance_resident_process_death.py` kills a forked worker with
+SIGKILL at the actual resident owning entry's successor-batch-durable boundary.
+The parent confirms that child-only batch/adoption attributes remain absent,
+then reconstructs those expectations from the retained WAL bytes. A different
+forked worker completes the real publication and ACK paths while fixture guards
+forbid source recapture, clock acquisition and sequence reallocation. It checks
+the completed archive bytes, unchanged reserved sequence and final ACK state.
+Git/index observations and timestamps remain controlled fixture inputs; forked
+workers inherit test configuration. This is TESTED worker-death recovery, not a
+fresh service executable, real-engine transaction, power loss or full A09 result.
+
+The first run failed an incorrect test expectation that the pre-adoption WAL
+must erase the prior generation's ready receipt. The corrected oracle requires
+that exact parent ready/committed receipt and a distinct successor batch. Both
+logs are retained as resident-process-death-v1/v2; the corrected run passed.
+
+Independent GPT-6.1 code/evidence review found no blocker for this single
+boundary. Adoption identity is reconstructed from the same retained WAL, so
+this is consistency evidence, not independent authentication or tamper rejection.
+Concurrent-reader visibility while the successor is pending is not established.
