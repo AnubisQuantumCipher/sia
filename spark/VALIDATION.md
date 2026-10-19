@@ -133,3 +133,19 @@ component repair obligation, not release qualification: isolated runtime PR,
 full CI, installed-machine verification, refreshed freeze and publication
 readback remain required. Power-loss survival and the full assurance mission
 remain unproved.
+
+## Committed-source reproduction runner
+
+`verify-policy.sh` reproduced the strict build, both runtime harnesses and
+GNATprove from a fresh archive of commit
+`d579861162548d5ceccf7192350869d0859434d3`. The retained detailed report covers
+all four units and reports 88 total checks, with no justified or unproved
+checks. Evidence is in `policy-reproduction-v1`; each command, exit status,
+tool executable identity and complete source archive is retained. Existing
+output-directory reuse is rejected. This is a scoped reproduction aid, not
+the complete independently qualified offline system verifier.
+
+Correction to that commit's message: Bash syntax checking passed, but
+ShellCheck was unavailable (`command not found`), so the message's claim that
+ShellCheck passed is incorrect. No ShellCheck result is claimed. The historical
+commit is retained; this correction records the actual negative evidence.
