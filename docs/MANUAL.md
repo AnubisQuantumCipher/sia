@@ -1539,6 +1539,16 @@ codex mcp add sia -- python3 ~/.local/share/sia/bin/sia-mcp
 grok mcp add --scope user sia -- python3 ~/.local/share/sia/bin/sia-mcp
 ```
 
+Recall may wait for a daemon corpus transaction before the search starts.
+Avoid a short outer cutoff such as `timeout 20s`: exit 124 then means the
+caller killed the command, not that SIA's search reported a failure. A bounded
+CLI invocation is `timeout --kill-after=5s 240s sia ask "question" --no-touch`.
+Poll a running command to completion instead of treating a tool's initial
+yield as a timeout. The MCP server budgets 240 seconds per CLI request; allow
+that budget in the client. If it expires, inspect daemon/lock contention and
+preserve independent evidence; do not bypass the consistency lease or retry
+indefinitely. This is a time budget, not a latency guarantee.
+
 Run only the command for the client you intend to configure, then rerun
 `./install.sh` so SIA can inspect it and create the appropriate durable
 non-ownership guard. For a generic client, create an explicit guard before

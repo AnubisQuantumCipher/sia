@@ -30,6 +30,25 @@ sia rehearse [slug]               # list due reviews or deliberately recall one
 sia bench                         # signed-ledger held-out memory self-benchmark
 ```
 
+## Recall waits and timeouts
+
+Recall can wait for the daemon's corpus transaction before searching. Its
+search subprocess timeout does not include that lock wait. Do not impose a
+short outer cutoff such as `timeout 20s` and report its exit 124 as a SIA
+engine failure. For bounded CLI recall, use:
+
+```bash
+timeout --kill-after=5s 240s sia ask "question" --no-touch
+```
+
+If the execution tool returns a running-session handle, poll that same session
+until completion; a short tool yield is not a command deadline. The MCP server
+also budgets 240 seconds per CLI request; its client must allow that request
+budget. A busy machine can still exhaust it: report the actual timeout and
+inspect the daemon/lock holder rather than blindly retrying, bypassing locks,
+or claiming memory is absent. Notes are only queued until publication is
+confirmed; retain worktree evidence independently.
+
 ## When to use
 
 - **Session start / before re-deriving machine history**: `sia ask` first.
