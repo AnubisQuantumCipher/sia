@@ -7,6 +7,7 @@ an off-path tree which ``siacapsule.verify`` authenticates.
 """
 
 import contextlib
+from collections import deque
 import datetime
 import fcntl
 import hashlib
@@ -3384,14 +3385,87 @@ def _resolve_snapshot(requested, *, restic_path=None):
     return matches[0]
 
 
+def _snapshot_listing_documents(snapshot_id, *, restic_path=None):
+    """Walk the immutable snapshot in bounded, non-recursive directory batches.
+
+    Each response keeps the existing subprocess byte ceiling. The caller
+    enforces the unchanged whole-tree entry, depth and byte policies before
+    this generator can enqueue another directory. No restore starts until
+    every discovered directory has been listed.
+    """
+    pending = deque([("/", None)])
+    snapshot = None
+    while pending:
+        # Bound both argv size and each captured metadata response. A single
+        # oversized directory still refuses under the original byte ceiling.
+        batch = []
+        argument_bytes = 0
+        depth = pending[0][0].count("/")
+        while pending and len(batch) < 64 \
+                and pending[0][0].count("/") == depth:
+            path, digest = pending[0]
+            size = len(os.fsencode(path)) + 1
+            if batch and argument_bytes + size > sialib.MAX_CONFIG_BYTES:
+                break
+            batch.append(pending.popleft())
+            argument_bytes += size
+        scopes = dict(batch)
+        raw = _run_restic(
+            ["ls", "--json", snapshot_id, *scopes],
+            restic_path=restic_path)
+        header_seen = False
+        self_seen = set()
+        for document in _json_documents(raw, "restic snapshot listing"):
+            if not isinstance(document, dict):
+                raise ValueError("restic snapshot listing contains a non-object")
+            kind = document.get("message_type", document.get("struct_type"))
+            if document.get("message_type", kind) != kind \
+                    or document.get("struct_type", kind) != kind:
+                raise ValueError("restic snapshot listing type fields conflict")
+            if kind == "snapshot":
+                if header_seen or document.get("id") != snapshot_id \
+                        or not isinstance(document.get("tags"), list) \
+                        or "sia-capsule" not in document["tags"]:
+                    raise ValueError("restic snapshot listing identity changed")
+                header_seen = True
+                if snapshot is None:
+                    snapshot = document
+                    yield document
+                elif document != snapshot:
+                    raise ValueError("restic snapshot listing identity changed")
+                continue
+            if kind != "node":
+                raise ValueError("restic snapshot listing has an unknown record")
+            path = document.get("path")
+            if not isinstance(path, str):
+                raise ValueError("restic snapshot listing contains an unsafe node")
+            digest = hashlib.sha256(_canonical_bytes(document)).digest()
+            if path in scopes:
+                if path in self_seen or document.get("type") != "dir" \
+                        or (scopes[path] is not None and digest != scopes[path]):
+                    raise ValueError("restic snapshot directory identity changed")
+                self_seen.add(path)
+                continue
+            if posixpath.dirname(path) not in scopes:
+                raise ValueError("restic snapshot listing escaped its directory scope")
+            yield document
+            # Resuming here means the caller accepted this node under the
+            # existing whole-tree policy, including uniqueness and depth.
+            if document.get("type") == "dir":
+                pending.append((path, digest))
+        if not header_seen:
+            raise ValueError("restic snapshot listing lacks its snapshot record")
+        if any(path != "/" and path not in self_seen for path in scopes):
+            raise ValueError("restic snapshot listing omitted a directory")
+
+
 def _preflight_snapshot(snapshot_id, *, restic_path=None):
     """Bound authenticated repository metadata before restic writes bytes."""
-    raw = _run_restic(
-        ["ls", "--json", snapshot_id], restic_path=restic_path)
     snapshot_seen = False
     paths = {}
     total_bytes = 0
-    for document in _json_documents(raw, "restic snapshot listing"):
+    for document in _snapshot_listing_documents(
+            snapshot_id, restic_path=restic_path):
         if not isinstance(document, dict):
             raise ValueError("restic snapshot listing contains a non-object")
         message_type = document.get("message_type")

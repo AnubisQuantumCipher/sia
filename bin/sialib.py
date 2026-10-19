@@ -633,7 +633,7 @@ def _build_organs():
 HIGH_TAGS = ["integrity-failure", "refusal", "crash", "coredump", "failed",
              "collapse", "healing", "urgent"]
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 
 
 # Corpus bytes and their derived PGLite/graph projections form one publication
@@ -10735,7 +10735,10 @@ def _dream_transaction_guarded(
     if _pending_pulse_status_effects(memo) is not None:
         raise RuntimeError(
             "dream refused while pulse status-effects recovery is pending")
-    now = time.time() if now is None else float(now)
+    # Publication below can add uses after maintenance starts. Live phases
+    # must capture their clocks after those writes; explicit replay clocks
+    # remain fixed and still reject later memory rather than rewriting it.
+    now = None if now is None else float(now)
     if not isinstance(memo.get("sync_needed", False), bool):
         raise RuntimeError("brainstem memo sync-needed state is invalid")
     store0 = load_thoughts()
@@ -10895,8 +10898,9 @@ def _dream_transaction_guarded(
     try:
         g = _require_musing_graph_snapshot(
             read_json(GRAPH_PATH, None))
-        mind = siamind.load_mind()
-        pruned = siamind.hebb_hygiene(mind, now=now)
+        graph_now = time.time() if now is None else now
+        mind = siamind.load_mind(now=graph_now)
+        pruned = siamind.hebb_hygiene(mind, now=graph_now)
         lseq, lhead = ledger_head()
         if isinstance(lseq, bool) or not isinstance(lseq, int) \
                 or not 0 < lseq <= MAX_JSON_SAFE_INTEGER \
@@ -10904,8 +10908,8 @@ def _dream_transaction_guarded(
                 or re.fullmatch(r"[0-9a-f]{64}", lhead) is None:
             raise RuntimeError("signed ledger head is unavailable for seeded graph walk")
         dream_day = datetime.datetime.fromtimestamp(
-            now, datetime.timezone.utc).strftime("%Y-%m-%d")
-        m = siamind.muse(mind, g, dream_day, lhead, now=now)
+            graph_now, datetime.timezone.utc).strftime("%Y-%m-%d")
+        m = siamind.muse(mind, g, dream_day, lhead, now=graph_now)
         thought = ("association", m[0], m[1], False) if m else None
         _stage_dream_unit(
             mind, "muse", "DREAM:muse", "1" if m else "0",
@@ -10974,7 +10978,16 @@ def _dream_transaction_guarded(
     # recovery identity before launching it, so a kill during any phase keeps
     # readiness closed until corpus sync + graph export are reconciled.
     _mark_dream_publication(memo, _projected_pulse_redactions(memo))
-    r = gbrain(["dream", "--json"], timeout=900)
+    # The pinned engine only pack-gates some phases. A bare dream also runs
+    # cloud proposal/grading paths outside SIA's explicit judge consent.
+    # Pass the complete deterministic roster from schema-pack/pack.yaml;
+    # keep extract with sync to suppress sync's implicit model backstop.
+    r = gbrain(["dream", "--json",
+                "--phase", "lint", "--phase", "backlinks",
+                "--phase", "sync", "--phase", "extract",
+                "--phase", "recompute_emotional_weight",
+                "--phase", "embed", "--phase", "orphans",
+                "--phase", "purge"], timeout=900)
     rep = None
     if r.returncode == 0:
         for opener in ("{",):

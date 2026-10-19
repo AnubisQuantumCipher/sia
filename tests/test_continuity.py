@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import shutil
 import stat
 import subprocess
@@ -75,6 +76,16 @@ class ContinuityTransport(unittest.TestCase):
     @staticmethod
     def _runner(_command):
         return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    @staticmethod
+    def _scoped_listing(listing, arguments):
+        # Preserve the original fixture nodes; emulate directory filtering.
+        scopes = arguments[3:]
+        return "\n".join(
+            json.dumps(row) for row in map(json.loads, listing.splitlines())
+            if row.get("message_type") == "snapshot"
+            or row.get("path") in scopes
+            or posixpath.dirname(row.get("path", "")) in scopes) + "\n"
 
     def _configure(self):
         config = {
@@ -1890,7 +1901,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                 }])
             if arguments[:2] == ["ls", "--json"]:
                 capsule_name = ".capsule-restored"
-                return "\n".join((
+                listing = "\n".join((
                     json.dumps({
                         "message_type": "snapshot", "id": "abc123",
                         "tags": ["sia-capsule"]}),
@@ -1906,6 +1917,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
                         "path": "/" + capsule_name + "/payload",
                         "size": 0}),
                 )) + "\n"
+                return self._scoped_listing(listing, arguments)
             if arguments[0] == "restore":
                 target = arguments[arguments.index("--target") + 1]
                 observed_target.append(target)
@@ -2181,13 +2193,13 @@ raise SystemExit(siabackup.run_request({request_path!r}))
 
         def run(arguments, **_kwargs):
             calls.append(arguments[0])
-            return listing
+            return self._scoped_listing(listing, arguments)
 
         with mock.patch.object(siabackup, "_run_restic", side_effect=run), \
                 mock.patch.object(siabackup, "MAX_SPOOL_BYTES", 1), \
                 self.assertRaisesRegex(ValueError, "byte policy"):
             siabackup._verify_snapshot_offpath("abc123")
-        self.assertEqual(calls, ["ls"])
+        self.assertEqual(calls, ["ls", "ls"])
         self.assertEqual(os.listdir(siabackup.CHECKS_DIR), [])
 
     def test_failed_partial_restore_is_cleaned_without_following_links(self):
@@ -2210,7 +2222,7 @@ raise SystemExit(siabackup.run_request({request_path!r}))
 
         def run(arguments, **_kwargs):
             if arguments[0] == "ls":
-                return listing
+                return self._scoped_listing(listing, arguments)
             target = arguments[arguments.index("--target") + 1]
             partial = os.path.join(target, ".capsule-test")
             os.mkdir(partial)

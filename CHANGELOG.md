@@ -1,10 +1,23 @@
 # Changelog
 
-## Unreleased — dated prediction grading and proposal acceptance
+## 1.8.4 — 2026-10-19 · grading evidence and local maintenance
 
 Thanks to [@Jasonmst](https://github.com/Jasonmst) for the reproductions and
 expected behavior in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33).
 
+- Automatic and manual maintenance pass the schema pack's exact deterministic
+  phase list to gbrain. Its default cycle could otherwise send memory pages to
+  a provider through proposal/grading phases without SIA judge consent. Local
+  maintenance and embedding phases remain enabled; optional SIA grading still
+  requires its own explicit judge configuration.
+- Live maintenance captures rehearsal and graph clocks after preceding
+  publications. Explicit replay clocks still refuse future history. This also
+  carries the previously installed local clock repair into the release.
+- Backup verification walks immutable snapshot metadata in bounded directory
+  batches instead of capturing one whole-tree listing. Snapshot and directory
+  identities and aggregate path, depth and byte limits remain checked before
+  restore. Oversized individual responses still refuse. This carries the
+  previously installed backup repair into the release.
 - Dated grading includes every admitted day shard and overlapping weekly epoch
   for named sources within the take's UTC calendar window, preserving the full
   page content instead of a few recent excerpts. Complete snapshots have explicit
