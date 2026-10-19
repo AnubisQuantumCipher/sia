@@ -35,3 +35,36 @@ end-to-end resident integration, cross-platform CI, off-host recovery and
 independent held-out cognitive evaluation. The policy is not wired into the
 released Python runtime. Contracts specify exact Boolean acceptance predicates;
 they do not prove input assertions true in the physical system.
+
+## Durable-prefix reducer checkpoint
+
+The subsequent reducer adds immediate-successor admission, predecessor-receipt
+matching, exact latest-receipt replay classification and unchanged state on
+refusal/retry. Its inputs still require authentication by the future protected
+adapter. No filesystem operation is performed here.
+
+TESTED: both `policy_tests` and `transaction_tests` pass with strict compiler
+warnings and assertions enabled. Phase-triple tests use an independent
+adjacency oracle; full-path tests use distinct receipts, and negative controls
+include stale historical replay, wrong Apply/replay predecessors and coherent
+foreign-epoch/foreign-digest requests with matching foreign witnesses.
+
+PROVED in all four analyzed units: the same GNATprove command with
+`--no-inlining` reports all 88 checks proved, zero justified and zero unproved.
+The modular oracle is proved for arbitrary phase inputs and still executed
+exhaustively by the test harness. No fixture or required rejection was removed.
+
+FAILED attempts retained: the initial reducer proof reached the overall
+180-second limit. A later run completed with five unproved test-harness checks
+and reported prover time/memory limits. Separating the oracle into a bounded,
+side-effect-free procedure and using modular analysis resolved those checks;
+no assumption, suppression or weakened policy contract was introduced. The
+initial attempt also overlapped a test-source edit and cannot establish a
+stable-source result. The accepted modular run had no overlapping code edits.
+
+Independent GPT-6.1 review found no blocker in the abstract reducer, but
+required complete authenticated receipt binding and stronger negative tests.
+Those requirements and tests are included. The reviewer did not independently
+run GNATprove. Raw attempts and the accepted summary are retained in the same
+operator-local evidence directory. Real crash/replay, signing protection,
+IPC, model checking and integration acceptance remain UNRUN.

@@ -3,7 +3,7 @@ project SIA_Assurance is
    for Source_Dirs use ("src", "tests");
    for Object_Dir use "obj";
    for Exec_Dir use "bin";
-   for Main use ("policy_tests.adb");
+   for Main use ("policy_tests.adb", "transaction_tests.adb");
    package Compiler is
       for Default_Switches ("Ada") use
         ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",

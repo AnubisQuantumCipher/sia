@@ -53,6 +53,9 @@ any time with `sia backup schedule`.
 
 ![Example SIA cockpit](preview.png)
 
+This example screenshot is historical; its displayed counts and status are
+not a live health report or an assurance result for your machine.
+
 Example SIA cockpit. This static preview is not current machine state, a live
 readiness result, or evidence of cognitive performance.
 

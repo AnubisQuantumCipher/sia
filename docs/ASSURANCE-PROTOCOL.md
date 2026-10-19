@@ -56,6 +56,16 @@ grant. Grants cannot be reused for another recipient, payload or transition.
 Authenticate a durable predecessor before choosing the next generation;
 generation exhaustion refuses rather than wrapping.
 
+The authenticated receipt schema must include the protocol version, operation,
+caller capability identity, transaction binding, before and after phases,
+predecessor receipt digest, complete effect/witness manifest and result. Its
+digest is over a canonical bounded encoding; the signature covers that digest
+and its domain separator. Matching receipt digests count as the same operation
+only after this schema and signature are verified. No caller-selected subset
+of material fields may be omitted. The durable state record must authenticate
+the current phase and receipt chain. An arbitrary deserialized state, even if
+its Ada representation is valid, must never become authoritative.
+
 Requests cannot supply authoritative `durable`, `signature_valid` or
 `recovery_complete` flags. Only the protected observation boundary may create
 such typed witnesses after actual readback/verification. Each witness binds
