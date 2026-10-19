@@ -1340,6 +1340,12 @@ def open_take_evidence_windows():
             "open take evidence retention requires current natural history")
     windows = []
     for take in _history_open_rows("take"):
+        legacy = take.get("legacy_v1")
+        if isinstance(legacy, dict) \
+                and legacy.get("deadline_state") == "invalid-open-blocked":
+            raise GradingEvidenceUnavailable(
+                "blocked legacy take has no valid evidence window; "
+                "repair it before consolidation")
         window = _take_window(take["created"], take["deadline"])
         claim = take["claim"].lower()
         sources = frozenset(source for source in ORGAN_NAMES

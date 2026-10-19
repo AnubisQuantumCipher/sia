@@ -2513,6 +2513,12 @@ def cmd_grade(tid=None):
               "with the judge…")
         try:
             gt = siatakes.grade_take(t, persist=_persist_grade)
+        except (siatakes.GradingEvidenceUnavailable,
+                siatakes.GradingJudgeUnavailable) as exc:
+            detail = sialib.strip_controls(sialib.redact(str(exc), "status-error"))
+            print(f"  grading refused; take remains open: {detail}")
+            grade_failed = True
+            continue
         except (OSError, RuntimeError, ValueError) as exc:
             detail = sialib.strip_controls(sialib.redact(str(exc), "status-error"))
             print(f"  grade not completed or publication pending: {detail}")
@@ -2520,6 +2526,7 @@ def cmd_grade(tid=None):
             break
         if not gt:
             print("  grading failed (judge unavailable)")
+            grade_failed = True
             continue
         mark = {"resolved-true": "TRUE", "resolved-false": "FALSE"}.get(
             gt["status"], "UNRESOLVABLE")

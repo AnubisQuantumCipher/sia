@@ -30,6 +30,18 @@ def _write(path, text):
 
 
 class GradingEvidenceCanonicalization(unittest.TestCase):
+    def test_blocked_legacy_retention_refuses_without_capping_valid_deadlines(self):
+        take = {"created": "2026-08-01T00:00:00Z", "deadline": "9999-12-31",
+                "claim": "journal grows"}
+        with mock.patch.object(siatakes, "natural_history_debt", return_value=False), \
+                mock.patch.object(siatakes, "_history_open_rows", return_value=[take]):
+            self.assertEqual(siatakes.open_take_evidence_windows()[0][2],
+                             "9999-12-31")
+            take["legacy_v1"] = {"deadline_state": "invalid-open-blocked"}
+            with self.assertRaisesRegex(siatakes.GradingEvidenceUnavailable,
+                                        "blocked legacy take"):
+                siatakes.open_take_evidence_windows()
+
     def test_grading_retries_rotate_past_permanently_refusing_takes(self):
         due = [{"id": key} for key in ("a", "b", "c", "d", "e")]
         first = siatakes.next_grade_batch(due)

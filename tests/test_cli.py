@@ -3311,6 +3311,36 @@ class MutationBoundaries(unittest.TestCase):
         self.assertIn(("memo", False), between)
         self.assertNotIn("sync_needed", memo)
 
+    def test_manual_grade_refusal_continues_and_returns_failure(self):
+        takes = [{"id": name, "status": "open", "claim": name}
+                 for name in ("first", "second")]
+        for refusal in (siatakes.GradingJudgeUnavailable,
+                        siatakes.GradingEvidenceUnavailable):
+            output = io.StringIO()
+            result = {"status": "resolved-true", "brier": None,
+                      "claim": "second", "slug": "takes/second"}
+            with self.subTest(refusal=refusal), \
+                    mock.patch.object(sia.sialib, "corpus_owner",
+                                      return_value=contextlib.nullcontext()), \
+                    mock.patch.object(sia.sialib, "corpus_publication",
+                                      return_value=contextlib.nullcontext(None)), \
+                    mock.patch.object(sia.sialib, "load_memo", return_value={}), \
+                    mock.patch.object(sia.sialib, "_settle_pending_publication"), \
+                    mock.patch.object(siatakes, "recover_natural_history_transactions",
+                                      return_value=([], [])), \
+                    mock.patch.object(siatakes, "recover_grade_transactions",
+                                      return_value=([], [])), \
+                    mock.patch.object(siatakes, "due_takes", return_value=takes), \
+                    mock.patch.object(siatakes, "grade_take",
+                                      side_effect=[refusal("unavailable"), result]) as grade, \
+                    mock.patch.object(sia.sialib, "append_thought_inbox") as inbox, \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(sia.cmd_grade(), 1)
+            self.assertEqual([call.args[0]["id"] for call in grade.call_args_list],
+                             ["first", "second"])
+            self.assertIn("take remains open", output.getvalue())
+            self.assertEqual(inbox.call_args.args[0]["links"], ["takes/second"])
+
     def test_manual_multigrade_publication_failure_aborts_later_judge(self):
         memo, judged = {}, []
         takes = [

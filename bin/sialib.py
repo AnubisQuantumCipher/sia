@@ -10658,7 +10658,8 @@ def _same_day_grade_retry(memo):
     state = memo.get("dream", {})
     if state.get("status") != "grading-pending":
         return False
-    attempted = datetime.datetime.fromisoformat(state["attempt"])
+    attempted = datetime.datetime.fromisoformat(
+        state["attempt"].replace("Z", "+00:00"))
     return attempted.astimezone().date() == utcnow().astimezone().date()
 
 
