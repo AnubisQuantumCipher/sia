@@ -31,7 +31,7 @@ For a clean committed checkout, source the GNAT environment and run
 `spark/verify-policy.sh NEW_OUTPUT_DIR`. On this shared machine invoke it under
 the existing nonblocking heavy-work lock. It archives the exact committed
 `spark` tree into a new retained directory, builds there without old objects,
-runs both harnesses and the strict proof command with finite deadlines, and
+runs all three harnesses and the strict proof command with finite deadlines, and
 retains commands, exit statuses, output, source identity and tool executable
 hashes. It refuses an existing output directory or uncommitted tree.
 The caller must supply enough storage and the qualified toolchain. Executable
@@ -57,3 +57,9 @@ and durably commit the reduced state with a recoverable journal. Individual
 filesystem operations, journal cursor substeps, acquisition fences and the
 next transaction's generation allocation still require refinement. Recovery
 from a real process crash has not been demonstrated by these pure tests.
+
+The runner also checks reported coverage against every spec/body unit in the
+supported source directories. Missing units, incomplete coverage, malformed
+totals, justified checks and unproved checks refuse success. This checks report
+structure, not authenticity or system assurance. Its synthetic negative tests
+run with `python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v`.

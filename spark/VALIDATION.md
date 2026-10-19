@@ -192,3 +192,19 @@ A fresh archived-source run of commit
 `16986c7` is retained under `wire-reproduction-v1`. It must show complete
 implementation and harness coverage as well as zero unresolved obligations
 before acceptance. Its proof process remains pending at this checkpoint.
+
+The archived `wire-reproduction-v1` proof exceeded its overall 180-second
+deadline (exit 124); build and all three harnesses passed. Its partial results
+are not accepted. A subsequent implementation-unit diagnostic completed with
+exit 0 and reported all 181 checks proved, including decoder field mappings,
+termination and generation arithmetic. This diagnostic is not the clean-source
+whole-project acceptance run. Its log and summary are retained separately.
+
+The runner now gives the expanded project a finite 600-second overall proof
+budget; per-check timeout, memory, strict warnings and proof requirements are
+unchanged. A report coverage gate requires all source spec/body units, complete
+reported subprogram coverage and consistent discharged totals. Eight synthetic
+tests pass, including missing spec-only units and malformed totals found by
+independent review. The historical policy-only report passes against its own
+source and is refused against the expanded source tree. This gate does not
+authenticate reports or establish physical integration correctness.

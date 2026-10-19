@@ -8,7 +8,7 @@ if [[ $# != 1 ]]; then
 fi
 # Resolve before any directory change: PATH may contain relative entries.
 declare -A tool_paths
-for tool in gprbuild gnatprove gnatls gcc timeout sha256sum tar git; do
+for tool in gprbuild gnatprove gnatls gcc timeout sha256sum tar git python3; do
     selected=$(type -P -- "$tool")
     tool_paths[$tool]=$(realpath -e -- "$selected")
     test -x "${tool_paths[$tool]}"
@@ -53,9 +53,11 @@ run_check build 120s "${tool_paths[gprbuild]}" -p -P spark/sia_assurance.gpr
 run_check policy-tests 30s spark/bin/policy_tests
 run_check transaction-tests 30s spark/bin/transaction_tests
 run_check request-wire-tests 30s spark/bin/request_wire_tests
-run_check proof 180s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
+run_check proof 600s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
     --assumptions --no-inlining --memlimit=512 --timeout=10
 test -s spark/obj/gnatprove/gnatprove.out
 cp -- spark/obj/gnatprove/gnatprove.out "$output/gnatprove-summary.txt"
+run_check coverage 10s "${tool_paths[python3]}" spark/check-proof-summary.py \
+    spark "$output/gnatprove-summary.txt"
 printf 'All commands passed for %s. Review proof coverage and assumptions in %s.\n' \
     "$commit" "$output"
