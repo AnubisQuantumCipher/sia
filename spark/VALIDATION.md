@@ -208,3 +208,13 @@ tests pass, including missing spec-only units and malformed totals found by
 independent review. The historical policy-only report passes against its own
 source and is refused against the expanded source tree. This gate does not
 authenticate reports or establish physical integration correctness.
+
+The separate experimental Linux packet intake has ten passing tests using real
+Unix sockets plus an injected descriptor-close error. They cover exact payload
+and per-message credentials, a child sender, every short length, oversized
+packets, non-concatenation, unexpected descriptor cleanup/truncation, socket
+configuration and EOF. Independent source review found no blocker within this
+single-receive scope and requested cleanup continuation after a close error;
+that repair and negative control are included. The eight summary-gate tests
+also pass. These are Python/Linux tests, not SPARK proofs, protected capability
+admission, a complete service resource bound or decoder integration evidence.

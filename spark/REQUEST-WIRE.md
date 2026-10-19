@@ -5,6 +5,9 @@ Status: untrusted decoding prototype, not an installed IPC service or authority.
 observed length. A future transport must bound reads before allocation, measure
 actual bytes, reject excess/trailing input, and authenticate the peer. This
 package cannot establish that a caller supplied the real observed length.
+The experimental Linux packet receiver in `transport/` now measures and bounds
+one actual packet, with socket tests. It is not yet connected to this decoder
+or installed as a service; peer credentials do not grant mutation authority.
 
 | Byte positions | Field | Encoding |
 | --- | --- | --- |
