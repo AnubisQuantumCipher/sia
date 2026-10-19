@@ -52,3 +52,43 @@ still own protected storage and keys under a separate identity. Resource limits,
 syscall policy, broker authorization, service installation and recovery remain
 unimplemented. Root/kernel compromise and malicious installed system binaries
 are outside this experiment's guarantee.
+
+## Real offline engine lane
+
+`check_engine_boundary.py GBRAIN_BINARY NEW_EVIDENCE_DIR` runs the supplied
+actual gbrain binary in the namespace configuration against disposable state.
+It initializes PGLite without embeddings, adds the source, syncs without pulls,
+embeddings or extraction, checks database identity, retrieves the committed
+page body, checks source-scoped keyword results and resynchronizes. No live
+SIA corpus or engine configuration is mounted.
+
+The first dirty-working-tree negative control FAILED: gbrain indexed an
+uncommitted file despite the read-only mount (`engine-boundary-v2`). The test
+now clones the exact fixture commit without local/hardlink optimization,
+checks out that commit detached, verifies clean status and mounts this export.
+The origin deliberately retains an untracked file and a modified tracked page.
+Both dirty tokens must be absent from the tested search results while the
+original committed body remains retrievable before/after resync. File-content
+inventories of the origin and export must remain unchanged; these inventories
+do not establish metadata or complete filesystem-tree identity.
+
+This finding corrects a former test comment about gbrain's walker. SIA's
+existing publication path commits corpus changes and checks Git cleanliness;
+the failed raw-engine export experiment does not demonstrate a released-runtime
+bypass. A protected production exporter must independently validate source
+identity, links, resource bounds, publication generation and crash behavior.
+The fixture clone helper is not that production implementation.
+
+Each engine invocation has configured per-file, descriptor, CPU and elapsed-time
+limits. CPU/descriptor limits apply per process, not cumulatively to descendants.
+Aggregate disk and memory bounds remain UNPROVEN; use a disposable, monitored
+working area with capacity for this experiment. The source export and root
+mount are read-only, while explicit state/temp mounts and proc/dev semantics
+remain distinct. Do not claim an exclusive writable-path or syscall allowlist.
+
+Acceptance must run a committed archived driver and retain all command/output/
+exit records plus source, tool, engine, receipt/pin and fixture bindings. The
+script accepts an explicit engine path; the installed receipt/pin relationship
+must be verified separately. This is TESTED offline engine behavior under the
+recorded configuration, not embedding, provider containment or installed SIA
+authority. The earlier namespace probe's observations remain separate evidence.
