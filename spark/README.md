@@ -27,6 +27,19 @@ Proof: `gnatprove -P spark/sia_assurance.gpr -U --mode=all --assumptions --no-in
 Inspect coverage, raw proof summaries, warnings, assumptions and exclusions;
 exit status alone does not establish the intended acceptance requirements.
 
+For a clean committed checkout, source the GNAT environment and run
+`spark/verify-policy.sh NEW_OUTPUT_DIR`. On this shared machine invoke it under
+the existing nonblocking heavy-work lock. It archives the exact committed
+`spark` tree into a new retained directory, builds there without old objects,
+runs both harnesses and the strict proof command with finite deadlines, and
+retains commands, exit statuses, output, source identity and tool executable
+hashes. It refuses an existing output directory or uncommitted tree.
+The caller must supply enough storage and the qualified toolchain. Executable
+hashes do not identify all prover libraries or establish toolchain qualification.
+No download, installation, network access or automatic acceptance decision is
+performed by the runner. Inspect the retained obligations and assumptions;
+this is a reproducibility aid, not the completed offline system verifier.
+
 Keep runtime assertions enabled. The abstract input domain and proof result
 do not validate hostile IPC representations, external processes, physical
 durability, cryptography or Linux isolation. See `docs/ASSURANCE-GOAL.md`.
