@@ -161,3 +161,18 @@ checks, with no justified/unproved checks (`policy-reproduction-v2` and
 match the absolute tool paths. This closes that specific evidence-binding gap;
 dependencies, concurrent same-user mutation and toolchain qualification remain
 outside the runner's guarantee.
+
+## Request decoder development checkpoint
+
+The fixed-capacity untrusted-request decoder builds under strict warnings and
+its runtime harness passes. Initial compilation rejected an obsolete aggregate
+syntax and an unsupported function aspect; those were corrected without
+disabling warnings. The first proof attempt was intentionally stopped with
+exit 143 after independent review identified missing accepted-field contracts;
+its partial log is retained as `wire-proof-first-build.log`, not accepted proof.
+
+The revised decoder has explicit accepted field mappings and a big-endian
+generation relation. A nonuniform digest and JACKAL-checked multi-byte numeric
+vector strengthen the initial tests. Proof log `wire-proof-semantic.log` is
+pending at this checkpoint. No decoder proof completion, authenticated IPC,
+transport bounds or integrated authority is claimed. See `REQUEST-WIRE.md`.

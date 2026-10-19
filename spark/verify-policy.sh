@@ -52,6 +52,7 @@ cd -- "$output/source"
 run_check build 120s "${tool_paths[gprbuild]}" -p -P spark/sia_assurance.gpr
 run_check policy-tests 30s spark/bin/policy_tests
 run_check transaction-tests 30s spark/bin/transaction_tests
+run_check request-wire-tests 30s spark/bin/request_wire_tests
 run_check proof 180s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
     --assumptions --no-inlining --memlimit=512 --timeout=10
 test -s spark/obj/gnatprove/gnatprove.out
