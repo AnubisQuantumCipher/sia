@@ -42,5 +42,9 @@ allocate generations or authorize a claimed durable effect from a request.
 The new harness checks validity endpoints, reversed/empty intervals, maximum
 tick boundaries, changed sender and revocation, every byte of each identity,
 each other material request field, operation isolation and a zero capability.
-Strict build and runtime tests pass; complete archived proof is pending.
+The archived run at `a967012cc0caaac2715ff7efd3c62436eef4b885` passes strict
+build, all four runtime harnesses and all 240 proof checks across eight units,
+with zero justified or unproved checks. Independent evidence review confirmed
+the archive/source binding and coverage. This proves only the stated pure
+contracts, conditional on toolchain semantics and the external assumptions.
 The original policy, reducer and decoder tests remain unchanged.

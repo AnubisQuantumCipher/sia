@@ -269,3 +269,10 @@ the original test remains in history. A fresh archived run of
 `admission-reproduction-v1`; complete proof is pending at this checkpoint.
 No grant-store authentication, replay consumption, disclosure permission or
 protected mutation is established. See `REQUEST-ADMISSION.md` and `ASSUMPTIONS.md`.
+
+The archived admission run subsequently completed: all four harnesses, build,
+proof and coverage returned zero. The report contains all eight units and 240
+proved checks with none justified/unproved. Independent GPT-6.1 evidence review
+checked all manifest hashes, exact archive-to-commit and extracted-source
+equality, coverage and exits; no blocker for pure-contract acceptance was found.
+No protected deployment claim follows from this result.
