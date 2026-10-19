@@ -1,0 +1,18 @@
+project SIA_Assurance is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "tests");
+   for Object_Dir use "obj";
+   for Exec_Dir use "bin";
+   for Main use ("policy_tests.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",
+         "-gnatw.o", "-O2", "-g");
+      for Local_Configuration_Pragmas use "restrictions.adc";
+   end Compiler;
+   package Prove is
+      for Proof_Switches ("Ada") use
+        ("--level=2", "--report=all", "--warnings=error",
+         "--checks-as-errors=on", "--proof-warnings=on", "-j1");
+   end Prove;
+end SIA_Assurance;
