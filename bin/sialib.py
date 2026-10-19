@@ -8096,7 +8096,7 @@ def _settle_pending_dream_ledger(memo):
 
 
 def _bind_pending_dream_cycle(memo, dream_state, arg1, arg2, content,
-                              thought_text, *, urgent=False):
+                              thought_text, *, urgent=False, grade_cycle_status=None):
     """Persist one exact cycle result before status, ledger, or generated entry."""
     marker = _pending_dream_marker(memo)
     if marker is None:
@@ -8124,6 +8124,11 @@ def _bind_pending_dream_cycle(memo, dream_state, arg1, arg2, content,
     rebound = dict(marker, cycle=cycle)
     updated = dict(memo, dream=dream_state,
                    dream_publication=rebound, sync_needed=True)
+    updated.pop("grade_retry_cycle_status", None)
+    if grade_cycle_status is not None:
+        if grade_cycle_status not in {"ok", "clean", "partial"}:
+            raise ValueError("grading retry cycle status is invalid")
+        updated["grade_retry_cycle_status"] = grade_cycle_status
     _write_memo(updated)
     memo.clear()
     memo.update(updated)
@@ -10577,6 +10582,107 @@ def rehearse_memories(now=None, stage=None, redaction_checkpoint=None):
     return report
 
 
+def _grade_dream_take(memo, store, take):
+    """Judge and publish one take; refusals do not prevent later attempts."""
+    def persist_grade(row, verdict, justification, snapshots):
+        siatakes.commit_grade_transition(
+            row, verdict, justification, snapshots,
+            before_publish=lambda: _mark_external_corpus_mutation(memo))
+        _settle_pending_publication(memo, "publish dream grade before continuing")
+
+    export_thoughts(store)
+    _settle_thought_page_signals(store)
+    _settle_pending_publication(
+        memo, "publish prior maintenance entries before grading")
+    try:
+        graded = siatakes.grade_take(take, persist=persist_grade)
+        detail = "grader returned no completed result" if not graded else ""
+    except (siatakes.GradingEvidenceUnavailable,
+            siatakes.GradingJudgeUnavailable) as exc:
+        graded = None
+        detail = _dream_diagnostic(memo, exc, 400)
+    if not graded:
+        log(f"dream grading refused for {take['id']}: {detail}")
+        durable_ledger_append("DREAM:grade-refused", take["id"], detail)
+        return False
+    mark = {"resolved-true": "TRUE", "resolved-false": "FALSE"}.get(
+        graded["status"], "UNRESOLVABLE")
+    brier = f" · Brier {graded['brier']}" if graded["brier"] is not None else ""
+    add_thought(store, "grade",
+                f"Prediction graded: “{clip(graded['claim'], 80)}”: {mark}{brier}.",
+                [graded["slug"]], origin="model")
+    return True
+
+
+def _run_dream_grades(memo, store):
+    """Run a bounded rotating batch; return whether retry work remains."""
+    try:
+        due = siatakes.due_takes()
+        batch = siatakes.next_grade_batch(due, memo.get("grade_retry_after", ""))
+        if batch:
+            updated = dict(memo, grade_retry_after=batch[-1]["id"])
+            _write_memo(updated)
+            memo.clear()
+            memo.update(updated)
+        completed = 0
+        for take in batch:
+            if _grade_dream_take(memo, store, take):
+                completed += 1
+        if completed:
+            cal = siatakes.summary()
+            if cal.get("resolved"):
+                add_thought(store, "calibration",
+                    f"Descriptive calibration restated: {cal['resolved']} "
+                    f"resolved take(s), mean Brier {cal['brier']}, "
+                    f"population status {cal['calibration_status']}. "
+                    f"Operator-selected and model-assisted; no world-truth "
+                    f"or generalization claim.", ["sia/cortex"], origin="model")
+        refused = len(batch) - completed
+        state = ("done" if completed else "refused") if batch else "none-due"
+        detail = (f"attempted={len(batch)} completed={completed} refused={refused}"
+                  if batch else "")
+        durable_ledger_append("DREAM:grade", state, detail)
+        return bool(refused or len(due) > len(batch))
+    except LedgerTransitionError as exc:
+        detail = _dream_diagnostic(memo, exc, 160)
+        raise LedgerTransitionError(detail) from exc
+    except Exception as exc:
+        detail = _dream_diagnostic(memo, exc, 80)
+        durable_ledger_append("DREAM:grade", "error", detail)
+        log(f"take grading failed: {detail}")
+        return True
+
+
+def _same_day_grade_retry(memo):
+    """Retry only grading after today's full cycle has already completed."""
+    state = memo.get("dream", {})
+    if state.get("status") != "grading-pending":
+        return False
+    attempted = datetime.datetime.fromisoformat(state["attempt"])
+    return attempted.astimezone().date() == utcnow().astimezone().date()
+
+
+def _retry_dream_grades(memo, store):
+    """Complete only grading, without rerunning compaction or gbrain dream."""
+    cycle_status = memo.get("grade_retry_cycle_status")
+    if cycle_status not in {"ok", "clean", "partial"}:
+        raise ValueError("grading retry lacks its completed cycle status")
+    pending = _run_dream_grades(memo, store)
+    export_thoughts(store)
+    _settle_thought_page_signals(store)
+    _settle_pending_publication(memo, "publish retried dream grades")
+    if pending:
+        raise RuntimeError("due grading remains pending; retry scheduled")
+    state = {"last": memo["dream"]["attempt"], "status": cycle_status,
+             "summary": "Maintenance grading retry completed."}
+    updated = dict(memo, dream=state)
+    updated.pop("grade_retry_cycle_status", None)
+    _write_memo(updated)
+    memo.clear()
+    memo.update(updated)
+    return {"status": cycle_status, "grading_only": True}
+
+
 def dream(memo_update=True, now=None):
     """Run the whole nightly workflow under the corpus transaction lease."""
     with corpus_owner():
@@ -10680,6 +10786,8 @@ def _dream_transaction_guarded(
         _recover_pending_dream_publication(memo)
     _settle_pending_publication(
         memo, "publish pending corpus migration before dream")
+    if _same_day_grade_retry(memo):
+        return _retry_dream_grades(memo, store0)
     # The nightly job is independent units with separate ledgers and
     # failure domains — a bad grade must never block an epoch merge, and a
     # failed heuristic drift tripwire must never block the gbrain cycle.
@@ -10811,82 +10919,7 @@ def _dream_transaction_guarded(
         detail = _dream_diagnostic(memo, e, 80)
         durable_ledger_append("DREAM:muse", "error", detail)
         log(f"seeded graph walk failed: {detail}")
-    # prediction grading: grade due predictions (≤3/attempt; configured judge,
-    # deterministic Brier), then restate calibration
-    grading_pending = True
-    try:
-        completed_grades = 0
-        def persist_grade(row, verdict, justification, evidence_snapshots):
-            siatakes.commit_grade_transition(
-                row, verdict, justification, evidence_snapshots,
-                before_publish=lambda: _mark_external_corpus_mutation(memo))
-            _settle_pending_publication(
-                memo, "publish dream grade before continuing")
-
-        all_due_grades = siatakes.due_takes()
-        due_grades = siatakes.next_grade_batch(
-            all_due_grades, memo.get("grade_retry_after", ""))
-        if due_grades:
-            updated = dict(memo, grade_retry_after=due_grades[-1]["id"])
-            _write_memo(updated)
-            memo.clear()
-            memo.update(updated)
-        for t in due_grades:
-            export_thoughts(store0)
-            _settle_thought_page_signals(store0)
-            _settle_pending_publication(
-                memo, "publish prior maintenance entries before grading")
-            try:
-                gt = siatakes.grade_take(t, persist=persist_grade)
-            except (siatakes.GradingEvidenceUnavailable,
-                    siatakes.GradingJudgeUnavailable) as exc:
-                detail = _dream_diagnostic(memo, exc, 400)
-                log(f"dream grading refused for {t['id']}: {detail}")
-                durable_ledger_append("DREAM:grade-refused", t["id"], detail)
-                continue
-            if not gt:
-                detail = "grader returned no completed result"
-                log(f"dream grading refused for {t['id']}: {detail}")
-                durable_ledger_append("DREAM:grade-refused", t["id"], detail)
-                continue
-            completed_grades += 1
-            mark = {"resolved-true": "TRUE",
-                    "resolved-false": "FALSE"}.get(gt["status"],
-                                                   "UNRESOLVABLE")
-            brier = (f" · Brier {gt['brier']}"
-                     if gt["brier"] is not None else "")
-            add_thought(store0, "grade",
-                f"Prediction graded: “{clip(gt['claim'], 80)}”: "
-                f"{mark}{brier}.", [gt["slug"]], origin="model")
-        if completed_grades:
-            cal = siatakes.summary()
-            if cal.get("resolved"):
-                add_thought(store0, "calibration",
-                    f"Descriptive calibration restated: {cal['resolved']} "
-                    f"resolved take(s), mean Brier {cal['brier']}, "
-                    f"population status {cal['calibration_status']}. "
-                    f"Operator-selected and model-assisted; no world-truth "
-                    f"or generalization claim.", ["sia/cortex"],
-                    origin="model")
-        attempted_grades = len(due_grades)
-        refused_grades = attempted_grades - completed_grades
-        grading_pending = bool(refused_grades or len(all_due_grades) > 3)
-        if not attempted_grades:
-            grade_state = "none-due"
-            grade_detail = ""
-        else:
-            grade_state = "done" if completed_grades else "refused"
-            grade_detail = (
-                f"attempted={attempted_grades} "
-                f"completed={completed_grades} refused={refused_grades}")
-        durable_ledger_append("DREAM:grade", grade_state, grade_detail)
-    except LedgerTransitionError as exc:
-        detail = _dream_diagnostic(memo, exc, 160)
-        raise LedgerTransitionError(detail) from exc
-    except Exception as e:
-        detail = _dream_diagnostic(memo, e, 80)
-        durable_ledger_append("DREAM:grade", "error", detail)
-        log(f"take grading failed: {detail}")
+    grading_pending = _run_dream_grades(memo, store0)
     # Heuristic drift tripwire: the historian retains a small date-seeded
     # observation of slug-family proximity. It does not run a reader or score
     # answer correctness; the full signed-ledger QA benchmark is separate.
@@ -10984,7 +11017,8 @@ def _dream_transaction_guarded(
         }, sort_keys=True, separators=(",", ":"))
         _bind_pending_dream_cycle(
             memo, dream_state, str(rep.get("status", "?"))[:80],
-            bits[:100], cycle_content, text)
+            bits[:100], cycle_content, text,
+            grade_cycle_status=rep["status"] if grading_pending else None)
         _complete_pending_dream_cycle(memo, store)
     elif rep is not None:
         previous = memo.get("dream", {})

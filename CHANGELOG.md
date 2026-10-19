@@ -15,7 +15,9 @@ expected behavior in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33)
   potentially needed evidence.
 - Dream records and logs each evidence/judge refusal reason. Incomplete grading
   leaves the successful-maintenance date unchanged and uses the existing
-  rate-limited retry scheduler. A durable cursor rotates the bounded grading
+  rate-limited retry scheduler. Same-day retries run grading only, without
+  repeating compaction, rehearsal, benchmarks, or gbrain's dream cycle. A new
+  local day still runs regular maintenance. A durable cursor rotates the bounded grading
   batch so permanently refusing takes cannot starve later ones.
 - `sia take --accept all` reports and skips expired proposals while retaining
   them in the queue. Explicit acceptance of an expired proposal still refuses.

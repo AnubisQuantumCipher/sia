@@ -869,12 +869,43 @@ class DreamPublication(unittest.TestCase):
         self.assertNotIn("dream_publication", self.written_memo)
         self.memo = copy.deepcopy(self.written_memo)
         attempted.clear()
+        def forbid_compaction():
+            self.fail("grading retry reran compaction")
+
         with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
-            self._run(result=report, due_takes=due, grade_take=refuse)
+            self._run(result=report, due_takes=due, grade_take=refuse,
+                      consolidate=forbid_compaction)
         self.assertEqual(attempted, ["fourth", "first", "second"])
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json"]])
         self.memo = copy.deepcopy(self.written_memo)
-        self._run(result=report, due_takes=[])
+        self._run(result=report, due_takes=[], consolidate=forbid_compaction)
         self.assertEqual(self.written_memo["dream"]["status"], "ok")
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json"]])
+
+    def test_persistent_grade_refusal_does_not_starve_next_days_maintenance(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "ok"}))
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.memo = copy.deepcopy(self.written_memo)
+        tomorrow = self.sialib.utcnow() + self.sialib.datetime.timedelta(days=1)
+        with mock.patch.object(self.sialib, "utcnow", return_value=tomorrow), \
+                self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.assertEqual([row for row in self.gbrain_calls if row[0] == "dream"],
+                         [["dream", "--json"], ["dream", "--json"]])
+
+    def test_grading_retry_does_not_promote_partial_maintenance_to_ok(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "partial"}))
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=[{"id": "refused"}])
+        self.assertEqual(self.written_memo["grade_retry_cycle_status"], "partial")
+        self.memo = copy.deepcopy(self.written_memo)
+        self.assertEqual(self._run(result=report, due_takes=[]),
+                         {"status": "partial", "grading_only": True})
+        self.assertEqual(self.written_memo["dream"]["status"], "partial")
+        self.assertNotIn("grade_retry_cycle_status", self.written_memo)
 
     def test_multigrade_publishes_before_next_gbrain_grade(self):
         takes = [
