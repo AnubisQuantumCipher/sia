@@ -315,3 +315,20 @@ sync, database probe, retrieval/search and resync all passed. No embedding,
 provider transmission, protected production exporter or installed-service
 authority is established. Per-file/descriptor/CPU/time limits are configured;
 aggregate memory/disk and descendant resource budgets remain UNPROVEN.
+
+The subsequent experimental precheck and engine lane at
+`6d75da71b12da59df9ec9e30fbc2fe3956af6dc8` passed from a committed archive
+under `engine-reproduction-v2`. Nine focused tests reject unsupported Git
+entry modes, malformed paths and file/count/declared-byte budget violations.
+The real offline engine sequence also passed. Independent GPT-6.1 review
+verified all manifest hashes, pre-run inventory, archive/extracted-source
+identity, focused and engine exits, and receipt/pin consistency without
+repeating execution. Accepted status is TESTED for the disposable fixture only.
+Clone/object-storage budgets, arbitrary-repository admission, protected export
+ownership and production authority remain outside this result.
+
+CI now explicitly discovers the Python proof-summary, packet and experimental
+export controls with finite deadlines and ResourceWarning errors. Their local
+runs passed (respectively eight, ten and nine tests); the new CI step itself
+requires remote execution. This does not run GNATprove or the Ada I/O adapter,
+and does not replace their separate committed-source acceptance lanes.
