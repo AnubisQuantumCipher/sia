@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from committed_export import validate_commit
+
 TOKEN = "siaisolationfixturetoken"
 SLUG = "events/test/alpha"
 UNCOMMITTED_TOKEN = "notindexedfixturezzzx"
@@ -48,6 +50,8 @@ def prepare(output):
     page.write_text("---\ntitle: alpha\n---\n# alpha\n" + DIRTY_TOKEN + "\n")
     git(output, ["clone", "--no-local", "--no-hardlinks", "--no-checkout",
                  str(corpus), str(output / "export")])
+    tree_budget = validate_commit(output / "export", committed)
+    (output / "export-tree-budget.json").write_text(json.dumps(tree_budget) + "\n")
     git(output / "export", ["checkout", "--detach", committed])
     if git(output / "export", ["rev-parse", "HEAD"]) != committed \
             or git(output / "export", ["status", "--porcelain", "--untracked-files=all"]):

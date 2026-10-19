@@ -92,3 +92,20 @@ script accepts an explicit engine path; the installed receipt/pin relationship
 must be verified separately. This is TESTED offline engine behavior under the
 recorded configuration, not embedding, provider containment or installed SIA
 authority. The earlier namespace probe's observations remain separate evidence.
+
+The experimental export precheck now inspects the named Git tree before
+checkout. It accepts only regular non-executable blobs, bounded UTF-8 relative
+paths and bounded declared blob totals; it rejects symlinks, gitlinks and
+ambiguous paths. Run its controls separately:
+
+```
+python3 -m unittest discover -s spark/isolation -p test_committed_export.py -v
+```
+
+This budget covers declared committed blob bytes, not clone transfer, object
+storage, checkout overhead or engine storage. Cloning precedes validation.
+The current caller obtains the identity from its trusted fixture's HEAD;
+`ls-tree` alone does not establish commit object type. Repository-local
+configuration and replacement objects remain trusted fixture state. This is
+not admission of arbitrary repositories, a race-resistant exporter or an
+OS-protected production authority.

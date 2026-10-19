@@ -31,7 +31,7 @@ For a clean committed checkout, source the GNAT environment and run
 `spark/verify-policy.sh NEW_OUTPUT_DIR`. On this shared machine invoke it under
 the existing nonblocking heavy-work lock. It archives the exact committed
 `spark` tree into a new retained directory, builds there without old objects,
-runs all three harnesses and the strict proof command with finite deadlines, and
+runs all four harnesses and the strict proof command with finite deadlines, and
 retains commands, exit statuses, output, source identity and tool executable
 hashes. It refuses an existing output directory or uncommitted tree.
 The caller must supply enough storage and the qualified toolchain. Executable

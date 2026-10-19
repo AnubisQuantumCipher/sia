@@ -22,7 +22,7 @@ does not make an unverified broker trustworthy.
 
 Indexing receives a read-only export for one authorized generation and writes
 only its disposable projection area. It cannot modify the authoritative
-corpus, transaction journal or signing identity. Its Linux confinement must
+corpus, transaction journal or signing identity. Its protected exporter must
 materialize and validate the exact committed tree before exposing it. A
 read-only mount of a dirty working tree is insufficient: the installed gbrain
 walker indexed an uncommitted fixture in the retained engine-boundary-v2
