@@ -9,7 +9,10 @@ This is a requirements and acceptance ledger, not a completed assurance claim.
 Finish issue #33, retain reporter credit, verify the installed runtime, publish
 1.8.4, request exact-commit marketplace verification, and read back the catalog.
 Marketplace approval is external; a submitted request is not publication.
-Preserve that frozen target while developing this work on its isolated branch.
+Keep experimental assurance work isolated. The initial release target is now
+held for the reproduced ACK directory-synchronization gap; PRs #38 and #39
+close its obsolete freeze and qualify the runtime repair. Freeze a new exact
+main commit only after the required repair and release checks pass.
 
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
@@ -23,9 +26,9 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 |---|---|---|---|
 | A01 | Freeze threat model, transition tables, capabilities and resource bounds | Source-backed model, assumptions and requirements traceability | IN PROGRESS |
 | A02 | Provenance authority | SPARK contracts and proofs rejecting escalation of model, derived or legacy content; independently tested legitimate transitions | PARTIAL: pure admission predicate proved/tested; authenticated origin producer and enforcement UNRUN |
-| A03 | Publication and acknowledgment authority | Generation-bound durability, corpus/index/graph/ledger joins, no recovery debt; proofs plus real adapter evidence | PARTIAL: pure joined-publication/ACK predicates proved/tested; temporal protocol and adapter evidence UNRUN |
+| A03 | Publication and acknowledgment authority | Generation-bound durability, corpus/index/graph/ledger joins, no recovery debt; proofs plus real adapter evidence | PARTIAL: pure joined-publication/ACK predicates proved/tested; pure durable-prefix reducer proved; full resident adapter evidence UNRUN |
 | A04 | Disclosure authority | Narrow recipient/evidence/byte/operation authorization; local indexing denied provider-network access by Linux; positive and negative controls | UNRUN |
-| A05 | Recovery and continuity authority | Exact predecessor/successor admission, crash/replay model and fault-injection receipts | PARTIAL: pure reducer proved; bounded single-transaction crash model checked with negative/reachability controls; real fault injection and restore UNRUN |
+| A05 | Recovery and continuity authority | Exact predecessor/successor admission, crash/replay model and fault-injection receipts | PARTIAL: pure reducer proved; bounded single-transaction crash model checked with negative/reachability controls; component SIGKILL and fsync-failure controls tested with recovery repairs; fresh resident restart and restore UNRUN |
 | A06 | Identity and receipt authority | Rejected replay, tampering, mismatched generations and unauthorized transitions; protected signing authority | UNRUN |
 | A07 | Resource authority | Proved bounds for requests, counters, queues and admission; exhaustion tests and OS limits | UNRUN |
 | A08 | Cognitive claim admission | Frozen held-out evaluation against dense baseline; independent reproduction; no unearned improvement claims | UNRUN |
@@ -33,7 +36,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A10 | Off-host recovery campaign | Damaged data, revoked/compromised credentials and tampered receipts tested without touching live evidence | UNRUN |
 | A11 | Bounded versioned IPC and migration | Shadow comparison first; differential legitimate/adversarial tests; authority transfer only after evidence; missing/mismatched kernel refuses | UNRUN |
 | A12 | Linux enforcement and bypass resistance | Restricted actuator actually owns protected state; hostile same-user tests; no Python bypass of denial | UNRUN |
-| A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | UNRUN |
+| A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; complete offline system verifier, portable proof CI and release readback UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | IN PROGRESS |
 | A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: caller cutoff diagnosed, guidance corrected; universal latency not established |
 

@@ -149,3 +149,15 @@ Correction to that commit's message: Bash syntax checking passed, but
 ShellCheck was unavailable (`command not found`), so the message's claim that
 ShellCheck passed is incorrect. No ShellCheck result is claimed. The historical
 commit is retained; this correction records the actual negative evidence.
+
+Independent review identified a tool-identity gap: resolving a tool before a
+directory change but later invoking its bare name could select a different
+executable through relative PATH entries. Commit
+`8bd12678ea98e9dae9cf58637b9fc23c563f7369` resolves absolute paths before any
+directory change and uses those same paths for version, hash, build and proof.
+Fresh normal and relative-PATH runs both passed build, harnesses and all 88
+checks, with no justified/unproved checks (`policy-reproduction-v2` and
+`policy-reproduction-relative-path`). Recorded build/proof command executables
+match the absolute tool paths. This closes that specific evidence-binding gap;
+dependencies, concurrent same-user mutation and toolchain qualification remain
+outside the runner's guarantee.
