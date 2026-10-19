@@ -10811,8 +10811,9 @@ def _dream_transaction_guarded(
         detail = _dream_diagnostic(memo, e, 80)
         durable_ledger_append("DREAM:muse", "error", detail)
         log(f"seeded graph walk failed: {detail}")
-    # prediction grading: grade due predictions (≤3/night; configured judge,
+    # prediction grading: grade due predictions (≤3/attempt; configured judge,
     # deterministic Brier), then restate calibration
+    grading_pending = True
     try:
         completed_grades = 0
         def persist_grade(row, verdict, justification, evidence_snapshots):
@@ -10822,14 +10823,31 @@ def _dream_transaction_guarded(
             _settle_pending_publication(
                 memo, "publish dream grade before continuing")
 
-        due_grades = siatakes.due_takes()[:3]
+        all_due_grades = siatakes.due_takes()
+        due_grades = siatakes.next_grade_batch(
+            all_due_grades, memo.get("grade_retry_after", ""))
+        if due_grades:
+            updated = dict(memo, grade_retry_after=due_grades[-1]["id"])
+            _write_memo(updated)
+            memo.clear()
+            memo.update(updated)
         for t in due_grades:
             export_thoughts(store0)
             _settle_thought_page_signals(store0)
             _settle_pending_publication(
                 memo, "publish prior maintenance entries before grading")
-            gt = siatakes.grade_take(t, persist=persist_grade)
+            try:
+                gt = siatakes.grade_take(t, persist=persist_grade)
+            except (siatakes.GradingEvidenceUnavailable,
+                    siatakes.GradingJudgeUnavailable) as exc:
+                detail = _dream_diagnostic(memo, exc, 400)
+                log(f"dream grading refused for {t['id']}: {detail}")
+                durable_ledger_append("DREAM:grade-refused", t["id"], detail)
+                continue
             if not gt:
+                detail = "grader returned no completed result"
+                log(f"dream grading refused for {t['id']}: {detail}")
+                durable_ledger_append("DREAM:grade-refused", t["id"], detail)
                 continue
             completed_grades += 1
             mark = {"resolved-true": "TRUE",
@@ -10852,6 +10870,7 @@ def _dream_transaction_guarded(
                     origin="model")
         attempted_grades = len(due_grades)
         refused_grades = attempted_grades - completed_grades
+        grading_pending = bool(refused_grades or len(all_due_grades) > 3)
         if not attempted_grades:
             grade_state = "none-due"
             grade_detail = ""
@@ -10949,6 +10968,12 @@ def _dream_transaction_guarded(
                 + (f" — {bits}." if bits else "."))
         dream_state = {"last": iso(), "status": rep.get("status"),
                        "summary": bits}
+        if grading_pending:
+            dream_state = {
+                "last": memo.get("dream", {}).get("last", ""),
+                "attempt": iso(), "status": "grading-pending",
+                "summary": "Due grading is incomplete; retry is rate-limited."}
+            text += " Due grading is incomplete and will be retried."
         totals_payload = json.dumps(
             tot, sort_keys=True, separators=(",", ":"),
             ensure_ascii=False)
@@ -11032,4 +11057,6 @@ def _dream_transaction_guarded(
     if not cycle_finished:
         status = rep.get("status") if rep is not None else "failed"
         raise RuntimeError(f"gbrain dream cycle {status}")
+    if grading_pending:
+        raise RuntimeError("due grading remains pending; retry scheduled")
     return rep

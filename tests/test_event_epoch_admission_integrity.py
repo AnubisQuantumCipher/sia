@@ -88,6 +88,23 @@ class EventEpochAdmissionIntegrity(unittest.TestCase):
         with self.assertRaises((RuntimeError, ValueError)):
             self.lib._read_epoch_state(self.epoch_slug)
 
+    def test_open_take_retains_window_source_then_resolution_releases_it(self):
+        _event, source, _record = self._source()
+        before = source.read_bytes()
+        self._commit_corpus()
+        windows = [(frozenset({"org"}), "2026-01-05", "2026-01-06")]
+        with mock.patch.object(self.lib.siatakes, "open_take_evidence_windows",
+                               return_value=windows):
+            self.assertEqual(self.lib.consolidate_corpus(), (0, 0, 1))
+        self.assertEqual(source.read_bytes(), before)
+        tomorrow = self.lib.utcnow() + self.lib.datetime.timedelta(days=1)
+        with mock.patch.object(self.lib.siatakes, "open_take_evidence_windows",
+                               return_value=[]), \
+                mock.patch.object(self.lib, "utcnow", return_value=tomorrow):
+            self.lib.consolidate_corpus()
+        self.assertFalse(source.exists())
+        self.assertTrue(Path(self.lib.corpus_path(self.epoch_slug)).exists())
+
     def test_declared_day_count_cannot_exceed_exact_source_days(self):
         event, _path, record = self._source()
         self._epoch(record, dates=["2026-01-05"], day_count=2,

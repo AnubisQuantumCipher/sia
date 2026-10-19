@@ -819,15 +819,62 @@ class DreamPublication(unittest.TestCase):
 
     def test_due_grade_refusals_are_not_signed_as_none_due(self):
         report = {"status": "ok", "totals": {}}
-        self._run(
-            result=self._result(os.EX_OK, json.dumps(report)),
-            due_takes=[{"id": "due-take"}],
-            grade_take=lambda *_args, **_kwargs: None)
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(
+                result=self._result(os.EX_OK, json.dumps(report)),
+                due_takes=[{"id": "due-take"}],
+                grade_take=lambda *_args, **_kwargs: None)
         grade_rows = [row for row in self.ledger_rows
                       if row[0] == "DREAM:grade"]
         self.assertEqual(grade_rows, [
             ("DREAM:grade", "refused",
              "attempted=1 completed=0 refused=1")])
+        self.assertEqual(self.written_memo["dream"]["last"],
+                         "2026-08-29T12:00:00Z")
+        self.assertEqual(self.written_memo["dream"]["status"], "grading-pending")
+        self.assertIn(("DREAM:grade-refused", "due-take",
+                       "grader returned no completed result"), self.ledger_rows)
+
+    def test_judge_refusal_reason_is_logged_and_next_take_is_attempted(self):
+        attempts = []
+
+        def refuse(row, **_kwargs):
+            attempts.append(row["id"])
+            raise self.sialib.siatakes.GradingJudgeUnavailable(
+                "judge service unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(
+                result=self._result(os.EX_OK, json.dumps({"status": "ok"})),
+                due_takes=[{"id": "first"}, {"id": "second"}],
+                grade_take=refuse)
+        self.assertEqual(attempts, ["first", "second"])
+        self.assertIn(("DREAM:grade-refused", "first",
+                       "judge service unavailable"), self.ledger_rows)
+
+    def test_durable_retry_cursor_rotates_after_restart_and_clears_on_success(self):
+        report = self._result(os.EX_OK, json.dumps({"status": "ok"}))
+        due = [{"id": name} for name in ("first", "second", "third", "fourth")]
+        attempted = []
+
+        def refuse(row, **_kwargs):
+            attempted.append(row["id"])
+            return None
+
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=due, grade_take=refuse)
+        self.assertEqual(attempted, ["first", "second", "third"])
+        self.assertEqual(self.written_memo["grade_retry_after"], "third")
+        self.assertTrue(self.sialib._status_dream_shape(self.written_memo["dream"]))
+        self.assertNotIn("dream_publication", self.written_memo)
+        self.memo = copy.deepcopy(self.written_memo)
+        attempted.clear()
+        with self.assertRaisesRegex(RuntimeError, "due grading remains pending"):
+            self._run(result=report, due_takes=due, grade_take=refuse)
+        self.assertEqual(attempted, ["fourth", "first", "second"])
+        self.memo = copy.deepcopy(self.written_memo)
+        self._run(result=report, due_takes=[])
+        self.assertEqual(self.written_memo["dream"]["status"], "ok")
 
     def test_multigrade_publishes_before_next_gbrain_grade(self):
         takes = [

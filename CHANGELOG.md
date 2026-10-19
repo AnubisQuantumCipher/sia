@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — dated prediction grading and proposal acceptance
+
+Thanks to [@Jasonmst](https://github.com/Jasonmst) for the reproductions and
+expected behavior in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33).
+
+- Dated grading includes every admitted day shard and overlapping weekly epoch
+  for named sources within the take's UTC calendar window, preserving the full
+  page content instead of a few recent excerpts. Complete snapshots have explicit
+  page and byte limits; an admission or capacity failure leaves the take open.
+- Open takes retain matching day pages through consolidation until resolution.
+  Claims without a named source conservatively retain all sources in the window.
+  Missing natural-history authority refuses consolidation rather than deleting
+  potentially needed evidence.
+- Dream records and logs each evidence/judge refusal reason. Incomplete grading
+  leaves the successful-maintenance date unchanged and uses the existing
+  rate-limited retry scheduler. A durable cursor rotates the bounded grading
+  batch so permanently refusing takes cannot starve later ones.
+- `sia take --accept all` reports and skips expired proposals while retaining
+  them in the queue. Explicit acceptance of an expired proposal still refuses.
+
+Grades remain model-assisted. This does not restore already consolidated day
+pages, revise historical grades, or claim that a model must return TRUE. The
+signed snapshot makes the evidence presented to that model inspectable.
+
 ## 1.8.3 — 2026-09-23 · a redacted note can no longer stop the daemon
 
 ### Resident daemon

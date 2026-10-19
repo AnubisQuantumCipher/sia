@@ -1707,6 +1707,37 @@ class HonestStatusLanguage(unittest.TestCase):
 
 
 class MutationBoundaries(unittest.TestCase):
+    def test_accept_all_skips_expired_and_retains_them(self):
+        today = datetime.datetime(2026, 10, 19, tzinfo=datetime.timezone.utc)
+        proposals = [siatakes.validate_proposal({
+            "claim": "claim " + deadline, "confidence": 0.7,
+            "deadline": deadline, "domain": "ops"})
+            for deadline in ("2026-10-18", "2026-10-19", "2026-10-20")]
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as state, \
+                mock.patch.object(sia.sialib, "STATE", state), \
+                mock.patch.object(siatakes, "_utcnow", return_value=today), \
+                mock.patch.object(sia.sialib, "corpus_owner",
+                                  side_effect=contextlib.nullcontext), \
+                mock.patch.object(sia.sialib, "corpus_publication",
+                                  side_effect=contextlib.nullcontext), \
+                mock.patch.object(siatakes, "create_take",
+                                  return_value={"id": "accepted", **proposals[2]}) as create, \
+                contextlib.redirect_stdout(output):
+            siatakes.locked_proposals(state, lambda _: proposals)
+            self.assertEqual(sia.cmd_take(["--accept", "all"]), 0)
+            create.assert_called_once()
+            self.assertEqual(create.call_args.args[0], proposals[2]["claim"])
+            self.assertEqual(siatakes.read_proposals(state), proposals[:2])
+            create.reset_mock()
+            self.assertEqual(sia.cmd_take(["--accept", "all"]), 0)
+            create.assert_not_called()
+            self.assertEqual(sia.cmd_take([
+                "--accept", proposals[0]["proposal_id"]]), 2)
+            self.assertEqual(siatakes.read_proposals(state), proposals[:2])
+        self.assertIn("skipped expired proposal", output.getvalue())
+        self.assertIn("no eligible pending proposals", output.getvalue())
+
     def _complete_brainstem_status(self, verdict="pass"):
         return _current_status_fixture(verdict)
 

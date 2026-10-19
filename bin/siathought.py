@@ -2898,6 +2898,7 @@ def consolidate_corpus():
     if corpus_commit("pre-consolidation") == "error":
         raise RuntimeError("pre-consolidation corpus git commit failed")
     mind_state = siamind.load_mind()
+    take_windows = siatakes.open_take_evidence_windows()
     # A completed `sia memory --pin` is protection immediately, even though
     # the single-writer brainstem materializes it on the next pulse.  The
     # producer and scheduled maintenance share the corpus lease; the queue snapshot itself is
@@ -2938,6 +2939,10 @@ def consolidate_corpus():
         if date >= cutoff:
             continue
         page_slug = rel[:-3]
+        if any((not sources or organ in sources) and first <= date <= last
+               for sources, first, last in take_windows):
+            kept_days.add((organ, date))
+            continue
         day_paths[(organ, date)].append((path, rel, page_slug, part))
 
     for (organ, date), paths in day_paths.items():
