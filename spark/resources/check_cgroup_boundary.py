@@ -45,6 +45,42 @@ def cleanup(output, mode, unit):
         raise RuntimeError('disposable unit cleanup unresolved')
 
 
+def validate_result(mode, observed, rows, returncode):
+    if not rows or rows[0].get('event') != 'bounds-checked':
+        raise RuntimeError('workload did not verify effective limits')
+    after = [row for row in rows if row.get('event') == 'after-workload']
+    if len(after) != 1 or after[0].get('cgroup') != rows[0].get('cgroup'):
+        raise RuntimeError('missing post-workload kernel counters')
+    if mode in ('process', 'allocation'):
+        event = 'process-limit-refused' if mode == 'process' else 'allocation-completed'
+        if returncode != 0 or rows[1].get('event') != event:
+            raise RuntimeError('positive resource control failed')
+    elif observed['LoadState'] != 'loaded' or returncode == 0 \
+        or observed['MemoryMax'] != '67108864' or observed['MemorySwapMax'] != '0' \
+        or observed['TasksMax'] != '8' or observed['Result'] != 'oom-kill' \
+        or observed['ExecMainCode'] != '2' or observed['ExecMainStatus'] != '9':
+        raise RuntimeError('expected kernel OOM kill not observed')
+    if mode.startswith('memory') and any(after[0]['memory_events'][key] <=
+        rows[0]['memory_events'][key] for key in ('max', 'oom', 'oom_kill')):
+        raise RuntimeError('missing cgroup-local OOM attribution')
+    if mode == 'allocation' and rows[1].get('blocks') != 40:
+        raise RuntimeError('positive allocation control mismatch')
+    if mode == 'memory-child':
+        child = [row for row in rows if row.get('event') == 'child-memory-ready']
+        parent = [row for row in rows if row.get('event') == 'parent-memory-start']
+        child_bounds = [row for row in rows if row.get('event') == 'bounds-checked'
+                        and child and row.get('pid') == child[0].get('pid')]
+        if (len(child_bounds) != 1 or len(child) != 1 or len(parent) != 1 or child[0].get('blocks') != 40
+                or child_bounds[0].get('cgroup') != rows[0].get('cgroup')
+                or child[0].get('cgroup') != rows[0].get('cgroup')
+                or child[0].get('pid') != parent[0].get('child_pid')
+                or parent[0].get('pid') != rows[0].get('pid')
+                or child[0].get('pid') == parent[0].get('pid')):
+            raise RuntimeError('combined process memory control missing')
+        if after[0]['memory_events']['oom_group_kill'] <= rows[0]['memory_events']['oom_group_kill']:
+            raise RuntimeError('missing cgroup group-kill event')
+
+
 def run_case(output, mode, probe):
     unit = 'sia-assurance-resource-' + uuid.uuid4().hex + '.service'
     command = ['/usr/bin/systemd-run', '--user', '--wait', '--pipe', '--unit=' + unit,
@@ -65,22 +101,7 @@ def run_case(output, mode, probe):
         if len(raw) > 65536:
             raise RuntimeError('unexpected output volume')
         rows = [json.loads(line) for line in raw.decode().splitlines() if line.startswith('{')]
-        if not rows or rows[0].get('event') != 'bounds-checked':
-            raise RuntimeError('workload did not verify effective limits')
-        after = [row for row in rows if row.get('event') == 'after-workload']
-        if len(after) != 1 or after[0].get('cgroup') != rows[0].get('cgroup'):
-            raise RuntimeError('missing post-workload kernel counters')
-        if mode == 'process':
-            if result.returncode != 0 or rows[1].get('event') != 'process-limit-refused':
-                raise RuntimeError('process limit control failed')
-        elif observed['LoadState'] != 'loaded' or result.returncode == 0 \
-                or observed['MemoryMax'] != '67108864' or observed['MemorySwapMax'] != '0' \
-                or observed['TasksMax'] != '8' or observed['Result'] != 'oom-kill' \
-                or observed['ExecMainCode'] != '2' or observed['ExecMainStatus'] != '9':
-            raise RuntimeError('expected kernel OOM kill not observed')
-        if mode == 'memory' and any(after[0]['memory_events'][key] <=
-                rows[0]['memory_events'][key] for key in ('max', 'oom', 'oom_kill')):
-            raise RuntimeError('missing cgroup-local OOM attribution')
+        validate_result(mode, observed, rows, result.returncode)
         return {'manager': observed if observed['LoadState'] != 'not-found'
                 else {'LoadState': 'not-found'}, 'probe': rows}
     finally:
@@ -95,7 +116,7 @@ def main():
     probe = Path(__file__).with_name('cgroup_probe.py').resolve(strict=True)
     if not re.fullmatch(r'/[A-Za-z0-9_./-]+', str(probe)):
         raise RuntimeError('probe path not supported by fixture unit syntax')
-    reports = {mode: run_case(output, mode, probe) for mode in ('process', 'memory')}
+    reports = {mode: run_case(output, mode, probe) for mode in ('process', 'allocation', 'memory', 'memory-child')}
     report = {'status': 'TESTED', 'controls': reports,
               'scope': 'transient user-service memory/process containment; no production authority or disk budget'}
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

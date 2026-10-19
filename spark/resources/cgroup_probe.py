@@ -23,7 +23,7 @@ def boundary():
               for name in ('memory.max', 'memory.swap.max', 'pids.max', 'memory.oom.group')}
     if limits != {'memory.max': '67108864', 'memory.swap.max': '0', 'pids.max': '8', 'memory.oom.group': '1'}:
         raise RuntimeError('effective cgroup limits differ')
-    print(json.dumps({'event': 'bounds-checked', 'cgroup': relative, 'limits': limits,
+    print(json.dumps({'event': 'bounds-checked', 'pid': os.getpid(), 'cgroup': relative, 'limits': limits,
                       'memory_events': memory_events(directory)}), flush=True)
     return directory
 
@@ -63,26 +63,68 @@ def process_control(directory):
                 raise RuntimeError('child cleanup failed')
 
 
-def memory_control():
-    # A declared finite workload larger than the checked cgroup budget.
-    # Touch every page; retaining the blocks forces aggregate accounting.
+def allocate_blocks(count):
+    if count not in (40, 128):
+        raise ValueError('unsupported fixed workload')
     blocks = []
-    for _ in range(128):
+    for _ in range(count):
         block = bytearray(1024 * 1024)
         for offset in range(0, len(block), 4096):
             block[offset] = 1
         blocks.append(block)
-    raise RuntimeError('memory workload completed without cgroup containment')
+    return blocks
+
+
+def descendant_memory(directory):
+    ready_read, ready_write = os.pipe()
+    release_read, release_write = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(ready_read)
+        os.close(release_write)
+        if boundary() != directory:
+            raise RuntimeError('child escaped configured cgroup')
+        blocks = allocate_blocks(40)
+        print(json.dumps({'event': 'child-memory-ready', 'pid': os.getpid(),
+                          'blocks': len(blocks),
+                          'cgroup': str(directory.relative_to('/sys/fs/cgroup'))}), flush=True)
+        if os.write(ready_write, b'R') != 1:
+            os._exit(2)
+        os.close(ready_write)
+        os.read(release_read, 1)
+        os.close(release_read)
+        os._exit(0)
+    os.close(ready_write)
+    os.close(release_read)
+    try:
+        if os.read(ready_read, 1) != b'R':
+            raise RuntimeError('child allocation did not complete')
+        print(json.dumps({'event': 'parent-memory-start', 'pid': os.getpid(),
+                          'child_pid': pid}), flush=True)
+        blocks = allocate_blocks(40)
+        raise RuntimeError('combined workload completed: ' + str(len(blocks)))
+    finally:
+        os.close(ready_read)
+        os.close(release_write)
+        waited, status = os.waitpid(pid, 0)
+        if waited != pid or status != 0:
+            raise RuntimeError('descendant cleanup failed')
 
 
 def main():
-    if sys.argv[1:] not in (['process'], ['memory'], ['report']):
-        raise SystemExit('expected process, memory or report mode')
+    if sys.argv[1:] not in (['process'], ['memory'], ['allocation'], ['memory-child'], ['report']):
+        raise SystemExit('expected process, memory, allocation, memory-child or report mode')
     directory = boundary()
     if sys.argv[1] == 'process':
         process_control(directory)
     elif sys.argv[1] == 'memory':
-        memory_control()
+        blocks = allocate_blocks(128)
+        raise RuntimeError('memory workload completed: ' + str(len(blocks)))
+    elif sys.argv[1] == 'allocation':
+        blocks = allocate_blocks(40)
+        print(json.dumps({'event': 'allocation-completed', 'blocks': len(blocks)}), flush=True)
+    elif sys.argv[1] == 'memory-child':
+        descendant_memory(directory)
     else:
         print(json.dumps({'event': 'after-workload',
                           'cgroup': str(directory.relative_to('/sys/fs/cgroup')),
