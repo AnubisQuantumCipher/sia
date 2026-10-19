@@ -45,7 +45,7 @@ def command(bwrap, root, probe, port):
 
 def experiment(root, output, bwrap, probe):
     namespace_control = subprocess.run(
-        ["/usr/bin/unshare", "--user", "--map-root-user", "/usr/bin/true"],
+        ["/usr/bin/python3", "-I", "-c", "import os; os.unshare(os.CLONE_NEWUSER)"],
         capture_output=True, timeout=3, check=True)
     if namespace_control.stdout or namespace_control.stderr:
         raise RuntimeError("unexpected host namespace positive-control output")

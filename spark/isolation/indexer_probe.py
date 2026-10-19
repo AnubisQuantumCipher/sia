@@ -1,9 +1,9 @@
 """Runs only inside the disposable namespace experiment."""
 import errno
 import json
+import os
 from pathlib import Path
 import socket
-import subprocess
 import sys
 
 
@@ -21,9 +21,13 @@ def main():
             raise RuntimeError("process retained capabilities")
     if status["NoNewPrivs"].strip() != "1":
         raise RuntimeError("no-new-privileges missing")
-    nested = subprocess.run(["/usr/bin/unshare", "--user", "--map-root-user",
-                             "/usr/bin/true"], capture_output=True, timeout=3)
-    if nested.returncode == 0:
+    try:
+        os.unshare(os.CLONE_NEWUSER)
+    except OSError as error:
+        if error.errno != errno.ENOSPC:
+            raise
+        nested_errno = error.errno
+    else:
         raise RuntimeError("nested user namespace was permitted")
     exported = Path("/source/record")
     if exported.read_bytes() != b"source-evidence\n":
@@ -62,8 +66,7 @@ def main():
                       "capabilities": {name: status[name].strip()
                                        for name in ("CapEff", "CapPrm", "CapAmb")},
                       "no_new_privileges": status["NoNewPrivs"].strip(),
-                      "nested_user_namespace_exit": nested.returncode,
-                      "nested_user_namespace_stderr": nested.stderr.decode("utf-8")}))
+                      "nested_user_namespace_errno": nested_errno}))
 
 
 if __name__ == "__main__":

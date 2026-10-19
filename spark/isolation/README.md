@@ -17,7 +17,9 @@ and complete the fixed request/response over the exposed Unix endpoint. The
 driver checks that the host export is unchanged and all five requested namespace
 identities differ. The child reports zero effective, permitted and ambient
 capabilities and `NoNewPrivs=1`. A user-namespace creation that succeeds on the
-host must fail inside the child. Both the permitted path and the refused path
+host must fail inside the child with ENOSPC. The probe calls the syscall via
+`os.unshare` and checks the actual errno; an unrelated command failure cannot
+satisfy this control. Both the permitted path and the refused path
 have positive controls. These are observations of this experiment, not a proof
 that every privilege-escalation mechanism has been excluded.
 
