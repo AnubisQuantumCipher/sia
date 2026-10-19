@@ -365,3 +365,18 @@ child and parent. The subsequent valid worker remains the positive control.
 The focused updated run passed; this adds mismatch rejection, not independent
 authentication of the expected digest. The earlier archived reproduction remains
 bound to its original snapshot and does not include this extension.
+
+
+The next development campaign adds SIGKILL immediately after successful real
+orphan adoption. Its first oracle (resident-process-death-v5) FAILED because
+it incorrectly required the current implementation to reauthorize a pending
+transaction from each new caller pin. The previous architecture wording said
+"existing adoption must match the caller's independent pin" without explaining
+its completed-state/WAL-admission scope. Independent review confirmed that
+pending work delegates to retained publication authority. The corrected
+characterization keeps wrong-pin refusal before adoption and tests recovery
+of identical retained transaction bytes after adoption with a different
+rollover pin. This is not an approved relaxation or a required compatibility
+guarantee for the future protected service. Pending-request reauthorization,
+revocation and recovery grant lifetime remain UNIMPLEMENTED / unresolved there.
+The separately documented policy-supersession path remains distinct.
