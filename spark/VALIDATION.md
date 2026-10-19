@@ -356,3 +356,12 @@ Independent GPT-6.1 code/evidence review found no blocker for this single
 boundary. Adoption identity is reconstructed from the same retained WAL, so
 this is consistency evidence, not independent authentication or tamper rejection.
 Concurrent-reader visibility while the successor is pending is not established.
+
+The worker campaign now also starts a separate refusal worker before valid
+recovery. A different caller adoption digest must produce the specific
+`v3-original-adoption-pin-differs` refusal, never enter guarded recovery/write
+functions, and leave the fixture's captured artifact images unchanged in both
+child and parent. The subsequent valid worker remains the positive control.
+The focused updated run passed; this adds mismatch rejection, not independent
+authentication of the expected digest. The earlier archived reproduction remains
+bound to its original snapshot and does not include this extension.

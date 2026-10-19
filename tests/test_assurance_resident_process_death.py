@@ -45,6 +45,21 @@ def recover(resident, fixture, reserved, raw):
     resident.assertNotIn("clock", trace.stages)
 
 
+def refuse_wrong_adoption(resident, fixture):
+    before = resident.capture.images(fixture)
+    wrong_pin = "0" * 64
+    resident.assertNotEqual(wrong_pin, fixture.adopted["expected_adoption_sha256"])
+    blocked = resident.forbidden("mismatched adoption reached recovery/write")
+    with resident.instrument(fixture, recovery=True) as trace, \
+            mock.patch.object(trace.owner, "_recover_orphan_controller_source_successor_batch", blocked), \
+            mock.patch.object(trace.owner, "_write_memo", blocked), \
+            mock.patch.object(trace.owner, "atomic_write", blocked), \
+            resident.assertRaisesRegex(RuntimeError, "v3-original-adoption-pin-differs"):
+        trace.invoke(wrong_pin)
+    blocked.assert_not_called()
+    resident.assertEqual(resident.capture.images(fixture), before)
+
+
 @unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(),
                      "Linux fork worker fixture required")
 class AssuranceResidentProcessDeath(unittest.TestCase):
@@ -89,6 +104,9 @@ class AssuranceResidentProcessDeath(unittest.TestCase):
             self.assertNotEqual(fixture.batch["batch_sha256"],
                                 reserved["controller_source_committed"]["source_batch_sha256"])
             self.assertFalse(fixture.case.archive_path(fixture.batch).exists())
+            before_refusal = resident.capture.images(fixture)
+            self.worker(refuse_wrong_adoption, (resident, fixture), 0)
+            self.assertEqual(resident.capture.images(fixture), before_refusal)
             self.worker(recover, (resident, fixture, reserved, raw), 0)
             self.assertEqual(fixture.case.archive_path(fixture.batch).read_bytes(), raw)
             with resident.resident_owner(fixture) as owner:
