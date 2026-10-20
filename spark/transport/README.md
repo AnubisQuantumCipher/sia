@@ -173,7 +173,12 @@ SEQPACKET receiver to this adapter. It checks independent observation/proposal
 outcomes, matching nonuniform payloads, each changed grant byte, identity,
 revocation and interval refusals, invalid frames, exact input length, canonical
 metadata and descriptor failures. Run the existing `test_*.py` command after
-building all three probes. Fresh committed-source acceptance is pending.
+building all three probes. A fresh archive of
+`7f604a037f37f9e828ee110d1c46efc4cc1c0c0e` passed the strict build and all
+53 transport/support controls. Independent GPT-6.1 review verified archive,
+manifest and source bindings, including unchanged pure sources relative to
+the accepted proof, without rerunning the tools. Acceptance covers the
+fixture handoff only; the raw I/O adapter is not proved.
 
 This is an execution-path test, not a protected service: the Python test driver
 can substitute the grant, sender or clock. The grant record does not bind a boot
