@@ -1,4 +1,4 @@
-"""Isolated exec fixture; settlement witness is not an authenticated ledger."""
+"""Isolated exec fixture with controlled and real signed-settlement lanes."""
 import importlib.util
 import json
 import os
@@ -19,6 +19,7 @@ def runtime():
     spec = importlib.util.spec_from_file_location("consolidation_exec_lib", path)
     lib = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(lib)
+    lib.BIN = str(path.parent)
     lib.siamind.EPISODIC_DAYS = 1
     return lib
 
@@ -68,8 +69,41 @@ def recover(lib):
         lib._recover_pending_consolidation(lib.load_memo())
 
 
+def prepare_signed(lib):
+    prepare(lib)
+    subprocess.run([sys.executable, str(Path(lib.BIN) / "sia-ledger"),
+                    "init", lib.SHARE], check=True, timeout=30)
+
+
+def recover_signed(lib, *, kill=False):
+    memo = lib.load_memo()
+    marker = memo["consolidation_pending"]
+    if lib.memory_readiness() != (False, "corpus consolidation recovery is pending"):
+        raise AssertionError("unsettled transaction did not block readiness")
+    original = lib._settle_consolidation_ledger
+
+    def settle(state):
+        result = original(state)
+        if kill:
+            os.kill(os.getpid(), signal.SIGKILL)
+        return result
+
+    with mock.patch.object(lib, "consolidate_corpus",
+                           side_effect=AssertionError("applied work repeated")), \
+            mock.patch.object(lib, "_settle_consolidation_ledger", settle):
+        lib._recover_pending_consolidation(memo)
+    ledger = marker["ledger"]
+    if not lib.ledger_contains(ledger["action"], ledger["arg1"], ledger["arg2"],
+                               ledger["content"], ledger["record_id"]):
+        raise AssertionError("exact signed occurrence missing after recovery")
+    subprocess.run([sys.executable, str(Path(lib.BIN) / "sia-ledger"),
+                    "verify", lib.SHARE], check=True, timeout=30)
+
+
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in ("prepare", "kill", "recover"):
+    if len(sys.argv) != 2 or sys.argv[1] not in (
+            "prepare", "kill", "recover", "prepare-signed",
+            "kill-settled", "recover-signed"):
         raise ValueError("expected one known fixture phase")
     lib = runtime()
     with mock.patch.object(lib.siamind, "pending_user_pin_slugs",
@@ -78,6 +112,12 @@ def main():
             prepare(lib)
         elif sys.argv[1] == "kill":
             kill_after_apply(lib)
+        elif sys.argv[1] == "prepare-signed":
+            prepare_signed(lib)
+        elif sys.argv[1] == "kill-settled":
+            recover_signed(lib, kill=True)
+        elif sys.argv[1] == "recover-signed":
+            recover_signed(lib)
         else:
             recover(lib)
 

@@ -1,4 +1,4 @@
-"""Fresh-exec recovery at applied persistence; ledger settlement is controlled."""
+"""Fresh-exec recovery with controlled and actual signed-ledger settlement."""
 import json
 from pathlib import Path
 import signal
@@ -9,6 +9,43 @@ import unittest
 
 
 class ConsolidationExecRecovery(unittest.TestCase):
+    def test_signed_settlement_survives_death_without_duplicate_entry(self):
+        worker = Path(__file__).with_name("consolidation_exec_worker.py")
+        with tempfile.TemporaryDirectory(prefix="sia-exec-signed-") as home:
+            (Path(home) / ".sia-exec-fixture").write_text("disposable-test-home\n")
+            env = {"HOME": home, "SIA_EXEC_FIXTURE_HOME": home,
+                   "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"}
+            state = Path(home) / ".local/state/sia"
+            share = Path(home) / ".local/share/sia"
+
+            def run(phase, expected):
+                result = subprocess.run(
+                    [sys.executable, "-B", str(worker), phase], env=env,
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
+            run("prepare-signed", 0)
+            source = share / "corpus/events/org/2026-01-05.md"
+            original = source.read_bytes()
+            genesis = (share / "ledger.tsv").read_bytes()
+            run("kill", -signal.SIGKILL)
+            applied = json.loads((state / "memo.json").read_text())
+            marker = applied["consolidation_pending"]
+            self.assertIn("applied_at", marker)
+            self.assertEqual((share / "ledger.tsv").read_bytes(), genesis)
+            run("kill-settled", -signal.SIGKILL)
+            self.assertEqual(json.loads((state / "memo.json").read_text()), applied)
+            signed = (share / "ledger.tsv").read_bytes()
+            self.assertTrue(signed.startswith(genesis))
+            self.assertEqual(len(signed.splitlines()), 2)
+            pin = (share / "head.pin").read_bytes()
+            run("recover-signed", 0)
+            self.assertEqual((share / "ledger.tsv").read_bytes(), signed)
+            self.assertEqual((share / "head.pin").read_bytes(), pin)
+            self.assertNotIn("consolidation_pending",
+                             json.loads((state / "memo.json").read_text()))
+            self.assertEqual(source.read_bytes(), original)
+
     def test_worker_requires_explicit_fixture_home_before_import(self):
         worker = Path(__file__).with_name("consolidation_exec_worker.py")
         with tempfile.TemporaryDirectory(prefix="sia-exec-refusal-") as home:

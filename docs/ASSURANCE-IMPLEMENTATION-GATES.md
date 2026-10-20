@@ -115,6 +115,28 @@ worker invocation without an explicit fixture home. This closes that isolated
 fresh-exec cut only: no signed-ledger qualification, resident front-door
 execution, storage power-loss model, or production readiness is established.
 
+The additional signed exec lane initializes disposable Ed25519 keys with the
+checkout's actual `sia-ledger`. After the applied-marker cut, another fresh
+process performs real settlement and is killed before clearing the memo marker.
+A final process recovers, checks the exact occurrence through `ledger_contains`,
+and runs the keeper's signature/chain verification. The test requires unchanged
+signed ledger bytes and head pin across the retry, one successor entry after
+genesis, retained transaction identity and unchanged protected source bytes.
+The exec, backlog and existing ledger-recovery suites pass 16 tests. This adds
+actual local signed-settlement integration evidence at those cuts; it does not
+provide an independent cryptographic verifier, protected key custody, a complete
+resident-service campaign, or power-loss assurance.
+
+Operational progress must retain its generation identity. The installed scan
+changed from generation `96b25629f4dc480da64dd4fcf499ea58` with 21 pending days
+to `88611c43a1e2486c8ccea4b0ccaaf2f7`, first scanning and later holding 60 pending
+days. `_acknowledge_consolidation_claims` deliberately starts a conservative
+rescan after source unlink. A falling within-generation count therefore does
+not establish a global completion percentage or latency bound. The daemon
+remained active; installed recall availability and a bounded recovery-latency
+argument remain open. Do not remove the rescan or clear recovery debt merely
+to improve that count.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
