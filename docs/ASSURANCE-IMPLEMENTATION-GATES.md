@@ -69,6 +69,27 @@ Do not infer actual legacy or controller execution from that flag alone, or
 toggle it merely to exercise a preferred test path. Inspect installed code,
 validated retained state and actual dispatch evidence before making that claim.
 
+### Installed observation on 2026-10-20
+
+At 08:09:40 UTC, a corpus-lease-protected observation of the installed runtime
+found the controller configuration disabled, no controller marker keys, and no
+retained controller source path. The installed selection predicates therefore
+selected legacy dispatch at that observation. The active systemd service
+executes the installed `sia-brainstem`; observing its actual branch execution
+and fault recovery remains required. Evidence:
+`installed-dispatch-observation-v1.json` in the external assurance directory.
+
+The accompanying bounded no-touch recall completed with exit 1 and the explicit
+refusal `corpus consolidation recovery is pending`, rather than an outer
+timeout. `sia ready` independently refused for the same reason. Individual
+atomic file snapshots retained in `recall-consolidation-refusal-v1.json` show
+a named consolidation transaction and outstanding scan days; these snapshots
+are not a common transaction observation or proof of eventual completion.
+The daemon was still completing pulses, and held the corpus lease during the
+recall wait. Earlier successful readiness checks do not establish current
+availability. Investigate recovery progress and retain the refusal; do not
+clear its marker or bypass the read gate to make recall appear healthy.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
