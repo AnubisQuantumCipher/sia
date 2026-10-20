@@ -7,6 +7,12 @@ One implementation owner retains the assurance worktree. Independent GPT-6.1
 review remains a separate acceptance activity. Avionics-style rigor is an
 engineering aspiration, not certification or an error-free interpretation claim.
 
+The explicit rule mapping, current violations and repair order are in
+[`POWER-OF-TEN-ASSESSMENT.md`](POWER-OF-TEN-ASSESSMENT.md). The authoritative-source
+research and proposed lifecycle obligations are in
+[`AVIONICS-INSPIRED-ASSURANCE.md`](AVIONICS-INSPIRED-ASSURANCE.md). Both are
+acceptance work under this mission, not optional feature work.
+
 ## Ada/SPARK resources
 
 Installed skill entry points were inspected to select applicable guidance.
