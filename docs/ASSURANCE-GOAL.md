@@ -9,10 +9,14 @@ This is a requirements and acceptance ledger, not a completed assurance claim.
 Finish issue #33, retain reporter credit, verify the installed runtime, publish
 1.8.4, request exact-commit marketplace verification, and read back the catalog.
 Marketplace approval is external; a submitted request is not publication.
-Keep experimental assurance work isolated. The initial release target is now
-held for the reproduced ACK directory-synchronization gap; PRs #38 and #39
-close its obsolete freeze and qualify the runtime repair. Freeze a new exact
-main commit only after the required repair and release checks pass.
+Keep experimental assurance work isolated. The initial release target was held
+for the reproduced ACK directory-synchronization gap. PRs #38 and #39 closed
+its obsolete freeze and merged the runtime repair; repaired main passed CI and
+normal local installation. PR #40 then passed both candidate CI runs and merged
+the declaration-only freeze. Its merged tree matches the tested candidate.
+Final merged-main CI, the v1.8.4 tag/release, marketplace verification and final
+publication readback remain pending. These release observations do not qualify
+the experimental assurance branch or any protected service.
 
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
@@ -81,9 +85,16 @@ The next protected-service design is specified in
 [`spark/PROTECTED-SLOT-CONTRACT.md`](../spark/PROTECTED-SLOT-CONTRACT.md).
 It requires a separate effect decision, actual disposable protected ownership,
 durable retirement and independently authorized outcome queries. It remains
-DESIGN ONLY: wire tables, complete resource budgets and signing/recovery
-protocol details must be frozen before implementation acceptance. It does not
-replace the full production obligations above or permit live-data migration.
+DESIGN ONLY. The independently reviewed request/grant proposal is in
+[`spark/PROTECTED-SLOT-WIRE.md`](../spark/PROTECTED-SLOT-WIRE.md). It separates
+current authorization from immutable operation identity and the historical
+publication-request digest; requires exact request-kind/grant-action/slot joins;
+and admits outcome reads only through current read authority. Unsupported
+completed-Publish retry envelopes uniformly refuse; existing APIs and accepted
+retry guarantees remain unchanged. Exact offsets, independent vectors, complete
+resource budgets, clock domains and signing/recovery schemas still must be
+frozen before implementation acceptance. These proposals do not replace the
+full production obligations above or permit live-data migration.
 
 ## Claims requiring verification
 
