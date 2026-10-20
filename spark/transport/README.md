@@ -147,7 +147,11 @@ The eleven development controls cover independent field values, malformed
 records, actual permission/link/special-file failures, changes during reading,
 short reads, read errors and descriptor cleanup. Foreign ownership and isolated
 name mismatch are synthetic observations; they do not establish a separate-UID
-boundary. Archived-source acceptance remains pending for this component.
+boundary. A fresh archive of 975bd37a13dfb7088df0200a9fa82a14478182b4
+passed all eleven controls with unchanged source inventories. Independent
+GPT-6.1 review verified the manifest, archive/commit/extraction equality and
+retained outputs without rerunning tests. This accepts bounded observation
+under the stated assumptions only.
 Production grant commissioning, protected dispatch and bypass-resistance tests
 remain unimplemented. Run the focused controls with:
 
