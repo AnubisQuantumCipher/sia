@@ -144,7 +144,11 @@ The source-backed lifecycle requirements and compatibility boundaries are in
 [`spark/RECORD-LIFECYCLE.md`](../spark/RECORD-LIFECYCLE.md). They distinguish
 captured bytes from complete source coverage, logical retraction/retirement
 from deletion, and legacy origin classification from authenticated admission.
-The lifecycle planner and its protected integration remain unimplemented.
+The first pure local retraction planner is described in
+[`spark/RETRACTION-PLANNER.md`](../spark/RETRACTION-PLANNER.md). Strict development
+build and all runtime harnesses passed; committed-source proof/reproduction
+is still required. Protected integration and global descendant invalidation
+remain unimplemented.
 
 The operator supplied a documentation-based assessment, not a certification.
 Its quoted retrieval figures are historical repository diagnostics, not answer
