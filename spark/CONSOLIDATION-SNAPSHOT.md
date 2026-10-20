@@ -94,3 +94,33 @@ operate only on disposable test repositories, never on the installed corpus.
 Four snapshot tests pass. No production reference is created by this checkpoint.
 Admission journaling, fresh-process/power-loss cuts, aggregate reference budgets,
 retirement, orphan-pin recovery and persisted schema integration remain OPEN.
+
+## Experimental admission journal
+
+`siaconsolidationadmission.admit` now serializes one exact request under the
+existing corpus lease. It persists `planned` before creating the reference,
+then persists `admitted` only after exact pin readback. Recovery of `planned`
+may finish creating that same pin. Recovery of `admitted` uses `check_pin` and
+cannot recreate a missing pin. The journal binds schema, generation,
+transaction digest, cutoff, commit and phase. Conflicting fields refuse before
+changing the retained request. Malformed state is not silently normalized.
+
+The transaction digest is currently caller-supplied; it is not an authenticated
+producer or a proved binding to the installed named maintenance transaction.
+The fixed journal path permits one outstanding request. There is deliberately
+no implicit replacement, cleanup or retirement policy. Integrating repeated
+generations requires those transitions and their evidence, not deletion of a
+blocking journal.
+
+Exception-injection tests interrupt after plan persistence, after pin creation
+and after admission persistence, then reload and resume the exact request.
+Other tests remove an admitted pin, conflict the request, or corrupt retained
+fields and require refusal without journal repair. These tests use real
+bounded Git commands, the corpus lease and atomic journal writes in isolated
+storage. They do not establish actual process-death, torn-write or power-loss
+behavior of this new journal.
+
+The first development run failed because the composed fixture's lock path
+still referenced its separate isolated HOME while its STATE was relocated.
+The fixture now binds the corpus lock to its own STATE directory. This did not
+require bypassing or mocking the lease.

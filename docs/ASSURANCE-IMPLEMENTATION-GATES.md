@@ -158,6 +158,11 @@ and a separate admitted-pin check that cannot recreate missing state. Four
 snapshot tests pass, including real packed-ref/GC retention and exact
 missing-object negative controls. This is experimental reachability evidence;
 admission durability, reference lifecycle and runtime integration remain open.
+The experimental admission journal now distinguishes planned creation from
+admitted state under the corpus lease. Ten admission/snapshot tests pass,
+including interrupted prefixes, exact retries, missing-pin refusal and malformed
+retained-state preservation. This remains outside the installed recovery path;
+fresh-process/power-loss cuts and authenticated transaction binding remain open.
 
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
