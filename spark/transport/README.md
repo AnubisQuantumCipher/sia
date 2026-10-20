@@ -227,8 +227,11 @@ SEQPACKET observations. It covers independent domains, both operations,
 every retained/current domain byte, swapped and matching-zero domains,
 revocation, subject, interval and payload refusals, malformed frames, truncated
 or trailing input, malformed scalars, EOF waiting and descriptor errors.
-Development strict build and 65 transport/support tests passed; committed-source
-reproduction and independent acceptance are pending. Pure source is unchanged.
+A fresh committed archive of `7aac60c78a518fc2bcef6813beb428d5679fe3cd`
+passed strict build and all 65 transport/support tests. Independent GPT-6.1
+review verified hashes, source/archive bindings and retained outputs without
+repeating execution. Pure sources remain identical to accepted proof `8bd9625`.
+Acceptance covers the unauthenticated fixture handoff only.
 
 This adapter has no effects and is outside the SPARK proof boundary. Its domain,
 grant and clock inputs are supplied by the test driver, which could substitute
