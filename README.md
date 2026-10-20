@@ -278,7 +278,13 @@ default, hardened kernels) SIA announces once that it fell back to
 process-group isolation and keeps working — that fallback is weaker
 containment, not a failure. SIA also requires `git`, `curl`, `tar`,
 `unzip`, `bzip2`, `sha256sum`, `zstd`, `flock`, `ss` from `iproute2`, a systemd
-user session (`systemctl`), and roughly 2 GB of disk for Ollama. The bootstrap
+user session (`systemctl`), and roughly 2 GB of disk for Ollama. This candidate
+also requires the administrator-installed
+[Ollama account guard](docs/OLLAMA-ACCOUNT-GUARD.md), its narrow read-only
+checker delegation through `sudo`, and `nftables`; installation
+and Ollama startup refuse without its matching active service. Loopback alone
+does not prevent another local Linux account from accessing Ollama's API.
+The bootstrap
 downloads Bun, Ollama, and SIA's private restic executable from pinned release
 URLs and verifies their published SHA-256 digests before extraction; it checks
 out the full gbrain commit in `GBRAIN_PIN`, verifies the pinned `bun.lock`,

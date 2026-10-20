@@ -1819,6 +1819,11 @@ ARCH="$(uname -m)"; case "$ARCH" in
   *) echo "unsupported arch: $ARCH"; exit 1 ;;
 esac
 preflight_python_capabilities
+if ! python3 -I -S "$REPO/bin/siaollamaguard.py" gate; then
+  echo "Ollama requires the administrator-installed local-account guard." >&2
+  echo "Review docs/OLLAMA-ACCOUNT-GUARD.md before continuing." >&2
+  exit 1
+fi
 
 # The pinned gbrain caches embedded extensions under TMPDIR and trusts a
 # same-size existing archive. Ignore ambient temp parents and keep every
@@ -8830,7 +8835,9 @@ SIA_RELEASE_FILES=(
   bin/siaprocess.py
   bin/sianotes.py
   bin/siatakes.py docs/ARCHITECTURE.md docs/MANUAL.md docs/WHITEPAPER.md docs/CONTINUITY.md
+  docs/OLLAMA-ACCOUNT-GUARD.md
   schema-pack/pack.yaml
+  bin/siaollamaguard.py systemd/sia-ollama-guard.service
   skill/SKILL.md systemd/sia-brainstem.service systemd/sia-ollama.service
   systemd/sia-backup.service systemd/sia-backup.timer
   systemd/sia-backup-check.service systemd/sia-backup-check.timer

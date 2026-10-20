@@ -1332,6 +1332,8 @@ process.stdout.write(JSON.stringify({
                 "only when no owned memory store exists",
                 "install or restart user services"):
             self.assertIn(phrase, cockpit)
+        self.assertIn("administrator-installed guard", cockpit)
+        self.assertIn("does not install administrator permissions", cockpit)
         self.assertIn("Installation is disabled to prevent a downgrade", cockpit)
         self.assertIn("omarchy plugin update khephri.sia", cockpit)
 
