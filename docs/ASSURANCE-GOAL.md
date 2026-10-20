@@ -77,6 +77,14 @@ No substantial unrelated cognitive feature, cockpit feature or source adapter
 is part of this goal. Research mechanisms may fail to beat retrieval; in that
 case retain the negative evidence and remove unsupported improvement claims.
 
+The next protected-service design is specified in
+[`spark/PROTECTED-SLOT-CONTRACT.md`](../spark/PROTECTED-SLOT-CONTRACT.md).
+It requires a separate effect decision, actual disposable protected ownership,
+durable retirement and independently authorized outcome queries. It remains
+DESIGN ONLY: wire tables, complete resource budgets and signing/recovery
+protocol details must be frozen before implementation acceptance. It does not
+replace the full production obligations above or permit live-data migration.
+
 ## Claims requiring verification
 
 The operator supplied a documentation-based assessment, not a certification.
