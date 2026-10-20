@@ -11,7 +11,9 @@ SPEC.loader.exec_module(CHECKER)
 REPORT = """SPARK Analysis results Total Flow Provers Justified   Unproved
 Total 2 2 . . .
 in unit a, 1 subprograms and packages out of 1 analyzed
+  A at a.adb:1 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
 in unit b, 1 subprograms and packages out of 1 analyzed
+  B at b.adb:1 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
 """
 
 
@@ -77,6 +79,36 @@ class ProofSummary(unittest.TestCase):
     def test_oversize_report(self):
         with self.assertRaises(ValueError):
             self.check_text("x" * (CHECKER.LIMIT + 1))
+
+    def test_nonzero_detail_diagnostics_refuse(self):
+        for field in ("errors", "checks,", "warnings", "pragma Assume statements"):
+            for value in ("1", "999999", "-1", "unknown"):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ValueError):
+                        self.check_text(REPORT.replace("0 " + field, value + " " + field))
+
+    def test_missing_duplicate_misbound_and_malformed_details_refuse(self):
+        detail = REPORT.splitlines()[3] + "\n"
+        variants = (
+            REPORT.replace(detail, ""),
+            REPORT.replace(detail, detail + detail),
+            detail + REPORT,
+            REPORT.replace("A at a.adb", "A at b.adb"),
+            REPORT.replace("flow analyzed", "flow not analyzed"),
+            REPORT.replace("and proved (0 checks)", "and not proved"),
+            REPORT.replace("0 pragma Assume statements", ""),
+        )
+        for text in variants:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                self.check_text(text)
+
+    def test_duplicate_name_cannot_replace_missing_subprogram(self):
+        detail = REPORT.splitlines()[3] + "\n"
+        text = REPORT.replace(
+            "in unit a, 1 subprograms and packages out of 1 analyzed",
+            "in unit a, 2 subprograms and packages out of 2 analyzed")
+        with self.assertRaises(ValueError):
+            self.check_text(text.replace(detail, detail + detail.replace("a.adb:1", "a.ads:2")))
 
 
 if __name__ == "__main__":

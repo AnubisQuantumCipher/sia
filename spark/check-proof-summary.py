@@ -11,6 +11,11 @@ import sys
 
 LIMIT = 1024 * 1024
 UNIT = re.compile(r"in unit ([a-z][a-z0-9_]*), ([0-9]{1,6}) subprograms and packages out of ([0-9]{1,6}) analyzed")
+DETAIL = re.compile(
+    r"  ([A-Za-z][A-Za-z0-9_.]*) at ([a-z][a-z0-9_]*\.(?:ads|adb)):"
+    r"[1-9][0-9]{0,5} flow analyzed "
+    r"\(0 errors, 0 checks, 0 warnings and 0 pragma Assume statements\)"
+    r" and proved \([0-9]{1,6} checks\)")
 
 
 def required_units(root):
@@ -53,6 +58,7 @@ def check(root, report):
         raise ValueError("proof report exceeds byte limit")
     lines = raw.decode("utf-8", errors="strict").splitlines()
     check_totals(lines)
+    check_details(lines)
     seen = set()
     for line in lines:
         if not line.startswith("in unit "):
@@ -71,6 +77,32 @@ def check(root, report):
                          repr(sorted(seen - expected)))
     return {"status": "checks-discharged", "units": sorted(seen),
             "scope": "reported proof obligations only; authenticity and system assurance external"}
+
+
+def check_details(lines):
+    """Require complete, clean detail rows for this pinned report format."""
+    current = None
+    required = 0
+    seen = set()
+    for line in lines:
+        if line.startswith("in unit "):
+            if current is not None and len(seen) != required:
+                raise ValueError("missing analysis detail rows")
+            match = UNIT.fullmatch(line)
+            if match is None:
+                raise ValueError("unsupported unit coverage row")
+            current, count, _ = match.groups()
+            required, seen = int(count), set()
+        elif " at " in line or "flow analyzed" in line or "pragma Assume" in line:
+            match = DETAIL.fullmatch(line)
+            if match is None or current is None:
+                raise ValueError("unsupported or non-clean analysis detail row")
+            name, filename = match.groups()
+            if Path(filename).stem != current or name.lower() in seen:
+                raise ValueError("misbound or duplicate analysis detail row")
+            seen.add(name.lower())
+    if current is None or len(seen) != required:
+        raise ValueError("missing analysis detail rows")
 
 
 def main():
