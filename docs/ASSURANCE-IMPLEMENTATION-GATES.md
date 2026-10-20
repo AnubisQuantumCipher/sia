@@ -148,6 +148,11 @@ Recovery completes after those replacements cease. This is a tracked liveness
 failure and a repair obligation, not a green acceptance result. The combined
 backlog, exec, ledger and original `EpochMerge` suites pass 48 tests with that
 negative behavior explicitly preserved.
+The [immutable discovery candidate](../spark/CONSOLIDATION-SNAPSHOT.md)
+adds a bounded Git tree reader and real immutable-ID tests. The combined
+snapshot/recovery suite passes 50 tests. This primitive is deliberately not
+wired into recovery: durable reference binding, schema migration, arrivals,
+compatibility, source revalidation and positive churn recovery remain required.
 
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
