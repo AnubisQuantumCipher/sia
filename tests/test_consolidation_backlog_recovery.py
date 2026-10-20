@@ -5,6 +5,7 @@ This is not a resident-service or signed-ledger acceptance campaign.
 """
 import copy
 from pathlib import Path
+import subprocess
 import unittest
 from unittest import mock
 
@@ -62,6 +63,49 @@ class ConsolidationBacklogRecovery(unittest.TestCase):
         self.assertEqual({path: path.read_bytes() for path in self.paths},
                          self.originals)
         self.assertFalse(self.fixture.epoch.exists())
+
+    def test_unlink_rescan_finishes_without_losing_protected_days(self):
+        original_commit = subprocess.check_output(
+            ["git", "-C", self.lib.CORPUS, "rev-parse", "HEAD"],
+            text=True, timeout=10).strip()
+        retired = self.paths[-1]
+        retired_rel = retired.relative_to(self.lib.CORPUS).as_posix()
+        pins = self.pins - {retired_rel[:-3]}
+        memo = {}
+        self.lib._mark_consolidation_pending(memo)
+        identity = memo["consolidation_pending"]["id"]
+        generations = []
+        with mock.patch.object(self.lib, "MAX_CONSOLIDATION_DAYS_PER_RUN", 1), \
+                mock.patch.object(self.lib.siamind, "pending_user_pin_slugs",
+                                  return_value=pins), \
+                mock.patch.object(self.lib, "_settle_consolidation_ledger") as settle:
+            for phase, remaining in (
+                    ("complete", 2), ("complete", 1), ("scan", 0),
+                    ("complete", 1), ("complete", 0)):
+                self.lib._recover_pending_consolidation(memo)
+                state = self.scan()
+                generations.append(state["generation"])
+                self.assertEqual((state["phase"], len(state["pending_days"])),
+                                 (phase, remaining))
+                self.assertEqual(state["claims"], [])
+                if self.lib._consolidation_scan_debt():
+                    settle.assert_not_called()
+                    self.assertEqual(memo["consolidation_pending"]["id"], identity)
+                    self.assertNotIn("applied_at", memo["consolidation_pending"])
+                memo = self.lib.load_memo()
+            settle.assert_called_once()
+        self.assertEqual(generations[0], generations[1])
+        self.assertNotEqual(generations[1], generations[2])
+        self.assertEqual(generations[2:], [generations[2]] * 3)
+        self.assertNotIn("consolidation_pending", memo)
+        self.assertFalse(retired.exists())
+        for path in self.paths[:-1]:
+            self.assertEqual(path.read_bytes(), self.originals[path])
+        retained = subprocess.check_output(
+            ["git", "-C", self.lib.CORPUS, "show",
+             original_commit + ":" + retired_rel], timeout=10)
+        self.assertEqual(retained, self.originals[retired])
+        self.assertTrue(self.fixture.epoch.exists())
 
 
 if __name__ == "__main__":

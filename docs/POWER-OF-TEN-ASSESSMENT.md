@@ -109,3 +109,32 @@ reported proof scope without repeating the heavy run.
 This closes the missing compiler restriction for that source
 configuration only; total stack, runtime allocation, resource admission,
 target timing and the rest of rule 3 remain OPEN.
+
+## Repeatable Python inventory
+
+Run from the repository root:
+
+```sh
+python3 scripts/assurance_source_inventory.py \
+  bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp bin/sia-intent-review
+python3 -m unittest tests.test_assurance_source_inventory -v
+```
+
+The tool reads bounded regular source files, hashes their exact bytes, parses
+without importing inspected code, and emits `inventory-only`. Its successful
+exit means inventory execution completed, never compliance. It rejects
+unsupported/oversized inputs rather than returning a partial report.
+Final-component symlinks and nonregular files refuse; parent-directory symlinks
+and hard links are not excluded. Paths remain operator-selected and are not
+an authenticated containment interface.
+CPython parser allocations are not statically bounded by this tool; run the
+inventory under an external process budget when inspecting untrusted source.
+The node cap is checked after parsing and is not a parser-memory guarantee.
+
+The initial runtime pass (`power-of-ten-runtime-inventory-v2.json`, external
+evidence directory) covers 95 files and reports 317 physical-span findings,
+121 while-loop review sites, 692 direct dynamic-call sites and 31 expanded-scope
+sites. These overlap and are not counts of independently established defects.
+Aliases, callbacks, implicit dispatch, native code, call-graph cycles and
+semantic loop bounds require further analysis. Retain all findings; do not
+create an exception baseline that silently grants compliance.
