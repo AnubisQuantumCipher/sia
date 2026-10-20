@@ -313,3 +313,20 @@ allocation, authenticated producer/currentness, full capacity compatibility,
 execution/retirement, late-arrival handoff and legacy migration remain open.
 There is no transition out of a nonempty claimed batch until the real consumer
 protocol is implemented and qualified; there is no acknowledgment shortcut.
+
+Exact-source staging reproduction:
+
+- Commit: `cfd7727b404264b5b6de5a7e63a85de440e06653`.
+- Git archive SHA-256: `a875e237ab893131f7188e4a225dfe419a08fce72fe4607e6988d901d0b015c4`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Exit: 0; the retained raw log reports 86 tests passed.
+- External evidence: `consolidation-delivery-reproduction-v1` retains the
+  archive, extracted source, exact command, raw output and receipt. It covers
+  delivery/discovery/admission, fresh-process cuts, original EpochMerge and
+  exemplar cases, module ownership and explicit facade export contracts.
+- Independent GPT-6.1 review: `consolidation-delivery-review-v3.txt`;
+  the earlier blocker and both pre-repair failing regressions remain retained.
+
+The source-bound result qualifies only the staged component and the named
+regressions. The installed runtime, execution/retirement protocol and full
+assurance/release gates remain incomplete.

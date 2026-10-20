@@ -245,3 +245,13 @@ coverage and `installAvailable: false`. Raw issue/catalog responses are retained
 in `marketplace-readback-after-admission-exec-v1` externally. The v1.8.4
 marketplace publication gate remains open; passing the experimental component
 tests does not approve or publish that release.
+
+### Staging checkpoint reproduction
+
+The exact committed-source staging archive passes 86 focused tests, including
+original epoch recovery, module ownership, typed replay refusal and actual
+process-death staging cuts. See the source/hash/command receipt in
+[`CONSOLIDATION-SNAPSHOT.md`](../spark/CONSOLIDATION-SNAPSHOT.md). The independent
+GPT-6.1 review found no remaining blocker for staging after the retained fixes.
+The next obligation is the actual consumer's execution/retirement protocol; no
+new code is installed or promoted to publication authority by this result.
