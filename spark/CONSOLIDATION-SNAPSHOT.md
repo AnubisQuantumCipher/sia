@@ -368,3 +368,16 @@ Next, persist execution intent before allowing missing-source recovery, then
 qualify consumer completion, cursor advancement and retirement with fresh
 process cuts. The installed churn defect, protected ownership, late-arrival
 handoff, capacity compatibility, and release gates remain open.
+
+Exact-source executor reproduction:
+
+- Commit: `6251b4924a25ab16f96756c8b04e9ce0907d5388`.
+- Git archive SHA-256: `099f90bc6d0dfdea678335ba54950011860700485687938dab2097f7f7149b73`.
+- Python 3.14.7; git version 2.55.0; 90 tests passed, exit 0.
+- External evidence: `consolidation-executor-reproduction-v1` retains
+  the archive, extracted source, command, receipt and raw output.
+- Review addendum: `consolidation-executor-review-v2.txt` confirms the
+  fixture corrections and development-source hashes; archive reproduction
+  completed afterward. The reviewer did not rerun the suite.
+- No installed-runtime change, staged execution transition, SPARK change
+  or whole-system equivalence proof is included in this checkpoint.

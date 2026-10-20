@@ -255,3 +255,13 @@ process-death staging cuts. See the source/hash/command receipt in
 GPT-6.1 review found no remaining blocker for staging after the retained fixes.
 The next obligation is the actual consumer's execution/retirement protocol; no
 new code is installed or promoted to publication authority by this result.
+
+The legacy claim executor has now been decomposed into reviewable routines,
+with scan acknowledgment kept at the original entry point. Its committed
+source `6251b4924a25ab16f96756c8b04e9ce0907d5388` passes 90 targeted checks
+from a fresh archive, including original recovery regressions, retained-claim
+and index-failure replay controls, and the local sixty-line routine budget.
+See `CONSOLIDATION-SNAPSHOT.md` for the source/archive receipt and retained
+initial test failures. This prepares reusable effects; staged execution
+intent, completion/retirement, installed migration and G4 acceptance remain
+open. No existing readiness gate or protected ownership requirement changes.
