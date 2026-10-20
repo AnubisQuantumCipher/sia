@@ -12,11 +12,19 @@ import multiprocessing
 import os
 from pathlib import Path
 import signal
+import types
 import unittest
 from unittest import mock
 
 from tests import sia_test_home  # noqa: F401 -- isolate before runtime imports
 from tests import test_controller_source_ack as ack_tests
+
+
+def _ack_fsync_patch(callback):
+    import siasourceack
+    shim = types.SimpleNamespace(**vars(os))
+    shim.fsync = callback
+    return mock.patch.object(siasourceack, "os", shim)
 
 
 def _die_at_boundary(case, selected, queue_boundary=False):
@@ -156,7 +164,7 @@ class AssuranceAckProcessDeath(unittest.TestCase):
                 self.assertIn(expected, synced,
                               "recovered archive declared durable without directory fsync")
 
-        with mock.patch.object(os, "fsync", side_effect=fsync), \
+        with _ack_fsync_patch(fsync), \
                 mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
             self.assertIsNone(case.acknowledge())
         case.assert_final()
@@ -198,7 +206,7 @@ class AssuranceAckProcessDeath(unittest.TestCase):
                                         "missing recovered directory synchronization")
                     synced.clear()
 
-                with mock.patch.object(os, "fsync", side_effect=fsync), \
+                with _ack_fsync_patch(fsync), \
                         mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=boundary):
                     case.acknowledge()
                 case.assert_final()
@@ -227,7 +235,7 @@ class AssuranceAckProcessDeath(unittest.TestCase):
                 raise failure
             return real(fd)
 
-        with mock.patch.object(os, "fsync", side_effect=fsync), \
+        with _ack_fsync_patch(fsync), \
                 mock.patch.object(case.lib, ack_tests.BOUNDARY, side_effect=reached.append):
             with self.assertRaises(OSError) as caught:
                 case.acknowledge()
