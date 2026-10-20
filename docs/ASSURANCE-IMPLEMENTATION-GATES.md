@@ -104,6 +104,17 @@ All three tests in `tests.test_consolidation_backlog_recovery` passed. Settlemen
 is a controlled mock: this does not establish real signed-ledger durability,
 process-crash recovery, or installed recall availability.
 
+`tests.test_consolidation_exec_recovery` adds separate interpreter executions
+for preparation, SIGKILL immediately after the applied-marker writer returns,
+and recovery. All runtime imports use an explicitly marked disposable HOME.
+The recovery process observes the readiness refusal before settlement, must
+not repeat consolidation, and emits a controlled witness of the exact retained
+marker before marker removal. Original protected source bytes remain intact.
+The combined exec and backlog suite passes five tests, including refusal of
+worker invocation without an explicit fixture home. This closes that isolated
+fresh-exec cut only: no signed-ledger qualification, resident front-door
+execution, storage power-loss model, or production readiness is established.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
