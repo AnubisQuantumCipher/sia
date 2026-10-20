@@ -223,3 +223,21 @@ The default budget and finite per-command timeout do not establish a wall-clock
 deadline: lease waiting, Git/CPython allocation and full bounded tree-listing
 materialization remain in the runtime assumptions. No Power of Ten compliance,
 whole-system liveness, formal proof or release qualification is claimed here.
+
+Exact-source traversal reproduction:
+
+- Commit: `218c18acd8367974fa0fb2e0ecfead10dedb6843`.
+- Git archive SHA-256: `214f4344ab36bb9e623d483bc462dc127d74d39750ce2304c5c66b4105d5338c`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Exit: 0; raw log reports 32 tests passed, including the explicitly
+  negative forged-cursor and legacy-churn characterizations.
+- External evidence: `consolidation-discovery-reproduction-v1` retains the
+  exact archive, extracted source, command, raw log and receipt.
+- Independent GPT-6.1 review: `consolidation-discovery-review-v2.txt`,
+  read-only inspection with no blocker in the stated component scope.
+
+Command:
+
+```sh
+python3 -B -m unittest tests.test_consolidation_discovery tests.test_consolidation_admission_exec tests.test_consolidation_admission tests.test_consolidation_snapshot tests.test_consolidation_exec_recovery tests.test_consolidation_backlog_recovery -v
+```
