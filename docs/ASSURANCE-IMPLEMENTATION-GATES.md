@@ -96,6 +96,14 @@ recall wait. Earlier successful readiness checks do not establish current
 availability. Investigate recovery progress and retain the refusal; do not
 clear its marker or bypass the read gate to make recall appear healthy.
 
+The isolated consolidation recovery regression now injects a ledger-settlement
+exception after scan completion. It requires the durable applied marker and
+its ledger binding to survive reload, then requires retry to settle that exact
+marker without repeating consolidation. Protected source bytes remain intact.
+All three tests in `tests.test_consolidation_backlog_recovery` passed. Settlement
+is a controlled mock: this does not establish real signed-ledger durability,
+process-crash recovery, or installed recall availability.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.

@@ -107,6 +107,38 @@ class ConsolidationBacklogRecovery(unittest.TestCase):
         self.assertEqual(retained, self.originals[retired])
         self.assertTrue(self.fixture.epoch.exists())
 
+    def test_settlement_failure_retains_applied_identity_for_retry(self):
+        memo = {}
+        self.lib._mark_consolidation_pending(memo)
+        identity = memo["consolidation_pending"]["id"]
+        with mock.patch.object(self.lib.siamind, "pending_user_pin_slugs",
+                               return_value=self.pins), \
+                mock.patch.object(self.lib, "_settle_consolidation_ledger",
+                                  side_effect=RuntimeError("injected settlement failure")):
+            with self.assertRaisesRegex(RuntimeError, "injected settlement failure"):
+                self.lib._recover_pending_consolidation(memo)
+        persisted = self.lib.load_memo()
+        marker = copy.deepcopy(persisted["consolidation_pending"])
+        self.assertEqual(marker["id"], identity)
+        self.assertIn("applied_at", marker)
+        self.assertIn("ledger", marker)
+        self.assertEqual(self.lib._consolidation_scan_debt(), "")
+        # A completed scan must not erase an unsettled named transaction.
+        self.assertEqual(self.lib._pending_consolidation_marker(persisted), marker)
+        settled = []
+        with mock.patch.object(self.lib, "consolidate_corpus",
+                               side_effect=AssertionError("applied work repeated")), \
+                mock.patch.object(self.lib, "_settle_consolidation_ledger",
+                                  side_effect=lambda state: settled.append(
+                                      copy.deepcopy(state["consolidation_pending"]))) as settle:
+            self.lib._recover_pending_consolidation(persisted)
+            settle.assert_called_once()
+        self.assertEqual(settled, [marker])
+        self.assertNotIn("consolidation_pending", self.lib.load_memo())
+        self.assertEqual({path: path.read_bytes() for path in self.paths},
+                         self.originals)
+        self.assertFalse(self.fixture.epoch.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
