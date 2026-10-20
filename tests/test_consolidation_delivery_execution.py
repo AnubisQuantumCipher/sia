@@ -201,6 +201,19 @@ class ConsolidationDeliveryExecution(unittest.TestCase):
         self.assertFalse(leaf.exists())
         self.assert_retained_batch(claimed, "effects-returned")
 
+    def test_returned_state_byte_capacity_is_checked_before_source_effects(self):
+        claimed = self.stage()
+        executing = dict(claimed, phase="executing")
+        limit = len(self.delivery._encoded(executing).encode("utf-8"))
+        self.assertGreater(
+            len(self.delivery._encoded(
+                dict(claimed, phase="effects-returned")).encode("utf-8")), limit)
+        with mock.patch.object(self.delivery, "MAX_BYTES", limit):
+            with self.assertRaisesRegex(ValueError, "exceeds its byte bound"):
+                self.execute()
+        self.fixture.assert_sources_unchanged()
+        self.assert_retained_batch(claimed, "claimed")
+
 
 if __name__ == "__main__":
     unittest.main()

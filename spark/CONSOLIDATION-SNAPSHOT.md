@@ -410,6 +410,15 @@ can remain after the executor returns. Replay of `effects-returned` revalidates
 claim/source lineage but does not repeat effects. Qualification of every source
 outcome and exact event-index completeness remains required before retirement.
 
+The final phase's exact encoded size is checked before precommit or source
+effects. An initial implementation checked only the current/intent state; a
+near-limit journal could fit `executing` but not the longer `effects-returned`
+phase. A negative test reproduced source cleanup followed by final-state size
+refusal. Its source, failing preservation oracle and raw output are retained in
+`consolidation-execution-capacity-negative-v1`. The preflight repairs this
+deterministic encoding edge; it does not reserve disk space or guarantee the
+later atomic write succeeds. A failed write retains execution intent for retry.
+
 A negative control removes a real event-index leaf after effects return.
 Replaying the returned-attempt state still succeeds and does not repair that
 leaf. This explicitly demonstrates that the state is **not** an index

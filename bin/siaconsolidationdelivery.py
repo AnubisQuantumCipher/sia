@@ -219,6 +219,8 @@ def execute_claims(owner, expected):
             return state
         if state["phase"] not in {"claimed", "executing"}:
             raise ValueError("snapshot delivery has no executable claims")
+        # Check the longer final phase's encoded size before effects.
+        _encoded(dict(state, phase="effects-returned"))
         if state["phase"] == "claimed":
             _require_live_sources(owner, state["claims"])
         else:
