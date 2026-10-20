@@ -153,5 +153,7 @@ runtime harnesses, full proof and raw/summary validation. It reported 788
 discharged checks across the complete 16-unit scope, using all tagged warnings
 and the same prover set reordered to Z3/CVC5/Alt-Ergo under unchanged caps.
 The linked warning-gate evidence binds that fresh development snapshot.
-Committed-source reproduction remains pending; runtime restoration and the
-external premises above remain unqualified.
+Committed-source reproduction subsequently passed at `1f71a97`, with all 788
+reported checks and the complete raw/summary gate accepted. Independent
+evidence review found no blocker within that scope. Runtime restoration and
+the external premises above remain unqualified.

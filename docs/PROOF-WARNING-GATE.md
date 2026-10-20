@@ -1,9 +1,9 @@
 # Complete proof diagnostics
 
-Status: fresh development build, all eight harnesses, full proof and complete
-diagnostic validation passed. Independent completed-evidence review found no
-blocker within that scope; fresh committed reproduction remains required.
-No broader zero-warning or Power of Ten acceptance is claimed.
+Status: fresh development and committed-source build, all eight harnesses,
+full proof and complete diagnostic validation passed. Independent evidence
+review found no blocker within this conditional pure-policy scope. No broader
+zero-warning or Power of Ten acceptance is claimed.
 
 The raw `.spark` output behind the incremental continuity proof contains
 miscellaneous warnings even though its final flow-detail rows are clean.
@@ -70,7 +70,8 @@ Development-v11 completed the full campaign in a new source/build directory:
 strict build, all eight runtime harnesses, full proof and raw/summary validation
 returned zero. GNATprove reported all 788 checks discharged across the complete
 16-unit scope, with no justified or unproved checks. The validator accepted all
-required raw diagnostic channels and found no declared assumptions or exclusions.
+required raw diagnostic channels; `pragma_assume`, `skip_proof` and
+`skip_flow_proof` lists were empty. Normal modular dependencies remain.
 The [derived receipt](PROOF-WARNING-EVIDENCE.json) binds source inputs,
 before/after proof-tool identities, commands, raw reports and the
 [versioned summary](evidence/proof-warning-v1.txt). Its generator also checked
@@ -82,6 +83,19 @@ The [independent completed-evidence review](evidence/proof-warning-development-r
 checked source/archive, tool, raw-report and retained-failure bindings. Its
 model-generated assessment is separate from the command outputs.
 
+The subsequent [committed reproduction receipt](PROOF-WARNING-COMMITTED-EVIDENCE.json)
+binds exact commit `1f71a97158f4f939497a90520be6191d4a082d4e`. The unchanged
+`spark/verify-policy.sh` ran from a new archive/build directory under the same
+600-second command limit, 10-second prover limit, 512-MB limit and one job.
+Build, every runtime harness, full proof and coverage validation passed;
+all 788 reported checks across sixteen units were discharged. The
+[committed summary](evidence/proof-warning-committed-v2.txt) matches the
+receipt's summary hash. Every archived file was compared with that Git commit,
+and the recorded tool hashes matched before and after.
+The [independent review](evidence/proof-warning-committed-review-v1.txt) found no
+blocker in this fresh reproduction evidence. These conditional contracts still
+do not authenticate producer inputs or establish deployed runtime continuity.
+
 The optional timing-wrapper launch first failed because `/usr/bin/time` is
 absent. `continuity-policy-development-v11-launcher-failure.json` records that
 pre-run failure; no proof had started. The unchanged runner then executed
@@ -89,7 +103,8 @@ without that optional wrapper. V10 and the earlier committed timeout remain
 failed runs; V11 does not relabel either one.
 
 The earlier 782 discharged obligations remain evidence for their recorded
-source/profile. They do not establish zero-warning compliance. Fresh build,
-every harness, full proof, complete raw diagnostics, independent review and
-exact committed reproduction are required to accept this repair. None of
-these controls establishes runtime continuity or system certification.
+source/profile. They do not establish zero-warning compliance. The new repair
+passed fresh build, every harness, full proof, complete raw diagnostics,
+independent evidence review and committed reproduction. Any later proof-input
+change requires fresh qualification. None of these controls establishes
+runtime continuity or system certification.

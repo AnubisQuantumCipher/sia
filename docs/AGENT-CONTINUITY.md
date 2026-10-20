@@ -193,7 +193,8 @@ retention generations, source ordering and supersession, origin, coverage,
 canonical padding, durable-witness bindings, current revision/dirty references
 and uncertain operations. It has no action-grant result.
 
-Complete proof acceptance remains OPEN. Development snapshots v2 through v7
+These early attempts did not establish complete proof acceptance.
+Development snapshots v2 through v7
 built and passed their continuity runtime controls, but each all-unit proof
 attempt reached the existing 600-second limit without a complete report.
 Those failures remain in the external evidence directories; earlier runtime
@@ -276,7 +277,10 @@ warnings, checked all raw diagnostic channels and tried the same provers in
 Z3/CVC5/Alt-Ergo order. Strict build, all eight harnesses, the full proof
 (788 reported checks) and coverage validation passed under the unchanged
 resource caps. [Warning-gate evidence](PROOF-WARNING-GATE.md) records the exact
-scope and retained failures. Fresh committed reproduction remains pending.
+scope and retained failures. Fresh committed reproduction subsequently passed
+at `1f71a97`: the same 788 reported checks and complete raw/summary validation,
+with independent evidence review. This closes the pure-core reproduction gate
+for those exact inputs; the runtime obligations below remain open.
 
 Witness production, protected freshness, original-reference resolution and
 cross-checkpoint operation history remain external obligations. In particular,

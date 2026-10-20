@@ -26,9 +26,10 @@ The [warning-gate repair](PROOF-WARNING-GATE.md) enables all tagged warnings,
 preserves the original test mutations/contracts, and checks every unit's raw
 diagnostic channels. The stricter fresh development campaign passed build,
 every harness, all 788 reported proof checks and the raw/summary validator.
-Fresh committed reproduction remains pending; the historical scoped proof
-results and the discovered warning evidence are both retained. This scoped
-gate result is not runtime-wide Power of Ten compliance.
+Fresh committed reproduction also passed at `1f71a97`, with independent
+evidence review. Historical scoped proof results, timeouts and the discovered
+warning evidence are retained. This scoped gate result is not runtime-wide
+Power of Ten compliance.
 
 ## Rule mapping
 

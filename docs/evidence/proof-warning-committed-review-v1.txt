@@ -1,0 +1,14 @@
+Origin: model-generated independent review; not proof or execution evidence.
+Reviewer: existing /root/assurance_architecture_review, actual GPT-6.1.
+Scope: completed committed-v2 evidence and PROOF-WARNING-COMMITTED-EVIDENCE.json.
+
+No blocker found for fresh committed pure-policy verification at 1f71a97158f4f939497a90520be6191d4a082d4e.
+
+Verified archive/source bindings, current proof inputs, unchanged runner/caps, before/after tool roster, raw-report and summary hashes, and retained prior-failure hash. Build, eight harnesses, full proof and coverage all exit 0: 788 discharged checks, sixteen units, with no raw warnings/errors or declared assumptions/exclusions.
+
+This closes the fresh reproduction gate for these conditional contracts—not authenticated producers, runtime continuity or authority. C13 design blockers remain open. No jobs or edits performed.
+
+Scope clarification: the empty declared-assumption/exclusion lists are
+pragma_assume, skip_proof and skip_flow_proof. Normal modular dependencies,
+toolchain trust and environmental premises remain; this is not assumption-free
+whole-system proof.
