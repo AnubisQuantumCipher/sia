@@ -1,6 +1,6 @@
 # Immutable consolidation discovery candidate
 
-Status: experimental reader and retention-pin primitives. The resident scanner is unchanged and the
+Status: experimental admitted snapshot discovery. The resident scanner is unchanged and the
 cursor-churn defect remains OPEN. This is not a new accepted retention policy.
 
 ## Implemented primitive
@@ -167,3 +167,59 @@ Exact-source reproduction for the process-death checkpoint:
   and receipt. Independent GPT-6.1 read-only review is retained as
   `consolidation-admission-exec-review-v1.txt`; it found no blocker for this
   limited component scope and does not supply certification independence.
+
+## Admitted immutable traversal
+
+`siaconsolidationdiscovery.discover` composes the retained admission journal,
+read-only pin verification and exact commit-tree resolution under the corpus
+lease. It traverses the corpus root, `events` and one organ level with a stack
+bounded to three frames. Each resumed frame must match its parent entry and
+the root must match the admitted commit. The returned cursor includes the exact
+admission record. Moving HEAD and replacement objects are not traversal inputs.
+
+Each call accepts a bounded work budget. A visited entry or exhausted frame
+consumes a unit; empty trees cannot create an uncharged loop. Ancestors are
+visited one entry at a time so the active child remains anchored to the last
+parent entry. Leaf entries are read in bounded batches. Candidate output is
+limited by the same budget and includes path, blob identity, organ, date and
+shard number. Existing event-path parsing and the pinned cutoff decide which
+paths are candidates; blob identity is not live-source validation.
+
+The copied input cursor is never advanced in place. If a later descendant read
+fails after private progress, no result is returned and the caller can replay
+the original cursor. This is not durable exactly-once delivery: the production
+consumer must atomically retain the next cursor together with its pending
+candidate batch before acknowledging or consuming that batch.
+
+Tests cover continuing atomic replacements and commits between single-unit
+steps, deterministic replay, immutable candidate blob identities and a late old
+day remaining intact outside the admitted snapshot. Additional controls cover
+multiple organs, shards, the exclusive cutoff boundary, invalid calendar dates,
+empty corpus/events trees, batching equivalence, changed bindings, missing pins
+and a descendant-read failure after private advancement. The combined discovery,
+admission, snapshot and prior recovery suites pass 32 tests.
+
+One passing test deliberately records an **UNPROVEN boundary**: a forged
+completed cursor can return no candidates despite eligible sources existing.
+Structural validation cannot authenticate traversal history. This API is only
+an internal candidate pending a durable owner and, for a hostile same-user threat
+model, a protected authority boundary. It must not be exposed as a caller-owned
+completion certificate or used to clear recovery debt. The production legacy
+churn characterization remains unchanged and still records the known defect.
+
+Remaining integration work:
+
+- Persist pending candidates and cursor as one recoverable state, bind their
+  consumption to the named maintenance transaction, and forbid skipping a batch.
+- Preserve legacy claims and debt through explicit migration.
+- Durably schedule post-snapshot arrivals without including them in this
+  snapshot's completion claim or repeatedly restarting this snapshot.
+- Preserve all live complete-shard, source identity, protection, open-take,
+  epoch/index lineage and unlink revalidation gates.
+- Qualify pin lifecycle/resource budgets, filename compatibility, failures within
+  durable operations, selected resident restart and actual recall.
+
+The default budget and finite per-command timeout do not establish a wall-clock
+deadline: lease waiting, Git/CPython allocation and full bounded tree-listing
+materialization remain in the runtime assumptions. No Power of Ten compliance,
+whole-system liveness, formal proof or release qualification is claimed here.

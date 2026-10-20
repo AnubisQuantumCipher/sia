@@ -200,6 +200,22 @@ storage power-loss qualification. Snapshot traversal integration, legacy debt
 migration, late arrivals, pin lifecycle and recovery bounds remain required.
 The scanner's continuing-write characterization is still an unresolved defect.
 
+The subsequent admitted discovery component now joins the retained journal,
+exact commit pin and immutable tree ancestry under the real corpus lease.
+Its continued-write test completes the original snapshot while preserving a
+later eligible arrival outside that snapshot's coverage. Batched/single-unit
+traversal, empty trees, cutoff/shard cases and failure-after-progress retry are
+tested. The combined discovery and existing recovery suites pass 32 tests.
+The old resident scanner is unchanged: this is component integration, not the
+completed runtime repair.
+
+A retained negative control shows that a caller can supply a forged completed
+cursor. Structural checks do not prove traversal history. Durable cursor/batch
+ownership, named transaction consumption and protected authority remain required
+before any discovery completion can clear recovery debt. See
+[`Admitted immutable traversal`](../spark/CONSOLIDATION-SNAPSHOT.md#admitted-immutable-traversal)
+for scope and remaining gates.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.

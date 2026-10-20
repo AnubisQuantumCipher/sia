@@ -87,6 +87,18 @@ def check_pin(run, corpus, generation, commit):
     return {"generation": generation, "commit": commit, "ref": name}
 
 
+def commit_tree(run, corpus, commit):
+    """Resolve the tree of an exact commit, with replacement objects disabled."""
+    object_id(commit)
+    kind = _git(run, corpus, ["cat-file", "-t", commit], 64)
+    if kind.returncode != 0 or kind.stdout != "commit\n":
+        raise ValueError("snapshot identity is not an available commit")
+    result = _git(run, corpus, ["rev-parse", "--verify", commit + "^{tree}"], 1024)
+    if result.returncode != 0:
+        raise ValueError("snapshot commit tree lookup failed")
+    return object_id(result.stdout.rstrip("\n"))
+
+
 def parse_tree(text):
     if not isinstance(text, str) or len(text) > MAX_TREE_BYTES \
             or len(text.encode("utf-8")) > MAX_TREE_BYTES:
