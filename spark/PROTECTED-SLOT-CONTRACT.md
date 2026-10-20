@@ -49,7 +49,8 @@ Exhausted generations refuse; no wrap or automatic reset is permitted.
 requires its own read authorization. It returns only the retained status and
 fixture receipt, never arbitrary payload or corpus content. A client timeout
 means unknown outcome, not failure, success or permission to change identity.
-An exact completed retry returns the original receipt without another write,
+An admitted exact completed outcome-query/retry returns the original receipt
+without another write,
 generation or signature. Reuse of an identity with different request bytes
 refuses. A missing record is explicitly Unknown, never inferred success.
 
@@ -60,7 +61,11 @@ its target fields bind the immutable historical operation's protocol/key/domain
 and request digest. These two domains are distinct and may not be substituted.
 An expired write grant and knowledge of a transaction identity grant no read
 authority. A completed `Publish_Fixture` retry follows this same read gate;
-it cannot restart admission or renew its write grant. Before read authorization,
+it cannot restart admission or renew its write grant. The initial wire proposal
+in `PROTECTED-SLOT-WIRE.md` does not admit completed Publish retry envelopes:
+it requires an explicit current-authorized Query and uniformly refuses Publish
+retries. Returning a retained result through a Publish envelope requires a future
+separately reviewed protocol extension. Before read authorization,
 replies reveal no distinction between an unknown, conflicting or completed
 operation. Typed Unknown/Conflict/Committed outcomes are available only after
 that gate. Pending recovery continues from protected intent without treating
