@@ -1,4 +1,5 @@
 """Fresh-process recovery after execution intent, publication and cleanup cuts."""
+import hashlib
 import json
 from pathlib import Path
 import signal
@@ -21,9 +22,9 @@ class ConsolidationExecutionExec(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stderr)
         return json.loads(result.stdout) if expected == 0 else None
 
-    def check_cut(self, home, cut):
+    def check_cut(self, home, cut, later=False):
         (home / ".sia-exec-fixture").write_text("disposable-test-home\n")
-        claimed = self.invoke(home, "prepare")
+        claimed = self.invoke(home, "prepare-later" if later else "prepare")
         state = home / ".local/state/sia"
         corpus = home / ".local/share/sia/corpus"
         sources = sorted((corpus / "events/org").glob("*.md"))
@@ -34,9 +35,14 @@ class ConsolidationExecutionExec(unittest.TestCase):
         journal = state / "consolidation-snapshot-delivery.json"
         epoch = corpus / "epochs/org/2026-w02.md"
         self.invoke(home, cut, -signal.SIGKILL)
+        originals = self.check_originals_prefix(home, cut, claimed, original)
+        if later:
+            self.assertNotEqual(originals["commit"], claimed["admission"]["commit"])
         phase = "effects-returned" if cut == "kill-persisted" else "executing"
+        if cut.startswith("kill-originals-"):
+            phase = "claimed"
         self.assertEqual(json.loads(journal.read_text()), dict(claimed, phase=phase))
-        if cut == "kill-intent":
+        if cut == "kill-intent" or cut.startswith("kill-originals-"):
             self.assertFalse(epoch.exists())
             self.assertTrue(all(path.exists() for path in sources))
         elif cut == "kill-epoch":
@@ -54,9 +60,52 @@ class ConsolidationExecutionExec(unittest.TestCase):
         if before is not None:
             self.assertEqual(epoch.read_bytes(), before)
         self.assertEqual((state / "memo.json").read_bytes(), memo)
-        self.check_replay_and_retention(home, returned, original)
+        self.assertEqual(json.loads((state / "consolidation-originals.json").read_text()),
+                         dict(originals, phase="retained"))
+        if later:
+            self.sever_head_history(corpus)
+        self.check_replay_and_retention(home, returned, original, later)
 
-    def check_replay_and_retention(self, home, returned, original):
+    def sever_head_history(self, corpus):
+        def git(*args):
+            return subprocess.check_output(
+                ["git", "-C", str(corpus), *args], text=True, timeout=10).strip()
+        git("add", "-u")
+        tree = git("write-tree")
+        root = git("-c", "user.name=Fixture", "-c", "user.email=t@t",
+                   "commit-tree", tree, "-m", "independent process fixture root")
+        git("update-ref", "HEAD", root)
+        git("reflog", "expire", "--expire=now", "--all")
+        git("pack-refs", "--all", "--prune")
+        git("gc", "--prune=now", "--quiet")
+        self.assertEqual(git("cat-file", "-t", root), "commit")
+
+    def check_originals_prefix(self, home, cut, claimed, original):
+        corpus = home / ".local/share/sia/corpus"
+        path = home / ".local/state/sia/consolidation-originals.json"
+        value = json.loads(path.read_text())
+        binding = hashlib.sha256(json.dumps({
+            "admission": claimed["admission"], "claims": claimed["claims"]},
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        phase = "planned" if cut in {
+            "kill-originals-plan", "kill-originals-pin"} else "retained"
+        self.assertEqual(value, {"schema": "sia-consolidation-originals-v1",
+                                 "binding": binding, "commit": value["commit"],
+                                 "phase": phase})
+        found = subprocess.run(
+            ["git", "-C", str(corpus), "rev-parse", "--verify", "--quiet",
+             "refs/sia/consolidation-originals/" + binding],
+            capture_output=True, text=True, timeout=10)
+        expected = (1, "", "") if cut == "kill-originals-plan" else (
+            0, value["commit"] + "\n", "")
+        self.assertEqual((found.returncode, found.stdout, found.stderr), expected)
+        for relative, raw in original.items():
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(corpus), "cat-file", "blob",
+                 value["commit"] + ":" + relative], timeout=10), raw)
+        return value
+
+    def check_replay_and_retention(self, home, returned, original, later=False):
         corpus = home / ".local/share/sia/corpus"
         journal = home / ".local/state/sia/consolidation-snapshot-delivery.json"
         retained = journal.read_bytes()
@@ -76,18 +125,30 @@ class ConsolidationExecutionExec(unittest.TestCase):
         self.assertEqual({path.relative_to(corpus): path.read_bytes()
                           for path in corpus.rglob("*.md")
                           if ".git" not in path.parts}, before)
-        for relative, raw in original.items():
-            retained_source = subprocess.check_output(
-                ["git", "-C", str(corpus), "show",
-                 returned["admission"]["commit"] + ":" + relative], timeout=10)
-            self.assertEqual(retained_source, raw)
+        pin = home / ".local/state/sia/consolidation-originals.json"
+        commits = {json.loads(pin.read_text())["commit"]}
+        if not later:
+            commits.add(returned["admission"]["commit"])
+        for commit in commits:
+            for relative, raw in original.items():
+                self.assertEqual(subprocess.check_output(
+                    ["git", "-C", str(corpus), "show", commit + ":" + relative],
+                    timeout=10), raw)
 
     def test_actual_process_cuts_retain_intent_and_resume_exact_effects(self):
-        for cut in ("kill-intent", "kill-epoch", "kill-unlink",
+        for cut in ("kill-originals-plan", "kill-originals-pin",
+                    "kill-originals-retained", "kill-intent", "kill-epoch", "kill-unlink",
                     "kill-return", "kill-persisted"):
             with self.subTest(cut=cut), tempfile.TemporaryDirectory(
                     prefix="sia-execution-cut-") as directory:
                 self.check_cut(Path(directory), cut)
+
+    def test_later_originals_survive_fresh_process_retention_and_cleanup_cuts(self):
+        for cut in ("kill-originals-plan", "kill-originals-pin",
+                    "kill-originals-retained", "kill-unlink"):
+            with self.subTest(cut=cut), tempfile.TemporaryDirectory(
+                    prefix="sia-later-originals-cut-") as directory:
+                self.check_cut(Path(directory), cut, later=True)
 
     def test_worker_requires_fixture_opt_in(self):
         with tempfile.TemporaryDirectory(prefix="sia-execution-refusal-") as home:

@@ -535,3 +535,78 @@ Exact-source outcome-observer reproduction:
   `source-inventory.json`, with status `inventory-only` and no findings in
   its limited checks. This does not establish Power of Ten compliance,
   loop termination, absence of indirect calls or bounded allocation.
+
+## Exact original retention before execution
+
+The delivery consumer now requires a separate
+`sia-consolidation-originals-v1` journal before it can persist execution intent.
+Its binding is SHA-256 of canonical JSON containing the complete admitted
+record and canonical selected-claim state. This includes pending days and
+claim source identities, not just a set of filenames. The fixed journal binds
+that digest to one exact commit and a `planned` or `retained` phase. The
+dedicated direct reference is
+`refs/sia/consolidation-originals/<full-binding-digest>`.
+
+Under the actual corpus lease, claimed execution first revalidates every live
+source and performs the existing precommit. The retention helper selects that
+exact HEAD commit and verifies the bytes of every claimed source against its
+path-bound digest. Only then does it persist `planned`, create or replay the
+exact absent-CAS pin, read it back, and persist `retained`. Current protection
+is observed before execution intent and effects. A planned retry keeps its
+original commit even if HEAD advances; it does not substitute a new commit.
+
+Already executing or returned work requires the retained journal, exact
+direct pin, available commit and exact claimed bytes. Missing journals,
+missing/different/symbolic pins, mismatched bindings, malformed records or
+different original bytes refuse without recreating retained state. The
+delivery outcome observer reads this checked commit directly. Its previous
+bounded HEAD-history fallback remains only in the explicitly unretained
+diagnostic helper; historical refusal controls are retained for that scope.
+The delivery API no longer depends on that fallback's search window.
+
+The journal permits one claim set. It deliberately has no implicit replacement,
+pin removal or cleanup path. Later batches need an explicit lifecycle that
+preserves outstanding evidence. Existing experimental `executing` or
+`effects-returned` records without this new retention journal refuse;
+they cannot bootstrap retention after destructive effects. No installed state
+is migrated, and no production compatibility or convergence claim follows.
+
+Binding input is limited to 1,048,576 encoded bytes and the retained record to
+4096 encoded bytes. The shared state reader's larger existing input ceiling
+applies before parsing and this smaller canonical-record check. A near-limit
+planned record can fit when the longer retained phase does not: in that case
+the pin may already exist, but sources remain live and execution intent is not
+written. This is recoverable partial retention, not a no-side-effect refusal
+or disk-space reservation. Aggregate storage/ref lifecycle, CPU, memory,
+subprocess latency and lease waiting remain unproved.
+
+Git and its object store, SHA-256 binding, parsers and the bounded runner are
+trusted dependencies. The protocol requests Git fsync and uses existing atomic
+journal writes, but returned-operation cuts are not storage power-loss proof.
+Cooperative lease ownership does not authenticate state against hostile
+same-user writers. Retained bytes establish availability and identity within
+those assumptions, not source truth or permission to retire or publish.
+
+The initial development run retained one fixture failure: `git symbolic-ref`
+recursively resolved the injected target through HEAD, while the test expected
+the immediate target. The fixture now uses `--no-recurse`; production reference
+validation was unchanged. Raw failure output and source are retained in
+`consolidation-originals-development-v1`.
+
+Development-v3 passes 127 targeted tests. Actual SIGKILL cuts after planning,
+pinning and retention now independently join the exact journal phase, canonical
+claim binding, commit, source bytes and expected pin presence before recovery.
+Fresh processes also recover versions observed after admission through those
+cuts and partial cleanup; subsequent HEAD replacement, packed references and
+GC preserve exact originals for further fresh-process replay and inspection.
+The original execution cuts and admitted-source checks remain in the suite.
+
+Other controls cover planned replay after HEAD advances, missing journals
+after intent, missing/different/symbolic retained pins, conflicting planned
+pins, nonzero pin-creation results, wrong original bytes, failed journal writes,
+malformed state and record-size refusal. Exact pin removal followed by real GC
+provides the negative control: the original object becomes unavailable, the
+independent root still exists and the observer refuses without repairing state.
+The old unretained-history search failures remain explicitly diagnostic tests.
+Independent review is retained in `consolidation-originals-review-v1.txt` and
+`consolidation-originals-review-v2.txt`; reviewers did not rerun the suite.

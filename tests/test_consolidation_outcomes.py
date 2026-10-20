@@ -25,6 +25,14 @@ class ConsolidationOutcomes(unittest.TestCase):
     def inspect(self):
         return self.delivery.inspect_outcomes(self.lib, self.fixture.record)
 
+    def inspect_history_diagnostic(self):
+        # Preserve characterization of the unretained-history helper. Delivery
+        # now requires its dedicated originals pin instead of using this path.
+        with self.lib.corpus_owner():
+            state = self.delivery._load(self.lib, self.fixture.record)
+            return self.delivery.outcomes.inspect_claims(
+                self.lib, self.fixture.record, state["claims"])
+
     def execute(self):
         self.fixture.stage()
         self.fixture.execute()
@@ -122,6 +130,12 @@ class ConsolidationOutcomes(unittest.TestCase):
         self.assertNotEqual(newer, self.fixture.record["commit"])
         before = self.execute()
         self.assertEqual(self.inspect()["outcomes"][0]["disposition"], "compacted")
+        with self.lib.corpus_owner():
+            retained = self.delivery.originals.check(
+                self.lib, self.fixture.record, self.fixture.retained()["claims"])
+        self.discovery.git("update-ref", "-d",
+                           self.delivery.originals._name(retained["binding"]),
+                           retained["commit"])
         self.discovery.git("add", "-u")
         tree = self.discovery.git("write-tree")
         root = self.discovery.git("-c", "user.name=Fixture",
@@ -136,6 +150,8 @@ class ConsolidationOutcomes(unittest.TestCase):
             capture_output=True, timeout=10)
         self.assertEqual((gone.returncode, gone.stdout, gone.stderr), (1, b"", b""))
         with self.assertRaisesRegex(ValueError, "original is unavailable"):
+            self.inspect_history_diagnostic()
+        with self.assertRaisesRegex(ValueError, "pin is missing or differs"):
             self.inspect()
         self.assert_pending_unchanged(before)
 
@@ -147,15 +163,16 @@ class ConsolidationOutcomes(unittest.TestCase):
         version = self.discovery.git("rev-parse", "HEAD")
         before = self.execute()
         self.assertEqual(self.lib.corpus_commit("record fixture cleanup"), "committed")
-        expected = self.inspect()
+        expected = self.inspect_history_diagnostic()
         with mock.patch.object(self.delivery.outcomes, "MAX_HISTORY_COMMITS", 1):
             with self.assertRaisesRegex(ValueError, "original is unavailable"):
-                self.inspect()
+                self.inspect_history_diagnostic()
+            self.assertEqual(self.inspect()["outcomes"], expected)
         relative = source.relative_to(self.lib.CORPUS).as_posix()
         self.assertEqual(subprocess.check_output(
             ["git", "-C", self.lib.CORPUS, "cat-file", "blob",
              version + ":" + relative], timeout=10), raw)
-        self.assertEqual(self.inspect(), expected)
+        self.assertEqual(self.inspect_history_diagnostic(), expected)
         self.assert_pending_unchanged(before)
 
     def test_malformed_oversized_or_failed_history_results_refuse(self):
@@ -163,7 +180,7 @@ class ConsolidationOutcomes(unittest.TestCase):
             self.sources[0].read_bytes() + b"\nnew claimed bytes\n")
         self.discovery.fixture._commit()
         before = self.execute()
-        expected = self.inspect()
+        expected = self.inspect_history_diagnostic()
         run = self.lib._run_bounded_text_process
         oversized = (self.fixture.record["commit"] + "\n") * 65
         for code, stdout, stderr, message in (
@@ -179,9 +196,9 @@ class ConsolidationOutcomes(unittest.TestCase):
             with self.subTest(message=message), mock.patch.object(
                     self.lib, "_run_bounded_text_process", injected):
                 with self.assertRaisesRegex(ValueError, message):
-                    self.inspect()
+                    self.inspect_history_diagnostic()
             self.assert_pending_unchanged(before)
-        self.assertEqual(self.inspect(), expected)
+        self.assertEqual(self.inspect_history_diagnostic(), expected)
 
     def test_legacy_unmarked_source_has_no_invented_event_index_obligation(self):
         source = self.sources[0]

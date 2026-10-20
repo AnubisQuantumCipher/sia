@@ -297,3 +297,14 @@ boundary. The next prerequisite is durable, identity-bound retention of every
 claimed original before any destructive effect, including versions observed
 after snapshot admission; admission and claim identity must survive crash,
 replay and real history GC without replacing mismatched pins.
+
+The candidate now implements that pre-effect original retention: a separate
+planned/pinned/retained protocol binds the full admitted claim identity to an
+exact precommit and verifies every claimed source before execution intent.
+Executing, returned and outcome-observation paths require the retained direct
+pin and cannot repair its loss. This removes opportunistic history search from
+delivery verification. Qualification is recorded with the snapshot work.
+The single outstanding claim-set journal still needs a defined lifecycle;
+all-batch completion, protected retirement authority, installed migration and
+G4 resident acceptance remain OPEN. Content retention does not authenticate
+origin, execution history or current permission to delete.

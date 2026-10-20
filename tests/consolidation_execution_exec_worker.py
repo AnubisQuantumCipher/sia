@@ -13,7 +13,7 @@ from consolidation_delivery_exec_worker import load_admission
 from consolidation_exec_worker import runtime
 
 
-def prepare(lib):
+def prepare(lib, later=False):
     prepare_request(lib)
     stamp = lib.datetime.datetime.fromisoformat("2026-01-06T12:00:00+00:00")
     lib.update_day_page("org", "2026-01-06", [
@@ -30,6 +30,9 @@ def prepare(lib):
     admission = importlib.import_module("siaconsolidationadmission")
     delivery = importlib.import_module("siaconsolidationdelivery")
     record = admission.admit(lib, **request)
+    if later:
+        source = Path(lib.CORPUS) / "events/org/2026-01-05.md"
+        source.write_bytes(source.read_bytes() + b"\nlater claimed version\n")
     delivery.offer(lib, record)
     return delivery.prepare_claims(lib, record)
 
@@ -40,7 +43,10 @@ def execute(lib, phase):
         return delivery.inspect_outcomes(lib, load_admission(lib))
     cuts = {"kill-intent": "execution-persisted",
             "kill-return": "effects-returned",
-            "kill-persisted": "effects-persisted"}
+            "kill-persisted": "effects-persisted",
+            "kill-originals-plan": "originals-planned",
+            "kill-originals-pin": "originals-pinned",
+            "kill-originals-retained": "originals-retained"}
 
     def boundary(stage):
         if stage == cuts.get(phase):
@@ -62,6 +68,7 @@ def execute(lib, phase):
         return result
 
     with mock.patch.object(delivery, "_boundary", boundary), \
+            mock.patch.object(delivery.originals, "_boundary", boundary), \
             mock.patch.object(lib, "_write_bounded_epoch", write), \
             mock.patch.object(lib, "_unlink_consolidation_source", unlink):
         result = delivery.execute_claims(lib, load_admission(lib))
@@ -71,12 +78,15 @@ def execute(lib, phase):
 
 
 def main():
-    phases = {"prepare", "recover", "inspect", "kill-intent", "kill-epoch",
-              "kill-unlink", "kill-return", "kill-persisted"}
+    phases = {"prepare", "prepare-later", "recover", "inspect", "kill-intent", "kill-epoch",
+              "kill-unlink", "kill-return", "kill-persisted",
+              "kill-originals-plan", "kill-originals-pin", "kill-originals-retained"}
     if len(sys.argv) != 2 or sys.argv[1] not in phases:
         raise ValueError("expected one known execution fixture phase")
     lib = runtime()
-    result = prepare(lib) if sys.argv[1] == "prepare" else execute(lib, sys.argv[1])
+    phase = sys.argv[1]
+    result = prepare(lib, phase == "prepare-later") if phase in {
+        "prepare", "prepare-later"} else execute(lib, phase)
     print(json.dumps(result, sort_keys=True))
 
 

@@ -9,6 +9,7 @@ import os
 
 import siaconsolidationadmission as admission
 import siaconsolidationdiscovery as discovery
+import siaconsolidationoriginals as originals
 import siaconsolidationoutcomes as outcomes
 import siaconsolidationsnapshot as snapshot
 
@@ -140,6 +141,7 @@ def offer(owner, expected, *, budget=32):
             if state["phase"] == "claimed":
                 _require_live_sources(owner, state["claims"])
             elif state["phase"] in {"executing", "effects-returned"}:
+                originals.check(owner, record, state["claims"])
                 owner._claimed_consolidation_paths(state["claims"])
             return state
         result = discovery.discover(owner, record, state["cursor"], budget=budget)
@@ -216,6 +218,7 @@ def execute_claims(owner, expected):
     with owner.corpus_owner():
         state = _load(owner, record)
         if state["phase"] == "effects-returned":
+            originals.check(owner, record, state["claims"])
             owner._claimed_consolidation_paths(state["claims"])
             return state
         if state["phase"] not in {"claimed", "executing"}:
@@ -225,9 +228,12 @@ def execute_claims(owner, expected):
         if state["phase"] == "claimed":
             _require_live_sources(owner, state["claims"])
         else:
+            originals.check(owner, record, state["claims"])
             owner._claimed_consolidation_paths(state["claims"])
         if owner.corpus_commit("pre-consolidation") not in {"committed", "clean"}:
             raise RuntimeError("pre-consolidation corpus git commit failed")
+        if state["phase"] == "claimed":
+            originals.retain(owner, record, state["claims"])
         pages, windows = _protection(owner)
         if state["phase"] == "claimed":
             state = dict(state, phase="executing")
@@ -251,7 +257,9 @@ def inspect_outcomes(owner, expected):
         state = _load(owner, record)
         if state["phase"] != "effects-returned":
             raise ValueError("snapshot effects have not returned")
-        observed = outcomes.inspect_claims(owner, record, state["claims"])
+        retained = originals.check(owner, record, state["claims"])
+        observed = outcomes.inspect_claims(
+            owner, record, state["claims"], original_commit=retained["commit"])
         selected = {(item["organ"], item["date"]) for item in observed}
         unclaimed = [day for day in _days(state["batch"])
                      if (day["organ"], day["date"]) not in selected]

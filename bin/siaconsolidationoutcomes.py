@@ -54,11 +54,16 @@ def _original_text(owner, record, source):
     raise ValueError("exact consolidation original is unavailable")
 
 
-def _verify_compacted_source(owner, record, source, epoch):
+def _verify_compacted_source(owner, record, source, epoch, original_commit):
     if source not in epoch["source_manifest"]:
         raise ValueError("compacted source lacks exact epoch lineage")
     organ, date, part = owner._event_source_parts(source["rel"])
-    text = _original_text(owner, record, source)
+    if original_commit is None:
+        text = _original_text(owner, record, source)
+    else:
+        text = _committed_text(owner, original_commit, source)
+        if text is None:
+            raise ValueError("retained commit lacks exact claimed original")
     item = (date, os.path.join(owner.CORPUS, source["rel"]), text,
             set(), source["sha256"], source["rel"], part)
     expected = owner._event_index_entries_for_sources([item], epoch["slug"])
@@ -70,18 +75,18 @@ def _verify_compacted_source(owner, record, source, epoch):
             raise ValueError("compacted source lacks an exact event-index entry")
 
 
-def _verify_compacted_day(owner, record, claim):
+def _verify_compacted_day(owner, record, claim, original_commit):
     slug = owner._epoch_slug_for_day(claim["organ"], claim["date"])
     epoch = owner._read_epoch_state(slug)
     if not epoch["source_manifest_declared"] or not epoch["event_ids_declared"] \
             or claim["date"] not in epoch["dates"]:
         raise ValueError("compacted day lacks declared epoch completeness")
     for source in claim["sources"]:
-        _verify_compacted_source(owner, record, source, epoch)
+        _verify_compacted_source(owner, record, source, epoch, original_commit)
     return slug
 
 
-def inspect_claims(owner, record, claims):
+def inspect_claims(owner, record, claims, *, original_commit=None):
     """Observe each selected day as intact or exactly represented after removal.
 
     This does not acknowledge a batch, authenticate the journal, verify unrelated
@@ -96,7 +101,8 @@ def inspect_claims(owner, record, claims):
         present = paths & live
         if present and present != paths:
             raise ValueError("consolidation day still has partial source cleanup")
-        epoch = None if present else _verify_compacted_day(owner, record, claim)
+        epoch = None if present else _verify_compacted_day(
+            owner, record, claim, original_commit)
         outcomes.append({
             "organ": claim["organ"], "date": claim["date"],
             "disposition": "retained" if present else "compacted",
