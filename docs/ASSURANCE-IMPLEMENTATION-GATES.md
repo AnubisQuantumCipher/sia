@@ -137,6 +137,12 @@ remained active; installed recall availability and a bounded recovery-latency
 argument remain open. Do not remove the rescan or clear recovery debt merely
 to improve that count.
 
+[`Consolidation progress`](../spark/model/CONSOLIDATION-PROGRESS.md) records
+the implementation's rescan structure, a finite liveness experiment and
+negative controls for reset-on-keep and external source recreation. It leaves
+directory-page refinement, successful operation assumptions, resident
+scheduling and wall-clock bounds explicit. It does not close G4 or rule 2.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
