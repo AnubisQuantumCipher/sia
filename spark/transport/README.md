@@ -117,5 +117,40 @@ adapter and Python orchestration are outside the SPARK proof boundary.
 Controls cover valid observation/proposal, sender/action/time mismatches, every
 single-byte mutation, malformed metadata and scalar limits, short/trailing input,
 read errors and output errors. Run the existing `test_*.py` command after building
-both probes. Development runs passed; fresh archived-source acceptance is pending.
+both probes. A fresh archive of aa620d001825d87024457df202f699251eb52925
+passed the strict probe build and 33 Python controls. Independent GPT-6.1 review
+checked the retained source bindings and outputs without rerunning them.
 The first strict adapter build's Unreferenced warning failure is retained.
+
+## Bounded grant-record observation
+
+`grant_record.py` reads one fixed `grant.record` name relative to an already
+authorized directory descriptor. The service must hold an exclusive grant-store
+lease throughout observation and use. Directory ancestry, descriptor provenance,
+separate service identity and lease enforcement are external obligations.
+The reader checks service ownership, private modes, a single regular-file link,
+bounded size, complete read and unchanged held-file/name/directory observations.
+It closes its file descriptor; the caller retains its directory descriptor.
+Both `GrantRefusal` and `OSError`, including close errors, must fail closed.
+Cleanup uncertainty must be retained rather than retried as apparent success.
+
+The ASCII format has a version line and five fixed ordered fields: subject,
+not-before, expires, active and a lowercase hexadecimal request frame. It has
+one final newline and is bounded to 1024 bytes. Decimal encodings are canonical.
+Parsing preserves inactive grants, invalid policy intervals and syntax-invalid
+request frames for SPARK to reject. Parsing does not authorize an operation or
+authenticate the grant's issuer, clock, protected ancestry or installation.
+Metadata comparisons are observations under the trusted lease, not protection
+against a hostile process holding the service UID.
+
+The eleven development controls cover independent field values, malformed
+records, actual permission/link/special-file failures, changes during reading,
+short reads, read errors and descriptor cleanup. Foreign ownership and isolated
+name mismatch are synthetic observations; they do not establish a separate-UID
+boundary. Archived-source acceptance remains pending for this component.
+Production grant commissioning, protected dispatch and bypass-resistance tests
+remain unimplemented. Run the focused controls with:
+
+```sh
+timeout --kill-after=5s 60s python3 -B -W error::ResourceWarning -m unittest discover -s spark/tests -p test_grant_record.py -v
+```
