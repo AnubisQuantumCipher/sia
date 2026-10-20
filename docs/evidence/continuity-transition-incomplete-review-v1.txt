@@ -1,0 +1,14 @@
+Source: completed read-only response of existing actual GPT-6.1 reviewer /root/assurance_architecture_review, 2026-10-20.
+
+No overstatement found in this incomplete checkpoint.
+
+Verified current/source-snapshot hashes, receipt/archive/log hashes, matching before/after tool rosters, retained failure hashes and generator identity. Recorded commands correctly distinguish full `-U` timeout from one-unit and limited-subprogram passes.
+
+Manifest/docs preserve:
+
+- Full proof: exit 124 at 600 seconds.
+- Full raw gate and committed reproduction: UNRUN.
+- No acceptance, installation or release claim.
+- Focused results retain external modular dependencies.
+
+The generator seals local observations; it is not an independent proof verifier or authenticated custody mechanism. Earlier failures remain evidence, and the proposed 900-second change is neither applied nor accepted by this status. No jobs or edits performed.

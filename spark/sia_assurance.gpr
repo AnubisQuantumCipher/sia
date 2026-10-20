@@ -6,7 +6,8 @@ project SIA_Assurance is
    for Main use ("policy_tests.adb", "transaction_tests.adb",
                  "request_wire_tests.adb", "request_admission_tests.adb",
                  "grant_lifetime_tests.adb", "retraction_tests.adb",
-                 "consolidation_tests.adb", "continuity_tests.adb");
+                 "consolidation_tests.adb", "continuity_tests.adb",
+                 "continuity_transition_tests.adb");
    package Compiler is
       for Default_Switches ("Ada") use
         ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",

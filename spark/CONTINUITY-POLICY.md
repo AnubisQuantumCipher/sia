@@ -1,10 +1,16 @@
 # Conservative continuity reference policy
 
-Status: experimental pure policy; incremental reported checks discharged,
-fresh committed-source reproduction still open. No runtime adapter,
+Status: experimental pure policy; fresh committed-source verification passed
+at `1f71a97` within the scope recorded below. No runtime adapter,
 capture, source authentication, durable checkpoint, approval or action execution
 is implemented by this package. It is a dependency of the agent continuity
 mission in `docs/AGENT-CONTINUITY.md`, not an installed continuity guarantee.
+
+The later predicate extraction and equivalence bridge accompanying
+`SIA_Continuity_Transitions` change this source after that receipt. Their focused
+diagnostics passed, but their fresh full-project run reached its command
+deadline. The earlier receipt must not be used to claim acceptance of the
+changed source; see [the retained transition failures](CONTINUITY-TRANSITIONS.md).
 
 ## Inputs, decision and safety intent
 

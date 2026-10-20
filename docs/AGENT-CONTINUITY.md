@@ -14,6 +14,20 @@ constraint, approval scope or interrupted operation. Existing `siacheckpoint*`
 modules concern corpus transactions/publication; those contracts are useful
 dependencies, not demonstrated agent working-context restoration.
 
+At `0f21fa3`, `sialib.Event.__init__` redacts and clips its summary. That is a
+summary projection, not lossless storage of an original conversation/tool
+record. A continuity adapter must retain separately bounded, redacted source
+records with transformation lineage and explicit gaps before deriving an Event.
+The current pattern-based redactor does not establish detection of every secret.
+
+The local `codex-event-shapes-v1.json` observation sampled metadata from a rollout
+filename matching this task. It found both custom-tool and function-tool
+records; an oversized record, record-count cap and unexamined ranges remained.
+No message/tool bodies were persisted. This is partial format observation only:
+the filename does not establish the current live source, unique session custody
+or complete capture. Enrollment must resolve and verify the actual harness
+source; unknown record variants and bounds must yield visible capture gaps.
+
 On the inspected machine, `codex --version` reports `codex-cli 0.159.2`.
 The user hook configuration contains one herdr SessionStart handler. Its inspected
 script reports session identity to herdr; it does not restore SIA task state.
@@ -362,3 +376,25 @@ Acceptance includes maximum capacity, missing originals, head/retention races,
 uncertain-operation omission/reset, stale and simultaneous markers, stopped-hook
 completion, exact Python/SPARK representation comparisons and fresh-process
 replay. This contract is not an implementation or a qualification result.
+
+## Transition implementation checkpoint
+
+[`SIA_Continuity_Transitions`](../spark/CONTINUITY-TRANSITIONS.md) now implements
+the pure C13 comparison for bounded operation histories. It rejects omission,
+identity substitution, reset and unsupported phase changes; changed operations
+need exact predecessor/successor and retained event/outcome bindings. Its
+proposal result grants no action or checkpoint publication.
+
+The [incomplete evidence manifest](CONTINUITY-TRANSITION-STATUS.json) binds the
+exact development source, commands, tool identities and retained failures.
+The strict build and all nine runtime harnesses passed. The fresh full-project
+proof timed out at 600 seconds with exit 124, and the complete raw-coverage gate
+was not run. Separate focused diagnostics passed for the predicate equivalence
+bridge, capacity harness and transition package. They do not close that gate.
+The older `1f71a97` receipt also does not cover this changed source.
+
+The unsuccessful later helper decomposition was reverted; both its strict
+compiler failure and focused proof timeout remain retained. No obligation or
+warning was suppressed. This is an implementation checkpoint, with committed
+reproduction, authenticated producers, transport, durable publication, C14
+delivery and semantic continuation still awaiting acceptance.

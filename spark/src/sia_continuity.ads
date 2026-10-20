@@ -94,43 +94,54 @@ package SIA_Continuity with SPARK_Mode, Pure is
          Item.Speaker = User and then Item.From = Source_Record))
    with Global => null;
 
-   function Valid_Predecessor (Item : Checkpoint; I : Claim_Index)
+   function Predecessor_Valid (Claims : Claim_Array; I : Claim_Index)
       return Boolean is
-     (if Item.Claims (I).Replaces = 0 then
+     (if Claims (I).Replaces = 0 then
          (for all J in 1 .. I - 1 =>
-            Item.Claims (J).Slot /= Item.Claims (I).Slot)
-      else Item.Claims (I).Replaces < I and then
-         Item.Claims (Item.Claims (I).Replaces).Slot = Item.Claims (I).Slot
-         and then Item.Claims (Item.Claims (I).Replaces).Kind =
-           Item.Claims (I).Kind
-         and then Item.Claims (Item.Claims (I).Replaces).From =
-           Item.Claims (I).From
-         and then Item.Claims (Item.Claims (I).Replaces).Speaker =
-           Item.Claims (I).Speaker
+            Claims (J).Slot /= Claims (I).Slot)
+      else Claims (I).Replaces < I and then
+         Claims (Claims (I).Replaces).Slot = Claims (I).Slot
+         and then Claims (Claims (I).Replaces).Kind = Claims (I).Kind
+         and then Claims (Claims (I).Replaces).From = Claims (I).From
+         and then Claims (Claims (I).Replaces).Speaker = Claims (I).Speaker
          and then
-           (for all J in Item.Claims (I).Replaces + 1 .. I - 1 =>
-              Item.Claims (J).Slot /= Item.Claims (I).Slot))
+           (for all J in Claims (I).Replaces + 1 .. I - 1 =>
+              Claims (J).Slot /= Claims (I).Slot))
+   with Global => null;
+
+   function Valid_Predecessor (Item : Checkpoint; I : Claim_Index)
+      return Boolean is (Predecessor_Valid (Item.Claims, I))
+   with Global => null;
+
+   function Claims_Valid
+     (Claims : Claim_Array; Count : Claim_Count; Through : Generation)
+      return Boolean is
+     ((for all I in 1 .. Count =>
+         Valid_Claim (Claims (I)) and then
+         Claims (I).Sequence <= Through and then
+         (if I > 1 then
+            Claims (I - 1).Sequence < Claims (I).Sequence)
+         and then Predecessor_Valid (Claims, I)) and then
+      (for all I in Count + 1 .. Max_Claims => Claims (I) = Empty_Claim) and then
+      (for all I in 1 .. Count =>
+         (for all J in 1 .. Count =>
+            (if I /= J then Claims (I).Identity /= Claims (J).Identity))))
    with Global => null;
 
    function Valid_Claims (Item : Checkpoint) return Boolean is
-     ((for all I in 1 .. Item.Count =>
-         Valid_Claim (Item.Claims (I)) and then
-         Item.Claims (I).Sequence <= Item.Through and then
-         (if I > 1 then
-            Item.Claims (I - 1).Sequence < Item.Claims (I).Sequence)
-         and then Valid_Predecessor (Item, I)) and then
-      (for all I in Item.Count + 1 .. Max_Claims =>
-         Item.Claims (I) = Empty_Claim) and then
-      (for all I in 1 .. Item.Count =>
-         (for all J in 1 .. Item.Count =>
-            (if I /= J then
-               Item.Claims (I).Identity /= Item.Claims (J).Identity))))
+     (Claims_Valid (Item.Claims, Item.Count, Item.Through))
+   with Global => null;
+
+   function Coverage_Valid
+     (Claims : Claim_Array; Count : Claim_Count; Coverage : Coverage_Array)
+      return Boolean is
+     (for all Kind in Claim_Kind =>
+        ((Coverage (Kind) in Partial | Complete) =
+           (for some I in 1 .. Count => Claims (I).Kind = Kind)))
    with Global => null;
 
    function Coverage_Consistent (Item : Checkpoint) return Boolean is
-     (for all Kind in Claim_Kind =>
-        ((Item.Coverage (Kind) in Partial | Complete) =
-           (for some I in 1 .. Item.Count => Item.Claims (I).Kind = Kind)))
+     (Coverage_Valid (Item.Claims, Item.Count, Item.Coverage))
    with Global => null;
 
    function Coverage_Ready (Item : Checkpoint) return Boolean is
@@ -149,15 +160,19 @@ package SIA_Continuity with SPARK_Mode, Pure is
       (if Item.Stage in Observed_Complete | Acknowledged then Item.Has_Result))
    with Global => null;
 
-   function Valid_Operations (Item : Checkpoint) return Boolean is
-     ((for all I in 1 .. Item.Operations_Count =>
-         Valid_Operation (Item.Operations (I))) and then
-      (for all I in Item.Operations_Count + 1 .. Max_Operations =>
-         Item.Operations (I) = Empty_Operation) and then
-      (for all I in 1 .. Item.Operations_Count =>
-         (for all J in 1 .. Item.Operations_Count =>
+   function Operations_Valid
+     (Operations : Operation_Array; Count : Operation_Count) return Boolean is
+     ((for all I in 1 .. Count => Valid_Operation (Operations (I))) and then
+      (for all I in Count + 1 .. Max_Operations =>
+         Operations (I) = Empty_Operation) and then
+      (for all I in 1 .. Count =>
+         (for all J in 1 .. Count =>
             (if I /= J then
-               Item.Operations (I).Identity /= Item.Operations (J).Identity))))
+               Operations (I).Identity /= Operations (J).Identity))))
+   with Global => null;
+
+   function Valid_Operations (Item : Checkpoint) return Boolean is
+     (Operations_Valid (Item.Operations, Item.Operations_Count))
    with Global => null;
 
    function Valid (Item : Checkpoint) return Boolean is
