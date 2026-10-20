@@ -184,6 +184,22 @@ refusal for that observation only. It does not fix the cursor-churn defect,
 qualify the experimental snapshot modules, establish a recovery deadline or
 guarantee future recall availability.
 
+### Snapshot admission process-death evidence
+
+The experimental snapshot admission journal now has actual SIGKILL cuts after
+planned persistence, pin creation/readback and admitted persistence. Separate
+fresh interpreters recover and replay the same exact request; the parent checks
+the journal prefix, reference identity, original source bytes and unchanged
+maintenance marker. Fresh recovery also refuses missing admitted pins,
+conflicting planned pins and deliberately truncated journals without repairing
+their retained state. The combined admission exec, exception, snapshot and
+original consolidation exec suites pass 20 tests.
+
+This is component process-death evidence, not a resident front-door campaign or
+storage power-loss qualification. Snapshot traversal integration, legacy debt
+migration, late arrivals, pin lifecycle and recovery bounds remain required.
+The scanner's continuing-write characterization is still an unresolved defect.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.

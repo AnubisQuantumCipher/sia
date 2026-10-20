@@ -92,8 +92,9 @@ Another test rejects a symbolic pin without changing its target. These commands
 operate only on disposable test repositories, never on the installed corpus.
 
 Four snapshot tests pass. No production reference is created by this checkpoint.
-Admission journaling, fresh-process/power-loss cuts, aggregate reference budgets,
-retirement, orphan-pin recovery and persisted schema integration remain OPEN.
+Admission journaling and fresh-process cuts now have the limited evidence below.
+Power-loss behavior, aggregate reference budgets, retirement, orphan-pin recovery
+and persisted scanner schema integration remain OPEN.
 
 ## Experimental admission journal
 
@@ -124,3 +125,32 @@ The first development run failed because the composed fixture's lock path
 still referenced its separate isolated HOME while its STATE was relocated.
 The fixture now binds the corpus lock to its own STATE directory. This did not
 require bypassing or mocking the lease.
+
+## Fresh-process admission cuts
+
+`tests.test_consolidation_admission_exec` uses distinct interpreter executions
+and actual SIGKILL after each of these returned operations:
+
+- Persist the planned journal, before creating the reference.
+- Create and read back the pin, before persisting admitted state.
+- Persist admitted state, before returning success.
+
+The parent checks the exact journal fields and whether the reference is present
+at each cut. Fresh recovery and a second fresh replay must return the same
+admitted record and leave the journal bytes unchanged on replay. The real corpus
+lease, Git operations and atomic writer execute in an explicitly marked disposable
+HOME. Original source bytes and the unrelated named maintenance marker must stay
+unchanged; no epoch is created by admission.
+
+Negative controls remove an admitted pin, introduce a conflicting pin after the
+planned cut, and explicitly truncate a planned journal. Recovery must refuse
+without replacing the retained journal or reference. The truncated-file control
+is deliberate corruption, not an observed storage tear. A separate worker guard
+requires explicit disposable-HOME opt-in before importing the runtime.
+
+The combined admission exec, admission exception, snapshot and existing
+consolidation exec suites pass 20 tests. SIGKILL at returned operation boundaries
+establishes only these process-death cases. It does not establish failures inside
+Git or the atomic writer, storage power-loss durability, authenticated transaction
+production, the complete resident path, or a bound on recovery time. The new
+tests do not enable the experimental journal in production.
