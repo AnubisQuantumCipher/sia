@@ -158,3 +158,25 @@ remain unimplemented. Run the focused controls with:
 ```sh
 timeout --kill-after=5s 60s python3 -B -W error::ResourceWarning -m unittest discover -s spark/tests -p test_grant_record.py -v
 ```
+
+## Test-only loaded-grant handoff
+
+`grant_probe` receives exactly two frames on standard input, grant first and
+request second, followed by EOF. Six bounded canonical decimal arguments carry
+grant subject, observed sender, current tick, not-before, expiry and active bit.
+It decodes the grant frame before invoking the composed request classifier;
+an invalid grant frame returns D. Input/output errors and malformed metadata
+fail the process. The parent must enforce a deadline while waiting for EOF.
+
+`test_grant_probe.py` connects the private disposable grant reader and actual
+SEQPACKET receiver to this adapter. It checks independent observation/proposal
+outcomes, matching nonuniform payloads, each changed grant byte, identity,
+revocation and interval refusals, invalid frames, exact input length, canonical
+metadata and descriptor failures. Run the existing `test_*.py` command after
+building all three probes. Fresh committed-source acceptance is pending.
+
+This is an execution-path test, not a protected service: the Python test driver
+can substitute the grant, sender or clock. The grant record does not bind a boot
+or service epoch. No production caller may treat this executable or its output
+as authenticated authority, a mutation permit or a disclosure authorization.
+The earlier failed build due to Decode argument ordering is retained.
