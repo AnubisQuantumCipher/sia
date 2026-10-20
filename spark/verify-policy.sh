@@ -54,6 +54,7 @@ run_check policy-tests 30s spark/bin/policy_tests
 run_check transaction-tests 30s spark/bin/transaction_tests
 run_check request-wire-tests 30s spark/bin/request_wire_tests
 run_check request-admission-tests 30s spark/bin/request_admission_tests
+run_check grant-lifetime-tests 30s spark/bin/grant_lifetime_tests
 run_check proof 600s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
     --assumptions --no-inlining --memlimit=512 --timeout=10
 test -s spark/obj/gnatprove/gnatprove.out
