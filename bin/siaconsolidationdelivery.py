@@ -9,6 +9,7 @@ import os
 
 import siaconsolidationadmission as admission
 import siaconsolidationdiscovery as discovery
+import siaconsolidationoutcomes as outcomes
 import siaconsolidationsnapshot as snapshot
 
 SCHEMA = "sia-consolidation-delivery-v1"
@@ -241,3 +242,21 @@ def execute_claims(owner, expected):
         _save(owner, updated)
         _boundary("effects-persisted")
         return updated
+
+
+def inspect_outcomes(owner, expected):
+    """Recheck selected source outcomes without accepting a caller's receipt."""
+    record = _record(expected)
+    with owner.corpus_owner():
+        state = _load(owner, record)
+        if state["phase"] != "effects-returned":
+            raise ValueError("snapshot effects have not returned")
+        observed = outcomes.inspect_claims(owner, record, state["claims"])
+        selected = {(item["organ"], item["date"]) for item in observed}
+        unclaimed = [day for day in _days(state["batch"])
+                     if (day["organ"], day["date"]) not in selected]
+        result = {"schema": "sia-consolidation-outcomes-v1",
+                  "admission": record, "coverage": "selected-claims-only",
+                  "outcomes": observed, "unclaimed_days": unclaimed}
+        _encoded(result)
+        return result

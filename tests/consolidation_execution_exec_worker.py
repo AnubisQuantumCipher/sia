@@ -36,6 +36,8 @@ def prepare(lib):
 
 def execute(lib, phase):
     delivery = importlib.import_module("siaconsolidationdelivery")
+    if phase == "inspect":
+        return delivery.inspect_outcomes(lib, load_admission(lib))
     cuts = {"kill-intent": "execution-persisted",
             "kill-return": "effects-returned",
             "kill-persisted": "effects-persisted"}
@@ -69,7 +71,7 @@ def execute(lib, phase):
 
 
 def main():
-    phases = {"prepare", "recover", "kill-intent", "kill-epoch",
+    phases = {"prepare", "recover", "inspect", "kill-intent", "kill-epoch",
               "kill-unlink", "kill-return", "kill-persisted"}
     if len(sys.argv) != 2 or sys.argv[1] not in phases:
         raise ValueError("expected one known execution fixture phase")

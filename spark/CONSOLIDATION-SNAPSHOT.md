@@ -459,3 +459,63 @@ Exact-source execution-attempt reproduction:
 - Development-v3 captured source before a comment-only edit clarifying
   that the encoding check does not reserve space. The final archived-source
   run above binds the actual committed bytes, including that clarification.
+
+## Selected-source outcome observation
+
+`siaconsolidationdelivery.inspect_outcomes` revalidates the retained admission,
+pin, traversal and claims under the actual corpus lease. It requires an
+`effects-returned` attempt, then freshly observes selected days. It accepts no
+previous observation or caller acknowledgment. The result declares
+`coverage: selected-claims-only` and explicitly lists unclaimed batch days.
+It does not persist a receipt, advance a cursor, remove claims, clear debt,
+authorize retirement or establish readiness.
+
+An all-live day is `retained` only after the existing exact source/shard
+validation. Mixed live/missing sources within a day refuse as partial cleanup.
+An all-missing day is `compacted` only after checking declared epoch dates,
+source manifest and event roster, exact claimed source lineage, and every
+expected marker-index entry reconstructed from the original source bytes.
+The original path-plus-NUL-plus-byte digest must equal the retained claim.
+A structurally valid but wrong index entry, omitted roster or removed index
+leaf therefore refuses even after an earlier successful observation.
+
+`compacted` has this limited meaning. It does not independently verify epoch
+summary prose, aggregate counts, exemplars, unrelated sources or entries,
+truth of recorded events, or authenticated execution history. Legacy source
+text without recognized event markers has no marker-index obligation under
+the inherited parser; this is explicitly characterized, not represented as
+complete natural-language indexing. Results are mutable observations made
+under the lease, not authority that survives later filesystem changes.
+
+The observer first reads the admitted commit. For a selected live source that
+changed after admission, it searches at most 64 current-HEAD path-history
+commits, with an 8192-byte history output cap and the existing per-page byte
+cap on each blob. Every candidate must have a full object identity and match
+the exact claimed digest. History exhaustion, unavailable originals, malformed
+identities or runner failures refuse; bounded search failure is not evidence
+that the original never existed. Git, strict UTF-8 decoding and existing
+source/index parsers remain trusted dependencies. Aggregate latency, lease
+waiting, memory and WCET are unproved.
+
+The fallback history is not independently pinned. A real history rewrite and
+GC control removes a later claimed original while preserving an independently
+checked current root; observation then refuses and leaves claims/debt intact.
+A separate search-budget control refuses while a direct exact-object read
+still recovers the original. Durable retention of later originals is required
+before retirement can rely on these observations.
+
+The expanded development suite passes 116 tests. It includes fresh-interpreter
+observation after all five existing SIGKILL/recovery cuts, index deletion and
+restoration, wrong canonical index data, omitted event rosters, explicit
+unclaimed days, history refusal boundaries and legacy no-marker sources.
+A forged-phase control demonstrates that content observations cannot
+authenticate execution history. A same-day partial-cleanup control refuses.
+The source copies, hashes, exact command and output are retained externally in
+`consolidation-outcomes-development-v2`; the earlier 113-test run is retained
+in `consolidation-outcomes-development-v1`.
+
+These observations close a selected-source checking gap, not the all-batch
+consumer protocol. Protected retained-source eligibility, whole-day paging,
+immutable later-source retention, durable outcomes and retirement, late-arrival
+handoff, installed migration, protected ownership and the complete resident
+acceptance campaign remain open. No SPARK or installed runtime change is made.

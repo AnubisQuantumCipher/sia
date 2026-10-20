@@ -64,6 +64,15 @@ class ConsolidationExecutionExec(unittest.TestCase):
                   for path in corpus.rglob("*.md") if ".git" not in path.parts}
         self.assertEqual(self.invoke(home, "recover"), returned)
         self.assertEqual(journal.read_bytes(), retained)
+        observed = self.invoke(home, "inspect")
+        self.assertEqual(observed["admission"], returned["admission"])
+        self.assertEqual(observed["coverage"], "selected-claims-only")
+        self.assertEqual(observed["unclaimed_days"], [])
+        self.assertEqual([item["disposition"] for item in observed["outcomes"]],
+                         ["compacted", "compacted"])
+        self.assertEqual([item["sources"] for item in observed["outcomes"]],
+                         [claim["sources"] for claim in returned["claims"]["claims"]])
+        self.assertEqual(journal.read_bytes(), retained)
         self.assertEqual({path.relative_to(corpus): path.read_bytes()
                           for path in corpus.rglob("*.md")
                           if ".git" not in path.parts}, before)

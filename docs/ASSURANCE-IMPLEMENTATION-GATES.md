@@ -275,3 +275,15 @@ The returned state explicitly does not establish event-index completeness;
 a real missing-leaf control demonstrates this limitation. Source-outcome
 qualification, all-batch completion, cursor retirement, installed migration
 and G4 acceptance remain open. No acknowledgment or settlement is added.
+
+The selected-source outcome observer now rechecks exact source bytes, epoch
+lineage and reconstructed marker-index records under the corpus lease.
+The development suite passes 116 tests, including observation in a fresh
+interpreter after each retained SIGKILL/recovery cut. Missing/wrong index
+evidence, partial same-day cleanup and unavailable original history refuse
+without changing claims or debt. Coverage is explicitly selected-claims-only;
+legacy unmarked prose, epoch summary/count semantics and authenticated
+execution history are outside this observation claim. Later live originals
+are not yet independently pinned, and a real GC negative control demonstrates
+the resulting safe refusal. Durable source retention and all-batch retirement
+are still required; see `CONSOLIDATION-SNAPSHOT.md` for exact scope and evidence.
