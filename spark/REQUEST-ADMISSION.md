@@ -58,8 +58,11 @@ clock interval and request match. A match delegates to the original classifier,
 preserving its revocation, identity, interval and exact-request requirements.
 The original APIs and deterministic fixtures remain unchanged.
 
-Strict build and initial runtime checks pass; complete archived proof and
-independent acceptance are pending. This package is not yet connected to a
+The archived run at `8bd9625e8898ea300623f0fc8b6925b2dc1df276` passed strict
+build, all five harnesses, and all 293 reported proof checks across ten fully
+analyzed units, with no justified or unproved obligations. Independent GPT-6.1
+review verified retained source/tool/output bindings without rerunning them.
+This establishes the pure contracts only. This package is not yet connected to a
 production observer, grant format or dispatcher. The test-only `grant_probe`
 continues to exercise the original unscoped comparator and is not a service.
 
