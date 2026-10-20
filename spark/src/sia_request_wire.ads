@@ -39,6 +39,23 @@ package SIA_Request_Wire with SPARK_Mode, Pure is
       Bytes (169) <= 127 and then Bytes (177) <= 127)
    with Global => null;
 
+   --  Reusable exact relation for composed consumers; the original Decode
+   --  postcondition remains explicit below.
+   function Decoded_As (Bytes : Frame; Length : Natural; Item : Request)
+      return Boolean is
+     (Valid (Bytes, Length) and then
+      Item.Action = (if Bytes (2) = 1 then Observe else Propose) and then
+      Item.Before_Phase = Natural (Bytes (3)) and then
+      Item.After_Phase = Natural (Bytes (4)) and then
+      Item.Capability = Digest (Bytes (9 .. 40)) and then
+      Item.Source = Digest (Bytes (41 .. 72)) and then
+      Item.Transaction = Digest (Bytes (73 .. 104)) and then
+      Item.Payload = Digest (Bytes (105 .. 136)) and then
+      Item.Predecessor_Receipt = Digest (Bytes (137 .. 168)) and then
+      Item.Before_Generation = Generation_Value (Bytes, 169) and then
+      Item.Target_Generation = Generation_Value (Bytes, 177))
+   with Global => null;
+
    procedure Decode
      (Bytes : Frame; Length : Natural; Accepted : out Boolean;
       Item : out Request)

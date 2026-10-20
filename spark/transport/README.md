@@ -79,3 +79,18 @@ Acceptance evidence must build the executable from a fresh committed archive
 and retain binary/source hashes and commands; mere binary presence is not
 source-binding evidence. The production handoff, authenticated dispatch and
 actual shadow policy comparison remain unimplemented.
+
+## Pure decoder-to-admission composition
+
+`SIA_Request_Admission.Classify_Frame` composes decoding and exact-grant
+comparison without trusting a caller-supplied syntax-acceptance flag. Invalid
+frames return the empty request and `Denied`; valid frames retain their exact
+decoded fields and receive the pure classifier result. A valid denied request
+still contains untrusted decoded fields, so consumers must never dispatch on
+those fields while ignoring the decision. `Proposal_Only` is still not permission
+to mutate. The original decoder contract remains unchanged.
+
+This addition is experimental: strict build and runtime checks passed during
+development, while its fresh committed-source proof acceptance is pending. It
+does not yet connect kernel credentials or a protected grant store to an
+installed service, and does not change released behavior.

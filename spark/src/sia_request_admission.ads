@@ -38,4 +38,19 @@ package SIA_Request_Admission with SPARK_Mode, Pure is
           Classify'Result = Observe_Only,
         Matches (Authority, Sender, Now, Item) and then Item.Action = Propose =>
           Classify'Result = Proposal_Only);
+
+   --  Compose syntax and grant comparison in one fail-closed entry. Neither
+   --  classification authorizes effects; grant/credential/clock trust is external.
+   procedure Classify_Frame
+     (Authority : Grant; Sender : User_Id; Now : Tick;
+      Bytes : Frame; Length : Natural; Item : out Request;
+      Decision : out Classification)
+   with Global => null, Always_Terminates,
+     Depends => (Item => (Bytes, Length),
+                 Decision => (Authority, Sender, Now, Bytes, Length)),
+     Post =>
+       (if not Valid (Bytes, Length) then
+          Item = Empty_Request and then Decision = Denied
+        else Decoded_As (Bytes, Length, Item) and then
+          Decision = Classify (Authority, Sender, Now, Item));
 end SIA_Request_Admission;
