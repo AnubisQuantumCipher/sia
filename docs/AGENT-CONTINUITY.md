@@ -22,6 +22,8 @@ A separate process-ancestry observation found this session's host executable at
 ChatGPT desktop process. The shell CLI is therefore not the qualification target.
 Neither version inspection nor generated protocol schemas establish actual
 hook execution. That still requires a lifecycle witness from the desktop binary.
+The later disposable lifecycle observations below supply a narrow manual
+compaction/startup/resume witness; they do not qualify an installed SIA adapter.
 
 The [official Codex hook documentation](https://learn.chatgpt.com/docs/hooks)
 documents SessionStart on startup/resume/compact and pre/post compaction events.
@@ -47,6 +49,8 @@ UNQUALIFIED targets.
 | C10 | Correction, deletion, retention and revocation propagate through derived descendants | Restore checks current tombstones/generation. Retained backups, embeddings and summaries are in scope; no resurrection from an old checkpoint. |
 | C11 | Pure SPARK validity/planning policy is enforced in the actual adapter path | Proof covers supplied premises only. Authenticate producers and protect writes under existing G2/G3 gates; no Python Boolean may substitute for evidence. |
 | C12 | Harness support is demonstrated, source/version bound and limited to observed events | Actual pre/post compact or documented equivalent lifecycle, restart and installed path readback. Hook timeout/trust/absence is a visible gap, not compatibility. |
+| C13 | Checkpoint transitions conserve unresolved operations | Join the exact authenticated predecessor and successor. Pending includes planned, dispatched and uncertain operations. None may disappear or change action/source identity; dispatched/uncertain work cannot reset to planned. Completion requires exact outcome-reconciliation evidence. Capacity exhaustion refuses publication; it cannot silently evict unresolved work. |
+| C14 | Restoration envelopes are scoped to one current lifecycle occurrence | Bind session, checkpoint/head, retention generation, lifecycle occurrence and target turn. A stale marker, missing/failed/stopped hook or a turn status alone cannot establish successful restoration. Recheck head and retention before use. |
 
 ## Stages and acceptance
 
@@ -171,7 +175,7 @@ same thread using `excludeTurns=true`, with no duplicate start. The prompt-input
 diagnostic did not contain the fixture hook marker. These observations are
 retained in `codex-lifecycle-probe-v1`; they establish metadata restart only.
 No model turn, actual compaction, restored next-action correctness or hook
-execution has been qualified. The initial probe's coarse UNRUN receipt does not
+execution was qualified by that first probe. The initial probe's coarse UNRUN receipt does not
 override its retained successful start response or failed history-read response.
 
 Next acceptance increment: authenticated bounded original-reference resolution
@@ -179,3 +183,160 @@ and conservative SPARK restore policy, then durable explicit checkpoint/resume
 with crash prefixes, followed by actual desktop hook execution and held-out
 compaction continuation. No experimental module has been installed or promoted
 to the marketplace release.
+
+## Conservative SPARK policy increment
+
+[`SIA_Continuity`](../spark/CONTINUITY-POLICY.md) adds a fixed-capacity pure
+classification of checkpoint structure and independently supplied current
+evidence. It checks exact task/session/repository bindings, checkpoint/capture/
+retention generations, source ordering and supersession, origin, coverage,
+canonical padding, durable-witness bindings, current revision/dirty references
+and uncertain operations. It has no action-grant result.
+
+Complete proof acceptance remains OPEN. Development snapshots v2 through v7
+built and passed their continuity runtime controls, but each all-unit proof
+attempt reached the existing 600-second limit without a complete report.
+Those failures remain in the external evidence directories; earlier runtime
+passes do not establish the later edited source.
+Development v8 built and passed its runtime controls, but its driver exited
+with signal-derived status 143 before recording the proof result. The proof
+receipt and complete report are absent. Its cause and proof outcome remain
+UNKNOWN; it is not recorded as another completed timeout or a proof pass.
+
+Focused diagnostics established the earlier core's reported obligations,
+the repaired full-capacity claim test and the parameterized context-byte test.
+The supersession diagnostic v7 and line diagnostic v3 were deliberately
+interrupted and remain unproved. Supersession diagnostic v8 completed with one
+unproved classification precondition for a correction that skips an intervening
+replacement; all its other selected checks discharged. The repair introduces
+checked invalidity lemmas and explicit expected-result conditions at the test
+boundary. A shared coherent-observation helper retains the same observation
+construction and runtime result assertion while reducing each caller's proof
+context. These changes retain the original mutations and wanted outcomes.
+Line diagnostic v4 proves only the later correction's validity assertion after
+a checked state cut; all helper bodies and callers require the complete
+campaign. No selected-line success,
+intermediate solver file or zero-check report row substitutes for all-unit
+coverage. Resource caps and original positive/negative controls are unchanged.
+
+Operation diagnostic v9 retained two unproved classification preconditions.
+An equality cut to the exact original uncertain-operation fixture and a
+parameterized, checked fixture lemma discharged the 13 selected caller checks
+in diagnostic v10. Diagnostic v11 separately discharged the lemma's seven
+selected checks. Those two scoped successes still do not replace a complete
+all-unit run, all runtime controls, coverage validation and independent review.
+The same explicit fixture-parameter contract was then applied to the corrected,
+permission and pending-approval fixture lemmas, retaining each equality cut,
+mutation and expected classification. Diagnostic v12 discharged the 14 selected
+permission-origin caller checks. Independent review found no weakened
+obligation. The changed helper bodies and complete source still need their
+full proof and runtime acceptance.
+
+Diagnostics v13–v15 separately discharged each changed helper's eight
+selected checks; v16 discharged the correction-chain caller's 28 selected
+checks. The source did not require the additional five-claim fixture
+decomposition considered during review. Fresh development-v9 built the
+complete project and passed all eight runtime harnesses. Its full all-unit
+proof reached the unchanged 600-second command limit, exit 124; no complete
+coverage result was produced. This attempt remains unqualified. The final
+read-only GPT-6.1 source review found no remaining blocker for this conditional
+classifier, while preserving the external obligations below.
+
+The explicitly incremental `continuity-policy-incremental-v1` continued a new
+retained copy of development-v9's exact source and generated proof session.
+The parent snapshot remains unchanged. Source, project/restrictions, tools
+and copied session contents match their retained identities. The same full
+`-U` command and strict coverage checker both exited zero. The final report
+records 782 discharged checks across sixteen units, with no justified or
+unproved checks and clean detail rows. Before/after tool hashes match.
+Independent GPT-6.1 review checked these bindings and preserved the distinction
+between an incremental result and a fresh reproduction.
+
+The [incremental evidence manifest](CONTINUITY-POLICY-EVIDENCE.json) derives
+source, command and artifact identities from those retained files. Build and
+all eight runtime harness passes belong to the exact parent snapshot; the
+complete proof belongs to its explicit continuation. This is not a fresh,
+independent or single-command reproduction. The fresh committed-source runner
+remains a separate open acceptance gate; no timeout, scope or verification
+requirement is waived.
+
+Witness production, protected freshness, original-reference resolution and
+cross-checkpoint operation history remain external obligations. In particular,
+the package cannot detect a producer that omits an uncertain operation from a
+new checkpoint. Its most permissive result proposes references only; it cannot
+establish that continuing an operation is authorized or safe.
+
+## Desktop lifecycle observations
+
+`codex-lifecycle-probe-v2` used a disposable, credential-free instance of the
+actual desktop executable. Startup and resume `SessionStart` hooks and a manual
+`PreCompact` hook executed and returned explicit stop responses. The startup/
+resume turns nevertheless reported `completed`, while the pre-compaction stop
+reported `interrupted`. Thus a harness turn status alone cannot establish a
+model response, successful compaction or completion of the requested work.
+
+`codex-lifecycle-probe-v3` allowed two manual compactions and resumed the exact
+same thread in a fresh app-server process. It used a loopback deterministic
+Responses fixture, not a model. Raw harness notifications and the fixture event
+file record startup, two pre/post-compaction pairs with compact SessionStart,
+and resume. Subsequent provider requests contained the fixed hook markers in
+developer-role messages. Compact SessionStart ran before the next requested
+turn; this is not evidence of automatic in-turn compaction.
+
+The actual desktop binary reported `0.162.0-alpha.17.2`; its retained hash was
+independently compared with the installed executable. The review is retained
+as `codex-lifecycle-review-v1.txt`. No probe was rerun by the reviewer.
+Provider request bodies were not persisted: marker-role observations depend on
+the inspected recorder, with byte counts and request hashes retained. Fixture
+response text and usage values are synthetic and are not retrieval scores,
+context-budget measurements or successful semantic continuation.
+
+The resumed request retained both an older compact marker and the new resume
+marker. The adapter must therefore bind and supersede restoration generations
+explicitly; it cannot assume the harness automatically removes stale context.
+Raw retrieved instructions must not be placed into developer context.
+
+Visible warnings are retained: the pre/post hooks ignore an inapplicable
+context-limit field, the synthetic model uses fallback metadata, and the
+harness warns about repeated compaction. The probes are not zero-warning
+qualification. They use bounded requests and deadlines but do not establish
+complete process/memory/stderr limits, hostile custody, or network isolation.
+The parent user `AGENTS.md` remained an instruction source; these fixtures are
+credential-free but not hermetic with respect to inherited instructions.
+
+This closes only the question of whether the selected binary executes these
+specific hooks and delivers fixed markers in this controlled lifecycle.
+Automatic compaction, hook timeout/trust failures, capture privacy/completeness,
+source-authenticated restoration, real-model held-out continuation and
+production SIA installation remain OPEN. The official
+[hook contract](https://learn.chatgpt.com/docs/hooks) and
+[app-server protocol guidance](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)
+guided the probe; observed behavior and retained failures control its claims.
+
+## Next runtime integration contract
+
+The independent read-only review in `continuity-integration-review-v1.txt`
+identified self-confirming producer inputs and lost cross-checkpoint operations
+as concrete blockers. The next slice is an explicit disposable resolver joined
+to a versioned SPARK adapter; automatic hooks and action execution are later
+acceptance steps.
+
+The resolver selects its enrolled task manifest and current head independently
+of the proposal. It reads originals under a finite aggregate budget, verifies
+their canonical byte identities and exact role/origin/sequence descriptors,
+checks current retention/retraction state and constructs observations from those
+reads. It must refuse a missing record, changed head or revocation observed
+during resolution. Hash agreement establishes a byte binding; protected custody,
+truth of content and authorization remain separate requirements.
+
+The pure transition validator must enforce C13 against the authenticated
+predecessor, including omission and reset negatives. The adapter must enforce
+C14 even when the harness retains an older marker beside the new one or reports
+`completed` after a stopped hook. Its receipt must distinguish hook execution,
+reference resolution, context delivery and semantic continuation; none implies
+the next stage.
+
+Acceptance includes maximum capacity, missing originals, head/retention races,
+uncertain-operation omission/reset, stale and simultaneous markers, stopped-hook
+completion, exact Python/SPARK representation comparisons and fresh-process
+replay. This contract is not an implementation or a qualification result.

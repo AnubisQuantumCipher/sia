@@ -57,7 +57,8 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A20 | Selected installed path and explicit migration | Actual dispatch bound to installed source/config/retained state; fault campaign on selected path; qualified migration without silent configuration or privilege changes | OPEN; raw controller_source false observed, actual dispatch not established by that field alone |
 | A21 | Full traceability and guidance | Hazards/requirements to contracts, source, proof, independent review and exact installed/released tests; relevant Ada/SPARK guidance applied | IN PROGRESS; staged gates and resource inventory recorded |
 | A22 | Agent compaction continuity | Authorized original-event capture, source-bound structured checkpoints, bounded conservative restore, approval and uncertain-operation reconciliation; repeated-compaction evaluation against an uncompacted baseline | OPEN: current Codex sense records metadata only; no qualified SIA task-restoration adapter |
-| A23 | Qualified harness lifecycle integration | Actual current Codex hooks exercised at compaction/resume, installed-source readback and retained outputs; each other harness separately qualified | OPEN: configured SessionStart handler belongs to herdr, not SIA; file presence is not integration evidence |
+| A23 | Qualified harness lifecycle integration | Actual current Codex hooks exercised at compaction/resume, installed-source readback and retained outputs; each other harness separately qualified | PARTIAL: disposable desktop startup/resume/manual-compaction hooks and marker delivery observed with a deterministic local provider; actual SIA adapter, automatic compaction, semantic continuation and installed-path qualification OPEN |
+| A24 | Detachable cockpit | Reuse the existing model, visual tree, readers, guarded operations and lifecycle lease; verify presentation switches and installed path | PARTIAL: native Quickshell window, 176 regression tests and disposable component/packaged-Omarchy lifecycle tests passed; exact source/evidence published on the experimental branch; full CI, live desktop activation and marketplace installation OPEN |
 
 The 2026-10-20 compaction-continuity expansion is binding scope in this same
 single-owner session. Its initial gap assessment, requirements and staged
@@ -105,8 +106,12 @@ derived-memory and selected-runtime gates. It extends the sequence below.
 5. Complete recovery, identity, disclosure, resource and cognitive gates and the
    acceptance campaigns; update claims and release only qualifying behavior.
 
-No substantial unrelated cognitive feature, cockpit feature or source adapter
-is part of this goal. Research mechanisms may fail to beat retrieval; in that
+The operator added one bounded cockpit change on 2026-10-20:
+[`sia cockpit --window`](COCKPIT-WINDOW.md), reusing the existing model,
+readers, guarded command paths and UI. It does not relax any assurance gate
+or authorize a second runtime or database owner. No other substantial unrelated
+cognitive feature, cockpit feature or source adapter is part of this goal.
+Research mechanisms may fail to beat retrieval; in that
 case retain the negative evidence and remove unsupported improvement claims.
 
 The next protected-service design is specified in

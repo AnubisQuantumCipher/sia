@@ -23,7 +23,7 @@ is finished. State-transition and crash-recovery proofs are still required.
 Build/test: source the installed GNAT environment, then run
 `gprbuild -p -P spark/sia_assurance.gpr`, `spark/bin/policy_tests`, and
 `spark/bin/transaction_tests`.
-Proof: `gnatprove -P spark/sia_assurance.gpr -U --mode=all --assumptions --no-inlining`.
+Proof: `gnatprove -P spark/sia_assurance.gpr -U --mode=all --assumptions --no-inlining --memlimit=512 --timeout=10`.
 Inspect coverage, raw proof summaries, warnings, assumptions and exclusions;
 exit status alone does not establish the intended acceptance requirements.
 
@@ -31,7 +31,7 @@ For a clean committed checkout, source the GNAT environment and run
 `spark/verify-policy.sh NEW_OUTPUT_DIR`. On this shared machine invoke it under
 the existing nonblocking heavy-work lock. It archives the exact committed
 `spark` tree into a new retained directory, builds there without old objects,
-runs all six harnesses and the strict proof command with finite deadlines, and
+runs every declared policy harness and the strict proof command with finite deadlines, and
 retains commands, exit statuses, output, source identity and tool executable
 hashes. It refuses an existing output directory or uncommitted tree.
 The caller must supply enough storage and the qualified toolchain. Executable
@@ -46,6 +46,11 @@ See `ASSUMPTIONS.md` for the explicit boundary and enforcement ledger, and
 Keep runtime assertions enabled. The abstract input domain and proof result
 do not validate hostile IPC representations, external processes, physical
 durability, cryptography or Linux isolation. See `docs/ASSURANCE-GOAL.md`.
+
+`SIA_Continuity` adds a conditional reference-restoration classifier for bounded
+checkpoints. See [`CONTINUITY-POLICY.md`](CONTINUITY-POLICY.md) for its contract,
+producer assumptions and current verification status. Its result cannot grant
+an action, establish an approval or authorize retrying an uncertain operation.
 
 `SIA_Transactions` adds a pure reducer for one transaction's durable prefix.
 It admits only the immediate successor, treats an exact most-recent receipt
