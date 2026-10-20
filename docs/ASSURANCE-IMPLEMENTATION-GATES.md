@@ -164,6 +164,26 @@ including interrupted prefixes, exact retries, missing-pin refusal and malformed
 retained-state preservation. This remains outside the installed recovery path;
 fresh-process/power-loss cuts and authenticated transaction binding remain open.
 
+### Installed recovery completion observation
+
+Later on 2026-10-20, bounded `sia ready` returned exit 0 (`SIA memory ready`).
+The subsequent bounded `sia ask "SIA consolidation recovery and publication
+readiness" --no-touch` also returned exit 0 with origin-labeled semantic results.
+Its boundary reported live senses, passing chains, a complete graph, six spans
+redacted at ingest and associative reranking disabled by measured default.
+Model and legacy-unlabeled results remain non-evidence; absence of recall is
+not evidence of absence.
+
+A later atomic scan-file observation showed generation
+`88611c43a1e2486c8ccea4b0ccaaf2f7` complete with no pending days or claims.
+The commands and file read are separate observations, not one transaction
+snapshot. Their summarized results and installed executable hashes are retained
+in `installed-consolidation-recovery-completion-v1.json` externally; private
+recalled content was not copied. This supersedes the earlier availability
+refusal for that observation only. It does not fix the cursor-churn defect,
+qualify the experimental snapshot modules, establish a recovery deadline or
+guarantee future recall availability.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
