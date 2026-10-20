@@ -4624,36 +4624,68 @@ Item {
                 font.bold: true
               }
               Grid {
+                id: statusCounts
+                width: vitalsCol.width
                 columns: 2
                 columnSpacing: Style.space(14)
                 rowSpacing: Style.space(2)
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
+                readonly property real labelWidth: Math.max(
+                  memoriesLabel.implicitWidth, linksLabel.implicitWidth,
+                  eventsLabel.implicitWidth, entriesLabel.implicitWidth)
+                readonly property real valueWidth: Math.max(0,
+                  width - labelWidth - columnSpacing)
+                Text { id: memoriesLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: linksLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: eventsLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
                        color: root.accent; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "entries kept"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: entriesLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "entries kept"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.thoughtStreamCountText()
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.thoughtStreamCountText()
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "usage-tracked pages"; color: Qt.alpha(root.fg, 0.55)
-                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentStatus.mind
-                         ? root.currentStatus.mind.nodes + " · " + root.currentStatus.mind.edges + " co-return edges"
-                         : "—"
-                       color: root.fg; font.bold: true
-                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+              }
+              Text {
+                width: vitalsCol.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "usage-tracked pages"
+                color: Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+              Text {
+                width: vitalsCol.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.currentStatus && root.currentStatus.mind
+                  ? root.currentStatus.mind.nodes + " · "
+                    + root.currentStatus.mind.edges + " co-return edges"
+                  : "—"
+                color: root.fg
+                font.bold: true
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
               }
 
               Text {

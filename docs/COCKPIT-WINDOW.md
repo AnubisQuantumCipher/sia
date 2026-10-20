@@ -63,17 +63,18 @@ fixture screenshots. These are controlled fixture data, not live memory.
 
 | Check | Evidence and result | Boundary |
 |---|---|---|
-| CLI and existing cockpit contracts | `cockpit-candidate-v1/cockpit-regression.log`: 176 tests passed; earlier release controls: seven passed | Python tests include mocks; source-wiring checks do not prove UI behavior |
-| Complete component lifecycle | `cockpit-window-development-v11`: TESTED | Installed Quickshell, private headless Sway, minimal IPC host; switches retain actual component members, inputs and operation identity |
-| Actual Omarchy loader | `cockpit-omarchy-development-v5`: TESTED | Unmodified packaged host/registry in disposable configuration; enabled candidate loaded from its normal user-plugin location |
+| CLI and existing cockpit contracts | `cockpit-status-wrap-regression-v1.log`: 176 tests passed on the follow-up layout repair; earlier release controls: seven passed | Python tests include mocks; source-wiring checks do not prove UI behavior |
+| Complete component lifecycle | `cockpit-window-development-v12`: TESTED | Installed Quickshell, private headless Sway, minimal IPC host; switches retain actual component members, inputs and operation identity |
+| Actual Omarchy loader | `cockpit-omarchy-development-v6`: TESTED | Unmodified packaged host/registry in disposable configuration; enabled candidate loaded from its normal user-plugin location |
 | Actual-host controls | CLI window/repeat/overlay/window, native close/reopen, disabled-plugin refusal; initial decorated geometry inside the output | One controlled display; current user's Hyprland shell and daemon untouched |
 | Geometry negatives and CLI | `cockpit-window-unit-v2.log`: 12 tests passed | Includes independent clipped-header/edge, hidden-window, parent-coordinate and invalid-workspace controls |
-| Independent review | `cockpit-window-review-final.txt`: existing GPT-6.1 reviewer found no remaining blocker within the tested scope | Source hashes match the final component and actual-host runs; model-origin review is not formal proof |
+| Independent review | `cockpit-window-review-final.txt` and `continuity-incremental-and-cockpit-review-v1.txt`: existing GPT-6.1 reviewer found no remaining blocker within the tested scope | Follow-up review binds the layout repair to v12/v6; model-origin review is not formal proof |
 | Existing CI fixture repairs | `cockpit-ci-repair-v1`: 35 tests passed with global/system Git configuration disabled | Restores early test-home isolation and supplies a command-scoped fixture identity; all assertions retained |
 | Full Python suite | `cockpit-candidate-v1`: timeout, exit 124 at its 600-second limit | Incomplete; focused results do not replace full CI acceptance |
 
-The machine-readable [checkpoint evidence](COCKPIT-WINDOW-EVIDENCE.json)
-binds source and retained output hashes. The evidence records distinct tested
+The original [checkpoint evidence](COCKPIT-WINDOW-EVIDENCE.json) is preserved.
+The [layout follow-up evidence](COCKPIT-WINDOW-LAYOUT-EVIDENCE.json) binds the
+later source, regression output, GUI receipts and visual inspection. The evidence records distinct tested
 snapshots; their combination still requires the complete CI gate. The earlier
 base CI run failed four isolation checks and three fixture Git commits; the
 focused repair above does not turn that failed run into a pass.
@@ -93,6 +94,16 @@ coordinate space. V4/v5 use that stronger oracle and its negative controls.
 Component v10 also exposed a test race: Close reached Sway before the reopened
 window mapped. V11 observes the compositor mapping with bounded read-only
 queries before sending the single Close command; it does not retry the action.
+
+Screenshot review after actual-host v5 identified another visible defect:
+the status grid clipped its long usage-count value. The follow-up bounds and
+wraps count values and gives the usage label/value their own full-width rows.
+Its expressions, source-admission checks and operations are unchanged.
+Component v12 and actual-host v6 pass the same lifecycle/geometry controls;
+the retained v6 image shows the repaired fixture counts. That image is a visual
+observation for one display, not an automated all-content visibility proof.
+The earlier v5 lifecycle pass remains valid within its recorded scope and
+does not erase the later visual failure.
 
 Both runners are opt-in and create a new output directory:
 
