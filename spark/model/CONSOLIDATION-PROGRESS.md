@@ -77,3 +77,51 @@ uses the recommended collector instead of suppressing that warning.
 No recovery-latency guarantee or Power-of-Ten rule 2 compliance is earned by
 this experiment alone. The smallest safe performance change must first retain
 the same source-observation, lineage, replay and publication guarantees.
+
+## Reproduced cursor-invalidation gap
+
+Status: FAILED liveness condition under repeated current-day replacement;
+repair OPEN. The characterization test
+`ConsolidationBacklogRecovery.test_current_day_replacement_restarts_paged_scan_until_quiescence`
+uses real corpus Git, Linux directory cookies, scan checkpoints and atomic file
+replacement. It reduces the scan entry budget to two to force pagination over
+a small fixture. All old days are pinned and the replacement page is newer
+than the fixed cutoff. Twelve recovery/replacement rounds retain the same
+pending transaction, produce multiple scan generations and never settle.
+After replacements stop, the same recovery path completes within the test's
+bounded retry allowance and every source byte remains unchanged.
+
+This passing characterization test records undesirable behavior; it is not
+acceptance of that behavior. Settlement is controlled in this fixture. It is
+not a complete daemon execution or proof of infinite execution. The shipped
+scan entry budget is 1024; the reduced-budget fixture exercises its cursor
+logic, not a measured full-size production workload.
+
+The relevant production interaction is visible in code:
+`_bounded_source_entries` treats changed directory identity as a cursor reset;
+`_advance_consolidation_scan` restarts its generation on that reset;
+`_recover_before_pulse` may return with consolidation still pending; and
+`_pulse_transaction_guarded` can then sense and atomically update event pages.
+Therefore eventual stability of eligible old bytes alone is insufficient for
+the current algorithm: unrelated newer pages share the directory namespace.
+The earlier finite model's atomic scan does not cover this interaction.
+
+The observed installed backlog had completed directory scans between
+source-removal rescans. This experiment does not diagnose its current wait as
+this pagination failure.
+
+Repair requirements:
+
+- Make discovery progress independent of ordinary updates outside its admitted
+  eligible snapshot, while preserving exact source identity checks before
+  consolidation and retaining newly arriving evidence.
+- Define and persist the snapshot/transaction boundary, including later-arriving
+  old events, restart, source replacement, and cutoff rollover. An immutable
+  authoritative namespace snapshot is a candidate, not an accepted design.
+- Do not ignore changed directory cookies, skip an unvisited suffix, discard
+  arrivals, silently raise resource ceilings, or suspend capture without a
+  qualified durable buffering/overflow policy.
+- Require a positive regression with continuing current-day updates, complete
+  eligible coverage, source retention and eventual settlement, followed by
+  selected resident-path and fresh-process tests. Preserve this characterization
+  as historical evidence when the expected behavior is deliberately repaired.

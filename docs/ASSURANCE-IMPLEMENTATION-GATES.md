@@ -142,6 +142,12 @@ the implementation's rescan structure, a finite liveness experiment and
 negative controls for reset-on-keep and external source recreation. It leaves
 directory-page refinement, successful operation assumptions, resident
 scheduling and wall-clock bounds explicit. It does not close G4 or rule 2.
+The subsequent real-filesystem characterization reproduces repeated cursor
+resets from current-day atomic replacement under a reduced paging budget.
+Recovery completes after those replacements cease. This is a tracked liveness
+failure and a repair obligation, not a green acceptance result. The combined
+backlog, exec, ledger and original `EpochMerge` suites pass 48 tests with that
+negative behavior explicitly preserved.
 
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.

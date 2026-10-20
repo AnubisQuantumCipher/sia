@@ -139,6 +139,45 @@ class ConsolidationBacklogRecovery(unittest.TestCase):
                          self.originals)
         self.assertFalse(self.fixture.epoch.exists())
 
+    def test_current_day_replacement_restarts_paged_scan_until_quiescence(self):
+        current = self.fixture._day("2026-10-20", ("OBS",))
+        current_bytes = current.read_bytes()
+        self.fixture._commit()
+        memo = {}
+        self.lib._mark_consolidation_pending(memo)
+        identity = memo["consolidation_pending"]["id"]
+        now = self.lib.datetime.datetime.fromisoformat("2026-10-20T12:00:00+00:00")
+        generations = set()
+        with mock.patch.object(self.lib, "MAX_SOURCE_SCAN_ENTRIES", 2), \
+                mock.patch.object(self.lib, "utcnow", return_value=now), \
+                mock.patch.object(self.lib.siamind, "pending_user_pin_slugs",
+                                  return_value=self.pins), \
+                mock.patch.object(self.lib, "_settle_consolidation_ledger") as settle:
+            for _attempt in range(12):
+                self.lib._recover_pending_consolidation(memo)
+                state = self.scan()
+                generations.add(state["generation"])
+                self.assertEqual(memo["consolidation_pending"]["id"], identity)
+                self.assertTrue(self.lib._consolidation_scan_debt())
+                # Normal atomic replacement changes the containing directory
+                # identity even when this page is newer than the pinned cutoff.
+                self.lib.atomic_write(str(current), current_bytes.decode())
+                memo = self.lib.load_memo()
+            settle.assert_not_called()
+            self.assertGreater(len(generations), 1)
+            # Stop namespace changes; retain every original processing gate.
+            for _attempt in range(64):
+                self.lib._recover_pending_consolidation(memo)
+                memo = self.lib.load_memo()
+                if "consolidation_pending" not in memo:
+                    break
+            self.assertNotIn("consolidation_pending", memo)
+            settle.assert_called_once()
+        self.assertEqual({path: path.read_bytes() for path in self.paths},
+                         self.originals)
+        self.assertEqual(current.read_bytes(), current_bytes)
+        self.assertFalse(self.fixture.epoch.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
