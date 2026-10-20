@@ -94,3 +94,18 @@ Each acceptance record must name exact source, configuration, toolchain,
 commands/exits, positive and negative controls, raw outputs, reviewer and
 remaining assumptions. No inference of whole-system safety or certification
 follows from this coding baseline.
+
+## First repair verification
+
+At source `4c72a49b95e325ae9e6a9ea1ebeb91152f4eb249`, the project adds
+`No_Implicit_Heap_Allocations` (the installed compiler's exact restriction
+identifier). Fresh archived-source build, six harnesses, all-unit GNATprove
+and the strict report gate passed. The summary reports 386 discharged checks
+across twelve units, no justified/unproved checks, and clean detail rows.
+Raw evidence: `power-of-ten-reproduction-v1` in the external assurance
+directory. Independent GPT-6.1 review in `power-of-ten-evidence-review-v1.txt`
+verified the source/configuration archive, tool hashes, harness exits and
+reported proof scope without repeating the heavy run.
+This closes the missing compiler restriction for that source
+configuration only; total stack, runtime allocation, resource admission,
+target timing and the rest of rule 3 remain OPEN.
