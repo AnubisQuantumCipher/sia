@@ -35,8 +35,12 @@ class ConsolidationDiscovery(unittest.TestCase):
         self.before = self.journal.read_bytes()
 
     def git(self, *arguments):
+        # Every test-created commit has its own identity. Never depend on a
+        # developer's global Git config or signing agent being present in CI.
         return subprocess.check_output(
-            ["git", "-C", self.lib.CORPUS, *arguments],
+            ["git", "-c", "user.name=SIA Fixture",
+             "-c", "user.email=sia-fixture@example.invalid",
+             "-c", "commit.gpgsign=false", "-C", self.lib.CORPUS, *arguments],
             text=True, timeout=10).strip()
 
     def test_discovery_finishes_with_continuing_writes_and_preserves_arrival(self):

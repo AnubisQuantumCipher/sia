@@ -1,4 +1,6 @@
 """Fresh-process recovery after execution intent, publication and cleanup cuts."""
+from tests import sia_test_home  # noqa: F401 -- isolate before runtime references
+
 import hashlib
 import json
 from pathlib import Path

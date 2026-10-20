@@ -1,4 +1,6 @@
 """Fresh-exec recovery with controlled and actual signed-ledger settlement."""
+from tests import sia_test_home  # noqa: F401 -- isolate before runtime references
+
 import json
 from pathlib import Path
 import signal
