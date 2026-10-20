@@ -5,6 +5,12 @@ not an installed service, a proof, or permission to migrate live SIA data.
 It follows the independent next-boundary review of checkpoint `0079f724`.
 All obligations in `docs/ASSURANCE-GOAL.md` remain required.
 
+The non-final refinement in `PROTECTED-SLOT-RECOVERY.md` specifies reconciliation
+of an authenticated final-named intent whose prior directory sync is unknown.
+Under exact current recovery authority, synchronize it before any payload
+effect; do not infer historical durability from visibility. Its temporal
+admission and control-freshness prerequisites remain OPEN before design freeze.
+
 ## Purpose and authority
 
 Implement one actual protected write and an independently verifiable outcome

@@ -105,6 +105,14 @@ is JACKAL `exact`, not protocol proof. Initial public-key byte/signature fixture
 and an independently authored checker are in
 [`spark/tests/PROTECTED-SLOT-VECTORS.md`](../spark/tests/PROTECTED-SLOT-VECTORS.md);
 they test fixed examples and signature mutations, not protected authority.
+The non-final recovery proposal in
+[`spark/PROTECTED-SLOT-RECOVERY.md`](../spark/PROTECTED-SLOT-RECOVERY.md)
+separates new publication, exact-operation recovery and current read authority.
+It treats a visible signed intent as requiring durability reconciliation and
+requires current recovery permission during uninterrupted continuation too.
+Admission timing, independently protected control freshness, persistent schemas
+and bounded phase execution remain OPEN; this is not an implemented or accepted
+recovery service.
 Complete malformed-input policy and portable verification, complete
 resource budgets, clock domains and signing/recovery schemas still must be
 completed and frozen before implementation acceptance. These proposals do not replace the
