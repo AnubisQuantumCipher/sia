@@ -254,7 +254,7 @@ class _ArchiveSlot:
 
     def move(self):
         if self.state == "archive":
-            self.current()
+            self._synchronize_recovered_move()
             return
         self.current()
         owner = self.owner
@@ -299,6 +299,23 @@ class _ArchiveSlot:
             self.current()
         finally:
             destination.close()
+
+    def _synchronize_recovered_move(self):
+        # A visible rename may have preceded either parent-directory fsync.
+        # Retain the old source parent through the absence check and sync.
+        old = _HeldRaw(self.owner, self.source, self.source_path,
+                       self.owner["MAX_STATE_JSON_BYTES"])
+        try:
+            if old.fd is not None:
+                _refuse(self.source, "ack-source-name-survived-move")
+            self.current()
+            old.current()
+            os.fsync(old.directories.fd)
+            os.fsync(self.held.directories.fd)
+            old.current()
+            self.current()
+        finally:
+            old.close()
 
     def close(self):
         self.held.close()
@@ -357,6 +374,10 @@ class _EffectsArchiveSlot:
         if self.expected_raw is None:
             _refuse(self.source, "ack-effects-archive-payload")
         if self.state == "archive":
+            self.current()
+            # Visibility is not durability: a previous publisher may have
+            # died after rename and before synchronizing this directory.
+            os.fsync(self.held.directories.fd)
             self.current()
             return
         self.current()
@@ -502,6 +523,9 @@ class _CursorAuthority:
     def publish(self, value=None):
         self.current()
         if self.state == "target":
+            # Exact target bytes can be visible before replacement is durable.
+            os.fsync(self.held.directories.fd)
+            self.current()
             return
         if self.main:
             self.owner["save_cursors"](value)
