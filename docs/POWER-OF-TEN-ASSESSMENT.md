@@ -154,3 +154,22 @@ This addresses local reviewability under rule 4 and exposes effect boundaries
 for subsequent work. It does not close the dynamic facade/call-graph problem
 under rules 1 and 9, prove termination or fixed allocation, or qualify the
 snapshot consumer. Existing violations remain open without an approved waiver.
+
+## Source-outcome checking
+
+Source `4082ac8190ab68e1f818f60494192b0023fdef5a` adds a read-only observer
+that reconstructs expected marker-index entries from exact retained source
+digests instead of trusting a successful executor return or an incomplete
+epoch roster. Its 116-test archive reproduction includes wrong-index,
+missing-index, history-loss, search-exhaustion and fresh-process recovery
+controls. This contributes evidence for explicit checked results and failure
+handling under rules 5 and 7. Search counts and individual command output are
+bounded, but aggregate latency, allocation and lease waiting remain unproved
+under rules 2 and 3. No acknowledgment or authority transfer follows.
+
+The five changed Python implementation/test files have no findings in the
+limited source inventory, retained with development-v2. That observation is
+not a compliance result: the inventory does not resolve indirect calls or
+prove semantic loop bounds. Source and complete scope are recorded in
+`spark/CONSOLIDATION-SNAPSHOT.md`; failures and larger unresolved rules remain
+visible in this assessment.

@@ -287,3 +287,13 @@ execution history are outside this observation claim. Later live originals
 are not yet independently pinned, and a real GC negative control demonstrates
 the resulting safe refusal. Durable source retention and all-batch retirement
 are still required; see `CONSOLIDATION-SNAPSHOT.md` for exact scope and evidence.
+
+The same 116-test selection passes from the fresh Git archive of
+`4082ac8190ab68e1f818f60494192b0023fdef5a` in
+`consolidation-outcomes-reproduction-v1`. Independent GPT-6.1 review found no
+blocker for the stated read-only selected-source scope and did not rerun the
+suite. This is TESTED component behavior, not a proved or installed retirement
+boundary. The next prerequisite is durable, identity-bound retention of every
+claimed original before any destructive effect, including versions observed
+after snapshot admission; admission and claim identity must survive crash,
+replay and real history GC without replacing mismatched pins.

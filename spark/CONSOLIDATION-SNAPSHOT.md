@@ -519,3 +519,19 @@ consumer protocol. Protected retained-source eligibility, whole-day paging,
 immutable later-source retention, durable outcomes and retirement, late-arrival
 handoff, installed migration, protected ownership and the complete resident
 acceptance campaign remain open. No SPARK or installed runtime change is made.
+
+Exact-source outcome-observer reproduction:
+
+- Source: `4082ac8190ab68e1f818f60494192b0023fdef5a`.
+- Git archive SHA-256: `e21561a3d236ee67c5e7446688df607f87442f16d8398f2b5f87f72804ed4ece`.
+- Python 3.14.7; git version 2.55.0; 116 targeted tests passed, exit 0.
+- `consolidation-outcomes-reproduction-v1` externally retains the archive,
+  extracted source, command, tool versions, receipt and raw output.
+- Independent GPT-6.1 review: `consolidation-outcomes-review-v1.txt` and
+  `consolidation-outcomes-review-v2.txt`. The addendum checked all five
+  implementation/test hashes against the development receipt and reviewed
+  its completed output; the reviewer did not rerun the tests.
+- The five-file syntax inventory is retained in development-v2 as
+  `source-inventory.json`, with status `inventory-only` and no findings in
+  its limited checks. This does not establish Power of Ten compliance,
+  loop termination, absence of indirect calls or bounded allocation.
