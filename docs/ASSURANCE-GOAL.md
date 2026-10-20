@@ -146,9 +146,16 @@ captured bytes from complete source coverage, logical retraction/retirement
 from deletion, and legacy origin classification from authenticated admission.
 The first pure local retraction planner is described in
 [`spark/RETRACTION-PLANNER.md`](../spark/RETRACTION-PLANNER.md). Strict development
-build and all runtime harnesses passed; committed-source proof/reproduction
-is still required. Protected integration and global descendant invalidation
-remain unimplemented.
+build and all six runtime harnesses passed. Committed-source reproduction at
+`376a54102eaff64383fc2f54c5a0d1ef68f0819f` discharged 386 reported checks across
+twelve fully analyzed units, with no justified or unproved checks. Independent
+GPT-6.1 review verified the retained source archive, tool identities and results
+(`retraction-reproduction-v1` and `retraction-review-v2.txt` in the external
+assurance evidence directory). This is PROVED pure-contract behavior under the
+recorded toolchain and supplied premises, plus TESTED harness executions.
+Authenticated parent observations, protected integration and global descendant
+invalidation remain unimplemented; no installed authority or full lifecycle
+acceptance follows. Local evidence custody remains an assumption.
 
 The operator supplied a documentation-based assessment, not a certification.
 Its quoted retrieval figures are historical repository diagnostics, not answer
