@@ -56,6 +56,16 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A19 | Semantic accuracy and abstention | Independent held-out ground truth, false-pass/false-fail measurements and explicit abstention; no LLM truth authority | UNRUN; complements A08 without replacing its baseline comparison |
 | A20 | Selected installed path and explicit migration | Actual dispatch bound to installed source/config/retained state; fault campaign on selected path; qualified migration without silent configuration or privilege changes | OPEN; raw controller_source false observed, actual dispatch not established by that field alone |
 | A21 | Full traceability and guidance | Hazards/requirements to contracts, source, proof, independent review and exact installed/released tests; relevant Ada/SPARK guidance applied | IN PROGRESS; staged gates and resource inventory recorded |
+| A22 | Agent compaction continuity | Authorized original-event capture, source-bound structured checkpoints, bounded conservative restore, approval and uncertain-operation reconciliation; repeated-compaction evaluation against an uncompacted baseline | OPEN: current Codex sense records metadata only; no qualified SIA task-restoration adapter |
+| A23 | Qualified harness lifecycle integration | Actual current Codex hooks exercised at compaction/resume, installed-source readback and retained outputs; each other harness separately qualified | OPEN: configured SessionStart handler belongs to herdr, not SIA; file presence is not integration evidence |
+
+The 2026-10-20 compaction-continuity expansion is binding scope in this same
+single-owner session. Its initial gap assessment, requirements and staged
+acceptance campaign are in
+[`AGENT-CONTINUITY.md`](AGENT-CONTINUITY.md). It adds to A05/A16–A21 and the
+existing gates; it does not replace consolidation recovery, protected authority,
+release or marketplace obligations. The separately drafted SOUL.md remains
+under operator review and must not be installed by this mission.
 
 Source completeness must distinguish observed empty, not observed, unavailable,
 and verified complete. Authentication of a model record never makes its content

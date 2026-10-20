@@ -53,6 +53,13 @@ Passing them cannot authorize migration or hide the missing enforcement.
 No new spending, security privilege, concurrency cap or network authority is
 implicitly granted by this sequence. The existing release remains separate.
 
+The later operator-directed [agent-continuity mission](AGENT-CONTINUITY.md)
+extends G1–G6 with original-event capture, structured source-bound checkpoints,
+bounded conservative restoration, approval/uncertain-operation reconciliation
+and repeated-compaction evaluation. Codex is the first qualification target;
+other harnesses remain unqualified until separately exercised. This remains
+one implementation owner and does not install the draft SOUL.md.
+
 ## Hazards and traceability requirements
 
 Every row must ultimately point to immutable source, contract/proof obligation,
