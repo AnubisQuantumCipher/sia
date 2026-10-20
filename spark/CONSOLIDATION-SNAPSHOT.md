@@ -253,7 +253,9 @@ state-file reader, corpus lease and atomic writer are used.
 |---|---|---|
 | `scan` | Last cursor from an empty candidate page | Read and atomically retain the next page |
 | `pending` | Before-cursor, exact next cursor and candidate batch | Replay that batch or derive live claims |
-| `claimed` | Same batch plus bounded selected live claims and remaining days | Revalidate and replay; no execution or retirement |
+| `claimed` | Same batch plus bounded selected live claims and remaining days | Revalidate all sources live, then persist execution intent |
+| `executing` | Unchanged before-cursor, batch and claims; durable attempt intent | Resume exact-lineage effects; no acknowledgment |
+| `effects-returned` | Same cursor, batch and claims after checked executor return | Replay the attempt observation; no retirement or settlement |
 | `complete` | Exhausted discovery with no outstanding candidate batch | Revalidate admission/pin and replay the observation |
 
 The next cursor of a nonempty page is retained inside its pending batch; it
@@ -311,8 +313,9 @@ inherits the larger existing state-reader ceiling. These are prototype resource
 limits, not an approved reduction of supported corpus/claim capacity. CPython
 allocation, authenticated producer/currentness, full capacity compatibility,
 execution/retirement, late-arrival handoff and legacy migration remain open.
-There is no transition out of a nonempty claimed batch until the real consumer
-protocol is implemented and qualified; there is no acknowledgment shortcut.
+At the staging checkpoint there was no transition out of a nonempty claimed
+batch. The execution-attempt extension below adds intent and returned-effect
+states; there is still no acknowledgment shortcut or batch retirement.
 
 Exact-source staging reproduction:
 
@@ -363,11 +366,12 @@ The corrected fixture uses the real lease and pins the existing exact-claim
 refusal message. No production guard was changed for those test corrections.
 Independent review is retained in `consolidation-executor-review-v1.txt`.
 
-The staged delivery component still cannot execute or acknowledge a batch.
-Next, persist execution intent before allowing missing-source recovery, then
-qualify consumer completion, cursor advancement and retirement with fresh
-process cuts. The installed churn defect, protected ownership, late-arrival
-handoff, capacity compatibility, and release gates remain open.
+The executor-refactor checkpoint did not enable staged execution. The subsequent
+extension below persists execution intent before allowing missing-source
+recovery. Consumer completion, cursor advancement and retirement still require
+qualification with fresh process cuts. The installed churn defect, protected
+ownership, late-arrival handoff, capacity compatibility, and release gates
+remain open.
 
 Exact-source executor reproduction:
 
@@ -381,3 +385,50 @@ Exact-source executor reproduction:
   completed afterward. The reviewer did not rerun the suite.
 - No installed-runtime change, staged execution transition, SPARK change
   or whole-system equivalence proof is included in this checkpoint.
+
+## Durable execution attempts
+
+`siaconsolidationdelivery.execute_claims` is an internal experimental consumer.
+Under the actual corpus lease it revalidates the retained admission, pin,
+traversal and claims. A `claimed` record still requires every source to be live.
+Only a retained `executing` record permits the legacy missing-source recovery
+rule, which requires exact epoch lineage. A missing source without that lineage
+refuses even after intent. Merely finding pre-existing epoch lineage cannot
+authorize a `claimed` record to skip initial live-source validation.
+
+Before the first epoch effect, the consumer performs the existing corpus
+precommit, observes current pins/importance and take windows, and persists
+`executing`. Recovery observes protection again under the lease and calls the
+same extracted executor. Only a successful return with well-formed bounded
+attempt counts can persist `effects-returned`. Those counts are checked as an
+interface result but are not retained or used as authority.
+
+Neither state advances the traversal cursor, removes claims, changes legacy
+scan acknowledgment, clears maintenance debt, settles a ledger, or declares
+publication readiness. Protected, capacity-limited and other retained sources
+can remain after the executor returns. Replay of `effects-returned` revalidates
+claim/source lineage but does not repeat effects. Qualification of every source
+outcome and exact event-index completeness remains required before retirement.
+
+A negative control removes a real event-index leaf after effects return.
+Replaying the returned-attempt state still succeeds and does not repair that
+leaf. This explicitly demonstrates that the state is **not** an index
+completeness witness or a safe settlement predicate. It is not a waived
+retirement requirement; no retirement API exists yet.
+
+Tests exercise intent-writer failures, failed precommit, fresh protection
+observations, malformed executor results, missing source refusal, index
+publication failure and partial cleanup replay. A separate disposable worker
+uses actual SIGKILL after persisted intent, epoch writing, first-source
+unlink, executor return and persisted returned state. Fresh interpreters must
+retain exact claims and maintenance-marker bytes, preserve original source
+bytes in the admitted Git commit, and avoid duplicate epoch counts.
+These are cuts after returned operations, not torn writes or storage power loss.
+
+The fixture explicitly opts into a disposable HOME before importing SIA.
+No installed dispatch or legacy scan migration is changed. Retained journal
+integrity remains cooperative same-user state, not authenticated history:
+phase forgery, rollback and hostile same-user writes require the still-open
+protected producer/actuator boundary. Resource/WCET bounds, snapshot-versus-live
+source retention, aggregate capacity, all-batch outcomes, late arrivals,
+retirement and the complete selected resident campaign remain open.

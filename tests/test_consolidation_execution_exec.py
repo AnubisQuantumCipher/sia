@@ -1,0 +1,95 @@
+"""Fresh-process recovery after execution intent, publication and cleanup cuts."""
+import json
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+WORKER = Path(__file__).with_name("consolidation_execution_exec_worker.py")
+
+
+class ConsolidationExecutionExec(unittest.TestCase):
+    def invoke(self, home, phase, expected=0):
+        result = subprocess.run(
+            [sys.executable, "-B", str(WORKER), phase],
+            env={"HOME": str(home), "SIA_EXEC_FIXTURE_HOME": str(home),
+                 "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8"},
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, expected, result.stderr)
+        return json.loads(result.stdout) if expected == 0 else None
+
+    def check_cut(self, home, cut):
+        (home / ".sia-exec-fixture").write_text("disposable-test-home\n")
+        claimed = self.invoke(home, "prepare")
+        state = home / ".local/state/sia"
+        corpus = home / ".local/share/sia/corpus"
+        sources = sorted((corpus / "events/org").glob("*.md"))
+        self.assertEqual(len(sources), 2)
+        original = {path.relative_to(corpus).as_posix(): path.read_bytes()
+                    for path in sources}
+        memo = (state / "memo.json").read_bytes()
+        journal = state / "consolidation-snapshot-delivery.json"
+        epoch = corpus / "epochs/org/2026-w02.md"
+        self.invoke(home, cut, -signal.SIGKILL)
+        phase = "effects-returned" if cut == "kill-persisted" else "executing"
+        self.assertEqual(json.loads(journal.read_text()), dict(claimed, phase=phase))
+        if cut == "kill-intent":
+            self.assertFalse(epoch.exists())
+            self.assertTrue(all(path.exists() for path in sources))
+        elif cut == "kill-epoch":
+            self.assertTrue(epoch.exists())
+            self.assertTrue(all(path.exists() for path in sources))
+        elif cut == "kill-unlink":
+            self.assertFalse(sources[0].exists())
+            self.assertTrue(sources[1].exists())
+        else:
+            self.assertTrue(all(not path.exists() for path in sources))
+        before = epoch.read_bytes() if epoch.exists() else None
+        returned = self.invoke(home, "recover")
+        self.assertEqual(returned, dict(claimed, phase="effects-returned"))
+        self.assertTrue(all(not path.exists() for path in sources))
+        if before is not None:
+            self.assertEqual(epoch.read_bytes(), before)
+        self.assertEqual((state / "memo.json").read_bytes(), memo)
+        self.check_replay_and_retention(home, returned, original)
+
+    def check_replay_and_retention(self, home, returned, original):
+        corpus = home / ".local/share/sia/corpus"
+        journal = home / ".local/state/sia/consolidation-snapshot-delivery.json"
+        retained = journal.read_bytes()
+        before = {path.relative_to(corpus): path.read_bytes()
+                  for path in corpus.rglob("*.md") if ".git" not in path.parts}
+        self.assertEqual(self.invoke(home, "recover"), returned)
+        self.assertEqual(journal.read_bytes(), retained)
+        self.assertEqual({path.relative_to(corpus): path.read_bytes()
+                          for path in corpus.rglob("*.md")
+                          if ".git" not in path.parts}, before)
+        for relative, raw in original.items():
+            retained_source = subprocess.check_output(
+                ["git", "-C", str(corpus), "show",
+                 returned["admission"]["commit"] + ":" + relative], timeout=10)
+            self.assertEqual(retained_source, raw)
+
+    def test_actual_process_cuts_retain_intent_and_resume_exact_effects(self):
+        for cut in ("kill-intent", "kill-epoch", "kill-unlink",
+                    "kill-return", "kill-persisted"):
+            with self.subTest(cut=cut), tempfile.TemporaryDirectory(
+                    prefix="sia-execution-cut-") as directory:
+                self.check_cut(Path(directory), cut)
+
+    def test_worker_requires_fixture_opt_in(self):
+        with tempfile.TemporaryDirectory(prefix="sia-execution-refusal-") as home:
+            result = subprocess.run(
+                [sys.executable, "-B", str(WORKER), "prepare"],
+                env={"HOME": home, "PATH": "/usr/bin:/bin"},
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("explicit isolated fixture home required", result.stderr)
+            self.assertFalse((Path(home) / ".local").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

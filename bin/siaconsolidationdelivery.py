@@ -1,7 +1,8 @@
-"""Experimental owned discovery batch and live-claim handoff.
+"""Experimental owned discovery, live claims and durable execution intent.
 
-No caller acknowledgment can retire a batch. Consumer execution/retirement,
-legacy migration and protected authority remain separate integration gates.
+No caller acknowledgment can retire a batch. A returned effects attempt is
+not completion, publication or settlement. Retirement, legacy migration and
+protected authority remain separate integration gates.
 """
 import json
 import os
@@ -94,7 +95,9 @@ def _validate(owner, record, value):
             "schema", "admission", "phase", "cursor", "batch", "claims"} \
             or value["schema"] != SCHEMA or value["admission"] != record \
             or not isinstance(value["phase"], str) \
-            or value["phase"] not in {"scan", "pending", "claimed", "complete"}:
+            or value["phase"] not in {
+                "scan", "pending", "claimed", "executing",
+                "effects-returned", "complete"}:
         raise ValueError("snapshot delivery shape is invalid")
     _encoded(value)
     cursor = value["cursor"]
@@ -113,7 +116,7 @@ def _validate(owner, record, value):
                                     budget=_budget(batch["budget"]))
         if not actual["candidates"] or _encoded(batch["result"]) != _encoded(actual):
             raise ValueError("snapshot delivery batch differs from pinned traversal")
-        if value["phase"] == "claimed":
+        if value["phase"] in {"claimed", "executing", "effects-returned"}:
             _validate_claims(owner, record, batch, value["claims"])
         elif value["claims"] is not None:
             raise ValueError("snapshot pending batch has unexpected claims")
@@ -131,9 +134,12 @@ def offer(owner, expected, *, budget=32):
     record, budget = _record(expected), _budget(budget)
     with owner.corpus_owner():
         state = _load(owner, record)
-        if state["phase"] in {"pending", "claimed"}:
+        if state["phase"] in {
+                "pending", "claimed", "executing", "effects-returned"}:
             if state["phase"] == "claimed":
                 _require_live_sources(owner, state["claims"])
+            elif state["phase"] in {"executing", "effects-returned"}:
+                owner._claimed_consolidation_paths(state["claims"])
             return state
         result = discovery.discover(owner, record, state["cursor"], budget=budget)
         if result["candidates"]:
@@ -176,4 +182,60 @@ def prepare_claims(owner, expected):
         _boundary("before-claims-persist")
         _save(owner, updated)
         _boundary("claims-persisted")
+        return updated
+
+
+def _protection(owner):
+    """Observe current protection inside the caller's corpus lease."""
+    mind = owner.siamind.load_mind()
+    windows = owner.siatakes.open_take_evidence_windows()
+    pages = owner.siamind.pending_user_pin_slugs() | {
+        slug for slug, record in mind.get("nodes", {}).items()
+        if isinstance(record, dict) and owner.siamind.is_important(record)}
+    return pages, windows
+
+
+def _check_effect_result(result, claims):
+    # These counts describe the attempt; they cannot acknowledge sources.
+    limit = len(claims["claims"])
+    if not isinstance(result, tuple) or len(result) != 3 \
+            or any(isinstance(value, bool) or not isinstance(value, int)
+                   or not 0 <= value <= limit for value in result):
+        raise ValueError("snapshot executor returned invalid attempt counts")
+
+
+def execute_claims(owner, expected):
+    """Persist intent before effects; retain all work until qualified retirement.
+
+    `effects-returned` records only successful return of this attempt. Protected,
+    capacity-limited or otherwise retained sources can remain. Caller-provided
+    counts or acknowledgments cannot create that transition.
+    """
+    record = _record(expected)
+    with owner.corpus_owner():
+        state = _load(owner, record)
+        if state["phase"] == "effects-returned":
+            owner._claimed_consolidation_paths(state["claims"])
+            return state
+        if state["phase"] not in {"claimed", "executing"}:
+            raise ValueError("snapshot delivery has no executable claims")
+        if state["phase"] == "claimed":
+            _require_live_sources(owner, state["claims"])
+        else:
+            owner._claimed_consolidation_paths(state["claims"])
+        if owner.corpus_commit("pre-consolidation") not in {"committed", "clean"}:
+            raise RuntimeError("pre-consolidation corpus git commit failed")
+        pages, windows = _protection(owner)
+        if state["phase"] == "claimed":
+            state = dict(state, phase="executing")
+            _boundary("before-execution-persist")
+            _save(owner, state)
+            _boundary("execution-persisted")
+        result = owner._execute_consolidation_claims(
+            state["claims"], record["cutoff"], pages, windows)
+        _check_effect_result(result, state["claims"])
+        _boundary("effects-returned")
+        updated = dict(state, phase="effects-returned")
+        _save(owner, updated)
+        _boundary("effects-persisted")
         return updated
