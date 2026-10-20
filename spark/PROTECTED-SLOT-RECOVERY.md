@@ -84,6 +84,11 @@ admission linearization rule, expiry checks and corresponding crash table
 before implementing either interpretation; do not change existing grant
 lifetime semantics by implication.
 
+The experimental candidate and its finite model are described in
+`model/ADMISSION-RECOVERY.md`: validity at the protected sample, with current
+independent recovery permission gating later effects. This candidate explicitly
+allows post-expiry completion and does not yet close the temporal freeze gate.
+
 For an authenticated final intent, write-grant expiry, write-grant removal or a
 new service epoch prevents new admission but does not erase retained evidence.
 Recovery uses the retained historical context and the current independently

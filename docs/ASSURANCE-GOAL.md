@@ -113,6 +113,11 @@ requires current recovery permission during uninterrupted continuation too.
 Admission timing, independently protected control freshness, persistent schemas
 and bounded phase execution remain OPEN; this is not an implemented or accepted
 recovery service.
+An experimental sampled-admission model is documented in
+[`spark/model/ADMISSION-RECOVERY.md`](../spark/model/ADMISSION-RECOVERY.md).
+It exposes completion after grant expiry and checks the abstract intent-sync
+requirement, with a deliberately broken negative control. Model evidence does
+not authenticate observations or qualify the eventual Linux implementation.
 Complete malformed-input policy and portable verification, complete
 resource budgets, clock domains and signing/recovery schemas still must be
 completed and frozen before implementation acceptance. These proposals do not replace the
