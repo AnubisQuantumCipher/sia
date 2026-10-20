@@ -24,6 +24,7 @@ as an installed guarantee. Evidence must bind the exact source and toolchain.
 | E03 | Per-request, queue, connection, process, output and disk budgets are enforced | Fixed single-frame paths TESTED; service-wide boundedness UNPROVEN | SPARK admission bounds, OS limits, saturation/recovery and starvation controls |
 | R01 | Filesystem/Git/index operations implement the abstract durable transition model | Bounded TLC model checked; component SIGKILL repairs TESTED; complete refinement UNPROVEN | Full front-door crash injection, replay, retained corruption cases and actual restart receipts |
 | R02 | Recovery can authenticate data and receipts after off-host damage or credential compromise | UNRUN | Isolated off-host restore, revoked/compromised-key controls, tampered-receipt refusals and source comparison |
+| R03 | Recovery-control freshness survives joint rollback of local records and epoch files | Experimental finite model only; actual independent anchor UNIMPLEMENTED/UNPROVEN | Independently pinned nonrollbackable provider; bounded current observation and compare-and-advance; serialized effects/revocation; joint-rollback, reset, lost-response and unavailable-provider tests |
 | C01 | Cognitive improvement claims reflect a frozen, held-out comparison | Historical diagnostic only; independent acceptance UNRUN | Independent dense-baseline evaluation, complete positive/negative measurements and reproducible artifacts |
 
 Readiness and disclosure are separate obligations. `Observe_Only` does not

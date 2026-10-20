@@ -118,6 +118,10 @@ An experimental sampled-admission model is documented in
 It exposes completion after grant expiry and checks the abstract intent-sync
 requirement, with a deliberately broken negative control. Model evidence does
 not authenticate observations or qualify the eventual Linux implementation.
+The independent-anchor requirements and rollback counterexamples are in
+[`spark/model/CONTROL-FRESHNESS.md`](../spark/model/CONTROL-FRESHNESS.md).
+Provider commissioning and actual rollback-resistant freshness remain UNPROVEN;
+a second local signed epoch file is not an accepted substitute.
 Complete malformed-input policy and portable verification, complete
 resource budgets, clock domains and signing/recovery schemas still must be
 completed and frozen before implementation acceptance. These proposals do not replace the

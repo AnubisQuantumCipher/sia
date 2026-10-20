@@ -48,6 +48,9 @@ control record. Its protected storage, atomic update/readback, restart behavior
 and bounded retention remain OPEN; no currentness producer is implemented.
 Issuer, key/profile, allowed actions and fixture role need independent pins.
 Separate signature-purpose names do not establish separate OS key custody.
+`model/CONTROL-FRESHNESS.md` specifies the independent-anchor obligation and
+advance-before-control-publication ordering. Its finite model assumes that
+anchor; it does not implement or qualify a provider.
 
 ## Intent publication and durability uncertainty
 
