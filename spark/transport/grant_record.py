@@ -27,6 +27,13 @@ class GrantRecord:
     expected_frame: bytes
 
 
+@dataclass(frozen=True)
+class ScopedGrantRecord:
+    boot: bytes
+    service: bytes
+    grant: GrantRecord
+
+
 def _decimal(value, maximum):
     if not 1 <= len(value) <= 19 or any(c < "0" or c > "9" for c in value):
         raise GrantRefusal("invalid-decimal")
@@ -78,7 +85,7 @@ def _directory(directory_fd):
     return info
 
 
-def load_record(directory_fd):
+def _read_record(directory_fd):
     """Read one held, private service-owned record; errors never yield a grant."""
     parent = _directory(directory_fd)
     descriptor = os.open(GRANT_NAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -96,6 +103,38 @@ def load_record(directory_fd):
         linked = os.stat(GRANT_NAME, dir_fd=directory_fd, follow_symlinks=False)
         if _identity(linked) != _identity(before) or _identity(_directory(directory_fd)) != _identity(parent):
             raise GrantRefusal("grant-binding-changed")
-        return parse_record(raw)
+        return raw
     finally:
         os.close(descriptor)
+
+
+def load_record(directory_fd):
+    """Observe the legacy unscoped fixture format only."""
+    return parse_record(_read_record(directory_fd))
+
+
+def parse_scoped_record(raw):
+    """Decode explicit v2 domains; zeros remain for SPARK policy to deny."""
+    if not isinstance(raw, bytes) or not 1 <= len(raw) <= MAX_RECORD_BYTES:
+        raise GrantRefusal("invalid-record-size")
+    try:
+        rows = raw.decode("ascii").split("\n")
+    except UnicodeDecodeError as exc:
+        raise GrantRefusal("non-ascii-record") from exc
+    if len(rows) != 9 or rows[0] != "sia-grant-v2" or rows[-1] != "":
+        raise GrantRefusal("invalid-scoped-record-layout")
+    domains = []
+    for row, prefix in zip(rows[1:3], ("boot=", "service=")):
+        if not row.startswith(prefix):
+            raise GrantRefusal("invalid-domain-field")
+        value = row[len(prefix):]
+        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise GrantRefusal("invalid-domain-encoding")
+        domains.append(bytes.fromhex(value))
+    legacy = ("sia-grant-v1\n" + "\n".join(rows[3:])).encode("ascii")
+    return ScopedGrantRecord(domains[0], domains[1], parse_record(legacy))
+
+
+def load_scoped_record(directory_fd):
+    """Observe v2 only: legacy records cannot become scoped grants implicitly."""
+    return parse_scoped_record(_read_record(directory_fd))

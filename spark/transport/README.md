@@ -185,3 +185,25 @@ can substitute the grant, sender or clock. The grant record does not bind a boot
 or service epoch. No production caller may treat this executable or its output
 as authenticated authority, a mutation permit or a disclosure authorization.
 The earlier failed build due to Decode argument ordering is retained.
+
+## Scoped grant observation format
+
+The experimental `sia-grant-v2` record adds fixed `boot=` and `service=` lines
+immediately after the version. Each contains one lowercase hexadecimal digest;
+the remaining ordered fields have the existing v1 grammar and the complete
+record retains the same byte ceiling. `load_scoped_record` refuses v1, and
+`load_record` refuses v2. No missing domain is filled from current state and
+no implicit migration is performed. Zero domains remain observable data for
+the pure lifetime policy to deny; the parser never authorizes them.
+
+Both loaders use the same private-file observation checks. The descriptor is
+closed before parsing; a close failure prevents either loader from returning a
+record. Tests retain all original v1 controls and add independent domain-byte
+oracles, explicit version separation, malformed fields and close uncertainty.
+Development controls pass; archived acceptance is pending.
+
+These are retained claimed domain values, not authenticated current epochs.
+No epoch producer, trusted issuer, restart invalidation or scoped Ada handoff
+is installed. The earlier handoff executable still accepts fixture v1 inputs;
+production enforcement must use an authenticated scoped path without falling
+back to that executable or the unscoped comparator.

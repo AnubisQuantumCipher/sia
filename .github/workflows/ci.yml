@@ -37,6 +37,7 @@ jobs:
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_request_packet.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_grant_record.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_scoped_grant_record.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/isolation -p test_committed_export.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/resources -p test_cgroup_results.py -v
       - name: compile all python
