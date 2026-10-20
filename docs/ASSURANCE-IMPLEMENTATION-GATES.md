@@ -265,3 +265,13 @@ See `CONSOLIDATION-SNAPSHOT.md` for the source/archive receipt and retained
 initial test failures. This prepares reusable effects; staged execution
 intent, completion/retirement, installed migration and G4 acceptance remain
 open. No existing readiness gate or protected ownership requirement changes.
+
+The subsequent execution-attempt consumer persists intent before epoch
+effects and retains cursor, claims and maintenance debt after return.
+Source `c54080e9e36305aa1141d6ff29b74dafa46060ea` passes 104 targeted tests
+from its Git archive, including fresh-process SIGKILL recovery and a
+repaired final-journal-size edge with retained pre-repair failure evidence.
+The returned state explicitly does not establish event-index completeness;
+a real missing-leaf control demonstrates this limitation. Source-outcome
+qualification, all-batch completion, cursor retirement, installed migration
+and G4 acceptance remain open. No acknowledgment or settlement is added.

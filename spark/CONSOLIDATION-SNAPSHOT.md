@@ -441,3 +441,21 @@ phase forgery, rollback and hostile same-user writes require the still-open
 protected producer/actuator boundary. Resource/WCET bounds, snapshot-versus-live
 source retention, aggregate capacity, all-batch outcomes, late arrivals,
 retirement and the complete selected resident campaign remain open.
+
+Exact-source execution-attempt reproduction:
+
+- Final source: `c54080e9e36305aa1141d6ff29b74dafa46060ea`.
+- Git archive SHA-256: `e8d5477e0e95529972841cbd1e61b70e976ab9b076ae33a8753d74fcb08e749e`.
+- Python 3.14.7; git version 2.55.0; 104 targeted tests passed, exit 0.
+- Evidence: `consolidation-execution-reproduction-v2` retains archive,
+  extracted source, exact command, receipt and raw output.
+- Independent GPT-6.1 reviews: `consolidation-execution-review-v1.txt`,
+  `consolidation-execution-review-v2.txt` and
+  `consolidation-execution-review-v3.txt`. Review did not rerun the suite.
+- Earlier source `f63738b968a07c00ceb3954eade0770f965ebb87` passed
+  its then-current 103 tests in `consolidation-execution-reproduction-v1`.
+  The later capacity negative control exposed its missing preflight; that
+  earlier green result is not acceptance of the repaired boundary.
+- Development-v3 captured source before a comment-only edit clarifying
+  that the encoding check does not reserve space. The final archived-source
+  run above binds the actual committed bytes, including that clarification.
