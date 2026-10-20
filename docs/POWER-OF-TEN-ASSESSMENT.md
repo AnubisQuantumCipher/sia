@@ -173,3 +173,16 @@ not a compliance result: the inventory does not resolve indirect calls or
 prove semantic loop bounds. Source and complete scope are recorded in
 `spark/CONSOLIDATION-SNAPSHOT.md`; failures and larger unresolved rules remain
 visible in this assessment.
+
+## Pre-effect original retention
+
+Source `5667541ed7e76964e75dd3e524d79e4dbda2451b` strengthens checked input/result and recovery
+ordering: the experimental consumer pins and verifies every selected original
+before execution intent, then refuses lost or mismatched retained state.
+Its 127-test archived-source reproduction covers real process cuts, source
+versions newer than admission, Git GC and failed writes/pin creation.
+The bounded record can leave a planned pin on final-record size refusal;
+sources remain live, and this partial retention is explicit. The protocol
+still relies on cooperative ownership, dynamic Python/Git allocation and
+unproved aggregate resource bounds. It is evidence toward rules 5 and 7,
+not closure of rules 1, 2, 3, 6 or 9, nor whole-system assurance.

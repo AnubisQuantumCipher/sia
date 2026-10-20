@@ -610,3 +610,17 @@ independent root still exists and the observer refuses without repairing state.
 The old unretained-history search failures remain explicitly diagnostic tests.
 Independent review is retained in `consolidation-originals-review-v1.txt` and
 `consolidation-originals-review-v2.txt`; reviewers did not rerun the suite.
+
+Exact-source original-retention reproduction:
+
+- Source: `5667541ed7e76964e75dd3e524d79e4dbda2451b`.
+- Git archive SHA-256: `e16a7e3ac29b12227f7842ca0780beff1fb63b8245ca9fa06ddced3dccf5d7c3`.
+- Python 3.14.7; git version 2.55.0; 127 targeted tests passed, exit 0.
+- External `consolidation-originals-reproduction-v1` retains the archive,
+  extracted source, exact command, tool versions, receipt and raw output.
+- Independent GPT-6.1 reviews v1/v2 found no scoped implementation blocker;
+  neither review reran the tests. The archived-source run completed afterward.
+- Seven-file source inventory in development-v3 is `inventory-only`, with no
+  findings in its limited syntax checks. It is not a compliance verdict.
+- No installed runtime, SPARK policy, retirement, whole-batch acknowledgment
+  or publication-readiness boundary is changed or accepted by this result.

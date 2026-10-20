@@ -308,3 +308,10 @@ The single outstanding claim-set journal still needs a defined lifecycle;
 all-batch completion, protected retirement authority, installed migration and
 G4 resident acceptance remain OPEN. Content retention does not authenticate
 origin, execution history or current permission to delete.
+
+Original-retention source `5667541ed7e76964e75dd3e524d79e4dbda2451b` passes 127 targeted tests from
+its fresh archive. The record, archive hash and retained failed-fixture output
+are indexed in `CONSOLIDATION-SNAPSHOT.md`. Exact originals are now pinned
+before effects within the experimental consumer. Whole-batch progression,
+retained-day eligibility, pin/journal lifecycle and the resident acceptance
+campaign remain open; successful selected-claim recovery cannot clear them.
