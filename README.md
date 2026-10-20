@@ -192,6 +192,10 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   separates the last-published snapshot from an explicitly requested live
   `sia ready` check, and a reversible workspace lock keeps the cockpit on one
   focused Hyprland workspace. Plus a bar widget with the live event count.
+  This experimental branch also adds `sia cockpit --window`: a detachable
+  native window using the same interface and command paths. Switch back with
+  `sia cockpit --overlay`. See the [qualification record](docs/COCKPIT-WINDOW.md);
+  this addition is not included in the v1.8.4 marketplace target.
 - **Agents everywhere.** An MCP server for the documented Claude Code, Codex
   CLI, and Grok integrations (plus compatible stdio MCP clients), and a skill
   for skill-reading harnesses. Tools cover reinforcing recall, a read-only

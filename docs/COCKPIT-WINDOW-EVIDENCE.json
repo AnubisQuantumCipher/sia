@@ -1,0 +1,156 @@
+{
+  "base": "4f8689e6f6a855a647b99fb47fe7d1e9ed517257",
+  "checks": [
+    {
+      "name": "cockpit regression",
+      "output": "cockpit-candidate-v1/cockpit-regression.log",
+      "result": "TESTED",
+      "source_receipt": "cockpit-candidate-v1/receipt.json",
+      "tests": 176
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "600s",
+        "/usr/bin/python3",
+        "-m",
+        "unittest",
+        "tests.test_test_state_isolation",
+        "tests.test_consolidation_discovery",
+        "tests.test_consolidation_originals",
+        "tests.test_consolidation_admission_exec",
+        "tests.test_consolidation_delivery_exec",
+        "tests.test_consolidation_exec_recovery",
+        "tests.test_consolidation_execution_exec",
+        "-v"
+      ],
+      "environment": "global and system Git config disabled; ResourceWarning is an error",
+      "exit": 0,
+      "name": "isolated consolidation CI fixtures",
+      "result": "TESTED",
+      "source_receipt": "cockpit-ci-repair-v1/receipt.json",
+      "tests": 35
+    },
+    {
+      "name": "component lifecycle",
+      "result": "TESTED",
+      "source_receipt": "cockpit-window-development-v11/receipt.json"
+    },
+    {
+      "name": "copied packaged Omarchy loader lifecycle",
+      "result": "TESTED",
+      "source_receipt": "cockpit-omarchy-development-v5/receipt.json"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "qmllint",
+        "Cockpit.qml"
+      ],
+      "exit": 0,
+      "name": "qml-lint"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "/usr/bin/python3",
+        "-m",
+        "py_compile",
+        "bin/sia",
+        "tests/test_cockpit_window.py",
+        "tests/test_cockpit_window_geometry.py",
+        "tests/cockpit_window_smoke.py",
+        "tests/cockpit_omarchy_smoke.py"
+      ],
+      "exit": 0,
+      "name": "changed-python-compile"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "600s",
+        "/usr/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "exit": 124,
+      "name": "unit-and-contracts"
+    }
+  ],
+  "documentation_changed_after_tests": [
+    "docs/COCKPIT-WINDOW.md"
+  ],
+  "failures_preserved": [
+    "Base CI run 39413431859 failed: four test-isolation checks and three fixture commits without Git identity.",
+    "Full local unittest discovery timed out at its 600-second command limit, exit 124.",
+    "Initial component probes had backend, socket-path, object-selection and resize-oracle failures.",
+    "Actual-host v1 raced asynchronous loading; v2 later failed visual acceptance for a clipped header.",
+    "Component v10 closed before mapping; v11 observes mapping before a single close action."
+  ],
+  "local_evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "non_claims": [
+    "Not a marketplace release or installation receipt.",
+    "Not whole-system proof, Power of Ten compliance, OS network containment or certification.",
+    "IPC acknowledgment establishes requested component state, not compositor visibility or memory readiness."
+  ],
+  "open_gates": [
+    "Complete CI on the combined committed source.",
+    "Live Hyprland activation and verification of any claimed installed path.",
+    "Real backend-operation reconciliation from the window.",
+    "Cross-version, scaling and smaller-display qualification.",
+    "Existing authority, continuity proof and marketplace release gates."
+  ],
+  "retained_artifacts_sha256": {
+    "cockpit-base-ci-failure.log": "0758bba0c1203860e6a04957d622eee62c60317ed7aa46aeb01a94a3bcb7a6c1",
+    "cockpit-base-ci.json": "72d6384e6efaee3148f81cae226dabecf8bcebe8212567e68b64e29361bcf9a0",
+    "cockpit-candidate-v1/cockpit-regression.log": "901882c0d03afe09c2804d8850d379a6d5a8e06b31882f1e07ccd899aff2170b",
+    "cockpit-candidate-v1/receipt.json": "5ef12ec0864cdef1ffe073214c9c9ed5bec3d2a6f65cd7235a765c7db890510a",
+    "cockpit-ci-fixture-review-v1.txt": "fc5be09b7b49636e8b02d69ceab6be4c33933a50d6cfce468175bc4534269fe7",
+    "cockpit-ci-repair-v1/receipt.json": "03a8670bfe4d69c09352b6682a972a24086a8595427be4bee7fa9086e44a91c8",
+    "cockpit-ci-repair-v1/tests.log": "8ce6db201699a16cfce75c1bf95d8e830d7d006fd510d23bd15ebc8efa0f054a",
+    "cockpit-omarchy-development-v2-visual-observation.md": "e62854c037f9bb17d23410d2592eaac519728309722df04b5f840ff14897b94b",
+    "cockpit-omarchy-development-v5/receipt.json": "a5c52ea56e3ea9b8991474776b7fea54b97d804592bf8d86d1504dde527f2ec5",
+    "cockpit-window-development-v11/receipt.json": "7bfad87bdb21513d029042f47dbb15956fe370bd1e49dad328559f77d577dcd6",
+    "cockpit-window-release-controls-v1.log": "859f5abb77c96dba34258284c0b3ef414ffb8b384f431404b13a55f480c67ce8",
+    "cockpit-window-review-final.txt": "6a5bc753873ae6102cf4d85381facf6b125f9ee89f9f174d1b18aa7f8eb2c8e6"
+  },
+  "review": {
+    "model": "GPT-6.1",
+    "origin": "model-generated review",
+    "reports": [
+      "cockpit-window-review-final.txt",
+      "cockpit-ci-fixture-review-v1.txt"
+    ],
+    "scope": "read-only independent review; not formal proof"
+  },
+  "schema": "sia-cockpit-checkpoint-evidence-v1",
+  "source_sha256": {
+    "CHANGELOG.md": "1b79fe02294a6bec44fdcc0890aaa89b3b2a8401e63c5020b1fec74397fb6534",
+    "Cockpit.qml": "df501f772ce9d6e9cc35816641b7780fb118e60326df6697e7a250f5f1e4d51d",
+    "README.md": "9e7a958edea5ad3f41d70e0d1b79129ad409ef77564920a65dff1dcad1e20cd8",
+    "bin/sia": "abf6de1d5ceb281ca641a46c8530d036343f47b9ce9d39b88185049813de754d",
+    "docs/COCKPIT-WINDOW.md": "6ea6e0d5e97402bd099f54b278c6aabf724705cf5b0a00f4cec89cc7c29ca304",
+    "docs/MANUAL.md": "f04786561b25fb898c8ce7f1c1b75d1ae1c1b7b58959a4b7aff3076c2b562d82",
+    "tests/cockpit_omarchy_smoke.py": "5ea9fd568360fac081b49ac2ebea1d4934b2b9a0a65d548e099211294f779616",
+    "tests/cockpit_window_smoke.py": "d9af587afd56841ae73fc5f2d033aee846be9b30bfd79b2a5f55d18ab988b04e",
+    "tests/fixtures/cockpit-window/shell.qml": "683ab6914509f2bb752004822f9b05ccae27db39ecade8fc8c18d91e4f009abc",
+    "tests/test_cockpit_window.py": "857e38f58afcbe8d3b32ee20566eb73090f2948ff2b406b3b41ffb18c3f3ffe1",
+    "tests/test_cockpit_window_geometry.py": "bbd7878b262f025be98b408e718022301834f51fac50c6f3a9a8aeefeb21af16",
+    "tests/test_consolidation_admission_exec.py": "ecff6d8be1bc0c2c387146cfed8d6020cea74c50e27d6975a680b0173b41ed28",
+    "tests/test_consolidation_delivery_exec.py": "5976321a0a57bf1c04ff68b5952b4609b7562f7d4462b16160e01ea3b6d0e9d9",
+    "tests/test_consolidation_discovery.py": "8bd0964add1a403e7a6b2433cbda3d71b25a23969e48cdcf8b385152f4c8122e",
+    "tests/test_consolidation_exec_recovery.py": "5c78f8bfbee505480adcad639aff3573e9521d1a16c23a63bed1c13cdb43a11e",
+    "tests/test_consolidation_execution_exec.py": "46b2059d6c19f022552ad2b2c196a9ff1367493bcd793e29025d38a6fee40e2a"
+  },
+  "status": "TESTED_SCOPES_WITH_OPEN_GATES"
+}

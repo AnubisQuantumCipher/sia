@@ -4,6 +4,8 @@
   sia status            current indexed-memory and evidence-source state
   sia live [--json]     inspect the retained source-authorized live loop
   sia version           print the installed SIA runtime release
+  sia cockpit [--window | --overlay]
+                        show the existing cockpit in the running Omarchy shell
   sia ready             exit successfully only when memory is reconciled
   sia ask "question" [--no-touch]
                         query local memory; ordinary results record later use
@@ -2902,10 +2904,40 @@ def _main_under_lifecycle(argv):
     return _dispatch(argv, cmd)
 
 
+def cmd_cockpit(args):
+    """Select one existing UI instance; never open a database or a new shell."""
+    if args not in ([], ["--window"], ["--overlay"]):
+        print("usage: sia cockpit [--window | --overlay]", file=sys.stderr)
+        return 2
+    presentation = "window" if args == ["--window"] else "overlay"
+    try:
+        result = sialib._run_bounded_text_process(
+            ["omarchy-shell", "shell", "call", "khephri.sia",
+             "showPresentation", presentation],
+            env=os.environ.copy(), timeout=6, cwd=None,
+            output_limit=4096, label="cockpit IPC")
+    except (OSError, RuntimeError, ValueError, OverflowError,
+            subprocess.SubprocessError):
+        print("SIA cockpit request could not be confirmed. Check the running "
+              "Omarchy shell; a timed-out request may still have opened it.",
+              file=sys.stderr)
+        return 1
+    expected = "sia-cockpit-v1:" + presentation
+    if result.returncode != 0 or result.stdout.strip() != expected:
+        print("SIA cockpit request was not confirmed by the loaded plugin. "
+              "Enable or update khephri.sia in the running Omarchy shell.",
+              file=sys.stderr)
+        return 1
+    print("SIA cockpit " + presentation + " requested in the running shell.")
+    return 0
+
+
 def _dispatch(argv, cmd):
     if cmd == "version":
         print(sialib.VERSION)
         return 0
+    if cmd == "cockpit":
+        return cmd_cockpit(argv[2:])
     if cmd == "status":
         return cmd_status()
     if cmd == "live":

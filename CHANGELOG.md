@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — experimental assurance branch
+
+- `sia cockpit --window` opens the existing cockpit in a native Quickshell
+  window. `sia cockpit --overlay` returns it to the overlay. Both use the same
+  `Model.js`, visual tree, readers and guarded commands; repeated requests
+  preserve pending-operation identities and inputs. No Tauri/WebView runtime
+  or additional memory service is introduced.
+- CLI dispatch retains the lifecycle lease and requires the loaded plugin's
+  exact presentation acknowledgment. Missing/older plugins and uncertain
+  timeouts fail explicitly. This acknowledgment is not a memory-readiness or
+  compositor-visibility verdict.
+
+Qualification and deployment limits are recorded in
+[`docs/COCKPIT-WINDOW.md`](docs/COCKPIT-WINDOW.md). These changes are not in the
+v1.8.4 marketplace verification target.
+
 ## 1.8.4 — 2026-10-19 · grading evidence and local maintenance
 
 Thanks to [@Jasonmst](https://github.com/Jasonmst) for the reproductions and

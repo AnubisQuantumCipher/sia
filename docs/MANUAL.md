@@ -259,6 +259,23 @@ activating its controller are separate deployment steps.
 
 ## 2. The cockpit
 
+**Detachable window — unreleased branch:** run `sia cockpit --window` to open
+the existing cockpit as a normal desktop window. Resize, move or close it with
+your window manager. `sia cockpit --overlay` (or `sia cockpit`) selects the
+full-screen overlay. Both presentations share the same interface, readers and
+guarded actions. Repeated requests preserve in-flight operation identities and
+form inputs. The overlay workspace lock is hidden in window mode because the
+window manager owns its workspace placement.
+
+The command requires the matching enabled plugin in a running Omarchy shell.
+Its success message confirms the component accepted the presentation request;
+it does not confirm focus, visibility or memory readiness. A timed-out request
+may still have opened the window, so check it before retrying. The bar summon
+continues to select the overlay. In window mode, first-light setup leaves the
+cockpit available while the installer runs in its terminal; in overlay mode,
+the cockpit steps aside after observing the terminal start. See
+[`COCKPIT-WINDOW.md`](COCKPIT-WINDOW.md) for tested scope and deployment limits.
+
 **Commitments:** a past due date means a task still needs review; it does not
 mean SIA is broken. **Review commitment…** opens the full task, holder, and due
 date in a terminal and closes the cockpit so the terminal is accessible. Check
