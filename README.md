@@ -221,12 +221,24 @@ today. The candidate policy layer — usage salience, co-return reinforcement,
 graph propagation, novelty scoring, a bounded attention window, stability,
 and rehearsal — is shipped as deterministic behavior, and the
 [whitepaper](docs/WHITEPAPER.md) is explicit about its evidentiary status:
-the associative tie-breaker matched the unmodified hybrid query on the historical probe
-set and did not beat it, and this release contains no controlled evidence
+the associative tie-breaker tied the initial historical probe set and then
+underperformed the unmodified hybrid query on the expanded source-gated set,
+so it is disabled by default. This release contains no controlled evidence
 that rehearsal improves answer quality. The policies are explicit hypotheses
 with instruments attached (`sia bench`, the nightly drift tripwire, the
 calibration record), not established improvements. Keep evidence and model
 separate in the docs the way the corpus keeps them separate in memory.
+
+### Experimental assurance work
+
+The isolated assurance branch contains Ada/SPARK policy packages and retained
+proof/test evidence for their stated pure contracts. These packages are not
+installed authorization for the released memory service. They do not establish
+filesystem durability, protected signing, hostile-process isolation or empirical
+cognitive improvement. The [assurance goal](docs/ASSURANCE-GOAL.md) records the
+remaining acceptance work, and the [protocol](docs/ASSURANCE-PROTOCOL.md)
+describes the proposed enforcement boundary. Related systems' proof claims do
+not transfer to SIA.
 
 ## Sixty seconds after install
 
