@@ -63,7 +63,8 @@ build, all five harnesses, and all 293 reported proof checks across ten fully
 analyzed units, with no justified or unproved obligations. Independent GPT-6.1
 review verified retained source/tool/output bindings without rerunning them.
 This establishes the pure contracts only. This package is not yet connected to a
-production observer, grant format or dispatcher. The test-only `grant_probe`
+production observer or dispatcher. A separate experimental v2 record and
+`scoped_grant_probe` exercise a test-supplied domain handoff only. The test-only `grant_probe`
 continues to exercise the original unscoped comparator and is not a service.
 
 Both domain values are mathematical inputs until a protected issuer and service

@@ -208,6 +208,31 @@ record observation only.
 
 These are retained claimed domain values, not authenticated current epochs.
 No epoch producer, trusted issuer, restart invalidation or scoped Ada handoff
-is installed. The earlier handoff executable still accepts fixture v1 inputs;
+is installed in production. The earlier handoff executable still accepts fixture v1 inputs;
 production enforcement must use an authenticated scoped path without falling
 back to that executable or the unscoped comparator.
+
+## Test-only scoped handoff
+
+`scoped_grant_probe` consumes retained boot/service digests, current boot/service
+digests, the grant frame and request frame, in that order, then requires EOF.
+Each digest is 32 bytes and each frame is 192 bytes. The same six canonical
+scalar arguments as `grant_probe` carry the fixture grant metadata, observed
+sender and clock. Both frames must decode before `Classify_Scoped` is called.
+Malformed metadata and I/O failures return process failure without a decision;
+invalid frames or policy refusals produce D. The parent enforces a deadline.
+
+`test_scoped_grant_probe.py` loads actual private v2 records and actual
+SEQPACKET observations. It covers independent domains, both operations,
+every retained/current domain byte, swapped and matching-zero domains,
+revocation, subject, interval and payload refusals, malformed frames, truncated
+or trailing input, malformed scalars, EOF waiting and descriptor errors.
+Development strict build and 65 transport/support tests passed; committed-source
+reproduction and independent acceptance are pending. Pure source is unchanged.
+
+This adapter has no effects and is outside the SPARK proof boundary. Its domain,
+grant and clock inputs are supplied by the test driver, which could substitute
+any value. It provides no protected epoch production, rollback resistance,
+revocation serialization or authenticated service authority. The original
+unscoped adapter remains unchanged for its original controls and is not a
+production fallback.
