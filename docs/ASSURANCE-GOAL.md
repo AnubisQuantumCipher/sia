@@ -91,9 +91,12 @@ current authorization from immutable operation identity and the historical
 publication-request digest; requires exact request-kind/grant-action/slot joins;
 and admits outcome reads only through current read authority. Unsupported
 completed-Publish retry envelopes uniformly refuse; existing APIs and accepted
-retry guarantees remain unchanged. Exact offsets, independent vectors, complete
+retry guarantees remain unchanged. The independently reviewed
+[`spark/PROTECTED-SLOT-LAYOUT.md`](../spark/PROTECTED-SLOT-LAYOUT.md) proposes
+exact field offsets and distinct hash/signature domain labels; its arithmetic
+is JACKAL `exact`, not protocol proof. Independent vectors, complete
 resource budgets, clock domains and signing/recovery schemas still must be
-frozen before implementation acceptance. These proposals do not replace the
+completed and frozen before implementation acceptance. These proposals do not replace the
 full production obligations above or permit live-data migration.
 
 ## Claims requiring verification

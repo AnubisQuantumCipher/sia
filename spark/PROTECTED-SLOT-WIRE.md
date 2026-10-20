@@ -122,8 +122,9 @@ The immutable operation digest is domain-separated SHA-256 over the exact
 encoded O. A separate current request digest covers the request kind and the
 complete request bytes, using a distinct frozen domain label. A third distinct
 label identifies the historical publication request digest. They are not interchangeable: a current query envelope
-must not be used as the historical publication or recovery identity. Complete
-hash/signature domain labels and vectors must be frozen before implementation.
+must not be used as the historical publication or recovery identity. The explicit
+layout and hash/signature label proposal is in `PROTECTED-SLOT-LAYOUT.md`.
+Its labels and independent vectors must be reviewed and frozen before implementation.
 
 ## Protected grants
 
@@ -140,7 +141,8 @@ or reversed interval grants nothing. Requests contain no authoritative clock tic
 Signature input is a fixed grant-domain label followed by every preceding grant
 byte, including prefix, A, O, Query_Target, interval, action, active state and
 reserved bytes.
-The label and canonical vectors remain a freeze prerequisite. Missing signatures,
+The label proposal is in `PROTECTED-SLOT-LAYOUT.md`; its review and canonical
+vectors remain a freeze prerequisite. Missing signatures,
 wrong configured keys or any mutation refuse. The service must not trust an
 artifact's claimed issuer/key to replace the administrator's independent pin.
 One publication-grant file and one current read-grant file are retained under
@@ -182,8 +184,9 @@ its earlier smaller totals. The retained v1 arithmetic is superseded for frames.
 A disposable local library observation signed and verified a test message and
 reported a 64-byte signature; it does not qualify the cryptographic library.
 
-Before freeze, complete explicit field offsets and golden/mutation vectors;
-hash/signature labels; monotonic units and domain producers; key rotation and
+Before freeze, review the proposed field offsets and hash/signature labels in
+`PROTECTED-SLOT-LAYOUT.md` and complete golden/mutation vectors;
+monotonic units and domain producers; key rotation and
 historical verification; any future completed-Publish retry envelopes;
 receipt/state/intent/response schemas; typed errors and output ceilings; OS
 queue/disk/memory/process budgets; and the new SPARK effect policy/model.
