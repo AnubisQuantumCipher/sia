@@ -50,6 +50,12 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; v1.8.4 release/tag readback complete and marketplace request filed; complete offline system verifier, portable proof CI and marketplace publication UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | PARTIAL: repository claims corrected and historical preview inspected; unattached illustrative visualization unavailable; final enforced-architecture documentation pending |
 | A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: caller cutoff diagnosed, guidance corrected, repeated installed-runtime readiness and no-touch recall passed; universal latency not established |
+| A16 | Authoritative history and capture gaps | Preserved original provenance, identity and ordering; explicit missing/unavailable capture; guarantees scoped to successfully captured events | PARTIAL: origin/completeness predicates exist; complete lifecycle and gap acceptance OPEN |
+| A17 | Authoritative retrieval and retirement | SPARK-governed current read/retire decisions, durable replay/tombstone evidence and no bypass | OPEN: protected Query proposed; full retirement and production mediation UNRUN |
+| A18 | Replaceable derived memory | Versioned evidence-linked dreams/summaries/embeddings; retraction and rebuild preserve authoritative history | End-to-end acceptance UNRUN |
+| A19 | Semantic accuracy and abstention | Independent held-out ground truth, false-pass/false-fail measurements and explicit abstention; no LLM truth authority | UNRUN; complements A08 without replacing its baseline comparison |
+| A20 | Selected installed path and explicit migration | Actual dispatch bound to installed source/config/retained state; fault campaign on selected path; qualified migration without silent configuration or privilege changes | OPEN; raw controller_source false observed, actual dispatch not established by that field alone |
+| A21 | Full traceability and guidance | Hazards/requirements to contracts, source, proof, independent review and exact installed/released tests; relevant Ada/SPARK guidance applied | IN PROGRESS; staged gates and resource inventory recorded |
 
 Source completeness must distinguish observed empty, not observed, unavailable,
 and verified complete. Authentication of a model record never makes its content
@@ -74,6 +80,11 @@ or justifications used to erase failures. Keep runtime checks enabled at
 untrusted boundaries even when internal code is proved.
 
 ## Implementation order
+
+The 2026-10-20 operator clarification is carried in
+[`ASSURANCE-IMPLEMENTATION-GATES.md`](ASSURANCE-IMPLEMENTATION-GATES.md),
+including the relevant Ada/SPARK skill inventory, lifecycle/retirement,
+derived-memory and selected-runtime gates. It extends the sequence below.
 
 1. Establish current source-backed boundaries and contracts.
 2. Implement and prove a small provenance/publication vertical slice; test it.
