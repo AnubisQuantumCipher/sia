@@ -14,9 +14,16 @@ for the reproduced ACK directory-synchronization gap. PRs #38 and #39 closed
 its obsolete freeze and merged the runtime repair; repaired main passed CI and
 normal local installation. PR #40 then passed both candidate CI runs and merged
 the declaration-only freeze. Its merged tree matches the tested candidate.
-Final merged-main CI, the v1.8.4 tag/release, marketplace verification and final
-publication readback remain pending. These release observations do not qualify
-the experimental assurance branch or any protected service.
+Final merged-main CI passed on `7371c8e2f152aec47f07843821447067991d96fc`.
+The annotated v1.8.4 tag and [published release](https://github.com/AnubisQuantumCipher/sia/releases/tag/v1.8.4)
+were read back, including reporter credit. The [final issue reply](https://github.com/AnubisQuantumCipher/sia/issues/33#issuecomment-6285535056)
+was posted and its exact body read back. [Marketplace request #12332](https://github.com/omacom/omarchy-plugin-marketplace/issues/12332)
+requests verification/publication of that exact commit; its body was read back.
+The post-request catalog still showed v1.8.3, update-unverified and Manual setup,
+with standard installation unavailable. Marketplace approval/publication remains
+an external gate. Main remains frozen; experimental work stays on this separate
+branch. These release observations do not qualify the experimental assurance
+branch or any protected service.
 
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
@@ -40,7 +47,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A10 | Off-host recovery campaign | Damaged data, revoked/compromised credentials and tampered receipts tested without touching live evidence | UNRUN |
 | A11 | Bounded versioned IPC and migration | Shadow comparison first; differential legitimate/adversarial tests; authority transfer only after evidence; missing/mismatched kernel refuses | PARTIAL: syntax decoder and exact-grant comparison contracts proved; Linux packet intake, bounded version-separated v1/v2 grant readers and loaded-grant test handoff reproduced; scoped production handoff, protected grant store, shadow policy and migration UNRUN |
 | A12 | Linux enforcement and bypass resistance | Restricted actuator actually owns protected state; hostile same-user tests; no Python bypass of denial | UNRUN |
-| A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; complete offline system verifier, portable proof CI and release readback UNRUN |
+| A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; v1.8.4 release/tag readback complete and marketplace request filed; complete offline system verifier, portable proof CI and marketplace publication UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | PARTIAL: repository claims corrected and historical preview inspected; unattached illustrative visualization unavailable; final enforced-architecture documentation pending |
 | A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: caller cutoff diagnosed, guidance corrected, repeated installed-runtime readiness and no-touch recall passed; universal latency not established |
 
