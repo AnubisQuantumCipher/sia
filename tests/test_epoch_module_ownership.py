@@ -25,6 +25,8 @@ EPOCH_EXPORTS = frozenset({
     "_bind_consolidation_ledger",
     "_bounded_event_directory_entries",
     "_canonical_consolidation_day",
+    "_canonical_consolidation_queue",
+    "_canonical_consolidation_claims",
     "_canonical_consolidation_scan",
     "_canonical_epoch_event_ids",
     "_canonical_epoch_source_manifest",

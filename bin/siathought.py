@@ -2518,31 +2518,11 @@ def _canonical_consolidation_day(value):
     return dict(value)
 
 
-def _canonical_consolidation_scan(value):
-    if not isinstance(value, dict) \
-            or set(value) != {
-                "schema", "generation", "phase", "cutoff", "queue",
-                "pending_days", "claims"} \
-            or value.get("schema") != CONSOLIDATION_SCAN_SCHEMA \
-            or value.get("phase") not in {"scan", "complete"} \
-            or not isinstance(value.get("generation"), str) \
-            or re.fullmatch(r"[0-9a-f]{32}", value["generation"]) is None \
-            or not isinstance(value.get("cutoff"), str) \
-            or re.fullmatch(
-                r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value["cutoff"]) is None \
-            or not isinstance(value.get("queue"), list) \
-            or len(value["queue"]) > MAX_CONSOLIDATION_DIRECTORY_QUEUE \
-            or not isinstance(value.get("pending_days"), list) \
-            or len(value["pending_days"]) > MAX_SOURCE_SCAN_ENTRIES \
-            or not isinstance(value.get("claims"), list) \
-            or len(value["claims"]) > MAX_CONSOLIDATION_DAYS_PER_RUN:
-        raise RuntimeError("consolidation scan state is invalid")
+def _canonical_consolidation_queue(frames, page_fields):
+    """Validate frames after the scan entry point checks the list bound."""
     queue = []
     queued_relatives = set()
-    page_fields = {
-        "device", "inode", "cookie", "size", "mtime_ns", "ctime_ns",
-        "reset"}
-    for frame in value["queue"]:
+    for frame in frames:
         if not isinstance(frame, dict) or set(frame) != {
                 "relative", "levels", "page"}:
             raise RuntimeError("consolidation scan cursor is invalid")
@@ -2572,12 +2552,13 @@ def _canonical_consolidation_scan(value):
         queued_relatives.add(relative)
         queue.append({"relative": relative, "levels": frame["levels"],
                       "page": _validated_source_page_state(raw_page)})
-    pending = [_canonical_consolidation_day(day)
-               for day in value["pending_days"]]
-    if len({(day["organ"], day["date"]) for day in pending}) != len(pending):
-        raise RuntimeError("consolidation candidate day is duplicated")
+    return queue
+
+
+def _canonical_consolidation_claims(raw_claims, cutoff, page_fields):
+    """Validate claims after the scan entry point checks the list bound."""
     claims = []
-    for claim in value["claims"]:
+    for claim in raw_claims:
         if not isinstance(claim, dict) or set(claim) != {
                 "organ", "date", "cutoff", "directory", "sources"}:
             raise RuntimeError("consolidation day claim is invalid")
@@ -2609,11 +2590,44 @@ def _canonical_consolidation_scan(value):
         if sources != canonical_sources \
                 or len({record["rel"] for record in sources}) != len(sources):
             raise RuntimeError("consolidation day claim is invalid")
-        if claim["cutoff"] != value["cutoff"]:
+        if claim["cutoff"] != cutoff:
             raise RuntimeError("consolidation claim cutoff conflicts")
         claims.append({**day, "cutoff": claim["cutoff"],
                        "directory": directory,
                        "sources": canonical_sources})
+    return claims
+
+
+def _canonical_consolidation_scan(value):
+    """Validate envelope, queue, days and claims in recovery refusal order."""
+    if not isinstance(value, dict) \
+            or set(value) != {
+                "schema", "generation", "phase", "cutoff", "queue",
+                "pending_days", "claims"} \
+            or value.get("schema") != CONSOLIDATION_SCAN_SCHEMA \
+            or value.get("phase") not in {"scan", "complete"} \
+            or not isinstance(value.get("generation"), str) \
+            or re.fullmatch(r"[0-9a-f]{32}", value["generation"]) is None \
+            or not isinstance(value.get("cutoff"), str) \
+            or re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value["cutoff"]) is None \
+            or not isinstance(value.get("queue"), list) \
+            or len(value["queue"]) > MAX_CONSOLIDATION_DIRECTORY_QUEUE \
+            or not isinstance(value.get("pending_days"), list) \
+            or len(value["pending_days"]) > MAX_SOURCE_SCAN_ENTRIES \
+            or not isinstance(value.get("claims"), list) \
+            or len(value["claims"]) > MAX_CONSOLIDATION_DAYS_PER_RUN:
+        raise RuntimeError("consolidation scan state is invalid")
+    page_fields = {
+        "device", "inode", "cookie", "size", "mtime_ns", "ctime_ns",
+        "reset"}
+    queue = _canonical_consolidation_queue(value["queue"], page_fields)
+    pending = [_canonical_consolidation_day(day)
+               for day in value["pending_days"]]
+    if len({(day["organ"], day["date"]) for day in pending}) != len(pending):
+        raise RuntimeError("consolidation candidate day is duplicated")
+    claims = _canonical_consolidation_claims(
+        value["claims"], value["cutoff"], page_fields)
     if (value["phase"] == "complete") != (not queue):
         raise RuntimeError("consolidation scan phase/cursor is invalid")
     return dict(value, queue=queue, pending_days=pending, claims=claims)
