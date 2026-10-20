@@ -141,3 +141,17 @@ Independent GPT-6.1 review found no source or evidence-binding blocker within
 that scope. See [the evidence manifest](../docs/CONTINUITY-POLICY-EVIDENCE.json)
 and [the continuity mission](../docs/AGENT-CONTINUITY.md) for retained failures
 and open gates. Runtime authority and end-to-end compaction remain unimplemented.
+
+The later fresh committed reproduction at `2794db2` again passed build and all
+eight harnesses but timed out at the unchanged 600-second proof limit.
+Inspection of raw output also exposed disabled miscellaneous warnings outside
+the old flow-summary gate. The [warning-gate repair](../docs/PROOF-WARNING-GATE.md)
+must qualify before any all-channel zero-warning acceptance.
+
+The strengthened development-v11 campaign then passed strict build, all eight
+runtime harnesses, full proof and raw/summary validation. It reported 788
+discharged checks across the complete 16-unit scope, using all tagged warnings
+and the same prover set reordered to Z3/CVC5/Alt-Ergo under unchanged caps.
+The linked warning-gate evidence binds that fresh development snapshot.
+Committed-source reproduction remains pending; runtime restoration and the
+external premises above remain unqualified.

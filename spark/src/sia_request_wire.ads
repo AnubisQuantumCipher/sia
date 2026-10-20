@@ -19,13 +19,13 @@ package SIA_Request_Wire with SPARK_Mode, Pure is
    --  Explicit network-order relation; no native-layout reinterpretation.
    function Generation_Value (Bytes : Frame; Start : Positive)
       return Generation is
-     (Generation (Bytes (Start)) * 2 ** 56 +
-      Generation (Bytes (Start + 1)) * 2 ** 48 +
-      Generation (Bytes (Start + 2)) * 2 ** 40 +
-      Generation (Bytes (Start + 3)) * 2 ** 32 +
-      Generation (Bytes (Start + 4)) * 2 ** 24 +
-      Generation (Bytes (Start + 5)) * 2 ** 16 +
-      Generation (Bytes (Start + 6)) * 2 ** 8 +
+     (((((((Generation (Bytes (Start)) * 2 ** 56 +
+      Generation (Bytes (Start + 1)) * 2 ** 48) +
+      Generation (Bytes (Start + 2)) * 2 ** 40) +
+      Generation (Bytes (Start + 3)) * 2 ** 32) +
+      Generation (Bytes (Start + 4)) * 2 ** 24) +
+      Generation (Bytes (Start + 5)) * 2 ** 16) +
+      Generation (Bytes (Start + 6)) * 2 ** 8) +
       Generation (Bytes (Start + 7)))
    with Global => null,
      Pre => Start in 169 | 177 and then Bytes (Start) <= 127;

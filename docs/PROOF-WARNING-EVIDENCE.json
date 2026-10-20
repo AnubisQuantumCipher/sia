@@ -1,0 +1,258 @@
+{
+  "base_commit": "2794db2390e4f7e3cb3cff0d5b910d2967ac6dd8",
+  "checks": [
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/sia_assurance.gpr"
+      ],
+      "exit": 0,
+      "name": "build"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/policy_tests"
+      ],
+      "exit": 0,
+      "name": "policy-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/transaction_tests"
+      ],
+      "exit": 0,
+      "name": "transaction-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_wire_tests"
+      ],
+      "exit": 0,
+      "name": "request-wire-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_admission_tests"
+      ],
+      "exit": 0,
+      "name": "request-admission-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/grant_lifetime_tests"
+      ],
+      "exit": 0,
+      "name": "grant-lifetime-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/retraction_tests"
+      ],
+      "exit": 0,
+      "name": "retraction-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/consolidation_tests"
+      ],
+      "exit": 0,
+      "name": "consolidation-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_tests"
+      ],
+      "exit": 0,
+      "name": "continuity-tests"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "600s",
+        "gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-U",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10"
+      ],
+      "exit": 0,
+      "name": "proof"
+    },
+    {
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "10s",
+        "python3",
+        "spark/check-proof-summary.py",
+        "spark",
+        "spark/obj/gnatprove/gnatprove.out"
+      ],
+      "exit": 0,
+      "name": "coverage"
+    }
+  ],
+  "coverage": {
+    "raw_diagnostics": "no warnings, errors or declared exclusions",
+    "scope": "reported proof obligations only; authenticity and system assurance external",
+    "status": "checks-discharged",
+    "units": [
+      "consolidation_tests",
+      "continuity_tests",
+      "grant_lifetime_tests",
+      "policy_tests",
+      "request_admission_tests",
+      "request_wire_tests",
+      "retraction_tests",
+      "sia_consolidation",
+      "sia_continuity",
+      "sia_grant_lifetime",
+      "sia_policy",
+      "sia_request_admission",
+      "sia_request_wire",
+      "sia_retraction",
+      "sia_transactions",
+      "transaction_tests"
+    ]
+  },
+  "local_evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "non_claims": [
+    "Development result, not a fresh committed-source result.",
+    "Proof is conditional on contracts, tools and environment.",
+    "No whole-system, Python/Qt, P10 or avionics compliance claim.",
+    "No installed or marketplace release claim."
+  ],
+  "open_gates": [
+    "Independent review of completed evidence and committed reproduction.",
+    "Authenticated evidence producers and protected runtime integration.",
+    "Cross-checkpoint operation conservation and durable publication.",
+    "Held-out semantic continuity, installed paths and release acceptance."
+  ],
+  "proof_tools_sha256": {
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+  },
+  "prover_order": [
+    "z3",
+    "cvc5",
+    "altergo"
+  ],
+  "raw_reports_sha256": {
+    "consolidation_tests.spark": "39a8bbf3bd91815de6276b38b6ca35ba9bdddb9458f753932be38c8f07daaa87",
+    "continuity_tests.spark": "01f80a9a9792ab73de1c7b1f84964b6d15b4a71ccb08c330f9c682b795ea1c52",
+    "grant_lifetime_tests.spark": "a31036da298ec065942bfccd402169dbce9fe37f5a447ac859aebc5e483dcab9",
+    "policy_tests.spark": "4084e51a6d1e3ccd63225be7fb2af16c5d2228e36e44fb85aec0dae271696615",
+    "request_admission_tests.spark": "e1fe751b0c0d8ccf03cf099b84a084b3d2109808d5f066f013f2986b41dc733d",
+    "request_wire_tests.spark": "c4d9fccedb748f6e01677bd11ede57aba2a6c79aed9ed8a1eb70a2d9578d57d0",
+    "retraction_tests.spark": "7d63a14d749f6b15ea1a3a55d9bedf4d854d7893108a8d0657ce0c275a7fef18",
+    "sia_consolidation.spark": "680d03c6a42c7535036197dccea39d4b9f768386ed2e0e75fe95b25e51bd51a0",
+    "sia_continuity.spark": "8430b2afedd85a334baae90536230f97188ad3131ba388e627aeaf100bcbe16c",
+    "sia_grant_lifetime.spark": "9f63be8831752bf3ea954625efa1e1d815ca591262104764706dfd5db1ea58a7",
+    "sia_policy.spark": "e15566124d1069e4e32f37bb21e8f51b367e22cd705002515530f7ffe3d22ac5",
+    "sia_request_admission.spark": "4527fe9e1abd3d0e836fc41b7d976220f43bb6f23ca0606f5a8c181355b7fb4c",
+    "sia_request_wire.spark": "09695dcce54810b4c05e04921e916f76310349e052ea9721882a586cccdcd6eb",
+    "sia_retraction.spark": "4e75569faa0da46a186d884f74afcd45e60eb0fafcc3068e6cffeb10ea6b2fd9",
+    "sia_transactions.spark": "79fc8e9a7b431c329d576733f916b76cd84357927dd8438f5c25500645927378",
+    "transaction_tests.spark": "0503e6e02cfa82b71e9378398f0b2abaa26a2c74220ead256bf03775e9b312df"
+  },
+  "reported_totals": "Total                           788    235 (30%)                                        553 (70%)           .          .",
+  "retained_artifacts_sha256": {
+    "continuity-policy-committed-v1-result.json": "86cb15020752b255260df3d587910913e2a434bff4d014d787ddf1f7aada8b8d",
+    "continuity-policy-development-v10-result.json": "7a22b1a6b4b97f6d7fbd4301a6b9c3ef357ec177e6ad13142bc3853f1a17d32c",
+    "continuity-policy-development-v11-toolchain-before.json": "fa305edc12782ffcef610501b5de577ced40e04d5bda456bc62f2dc921f2b6af",
+    "continuity-policy-development-v11/build.log": "85c1c7c03015639b8285f298a8bd684f579a4c4870992a7967ffe3c5b88c1f3c",
+    "continuity-policy-development-v11/consolidation-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/continuity-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/coverage.log": "194adb2c1e231eedb6b6ba61fcc314ccd87dc34b4d71495fe1a0414c4377c6a4",
+    "continuity-policy-development-v11/grant-lifetime-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/policy-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/proof.log": "8de831eef2fb94b5c081ce6021445f13847ba9a0c3151a6203de6aa21e8b3521",
+    "continuity-policy-development-v11/receipt.json": "15db32dd9fdac5fff221cc3aa3961d9222868e7db5b9bce428b5f00e577c0f95",
+    "continuity-policy-development-v11/request-admission-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/request-wire-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/retraction-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity-policy-development-v11/transaction-tests.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "proof-search-order-review-v1.txt": "c4a2b49f5a4204218e480df4cd03170a2436b3a827d565efa33d6fb20847392b",
+    "proof-warning-gate-real-negative-v2.json": "496aa45b004164b0a78bbbac6f74532b58dd95e4af07b47a9cc331ee45ec9094",
+    "proof-warning-gate-review-v2.txt": "46078642c7c0d5558afb1e24e93a01ce9df9ef40703181bcd8826c15bc1444b1",
+    "proof-warning-gate-tests-v2.log": "ce8e6347648b640343be32d365cd8ae909c23dd88a2f6a6f84955cd07d3a199c"
+  },
+  "schema": "sia-all-diagnostics-development-evidence-v1",
+  "source_mode": "fresh archive plus recorded uncommitted overlay",
+  "source_sha256": {
+    "spark/check-proof-summary.py": "579ce21dd36e3dabe4f36dee82f500eb6456564aa69747573f3d241726061e59",
+    "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+    "spark/sia_assurance.gpr": "b1099c326f6d1122af8a261113111f2c3621d7b9c72833f8e738e92036c89f00",
+    "spark/src/sia_consolidation.adb": "66b24e1a6d846948cb80f6ec5960efa34247de16dc718ef8200645d02db6bf7b",
+    "spark/src/sia_consolidation.ads": "a93f44ff93265dd47d22b7d2268ed3a33566476894b85292b0d693a9ddc69db9",
+    "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+    "spark/src/sia_continuity.ads": "ca5f715b579dd9c751a269190b7e524efbf2762b1c0bb2a2c14f9ba9850e8764",
+    "spark/src/sia_grant_lifetime.adb": "ce77559dc338d6e5c4ef1698cbb1cba13f6dc156f97ea5efe34b9fa65aa71d33",
+    "spark/src/sia_grant_lifetime.ads": "d4422783fe86bda25bfe600c606dc9a2b34cb4c18346931d6b9238fcbbaed8a8",
+    "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+    "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+    "spark/src/sia_request_admission.adb": "f659845d7824e496437d85198c07feedd42653ab214c9ba87a9d079962376dad",
+    "spark/src/sia_request_admission.ads": "504f44d9de1ff24454bf17397e07723d4fe4276faa7dfa1ab0b5e61d4663efd3",
+    "spark/src/sia_request_wire.adb": "43c12bd6834dd61f182ff22d6a9251a78fa4ab1d09db0ea9f057f0233172ad47",
+    "spark/src/sia_request_wire.ads": "5951173ec3a72aed2c7ab698fe8a624d375ef53ab3e2c141ac780048b5b20b6f",
+    "spark/src/sia_retraction.adb": "8f46ecf35ae52ed73b0e8930bc918104c0c61fd3c716fb9156f31801fe162fdb",
+    "spark/src/sia_retraction.ads": "d3bb90b07723fa5d3d9e704668fc3e2d640b3d4ae9781d9dd4403a43e8c6db9e",
+    "spark/src/sia_transactions.adb": "d1973627ca3a3666323d3366e99ebcd532da6af64ccaa1af711832a07540ab5e",
+    "spark/src/sia_transactions.ads": "f5cdba695062958aca31705ab855dc02f4c33e1754dbf8a44964a7dbf9754a8c",
+    "spark/tests/consolidation_tests.adb": "3ed890bd9224790b944aeb19454cbdcaecefc8d86cd74187932d76450cb98c06",
+    "spark/tests/continuity_tests.adb": "c18077c7d680d01854f164a14c0f382275f26f082d772ddc4e6cfdafd4f5d329",
+    "spark/tests/grant_lifetime_tests.adb": "0a9ce2e5da5d3dbf53614051d3cdf8d7445184497189bab0a8937a02ab612fda",
+    "spark/tests/policy_tests.adb": "66bf8f497c4b3a46eca75b1fce2cc31553868bacd2ebb015050f75199b5517b9",
+    "spark/tests/request_admission_tests.adb": "b6fb146f33a20cbc435b085b36a5ddbdf1a2d179ed961789a2e8a14348cb8e2c",
+    "spark/tests/request_wire_tests.adb": "79283a1cec85946f893092b32ba34d964db6ed45b6da3e99be8e8c187a5435db",
+    "spark/tests/retraction_tests.adb": "7250c3bdcac34938147c90b160dd9cf5a88b7c800261b0ffc577ea1e3fd30478",
+    "spark/tests/test_proof_summary.py": "4501cfed9578e79f860a485bd81e7d24f2d1609322094462bd934a24421a0670",
+    "spark/tests/transaction_tests.adb": "3ed63f9fd391ad1da5f6575450545bbcecddb9c9aac31969cd35c1034dea46ba",
+    "spark/verify-policy.sh": "690bd48c6433253c6defc192a50c40465bca2639fa4147c6faf1542fc86e5548"
+  },
+  "status": "FRESH_DEVELOPMENT_CHECKS_DISCHARGED",
+  "summary_sha256": "ee7f76253b43c389f1d7f0191a928c80f022934fa0eb31a89d5d67f2c2929551",
+  "versioned_report": "docs/evidence/proof-warning-v1.txt"
+}

@@ -10,6 +10,8 @@ import re
 import sys
 
 LIMIT = 1024 * 1024
+RAW_LIMIT = 4 * 1024 * 1024
+MAX_DIAGNOSTICS = 4096
 UNIT = re.compile(r"in unit ([a-z][a-z0-9_]*), ([0-9]{1,6}) subprograms and packages out of ([0-9]{1,6}) analyzed")
 DETAIL = re.compile(
     r"  ([A-Za-z][A-Za-z0-9_.]*) at ([a-z][a-z0-9_]*\.(?:ads|adb)):"
@@ -75,8 +77,47 @@ def check(root, report):
         raise ValueError("unit coverage mismatch: missing=" +
                          repr(sorted(expected - seen)) + "; unexpected=" +
                          repr(sorted(seen - expected)))
+    check_raw_diagnostics(root, expected)
     return {"status": "checks-discharged", "units": sorted(seen),
+            "raw_diagnostics": "no warnings, errors or declared exclusions",
             "scope": "reported proof obligations only; authenticity and system assurance external"}
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate raw-report key")
+        result[key] = value
+    return result
+
+
+def reject_constant(_value):
+    raise ValueError("non-JSON numeric constant")
+
+
+def check_raw_diagnostics(root, units):
+    """Summary flow rows do not include miscellaneous proof warnings."""
+    for name in sorted(units):
+        path = root / "obj" / "gnatprove" / (name + ".spark")
+        with path.open("rb") as stream:
+            raw = stream.read(RAW_LIMIT + 1)
+        if len(raw) > RAW_LIMIT:
+            raise ValueError("raw proof report exceeds byte limit")
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,
+                           parse_constant=reject_constant)
+        if type(value) is not dict:
+            raise ValueError("raw proof report is not an object")
+        for field in ("pragma_assume", "skip_proof", "skip_flow_proof"):
+            if value.get(field) != []:
+                raise ValueError("missing or nonempty raw exclusion field")
+        for field in ("warn_error", "flow", "proof"):
+            rows = value.get(field)
+            if type(rows) is not list or len(rows) > MAX_DIAGNOSTICS:
+                raise ValueError("missing or oversized raw diagnostics")
+            for row in rows:
+                if type(row) is not dict or row.get("severity") != "info":
+                    raise ValueError("raw diagnostic is not informational")
 
 
 def check_details(lines):

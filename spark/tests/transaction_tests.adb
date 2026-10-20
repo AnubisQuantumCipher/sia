@@ -104,7 +104,8 @@ procedure Transaction_Tests with SPARK_Mode is
          Item.Before := Step;
          Item.After := Phase'Succ (Step);
          Item.Predecessor_Receipt := Current.Last_Receipt;
-         Item.Receipt (1) := Digest_Byte (Phase'Pos (Step));
+         Item.Receipt :=
+           (Item.Receipt with delta 1 => Digest_Byte (Phase'Pos (Step)));
          Reduce (Current, Item, Outcome);
          pragma Assert (Outcome = Apply);
          Reduce (Current, Item, Outcome);

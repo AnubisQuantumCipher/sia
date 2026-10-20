@@ -76,7 +76,8 @@ procedure Policy_Tests with SPARK_Mode is
       Reject_Witness (Bad);
       Bad := Good;
       for Position in Digest'Range loop
-         Bad.Bound_To.Transaction (Position) := 18;
+         Bad.Bound_To.Transaction :=
+           (Bad.Bound_To.Transaction with delta Position => 18);
          Reject_Witness (Bad);
          Bad := Good;
       end loop;

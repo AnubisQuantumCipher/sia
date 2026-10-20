@@ -46,7 +46,7 @@ procedure Consolidation_Tests with SPARK_Mode is
       Check (Initial, Good, Record_Proposed);
       Check (Recorded_State, Good, Identical_Record);
       for Kind in Disposition loop
-         Item.Results (1) := Kind;
+         Item.Results := (Item.Results with delta 1 => Kind);
          if Kind in Retained_Intact | Compacted_Exact then
             Check (Initial, Item, Record_Proposed);
          else
@@ -171,10 +171,11 @@ procedure Consolidation_Tests with SPARK_Mode is
    begin
       Current.Expected.Count := Max_Days;
       for I in Day_Index loop
-         Current.Expected.Days (I) :=
-           (Day => [1 => SIA_Policy.Digest_Byte (I / 256),
-                    2 => SIA_Policy.Digest_Byte (I mod 256), others => 0],
-            Sources => Zero, Originals => [others => 3]);
+         Current.Expected.Days :=
+           (Current.Expected.Days with delta
+            I => (Day => [1 => SIA_Policy.Digest_Byte (I / 256),
+                          2 => SIA_Policy.Digest_Byte (I mod 256), others => 0],
+                  Sources => Zero, Originals => [others => 3]));
          pragma Loop_Invariant
            (for all J in 1 .. I =>
               Integer (Current.Expected.Days (J).Day (1)) * 256 +

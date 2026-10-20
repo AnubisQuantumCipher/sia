@@ -1,5 +1,6 @@
 """Synthetic report-shape controls; these fixtures are not proof evidence."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -26,9 +27,20 @@ class ProofSummary(unittest.TestCase):
             'project P is for Source_Dirs use ("src", "tests"); end P;')
         (self.root / "src").mkdir()
         (self.root / "tests").mkdir()
+        self.raw_reports = self.root / "obj" / "gnatprove"
+        self.raw_reports.mkdir(parents=True)
         for name in ("a", "b"):
             (self.root / "src" / (name + ".adb")).write_text("-- fixture\n")
+            self.write_raw(name, self.clean_raw())
         self.report = self.root / "report.txt"
+
+    @staticmethod
+    def clean_raw():
+        return {"warn_error": [], "flow": [], "proof": [], "pragma_assume": [],
+                "skip_proof": [], "skip_flow_proof": []}
+
+    def write_raw(self, name, value):
+        (self.raw_reports / (name + ".spark")).write_text(json.dumps(value))
 
     def check_text(self, text):
         self.report.write_text(text)
@@ -109,6 +121,84 @@ class ProofSummary(unittest.TestCase):
             "in unit a, 2 subprograms and packages out of 2 analyzed")
         with self.assertRaises(ValueError):
             self.check_text(text.replace(detail, detail + detail.replace("a.adb:1", "a.ads:2")))
+
+    def test_raw_warning_cannot_hide_behind_clean_summary(self):
+        for field in ("warn_error", "flow", "proof"):
+            for severity in ("warning", "error", "fatal", "unknown", None):
+                value = self.clean_raw()
+                value[field] = [{"severity": severity, "suppressed": ""}]
+                self.write_raw("b", value)
+                with self.subTest(field=field, severity=severity):
+                    with self.assertRaises(ValueError):
+                        self.check_text(REPORT)
+
+    def test_raw_informational_message_is_not_a_warning(self):
+        value = self.clean_raw()
+        for field in ("warn_error", "flow", "proof"):
+            value[field] = [{"severity": "info", "rule": "error"}]
+        value["assumptions"] = [{"claim": {"predicate": "CLAIM_AORTE"}}]
+        self.write_raw("a", value)
+        self.assertEqual(self.check_text(REPORT)["units"], ["a", "b"])
+
+    def test_duplicate_key_cannot_erase_a_warning(self):
+        path = self.raw_reports / "a.spark"
+        for rows in (
+            '"warn_error":[{"severity":"warning"}],"warn_error":[]',
+            '"warn_error":[{"severity":"warning","severity":"info"}]',
+        ):
+            path.write_text("{" + rows + ',"flow":[],"proof":[],"pragma_assume":[],'
+                            '"skip_proof":[],"skip_flow_proof":[]}')
+            with self.subTest(rows=rows), self.assertRaises(ValueError):
+                self.check_text(REPORT)
+
+    def test_missing_or_nonempty_raw_exclusions_refuse(self):
+        for key in ("pragma_assume", "skip_proof", "skip_flow_proof"):
+            for replacement in (None, [1], False, {}):
+                value = self.clean_raw()
+                value[key] = replacement
+                self.write_raw("a", value)
+                with self.subTest(key=key, value=replacement), self.assertRaises(ValueError):
+                    self.check_text(REPORT)
+            value = self.clean_raw()
+            del value[key]
+            self.write_raw("a", value)
+            with self.assertRaises(ValueError):
+                self.check_text(REPORT)
+
+    def test_malformed_missing_and_oversize_raw_reports_refuse(self):
+        path = self.raw_reports / "a.spark"
+        for raw in ("{", "[]", "null", "{}",
+                    "x" * (CHECKER.RAW_LIMIT + 1)):
+            path.write_text(raw)
+            with self.subTest(raw=raw[:64]), self.assertRaises(ValueError):
+                self.check_text(REPORT)
+        path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.check_text(REPORT)
+
+    def test_unknown_and_oversize_raw_diagnostics_refuse(self):
+        for field in ("warn_error", "flow", "proof"):
+            for rows in (None, {}, [None], [{}],
+                         [{"severity": "info"}] * (CHECKER.MAX_DIAGNOSTICS + 1)):
+                value = self.clean_raw()
+                value[field] = rows
+                self.write_raw("a", value)
+                with self.subTest(field=field, rows=str(rows)[:64]):
+                    with self.assertRaises(ValueError):
+                        self.check_text(REPORT)
+            value = self.clean_raw()
+            del value[field]
+            self.write_raw("a", value)
+            with self.assertRaises(ValueError):
+                self.check_text(REPORT)
+
+    def test_non_json_numeric_constants_refuse(self):
+        path = self.raw_reports / "a.spark"
+        for token in ("NaN", "Infinity", "-Infinity"):
+            raw = json.dumps(self.clean_raw())[:-1] + ',"ignored":' + token + '}'
+            path.write_text(raw)
+            with self.subTest(token=token), self.assertRaises(ValueError):
+                self.check_text(REPORT)
 
 
 if __name__ == "__main__":

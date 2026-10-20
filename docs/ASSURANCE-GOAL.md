@@ -75,6 +75,12 @@ other systems' authorization; those systems authenticate evidence independently.
 
 ## Proof boundary
 
+The [raw-diagnostic gate repair](PROOF-WARNING-GATE.md) records optional
+warnings discovered behind earlier clean flow-summary rows. Historical
+discharged-check results retain their stated source and scope; they do not
+establish all-channel zero-warning acceptance. Current acceptance must include
+the complete raw diagnostic roster as well as the summary and all-unit result.
+
 Prove deterministic policy, initialization, absence of run-time errors,
 termination, provenance non-escalation, readiness and resource invariants.
 Do not infer filesystem durability, actual cryptographic validity, process

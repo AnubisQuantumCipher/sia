@@ -15,7 +15,8 @@ project SIA_Assurance is
    end Compiler;
    package Prove is
       for Proof_Switches ("Ada") use
-        ("--level=2", "--report=all", "--warnings=error",
-         "--checks-as-errors=on", "--proof-warnings=on", "-j1");
+        ("--level=2", "--report=all", "-W=all", "--warnings=error",
+         "--checks-as-errors=on", "--proof-warnings=on",
+         "--prover=z3,cvc5,altergo", "-j1");
    end Prove;
 end SIA_Assurance;

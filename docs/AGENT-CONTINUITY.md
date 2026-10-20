@@ -260,6 +260,24 @@ independent or single-command reproduction. The fresh committed-source runner
 remains a separate open acceptance gate; no timeout, scope or verification
 requirement is waived.
 
+Fresh committed-source reproduction at
+`2794db2390e4f7e3cb3cff0d5b910d2967ac6dd8` passed the strict build and all eight
+harnesses, then reached the same 600-second proof limit, exit 124. Evidence:
+`continuity-policy-committed-v1`; no completed coverage acceptance follows.
+Inspection also found default-disabled miscellaneous warnings in the earlier
+raw proof output that were outside the original summary checker's scope.
+The [diagnostic-gate repair](PROOF-WARNING-GATE.md) is a new qualification
+obligation. Clean flow-summary rows never established all-channel zero-warning
+compliance.
+
+The stricter development-v11 campaign subsequently completed from a fresh
+archive plus an explicitly recorded working-tree overlay. It enabled all tagged
+warnings, checked all raw diagnostic channels and tried the same provers in
+Z3/CVC5/Alt-Ergo order. Strict build, all eight harnesses, the full proof
+(788 reported checks) and coverage validation passed under the unchanged
+resource caps. [Warning-gate evidence](PROOF-WARNING-GATE.md) records the exact
+scope and retained failures. Fresh committed reproduction remains pending.
+
 Witness production, protected freshness, original-reference resolution and
 cross-checkpoint operation history remain external obligations. In particular,
 the package cannot detect a producer that omits an uncertain operation from a

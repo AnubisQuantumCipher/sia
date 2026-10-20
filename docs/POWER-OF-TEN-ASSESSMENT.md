@@ -18,6 +18,18 @@ Assessment source baseline: `075ecae2f97a95304f603eff23d10cbc30c0f82f`.
 The pure-core proof evidence remains bound to `376a541`; the strengthened
 report gate to `6450636`. No runtime-wide compliance score is meaningful.
 
+Later diagnostic finding at the continuity checkpoint `2794db2`: clean
+flow-summary rows did not include every raw proof diagnostic. Optional
+array-initialization and operator-reassociation warnings were disabled by the
+then-selected profile. Its all-channel zero-warning acceptance is FAILED.
+The [warning-gate repair](PROOF-WARNING-GATE.md) enables all tagged warnings,
+preserves the original test mutations/contracts, and checks every unit's raw
+diagnostic channels. The stricter fresh development campaign passed build,
+every harness, all 788 reported proof checks and the raw/summary validator.
+Fresh committed reproduction remains pending; the historical scoped proof
+results and the discovered warning evidence are both retained. This scoped
+gate result is not runtime-wide Power of Ten compliance.
+
 ## Rule mapping
 
 The “intent” column is a concise paraphrase of each rationale. Every other

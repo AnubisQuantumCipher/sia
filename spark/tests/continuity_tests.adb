@@ -574,7 +574,7 @@ procedure Continuity_Tests with SPARK_Mode is
       Item.Through := Generation (Max_Claims);
       Item.Coverage (Constraint) := Complete;
       for I in 5 .. Max_Claims loop
-         Item.Claims (I) := Capacity_Claim (I);
+         Item.Claims := (Item.Claims with delta I => Capacity_Claim (I));
          pragma Loop_Invariant
            (for all J in Claim_Index =>
               Item.Claims (J) =
@@ -622,7 +622,8 @@ procedure Continuity_Tests with SPARK_Mode is
       Initial_Properties;
       Item.Operations_Count := Max_Operations;
       for I in Operation_Index loop
-         Item.Operations (I) := Capacity_Operation (I);
+         Item.Operations :=
+           (Item.Operations with delta I => Capacity_Operation (I));
          pragma Loop_Invariant
            (for all J in Operation_Index =>
               Item.Operations (J) =

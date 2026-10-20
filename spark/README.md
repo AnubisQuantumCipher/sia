@@ -73,5 +73,11 @@ the reported number of unique, source-bound detail rows in the supported
 GNATprove format, with zero flow errors, outstanding flow checks, warnings and
 `pragma Assume` statements, and a proved result. Unknown detail formats refuse
 acceptance rather than silently dropping diagnostics. This checks report
-structure, not authenticity or system assurance. Its synthetic negative tests
+structure, not authenticity or system assurance. The strengthened gate also
+checks each required unit's raw diagnostic channels and explicit exclusion
+lists, with bounded input and duplicate-key rejection. The project requests
+all tagged warnings with `-W=all`; warning errors alone do not enable disabled
+categories. See [`PROOF-WARNING-GATE.md`](../docs/PROOF-WARNING-GATE.md) for the
+discovered gap, retained negative evidence and qualification status.
+Its synthetic negative tests
 run with `python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v`.
