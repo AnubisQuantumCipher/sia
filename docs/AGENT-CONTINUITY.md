@@ -142,3 +142,40 @@ and repeated fresh-process projection. These process tests are explicitly not
 Codex compaction, semantic retrieval or an uncompacted-baseline evaluation.
 Next: authenticate and resolve references, define/prove the conservative SPARK
 restore policy, then qualify explicit durable checkpoint/resume and actual hooks.
+
+## Retained evidence and current acceptance
+
+At source `1e3e6de7281142ac08005274ffa452dcbad341b7`, fresh selected-source reproduction passed
+21 tests: the 18 continuity-codec controls and three installed-runtime dependency
+closure checks, with Python warnings treated as errors. The archive contains
+`bin`, `scripts`, `tests`, `install.sh` and `uninstall.sh`; it is not a full-repo
+archive. SHA-256: `50f25c23cae0730e2e26ce6c8a26e989a7fa991a08c53db417327083db9f0314`. Evidence:
+`continuity-packet-reproduction-v1` and `continuity-packet-review-v2.txt`.
+Independent GPT-6.1 review verified archive/source, interpreter identity and raw
+outputs without rerunning tests. The source inventory remains inventory-only;
+no syntax findings is not Power of Ten compliance. Standard formatted exception
+tracebacks suppress decoder causes, but Python exception context/locals can
+still hold input in memory; arbitrary exception-object logging is not approved.
+
+`codex-host-identity-v1.json` retains the inspected executable/configuration
+hashes and process lineage. An ancestor outside the desktop host could not be
+read (permission error); the visible desktop executable was independently
+versioned. A disposable credential-free instance of that same executable listed
+the fixture hook first as untrusted and then as trusted after exact-definition
+review. This did not change production hook configuration.
+
+The disposable `thread/start` succeeded, but `thread/read` with
+`includeTurns=true` returned `list_turns is not supported yet`. Its successful
+start response was reconciled before continuing: a fresh server resumed that
+same thread using `excludeTurns=true`, with no duplicate start. The prompt-input
+diagnostic did not contain the fixture hook marker. These observations are
+retained in `codex-lifecycle-probe-v1`; they establish metadata restart only.
+No model turn, actual compaction, restored next-action correctness or hook
+execution has been qualified. The initial probe's coarse UNRUN receipt does not
+override its retained successful start response or failed history-read response.
+
+Next acceptance increment: authenticated bounded original-reference resolution
+and conservative SPARK restore policy, then durable explicit checkpoint/resume
+with crash prefixes, followed by actual desktop hook execution and held-out
+compaction continuation. No experimental module has been installed or promoted
+to the marketplace release.

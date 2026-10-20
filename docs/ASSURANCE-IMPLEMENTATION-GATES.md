@@ -322,3 +322,28 @@ are indexed in `CONSOLIDATION-SNAPSHOT.md`. Exact originals are now pinned
 before effects within the experimental consumer. Whole-batch progression,
 retained-day eligibility, pin/journal lifecycle and the resident acceptance
 campaign remain open; successful selected-claim recovery cannot clear them.
+
+### Consolidation policy and agent-continuity checkpoint
+
+Source `1e3e6de7281142ac08005274ffa452dcbad341b7` adds the pure
+[consolidation observation planner](../spark/CONSOLIDATION-POLICY.md), with a
+complete archived strict proof/runtime result and independent evidence review.
+It does not advance a cursor or retire originals. The original-retention and
+full-consumer progression gates remain open.
+
+The [agent-continuity proposal codec](AGENT-CONTINUITY.md) has retained scoped
+parser/process/dependency tests and independent review. It returns unverified
+references only. Actual capture, protected source resolution, SPARK restoration,
+durable checkpoint publication, harness compaction and held-out continuation
+remain open. The desktop metadata-resume probe is not substituted for them.
+
+A fresh installed no-touch recall on 2026-10-20 completed with exit zero; its
+retained boundary reports live senses, passing chains, a complete graph, six
+redacted spans and associative reranking disabled by measured default. Model
+and legacy-unlabeled memories remain non-evidence, and absence of recall is not
+evidence of absence. `installed-recall-continuity-start-v1.json` retains command
+and timing metadata without raw memories. This does not install the experimental
+continuity codec or guarantee recall deadlines. Marketplace request #12332 was
+still OPEN and security-review-required at the latest issue observation; the
+latest bounded catalog probes did not establish current listing state. Neither
+issue validation nor this branch's tests establish marketplace publication.

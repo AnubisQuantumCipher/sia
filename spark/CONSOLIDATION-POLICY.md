@@ -38,3 +38,19 @@ Full consumer progression remains OPEN: split days across immutable pages,
 more than one execution-sized claim set per batch, durable complete-outcome
 recording, current protection decisions, late arrivals and bounded original-pin
 retirement must be resolved before replacing the installed consolidation path.
+
+## Committed-source reproduction
+
+Source `1e3e6de7281142ac08005274ffa452dcbad341b7` passed `spark/verify-policy.sh` in a fresh
+archived tree. The retained summary reports 482 discharged checks (156 flow,
+326 prover), fourteen fully analyzed units, no justified or unproved checks,
+and all seven runtime harnesses passing. Strict build, proof and coverage
+commands exited zero. Spark-subtree archive SHA-256:
+`451afedea2d6478558f8d9223098c3fc43e6fba3a66f8004bdd753ac201313cb`.
+
+Evidence: `consolidation-policy-reproduction-v1` and independent GPT-6.1
+`consolidation-policy-review-v3.txt` in the external assurance evidence directory.
+The reviewer compared archive/source and recorded tool hashes and inspected
+the completed reports; it did not rerun the proof. This qualifies the pure
+contracts and harnesses only. All runtime/enforcement/resource non-claims above
+remain controlling.
