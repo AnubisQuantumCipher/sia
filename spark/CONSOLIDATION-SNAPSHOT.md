@@ -330,3 +330,41 @@ Exact-source staging reproduction:
 The source-bound result qualifies only the staged component and the named
 regressions. The installed runtime, execution/retirement protocol and full
 assurance/release gates remain incomplete.
+
+## Reusable claim effects
+
+The legacy consolidation executor now separates source selection and validation,
+epoch preparation, publication, and exact-source cleanup into named routines.
+`consolidate_corpus` retains pre-consolidation Git commit, live protection
+observations, cutoff calculation, scan/claim preparation, and acknowledgment.
+The internal `_execute_consolidation_claims` performs the effects under its
+caller's corpus lease and does not acknowledge or change the retained claims.
+It is not an authenticated front door or a SPARK authority boundary.
+
+Day-level pins, take windows, safety tags, contiguous shards, exact claim and
+recovery lineage, clean tracked Git sources, bounded reads, stable file identity,
+event completeness, epoch capacity, index publication order, and directory
+synchronization remain in the execution path. Preparation refusals retain the
+whole weekly group before mutation. Effect failures propagate; a later retry
+uses retained epoch lineage without merging source counts again.
+
+The new executor tests require retained claim bytes on success and refusal,
+protected-day preservation, changed-source rejection, and source retention
+after injected index-publication failure. Retry must leave epoch bytes
+unchanged while completing cleanup. An AST check enforces at most sixty
+physical lines for the fourteen explicitly named executor routines, including
+the legacy entry point. This is a local routine-size check, not Python
+termination, resource, or whole-program control-flow proof.
+
+The expanded development run reports 90 passing tests. The initial run's three
+new test setup errors are retained in `consolidation-executor-development-v1`;
+the fixture incorrectly passed a label to the zero-argument corpus lease API.
+The corrected fixture uses the real lease and pins the existing exact-claim
+refusal message. No production guard was changed for those test corrections.
+Independent review is retained in `consolidation-executor-review-v1.txt`.
+
+The staged delivery component still cannot execute or acknowledge a batch.
+Next, persist execution intent before allowing missing-source recovery, then
+qualify consumer completion, cursor advancement and retirement with fresh
+process cuts. The installed churn defect, protected ownership, late-arrival
+handoff, capacity compatibility, and release gates remain open.

@@ -2912,6 +2912,385 @@ def _consolidation_scan_debt():
     return ""
 
 
+def _consolidation_day_paths(claimed_paths, cutoff, take_windows, kept_days):
+    day_paths = collections.defaultdict(list)
+    for path in claimed_paths:
+        rel = os.path.relpath(path, CORPUS)
+        try:
+            organ, date, part = _event_source_parts(rel)
+        except ValueError:
+            continue
+        if date >= cutoff:
+            continue
+        page_slug = rel[:-3]
+        if any((not sources or organ in sources) and first <= date <= last
+               for sources, first, last in take_windows):
+            kept_days.add((organ, date))
+            continue
+        day_paths[(organ, date)].append((path, rel, page_slug, part))
+    return day_paths
+
+
+def _consolidation_day_lineage(paths, organ, date, epoch_state):
+    observed_parts = [item[3] for item in paths]
+    day_manifest = []
+    for record in epoch_state["source_manifest"]:
+        source_organ, source_date, _source_part = _event_source_parts(
+            record["rel"])
+        if source_organ == organ and source_date == date:
+            day_manifest.append(record)
+    recovery_lineage = bool(day_manifest)
+    manifest_by_rel = {record["rel"]: record
+                       for record in day_manifest}
+    if recovery_lineage:
+        if date not in epoch_state["dates"] \
+                or any(rel not in manifest_by_rel
+                       for _path, rel, _page_slug, _part in paths):
+            raise RuntimeError(
+                "live event shards conflict with epoch source lineage")
+    elif observed_parts != list(range(1, observed_parts[-1] + 1)):
+        raise RuntimeError("event day shards are not contiguous")
+    return manifest_by_rel
+
+
+def _consolidation_day_is_durable(paths):
+    durable = True
+    for _path, rel, _page_slug, _part in paths:
+        try:
+            tracked = _run_bounded_text_process(
+                ["git", "ls-files", "--error-unmatch", "--", rel],
+                env=None, timeout=30, cwd=CORPUS,
+                label="git tracked-source check").returncode == 0
+            clean_status = _run_bounded_text_process(
+                ["git", "status", "--porcelain", "--", rel],
+                env=None, timeout=30, cwd=CORPUS,
+                label="git source status")
+            clean = clean_status.returncode == 0 \
+                and clean_status.stdout.strip() == ""
+        except Exception:
+            tracked = clean = False
+        durable = durable and tracked and clean
+    return durable
+
+
+def _read_consolidation_source(path, rel):
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise RuntimeError(
+            f"consolidation source cannot be opened safely: {rel}") \
+            from exc
+    with siaqueue.regular_file_stream(
+            fd, label="consolidation source", error_type=RuntimeError) as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_size > MAX_EVENT_PAGE_BYTES:
+            raise RuntimeError(
+                f"consolidation source is not a bounded regular file: "
+                f"{rel}")
+        raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    before_token = (before.st_dev, before.st_ino, before.st_size,
+                    before.st_mtime_ns, before.st_ctime_ns)
+    after_token = (after.st_dev, after.st_ino, after.st_size,
+                   after.st_mtime_ns, after.st_ctime_ns)
+    if before_token != after_token \
+            or len(raw) > MAX_EVENT_PAGE_BYTES:
+        raise RuntimeError(
+            f"consolidation source changed while read: {rel}")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise RuntimeError(
+            f"consolidation source is not valid UTF-8: {rel}") \
+            from exc
+    return raw, text
+
+
+def _consolidation_day_items(
+        paths, date, claimed_source_ids, manifest_by_rel, scheduled_pages):
+    day_items = []
+    protected = any(page_slug in scheduled_pages
+                    for _path, _rel, page_slug, _part in paths)
+    for path, rel, _page_slug, part in paths:
+        raw, text = _read_consolidation_source(path, rel)
+        source_id = hashlib.sha256(
+            rel.encode("utf-8") + b"\0" + raw).hexdigest()
+        if claimed_source_ids.get(rel) != source_id:
+            raise RuntimeError(
+                f"consolidation source changed after its claim: {rel}")
+        lineage_record = manifest_by_rel.get(rel)
+        if manifest_by_rel and (lineage_record is None
+                                or lineage_record["sha256"] != source_id):
+            raise RuntimeError(
+                f"live event shard conflicts with epoch source lineage: "
+                f"{rel}")
+        tm = re.search(r"^tags: \[(.*)\]$", text, re.M)
+        tags = {tag.strip()
+                for tag in (tm.group(1).split(",") if tm else [])}
+        protected = protected or bool(tags & siamind.SAFETY_TAGS)
+        day_items.append(
+            (date, path, text, tags, source_id, rel, part))
+    return day_items, protected
+
+
+def _group_consolidation_claims(scan_state, cutoff, scheduled_pages, take_windows):
+    claimed_paths = _claimed_consolidation_paths(scan_state)
+    claimed_source_ids = {
+        record["rel"]: record["sha256"]
+        for claim in scan_state["claims"] for record in claim["sources"]
+    }
+    groups, kept_days, epoch_states = {}, set(), {}
+    day_paths = _consolidation_day_paths(
+        claimed_paths, cutoff, take_windows, kept_days)
+    for (organ, date), paths in day_paths.items():
+        paths.sort(key=lambda item: item[3])
+        observed_parts = [item[3] for item in paths]
+        if len(observed_parts) != len(set(observed_parts)):
+            raise RuntimeError("event day shard identity is duplicated")
+        try:
+            slug = _epoch_slug_for_day(organ, date)
+            if slug not in epoch_states:
+                epoch_states[slug] = _read_epoch_state(slug)
+            epoch_state = epoch_states[slug]
+        except ConsolidationCapacityError:
+            kept_days.add((organ, date))
+            continue
+        manifest_by_rel = _consolidation_day_lineage(
+            paths, organ, date, epoch_state)
+        if not _consolidation_day_is_durable(paths):
+            continue  # Retain the entire day; try next dream.
+        day_items, protected = _consolidation_day_items(
+            paths, date, claimed_source_ids, manifest_by_rel, scheduled_pages)
+        if protected and not manifest_by_rel:
+            # Keeping only a protected shard would orphan sibling numbering.
+            kept_days.add((organ, date))
+            continue
+        y, w, _ = datetime.date.fromisoformat(date).isocalendar()
+        groups.setdefault((organ, y, w), []).extend(day_items)
+    return groups, kept_days, epoch_states
+
+
+def _unlink_consolidation_source(item):
+    """Delete only the exact source bytes admitted to this epoch."""
+    _date, path, _text, _tags, expected_id, rel, _part = item
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with siaqueue.regular_file_stream(
+            fd, label="consolidation source", error_type=RuntimeError) as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) \
+                or before.st_size > MAX_EVENT_PAGE_BYTES:
+            raise RuntimeError(
+                f"consolidation cleanup target is not bounded: {rel}")
+        current = stream.read(MAX_EVENT_PAGE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    observed = (before.st_dev, before.st_ino, before.st_size,
+                before.st_mtime_ns, before.st_ctime_ns)
+    finished = (after.st_dev, after.st_ino, after.st_size,
+                after.st_mtime_ns, after.st_ctime_ns)
+    target = os.lstat(path)
+    if observed != finished or len(current) > MAX_EVENT_PAGE_BYTES \
+            or (target.st_dev, target.st_ino) != (after.st_dev,
+                                                  after.st_ino):
+        raise RuntimeError(
+            f"consolidation source changed before cleanup: {rel}")
+    current_id = hashlib.sha256(
+        rel.encode("utf-8") + b"\0" + current).hexdigest()
+    if current_id != expected_id:
+        raise RuntimeError(
+            f"consolidation source changed before cleanup: {rel}")
+    _before_corpus_mutation()
+    os.unlink(path)
+    dfd = os.open(os.path.dirname(path),
+                  os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
+
+
+def _consolidation_pending_summary(organ, pending_items):
+    pending_exemplars = {}
+    for item in pending_items:
+        log_part = item[2].split("## Timeline")[0].split("## Log")[-1]
+        pending_exemplars[item[5]] = _epoch_exemplars([
+            line for line in log_part.splitlines()
+            if line.startswith("- ")])
+    counts, all_tags, bullets, links = {}, {organ}, [], set()
+    for date, path, text, tags, _source_id, _rel, _part in pending_items:
+        cm = re.search(r"^sia_counts: (.*)$", text, re.M)
+        if not cm:
+            raise RuntimeError(
+                f"consolidation source lacks sia_counts: "
+                f"{os.path.relpath(path, CORPUS)}")
+        source_counts = _parse_sia_counts(
+            cm.group(1), os.path.relpath(path, CORPUS))
+        for k, v in source_counts.items():
+            counts[k] = counts.get(k, 0) + v
+        all_tags |= tags
+        for b in pending_exemplars[_rel]:
+            bullets.append(f"- {date} ·" + b[1:])
+        for wl in re.findall(r"\[\[([a-z0-9/._-]+)", text):
+            links.add(wl)
+    return counts, all_tags, bullets, links
+
+
+def _extend_consolidation_summary(
+        et, slug, counts, all_tags, bullets, links, from_date, to_date):
+    pm = re.search(r"^sia_counts: (.*)$", et, re.M)
+    if not pm:
+        raise RuntimeError(f"existing epoch lacks sia_counts: {slug}")
+    epoch_counts = _parse_sia_counts(pm.group(1), slug)
+    for k, v in epoch_counts.items():
+        counts[k] = counts.get(k, 0) + v
+    ptm = re.search(r"^tags: \[(.*)\]$", et, re.M)
+    if ptm:
+        all_tags |= {t.strip() for t in ptm.group(1).split(",")
+                     if t.strip()}
+    pdm = re.search(r"^date: (.*)$", et, re.M)
+    if pdm and pdm.group(1).strip() < from_date:
+        from_date = pdm.group(1).strip()
+    etm = re.search(
+        r"Consolidated from \d+ day-memories "
+        r"\(\d{4}-\d{2}-\d{2} … (\d{4}-\d{2}-\d{2})\)", et)
+    if etm and etm.group(1) > to_date:
+        to_date = etm.group(1)
+    if "## Exemplars" in et:
+        ex = et.split("## Exemplars", 1)[1].split("\n## ")[0]
+        prev_b = [l for l in ex.splitlines() if l.startswith("- ")]
+        bullets = prev_b + bullets
+    for wl in re.findall(r"\[\[([a-z0-9/._-]+)", et):
+        links.add(wl)
+    return counts, all_tags, bullets, links, from_date, to_date
+
+
+def _render_consolidation_epoch(
+        organ, y, w, state, pending_items, source_ids, merged_manifest, event_ids):
+    slug = state["slug"]
+    name = ORGANS.get(organ, (organ, ""))[0]
+    counts, all_tags, bullets, links = _consolidation_pending_summary(
+        organ, pending_items)
+    prior_dates = state["dates"]
+    from_date, to_date = pending_items[0][0], pending_items[-1][0]
+    pending_dates = {item[0] for item in pending_items}
+    all_dates = sorted(set(prior_dates) | pending_dates)
+    ndays = state["ndays"] + len(pending_dates - set(prior_dates))
+    if state["text"]:
+        counts, all_tags, bullets, links, from_date, to_date = \
+            _extend_consolidation_summary(
+                state["text"], slug, counts, all_tags, bullets, links,
+                from_date, to_date)
+    bullets = _epoch_exemplars(bullets, limit=MAX_WEEKLY_EPOCH_EXEMPLARS)
+    total = sum(counts.values())
+    agg = ", ".join(f"{v}× {k}" for k, v in
+                    sorted(counts.items(), key=lambda kv: -kv[1])[:8])
+    linkline = " ".join(f"[[{l}]]" for l in sorted(links)
+                        if not l.startswith("events/"))[:800]
+    epoch_frontmatter = [
+        "type: epoch", fm_title(f"{name} — {y} week {w}"),
+        f"tags: [{', '.join(sorted(all_tags))}]",
+        f"date: {from_date}",
+        f"sia_sources: {json.dumps(source_ids, separators=(',', ':'))}",
+        "sia_source_manifest: " + json.dumps(
+            merged_manifest, separators=(",", ":"),
+            ensure_ascii=False),
+        "sia_event_ids: " + json.dumps(
+            event_ids, separators=(",", ":"), ensure_ascii=False),
+        f"sia_dates: {json.dumps(all_dates, separators=(',', ':'))}",
+        f"sia_counts: {json.dumps(counts, sort_keys=True)}",
+    ]
+    if organ == "jackal":
+        epoch_frontmatter.insert(1, "origin: derived")
+    epoch_body = (
+        f"# {name} — {y} week {w}\n\n"
+        f"Consolidated from {ndays} day-memories "
+        f"({from_date} … {to_date}); originals verbatim in "
+        f"corpus git history. Source: [[organs/{organ}]] for "
+        f"[[sia/cortex]].\n\n"
+        f"## Exemplars\n" + "\n".join(bullets) + "\n\n"
+        f"{linkline}\n\n"
+        f"## Timeline\n- **{to_date}** — {total} events that "
+        f"week: {agg}\n")
+    return _render_bounded_epoch(slug, epoch_frontmatter, epoch_body)
+
+
+def _plan_consolidation_group(organ, y, w, items, state):
+    """Prepare exact epoch and index bytes before any group mutation."""
+    slug = state["slug"]
+    prior_sources = state["sources"]
+    prior_source_set = set(prior_sources)
+    pending_items = [item for item in items if item[4] not in prior_source_set]
+    source_ids = prior_sources + [item[4] for item in pending_items]
+    try:
+        merged_manifest = _merge_epoch_source_manifest(
+            state["source_manifest"], items, slug, source_ids)
+        event_entries = _event_index_entries_for_sources(items, slug)
+        event_ids = _merge_epoch_event_ids(state, items, event_entries)
+        _preflight_event_index_entries(event_entries)
+    except (ConsolidationCapacityError, ConsolidationCompletenessError):
+        return None
+    for item in pending_items:
+        if item[0] in state["dates"] \
+                and not any(record["rel"] == item[5]
+                            for record in state["source_manifest"]):
+            raise RuntimeError(
+                "event source conflicts with legacy epoch date lineage")
+    try:
+        if not pending_items:
+            recovery_dates = sorted(
+                set(state["dates"]) | {item[0] for item in items})
+            rendered = _render_epoch_source_manifest(
+                state, merged_manifest, recovery_dates, event_ids)
+        else:
+            rendered = _render_consolidation_epoch(
+                organ, y, w, state, pending_items, source_ids,
+                merged_manifest, event_ids)
+    except ConsolidationCapacityError:
+        return None
+    return pending_items, rendered, event_entries
+
+
+def _apply_consolidation_groups(groups, kept_days, epoch_states):
+    consolidated_days = set()
+    written_epochs = 0
+    for (organ, y, w), items in groups.items():
+        items.sort(key=lambda item: (item[0], item[6], item[5]))
+        slug = f"epochs/{organ}/{y}-w{w:02d}"
+        state = epoch_states.get(slug)
+        if state is None:
+            state = _read_epoch_state(slug)
+            epoch_states[slug] = state
+        plan = _plan_consolidation_group(organ, y, w, items, state)
+        if plan is None:
+            # Nothing in this weekly group has been mutated yet.
+            kept_days |= {(organ, item[0]) for item in items}
+            continue
+        pending_items, rendered, event_entries = plan
+        if pending_items:
+            _write_bounded_epoch(slug, rendered)
+        else:
+            # Replay cleanup without merging already durable counts again.
+            _write_epoch_source_manifest(state, rendered)
+        _publish_event_index_entries(event_entries)
+        if pending_items:
+            consolidated_days |= {(organ, item[0]) for item in pending_items}
+            written_epochs += 1
+        for item in items:
+            _unlink_consolidation_source(item)
+    return len(consolidated_days), written_epochs, len(kept_days)
+
+
+def _execute_consolidation_claims(scan_state, cutoff, scheduled_pages, take_windows):
+    """Execute retained claims under the caller's corpus lease; do not ACK."""
+    groups, kept_days, epoch_states = _group_consolidation_claims(
+        scan_state, cutoff, scheduled_pages, take_windows)
+    return _apply_consolidation_groups(groups, kept_days, epoch_states)
+
+
 def consolidate_corpus():
     """Compact old day pages into weekly epoch pages.
 
@@ -2941,350 +3320,8 @@ def consolidate_corpus():
     scan_state = _prepare_consolidation_claims(scan_state)
     if not scan_state["claims"]:
         return 0, 0, 0
-    claimed_paths = _claimed_consolidation_paths(scan_state)
-    claimed_source_ids = {
-        record["rel"]: record["sha256"]
-        for claim in scan_state["claims"] for record in claim["sources"]
-    }
-    groups, kept_days = {}, set()
-    epoch_states = {}
-
-    def epoch_state_for_day(organ, date):
-        slug = _epoch_slug_for_day(organ, date)
-        if slug not in epoch_states:
-            epoch_states[slug] = _read_epoch_state(slug)
-        return epoch_states[slug]
-
-    day_paths = collections.defaultdict(list)
-    for path in claimed_paths:
-        rel = os.path.relpath(path, CORPUS)
-        try:
-            organ, date, part = _event_source_parts(rel)
-        except ValueError:
-            continue
-        if date >= cutoff:
-            continue
-        page_slug = rel[:-3]
-        if any((not sources or organ in sources) and first <= date <= last
-               for sources, first, last in take_windows):
-            kept_days.add((organ, date))
-            continue
-        day_paths[(organ, date)].append((path, rel, page_slug, part))
-
-    for (organ, date), paths in day_paths.items():
-        paths.sort(key=lambda item: item[3])
-        observed_parts = [item[3] for item in paths]
-        observed_parts.sort()
-        if len(observed_parts) != len(set(observed_parts)):
-            raise RuntimeError("event day shard identity is duplicated")
-
-        try:
-            epoch_state = epoch_state_for_day(organ, date)
-        except ConsolidationCapacityError:
-            kept_days.add((organ, date))
-            continue
-        day_manifest = []
-        for record in epoch_state["source_manifest"]:
-            source_organ, source_date, _source_part = _event_source_parts(
-                record["rel"])
-            if source_organ == organ and source_date == date:
-                day_manifest.append(record)
-        recovery_lineage = bool(day_manifest)
-        manifest_by_rel = {record["rel"]: record
-                           for record in day_manifest}
-        if recovery_lineage:
-            if date not in epoch_state["dates"] \
-                    or any(rel not in manifest_by_rel
-                           for _path, rel, _page_slug, _part in paths):
-                raise RuntimeError(
-                    "live event shards conflict with epoch source lineage")
-        elif observed_parts != list(range(1, observed_parts[-1] + 1)):
-            raise RuntimeError("event day shards are not contiguous")
-
-        durable = True
-        for _path, rel, _page_slug, _part in paths:
-            try:
-                tracked = _run_bounded_text_process(
-                    ["git", "ls-files", "--error-unmatch", "--", rel],
-                    env=None, timeout=30, cwd=CORPUS,
-                    label="git tracked-source check").returncode == 0
-                clean_status = _run_bounded_text_process(
-                    ["git", "status", "--porcelain", "--", rel],
-                    env=None, timeout=30, cwd=CORPUS,
-                    label="git source status")
-                clean = clean_status.returncode == 0 \
-                    and clean_status.stdout.strip() == ""
-            except Exception:
-                tracked = clean = False
-            durable = durable and tracked and clean
-        if not durable:
-            continue               # retain the entire day; try next dream
-
-        day_items = []
-        protected = any(page_slug in scheduled_pages
-                        for _path, _rel, page_slug, _part in paths)
-        for path, rel, _page_slug, part in paths:
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-                | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-            try:
-                fd = os.open(path, flags)
-            except OSError as exc:
-                raise RuntimeError(
-                    f"consolidation source cannot be opened safely: {rel}") \
-                    from exc
-            with siaqueue.regular_file_stream(
-                    fd, label="consolidation source", error_type=RuntimeError) as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode) \
-                        or before.st_size > MAX_EVENT_PAGE_BYTES:
-                    raise RuntimeError(
-                        f"consolidation source is not a bounded regular file: "
-                        f"{rel}")
-                raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
-                after = os.fstat(stream.fileno())
-            before_token = (before.st_dev, before.st_ino, before.st_size,
-                            before.st_mtime_ns, before.st_ctime_ns)
-            after_token = (after.st_dev, after.st_ino, after.st_size,
-                           after.st_mtime_ns, after.st_ctime_ns)
-            if before_token != after_token \
-                    or len(raw) > MAX_EVENT_PAGE_BYTES:
-                raise RuntimeError(
-                    f"consolidation source changed while read: {rel}")
-            try:
-                text = raw.decode("utf-8", errors="strict")
-            except UnicodeError as exc:
-                raise RuntimeError(
-                    f"consolidation source is not valid UTF-8: {rel}") \
-                    from exc
-            source_id = hashlib.sha256(
-                rel.encode("utf-8") + b"\0" + raw).hexdigest()
-            if claimed_source_ids.get(rel) != source_id:
-                raise RuntimeError(
-                    f"consolidation source changed after its claim: {rel}")
-            lineage_record = manifest_by_rel.get(rel)
-            if recovery_lineage and (lineage_record is None
-                                     or lineage_record["sha256"]
-                                     != source_id):
-                raise RuntimeError(
-                    f"live event shard conflicts with epoch source lineage: "
-                    f"{rel}")
-            tm = re.search(r"^tags: \[(.*)\]$", text, re.M)
-            tags = {tag.strip()
-                    for tag in (tm.group(1).split(",") if tm else [])}
-            protected = protected or bool(tags & siamind.SAFETY_TAGS)
-            day_items.append(
-                (date, path, text, tags, source_id, rel, part))
-        if protected and not recovery_lineage:
-            # Safety-detail preservation is a day-level invariant. Keeping only a
-            # protected shard would orphan its siblings' numbering.
-            kept_days.add((organ, date))
-            continue
-        y, w, _ = datetime.date.fromisoformat(date).isocalendar()
-        groups.setdefault((organ, y, w), []).extend(day_items)
-    consolidated_days = set()
-    written_epochs = 0
-    for (organ, y, w), items in groups.items():
-        items.sort(key=lambda item: (item[0], item[6], item[5]))
-        slug = f"epochs/{organ}/{y}-w{w:02d}"
-        state = epoch_states.get(slug)
-        if state is None:
-            state = _read_epoch_state(slug)
-            epoch_states[slug] = state
-        et = state["text"]
-        prior_sources = state["sources"]
-        prior_dates = state["dates"]
-        prior_ndays = state["ndays"]
-        prior_source_set = set(prior_sources)
-        pending_items = [item for item in items
-                         if item[4] not in prior_source_set]
-        source_ids = prior_sources + [item[4] for item in pending_items]
-        try:
-            merged_manifest = _merge_epoch_source_manifest(
-                state["source_manifest"], items, slug, source_ids)
-            event_entries = _event_index_entries_for_sources(items, slug)
-            event_ids = _merge_epoch_event_ids(
-                state, items, event_entries)
-            _preflight_event_index_entries(event_entries)
-        except (ConsolidationCapacityError,
-                ConsolidationCompletenessError):
-            # Unrepresentable capacity or unavailable completeness retains
-            # the verbatim sources. Nothing in this weekly group has been
-            # mutated yet, so scheduled maintenance can reconsider it later.
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-
-        for item in pending_items:
-            if item[0] in prior_dates \
-                    and not any(record["rel"] == item[5]
-                                for record in state["source_manifest"]):
-                raise RuntimeError(
-                    "event source conflicts with legacy epoch date lineage")
-
-        def unlink_admitted(item):
-            """Delete only the exact source bytes admitted to this epoch."""
-            _date, path, _text, _tags, expected_id, rel, _part = item
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-                | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-            fd = os.open(path, flags)
-            with siaqueue.regular_file_stream(
-                    fd, label="consolidation source", error_type=RuntimeError) as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode) \
-                        or before.st_size > MAX_EVENT_PAGE_BYTES:
-                    raise RuntimeError(
-                        f"consolidation cleanup target is not bounded: {rel}")
-                current = stream.read(MAX_EVENT_PAGE_BYTES + 1)
-                after = os.fstat(stream.fileno())
-            observed = (before.st_dev, before.st_ino, before.st_size,
-                        before.st_mtime_ns, before.st_ctime_ns)
-            finished = (after.st_dev, after.st_ino, after.st_size,
-                        after.st_mtime_ns, after.st_ctime_ns)
-            target = os.lstat(path)
-            if observed != finished or len(current) > MAX_EVENT_PAGE_BYTES \
-                    or (target.st_dev, target.st_ino) != (after.st_dev,
-                                                          after.st_ino):
-                raise RuntimeError(
-                    f"consolidation source changed before cleanup: {rel}")
-            current_id = hashlib.sha256(
-                rel.encode("utf-8") + b"\0" + current).hexdigest()
-            if current_id != expected_id:
-                raise RuntimeError(
-                    f"consolidation source changed before cleanup: {rel}")
-            _before_corpus_mutation()
-            os.unlink(path)
-            dfd = os.open(os.path.dirname(path),
-                          os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
-
-        # A crash can leave sources whose lineage is already in the durable
-        # epoch page. Cleanup is replayable and must not merge their counts a
-        # second time.
-        if not pending_items:
-            recovery_dates = sorted(
-                set(prior_dates) | {item[0] for item in items})
-            try:
-                recovery_epoch = _render_epoch_source_manifest(
-                    state, merged_manifest, recovery_dates, event_ids)
-            except ConsolidationCapacityError:
-                kept_days |= {(organ, item[0]) for item in items}
-                continue
-            _write_epoch_source_manifest(state, recovery_epoch)
-            _publish_event_index_entries(event_entries)
-            for item in items:
-                unlink_admitted(item)
-            continue
-
-        name = ORGANS.get(organ, (organ, ""))[0]
-        pending_exemplars = {}
-        try:
-            for item in pending_items:
-                log_part = item[2].split("## Timeline")[0].split("## Log")[-1]
-                pending_exemplars[item[5]] = _epoch_exemplars([
-                    line for line in log_part.splitlines()
-                    if line.startswith("- ")])
-        except ConsolidationCapacityError:
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-        counts, all_tags, bullets, links = {}, {organ}, [], set()
-        for date, path, text, tags, _source_id, _rel, _part in pending_items:
-            cm = re.search(r"^sia_counts: (.*)$", text, re.M)
-            if not cm:
-                raise RuntimeError(
-                    f"consolidation source lacks sia_counts: "
-                    f"{os.path.relpath(path, CORPUS)}")
-            source_counts = _parse_sia_counts(
-                cm.group(1), os.path.relpath(path, CORPUS))
-            for k, v in source_counts.items():
-                counts[k] = counts.get(k, 0) + v
-            all_tags |= tags
-            for b in pending_exemplars[_rel]:
-                bullets.append(f"- {date} ·" + b[1:])
-            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", text):
-                links.add(wl)
-        # merge with an existing epoch page — a later consolidation run for
-        # the same week must extend it, never atomically erase it
-        from_date = pending_items[0][0]
-        to_date = pending_items[-1][0]
-        pending_dates = {item[0] for item in pending_items}
-        all_dates = sorted(set(prior_dates) | pending_dates)
-        ndays = prior_ndays + len(pending_dates - set(prior_dates))
-        if et:
-            pm = re.search(r"^sia_counts: (.*)$", et, re.M)
-            if not pm:
-                raise RuntimeError(f"existing epoch lacks sia_counts: {slug}")
-            epoch_counts = _parse_sia_counts(pm.group(1), slug)
-            for k, v in epoch_counts.items():
-                counts[k] = counts.get(k, 0) + v
-            ptm = re.search(r"^tags: \[(.*)\]$", et, re.M)
-            if ptm:
-                all_tags |= {t.strip() for t in ptm.group(1).split(",")
-                             if t.strip()}
-            pdm = re.search(r"^date: (.*)$", et, re.M)
-            if pdm and pdm.group(1).strip() < from_date:
-                from_date = pdm.group(1).strip()
-            etm = re.search(
-                r"Consolidated from \d+ day-memories "
-                r"\(\d{4}-\d{2}-\d{2} … (\d{4}-\d{2}-\d{2})\)", et)
-            if etm and etm.group(1) > to_date:
-                to_date = etm.group(1)
-            if "## Exemplars" in et:
-                ex = et.split("## Exemplars", 1)[1].split("\n## ")[0]
-                prev_b = [l for l in ex.splitlines() if l.startswith("- ")]
-                bullets = prev_b + bullets
-            for wl in re.findall(r"\[\[([a-z0-9/._-]+)", et):
-                links.add(wl)
-        try:
-            bullets = _epoch_exemplars(
-                bullets, limit=MAX_WEEKLY_EPOCH_EXEMPLARS)
-        except ConsolidationCapacityError:
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-        total = sum(counts.values())
-        agg = ", ".join(f"{v}× {k}" for k, v in
-                        sorted(counts.items(), key=lambda kv: -kv[1])[:8])
-        linkline = " ".join(f"[[{l}]]" for l in sorted(links)
-                            if not l.startswith("events/"))[:800]
-        epoch_frontmatter = [
-            "type: epoch", fm_title(f"{name} — {y} week {w}"),
-            f"tags: [{', '.join(sorted(all_tags))}]",
-            f"date: {from_date}",
-            f"sia_sources: {json.dumps(source_ids, separators=(',', ':'))}",
-            "sia_source_manifest: " + json.dumps(
-                merged_manifest, separators=(",", ":"),
-                ensure_ascii=False),
-            "sia_event_ids: " + json.dumps(
-                event_ids, separators=(",", ":"), ensure_ascii=False),
-            f"sia_dates: {json.dumps(all_dates, separators=(',', ':'))}",
-            f"sia_counts: {json.dumps(counts, sort_keys=True)}",
-        ]
-        if organ == "jackal":
-            epoch_frontmatter.insert(1, "origin: derived")
-        epoch_body = (
-            f"# {name} — {y} week {w}\n\n"
-            f"Consolidated from {ndays} day-memories "
-            f"({from_date} … {to_date}); originals verbatim in "
-            f"corpus git history. Source: [[organs/{organ}]] for "
-            f"[[sia/cortex]].\n\n"
-            f"## Exemplars\n" + "\n".join(bullets) + "\n\n"
-            f"{linkline}\n\n"
-            f"## Timeline\n- **{to_date}** — {total} events that "
-            f"week: {agg}\n")
-        try:
-            rendered_epoch = _render_bounded_epoch(
-                slug, epoch_frontmatter, epoch_body)
-        except ConsolidationCapacityError:
-            kept_days |= {(organ, item[0]) for item in items}
-            continue
-        _write_bounded_epoch(slug, rendered_epoch)
-        _publish_event_index_entries(event_entries)
-        consolidated_days |= {(organ, item[0]) for item in pending_items}
-        written_epochs += 1
-        for item in items:
-            unlink_admitted(item)
-    result = (len(consolidated_days), written_epochs, len(kept_days))
+    result = _execute_consolidation_claims(
+        scan_state, cutoff, scheduled_pages, take_windows)
     _acknowledge_consolidation_claims(scan_state)
     return result
 

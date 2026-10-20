@@ -138,3 +138,19 @@ sites. These overlap and are not counts of independently established defects.
 Aliases, callbacks, implicit dispatch, native code, call-graph cycles and
 semantic loop bounds require further analysis. Retain all findings; do not
 create an exception baseline that silently grants compliance.
+
+## Consolidation routine repair
+
+The consolidation executor is split into explicit source-validation,
+preparation, publication and cleanup routines. Its original entry point keeps
+scan acknowledgment; the reusable effects routine cannot acknowledge claims.
+`tests.test_consolidation_executor.ConsolidationRoutineBudget` enforces the
+sixty-physical-line ceiling for the fourteen named routines. The full affected
+regression selection passes 90 tests, including unchanged original epoch,
+backlog, crash-recovery, ownership and export cases. Exact-source reproduction
+is recorded with the [snapshot work](../spark/CONSOLIDATION-SNAPSHOT.md).
+
+This addresses local reviewability under rule 4 and exposes effect boundaries
+for subsequent work. It does not close the dynamic facade/call-graph problem
+under rules 1 and 9, prove termination or fixed allocation, or qualify the
+snapshot consumer. Existing violations remain open without an approved waiver.
