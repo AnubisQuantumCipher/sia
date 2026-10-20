@@ -216,6 +216,21 @@ before any discovery completion can clear recovery debt. See
 [`Admitted immutable traversal`](../spark/CONSOLIDATION-SNAPSHOT.md#admitted-immutable-traversal)
 for scope and remaining gates.
 
+The new delivery staging record atomically retains a candidate batch with its
+before/after cursors. Pending work replays and cannot be skipped by supplying a
+new cursor or acknowledgment. It now hands off to the original live-claim
+observation logic, retaining all selected candidate paths and the original
+batch. Execution and retirement remain unimplemented.
+
+Independent review found a staging-specific source-loss gap: legacy replay's
+valid epoch-lineage exception could allow missing sources before the new
+consumer executed anything. The real-lineage negative control reproduced the
+failure. A staging-specific live-presence check now refuses that case without
+changing legacy recovery. Failed evidence is retained. Actual process-death
+tests also exercise batch and claim persistence with fresh-interpreter replay;
+these do not establish resident or power-loss acceptance. Prototype serialization
+capacity and the remaining consumer protocol still require qualification.
+
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.

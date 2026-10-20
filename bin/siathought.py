@@ -2755,12 +2755,14 @@ def _bounded_event_directory_entries(organ):
     raise RuntimeError("event directory exceeds its consolidation page bound")
 
 
-def _prepare_consolidation_claims(value):
-    if value["claims"]:
-        return value
-    selected = value["pending_days"][:MAX_CONSOLIDATION_DAYS_PER_RUN]
-    if not selected:
-        return value
+def _observe_consolidation_claims(selected, cutoff):
+    """Observe live complete directories without advancing a recovery cursor."""
+    if not isinstance(selected, list) \
+            or len(selected) > MAX_CONSOLIDATION_DAYS_PER_RUN:
+        raise RuntimeError("consolidation selected days exceed their bound")
+    selected = [_canonical_consolidation_day(day) for day in selected]
+    if len({(day["organ"], day["date"]) for day in selected}) != len(selected):
+        raise RuntimeError("consolidation selected day is duplicated")
     by_organ = collections.defaultdict(list)
     for day in selected:
         by_organ[day["organ"]].append(day["date"])
@@ -2795,12 +2797,22 @@ def _prepare_consolidation_claims(value):
                              key=lambda record: record["rel"])
             if not records:
                 # A candidate may have disappeared before its immutable claim.
-                # It makes no absence claim and will be reconsidered later.
+                # The caller decides how to retain this unobserved work.
                 continue
             claims.append({"organ": organ, "date": date,
-                           "cutoff": value["cutoff"],
+                           "cutoff": cutoff,
                            "directory": directory,
                            "sources": records})
+    return claims
+
+
+def _prepare_consolidation_claims(value):
+    if value["claims"]:
+        return value
+    selected = value["pending_days"][:MAX_CONSOLIDATION_DAYS_PER_RUN]
+    if not selected:
+        return value
+    claims = _observe_consolidation_claims(selected, value["cutoff"])
     claimed_keys = {(claim["organ"], claim["date"]) for claim in claims}
     selected_keys = {(day["organ"], day["date"]) for day in selected}
     value["pending_days"] = [

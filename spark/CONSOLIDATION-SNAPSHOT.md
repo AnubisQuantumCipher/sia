@@ -241,3 +241,75 @@ Command:
 ```sh
 python3 -B -m unittest tests.test_consolidation_discovery tests.test_consolidation_admission_exec tests.test_consolidation_admission tests.test_consolidation_snapshot tests.test_consolidation_exec_recovery tests.test_consolidation_backlog_recovery -v
 ```
+
+## Durable candidate and live-claim staging
+
+`siaconsolidationdelivery` now owns an experimental on-disk handoff record.
+Its public operations accept the expected admission and a bounded work budget;
+they do not accept a caller cursor or acknowledgment. The existing strict
+state-file reader, corpus lease and atomic writer are used.
+
+| Phase | Retained work | Permitted progress in this checkpoint |
+|---|---|---|
+| `scan` | Last cursor from an empty candidate page | Read and atomically retain the next page |
+| `pending` | Before-cursor, exact next cursor and candidate batch | Replay that batch or derive live claims |
+| `claimed` | Same batch plus bounded selected live claims and remaining days | Revalidate and replay; no execution or retirement |
+| `complete` | Exhausted discovery with no outstanding candidate batch | Revalidate admission/pin and replay the observation |
+
+The next cursor of a nonempty page is retained inside its pending batch; it
+does not replace the before-cursor. Loading pending work recomputes its exact
+page against the pinned snapshot and rejects omitted candidates or a cursor
+jump. A different later requested budget cannot replace that outstanding batch.
+Missing delivery state restarts from the snapshot root; this can replay work
+and is not rollback detection. Protected state ownership and authenticated
+traversal history remain unimplemented. `complete` is not publication or
+consolidation settlement authority, and a caller must not use it to clear debt.
+
+The new `_observe_consolidation_claims` helper is extracted from the original
+claim-preparation path. Legacy preparation still performs its original state
+update and uses the same source-directory and content checks. The delivery
+path uses this helper to derive claims from the retained batch, then atomically
+stores them together. It requires every selected day and every selected
+candidate path to appear in the live claims. Missing observations refuse
+without discarding the pending batch.
+
+Staging additionally requires every claimed source to remain live and match the
+existing source validator. This is deliberately distinct from legacy execution
+recovery: the legacy validator can accept a missing source with exact retained
+epoch lineage, while this staging phase has executed no consolidation. The
+initial independent review found that using the legacy validator alone violated
+the staging contract. A regression using actual legacy consolidation and real
+epoch lineage failed before the fix (`ValueError not raised`). The staging-only
+presence check repairs that defect without changing legacy recovery semantics.
+The failing source, log and receipt remain in
+`consolidation-delivery-missing-source-negative-v1` externally.
+
+Another retained negative control showed that ordinary Python dictionary
+equality accepted Boolean/integer substitutions in a persisted batch. Exact
+replay now compares canonical JSON encodings, preserving those type distinctions.
+The pre-repair test failed for both substitutions; its source and raw evidence
+remain in `consolidation-delivery-typed-replay-negative-v1`.
+
+The staging tests retain exceptions before and after batch/claim persistence,
+mutated-return and malformed-state controls, missing and changed sources, and
+exact source digest checks. Additional workers perform actual SIGKILL after
+batch persistence and after claim persistence; fresh interpreters must replay
+the exact records with unchanged original source and maintenance-marker bytes.
+These are returned-operation cuts, not failures inside a filesystem write,
+storage power loss or a resident-service campaign.
+
+The expanded check also exposed stale release export expectations for
+`_canonical_consolidation_queue` and `_canonical_consolidation_claims`. An AST
+comparison found both omissions in the pre-change base as well as the working
+tree. Both names are now explicitly pinned; exact export equality remains
+required. The original failed run is retained in
+`consolidation-delivery-development-v2`, with the source-list diagnosis in
+`consolidation-delivery-export-pin-diagnosis-v1.json`.
+
+The delivery serialization ceiling is currently 1,048,576 bytes; its reader
+inherits the larger existing state-reader ceiling. These are prototype resource
+limits, not an approved reduction of supported corpus/claim capacity. CPython
+allocation, authenticated producer/currentness, full capacity compatibility,
+execution/retirement, late-arrival handoff and legacy migration remain open.
+There is no transition out of a nonempty claimed batch until the real consumer
+protocol is implemented and qualified; there is no acknowledgment shortcut.
