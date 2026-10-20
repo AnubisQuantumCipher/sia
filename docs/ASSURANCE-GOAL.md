@@ -140,6 +140,12 @@ full production obligations above or permit live-data migration.
 
 ## Claims requiring verification
 
+The source-backed lifecycle requirements and compatibility boundaries are in
+[`spark/RECORD-LIFECYCLE.md`](../spark/RECORD-LIFECYCLE.md). They distinguish
+captured bytes from complete source coverage, logical retraction/retirement
+from deletion, and legacy origin classification from authenticated admission.
+The lifecycle planner and its protected integration remain unimplemented.
+
 The operator supplied a documentation-based assessment, not a certification.
 Its quoted retrieval figures are historical repository diagnostics, not answer
 accuracy or new measurements. Its illustrated source-health and calibration
