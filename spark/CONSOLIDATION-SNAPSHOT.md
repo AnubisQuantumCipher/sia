@@ -154,3 +154,16 @@ establishes only these process-death cases. It does not establish failures insid
 Git or the atomic writer, storage power-loss durability, authenticated transaction
 production, the complete resident path, or a bound on recovery time. The new
 tests do not enable the experimental journal in production.
+
+Exact-source reproduction for the process-death checkpoint:
+
+- Commit: `6fbe1fa8f5a7cec74adf3e254f1fd58e99e9eb04`.
+- Git archive SHA-256: `ddcf1b49f032677e37834af114b4cf885b7e573ab8f51a5d3ffd4ab4a808df82`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Command: `python3 -B -m unittest tests.test_consolidation_admission_exec tests.test_consolidation_admission tests.test_consolidation_snapshot tests.test_consolidation_exec_recovery -v`.
+- Exit: 0; the retained raw log reports 20 tests passed.
+- External evidence directory: `consolidation-admission-exec-reproduction-v1`
+  under the mission evidence root; it retains archive, extracted source, raw log
+  and receipt. Independent GPT-6.1 read-only review is retained as
+  `consolidation-admission-exec-review-v1.txt`; it found no blocker for this
+  limited component scope and does not supply certification independence.

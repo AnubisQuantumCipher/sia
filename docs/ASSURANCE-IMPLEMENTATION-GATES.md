@@ -203,3 +203,14 @@ The scanner's continuing-write characterization is still an unresolved defect.
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.
 Failures and unknown outcomes remain visible and must not be renamed success.
+
+### Marketplace readback after admission process-death tests
+
+At `2026-10-20T09:19:48.684842+00:00`, verification request
+[#12332](https://github.com/omacom/omarchy-plugin-marketplace/issues/12332)
+remained OPEN with `validated`, `security-review-required` and `plugin-update`
+labels. The deployed catalog still reported SIA v1.8.3, `update-unverified`
+coverage and `installAvailable: false`. Raw issue/catalog responses are retained
+in `marketplace-readback-after-admission-exec-v1` externally. The v1.8.4
+marketplace publication gate remains open; passing the experimental component
+tests does not approve or publish that release.
