@@ -90,7 +90,10 @@ still contains untrusted decoded fields, so consumers must never dispatch on
 those fields while ignoring the decision. `Proposal_Only` is still not permission
 to mutate. The original decoder contract remains unchanged.
 
-This addition is experimental: strict build and runtime checks passed during
-development, while its fresh committed-source proof acceptance is pending. It
-does not yet connect kernel credentials or a protected grant store to an
+The committed-source reproduction at `20924429c26e2d203ae095d6d3d9205266642e02`
+passed strict build, all four runtime harnesses, and all 269 reported proof
+checks across eight units, with no justified or unproved obligations. Independent
+GPT-6.1 review checked the retained archive, manifest, source, outputs and coverage
+without rerunning them. This establishes the pure composition contracts only.
+It does not yet connect kernel credentials or a protected grant store to an
 installed service, and does not change released behavior.

@@ -416,3 +416,22 @@ This does not establish production sizing, arbitrary descendant-tree behavior,
 aggregate disk/output budgets, hostile same-user isolation or a SPARK resource
 authority. The earlier engine experiment still used its recorded per-process
 limits; these later cgroup observations do not retroactively change its scope.
+
+
+## Composed frame admission
+
+At `20924429c26e2d203ae095d6d3d9205266642e02`, the fresh committed archive
+in `frame-admission-reproduction-v1` passed strict build, four runtime harnesses,
+proof and coverage gates. GNATprove reports 269 checks proved, eight expected
+units analyzed, no justified/unproved obligations and no reported nonzero Assume
+counts. Independent GPT-6.1 review verified all manifest hashes and archive/source
+identity without repeating execution. The initial strict-build warning failure
+is retained as `frame-admission-build.log`.
+
+The new contract composes exact decoding with grant comparison. Invalid frames
+return `Empty_Request` and `Denied`; valid frames preserve the exact decoded
+request and classifier result. Runtime controls include a valid changed payload
+that must decode exactly yet be denied against the original grant. Valid denied
+items remain untrusted; observation/proposal classifications never authorize
+mutation. Grant storage, kernel-credential handoff, trusted clock and protected
+dispatch remain external obligations.
