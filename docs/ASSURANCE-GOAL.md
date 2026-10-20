@@ -94,7 +94,11 @@ completed-Publish retry envelopes uniformly refuse; existing APIs and accepted
 retry guarantees remain unchanged. The independently reviewed
 [`spark/PROTECTED-SLOT-LAYOUT.md`](../spark/PROTECTED-SLOT-LAYOUT.md) proposes
 exact field offsets and distinct hash/signature domain labels; its arithmetic
-is JACKAL `exact`, not protocol proof. Independent vectors, complete
+is JACKAL `exact`, not protocol proof. Initial public-key byte/signature fixtures
+and an independently authored checker are in
+[`spark/tests/PROTECTED-SLOT-VECTORS.md`](../spark/tests/PROTECTED-SLOT-VECTORS.md);
+they test fixed examples and signature mutations, not protected authority.
+Complete malformed-input policy and portable verification, complete
 resource budgets, clock domains and signing/recovery schemas still must be
 completed and frozen before implementation acceptance. These proposals do not replace the
 full production obligations above or permit live-data migration.

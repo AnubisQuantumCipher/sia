@@ -96,7 +96,10 @@ retained as `protected-slot-layout-arithmetic-v1.json` in the engineering
 evidence directory. Reproduce every boundary by summing the preceding widths;
 do not treat the Markdown table or retained calculation log as an authenticator.
 
-Independent canonical byte vectors, signed positive/negative vectors, mutation
-controls, schema review and the remaining parent-contract prerequisites are
-still required before protocol freeze. This proposal does not qualify a
+Initial deterministic fixtures and an independently authored checker are documented
+in `tests/PROTECTED-SLOT-VECTORS.md`. They cover byte reconstruction and
+signature mutation controls on the observed host; they do not supply a parser
+or an authorization decision. Complete malformed-scalar/domain admission controls,
+portable verifier qualification, schema review and the remaining parent-contract
+prerequisites are still required before protocol freeze. This proposal does not qualify a
 cryptographic implementation or establish any enforced authorization property.
