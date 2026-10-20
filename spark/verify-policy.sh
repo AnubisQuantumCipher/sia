@@ -59,6 +59,7 @@ run_check retraction-tests 30s spark/bin/retraction_tests
 run_check consolidation-tests 30s spark/bin/consolidation_tests
 run_check continuity-tests 30s spark/bin/continuity_tests
 run_check continuity-transition-tests 30s spark/bin/continuity_transition_tests
+run_check continuity-record-wire-tests 30s spark/bin/continuity_record_wire_tests
 run_check proof 600s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
     --assumptions --no-inlining --memlimit=512 --timeout=10
 test -s spark/obj/gnatprove/gnatprove.out

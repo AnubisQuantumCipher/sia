@@ -4,7 +4,8 @@ Status: implementation under verification; no acceptance or runtime claim.
 The current fresh proof receipt for `1f71a97` predates this package and must
 not be used as evidence for it.
 The [incomplete development manifest](../docs/CONTINUITY-TRANSITION-STATUS.json)
-binds the current proof-source bytes and retained command outcomes. Full proof
+binds the C13 checkpoint's proof-source bytes and retained command outcomes,
+subsequently committed as `7f692eb9c7836b3efe38ad0b75a743226d0a7cb1`. Full proof
 reached its 600-second deadline; full raw coverage and committed reproduction
 remain unrun.
 

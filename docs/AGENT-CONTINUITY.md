@@ -398,3 +398,14 @@ compiler failure and focused proof timeout remain retained. No obligation or
 warning was suppressed. This is an implementation checkpoint, with committed
 reproduction, authenticated producers, transport, durable publication, C14
 delivery and semantic continuation still awaiting acceptance.
+
+The next bounded increment is the proposed
+[continuity wire format](../spark/CONTINUITY-WIRE.md). Its Claim, Operation and
+Witness record decoders have passing strict build/runtime and focused proof
+evidence, bound in
+[`CONTINUITY-RECORD-WIRE-EVIDENCE.json`](CONTINUITY-RECORD-WIRE-EVIDENCE.json).
+They preserve syntactically representable policy-invalid values and return
+actual typed empty records on malformed input. They do not implement complete
+checkpoint framing, source authentication, process I/O or harness restoration.
+The full-project proof remains incomplete; the focused reports do not replace
+the required complete campaign.
