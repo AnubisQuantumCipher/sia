@@ -153,6 +153,11 @@ adds a bounded Git tree reader and real immutable-ID tests. The combined
 snapshot/recovery suite passes 50 tests. This primitive is deliberately not
 wired into recovery: durable reference binding, schema migration, arrivals,
 compatibility, source revalidation and positive churn recovery remain required.
+The snapshot primitive now adds generation-bound commit retention references
+and a separate admitted-pin check that cannot recreate missing state. Four
+snapshot tests pass, including real packed-ref/GC retention and exact
+missing-object negative controls. This is experimental reachability evidence;
+admission durability, reference lifecycle and runtime integration remain open.
 
 A safe degraded mode must enumerate allowed operations; "read only" is not
 automatically safe when identity, confidentiality or publication is uncertain.

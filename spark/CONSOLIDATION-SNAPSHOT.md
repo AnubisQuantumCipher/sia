@@ -1,6 +1,6 @@
 # Immutable consolidation discovery candidate
 
-Status: experimental reader only. The resident scanner is unchanged and the
+Status: experimental reader and retention-pin primitives. The resident scanner is unchanged and the
 cursor-churn defect remains OPEN. This is not a new accepted retention policy.
 
 ## Implemented primitive
@@ -35,9 +35,9 @@ does not prove bounded total recovery or worst-case execution time.
 - A full object name pins a Git namespace under the assumption that the local
   Git implementation and object store preserve object integrity. The helper
   does not independently recompute the raw tree-object hash.
-- A tree ID is not a durable retention pin. Production must bind a retained
-  commit/reference to the named transaction and protect it from collection
-  until the complete transaction and recovery obligations permit retirement.
+- A tree ID alone is not a retention pin. The prototype now supports a
+  generation-bound commit reference, but production must durably bind it to
+  the named transaction before admitting the scan and qualify its retirement.
 - The prototype rejects control-character names, unsupported entry types and
   non-UTF-8 output. The legacy walker can ignore some non-candidate names.
   Compatibility and refusal behavior must be explicitly reconciled before
@@ -66,3 +66,31 @@ does not prove bounded total recovery or worst-case execution time.
 
 The existing characterization remains unchanged until the integrated behavior
 is deliberately repaired and its new acceptance evidence is reviewed.
+
+## Retention-pin primitive
+
+`pin_commit` admits only a full available commit identity and a canonical
+generation. Its reference is `refs/sia/consolidation/<generation>`. Creation
+uses Git's [expected-old-value update](https://git-scm.com/docs/git-update-ref.html)
+with an absent-reference precondition and no symbolic dereference. Identical
+replay is accepted; a conflicting or symbolic reference refuses. Readback must
+match. Git fsync hardening is requested explicitly. This is not evidence of
+power-loss durability of all preexisting objects, packed references or storage.
+
+`check_pin` is a separate read-only operation for already admitted state.
+It refuses a missing or different reference and an unavailable commit; it never
+recreates the missing reference. Integration must preserve that distinction:
+creation retries before admission are not authority to repair missing pins after
+admission. Both operations require the caller's exclusive corpus lease; they
+do not exclude hostile same-user Git writers.
+
+The tests replace HEAD with an independent root, expire fixture reflogs, pack
+references and run real garbage collection. The pin retains the original commit
+and tree; exact replay still works with packed refs. After exact fixture-only
+pin removal, the negative control confirms the original commit is collected.
+Another test rejects a symbolic pin without changing its target. These commands
+operate only on disposable test repositories, never on the installed corpus.
+
+Four snapshot tests pass. No production reference is created by this checkpoint.
+Admission journaling, fresh-process/power-loss cuts, aggregate reference budgets,
+retirement, orphan-pin recovery and persisted schema integration remain OPEN.

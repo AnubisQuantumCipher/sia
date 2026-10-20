@@ -17,6 +17,76 @@ def object_id(value):
     return value
 
 
+def _git(run, corpus, arguments, limit):
+    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1",
+           "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": ""}
+    command = ["/usr/bin/git", "--no-replace-objects",
+               "-c", "protocol.allow=never", "-c", "core.fsync=all",
+               "-c", "core.fsyncMethod=fsync"]
+    result = run(command + arguments, env=env, timeout=30, cwd=corpus,
+                 label="consolidation snapshot Git", output_limit=limit)
+    if result.returncode == 0 and result.stderr:
+        raise ValueError("snapshot Git emitted an unexpected diagnostic")
+    return result
+
+
+def _pin_name(generation):
+    if not isinstance(generation, str) \
+            or re.fullmatch(r"[0-9a-f]{32}", generation) is None:
+        raise ValueError("snapshot generation is invalid")
+    return "refs/sia/consolidation/" + generation
+
+
+def _pin_value(run, corpus, name):
+    symbolic = _git(run, corpus, ["symbolic-ref", "--quiet", name], 1024)
+    if symbolic.returncode != 1:
+        raise ValueError("snapshot pin must be a direct reference")
+    result = _git(run, corpus, ["rev-parse", "--verify", "--quiet", name], 1024)
+    if result.returncode == 1:
+        return None
+    if result.returncode != 0:
+        raise ValueError("snapshot pin lookup failed")
+    return object_id(result.stdout.rstrip("\n"))
+
+
+def pin_commit(run, corpus, generation, commit):
+    """Create/replay a retention pin under the caller's exclusive corpus lease.
+
+    Git fsync is requested; this is not a power-loss or hostile-writer proof.
+    Errors preserve state for inspection rather than deleting/replacing a pin.
+    """
+    object_id(commit)
+    name = _pin_name(generation)
+    kind = _git(run, corpus, ["cat-file", "-t", commit], 64)
+    if kind.returncode != 0 or kind.stdout != "commit\n":
+        raise ValueError("snapshot identity is not an available commit")
+    current = _pin_value(run, corpus, name)
+    if current is not None and current != commit:
+        raise ValueError("snapshot generation is already bound differently")
+    if current is None:
+        result = _git(run, corpus, [
+            "update-ref", "--no-deref", name, commit, "0" * len(commit)], 1024)
+        if result.returncode != 0:
+            raise ValueError("snapshot pin creation failed")
+    if _pin_value(run, corpus, name) != commit:
+        raise ValueError("snapshot pin readback differs")
+    return {"generation": generation, "commit": commit, "ref": name}
+
+
+def check_pin(run, corpus, generation, commit):
+    """Validate an admitted pin without recreating missing retained state."""
+    object_id(commit)
+    name = _pin_name(generation)
+    if _pin_value(run, corpus, name) != commit:
+        raise ValueError("admitted snapshot pin is missing or differs")
+    kind = _git(run, corpus, ["cat-file", "-t", commit], 64)
+    if kind.returncode != 0 or kind.stdout != "commit\n":
+        raise ValueError("admitted snapshot commit is unavailable")
+    return {"generation": generation, "commit": commit, "ref": name}
+
+
 def parse_tree(text):
     if not isinstance(text, str) or len(text) > MAX_TREE_BYTES \
             or len(text.encode("utf-8")) > MAX_TREE_BYTES:
@@ -55,19 +125,11 @@ def tree_page(run, corpus, identity, offset, limit):
             or isinstance(limit, bool) or not isinstance(limit, int) \
             or not 1 <= limit <= MAX_PAGE_ENTRIES:
         raise ValueError("snapshot page cursor or bound is invalid")
-    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
-           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-           "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1",
-           "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": ""}
-    command = ["/usr/bin/git", "--no-replace-objects",
-               "-c", "protocol.allow=never"]
-    kind = run(command + ["cat-file", "-t", identity], env=env, timeout=30,
-               cwd=corpus, label="snapshot object type", output_limit=64)
+    kind = _git(run, corpus, ["cat-file", "-t", identity], 64)
     if kind.returncode != 0 or kind.stdout != "tree\n":
         raise ValueError("snapshot identity is not an available tree")
-    result = run(command + ["ls-tree", "--full-tree", "-z", identity],
-                 env=env, timeout=30, cwd=corpus,
-                 label="snapshot tree", output_limit=MAX_TREE_BYTES)
+    result = _git(run, corpus, ["ls-tree", "--full-tree", "-z", identity],
+                  MAX_TREE_BYTES)
     if result.returncode != 0:
         raise ValueError("snapshot tree read failed")
     entries = parse_tree(result.stdout)

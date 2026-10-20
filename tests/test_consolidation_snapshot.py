@@ -75,6 +75,64 @@ class ConsolidationSnapshot(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "byte bound"):
                 snapshot.parse_tree(valid)
 
+    def test_retention_pin_survives_collection_and_refuses_conflict(self):
+        day = self.fixture._day("2026-01-05", ("OBS",))
+        self.fixture._commit()
+        commit = self.git("rev-parse", "HEAD")
+        tree = self.git("rev-parse", "HEAD:events/org")
+        run = self.lib._run_bounded_text_process
+        generation = "a" * 32
+        pin = snapshot.pin_commit(run, self.lib.CORPUS, generation, commit)
+        self.assertEqual(snapshot.pin_commit(
+            run, self.lib.CORPUS, generation, commit), pin)
+        day.write_bytes(day.read_bytes() + b"\n")
+        self.fixture._commit()
+        # Make HEAD a new root so it cannot keep the original commit reachable.
+        new_tree = self.git("rev-parse", "HEAD^{tree}")
+        root = self.git("-c", "user.name=Fixture", "-c", "user.email=t@t",
+                        "commit-tree", new_tree, "-m", "independent root")
+        self.git("update-ref", "HEAD", root)
+        with self.assertRaisesRegex(ValueError, "bound differently"):
+            snapshot.pin_commit(run, self.lib.CORPUS, generation, root)
+        self.git("pack-refs", "--all", "--prune")
+        self.assertEqual(snapshot.pin_commit(
+            run, self.lib.CORPUS, generation, commit), pin)
+        self.git("reflog", "expire", "--expire=now", "--all")
+        self.git("gc", "--prune=now")
+        self.assertEqual(self.git("rev-parse", pin["ref"]), commit)
+        self.assertEqual(snapshot.check_pin(
+            run, self.lib.CORPUS, generation, commit), pin)
+        self.assertEqual(snapshot.tree_page(
+            run, self.lib.CORPUS, tree, 0, 1)["entries"][0]["name"],
+                         "2026-01-05.md")
+        # Negative control: exact fixture-only pin removal permits collection.
+        self.git("update-ref", "-d", pin["ref"], commit)
+        with self.assertRaisesRegex(ValueError, "missing or differs"):
+            snapshot.check_pin(run, self.lib.CORPUS, generation, commit)
+        self.git("reflog", "expire", "--expire=now", "--all")
+        self.git("gc", "--prune=now")
+        absent = subprocess.run(
+            ["/usr/bin/git", "-C", self.lib.CORPUS, "cat-file", "-e", commit],
+            capture_output=True, timeout=10)
+        self.assertEqual((absent.returncode, absent.stdout, absent.stderr),
+                         (1, b"", b""))
+        self.assertEqual(self.git("cat-file", "-t", root), "commit")
+
+    def test_symbolic_pin_refuses_without_mutating_its_target(self):
+        self.fixture._day("2026-01-05", ("OBS",))
+        self.fixture._commit()
+        commit = self.git("rev-parse", "HEAD")
+        generation = "b" * 32
+        name = "refs/sia/consolidation/" + generation
+        target = self.git("symbolic-ref", "HEAD")
+        self.git("symbolic-ref", name, target)
+        with self.assertRaisesRegex(ValueError, "direct reference"):
+            snapshot.pin_commit(
+                self.lib._run_bounded_text_process,
+                self.lib.CORPUS, generation, commit)
+        self.assertEqual(self.git("symbolic-ref", name), target)
+        self.assertEqual(self.git("rev-parse", target), commit)
+
 
 if __name__ == "__main__":
     unittest.main()
