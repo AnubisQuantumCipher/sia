@@ -200,7 +200,11 @@ Both loaders use the same private-file observation checks. The descriptor is
 closed before parsing; a close failure prevents either loader from returning a
 record. Tests retain all original v1 controls and add independent domain-byte
 oracles, explicit version separation, malformed fields and close uncertainty.
-Development controls pass; archived acceptance is pending.
+A fresh archive of `2d95f8e2484beb664efa5622bf29a90859c3ecb2` passed the
+strict probe build and all 59 transport/support tests. Independent GPT-6.1
+review verified source/archive/tool/result bindings and unchanged pure sources
+relative to accepted proof `8bd9625`, without rerunning tools. This accepts
+record observation only.
 
 These are retained claimed domain values, not authenticated current epochs.
 No epoch producer, trusted issuer, restart invalidation or scoped Ada handoff
