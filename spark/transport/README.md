@@ -97,3 +97,25 @@ GPT-6.1 review checked the retained archive, manifest, source, outputs and cover
 without rerunning them. This establishes the pure composition contracts only.
 It does not yet connect kernel credentials or a protected grant store to an
 installed service, and does not change released behavior.
+
+## Test-only composed admission handoff
+
+`admission_probe` is a separate descriptor/CLI adapter built by the same probe
+project. It takes fixture grant UID, observed sender UID, clock tick and grant
+action (`observe` or `propose`) as four arguments. It uses a fixed expected request
+and grant interval defined in its source, consumes at most one frame plus a
+sentinel, and emits exactly one classification byte: D, O or P. Invalid metadata
+or I/O errors fail the process; malformed frames produce D. The parent supplies
+a finite deadline and closes input at EOF.
+
+`test_admission_probe.py` passes actual receiver payload/UID values through this
+adapter. Metadata is then command-line input, not authenticated IPC: the test
+controls the grant and clock and could substitute another UID. No service, grant
+store, effect handler or production dispatcher is installed. The raw descriptor
+adapter and Python orchestration are outside the SPARK proof boundary.
+
+Controls cover valid observation/proposal, sender/action/time mismatches, every
+single-byte mutation, malformed metadata and scalar limits, short/trailing input,
+read errors and output errors. Run the existing `test_*.py` command after building
+both probes. Development runs passed; fresh archived-source acceptance is pending.
+The first strict adapter build's Unreferenced warning failure is retained.
