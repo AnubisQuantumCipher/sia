@@ -1,10 +1,11 @@
 name: ci
 on: [push, pull_request]
-# Only superseded experimental snapshots are canceled. Release/main/PR runs
-# retain distinct groups and must finish their own qualification.
+# Serialize experimental snapshots without discarding a running verification.
+# GitHub may replace the one pending snapshot; release/main/PR runs retain
+# distinct groups and must finish their own qualification.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/codex/sia-assurance-kernel-20261019' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/codex/sia-assurance-kernel-20261019' }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
