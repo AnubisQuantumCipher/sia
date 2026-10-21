@@ -1,6 +1,7 @@
 with SIA_Policy;
 with SIA_Continuity;
 with SIA_Continuity_Checkpoint_Wire;
+with SIA_Continuity_Record_Wire;
 
 procedure Continuity_Checkpoint_Wire_Tests with SPARK_Mode is
    use SIA_Policy;
@@ -12,36 +13,74 @@ procedure Continuity_Checkpoint_Wire_Tests with SPARK_Mode is
    procedure Check_Zero_And_Canonical
      with Global => null, Always_Terminates
    is
-      Bytes : Checkpoint_Bytes := [others => 0];
-      Item : Checkpoint;
-      Accepted : Boolean;
+      procedure Check_Zero_Representation
+        with Global => null, Always_Terminates
+      is
+         Bytes : constant Checkpoint_Bytes := [others => 0];
+         Item : Checkpoint;
+         Accepted : Boolean;
+      begin
+         Decode (Bytes, Accepted, Item);
+         pragma Assert (Accepted and then Item.Count = 0);
+         pragma Assert (Item /= Empty_Checkpoint);
+         pragma Assert
+           (for all I in Claim_Index => Item.Claims (I).From = Source_Record
+            and then Item.Claims (I).Speaker = User);
+      end Check_Zero_Representation;
+
+      procedure Check_Canonical_Representation
+        with Global => null, Always_Terminates
+      is
+         procedure Store_Canonical_Claim
+           (Bytes : in out Checkpoint_Bytes; I : Claim_Index)
+           with Global => null, Depends => (Bytes => (Bytes, I)),
+                Always_Terminates,
+                Post =>
+                  Bytes ((320 + (I - 1) * 128) + 106) = 3 and then
+                  Bytes ((320 + (I - 1) * 128) + 107) = 2 and then
+                  (for all J in Checkpoint_Bytes'Range =>
+                     (if J /= (320 + (I - 1) * 128) + 106 and then
+                         J /= (320 + (I - 1) * 128) + 107
+                      then Bytes (J) = Bytes'Old (J))) and then
+                  (for all J in Claim_Index =>
+                     (if J /= I then
+                         Bytes ((320 + (J - 1) * 128) + 106) =
+                           Bytes'Old ((320 + (J - 1) * 128) + 106) and then
+                         Bytes ((320 + (J - 1) * 128) + 107) =
+                           Bytes'Old ((320 + (J - 1) * 128) + 107)))
+         is
+         begin
+            Bytes := (Bytes with delta
+              (320 + (I - 1) * 128) + 106 => 3,
+              (320 + (I - 1) * 128) + 107 => 2);
+         end Store_Canonical_Claim;
+
+         Bytes : Checkpoint_Bytes := [others => 0];
+         Item : Checkpoint;
+         Accepted : Boolean;
+      begin
+         for I in Claim_Index loop
+            Store_Canonical_Claim (Bytes, I);
+            pragma Loop_Invariant
+              (for all J in Claim_Index =>
+                 (if J <= I then
+                     Bytes ((320 + (J - 1) * 128) + 106) = 3 and then
+                     Bytes ((320 + (J - 1) * 128) + 107) = 2
+                  else
+                     Bytes ((320 + (J - 1) * 128) + 106) = 0 and then
+                     Bytes ((320 + (J - 1) * 128) + 107) = 0));
+            pragma Loop_Invariant
+              (for all J in Checkpoint_Bytes'Range =>
+                 (if J < 321 or else J > 8512 or else
+                     (J - 321) mod 128 not in 105 .. 106
+                  then Bytes (J) = Bytes'Loop_Entry (J)));
+         end loop;
+         Decode (Bytes, Accepted, Item);
+         pragma Assert (Accepted and then Item = Empty_Checkpoint);
+      end Check_Canonical_Representation;
    begin
-      Decode (Bytes, Accepted, Item);
-      pragma Assert (Accepted and then Item.Count = 0);
-      pragma Assert (Item /= Empty_Checkpoint);
-      pragma Assert
-        (for all I in Claim_Index => Item.Claims (I).From = Source_Record
-         and then Item.Claims (I).Speaker = User);
-      for I in Claim_Index loop
-         Bytes := (Bytes with delta
-           (320 + (I - 1) * 128) + 106 => 3,
-           (320 + (I - 1) * 128) + 107 => 2);
-         pragma Loop_Invariant
-           (for all J in Claim_Index =>
-              (if J <= I then
-                  Bytes ((320 + (J - 1) * 128) + 106) = 3 and then
-                  Bytes ((320 + (J - 1) * 128) + 107) = 2
-               else
-                  Bytes ((320 + (J - 1) * 128) + 106) = 0 and then
-                  Bytes ((320 + (J - 1) * 128) + 107) = 0));
-         pragma Loop_Invariant
-           (for all J in Checkpoint_Bytes'Range =>
-              (if J < 321 or else J > 8512 or else
-                  (J - 321) mod 128 not in 105 .. 106
-               then Bytes (J) = Bytes'Loop_Entry (J)));
-      end loop;
-      Decode (Bytes, Accepted, Item);
-      pragma Assert (Accepted and then Item = Empty_Checkpoint);
+      Check_Zero_Representation;
+      Check_Canonical_Representation;
    end Check_Zero_And_Canonical;
 
    procedure Check_Header with Global => null, Always_Terminates is
@@ -65,6 +104,29 @@ procedure Continuity_Checkpoint_Wire_Tests with SPARK_Mode is
            (for all J in 257 .. Checkpoint_Bytes'Last =>
               Bytes (J) = Bytes'Loop_Entry (J));
       end loop;
+      pragma Assert
+        (Digest (Bytes (Digest'First .. Digest'Last)) = Digest'[others => 1]);
+      pragma Assert
+        (Digest (Bytes (32 + Digest'First .. 32 + Digest'Last)) =
+           Digest'[others => 2]);
+      pragma Assert
+        (Digest (Bytes (64 + Digest'First .. 64 + Digest'Last)) =
+           Digest'[others => 3]);
+      pragma Assert
+        (Digest (Bytes (96 + Digest'First .. 96 + Digest'Last)) =
+           Digest'[others => 4]);
+      pragma Assert
+        (Digest (Bytes (128 + Digest'First .. 128 + Digest'Last)) =
+           Digest'[others => 5]);
+      pragma Assert
+        (Digest (Bytes (160 + Digest'First .. 160 + Digest'Last)) =
+           Digest'[others => 6]);
+      pragma Assert
+        (Digest (Bytes (192 + Digest'First .. 192 + Digest'Last)) =
+           Digest'[others => 7]);
+      pragma Assert
+        (Digest (Bytes (224 + Digest'First .. 224 + Digest'Last)) =
+           Digest'[others => 8]);
       Decode (Bytes, Accepted, Item);
       pragma Assert (Accepted);
       pragma Assert
@@ -275,14 +337,23 @@ procedure Continuity_Checkpoint_Wire_Tests with SPARK_Mode is
       for I in Claim_Index loop
          Bytes := [others => 0];
          Bytes := (Bytes with delta (320 + (I - 1) * 128) + 105 => 13);
+         pragma Assert (Claim_Payload (Bytes, I) (105) = 13);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Claim_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
          Bytes := [others => 0];
          Bytes := (Bytes with delta (320 + (I - 1) * 128) + 128 => 1);
+         pragma Assert (Claim_Payload (Bytes, I) (128) = 1);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Claim_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
          Bytes := [others => 0];
          Bytes := (Bytes with delta (320 + (I - 1) * 128) + 97 => 128);
+         pragma Assert (Claim_Payload (Bytes, I) (97) = 128);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Claim_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
       end loop;
@@ -291,23 +362,38 @@ procedure Continuity_Checkpoint_Wire_Tests with SPARK_Mode is
    procedure Check_Inactive_Operations
      with Global => null, Always_Terminates
    is
-      Bytes : Checkpoint_Bytes;
-      Item : Checkpoint;
-      Accepted : Boolean;
-   begin
-      for I in Operation_Index loop
+      procedure Check_Inactive_Operation (I : Operation_Index)
+        with Global => null, Always_Terminates
+      is
+         Bytes : Checkpoint_Bytes;
+         Item : Checkpoint;
+         Accepted : Boolean;
+      begin
          Bytes := [others => 0];
          Bytes := (Bytes with delta (8512 + (I - 1) * 144) + 129 => 5);
+         pragma Assert (Operation_Payload (Bytes, I) (129) = 5);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Operation_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
          Bytes := [others => 0];
          Bytes := (Bytes with delta (8512 + (I - 1) * 144) + 130 => 2);
+         pragma Assert (Operation_Payload (Bytes, I) (130) = 2);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Operation_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
          Bytes := [others => 0];
          Bytes := (Bytes with delta (8512 + (I - 1) * 144) + 144 => 1);
+         pragma Assert (Operation_Payload (Bytes, I) (144) = 1);
+         pragma Assert
+           (not SIA_Continuity_Record_Wire.Valid (Operation_Payload (Bytes, I)));
          Decode (Bytes, Accepted, Item);
          pragma Assert (not Accepted and then Item = Empty_Checkpoint);
+      end Check_Inactive_Operation;
+   begin
+      for I in Operation_Index loop
+         Check_Inactive_Operation (I);
       end loop;
    end Check_Inactive_Operations;
 
