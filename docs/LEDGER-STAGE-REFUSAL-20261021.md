@@ -30,6 +30,10 @@ suite with two FIFO deadline errors and five masked-refusal failures; its exact
 stage positive case passes. With the two-site repair, all four new test methods
 pass, and all 39 original ledger tests pass with warnings treated as errors.
 Independent review checked those outputs; it did not rerun them.
+A subsequent actual GPT-6.1 executor independently reproduced all four new and
+39 original cases from committed `e9aeef01f1d7a842476fc8ac2da9c49ac8ab8ff5`,
+with no source overlays. The [later raw record](REVIEW-REPAIRS-EVIDENCE-20261021.json)
+keeps that execution distinct from the earlier source review.
 
 The new test has no diagnostics under the existing pinned partial Ruff profile.
 The ledger retains six pre-existing diagnostics, without suppression. Those,

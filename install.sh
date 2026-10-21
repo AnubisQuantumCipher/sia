@@ -9151,7 +9151,7 @@ def stable_regular(path, maximum, label):
     cloexec = getattr(os, "O_CLOEXEC", None)
     if nofollow is None or cloexec is None:
         raise ValueError(label + " cannot be opened with required flags")
-    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
@@ -9252,7 +9252,7 @@ def stable_regular(path, maximum, label):
     cloexec = getattr(os, "O_CLOEXEC", None)
     if nofollow is None or cloexec is None:
         raise ValueError(label + " cannot be opened with required flags")
-    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \

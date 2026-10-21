@@ -29,6 +29,11 @@ prohibits hiding assumptions, not the existence of a trusted boundary.
 Each increment must close a named existing obligation. Engineering acceptance
 and external publication are separate; publication waiting adds no features.
 
+The [review remediation roster](ASSURANCE-REVIEW-REMEDIATION-20261021.md) maps
+the supplied repository review into concrete R01–R46 action references under
+these existing obligations. Its case families require a frozen detailed plan
+and source-bound acceptance evidence; it creates no substitute goal or waiver.
+
 The operator-directed ownership transfer on 2026-10-21 preserved this exact
 branch, source checkpoint `1b3829d84002037e329a61c1ecff6ac3909c0210`, uncommitted
 increment and retained evidence. The prior owner explicitly relinquished work

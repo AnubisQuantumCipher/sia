@@ -77,6 +77,9 @@ that coverage. The checker does not judge the adequacy of the referenced
 oracles, ground truth, source scopes, adaptations or compensating controls.
 Final acceptance must retain the detailed criteria and their actual outputs;
 minimum scope/role joins alone cannot close an obligation.
+The [review remediation roster](ASSURANCE-REVIEW-REMEDIATION-20261021.md)
+identifies concrete action and case families for that detailed plan. Its R01–R46
+references are not executable cases or mechanically enforced semantic criteria.
 
 Plan freezing compares canonical bytes with a separately referenced snapshot.
 It does not authenticate when freezing occurred, its issuer, approvals or the
