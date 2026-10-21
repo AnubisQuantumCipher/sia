@@ -64,3 +64,39 @@ complete `-U` proof, raw/summary coverage checks, committed-source reproduction
 and independent evidence review. Do not repeat an unchanged failed campaign or
 adopt these candidates from their focused results. Runtime integration,
 installed harness continuity and marketplace publication remain separate gates.
+
+## Transition helper follow-up
+
+The [transition experiment manifest](CONTINUITY-TRANSITION-PROOF-SEARCH-EVIDENCE.json)
+retains the next attempts, including the failed extraction and compiler result.
+Its compressed patch contains the complete unadopted overlay against its exact
+base, including the earlier predicate and local-copy changes. Decompression
+preserves the original patch bytes; it is not active project source.
+
+| Attempt | Retained outcome |
+| --- | --- |
+| Original transition unit, CVC5-first | Diagnostic exit 124 at 120 seconds; no fresh summary |
+| Helper extraction v1 | Extractor failed before build/proof because it assumed a declaration line break |
+| Helper extraction v2 | Strict compilation refused a non-static composite constant in a pure package |
+| Helper extraction v3 | Strict build and original transition runtime passed; extracted helper package discharged 13 checks; complete caller diagnostic timed out at 120 seconds |
+| Helper extraction v4 | Restored the synthetic-observation boundary comment; Alt-Ergo-first caller diagnostic timed out at 120 seconds; no new build/runtime claim |
+| Complete extraction v5 | Fresh strict build and all eleven original runtimes passed; full `-U` proof exited 124 at 600 seconds without a fresh summary; coverage validation UNRUN |
+
+The extraction preserves `Event`, `Expected`, `Check` and `Check_Unchanged`,
+their conditions/contracts and executable statements. The empty-observation
+constant becomes a zero-argument pure expression function with the same exact
+aggregate. Remaining fixtures, assertions and calls retain their order.
+Independent actual GPT-6.1 source review found no semantic loss; its requested
+comment was restored before the full attempt. The helper's focused proof does
+not establish its callers or complete project coverage.
+
+All these candidates remain **UNADOPTED**. No authority source, original test
+domain, warning setting or resource limit was weakened. The full attempt's
+proof-tool hashes matched before and after execution. Partial raw reports are
+retained even though no complete summary was produced.
+
+A subsequent read-only review proposed sharing the two parameterized rejection
+checks behind an explicitly checked helper. That proposal still needs body and
+caller proof, all original runtime controls, and complete all-unit acceptance.
+No performance benefit has been established, and another unchanged full run is
+not justified by these results.

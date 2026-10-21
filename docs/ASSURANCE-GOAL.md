@@ -19,8 +19,10 @@ The annotated v1.8.4 tag and [published release](https://github.com/AnubisQuantu
 were read back, including reporter credit. The [final issue reply](https://github.com/AnubisQuantumCipher/sia/issues/33#issuecomment-6285535056)
 was posted and its exact body read back. [Marketplace request #12332](https://github.com/omacom/omarchy-plugin-marketplace/issues/12332)
 requests verification/publication of that exact commit; its body was read back.
-The post-request catalog still showed v1.8.3, update-unverified and Manual setup,
-with standard installation unavailable. Marketplace approval/publication remains
+The initial post-request catalog still showed v1.8.3. A later retained readback
+on 2026-10-21 UTC shows v1.8.4 and the correct upstream commit, but verification
+still covers an older snapshot: update-unverified, Manual setup, and standard
+installation unavailable. Marketplace approval/publication remains
 an external gate. Main remains frozen; experimental work stays on this separate
 branch. These release observations do not qualify the experimental assurance
 branch or any protected service.
@@ -35,8 +37,13 @@ the existing exact-source acceptance/review gates.
 The candidate is retained in [draft PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41),
 including the full-CI failures and subsequent test-fixture repairs. Isolated
 kernel and sudo-delegation evidence does not qualify the host's administrator
-configuration; corrected-commit CI and actual installation acceptance remain
-open. The same owner continues the assurance branch with these obligations
+configuration. Both corrected-head full CI runs passed, each reporting 3868
+tests with 21 skips; gbrain-contract and marketplace-freeze also passed.
+The existing actual GPT-6.1 reviewer closed the runbook finding and found no
+concrete surviving bypass or regression in the scoped final deltas. Pinned
+administrator-installation files and a command sheet are prepared, but host
+authentication, commissioning and the actual lifecycle acceptance remain open.
+The same owner continues the assurance branch with these obligations
 visible, without treating a release blocker as a reason to stop implementation.
 
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
