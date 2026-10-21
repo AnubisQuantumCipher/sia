@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -416,9 +417,14 @@ class ManifestControls(unittest.TestCase):
                 (self.root / 'spark').rename(moved)
                 (self.root / 'spark').symlink_to(moved, target_is_directory=True)
             return real_open(path, flags, *args, **kwargs)
-        with CHECK.Checkout(self.root) as root, mock.patch.object(os, 'open', side_effect=replace):
+        os_shim = SimpleNamespace(**vars(os))
+        os_shim.open = replace
+        with CHECK.Checkout(self.root) as root, mock.patch.object(CHECK, 'os', os_shim):
+            self.assertIs(os.open, real_open)
             with self.assertRaises(OSError):
                 root.read('spark/src/policy.ads')
+        self.assertTrue(moved.is_dir())
+        self.assertTrue((self.root / 'spark').is_symlink())
 
     def test_cli_refusal_has_no_traceback_or_authority(self):
         manifest = self.root / 'bad.json'
