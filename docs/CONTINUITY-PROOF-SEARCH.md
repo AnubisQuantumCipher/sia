@@ -185,3 +185,49 @@ was still in progress and other required units were not completed. These
 observations establish neither complete proof nor an overall speed benefit.
 The combined candidate remains **UNADOPTED**. Do not retry it unchanged as an
 acceptance attempt or use earlier scoped reports to fill missing full coverage.
+
+## Modular transition checks and symbolic test loops
+
+The [next diagnostic manifest](CONTINUITY-MODULAR-SEARCH-EVIDENCE.json)
+retains two additional checked helpers and their exact-source overlay against
+`9c831d23af5b86815933789230d8249e2da2aea6`. It is **UNADOPTED**.
+No authority implementation, original fixture, runtime iteration, expected
+result or test domain was removed. Independent actual GPT-6.1 source reviews
+found no concrete preservation or soundness defect; they did not replay proof.
+
+The single-transition helper preserves the five original positive chain checks.
+Its concrete callers establish valid joined checkpoints, one changed operation
+and the required event kind. The two-event helper retains both the duplicate-ID
+refusal and the corrected-ID positive case. Two malformed-observation controls
+use the existing rejection helper with their original mutations. Every added
+precondition remains an obligation for the original concrete caller.
+
+| Diagnostic | Retained outcome |
+| --- | --- |
+| Single-transition helper and chain caller | Strict build/runtime and both focused proofs passed |
+| Complete transition unit after that extraction | Exit 124 at 120 seconds; no fresh summary |
+| Symbolic loops for three continuity test units | Build and selected runtimes passed; first complete-unit diagnostic reached 120 seconds; later diagnostics UNRUN in that attempt |
+| Two-event-identity helper and caller | Strict build/runtime and both focused proofs passed |
+| Independent whole-unit follow-up | Fresh strict build and all eleven runtime harnesses passed; transition and general continuity units reached 120 seconds; complete observation-wire unit passed |
+
+The symbolic-loop option disables automatic finite-loop expansion for those
+three test units. It retains the runtime loops and requires symbolic proof of
+their bodies and applicable invariants, termination and caller obligations.
+Captured translator settings retain all-mode analysis, no-inlining, enabled
+warnings, proof warnings, warnings-as-errors, one job, 512 MB and 10 seconds
+per check. This is a proof-strategy adaptation, not a Power of Ten compliance
+claim or permission to omit an iteration. Complete project benefit remains
+unproved.
+
+Completed scoped raw reports have no non-information diagnostics, assumptions
+annotations or proof/flow exclusions. Their overlapping dependency scopes must
+not be added together. The two whole-unit timeouts remain failed attempts to
+establish those units. No new complete all-unit campaign has been run on this
+overlay; the existing 600-second gate remains unchanged. A proposed increase
+requires a separate operator decision and is not implied by these artifacts.
+
+The retained profiling correction also remains visible: the first parser
+defaulted absent XML timing fields to zero; its successor marks those times
+UNAVAILABLE. Neither value is used as a measured wall time or acceptance claim.
+Exact source reconstruction, full proof/coverage, committed-source reproduction,
+independent evidence review and the installed continuity gates remain distinct.
