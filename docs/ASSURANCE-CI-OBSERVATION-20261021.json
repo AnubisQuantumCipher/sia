@@ -1,0 +1,33 @@
+{
+  "observed_at": "2026-10-21T04:49:59.351774+00:00",
+  "kind": "CI observation, not complete assurance acceptance",
+  "source": "c70cb95befd1c64451395ad8ffda19b244a2a410",
+  "run": "39532199321",
+  "url": "https://github.com/AnubisQuantumCipher/sia/actions/runs/39532199321",
+  "run_metadata_sha256": "06d31ba8294f038abf0183e34eddb3b0c64dc11e73334fd20315ea1a155c564b",
+  "test_log_sha256": "57e6795c771204d47a7988d50c7fb8cd393b348bf53dc4e8516bbb0056b71258",
+  "reported_summary": [
+    "Ran 3966 tests in 6688.306s",
+    "OK (skipped=21)"
+  ],
+  "comparison_target": "97958bb5e429ada032ea37d58815bdfbf4b74f6d",
+  "compared_paths": [
+    "bin",
+    "scripts",
+    "tests",
+    "install.sh",
+    "uninstall.sh",
+    "spark",
+    ".github"
+  ],
+  "code_comparison": "",
+  "correction": "v1 refused multiple summaries from distinct steps; v2 selects the named full unit-and-contract step. No test was rerun.",
+  "limits": [
+    "New target exact-commit CI is separate.",
+    "CI does not execute the full SPARK campaign or external overlays."
+  ],
+  "runner_sha256": "62bba52eac4437a85a15576c4f4bd018e64d42a70dc54148fbe2314850e7bcff",
+  "receipt_sha256": "ae335c419bea6a0a0a4f8cb8fe45efb2766e565672501dca3d175a184491ac19",
+  "retained_directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-ci-completed-c70cb95-v1",
+  "first_retainer_outcome": "FAILED parser expectation: several test steps emitted independent summaries; original raw logs retained."
+}

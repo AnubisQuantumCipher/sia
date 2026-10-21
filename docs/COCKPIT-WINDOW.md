@@ -71,6 +71,7 @@ fixture screenshots. These are controlled fixture data, not live memory.
 | Independent review | `cockpit-window-review-final.txt` and `continuity-incremental-and-cockpit-review-v1.txt`: existing GPT-6.1 reviewer found no remaining blocker within the tested scope | Follow-up review binds the layout repair to v12/v6; model-origin review is not formal proof |
 | Existing CI fixture repairs | `cockpit-ci-repair-v1`: 35 tests passed with global/system Git configuration disabled | Restores early test-home isolation and supplies a command-scoped fixture identity; all assertions retained |
 | Full Python suite | `cockpit-candidate-v1`: timeout, exit 124 at its 600-second limit | Incomplete; focused results do not replace full CI acceptance |
+| Subsequent complete CI | Run `39532199321` at `c70cb95befd1c64451395ad8ffda19b244a2a410`: success; the unit/contract step reports 3966 tests, 21 skipped | Exact CI source only; no full SPARK proof, live Hyprland activation or installed-window claim |
 
 The original [checkpoint evidence](COCKPIT-WINDOW-EVIDENCE.json) is preserved.
 The [layout follow-up evidence](COCKPIT-WINDOW-LAYOUT-EVIDENCE.json) binds the
@@ -78,6 +79,15 @@ later source, regression output, GUI receipts and visual inspection. The evidenc
 snapshots; their combination still requires the complete CI gate. The earlier
 base CI run failed four isolation checks and three fixture Git commits; the
 focused repair above does not turn that failed run into a pass.
+
+The subsequent [completed-CI observation](ASSURANCE-CI-OBSERVATION-20261021.json)
+retains the successful run metadata and full test-log digest. Its code-path
+comparison with `97958bb5e429ada032ea37d58815bdfbf4b74f6d` is empty for the
+listed source, test and workflow paths; this is a content comparison, not a
+new exact-commit CI run. The local timeout and earlier CI failures remain
+retained. External proof overlays and live desktop behavior are outside that CI
+result. The first log interpreter refused multiple test summaries; its correction
+selects the named unit/contract step and does not rerun or combine those tests.
 
 Failures are retained. Early component probes could not use Qt's offscreen
 backend for a layer-shell surface; an overlong socket path and incorrect

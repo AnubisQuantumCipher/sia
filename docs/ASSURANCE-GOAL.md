@@ -70,7 +70,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A12 | Linux enforcement and bypass resistance | Restricted actuator actually owns protected state; hostile same-user tests; no Python bypass of denial | UNRUN |
 | A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; v1.8.4 release/tag readback complete and marketplace request filed; complete offline system verifier, portable proof CI and marketplace publication UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | PARTIAL: repository claims corrected and historical preview inspected; unattached illustrative visualization unavailable; final enforced-architecture documentation pending |
-| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: installed CLI readiness and bounded no-touch recall passed again; current checkpoint markers were absent from the ad-hoc result. Timing, relevance and restoration remain separate; see INSTALLED-CONTINUITY-OBSERVATION-20261021.json |
+| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: installed readiness passed; direct no-touch recall returned the queued model note with an exact body-hash match. A prior probe timed out and its file-limit confound remains visible. Semantic retrieval, complete capture and task restoration remain unqualified; see INSTALLED-NOTE-RECALL-20261021.json |
 | A16 | Authoritative history and capture gaps | Preserved original provenance, identity and ordering; explicit missing/unavailable capture; guarantees scoped to successfully captured events | PARTIAL: origin/completeness predicates exist; complete lifecycle and gap acceptance OPEN |
 | A17 | Authoritative retrieval and retirement | SPARK-governed current read/retire decisions, durable replay/tombstone evidence and no bypass | OPEN: protected Query proposed; full retirement and production mediation UNRUN |
 | A18 | Replaceable derived memory | Versioned evidence-linked dreams/summaries/embeddings; retraction and rebuild preserve authoritative history | End-to-end acceptance UNRUN |
@@ -79,7 +79,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A21 | Full traceability and guidance | Hazards/requirements to contracts, source, proof, independent review and exact installed/released tests; relevant Ada/SPARK guidance applied | IN PROGRESS; staged gates and resource inventory recorded |
 | A22 | Agent compaction continuity | Authorized original-event capture, source-bound structured checkpoints, bounded conservative restore, approval and uncertain-operation reconciliation; repeated-compaction evaluation against an uncompacted baseline | OPEN: current Codex sense records metadata only; no qualified SIA task-restoration adapter |
 | A23 | Qualified harness lifecycle integration | Actual current Codex hooks exercised at compaction/resume, installed-source readback and retained outputs; each other harness separately qualified | PARTIAL: disposable desktop startup/resume/manual-compaction hooks and marker delivery observed with a deterministic local provider; actual SIA adapter, automatic compaction, semantic continuation and installed-path qualification OPEN |
-| A24 | Detachable cockpit | Reuse the existing model, visual tree, readers, guarded operations and lifecycle lease; verify presentation switches and installed path | PARTIAL: native Quickshell window, 176 regression tests and disposable component/packaged-Omarchy lifecycle tests passed; exact source/evidence published on the experimental branch; full CI, live desktop activation and marketplace installation OPEN |
+| A24 | Detachable cockpit | Reuse the existing model, visual tree, readers, guarded operations and lifecycle lease; verify presentation switches and installed path | PARTIAL: native Quickshell window, 176 regression tests and disposable component/packaged-Omarchy lifecycle tests passed; subsequent full CI passed at c70cb95 with 3966 tests and 21 skips; live desktop activation and marketplace installation OPEN |
 
 The 2026-10-20 compaction-continuity expansion is binding scope in this same
 single-owner session. Its initial gap assessment, requirements and staged
@@ -111,6 +111,24 @@ inactive. These checks do not establish the uninstalled administrator-owned
 guard, future latency, source-capture completeness or correct continuation.
 Original retrieved bodies remain local; this public manifest binds their log
 by digest without copying private memory contents.
+
+The subsequent [exact-note readback](INSTALLED-NOTE-RECALL-20261021.json)
+returned the model note queued at 04:11:57 UTC through the installed CLI's
+ordinary no-touch recall path. Its decoded body hash matches the queued body,
+and a subsequent installed readiness check passed. The note refers to the
+earlier `9c831d2` checkpoint; it does not claim to be the latest authoritative
+task state. This confirms one retrievable note, not semantic recall quality,
+complete indexing, original-event capture or correct post-compaction behavior.
+
+Failed probes remain explicit. Searching the request ID returned no matches;
+the probe initially mislabeled `query`, which is actually an alias of semantic
+`ask`. An initial direct probe returned a gbrain subprocess timeout. That probe
+also imposed a file-size limit on the entire child process, which could affect
+backend files; its interpretation is confounded. A corrected output-pipe bound
+preserved the request deadline and succeeded. The runs differed in live load,
+so this does not establish the timeout's cause. A process snapshot during the
+successful read shows waiting on the daemon's corpus lease. No lock was bypassed
+and no installed code, service configuration or resource policy was changed.
 
 ## Proof boundary
 

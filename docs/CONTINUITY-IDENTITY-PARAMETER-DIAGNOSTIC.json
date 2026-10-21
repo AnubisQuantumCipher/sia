@@ -1,0 +1,128 @@
+{
+  "kind": "FAILED scoped proof diagnostic; candidate UNADOPTED",
+  "base": "97958bb5e429ada032ea37d58815bdfbf4b74f6d",
+  "input_overlay": "CONTINUITY-MODULAR-SEARCH-EVIDENCE.json",
+  "source_delta": "--- a/spark/tests/continuity_tests.adb\n+++ b/spark/tests/continuity_tests.adb\n@@ -475,35 +475,36 @@\n       Check (Item, Current, Invalid_Checkpoint);\n    end Check_Operations;\n \n-   procedure Check_Empty_And_Identity\n-   with Global => null, Always_Terminates\n-   is\n-      Item : Checkpoint := Initial;\n+   procedure Check_Empty_And_Identity (Seed : Checkpoint)\n+   with Global => null, Always_Terminates,\n+     Pre => Seed = Initial\n+   is\n+      Item : Checkpoint := Seed;\n    begin\n       Initial_Properties;\n       Item.Count := 0;\n       Item.Claims := [others => Empty_Claim];\n       Item.Coverage := [others => SIA_Continuity.Observed_Empty];\n       Check_Observed (Item, Need_Evidence);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Claims (Max_Claims) := Item.Claims (1);\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Claims (2).Identity := Item.Claims (1).Identity;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Claims (1).Identity := Zero;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Claims (1).Slot := Zero;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Claims (1).Sequence := 0;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Through := 3;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Previous := Item.Identity;\n       Check_Observed (Item, Invalid_Checkpoint);\n       Item.Epoch := 2;\n@@ -516,9 +517,9 @@\n       Check_Observed (Item, References_Proposed);\n       Item.Previous := Zero;\n       Check_Observed (Item, Invalid_Checkpoint);\n-      Item := Initial;\n+      Item := Seed;\n       Item.Epoch := 0;\n-      Check (Item, Observe (Initial), Invalid_Checkpoint);\n+      Check (Item, Observe (Seed), Invalid_Checkpoint);\n    end Check_Empty_And_Identity;\n \n    function Capacity_Claim (I : Claim_Index) return Claim is\n@@ -656,7 +657,7 @@\n    Check_Supersession;\n    Check_Permission_Origin;\n    Check_Operations;\n-   Check_Empty_And_Identity;\n+   Check_Empty_And_Identity (Initial);\n    Check_Claim_Capacity;\n    Check_Operation_Capacity;\n    Initial_Properties;\n",
+  "source_before_sha256": "cdd77f3a67527945faf5c47db2d24a87715eb5f02e360c194914a97d61abe316",
+  "source_after_sha256": "9c635a2d6d22187a2145bb534c0a70aa96f23d025d9c034736f9d32bd242366c",
+  "checks": [
+    {
+      "name": "build",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/sia_assurance.gpr"
+      ],
+      "exit": 0,
+      "fresh_proof_summary": null,
+      "elapsed_seconds": 13.120883825002238
+    },
+    {
+      "name": "continuity-runtime",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_tests"
+      ],
+      "exit": 0,
+      "fresh_proof_summary": null,
+      "elapsed_seconds": 0.002505526994355023
+    },
+    {
+      "name": "identity-proof",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-v",
+        "-u",
+        "continuity_tests.adb",
+        "--limit-subp=continuity_tests.adb:478"
+      ],
+      "exit": 124,
+      "fresh_proof_summary": false,
+      "elapsed_seconds": 120.00279311003396
+    }
+  ],
+  "tools_unchanged": true,
+  "proof_tools_before": {
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+  },
+  "proof_tools_after": {
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+  },
+  "artifacts": [
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-v1/receipt.json",
+      "sha256": "59028c042845506a7477a615e7bdc6160e12bc556ff1e2c90d67ecf97a0d5056",
+      "bytes": 12664
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-v1/base.tar",
+      "sha256": "36b823176f32276b6c9347664affd20c21845bfd300597335dfe784bf07f9e3d",
+      "bytes": 778240
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-v1/build.log",
+      "sha256": "d368d2964f755d7ba5fa867e57bb5b20f4d0e18e64a7c2455d03f9b497e94d4f",
+      "bytes": 2707
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-v1/continuity-runtime.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-v1/identity-proof.log",
+      "sha256": "a88d269b433f1df819b627078efcb8ef17a44bdb20de4ab2841e854a155e3c66",
+      "bytes": 6552
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/run-continuity-identity-parameter-v1.py",
+      "sha256": "afe509dac025e24dd08d60726207e51a0f4cd9af4ed4c75f70bd94f4add7153c",
+      "bytes": 3821
+    },
+    {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-identity-parameter-review-v1.txt",
+      "sha256": "f6e078a711c51ddbab236319626a40e43cb2d6ed10b9ee1847aa19222416974a",
+      "bytes": 978
+    }
+  ],
+  "limits": [
+    "Strict build and continuity runtime passed.",
+    "Focused identity routine proof exited 124 at 120 seconds; no fresh summary.",
+    "No speed benefit, caller proof, whole-unit or all-project acceptance established.",
+    "Full campaign and scope/resource limits remain unchanged."
+  ]
+}

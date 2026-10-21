@@ -231,3 +231,13 @@ defaulted absent XML timing fields to zero; its successor marks those times
 UNAVAILABLE. Neither value is used as a measured wall time or acceptance claim.
 Exact source reconstruction, full proof/coverage, committed-source reproduction,
 independent evidence review and the installed continuity gates remain distinct.
+
+The next [identity-fixture diagnostic](CONTINUITY-IDENTITY-PARAMETER-DIAGNOSTIC.json)
+passed the same initial fixture through a parameter constrained to equal that
+fixture. Actual GPT-6.1 source review found every original mutation and expected
+result preserved, including the epoch-zero negative against the valid baseline's
+observations. Strict build and the continuity runtime passed. The focused proof
+still exited 124 at 120 seconds without a fresh summary. This attempt remains
+**FAILED** as proof establishment and **UNADOPTED**; no speed benefit, caller
+proof, complete-unit coverage or all-project acceptance follows. The original
+negative result and source delta are retained. The current proof cap is unchanged.
