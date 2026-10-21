@@ -1,0 +1,350 @@
+--- a/spark/sia_assurance.gpr
++++ b/spark/sia_assurance.gpr
+@@ -21,5 +21,7 @@
+         ("--level=2", "--report=all", "-W=all", "--warnings=error",
+          "--checks-as-errors=on", "--proof-warnings=on",
+          "--prover=z3,cvc5,altergo", "-j1");
++      for Proof_Switches ("continuity_predicate_checks.adb") use
++        ("--prover=cvc5,z3,altergo");
+    end Prove;
+ end SIA_Assurance;
+--- a/spark/tests/continuity_tests.adb
++++ b/spark/tests/continuity_tests.adb
+@@ -1,94 +1,8 @@
++with Continuity_Predicate_Checks; use Continuity_Predicate_Checks;
+ with SIA_Policy; use SIA_Policy;
+ with SIA_Continuity; use SIA_Continuity;
+ 
+ procedure Continuity_Tests with SPARK_Mode is
+-   --  Independent reference expressions frozen from sia_continuity.ads at
+-   --  0f21fa357b128dcdc06cc9108059408219b4bf46, with names changed only.
+-   --  These retain whole-checkpoint inputs so the extraction is not its own
+-   --  oracle. Check_Predicate_Equivalence admits every typed checkpoint.
+-   function Original_Claim (Item : Claim) return Boolean is
+-     (Item.Identity /= Zero and then Item.Slot /= Zero and then
+-      Item.Sequence /= 0 and then
+-      (if Item.Speaker = Assistant then Item.From = Model_Record) and then
+-      (if Item.Kind = Permission_Reference then
+-         Item.Speaker = User and then Item.From = Source_Record))
+-   with Global => null;
+-
+-   function Original_Predecessor (Item : Checkpoint; I : Claim_Index)
+-      return Boolean is
+-     (if Item.Claims (I).Replaces = 0 then
+-         (for all J in 1 .. I - 1 =>
+-            Item.Claims (J).Slot /= Item.Claims (I).Slot)
+-      else Item.Claims (I).Replaces < I and then
+-         Item.Claims (Item.Claims (I).Replaces).Slot = Item.Claims (I).Slot
+-         and then Item.Claims (Item.Claims (I).Replaces).Kind =
+-           Item.Claims (I).Kind
+-         and then Item.Claims (Item.Claims (I).Replaces).From =
+-           Item.Claims (I).From
+-         and then Item.Claims (Item.Claims (I).Replaces).Speaker =
+-           Item.Claims (I).Speaker
+-         and then
+-           (for all J in Item.Claims (I).Replaces + 1 .. I - 1 =>
+-              Item.Claims (J).Slot /= Item.Claims (I).Slot))
+-   with Global => null;
+-
+-   function Original_Claims (Item : Checkpoint) return Boolean is
+-     ((for all I in 1 .. Item.Count =>
+-         Original_Claim (Item.Claims (I)) and then
+-         Item.Claims (I).Sequence <= Item.Through and then
+-         (if I > 1 then
+-            Item.Claims (I - 1).Sequence < Item.Claims (I).Sequence)
+-         and then Original_Predecessor (Item, I)) and then
+-      (for all I in Item.Count + 1 .. Max_Claims =>
+-         Item.Claims (I) = Empty_Claim) and then
+-      (for all I in 1 .. Item.Count =>
+-         (for all J in 1 .. Item.Count =>
+-            (if I /= J then
+-               Item.Claims (I).Identity /= Item.Claims (J).Identity))))
+-   with Global => null;
+-
+-   function Original_Coverage (Item : Checkpoint) return Boolean is
+-     (for all Kind in Claim_Kind =>
+-        ((Item.Coverage (Kind) in Partial | Complete) =
+-           (for some I in 1 .. Item.Count => Item.Claims (I).Kind = Kind)))
+-   with Global => null;
+-
+-   function Original_Operation (Item : Operation) return Boolean is
+-     (Item.Identity /= Zero and then Item.Action /= Zero and then
+-      (if not Item.Has_Result then Item.Result_Record_Id = Zero) and then
+-      (if Item.Stage = Planned then not Item.Has_Result) and then
+-      (if Item.Stage in Observed_Complete | Acknowledged then Item.Has_Result))
+-   with Global => null;
+-
+-   function Original_Operations (Item : Checkpoint) return Boolean is
+-     ((for all I in 1 .. Item.Operations_Count =>
+-         Original_Operation (Item.Operations (I))) and then
+-      (for all I in Item.Operations_Count + 1 .. Max_Operations =>
+-         Item.Operations (I) = Empty_Operation) and then
+-      (for all I in 1 .. Item.Operations_Count =>
+-         (for all J in 1 .. Item.Operations_Count =>
+-            (if I /= J then
+-               Item.Operations (I).Identity /= Item.Operations (J).Identity))))
+-   with Global => null;
+-
+-   procedure Check_Predicate_Equivalence (Item : Checkpoint)
+-   with Global => null, Always_Terminates
+-   is
+-   begin
+-      pragma Assert
+-        (for all I in Claim_Index =>
+-           Valid_Claim (Item.Claims (I)) = Original_Claim (Item.Claims (I)));
+-      pragma Assert
+-        (for all I in Claim_Index =>
+-           Valid_Predecessor (Item, I) = Original_Predecessor (Item, I));
+-      pragma Assert (Valid_Claims (Item) = Original_Claims (Item));
+-      pragma Assert (Coverage_Consistent (Item) = Original_Coverage (Item));
+-      pragma Assert
+-        (for all I in Operation_Index =>
+-           Valid_Operation (Item.Operations (I)) =
+-             Original_Operation (Item.Operations (I)));
+-      pragma Assert (Valid_Operations (Item) = Original_Operations (Item));
+-   end Check_Predicate_Equivalence;
+ 
+    Initial : constant Checkpoint :=
+      (Scope => (Task_Id => [others => 1], Session_Id => [others => 2],
+@@ -256,44 +170,6 @@
+       pragma Assert (not Uncertain_Operations (Item));
+    end Pending_Properties;
+ 
+-   --  No precondition: partitioning active and padding ranges must preserve
+-   --  the original predicate for every representable checkpoint.
+-   procedure Check_Claim_Partition (Item : Checkpoint)
+-   with Global => null, Always_Terminates
+-   is
+-   begin
+-      pragma Assert
+-        (Valid_Claims (Item) =
+-           ((for all I in Claim_Index =>
+-               (if I <= Item.Count then
+-                  Valid_Claim (Item.Claims (I)) and then
+-                  Item.Claims (I).Sequence <= Item.Through and then
+-                  (if I > 1 then
+-                     Item.Claims (I - 1).Sequence < Item.Claims (I).Sequence)
+-                  and then Valid_Predecessor (Item, I)
+-                else Item.Claims (I) = Empty_Claim)) and then
+-            (for all I in 1 .. Item.Count =>
+-               (for all J in 1 .. Item.Count =>
+-                  (if I /= J then
+-                     Item.Claims (I).Identity /= Item.Claims (J).Identity)))));
+-   end Check_Claim_Partition;
+-
+-   procedure Check_Operation_Partition (Item : Checkpoint)
+-   with Global => null, Always_Terminates
+-   is
+-   begin
+-      pragma Assert
+-        (Valid_Operations (Item) =
+-           ((for all I in Operation_Index =>
+-               (if I <= Item.Operations_Count then
+-                  Valid_Operation (Item.Operations (I))
+-                else Item.Operations (I) = Empty_Operation)) and then
+-            (for all I in 1 .. Item.Operations_Count =>
+-               (for all J in 1 .. Item.Operations_Count =>
+-                  (if I /= J then
+-                     Item.Operations (I).Identity /=
+-                       Item.Operations (J).Identity)))));
+-   end Check_Operation_Partition;
+ 
+    --  Fixture-supplied observations, deliberately not an authenticity producer.
+    function Observe (Item : Checkpoint) return Current_Evidence
+@@ -701,11 +577,31 @@
+       Stage => Acknowledged, Has_Result => True)
+    with Global => null;
+ 
++   --  Keep the original mutations and oracles, but prove them against
++   --  the established capacity facts instead of the construction history.
++   procedure Check_Capacity_Mutations (Before : Checkpoint)
++   with Global => null, Always_Terminates,
++     Pre => Valid (Before) and then Coverage_Ready (Before) and then
++       Before.Epoch /= 0 and then Before.Operations_Count = Max_Operations and then
++       (for all I in Operation_Index =>
++          Before.Operations (I) = Capacity_Operation (I))
++   is
++      Item : Checkpoint := Before;
++      Current : Current_Evidence;
++   begin
++      Current := Observe (Item);
++      Current.Operations (Max_Operations).State := Retracted;
++      Check (Item, Current, Need_Evidence);
++      Item.Operations (Max_Operations).Stage := Dispatched;
++      Check_Observed (Item, Reconcile_Operations);
++      Item.Operations (Max_Operations).Identity := Item.Operations (1).Identity;
++      Check_Observed (Item, Invalid_Checkpoint);
++   end Check_Capacity_Mutations;
++
+    procedure Check_Operation_Capacity
+    with Global => null, Always_Terminates
+    is
+       Item : Checkpoint := Initial;
+-      Current : Current_Evidence;
+    begin
+       Initial_Properties;
+       Item.Operations_Count := Max_Operations;
+@@ -730,13 +626,7 @@
+       pragma Assert (Valid_Operations (Item));
+       pragma Assert (Valid (Item));
+       Check_Observed (Item, References_Proposed);
+-      Current := Observe (Item);
+-      Current.Operations (Max_Operations).State := Retracted;
+-      Check (Item, Current, Need_Evidence);
+-      Item.Operations (Max_Operations).Stage := Dispatched;
+-      Check_Observed (Item, Reconcile_Operations);
+-      Item.Operations (Max_Operations).Identity := Item.Operations (1).Identity;
+-      Check_Observed (Item, Invalid_Checkpoint);
++      Check_Capacity_Mutations (Item);
+       Item := Initial;
+       Item.Operations_Count := 1;
+       Item.Operations (1) :=
+--- /dev/null
++++ b/spark/tests/continuity_predicate_checks.ads
+@@ -0,0 +1,15 @@
++with SIA_Continuity;
++
++package Continuity_Predicate_Checks with SPARK_Mode, Pure is
++   use SIA_Continuity;
++
++   procedure Check_Predicate_Equivalence (Item : Checkpoint)
++   with Global => null, Always_Terminates;
++
++   procedure Check_Claim_Partition (Item : Checkpoint)
++   with Global => null, Always_Terminates;
++
++   procedure Check_Operation_Partition (Item : Checkpoint)
++   with Global => null, Always_Terminates;
++
++end Continuity_Predicate_Checks;
+--- /dev/null
++++ b/spark/tests/continuity_predicate_checks.adb
+@@ -0,0 +1,128 @@
++with SIA_Policy; use SIA_Policy;
++with SIA_Continuity; use SIA_Continuity;
++
++package body Continuity_Predicate_Checks with SPARK_Mode is
++   --  Independent reference expressions frozen from sia_continuity.ads at
++   --  0f21fa357b128dcdc06cc9108059408219b4bf46, with names changed only.
++   --  These retain whole-checkpoint inputs so the extraction is not its own
++   --  oracle. Check_Predicate_Equivalence admits every typed checkpoint.
++   function Original_Claim (Item : Claim) return Boolean is
++     (Item.Identity /= Zero and then Item.Slot /= Zero and then
++      Item.Sequence /= 0 and then
++      (if Item.Speaker = Assistant then Item.From = Model_Record) and then
++      (if Item.Kind = Permission_Reference then
++         Item.Speaker = User and then Item.From = Source_Record))
++   with Global => null;
++
++   function Original_Predecessor (Item : Checkpoint; I : Claim_Index)
++      return Boolean is
++     (if Item.Claims (I).Replaces = 0 then
++         (for all J in 1 .. I - 1 =>
++            Item.Claims (J).Slot /= Item.Claims (I).Slot)
++      else Item.Claims (I).Replaces < I and then
++         Item.Claims (Item.Claims (I).Replaces).Slot = Item.Claims (I).Slot
++         and then Item.Claims (Item.Claims (I).Replaces).Kind =
++           Item.Claims (I).Kind
++         and then Item.Claims (Item.Claims (I).Replaces).From =
++           Item.Claims (I).From
++         and then Item.Claims (Item.Claims (I).Replaces).Speaker =
++           Item.Claims (I).Speaker
++         and then
++           (for all J in Item.Claims (I).Replaces + 1 .. I - 1 =>
++              Item.Claims (J).Slot /= Item.Claims (I).Slot))
++   with Global => null;
++
++   function Original_Claims (Item : Checkpoint) return Boolean is
++     ((for all I in 1 .. Item.Count =>
++         Original_Claim (Item.Claims (I)) and then
++         Item.Claims (I).Sequence <= Item.Through and then
++         (if I > 1 then
++            Item.Claims (I - 1).Sequence < Item.Claims (I).Sequence)
++         and then Original_Predecessor (Item, I)) and then
++      (for all I in Item.Count + 1 .. Max_Claims =>
++         Item.Claims (I) = Empty_Claim) and then
++      (for all I in 1 .. Item.Count =>
++         (for all J in 1 .. Item.Count =>
++            (if I /= J then
++               Item.Claims (I).Identity /= Item.Claims (J).Identity))))
++   with Global => null;
++
++   function Original_Coverage (Item : Checkpoint) return Boolean is
++     (for all Kind in Claim_Kind =>
++        ((Item.Coverage (Kind) in Partial | Complete) =
++           (for some I in 1 .. Item.Count => Item.Claims (I).Kind = Kind)))
++   with Global => null;
++
++   function Original_Operation (Item : Operation) return Boolean is
++     (Item.Identity /= Zero and then Item.Action /= Zero and then
++      (if not Item.Has_Result then Item.Result_Record_Id = Zero) and then
++      (if Item.Stage = Planned then not Item.Has_Result) and then
++      (if Item.Stage in Observed_Complete | Acknowledged then Item.Has_Result))
++   with Global => null;
++
++   function Original_Operations (Item : Checkpoint) return Boolean is
++     ((for all I in 1 .. Item.Operations_Count =>
++         Original_Operation (Item.Operations (I))) and then
++      (for all I in Item.Operations_Count + 1 .. Max_Operations =>
++         Item.Operations (I) = Empty_Operation) and then
++      (for all I in 1 .. Item.Operations_Count =>
++         (for all J in 1 .. Item.Operations_Count =>
++            (if I /= J then
++               Item.Operations (I).Identity /= Item.Operations (J).Identity))))
++   with Global => null;
++
++   procedure Check_Predicate_Equivalence (Item : Checkpoint)
++   is
++   begin
++      pragma Assert
++        (for all I in Claim_Index =>
++           Valid_Claim (Item.Claims (I)) = Original_Claim (Item.Claims (I)));
++      pragma Assert
++        (for all I in Claim_Index =>
++           Valid_Predecessor (Item, I) = Original_Predecessor (Item, I));
++      pragma Assert (Valid_Claims (Item) = Original_Claims (Item));
++      pragma Assert (Coverage_Consistent (Item) = Original_Coverage (Item));
++      pragma Assert
++        (for all I in Operation_Index =>
++           Valid_Operation (Item.Operations (I)) =
++             Original_Operation (Item.Operations (I)));
++      pragma Assert (Valid_Operations (Item) = Original_Operations (Item));
++   end Check_Predicate_Equivalence;
++
++   --  No precondition: partitioning active and padding ranges must preserve
++   --  the original predicate for every representable checkpoint.
++   procedure Check_Claim_Partition (Item : Checkpoint)
++   is
++   begin
++      pragma Assert
++        (Valid_Claims (Item) =
++           ((for all I in Claim_Index =>
++               (if I <= Item.Count then
++                  Valid_Claim (Item.Claims (I)) and then
++                  Item.Claims (I).Sequence <= Item.Through and then
++                  (if I > 1 then
++                     Item.Claims (I - 1).Sequence < Item.Claims (I).Sequence)
++                  and then Valid_Predecessor (Item, I)
++                else Item.Claims (I) = Empty_Claim)) and then
++            (for all I in 1 .. Item.Count =>
++               (for all J in 1 .. Item.Count =>
++                  (if I /= J then
++                     Item.Claims (I).Identity /= Item.Claims (J).Identity)))));
++   end Check_Claim_Partition;
++
++   procedure Check_Operation_Partition (Item : Checkpoint)
++   is
++   begin
++      pragma Assert
++        (Valid_Operations (Item) =
++           ((for all I in Operation_Index =>
++               (if I <= Item.Operations_Count then
++                  Valid_Operation (Item.Operations (I))
++                else Item.Operations (I) = Empty_Operation)) and then
++            (for all I in 1 .. Item.Operations_Count =>
++               (for all J in 1 .. Item.Operations_Count =>
++                  (if I /= J then
++                     Item.Operations (I).Identity /=
++                       Item.Operations (J).Identity)))));
++   end Check_Operation_Partition;
++end Continuity_Predicate_Checks;
