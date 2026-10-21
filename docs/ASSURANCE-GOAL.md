@@ -53,9 +53,12 @@ administrator-installation files and a command sheet were prepared before
 the operator supplied live administrative authorization. The exact merged
 guard is now installed: kernel/service readback, owner embedding, another
 account's transport/HTTP denial, narrow delegation controls, live UFW reload
-and guard stop/start passed. The user Ollama unit was updated and loaded
-without restarting its active process. Actual boot/Ollama restart and installed
-upgrade/uninstall qualification remain open; this is scoped protection evidence.
+and guard stop/start passed. The user Ollama unit was initially updated/loaded
+without a restart. A subsequent restart under the native corpus/engine leases
+then exercised the actual startup gate successfully; owner embedding,
+different-account denial and different-account sudo refusal passed afterward.
+Actual boot and installed upgrade/uninstall qualification remain open; this is
+scoped protection evidence, not complete installed dependency attestation.
 The same owner continues the assurance branch with these obligations
 visible, without treating a release blocker as a reason to stop implementation.
 The operator explicitly resumed the Goal and requested qualifying merges on

@@ -1,0 +1,22 @@
+Retained model-generated actual GPT-6.1 read-only correspondence report.
+No execution replay, live-state attestation, jobs, edits or complete acceptance.
+
+No concrete correspondence or scope blocker found. Response reproduction
+binds commit 74efd05673719ce5a740d83510c652c5a956c930, empty overlay,
+matching archive/current sources, tool rosters and bundle artifacts. Recorded
+build/fifteen runtimes/core proof pass; report remains scoped to 31 checks/
+all 13 response entities.
+
+Restart receipts support one managed PID transition, successful actual
+ExecStartPre, post-restart controls and readiness/readback. Native leases are
+explicitly cooperative. Selected bundle excludes original successful note
+text and full firewall snapshots. Documentation closes only restart/other-
+account-sudo observations. Boot, upgrade/uninstall, dependency, marketplace and
+complete-assurance gates remain open. Complete harness/full-project proof
+remains unproved.
+
+Reviewed SHA-256:
+response manifest 74e1d1338805fd86a09e3afc8512e414e7b32deb4c80f1638c89d12f4ace5c30
+response bundle   295dc57daf3f677d7b503d50c725156dd5dec17cee814947ab05e1c63a3616ed
+restart manifest  e22d787ea14110b4c6fbb450f9f413e039e24f5001d03ced236c077eea1e88e4
+restart bundle    f8110e6d1040c5e6db58be55684dd07e02985667072ebbd32d4a0232b14f8cbe

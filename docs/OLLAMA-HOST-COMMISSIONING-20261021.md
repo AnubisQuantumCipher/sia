@@ -44,8 +44,17 @@ restoration. A model note referring to earlier source is not current authority
 or permission. Queued writes, native readiness, direct readback and semantic
 relevance remain separate properties.
 
-**UNPROVEN/UNRUN:** actual boot ordering, an actual managed Ollama restart,
-installed upgrade/uninstall lifecycle, other-account sudo-delegation execution,
+The subsequent [managed-restart receipt](OLLAMA-MANAGED-RESTART-20261021.json)
+records one coordinated restart after acquiring both existing native corpus
+and engine leases without waiting and observing no active API connection.
+Systemd records the actual startup gate's successful exit before the new
+Ollama process. Post-restart owner embedding, other-account transport denial,
+the full owner gate and another account's attempted read-only sudo command
+all passed their positive/negative controls. This supersedes the earlier
+no-restart observation and closes those two unrun controls only. Native leases
+are cooperative and do not constrain unrelated same-UID programs.
+
+**UNPROVEN/UNRUN:** actual boot ordering, installed upgrade/uninstall lifecycle,
 complete installed SIA dependency attestation and the full assurance mission.
 The CLI runtime remains the prior installed version; this operation installed
 the reviewed guard and user-unit change only. The existing full-system,

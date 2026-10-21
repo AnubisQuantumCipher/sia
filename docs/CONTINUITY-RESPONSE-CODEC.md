@@ -66,6 +66,15 @@ and external toolchain assumptions remain. The complete project proof, prior
 600-second failure, authenticated producer and installed restoration obligations
 remain open. No larger proof budget, source exclusion or assumption is added.
 
+Fresh committed reproduction of `74efd05673719ce5a740d83510c652c5a956c930`
+then repeated strict compilation, all fifteen runtimes and the scoped 31-check
+core proof from an archive with no overlay. The
+[committed receipt](CONTINUITY-RESPONSE-COMMITTED-EVIDENCE.json) binds source,
+exact commands/caps, equal tool rosters and clean raw diagnostics. The
+[actual GPT-6.1 correspondence review](evidence/continuity-response-and-restart-review-v1.txt)
+confirmed that limited scope without replay. The unchanged failing complete
+harness and full-project campaigns remain unproved and were not repeated.
+
 Next is the one-request Linux descriptor adapter and bounded parent supervision.
 Before executing it, qualify declared stack/memory/process limits, retain static
 stack information and test actual EOF, short/excess input, read/write errors,
