@@ -3732,7 +3732,12 @@ flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
          | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
 descriptor = os.open(path, flags, 0o700)
 try:
-    os.write(descriptor, source.encode("utf-8"))
+    remaining = memoryview(source.encode("utf-8"))
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if not 0 < written <= len(remaining):
+            raise OSError("short stable launcher write")
+        remaining = remaining[written:]
     os.fchmod(descriptor, 0o755)
     os.fsync(descriptor)
 finally:
