@@ -1,0 +1,16 @@
+Actual GPT-6.1 independent read-only committed-evidence review, 2026-10-21.
+No concrete correspondence or claims blocker found.
+
+Verified commit e7640a75b1c48fbfa3b2431f71ff558d65d8af9e, empty overlay,
+archive/extracted/current source hashes, equal tool rosters and bundle artifacts.
+Recorded strict builds, new/support controls and fifteen runtimes passed;
+overlapping controls are not additional independent coverage.
+
+Manifest 250b3b9d827212a12f865ee1966ab19d4b7370497ee654a6b2a016102049d7ee
+Bundle   2614b2d753ad72bda47a8f8b14d87129556d18a376bf42a03eb21cc9811c33dc
+
+Resource witnesses remain two-workload observations, not worst-case guarantees.
+Contract packaging preserves the original hash and limits display changes to
+terminal-newline normalization. This supports scoped committed I/O reproduction
+only. Complete proofs, authenticated producers, protected authority and installed
+continuity remain OPEN. No execution replay, jobs or edits performed.

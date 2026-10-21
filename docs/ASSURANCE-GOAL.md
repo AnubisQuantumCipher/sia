@@ -142,8 +142,12 @@ review caught and closed descriptor/cleanup issues; original source, failures
 and limited resource observations remain retained. This is TESTED fixture
 transport, not proved I/O, authenticated inputs or installed restoration.
 Complete harness/full-project proof and all A22/A23 acceptance gates remain
-open. The next protected design obligation is the admission temporal contract;
-fresh committed-source I/O reproduction must first bind this increment.
+open. Fresh [committed-source I/O reproduction](CONTINUITY-IO-COMMITTED-EVIDENCE-20261021.json)
+then repeated these strict builds, tests and fifteen runtimes from `e7640a7`
+with an empty overlay. Its resource observations remain selected-workload
+evidence, not worst-case bounds. The next protected design obligation is the
+admission temporal contract, alongside the executable acceptance manifest;
+neither is closed by the codec/transport checkpoint.
 
 Installed direct recall also returned request
 `b5f46f6010fd439ab069bf0363bbe074` with the exact queued body and unchanged

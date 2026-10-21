@@ -76,8 +76,13 @@ they did not independently replay execution. The Python source inventory
 reported no syntactic findings for the two new files. Its status is
 `inventory-only`, never Power of Ten compliance or dynamic-runtime proof.
 Development snapshots predate this descriptive WIRE/Goal documentation update;
-the executable source remains unchanged. Fresh committed-source reproduction
-is the next source-binding gate. Complete harness/full-project proofs,
+the executable source remains unchanged. The subsequent
+[committed-source reproduction](CONTINUITY-IO-COMMITTED-EVIDENCE-20261021.json)
+binds `e7640a75b1c48fbfa3b2431f71ff558d65d8af9e`, empty overlay and an exact
+fresh archive. The same strict builds, all seventeen new tests, the overlapping
+96 controls and all fifteen Ada runtimes passed. Separate resource witnesses
+bind that fresh binary too; their scope remains two selected executions.
+No proof was rerun or claimed from this reproduction. Complete harness/full-project proofs,
 authenticated producers, the protected actuator and actual Codex continuity
 acceptance remain OPEN. No universal compaction, timeout or certification claim
 follows from this checkpoint.
