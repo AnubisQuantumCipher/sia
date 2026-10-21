@@ -25,6 +25,20 @@ an external gate. Main remains frozen; experimental work stays on this separate
 branch. These release observations do not qualify the experimental assurance
 branch or any protected service.
 
+The subsequent marketplace review reported a different-account Ollama API
+boundary failure. The single owner reproduced it in a private namespace and
+is developing an isolated administrator-owned account guard in
+`codex/sia-ollama-account-boundary-20261020`. That candidate and its retained
+negative controls do not change frozen main or qualify the installed system.
+Marketplace publication remains blocked on resolving the concrete finding and
+the existing exact-source acceptance/review gates.
+The candidate is retained in [draft PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41),
+including the full-CI failures and subsequent test-fixture repairs. Isolated
+kernel and sudo-delegation evidence does not qualify the host's administrator
+configuration; corrected-commit CI and actual installation acceptance remain
+open. The same owner continues the assurance branch with these obligations
+visible, without treating a release blocker as a reason to stop implementation.
+
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
 decides consequential policy; Linux must enforce protected writes, identity,

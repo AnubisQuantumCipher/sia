@@ -306,3 +306,70 @@ The [independent read-only review](../docs/evidence/continuity-record-wire-revie
 checked this scoped checkpoint and its retained failures. No `pragma Assume`
 or skip annotations were found; ordinary modular dependency assumptions remain.
 The review does not grant full-project or integration acceptance.
+
+## Observation codecs in progress
+
+The unaccepted observation increment adds Context field mapping and fixed Claim,
+Operation and Transition observation decoding. Its source review found no
+semantic blocker and requested a positive nonempty preservation test across
+every availability state; that test was added.
+
+Development-v1 failed compilation because the pure package's typed-empty
+constants referenced non-static composite constants from another unit.
+Explicit equivalent record aggregates repair that initialization, with an
+assertion retaining equality to the original empty values. Development-v2
+then failed the strict compiler's value-conversion-copy warnings at nested
+record boundaries. Runtime harnesses and focused proofs were not run.
+Both source snapshots and failed build receipts remain in the external
+`continuity-observation-wire-development-v1` and `-v2` directories.
+No warning is suppressed and this source has no acceptance.
+
+Development-v3 then failed compilation because `Always_Terminates` was applied
+to ordinary pure functions. The installed compiler rejects that aspect there;
+SPARK already requires ordinary functions to terminate. The repair keeps
+`Always_Terminates` on the Decode procedures and uses each payload's fixed
+array range and exact byte-correspondence postcondition. It does not add a
+termination waiver. Explicit fixed-range aggregates replace the implicit
+slice conversions without changing the distinct wire types.
+
+Development-v4 passed the unchanged strict compiler flags and all eleven
+runtime harnesses. Its focused observation-core proof passed with 84 reported
+checks, zero justified and zero unproved checks, under the reported modular
+dependency assumptions. The subsequent harness proof reached its unchanged
+120-second diagnostic deadline, exit 124, before producing a complete report.
+The saved harness-named summary can contain the preceding core summary and
+must not be treated as a completed harness result. The raw command result is
+authoritative about completion. Full-project proof, framing/authentication,
+adapter integration and installed continuity remain unqualified.
+
+The independent read-only source review of the v4 codec and harness found no
+new semantic blocker or omitted original control. It confirmed the typed-empty
+aggregates, fixed payload bounds, field correspondence and preservation test
+across every availability state. That review does not turn the incomplete
+harness proof into acceptance. Exact source, tool identities, raw logs and all
+failed diagnostics remain in the external development directories.
+The [scoped evidence manifest](../docs/CONTINUITY-OBSERVATION-WIRE-EVIDENCE.json)
+binds this exact uncommitted overlay and explicitly rejects the stale
+harness-named summary. A revised diagnostic driver removes the preceding
+summary before each proof command and refuses zero exit without a fresh
+summary; mocked stale/fresh controls passed. That runner repair is not another
+prover execution and does not discharge the incomplete harness proof.
+
+Separate fresh diagnostics on the same overlay completed `Check_Context`
+(26 reported checks) and `Check_Availability` (9 reported checks). Both produced
+fresh summaries with unchanged tool identities. They cover only the named
+subprograms; their counts are not a full-harness total or integration evidence.
+
+Development-v5 then ran the full project from another fresh source directory.
+Strict build and all eleven runtime harnesses passed. The all-unit proof
+reached its unchanged 600-second deadline, exit 124, without a fresh summary;
+the complete coverage validator therefore did not run. Partial unit reports
+and prover attempts remain diagnostic data, not full-project acceptance.
+The manifest retains this timeout, the earlier harness timeout and the rejected
+stale summary. Neither the proof budget nor the required scope was weakened.
+
+Work on this increment remains preserved while the same owner repairs the
+different-account Ollama finding on marketplace request #12332 in a separate
+exact-release worktree. `a861e0f` is the preceding record-codec checkpoint.
+This observation increment remains a non-final source checkpoint: it is not
+installed, released, or accepted as a complete proof or continuity adapter.
