@@ -1,6 +1,7 @@
 with SIA_Policy;
 with SIA_Continuity;
 with SIA_Continuity_Current_Wire;
+with SIA_Continuity_Observation_Wire;
 
 procedure Continuity_Current_Wire_Tests with SPARK_Mode is
    use SIA_Policy;
@@ -203,6 +204,13 @@ procedure Continuity_Current_Wire_Tests with SPARK_Mode is
          if Position in 291 .. 296 | 339 .. 352 then
             Bytes := [others => 0];
             Bytes := (Bytes with delta Position => 1);
+            pragma Assert
+              (if Position in 291 .. 296 then
+                  Manifest_Payload (Bytes) (Position - 248) = 1
+               elsif Position in 339 .. 344 then
+                  Originals_Payload (Bytes) (Position - 296) = 1
+               else Bytes (Position) = 1);
+            pragma Assert (not Header_Valid (Bytes));
             Decode (Bytes, Accepted, Item);
             pragma Assert (not Accepted and then Item = Empty_Current);
          end if;
@@ -223,6 +231,11 @@ procedure Continuity_Current_Wire_Tests with SPARK_Mode is
             Bytes := [others => 0];
             Bytes := (Bytes with delta
               (352 + (I - 1) * 144) + Positions (Fault) => Values (Fault));
+            pragma Assert
+              (Claim_Payload (Bytes, I) (Positions (Fault)) = Values (Fault));
+            pragma Assert
+              (not SIA_Continuity_Observation_Wire.Valid
+                 (Claim_Payload (Bytes, I)));
             Decode (Bytes, Accepted, Item);
             pragma Assert (not Accepted and then Item = Empty_Current);
          end loop;
@@ -233,44 +246,89 @@ procedure Continuity_Current_Wire_Tests with SPARK_Mode is
       Positions : constant array (1 .. 6) of Positive :=
         [1, 130, 131, 132, 146, 160];
       Values : constant array (1 .. 6) of Digest_Byte := [4, 5, 2, 1, 1, 1];
-      Bytes : Current_Bytes;
-      Item : Current_Evidence;
-      Accepted : Boolean;
-   begin
-      for I in Operation_Index loop
+      procedure Check_Operation_Slot (I : Operation_Index)
+      with Global => null, Always_Terminates is
+         Bytes : Current_Bytes;
+         Item : Current_Evidence;
+         Accepted : Boolean;
+      begin
          for Fault in Positions'Range loop
             Bytes := [others => 0];
             Bytes := (Bytes with delta
               (9568 + (I - 1) * 160) + Positions (Fault) => Values (Fault));
+            pragma Assert
+              (Operation_Payload (Bytes, I) (Positions (Fault)) = Values (Fault));
+            pragma Assert
+              (SIA_Continuity_Observation_Wire.Operation_Payload
+                 (Operation_Payload (Bytes, I)) (131) =
+                   Operation_Payload (Bytes, I) (132));
+            pragma Assert
+              (not SIA_Continuity_Observation_Wire.Valid
+                 (Operation_Payload (Bytes, I)));
             Decode (Bytes, Accepted, Item);
             pragma Assert (not Accepted and then Item = Empty_Current);
          end loop;
+      end Check_Operation_Slot;
+   begin
+      for I in Operation_Index loop
+         Check_Operation_Slot (I);
       end loop;
    end Check_Operation_Refusal;
 
    procedure Check_Available_Refusal with Global => null, Always_Terminates is
-      Bytes : Current_Bytes;
-      Item : Current_Evidence;
-      Accepted : Boolean;
+      procedure Check_Available_Claim
+        (Code : Digest_Byte; I : Claim_Index)
+      with Global => null, Always_Terminates is
+         Bytes : Current_Bytes;
+         Item : Current_Evidence;
+         Accepted : Boolean;
+      begin
+            Bytes := [others => 0];
+            Bytes := (Bytes with delta
+              (352 + (I - 1) * 144) + 1 => Code,
+              (352 + (I - 1) * 144) + 110 => 1);
+            pragma Assert (Claim_Payload (Bytes, I) (110) = 1);
+            pragma Assert
+              (SIA_Continuity_Observation_Wire.Claim_Payload
+                 (Claim_Payload (Bytes, I)) (109) =
+                   Claim_Payload (Bytes, I) (110));
+            pragma Assert
+              (not SIA_Continuity_Observation_Wire.Valid
+                 (Claim_Payload (Bytes, I)));
+            Decode (Bytes, Accepted, Item);
+            pragma Assert (not Accepted and then Item = Empty_Current);
+      end Check_Available_Claim;
+      procedure Check_Available_Operation
+        (Code : Digest_Byte; I : Operation_Index)
+      with Global => null, Always_Terminates is
+         Bytes : Current_Bytes;
+         Item : Current_Evidence;
+         Accepted : Boolean;
+      begin
+            Bytes := [others => 0];
+            Bytes := (Bytes with delta
+              (9568 + (I - 1) * 160) + 1 => Code,
+              (9568 + (I - 1) * 160) + 132 => 1);
+            pragma Assert (Operation_Payload (Bytes, I) (132) = 1);
+            pragma Assert
+              (SIA_Continuity_Observation_Wire.Operation_Payload
+                 (Operation_Payload (Bytes, I)) (131) =
+                   Operation_Payload (Bytes, I) (132));
+            pragma Assert
+              (not SIA_Continuity_Observation_Wire.Valid
+                 (Operation_Payload (Bytes, I)));
+            Decode (Bytes, Accepted, Item);
+            pragma Assert (not Accepted and then Item = Empty_Current);
+      end Check_Available_Operation;
    begin
       --  Missing, retained and retracted states never bypass nested checks.
       --  The per-slot tests above separately cover Unknown and bad state codes.
       for Code in Digest_Byte range 1 .. 3 loop
          for I in Claim_Index loop
-            Bytes := [others => 0];
-            Bytes := (Bytes with delta
-              (352 + (I - 1) * 144) + 1 => Code,
-              (352 + (I - 1) * 144) + 110 => 1);
-            Decode (Bytes, Accepted, Item);
-            pragma Assert (not Accepted and then Item = Empty_Current);
+            Check_Available_Claim (Code, I);
          end loop;
          for I in Operation_Index loop
-            Bytes := [others => 0];
-            Bytes := (Bytes with delta
-              (9568 + (I - 1) * 160) + 1 => Code,
-              (9568 + (I - 1) * 160) + 132 => 1);
-            Decode (Bytes, Accepted, Item);
-            pragma Assert (not Accepted and then Item = Empty_Current);
+            Check_Available_Operation (Code, I);
          end loop;
       end loop;
    end Check_Available_Refusal;
@@ -278,17 +336,31 @@ procedure Continuity_Current_Wire_Tests with SPARK_Mode is
    procedure Check_Availability with Global => null, Always_Terminates is
       Positions : constant array (1 .. 6) of Positive :=
         [353, 4817, 9425, 9569, 10689, 11969];
-      Bytes : Current_Bytes;
-      Item : Current_Evidence;
-      Accepted : Boolean;
-   begin
-      for Position of Positions loop
-         for Code in Digest_Byte loop
+      subtype Availability_Case_Index is Positive range
+        Positions'First .. Positions'Last;
+
+      procedure Check_Availability_Case
+        (Case_Number : Availability_Case_Index; Code : Digest_Byte)
+        with Global => null, Always_Terminates
+      is
+         Position : constant Positive := Positions (Case_Number);
+         Bytes : Current_Bytes;
+         Item : Current_Evidence;
+         Accepted : Boolean;
+      begin
             Bytes := [others => 0];
             Bytes := (Bytes with delta Position => Code);
+            pragma Assert
+              (Claim_Payload (Bytes, 32) (1) = Bytes (4817));
+            pragma Assert (Valid (Bytes) = (Code <= 3));
             Decode (Bytes, Accepted, Item);
             pragma Assert (Accepted = (Code <= 3));
             pragma Assert (if not Accepted then Item = Empty_Current);
+      end Check_Availability_Case;
+   begin
+      for Case_Number in Availability_Case_Index loop
+         for Code in Digest_Byte loop
+            Check_Availability_Case (Case_Number, Code);
          end loop;
       end loop;
    end Check_Availability;
