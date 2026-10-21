@@ -60,6 +60,24 @@ only `state=pending` to `state=none`. Required terminal CI remains the next
 merge gate. Neither PR is merged at this observation, and source-merge
 authorization does not discharge host commissioning or release acceptance.
 
+The same owner added the fixed Checkpoint representation boundary on this
+experimental branch; see [the source-bound report](CONTINUITY-CHECKPOINT-CODEC.md).
+Strict build and all twelve runtime harnesses passed. The focused decoder core
+discharged 77 reported checks with clean raw diagnostics; complete test-harness
+proof still timed out at its existing limit. An isolated canonical-empty check
+passed, and a prover-order experiment did not close the complete harness gate
+and remains unadopted. All failures and exact source are retained in a versioned
+bundle. Full-project proof, production integration and A22/A23 remain open.
+
+The latest queued model note was also returned through the installed CLI with
+an exact body match and unchanged launcher/runtime hashes. The
+[readback evidence](INSTALLED-NOTE-RECALL-20261021-V2.json) binds request
+`69b90b6bbcab4e088d461d20a26896d4` to source checkpoint `ab81aeb`.
+This is one direct source-addressed retrieval, not complete capture, semantic
+retrieval, task restoration or an approval. Host administrator authentication
+is still unavailable, and both PR #42 full test jobs remain in progress.
+The Goal remains active; these gates restrict their dependent actions only.
+
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
 decides consequential policy; Linux must enforce protected writes, identity,

@@ -52,6 +52,11 @@ checkpoints. See [`CONTINUITY-POLICY.md`](CONTINUITY-POLICY.md) for its contract
 producer assumptions and current verification status. Its result cannot grant
 an action, establish an approval or authorize retrying an uncertain operation.
 
+The fixed checkpoint record decoder and its independent vectors are described
+in [`CONTINUITY-CHECKPOINT-CODEC.md`](../docs/CONTINUITY-CHECKPOINT-CODEC.md).
+Its focused core proof and runtime passes are separate from the incomplete
+combined-harness/full-project proof. No installed adapter calls it yet.
+
 `SIA_Transactions` adds a pure reducer for one transaction's durable prefix.
 It admits only the immediate successor, treats an exact most-recent receipt
 retry as already applied, and preserves state on refusal or retry. It cannot

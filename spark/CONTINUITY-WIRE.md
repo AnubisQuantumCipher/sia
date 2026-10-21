@@ -373,3 +373,14 @@ different-account Ollama finding on marketplace request #12332 in a separate
 exact-release worktree. `a861e0f` is the preceding record-codec checkpoint.
 This observation increment remains a non-final source checkpoint: it is not
 installed, released, or accepted as a complete proof or continuity adapter.
+
+## Complete Checkpoint record increment
+
+`SIA_Continuity_Checkpoint_Wire` now decodes the complete fixed Checkpoint record,
+including every inactive slot, under an exact field-correspondence contract.
+The [implementation/evidence report](../docs/CONTINUITY-CHECKPOINT-CODEC.md)
+retains the source-bound strict build and twelve runtime passes, the scoped
+77-check core proof, failed combined-harness proofs and the unadopted prover-order
+experiment. These are experimental representation results. Current_Evidence,
+the outer frame, actual I/O, authentication and installed task restoration
+remain unimplemented or unqualified; the full-project proof remains open.
