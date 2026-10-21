@@ -68,6 +68,12 @@ proof still timed out at its existing limit. An isolated canonical-empty check
 passed, and a prover-order experiment did not close the complete harness gate
 and remains unadopted. All failures and exact source are retained in a versioned
 bundle. Full-project proof, production integration and A22/A23 remain open.
+Fresh committed-source reproduction of `ac0a358` then repeated the strict build,
+all twelve runtime harnesses and the scoped 77-check core proof; its
+[separate receipt](CONTINUITY-CHECKPOINT-COMMITTED-EVIDENCE-V2.json) does not
+close the still-failing combined harness or full-project proof.
+Independent actual GPT-6.1 review confirmed that scoped committed-source
+correspondence without replaying proofs or granting system acceptance.
 
 The latest queued model note was also returned through the installed CLI with
 an exact body match and unchanged launcher/runtime hashes. The

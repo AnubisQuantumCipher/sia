@@ -76,10 +76,24 @@ verified source/archive correspondence and the core's raw/summary result for
 this non-final checkpoint. It did not replay the proof or close the remaining
 harness, full-project, committed-reproduction or integration gates.
 
+After that checkpoint was committed and pushed, a fresh archive of
+`ac0a35857180381ff07feff7eef5046ed25789e3` reproduced the strict build,
+all twelve runtime harnesses and the focused 77-check core proof. The
+[committed-source evidence](CONTINUITY-CHECKPOINT-COMMITTED-EVIDENCE-V2.json)
+binds the archive, complete source inventory, unchanged tool identities,
+commands and raw reports. Its derivation checks the exact command roster,
+copied/generated report equality and the existing strict report predicates.
+This closes committed reproduction only for that declared scope. The known
+failing complete-harness proof was not repeated or relabeled as passing.
+An [independent read-only check](evidence/continuity-checkpoint-committed-review-v1.txt)
+confirmed this correspondence, including the current command arguments and
+tool rosters. The retainer is a consistency aid, not a qualified general
+acceptance gate; its narrower automated checks remain explicit in the review.
+
 ## Remaining acceptance
 
 Complete harness and full-project proof, source-bound raw/summary coverage,
-fresh committed-source reproduction, independent evidence review and target
+complete committed-source reproduction, independent evidence review and target
 resource qualification remain required. The prior full-project 600-second
 failure is unchanged. No 900-second campaign is authorized or claimed.
 
