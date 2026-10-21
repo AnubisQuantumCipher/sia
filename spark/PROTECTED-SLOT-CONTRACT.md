@@ -8,8 +8,11 @@ All obligations in `docs/ASSURANCE-GOAL.md` remain required.
 The non-final refinement in `PROTECTED-SLOT-RECOVERY.md` specifies reconciliation
 of an authenticated final-named intent whose prior directory sync is unknown.
 Under exact current recovery authority, synchronize it before any payload
-effect; do not infer historical durability from visibility. Its temporal
-admission and control-freshness prerequisites remain OPEN before design freeze.
+effect; do not infer historical durability from visibility. The
+[timing decision](PROTECTED-SLOT-ADMISSION-TIME.md) selects sampled admission
+for this new protocol only. Complete temporal schemas, authenticated clock,
+phase bounds and control-freshness/fencing prerequisites remain OPEN before
+design freeze or protected implementation acceptance.
 
 ## Purpose and authority
 

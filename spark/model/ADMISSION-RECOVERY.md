@@ -25,9 +25,13 @@ while the section runs. No sample or staged file authorizes reconstruction
 after a crash. Only a retained authenticated final-named intent can enter
 the separately authorized synchronization/recovery path.
 
-This choice is still subject to independent review and full protocol freeze.
-An operator requiring expiry to cancel all later completion needs a different
-explicit contract, not an unsupported stronger claim about this one.
+The subsequent [timing decision](../PROTECTED-SLOT-ADMISSION-TIME.md) selects
+this interpretation for the new disposable protocol after independent design
+review. Full temporal protocol freeze remains OPEN, including authenticated
+clock/domain production, schemas, freshness/fencing at S, phase budgets and
+Query timing. This model has not acquired those properties. An operator
+requiring expiry to cancel all later completion needs a different explicit
+contract, not an unsupported stronger claim about this one.
 
 ## Abstraction and checks
 

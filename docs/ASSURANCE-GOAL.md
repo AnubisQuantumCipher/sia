@@ -344,9 +344,14 @@ The non-final recovery proposal in
 separates new publication, exact-operation recovery and current read authority.
 It treats a visible signed intent as requiring durability reconciliation and
 requires current recovery permission during uninterrupted continuation too.
-Admission timing, independently protected control freshness, persistent schemas
-and bounded phase execution remain OPEN; this is not an implemented or accepted
-recovery service.
+The subsequent [admission timing decision](../spark/PROTECTED-SLOT-ADMISSION-TIME.md)
+selects protected sampled validity for the new disposable protocol and specifies
+the intent-rename/parent-sync crash rule. Independently reviewed clarification
+requires current recovery-control serialization/fencing at S, rather than a
+cached remote read. This changes no existing accepted proposal guarantee.
+Authenticated clock/domain production, exact persistent schemas, independent
+freshness, phase bounds and Query timing remain OPEN; this is not an implemented
+or accepted recovery service.
 An experimental sampled-admission model is documented in
 [`spark/model/ADMISSION-RECOVERY.md`](../spark/model/ADMISSION-RECOVERY.md).
 It exposes completion after grant expiry and checks the abstract intent-sync

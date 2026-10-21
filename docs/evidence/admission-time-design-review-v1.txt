@@ -1,0 +1,27 @@
+Actual GPT-6.1 independent read-only design review, 2026-10-21.
+
+No contradiction or lowering of an existing accepted guarantee found: this
+selects semantics for a new, uncommissioned effect protocol and explicitly
+leaves existing proposal APIs unchanged.
+
+Initial review required consistent parent status/linking and explicit current
+recovery-control serialization across S and intent signing/publication. Both
+clarifications were closed in the follow-up review. The sample step requires
+an authenticated, section-bound provider/fencing witness; cached remote reads
+or a local lease alone are insufficient. Loss-of-authority behavior remains
+an implementation prerequisite.
+
+Parent contract, recovery, wire and model documents consistently distinguish
+the selected sampled-admission interpretation from the still-OPEN complete
+temporal protocol. The clock-source record limits its local observation to
+API availability and preserves authentication/rollback/timing nonclaims.
+
+The surviving-final-intent crash rule is coherent: synchronize under exact
+current recovery authority before payload effect. Staging or lost final intent
+cannot recreate admission. Historical S establishes neither continuous grant
+validity nor past fsync success.
+
+No new contradiction or implicit effect permission found. Protected effects
+remain blocked on schemas, producers, freshness/fencing and phase qualification.
+This is design-review closure only, not protected execution, commissioning,
+new mathematical proof or system acceptance. No jobs or edits performed.

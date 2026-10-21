@@ -133,8 +133,11 @@ Reserved || Signature`, where both time fields use eight bytes, Action and
 Active each use one byte, Reserved is six zero bytes and Signature is 64 bytes.
 Action is exactly 1 Publish or 2 Query; Active is exactly 0 or 1. Both time
 scalars must fit `SIA_Request_Admission.Tick`; reject the high bit before
-conversion. Units, clock sampling and domain production remain explicit freeze
-prerequisites: no implementation may choose them implicitly. The policy
+conversion. The [timing decision](PROTECTED-SLOT-ADMISSION-TIME.md) selects
+Linux CLOCK_BOOTTIME in integer nanoseconds and protected sampled admission
+for this new protocol. Authenticated clock/domain production and canonical
+domain encoding remain freeze prerequisites; implementations cannot substitute
+an implicit clock, unit or fallback. The policy
 requires an active grant and `Not_Before <= observed_tick < Expires`; an empty
 or reversed interval grants nothing. Requests contain no authoritative clock tick.
 

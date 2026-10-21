@@ -79,18 +79,19 @@ the encoded statement; descriptor observations and durable ordering must still
 justify its claims. The intent's own final publication and parent synchronization
 must complete before any payload effect.
 
-The temporal admission contract remains OPEN: validity at an authenticated
-sampled admission tick and validity through durable intent publication are
-different guarantees. The lease does not stop time. Neither this proposal nor
-an earlier validity Boolean establishes the latter guarantee. Freeze the
-admission linearization rule, expiry checks and corresponding crash table
-before implementing either interpretation; do not change existing grant
-lifetime semantics by implication.
+The [admission timing decision](PROTECTED-SLOT-ADMISSION-TIME.md) now selects
+validity at the protected sample for this new disposable protocol. It explicitly
+allows post-expiry completion under independently current recovery authority;
+it never claims continuous grant validity through signing or fsync. The lease
+does not stop time. Existing proposal APIs and accepted lifetime guarantees
+remain unchanged. The decision supplies the sample/rename-before-sync crash
+rule and Linux clock/unit choice. Authenticated clock production, exact
+schemas, current control/fencing at S, phase deadlines and Query timing remain
+OPEN. This selects a policy interpretation, not the complete temporal protocol.
 
-The experimental candidate and its finite model are described in
-`model/ADMISSION-RECOVERY.md`: validity at the protected sample, with current
-independent recovery permission gating later effects. This candidate explicitly
-allows post-expiry completion and does not yet close the temporal freeze gate.
+The experimental finite model is described in `model/ADMISSION-RECOVERY.md`.
+Its abstract expiry/synchronization checks do not close those remaining gates
+or commission the selected timing decision.
 
 For an authenticated final intent, write-grant expiry, write-grant removal or a
 new service epoch prevents new admission but does not erase retained evidence.
