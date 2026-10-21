@@ -178,7 +178,7 @@ class ManifestControls(unittest.TestCase):
         self.assertTrue(any('A04: missing joined installed/negative' in gap for gap in result['gaps']))
 
     def test_wide_or_noncanonical_numeric_rows_cannot_disappear(self):
-        for name, prefix, count, columns in CHECK.TABLES:
+        for name, prefix, _count, columns in CHECK.TABLES:
             original = (self.root / name).read_bytes()
             for suffix in ('100', '10', '001', '1bad'):
                 for spacing in ('| ', '|', '  |\t'):

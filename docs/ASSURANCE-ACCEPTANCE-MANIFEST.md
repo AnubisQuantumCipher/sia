@@ -102,6 +102,9 @@ Power of Ten compliance or avionics certification.
 CI treats Python warnings as errors for the focused checker suite. Comprehensive
 pinned Python static analysis remains OPEN; the bounded AST inventory alone
 cannot close that requirement or prove a complete call graph.
+The later [partial pinned correctness lane](ASSURANCE-PYTHON-ANALYSIS.md)
+adds explicit strict pairing and a finite analyzer scope without closing the
+broader analysis obligation or waiving the retained baseline findings.
 
 The [independent committed-source reproduction](ASSURANCE-MANIFEST-COMMITTED-EVIDENCE-V1.json)
 uses a fresh archive of `b947dbdd41f3a36f2e9a35cca8fa5dd3955e6ff7`.

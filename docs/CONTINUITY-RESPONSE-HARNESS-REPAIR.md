@@ -36,7 +36,14 @@ protected authority and installed continuity are outside this proof.
 The improvement makes the retained assertions tractable through a smaller
 proof boundary. Runtime tests still exercise every original combination.
 
-Fresh committed-source reproduction is the next acceptance step. Complete
-all-unit proof and its original raw/summary coverage gate remain required;
+The [fresh committed-source reproduction](CONTINUITY-RESPONSE-COMMITTED-EVIDENCE-V1.json)
+at `1292d328ebc27680a040a263a7445cb04b2d82bd` uses a new archive with no
+overlay. Strict build, all fifteen original runtimes and complete response-unit
+proof pass again, with 90 reported checks and all nine intended declarations.
+Source/tool identities stayed unchanged and the raw diagnostic/exclusion
+inspection passed. No focused helper proof was rerun; the result is a separate
+committed execution, not a relabeling of the development overlay.
+
+Complete all-unit proof and its original raw/summary coverage gate remain required;
 the inherited full-project timeout is not closed by this unit result.
 All other A/G/C and Power of Ten obligations remain binding.

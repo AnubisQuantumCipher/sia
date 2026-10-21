@@ -439,7 +439,7 @@ def check_obligations(root, rows, gaps):
     expected = normative_rows(root)
     fixed = ('id', 'document', 'document_sha256', 'line', 'normative_row', 'mandatory',
              'required_coverage')
-    for row, original in zip(rows, expected):
+    for row, original in zip(rows, expected, strict=True):
         keys(row, 'id document document_sha256 line normative_row mandatory required_coverage case_ids dependencies dependency_basis')
         if any(row[key] != original[key] for key in fixed) or row['mandatory'] is not True:
             raise Refusal('normative requirement weakened or mismatched')
@@ -700,7 +700,7 @@ def check_power_ten(root, rows, cases, inventory, gaps):
                 for category in P10_CATEGORIES]
     if type(rows) is not list or len(rows) != len(expected):
         raise Refusal('missing Power of Ten applicability roster')
-    for row, pair in zip(rows, expected):
+    for row, pair in zip(rows, expected, strict=True):
         keys(row, 'rule category source_scope controls')
         if (row['rule'], row['category']) != pair:
             raise Refusal('Power of Ten applicability roster changed')

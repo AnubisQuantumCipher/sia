@@ -158,8 +158,12 @@ The later [response-harness proof repair](CONTINUITY-RESPONSE-HARNESS-REPAIR.md)
 isolates the original unused-family body behind a statically called, typed
 helper while preserving every original loop, domain and assertion. Independent
 review, strict build, all fifteen runtimes and complete response-harness proof
-pass on the exact retained overlay. Full-project proof and committed-source
-reproduction remain separate required gates; no system acceptance follows.
+pass on the exact retained overlay. A separate
+[fresh committed-source run](CONTINUITY-RESPONSE-COMMITTED-EVIDENCE-V1.json)
+at `1292d328ebc27680a040a263a7445cb04b2d82bd` repeats the strict build, all
+fifteen runtimes and complete response-unit proof without an overlay. Its
+90 checks and nine declarations remain a unit scope. Full-project proof is
+still required; no system acceptance follows.
 
 The subsequent [disposable I/O increment](CONTINUITY-IO.md) joins the fixed
 frame evaluator and response encoder through a bounded Linux process and
