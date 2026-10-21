@@ -1,0 +1,21 @@
+[Unit]
+Description=SIA Ollama local-account firewall
+DefaultDependencies=no
+After=local-fs.target nftables.service ufw.service firewalld.service
+Before=systemd-user-sessions.service
+RequiresMountsFor=/usr/local/libexec /etc/sia
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I -S -B /usr/local/libexec/sia-ollama-guard apply
+RemainAfterExit=yes
+TimeoutStartSec=45
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

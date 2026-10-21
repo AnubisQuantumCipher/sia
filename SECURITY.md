@@ -20,7 +20,14 @@ Secret-shaped spans (key blocks, JWTs,
 tokens, `.ssh` paths, password fields) are redacted at the sense
 boundary, before anything reaches the corpus or git; every omission is
 counted in SOURCE HEALTH. Memory storage and embeddings are local; embeddings
-use a loopback-only Ollama socket. External-network paths owned by this
+use a loopback-only Ollama socket. This candidate adds an administrator-owned
+[account guard](docs/OLLAMA-ACCOUNT-GUARD.md) because loopback alone does not
+authenticate local clients. Linux UID filtering protects the whole API from
+ordinary other accounts; same-UID code and administrators remain outside that
+boundary. Root firewall replacement can invalidate protection, so service
+state is not continuous kernel attestation. Installed protection remains
+unqualified until the documented lifecycle and deployment gates pass.
+External-network paths owned by this
 repository are the installer's downloads, the optional judge through your
 configured Claude CLI authentication/account/provider, and the optional
 continuity adapter when the operator configures a remote recovery repository;

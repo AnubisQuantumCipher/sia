@@ -3,6 +3,7 @@ Description=Ollama local model server (SIA embeddings)
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/python3 -I -S -B /usr/local/libexec/sia-ollama-guard gate
 ExecStart=%h/opt/ollama/bin/ollama serve
 Environment=OLLAMA_HOST=127.0.0.1:11434
 Environment=OLLAMA_KEEP_ALIVE=30m
