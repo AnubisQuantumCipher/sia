@@ -1734,7 +1734,7 @@ path = sys.argv[1]
 parent = os.path.dirname(path)
 limit = 16_777_216
 flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
 try:
     fd = os.open(path, flags)
 except FileNotFoundError:
