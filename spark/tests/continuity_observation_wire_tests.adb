@@ -197,6 +197,12 @@ procedure Continuity_Observation_Wire_Tests with SPARK_Mode is
            208 + I => Third (I), 240 + I => Fourth (I),
            288 + I => Second (I), 320 + I => Third (I),
            352 + I => Fourth (I), 384 + I => Fifth (I));
+         --  Only digest bytes change. Preserve the scalar and padding facts
+         --  explicitly across the loop's proof cut point.
+         pragma Loop_Invariant
+           (for all J in Transition_Observation_Bytes'Range =>
+              (if J not in 145 .. 272 | 289 .. 416 then
+                 Bytes (J) = Bytes'Loop_Entry (J)));
          pragma Loop_Invariant (Valid (Bytes));
          pragma Loop_Invariant
            (Bytes (273) = 1 and then Bytes (274) = 1 and then
