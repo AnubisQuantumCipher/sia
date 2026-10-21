@@ -39,6 +39,15 @@ reports are not summed or treated as full-project coverage. The earlier
 600-second full-project failure remains open; no new full-project run or
 larger proof budget is claimed.
 
+After checkpoint `15b613aec79c7ebb5374941d4c1087b986b1d066` was pushed and
+read back, a fresh archive with no overlay repeated strict compilation,
+all fourteen runtimes and the scoped 58-check frame-core proof. The
+[committed reproduction](CONTINUITY-FRAME-COMMITTED-EVIDENCE.json) binds the
+complete source inventory, exact commands/caps, equal tool rosters and raw
+reports. The [actual GPT-6.1 correspondence review](evidence/continuity-frame-committed-review-v1.txt)
+confirmed that limited scope without replaying proof. The unchanged failing
+complete harness and full-project campaign were not repeated or relabeled.
+
 Tests include independent nonuniform frame vectors distinguishing both
 checkpoint positions, current evidence, and first/interior/last transition
 observations with complete expected-record comparisons. Header byte sweeps,
