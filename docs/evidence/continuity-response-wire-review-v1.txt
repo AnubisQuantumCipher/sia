@@ -1,0 +1,19 @@
+Retained model-generated actual GPT-6.1 source/evidence correspondence report.
+No independent execution replay, jobs, edits or complete-system acceptance.
+
+No concrete correspondence or claims blocker found for this experimental
+checkpoint. Verified current v2 source hashes, retained artifact hashes, equal
+tool rosters and bundle/member correspondence. Scoped report covers 31 checks/
+all 13 response-core entities, clean raw diagnostics and empty Assume/skip
+annotation arrays.
+
+Documentation preserves v1 retention refusal and both complete-harness timeouts.
+It distinguishes representation acceptance from policy success and states
+Matches correlation/authenticity limits. Private storage metadata is absent
+from the bundle. Complete harness/full-project proof and installed continuity
+remain open.
+
+Reviewed SHA-256:
+document 390efd5edd11655b2a6b24369e95324aed9104edde75038a4b2dc22fe850be74
+manifest 9459659848bd30548b414950bb761c72841e33eda75c14f10679c5905676b742
+bundle   779afaaa333e352d21bb4177df2d5a2c8dc6142b2ce2074666c263d5d6e509c2

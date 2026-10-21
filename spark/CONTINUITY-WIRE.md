@@ -404,3 +404,13 @@ The [scoped report](../docs/CONTINUITY-FRAME-CODEC.md) retains the failed build,
 strict compilation/runtime passes, scoped core proof, incomplete harness proof
 and independent review findings. Stream framing, response bytes, process
 resource qualification and authenticated installed restoration remain open.
+
+## Fixed response increment
+
+`SIA_Continuity_Response_Wire` implements the fixed response representation,
+canonical unused result families and syntax/family/exit matching. The
+[scoped report](../docs/CONTINUITY-RESPONSE-CODEC.md) preserves literal protocol
+controls, a strict-retention refusal caused by overloaded report names, the
+explicit-name repair, current core proof and incomplete harness proofs.
+`Matches` does not authenticate a process/request instance or recompute the
+original request's classification. Actual stream supervision remains open.

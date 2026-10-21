@@ -105,6 +105,15 @@ classifier composition in memory. Strict build/all fourteen runtimes and the
 scoped 58-check core proof pass; complete harness proof still times out at 120
 seconds. Actual I/O, authentic producers and installed restoration remain open.
 
+The [fixed response increment](CONTINUITY-RESPONSE-CODEC.md) then adds exact
+64-byte result encoding/decoding and request-family/exit matching. Strict build,
+all fifteen runtimes and the scoped 31-check core proof pass after a report-name
+retention refusal was repaired without changing the checker or semantics.
+Both complete response-harness proofs still time out at 120 seconds; all failed
+source/reports remain. Matching a transport refusal is not policy success or
+request-instance authentication. No actual I/O or installed restoration is
+claimed from these pure codecs.
+
 Installed direct recall also returned request
 `b5f46f6010fd439ab069bf0363bbe074` with the exact queued body and unchanged
 launcher/runtime hashes. The retained local records
