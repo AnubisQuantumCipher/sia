@@ -1,0 +1,21 @@
+{
+  "client_elapsed_ms": 36837,
+  "ended": "2026-10-21T07:19:29.233Z",
+  "intended_target_request": "b5f46f6010fd439ab069bf0363bbe074",
+  "intended_target_returned": false,
+  "isError": false,
+  "kind": "OBSERVED actual MCP search; not continuity acceptance",
+  "limitations": [
+    "One chosen query, repeated across two interfaces; no accuracy estimate.",
+    "MCP executable/dependency identity was not attested by this call.",
+    "A miss establishes neither lost storage nor absent indexing.",
+    "No future latency, automatic capture or restoration guarantee."
+  ],
+  "query": "SIA assurance single implementation owner Current_Evidence next step",
+  "reported_boundary": "boundary: senses live \u00b7 chains pass \u00b7 graph complete \u00b7 6 span(s) redacted at ingest \u00b7 semantic recall \u00b7 associative rerank off by measured default; retrieval.associative_rerank enables it \u00b7 absence of recall \u2260 evidence of absence",
+  "retained_source": "/home/sicarii/Work/sia-assurance-evidence-20261019/installed-mcp-semantic-smoke-20261021-v1.json",
+  "retained_source_sha256": "21efb11361610fbeea6258b85485a4eb25e97b930ad497921a0bce650d11cf4d",
+  "returned_text_sha256": "7e71d3180c2dd4c653fe79eb2dd01846f24440831a6de63ff967675637683f2d",
+  "started": "2026-10-21T07:18:52.396Z",
+  "tool": "mcp__sia__search"
+}

@@ -65,6 +65,16 @@ An [independent evidence review](evidence/continuity-current-wire-review-v1.txt)
 confirmed source/archive/report correspondence and the limited core scope.
 It performed no proof replay and granted no complete-system acceptance.
 
+After code commit `e0725f7f0cc5fa830316d12474a9932c3360214f` was pushed and
+read back, a fresh archive of that exact commit repeated the strict build,
+all thirteen runtime harnesses and the scoped 73-check core proof. The
+[committed-source receipt](CONTINUITY-CURRENT-COMMITTED-EVIDENCE.json) has an
+empty overlay and binds the archive, complete source inventory, exact commands,
+tool identities and raw reports. Its
+[independent correspondence review](evidence/continuity-current-committed-review-v1.txt)
+confirmed that scope without replaying the proof. The unchanged failing complete
+harness was not repeated or relabeled as passing.
+
 One job, 512 MB per prover, the 10-second check limit and existing command
 deadlines remain unchanged. No proof exclusion, warning suppression, assumption
 annotation, original-case removal or additional permission is introduced.
@@ -72,7 +82,7 @@ The earlier full-project 600-second failure remains open. A passing core proof
 or test subset cannot discharge it.
 
 Next acceptance requires complete harness and full-project proof, raw/summary
-coverage checks, exact committed-source reproduction and independent evidence
+coverage checks, reproduction of that complete scope and independent evidence
 review. The next implementation step is outer framing and exact classifier
 composition. Authenticated producers, I/O/resource qualification, original-event
 capture, fault-tested publication and real harness restoration remain separate

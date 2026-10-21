@@ -101,6 +101,27 @@ launcher/runtime hashes. The retained local records
 checkpoint `a2bd8d64b7f92230ce6f49d0f59311c3661ed01b`. It is model prose and
 direct retrieval only; no permission or semantic-continuity guarantee follows.
 
+Fresh committed reproduction of Current_Evidence code commit `e0725f7`
+repeated the strict build, all thirteen runtimes and the scoped 73-check core
+proof. The [source-bound receipt](CONTINUITY-CURRENT-COMMITTED-EVIDENCE.json)
+and independent correspondence review preserve the incomplete harness and
+full-project gates.
+
+A subsequent [installed semantic smoke query](INSTALLED-SEMANTIC-SMOKE-20261021.json)
+completed within the existing recall budget, but did not surface the same
+known note returned by direct recall. It returned older material. The CLI
+reported live senses, passing chains, complete graph and redacted ingest spans;
+these status labels did not establish relevance. This chosen development query
+is a retained retrieval miss, not a held-out accuracy measurement or evidence
+that the note is absent from storage/indexing. The continuity adapter must
+restore by explicit task/checkpoint identities and validate current source;
+semantic ranking alone cannot supply that contract.
+The [actual SIA MCP search tool](INSTALLED-MCP-SEMANTIC-SMOKE-20261021.json)
+then completed the identical query without a tool error and also missed the
+known target. This verifies one agent-facing invocation, not the MCP executable
+identity, a retrieval-accuracy rate, an automatic restoration hook or a future
+latency guarantee. Both misses remain visible.
+
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
 decides consequential policy; Linux must enforce protected writes, identity,
@@ -125,7 +146,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A12 | Linux enforcement and bypass resistance | Restricted actuator actually owns protected state; hostile same-user tests; no Python bypass of denial | UNRUN |
 | A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; v1.8.4 release/tag readback complete and marketplace request filed; complete offline system verifier, portable proof CI and marketplace publication UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | PARTIAL: repository claims corrected and historical preview inspected; unattached illustrative visualization unavailable; final enforced-architecture documentation pending |
-| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: installed readiness passed; direct no-touch recall returned the queued model note with an exact body-hash match. A prior probe timed out and its file-limit confound remains visible. Semantic retrieval, complete capture and task restoration remain unqualified; see INSTALLED-NOTE-RECALL-20261021.json |
+| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: direct no-touch recall returned the queued model note with an exact body-hash match. A semantic smoke query completed but missed that known target; earlier timeout/file-limit-confounded probes remain visible. Retrieval accuracy, complete capture and task restoration remain unqualified; see INSTALLED-SEMANTIC-SMOKE-20261021.json and earlier readback evidence |
 | A16 | Authoritative history and capture gaps | Preserved original provenance, identity and ordering; explicit missing/unavailable capture; guarantees scoped to successfully captured events | PARTIAL: origin/completeness predicates exist; complete lifecycle and gap acceptance OPEN |
 | A17 | Authoritative retrieval and retirement | SPARK-governed current read/retire decisions, durable replay/tombstone evidence and no bypass | OPEN: protected Query proposed; full retirement and production mediation UNRUN |
 | A18 | Replaceable derived memory | Versioned evidence-linked dreams/summaries/embeddings; retraction and rebuild preserve authoritative history | End-to-end acceptance UNRUN |
