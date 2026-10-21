@@ -1,0 +1,504 @@
+{
+  "artifacts_sha256": {
+    "all-proof-continuity_observation_wire_tests.spark": "152db5770697225aef0589990578b63425c04dfe02204a816daa2d89aac27555",
+    "all-proof.log": "146af1baf4dbfc0f6457e447b977d8ee818e604487e11d6c1d8b5667525c5c24",
+    "base.tar": "464383cd89660174a633237b8cfee8af16d2546a09557307de467b9d5f2f4c3d",
+    "build.log": "d368d2964f755d7ba5fa867e57bb5b20f4d0e18e64a7c2455d03f9b497e94d4f",
+    "consolidation_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity_observation_wire_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity_record_wire_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "continuity_transition_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grant_lifetime_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "request_admission_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "request_wire_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "retraction_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "transaction_tests-runtime.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "candidate_adopted": false,
+  "candidate_patch": {
+    "matches_reviewed_overlay": true,
+    "original_sha256": "293eb62d8aa75cce96644116cf559bc9448f53f3b3c314f13201949513fed8f0",
+    "path": "evidence/continuity-modular-search-v1.patch.gz",
+    "sha256": "6cc7c5237b6e586c9fb2b7c5e82a60679b6d02c03430e8a0f6bb1de5489b4611"
+  },
+  "evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "generator_sha256": "f7f3148d828b06ce465e8938d6c43bddac1589aa5f1d6e0af5e6670193ae8dce",
+  "limitations": [
+    "Only terminal commands and matching complete coverage can establish development gate success.",
+    "Partial reports cannot be combined with earlier focused results.",
+    "Development overlays still require adoption and committed-source reproduction.",
+    "Independent review, authentic producers and installed restoration are separate gates.",
+    "Python runtime allocation and hostile concurrent filesystem mutation are not formally bounded here.",
+    "Local evidence custody and toolchain authenticity remain environmental assumptions.",
+    "No universal recall, capture, whole-system proof or marketplace claim."
+  ],
+  "limits_changed": false,
+  "limits_used": {
+    "full_seconds": 600,
+    "jobs": 1,
+    "prover_memory_mb": 512,
+    "prover_seconds": 10
+  },
+  "prior_preflight_refusal_sha256": "1294da99359c197b2e5649e8ad65c64dca56ec81f6ffb238a67e28c50783310f",
+  "receipt": {
+    "all_proof_raw_sha256": {
+      "consolidation_tests.spark": "bddc8dc1fe5249bacb4b2f32bae9e832c6d7b6745645ecaf3c482615880e01be",
+      "continuity_observation_wire_tests.spark": "152db5770697225aef0589990578b63425c04dfe02204a816daa2d89aac27555",
+      "continuity_operation_checks.spark": "a56d86ec64513b389548602e4fd850b2d05b745b9246cfc5d92ce1396ddade6c",
+      "continuity_predicate_checks.spark": "ac37623a243aa20c9b8c741f757a70d4d58b25dcbc45fc1beb921a0f11f4f301",
+      "continuity_record_wire_tests.spark": "f8b392670a2f7de77e6c91de4e13cd2e8d8bdb2c8d59e28f18767bfc4e05887a",
+      "continuity_tests.spark": "6439568c2794135e512943e532785334be44b094c475b502eb0162d6ffb4c5b5",
+      "continuity_transition_checks.spark": "c27459dcc2e66866509f1ff1c93672925fa405c106caee7f747032cd501743ad",
+      "continuity_transition_tests.spark": "d9fb2bb370115d5e08e2c4e33a3bb028fb2c6ff2948a867aeb137e2008a52465",
+      "grant_lifetime_tests.spark": "a03ad5be71493c44645016328e4ba7a0defb8db7a0b8389f0678a14161eb0b31",
+      "policy_tests.spark": "60639ac7149511c1983f2fead76575546b5d4cb82c8fbd40e06b966f9681e2ee",
+      "request_admission_tests.spark": "975bd864072a189b86fd6d7f4a43f83e440dc6236945297000422e7d87c5fb98",
+      "request_wire_tests.spark": "a5794a729f2336ab5dfb8efaa65ebdf4873db94de8086f3d354dcdaa9bcc1f70",
+      "retraction_tests.spark": "17c42c7e489818a55e5ea4053f4c7f1e91529260f1134234b01db60dc3df3039",
+      "sia_request_admission.spark": "19d26573e5ba19b6c5963b165372210681678c3ce0c868357c44121c77c52602",
+      "transaction_tests.spark": "c0f9a555ef5a78cc0d284217ab2c0b6e4d7783a72d2f1dbd52775089dc120e40"
+    },
+    "base": "b34b9a77fc5c4a4ec387c6264aebf1234474caf7",
+    "base_archive_sha256": "464383cd89660174a633237b8cfee8af16d2546a09557307de467b9d5f2f4c3d",
+    "candidate_adopted": false,
+    "checks": [
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "120s",
+          "gprbuild",
+          "-p",
+          "-P",
+          "spark/sia_assurance.gpr"
+        ],
+        "elapsed_seconds": 12.885514508001506,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "build"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/policy_tests"
+        ],
+        "elapsed_seconds": 0.001573001965880394,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "policy_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/transaction_tests"
+        ],
+        "elapsed_seconds": 0.0015443770098499954,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "transaction_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_wire_tests"
+        ],
+        "elapsed_seconds": 0.001565503014717251,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "request_wire_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_admission_tests"
+        ],
+        "elapsed_seconds": 0.0015369189786724746,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "request_admission_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/grant_lifetime_tests"
+        ],
+        "elapsed_seconds": 0.0013902520295232534,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "grant_lifetime_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/retraction_tests"
+        ],
+        "elapsed_seconds": 0.001401835004799068,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "retraction_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/consolidation_tests"
+        ],
+        "elapsed_seconds": 0.041179188003297895,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "consolidation_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_tests"
+        ],
+        "elapsed_seconds": 0.0023005870170891285,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "continuity_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_transition_tests"
+        ],
+        "elapsed_seconds": 0.0018773780320771039,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "continuity_transition_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_record_wire_tests"
+        ],
+        "elapsed_seconds": 0.0016110020224004984,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "continuity_record_wire_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_observation_wire_tests"
+        ],
+        "elapsed_seconds": 0.0059114249888807535,
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "name": "continuity_observation_wire_tests-runtime"
+      },
+      {
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "600s",
+          "gnatprove",
+          "-P",
+          "spark/sia_assurance.gpr",
+          "-U",
+          "--mode=all",
+          "--assumptions",
+          "--no-inlining",
+          "--memlimit=512",
+          "--timeout=10",
+          "-v"
+        ],
+        "elapsed_seconds": 600.0060184100294,
+        "exit": 124,
+        "fresh_proof_summary": false,
+        "name": "all-proof"
+      }
+    ],
+    "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-symbolic-full-v2/source",
+    "files": {
+      "spark/sia_assurance.gpr": "cccba24e7ec476ec0b40f0b5523a52d8c211cf4fa6499a733e9d105863770e59",
+      "spark/src/sia_continuity_observation_wire.adb": "a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c",
+      "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+      "spark/tests/continuity_observation_wire_tests.adb": "b4ad291d1baa864f595333d6f6d817e22dde7b3aecdb50faf41df01dc8970e71",
+      "spark/tests/continuity_operation_checks.adb": "68a8d0f029f30f5cfcd1c74e40afcd40619916b98a9cd5adfa6f7999ed9f2d0b",
+      "spark/tests/continuity_operation_checks.ads": "46a8f23f09b1b0fc264b1b6e550d5b0d069e3bae5e5fa9e3868205c6c01abd94",
+      "spark/tests/continuity_predicate_checks.adb": "f9bb141ab561bd4220519b9d701baffe1f89a347abfb91393702b40c696b9e89",
+      "spark/tests/continuity_predicate_checks.ads": "448ee12981b859a477e188820e94ec590e141727bdd2308a3a5f3bf057751fda",
+      "spark/tests/continuity_tests.adb": "cdd77f3a67527945faf5c47db2d24a87715eb5f02e360c194914a97d61abe316",
+      "spark/tests/continuity_transition_checks.adb": "4b2e5f9d7020ba0bde337c6e6cebee1ec682cc061a142dc23ef55f0b6f3cf7ae",
+      "spark/tests/continuity_transition_checks.ads": "57a7617e3aeb1df22bed1b8fc8ee16d513be264783cd6367566a8f9d50fdd35d",
+      "spark/tests/continuity_transition_tests.adb": "b33078424352b2b2db7e2f1f79c338e9fac3896a2308645f1855e9546a3e1510",
+      "spark/verify-policy.sh": "719b54d5e73ed7d5917d006076c195e9c1e21aa720205f70f901372673875086"
+    },
+    "original_test_sha256": "e0a0ce61eceaf284a8c876522a8f4fce8226374523cfa152c92fea3814c0e41b",
+    "original_transition_test_sha256": "c92b660d3731beccd3dc55c32e8280af8c3da028f6172ec04c338945dbd44955",
+    "predicate_candidate_test_sha256": "d12205485cd32c1db813c93f89d9f7a9b129dc43563142eaa088425bb4be42b2",
+    "proof_outputs": {
+      "all-proof": {
+        "continuity_observation_wire_tests.spark": "152db5770697225aef0589990578b63425c04dfe02204a816daa2d89aac27555"
+      }
+    },
+    "proof_tools_after": {
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+    },
+    "proof_tools_before": {
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+      "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+    },
+    "runner_dependencies_sha256": {
+      "run-continuity-decomposed-v1.py": "6e4dac2cea1837ae6b915f353cdd9b4f59cd45f346698d061ef75d65ac85c518",
+      "run-continuity-observation-wire-development-v2.py": "300b12f0255aa2cfa0befcab320eb5480516f73fd084583f36cb9bdfcfe22ecd",
+      "run-continuity-operation-scope-v1.py": "dedbd01834549bb3bbad5b2ad044ea6b880aa49100b2127f21f52ecaf1ca8938",
+      "run-continuity-operation-scope-v2.py": "fa2796b4ec3323695d98619d67b41a6b32ccbe8caeb58e5bff1eec55fae403e0",
+      "run-continuity-predicate-extraction-v1.py": "e412465d4c94cfdd27d829df7226a82399071f985e04757e46fb8369882db5af",
+      "run-continuity-symbolic-loops-v1.py": "aa8622a40fe593bc8dc40f1ea23197ff9089a367854475d430e0c0d90a21da4b",
+      "run-operation-frame-lemma-v2.py": "dbe8c0e1c2d04a843dc29c4ac3f9743a966ee09b775d338ca57ba44bbc4c5dc8",
+      "run-operation-initial-lemma-v2.py": "9653395b3bb527dea8c2c1961cd8ce5165f13d7532ece155f4105bd83b35fd3f",
+      "run-transition-empty-helper-v1.py": "f20e127fd31b3ce973ab44a880212b8cd6145a7deddecd6a9cb998c968589f35",
+      "run-transition-helper-extraction-v3.py": "2c540225ebfbd378d0a8704ea120aa126ec5e22889fc2456aec1cc8fc45e8a31",
+      "run-transition-helper-extraction-v5.py": "79f4bf73ae09a91bd15f7809806a3bfc6e62be5a8cb2a16f11840b5f61101d5e",
+      "run-transition-single-helper-v1.py": "1023e2916b279c1dc7fc184204e9a8cd6776fa76895f798b12b2d5b3ec59c8ec",
+      "run-transition-unbound-helper-v1.py": "3d5173c9e053d60c4cba453cb09932226413452c3cf355d0524d3579e6afdcc0",
+      "run-transition-uniqueness-helper-v1.py": "bb24d6e9e4aa1eabc789c90479ba04ea8c8caef4e13767bf7e4d66f4757c6524"
+    },
+    "runner_sha256": "2ecd34c10c73a20880b2efb55e026b08e2f49fa8b82d8c32af6f4006412468f7",
+    "scope": "FULL: reviewed modular transition candidate; unadopted",
+    "source_roster_sha256": {
+      "spark/src/sia_consolidation.adb": "66b24e1a6d846948cb80f6ec5960efa34247de16dc718ef8200645d02db6bf7b",
+      "spark/src/sia_consolidation.ads": "a93f44ff93265dd47d22b7d2268ed3a33566476894b85292b0d693a9ddc69db9",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity_observation_wire.adb": "a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c",
+      "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_transitions.adb": "43f7c5d7a5455472d5f25aa2e9fceb9e866cededa81f0e6047df45684c21ba5e",
+      "spark/src/sia_continuity_transitions.ads": "cfaf19687229927154d4a57a3b4297ab7d3d6d9a36283ea944527a4bc5bdf97c",
+      "spark/src/sia_grant_lifetime.adb": "ce77559dc338d6e5c4ef1698cbb1cba13f6dc156f97ea5efe34b9fa65aa71d33",
+      "spark/src/sia_grant_lifetime.ads": "d4422783fe86bda25bfe600c606dc9a2b34cb4c18346931d6b9238fcbbaed8a8",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_request_admission.adb": "f659845d7824e496437d85198c07feedd42653ab214c9ba87a9d079962376dad",
+      "spark/src/sia_request_admission.ads": "504f44d9de1ff24454bf17397e07723d4fe4276faa7dfa1ab0b5e61d4663efd3",
+      "spark/src/sia_request_wire.adb": "43c12bd6834dd61f182ff22d6a9251a78fa4ab1d09db0ea9f057f0233172ad47",
+      "spark/src/sia_request_wire.ads": "5951173ec3a72aed2c7ab698fe8a624d375ef53ab3e2c141ac780048b5b20b6f",
+      "spark/src/sia_retraction.adb": "8f46ecf35ae52ed73b0e8930bc918104c0c61fd3c716fb9156f31801fe162fdb",
+      "spark/src/sia_retraction.ads": "d3bb90b07723fa5d3d9e704668fc3e2d640b3d4ae9781d9dd4403a43e8c6db9e",
+      "spark/src/sia_transactions.adb": "d1973627ca3a3666323d3366e99ebcd532da6af64ccaa1af711832a07540ab5e",
+      "spark/src/sia_transactions.ads": "f5cdba695062958aca31705ab855dc02f4c33e1754dbf8a44964a7dbf9754a8c",
+      "spark/tests/consolidation_tests.adb": "3ed890bd9224790b944aeb19454cbdcaecefc8d86cd74187932d76450cb98c06",
+      "spark/tests/continuity_observation_wire_tests.adb": "b4ad291d1baa864f595333d6f6d817e22dde7b3aecdb50faf41df01dc8970e71",
+      "spark/tests/continuity_operation_checks.adb": "68a8d0f029f30f5cfcd1c74e40afcd40619916b98a9cd5adfa6f7999ed9f2d0b",
+      "spark/tests/continuity_operation_checks.ads": "46a8f23f09b1b0fc264b1b6e550d5b0d069e3bae5e5fa9e3868205c6c01abd94",
+      "spark/tests/continuity_predicate_checks.adb": "f9bb141ab561bd4220519b9d701baffe1f89a347abfb91393702b40c696b9e89",
+      "spark/tests/continuity_predicate_checks.ads": "448ee12981b859a477e188820e94ec590e141727bdd2308a3a5f3bf057751fda",
+      "spark/tests/continuity_record_wire_tests.adb": "9ad644796403d7fd79d7c81f8f07ce82a2ddf215b450058c7d13bbd4c07953a8",
+      "spark/tests/continuity_tests.adb": "cdd77f3a67527945faf5c47db2d24a87715eb5f02e360c194914a97d61abe316",
+      "spark/tests/continuity_transition_checks.adb": "4b2e5f9d7020ba0bde337c6e6cebee1ec682cc061a142dc23ef55f0b6f3cf7ae",
+      "spark/tests/continuity_transition_checks.ads": "57a7617e3aeb1df22bed1b8fc8ee16d513be264783cd6367566a8f9d50fdd35d",
+      "spark/tests/continuity_transition_tests.adb": "b33078424352b2b2db7e2f1f79c338e9fac3896a2308645f1855e9546a3e1510",
+      "spark/tests/grant_lifetime_tests.adb": "0a9ce2e5da5d3dbf53614051d3cdf8d7445184497189bab0a8937a02ab612fda",
+      "spark/tests/policy_tests.adb": "66bf8f497c4b3a46eca75b1fce2cc31553868bacd2ebb015050f75199b5517b9",
+      "spark/tests/request_admission_tests.adb": "b6fb146f33a20cbc435b085b36a5ddbdf1a2d179ed961789a2e8a14348cb8e2c",
+      "spark/tests/request_wire_tests.adb": "79283a1cec85946f893092b32ba34d964db6ed45b6da3e99be8e8c187a5435db",
+      "spark/tests/retraction_tests.adb": "7250c3bdcac34938147c90b160dd9cf5a88b7c800261b0ffc577ea1e3fd30478",
+      "spark/tests/transaction_tests.adb": "3ed63f9fd391ad1da5f6575450545bbcecddb9c9aac31969cd35c1034dea46ba"
+    },
+    "tools_unchanged": true
+  },
+  "receipt_sha256": "9b0b2ea1540dbb989bf1ebffd29467c4ef7f5681a8b10d5105017a126f61a969",
+  "retained_raw_audit": {
+    "consolidation_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "bddc8dc1fe5249bacb4b2f32bae9e832c6d7b6745645ecaf3c482615880e01be",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_observation_wire_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "152db5770697225aef0589990578b63425c04dfe02204a816daa2d89aac27555",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_operation_checks.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "a56d86ec64513b389548602e4fd850b2d05b745b9246cfc5d92ce1396ddade6c",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_predicate_checks.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "ac37623a243aa20c9b8c741f757a70d4d58b25dcbc45fc1beb921a0f11f4f301",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_record_wire_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "f8b392670a2f7de77e6c91de4e13cd2e8d8bdb2c8d59e28f18767bfc4e05887a",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "6439568c2794135e512943e532785334be44b094c475b502eb0162d6ffb4c5b5",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_transition_checks.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "c27459dcc2e66866509f1ff1c93672925fa405c106caee7f747032cd501743ad",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "continuity_transition_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "d9fb2bb370115d5e08e2c4e33a3bb028fb2c6ff2948a867aeb137e2008a52465",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "grant_lifetime_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "a03ad5be71493c44645016328e4ba7a0defb8db7a0b8389f0678a14161eb0b31",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "policy_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "60639ac7149511c1983f2fead76575546b5d4cb82c8fbd40e06b966f9681e2ee",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "request_admission_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "975bd864072a189b86fd6d7f4a43f83e440dc6236945297000422e7d87c5fb98",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "request_wire_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "a5794a729f2336ab5dfb8efaa65ebdf4873db94de8086f3d354dcdaa9bcc1f70",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "retraction_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "17c42c7e489818a55e5ea4053f4c7f1e91529260f1134234b01db60dc3df3039",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "sia_request_admission.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "19d26573e5ba19b6c5963b165372210681678c3ce0c868357c44121c77c52602",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    },
+    "transaction_tests.spark": {
+      "non_information_diagnostics": [],
+      "pragma_assume": [],
+      "sha256": "c0f9a555ef5a78cc0d284217ab2c0b6e4d7783a72d2f1dbd52775089dc120e40",
+      "skip_flow_proof": [],
+      "skip_proof": []
+    }
+  },
+  "run_directory": "continuity-symbolic-full-v2",
+  "schema_version": 1,
+  "status": "FAILED_TO_ESTABLISH_FULL_PROOF",
+  "verified_proof_products_sha256": {
+    "all-proof-continuity_observation_wire_tests.spark": "152db5770697225aef0589990578b63425c04dfe02204a816daa2d89aac27555"
+  },
+  "verified_source_roster_sha256": {
+    "spark/check-proof-summary.py": "579ce21dd36e3dabe4f36dee82f500eb6456564aa69747573f3d241726061e59",
+    "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+    "spark/sia_assurance.gpr": "cccba24e7ec476ec0b40f0b5523a52d8c211cf4fa6499a733e9d105863770e59",
+    "spark/src/sia_consolidation.adb": "66b24e1a6d846948cb80f6ec5960efa34247de16dc718ef8200645d02db6bf7b",
+    "spark/src/sia_consolidation.ads": "a93f44ff93265dd47d22b7d2268ed3a33566476894b85292b0d693a9ddc69db9",
+    "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+    "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+    "spark/src/sia_continuity_observation_wire.adb": "a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c",
+    "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+    "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+    "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+    "spark/src/sia_continuity_transitions.adb": "43f7c5d7a5455472d5f25aa2e9fceb9e866cededa81f0e6047df45684c21ba5e",
+    "spark/src/sia_continuity_transitions.ads": "cfaf19687229927154d4a57a3b4297ab7d3d6d9a36283ea944527a4bc5bdf97c",
+    "spark/src/sia_grant_lifetime.adb": "ce77559dc338d6e5c4ef1698cbb1cba13f6dc156f97ea5efe34b9fa65aa71d33",
+    "spark/src/sia_grant_lifetime.ads": "d4422783fe86bda25bfe600c606dc9a2b34cb4c18346931d6b9238fcbbaed8a8",
+    "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+    "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+    "spark/src/sia_request_admission.adb": "f659845d7824e496437d85198c07feedd42653ab214c9ba87a9d079962376dad",
+    "spark/src/sia_request_admission.ads": "504f44d9de1ff24454bf17397e07723d4fe4276faa7dfa1ab0b5e61d4663efd3",
+    "spark/src/sia_request_wire.adb": "43c12bd6834dd61f182ff22d6a9251a78fa4ab1d09db0ea9f057f0233172ad47",
+    "spark/src/sia_request_wire.ads": "5951173ec3a72aed2c7ab698fe8a624d375ef53ab3e2c141ac780048b5b20b6f",
+    "spark/src/sia_retraction.adb": "8f46ecf35ae52ed73b0e8930bc918104c0c61fd3c716fb9156f31801fe162fdb",
+    "spark/src/sia_retraction.ads": "d3bb90b07723fa5d3d9e704668fc3e2d640b3d4ae9781d9dd4403a43e8c6db9e",
+    "spark/src/sia_transactions.adb": "d1973627ca3a3666323d3366e99ebcd532da6af64ccaa1af711832a07540ab5e",
+    "spark/src/sia_transactions.ads": "f5cdba695062958aca31705ab855dc02f4c33e1754dbf8a44964a7dbf9754a8c",
+    "spark/tests/consolidation_tests.adb": "3ed890bd9224790b944aeb19454cbdcaecefc8d86cd74187932d76450cb98c06",
+    "spark/tests/continuity_observation_wire_tests.adb": "b4ad291d1baa864f595333d6f6d817e22dde7b3aecdb50faf41df01dc8970e71",
+    "spark/tests/continuity_operation_checks.adb": "68a8d0f029f30f5cfcd1c74e40afcd40619916b98a9cd5adfa6f7999ed9f2d0b",
+    "spark/tests/continuity_operation_checks.ads": "46a8f23f09b1b0fc264b1b6e550d5b0d069e3bae5e5fa9e3868205c6c01abd94",
+    "spark/tests/continuity_predicate_checks.adb": "f9bb141ab561bd4220519b9d701baffe1f89a347abfb91393702b40c696b9e89",
+    "spark/tests/continuity_predicate_checks.ads": "448ee12981b859a477e188820e94ec590e141727bdd2308a3a5f3bf057751fda",
+    "spark/tests/continuity_record_wire_tests.adb": "9ad644796403d7fd79d7c81f8f07ce82a2ddf215b450058c7d13bbd4c07953a8",
+    "spark/tests/continuity_tests.adb": "cdd77f3a67527945faf5c47db2d24a87715eb5f02e360c194914a97d61abe316",
+    "spark/tests/continuity_transition_checks.adb": "4b2e5f9d7020ba0bde337c6e6cebee1ec682cc061a142dc23ef55f0b6f3cf7ae",
+    "spark/tests/continuity_transition_checks.ads": "57a7617e3aeb1df22bed1b8fc8ee16d513be264783cd6367566a8f9d50fdd35d",
+    "spark/tests/continuity_transition_tests.adb": "b33078424352b2b2db7e2f1f79c338e9fac3896a2308645f1855e9546a3e1510",
+    "spark/tests/grant_lifetime_tests.adb": "0a9ce2e5da5d3dbf53614051d3cdf8d7445184497189bab0a8937a02ab612fda",
+    "spark/tests/policy_tests.adb": "66bf8f497c4b3a46eca75b1fce2cc31553868bacd2ebb015050f75199b5517b9",
+    "spark/tests/request_admission_tests.adb": "b6fb146f33a20cbc435b085b36a5ddbdf1a2d179ed961789a2e8a14348cb8e2c",
+    "spark/tests/request_wire_tests.adb": "79283a1cec85946f893092b32ba34d964db6ed45b6da3e99be8e8c187a5435db",
+    "spark/tests/retraction_tests.adb": "7250c3bdcac34938147c90b160dd9cf5a88b7c800261b0ffc577ea1e3fd30478",
+    "spark/tests/transaction_tests.adb": "3ed63f9fd391ad1da5f6575450545bbcecddb9c9aac31969cd35c1034dea46ba",
+    "spark/verify-policy.sh": "719b54d5e73ed7d5917d006076c195e9c1e21aa720205f70f901372673875086"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "acceptance": "Full proof, committed-source reproduction and system assurance remain open.",
+  "artifacts_sha256": {
+    "continuity-full-retainer-controls-v1.log": "d73558844e6cdfa56745630241937934c121093418dee2f2fb734388c9a77792",
+    "continuity-full-retainer-controls-v2.log": "56c628551e81d8cde3e4499fa406670d0842557f08bda444c91867dbbc14afee",
+    "continuity-full-retainer-inventory-refusal-v1.json": "de6fb9789e2a3947a7f353197032b5585e1831d4141464156812fc67896bb775",
+    "continuity-full-retainer-review-v1.txt": "0c6e5fce6723e3297974b28be1cf0d9d5cbc87eaf2a98224c291de68d7b1f332",
+    "continuity-full-retainer-review-v2.txt": "3450788f2dc0a41b45f99d298b56784179aacc5232cbf19b45506a16fa71e5f5",
+    "continuity-modular-full-manifest-before-bounded-decompression.json": "8f925df9db9c4f09de10eb8fee3a7afbfeb62592dc5a1bfcb6ff9ac200980cda",
+    "continuity-symbolic-full-v2/storage-postflight.json": "9e30922c9f42e88d1b608577bd34eb2190d21170d47719a898f06581ecdac5a2",
+    "retain-continuity-symbolic-full-v2.py": "90c611f709f2aa04794fb57029e44e88ee84b3035d9a630d56ffe1d0a23c296c",
+    "retain-continuity-symbolic-full-v3.py": "b9190b8a68a80e7d7084115a30c05cdbff985c3c8ccba68797d14e3a71f25a38",
+    "retain-continuity-symbolic-full-v4.py": "f7f3148d828b06ce465e8938d6c43bddac1589aa5f1d6e0af5e6670193ae8dce",
+    "test-continuity-full-retainer-v1.py": "dc9b71c0f7f3b406f94048a7a9ac212df828342b7dc84dc8c5f1ee530f45b0d6",
+    "test-continuity-full-retainer-v2.py": "fc3cfd88a20cdbf91373514b2300aff934d990e59404b4f17a2945e804eb42e7"
+  },
+  "command": [
+    "python3",
+    "-W",
+    "error",
+    "test-continuity-full-retainer-v2.py"
+  ],
+  "full_campaign": "Exit 124 at 600 seconds; no complete summary; coverage UNRUN.",
+  "generator_sha256": "b7d21c69881720b074398977cea2e71f153cd80f983386bd356db29d0c73cfdb",
+  "initial_review_findings": [
+    "Tool stability flag required exact before/after roster comparison.",
+    "Warning and exclusion findings must reject successful qualification.",
+    "The actual Ada inventory must match the bound inventory.",
+    "Successful qualification requires bound summary and validated coverage.",
+    "Directory and archive enumeration must stop at its declared bound."
+  ],
+  "observed_summary": "Ran 10 tests in 0.013s",
+  "schema_version": 1,
+  "scope": "Evidence retainer controls only; fabricated success inputs never constitute proof evidence.",
+  "status": "TESTED_NEGATIVE_CONTROLS"
+}

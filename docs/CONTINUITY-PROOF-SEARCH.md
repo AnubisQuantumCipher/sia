@@ -222,9 +222,9 @@ unproved.
 Completed scoped raw reports have no non-information diagnostics, assumptions
 annotations or proof/flow exclusions. Their overlapping dependency scopes must
 not be added together. The two whole-unit timeouts remain failed attempts to
-establish those units. No new complete all-unit campaign has been run on this
-overlay; the existing 600-second gate remains unchanged. A proposed increase
-requires a separate operator decision and is not implied by these artifacts.
+establish those units. The later complete attempt is recorded below; the
+existing 600-second gate remains unchanged. A proposed increase requires a
+separate operator decision and is not implied by these artifacts.
 
 The retained profiling correction also remains visible: the first parser
 defaulted absent XML timing fields to zero; its successor marks those times
@@ -241,3 +241,39 @@ still exited 124 at 120 seconds without a fresh summary. This attempt remains
 **FAILED** as proof establishment and **UNADOPTED**; no speed benefit, caller
 proof, complete-unit coverage or all-project acceptance follows. The original
 negative result and source delta are retained. The current proof cap is unchanged.
+
+## Complete modular-candidate follow-up
+
+The [terminal full-campaign evidence](CONTINUITY-MODULAR-FULL-EVIDENCE.json)
+binds the reviewed modular overlay to the clean `b34b9a7` source archive.
+The failed identity-parameter experiment above is excluded. Strict compilation
+and all eleven original runtime harnesses passed. Full `-U` analysis exited
+124 at the unchanged 600-second limit without a fresh summary, so the complete
+coverage gate was **UNRUN**. Tool hashes match before and after the campaign.
+The candidate remains **UNADOPTED** and full proof remains **UNPROVEN**.
+
+Completed raw reports include the general continuity and transition harnesses;
+their retained diagnostics are informational and their assumption/exclusion
+arrays are empty. The last translator invocation was for the continuity
+transition authority unit. These partial products do not establish missing
+units, complete coverage, a complete-project speed improvement or acceptance.
+Do not fill their gaps using earlier focused reports or rerun this candidate
+unchanged as another acceptance attempt.
+
+Independent review of the initial evidence retainer found checks missing for
+tool-roster equality, extra source inputs, raw warning/exclusion findings and
+bound complete-summary/coverage products. The replacement verifies these
+conditions and limits directory/archive enumeration while collecting it.
+Its first inventory check refused because the archive also contains a separate
+transport project; the correction matches this project's declared `src` and
+`tests` scope exactly, without changing proof scope. Both review findings and
+that refusal are preserved. [Ten focused controls passed](CONTINUITY-FULL-RETAINER-CONTROLS.json), including an actual
+extra Ada source file, forged success flags, warnings, exclusions and a missing
+bound summary. Follow-up review also found an unbounded decompression call;
+the final retainer caps decompressed bytes and retains positive and overflow
+controls. These are evidence-tool tests, not additional SPARK proofs. The
+successful qualification branch still awaits a completed real campaign.
+
+The proposed larger full-campaign budget remains pending and unused. Exact
+committed-source reproduction, independent acceptance, authenticated producers,
+actual harness restoration and installed/release verification remain required.
