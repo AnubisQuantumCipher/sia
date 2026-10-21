@@ -8736,7 +8736,12 @@ remove_managed_skill
         self.assertIn(
             "shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup",
             workflow)
-        self.assertIn("bash -n install.sh uninstall.sh bin/sia-setup", workflow)
+        self.assertEqual(_workflow_run_block("shell syntax").splitlines(), [
+            "set -euo pipefail",
+            "bash -n install.sh",
+            "bash -n uninstall.sh",
+            "bash -n bin/sia-setup",
+        ])
         uses = re.findall(r"uses:\s+([^@\s]+)@([^\s#]+)", workflow)
         self.assertTrue(uses)
         for action, revision in uses:
@@ -8757,6 +8762,31 @@ remove_managed_skill
             workflow)
         self.assertIn("https://pypi.org/pypi/cryptography/50.0.1/json",
                       workflow)
+
+    def test_ci_shell_syntax_checks_every_script_without_execution(self):
+        script = _workflow_run_block("shell syntax")
+        names = ("install.sh", "uninstall.sh", "bin/sia-setup")
+        for damaged in (None,) + names:
+            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as root:
+                for name in names:
+                    content = "printf 'unexpected execution\\n' > executed\n"
+                    if name == damaged:
+                        content += "if then\n"
+                    _write(os.path.join(root, name), content)
+                result = subprocess.run(
+                    ("bash", "--noprofile", "--norc", "-e", "-o", "pipefail",
+                     "-c", script), cwd=root,
+                    env={"PATH": os.defpath, "HOME": root, "LC_ALL": "C"},
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    timeout=3, check=False)
+                self.assertFalse(os.path.exists(os.path.join(root, "executed")))
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.returncode, 0 if damaged is None else 2)
+                if damaged is None:
+                    self.assertEqual(result.stderr, "")
+                else:
+                    self.assertIn(damaged + ": line 2:", result.stderr)
+                    self.assertIn("syntax error", result.stderr)
 
     def test_ci_release_artifact_block_checks_committed_tree_damage(self):
         script = _workflow_run_block("release artifact contracts")
