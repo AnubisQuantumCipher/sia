@@ -18,14 +18,20 @@ Final merged-main CI passed on `7371c8e2f152aec47f07843821447067991d96fc`.
 The annotated v1.8.4 tag and [published release](https://github.com/AnubisQuantumCipher/sia/releases/tag/v1.8.4)
 were read back, including reporter credit. The [final issue reply](https://github.com/AnubisQuantumCipher/sia/issues/33#issuecomment-6285535056)
 was posted and its exact body read back. [Marketplace request #12332](https://github.com/omacom/omarchy-plugin-marketplace/issues/12332)
-requests verification/publication of that exact commit; its body was read back.
+requested verification/publication of that exact commit; its body was read back.
 The initial post-request catalog still showed v1.8.3. A later retained readback
 on 2026-10-21 UTC shows v1.8.4 and the correct upstream commit, but verification
 still covers an older snapshot: update-unverified, Manual setup, and standard
 installation unavailable. Marketplace approval/publication remains
-an external gate. Main remains frozen; experimental work stays on this separate
-branch. These release observations do not qualify the experimental assurance
-branch or any protected service.
+an external gate. Following the later blocking finding, request #12332 was
+retired on 2026-10-21 before moving main. The declaration-only closure is
+[PR #42](https://github.com/AnubisQuantumCipher/sia/pull/42), exact head
+`3f28a585e733beea78cddc09b3fe1484f112d0d5`; its full CI is pending.
+Main still carries the pending declaration. The existing reviewer-block
+exception permits that administrative closure followed by the separate
+fix-only movement; unrelated experimental work stays on this branch.
+These release observations do not qualify the experimental assurance branch
+or any protected service.
 
 The subsequent marketplace review reported a different-account Ollama API
 boundary failure. The single owner reproduced it in a private namespace and
@@ -34,7 +40,7 @@ is developing an isolated administrator-owned account guard in
 negative controls do not change frozen main or qualify the installed system.
 Marketplace publication remains blocked on resolving the concrete finding and
 the existing exact-source acceptance/review gates.
-The candidate is retained in [draft PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41),
+The candidate is retained in [PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41),
 including the full-CI failures and subsequent test-fixture repairs. Isolated
 kernel and sudo-delegation evidence does not qualify the host's administrator
 configuration. Both corrected-head full CI runs passed, each reporting 3868
@@ -45,6 +51,14 @@ administrator-installation files and a command sheet are prepared, but host
 authentication, commissioning and the actual lifecycle acceptance remain open.
 The same owner continues the assurance branch with these obligations
 visible, without treating a release blocker as a reason to stop implementation.
+The operator explicitly resumed the Goal and requested qualifying merges on
+2026-10-21. The Goal tool reports active. PR #41 was marked ready for review
+at unchanged head `84140e682ac47d464d314daf5ed9e0e3e277242d` after another
+actual GPT-6.1 source-merge assessment. PR #42 passed all 25 freeze controls
+and the actual workflow gate in a main-push context; its immutable diff is
+only `state=pending` to `state=none`. Required terminal CI remains the next
+merge gate. Neither PR is merged at this observation, and source-merge
+authorization does not discharge host commissioning or release acceptance.
 
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
@@ -129,6 +143,19 @@ preserved the request deadline and succeeded. The runs differed in live load,
 so this does not establish the timeout's cause. A process snapshot during the
 successful read shows waiting on the daemon's corpus lease. No lock was bypassed
 and no installed code, service configuration or resource policy was changed.
+
+The later installed direct read of request
+`98c9c7fb87b0421ebbf84fa544aab313` completed successfully on 2026-10-21.
+The decoded model-note body exactly matched its queued SHA-256
+`50e7908e73fe471c1dc85f8328ffd29ae7a4aa0ada246e44a6ac0d79130e9cd3`;
+the installed launcher and CLI hashes remained unchanged. External receipts
+`installed-note-direct-20261021-v3.json` and
+`installed-note-body-comparison-v3.json` retain the command, limits, timing,
+source bindings and comparison. This note describes checkpoint `5be77d1`,
+before the subsequent Goal resume and marketplace retirement. Those older
+status statements are superseded by the delivery observations above; recalled
+model prose does not grant permission or establish the current task state.
+This single read does not qualify semantic retrieval or compaction continuity.
 
 ## Proof boundary
 
