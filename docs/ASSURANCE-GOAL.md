@@ -184,6 +184,16 @@ decides consequential policy; Linux must enforce protected writes, identity,
 signing authority, and network separation. Existing contracts, deterministic
 fixtures, accepted cases, negative controls and compatibility must survive.
 
+The [latest installed direct-note observation](INSTALLED-NOTE-RECALL-20261021-V10.json)
+returned request `e695c2e5f39a4c03ac60d4e34f83f8c6`, source checkpoint
+`c6c2b6aec1c0b9071698a5acff088c6890c8709b`, with an exact queued-body match
+and unchanged installed launcher/CLI hashes. It completed within the existing
+240-second budget without a short outer cutoff. This supersedes the older
+model note's operational status, not the original user instructions or evidence.
+It establishes one direct retrievable model record, not semantic accuracy,
+complete capture/indexing, future latency or correct post-compaction behavior.
+Private original note text remains excluded from the public receipt.
+
 ## Required work and acceptance
 
 | ID | Obligation | Required acceptance evidence | Current status |

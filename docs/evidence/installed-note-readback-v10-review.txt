@@ -1,0 +1,15 @@
+Actual GPT-6.1 independent read-only metadata correspondence review.
+No correspondence or scope blocker found.
+
+Retained queue/read/comparison metadata hashes match. Request identity,
+queued/returned body hashes and unchanged launcher/CLI hashes agree.
+The public receipt excludes original note text; the Goal paragraph correctly
+presents this as a later, source-addressed model-note observation.
+
+Manifest SHA-256:
+32a5ca5faa309721fb5921486478ea23dfab4da4a3701ae85570904368dcdbf3
+
+This verifies metadata correspondence, not independent private-body
+recomputation or live execution. No semantic retrieval, complete capture,
+future latency, authority or continuity acceptance follows.
+No jobs or edits performed.

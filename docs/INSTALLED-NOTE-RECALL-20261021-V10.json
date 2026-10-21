@@ -1,0 +1,75 @@
+{
+  "body_comparison": {
+    "body_sha256": "0ab3da52d081b9386f75a89001d0d1f90ce663fdb4afbd6d79bd345fa1560f0e",
+    "exact_origin": true,
+    "installed_binaries_unchanged": true,
+    "kind": "OBSERVED exact queued-model-note body; not authority",
+    "limitation": "No complete capture, semantic retrieval, current task restoration or approval claim.",
+    "queued_body_sha256": "0ab3da52d081b9386f75a89001d0d1f90ce663fdb4afbd6d79bd345fa1560f0e",
+    "request_id": "e695c2e5f39a4c03ac60d4e34f83f8c6",
+    "request_id_present": true,
+    "returned_origin_line": "[origin:model] notes/2026-10-21-093851-codex-e695c2e5f39a4c03ac60d4e34f83f8c6",
+    "same_body": true,
+    "source_checkpoint": "c6c2b6aec1c0b9071698a5acff088c6890c8709b",
+    "source_log_sha256": "06b75ca338410c2583e37e954f6ca95f2b305eae42e44b566b91d3ad65eb22af"
+  },
+  "direct_read": {
+    "capture_helper_sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+    "capture_status": "complete",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "recall",
+      "notes/2026-10-21-093851-codex-e695c2e5f39a4c03ac60d4e34f83f8c6",
+      "--no-touch"
+    ],
+    "elapsed_seconds": 15.047225732996594,
+    "executable_after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "executable_before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "exit": 0,
+    "kind": "OBSERVED installed direct-read; not continuity acceptance",
+    "limitations": [
+      "Model-origin note, not authorization or truth.",
+      "Direct recall does not establish semantic retrieval.",
+      "No full installed dependency-closure attestation.",
+      "Output pipe bound does not alter backend file limits."
+    ],
+    "log_sha256": "06b75ca338410c2583e37e954f6ca95f2b305eae42e44b566b91d3ad65eb22af",
+    "maximum_log_bytes": 1048576,
+    "observed_at": "2026-10-21T09:39:39.731179+00:00",
+    "queue_receipt_sha256": "780d6c570af79c01232ae939d5cde09a0244771e033dbfd3d9c27f07074f820e",
+    "request_id": "e695c2e5f39a4c03ac60d4e34f83f8c6",
+    "runner_sha256": "a4f4a3114aa0ccf537a571216f0e1b1c9331b765f87dbbadd7d457e9058f073d"
+  },
+  "kind": "OBSERVED one installed source-addressed model note; no broader guarantee",
+  "limits": [
+    "Model prose is not authority, factual evidence or new approval.",
+    "Direct retrieval does not establish semantic accuracy or complete indexing/capture.",
+    "No future timeout, complete installed dependency or compaction-continuity claim."
+  ],
+  "original_note_log": "Private local evidence only; not copied to this repository",
+  "queue_receipt": {
+    "action": "queue one agent note",
+    "body_sha256": "0ab3da52d081b9386f75a89001d0d1f90ce663fdb4afbd6d79bd345fa1560f0e",
+    "capture_status": "complete",
+    "elapsed_seconds": 0.10347899101907387,
+    "exit": 0,
+    "initial_outcome": "not yet observed",
+    "log_sha256": "d06c3bd87be8b061491299169ed931552b993452fd7119cc314549851002e905",
+    "observed_at": "2026-10-21T09:38:51.125953+00:00",
+    "origin": "model",
+    "publication_status": "UNCONFIRMED; inspect queue response and reconcile exact identity",
+    "runner_sha256": "27bb74c9be931dc1f76fce3e53e42adcf67b5a7f09c5134aac9c375175b38089",
+    "source": "c6c2b6aec1c0b9071698a5acff088c6890c8709b"
+  },
+  "retained_metadata_sha256": {
+    "continuity-note-20261021-v10.json": "780d6c570af79c01232ae939d5cde09a0244771e033dbfd3d9c27f07074f820e",
+    "installed-note-body-comparison-v9.json": "404da608b63b1e0e060e7627667c9ecd1faef9d7ef7565f61d053681869550eb",
+    "installed-note-direct-20261021-v9.json": "ab03fd9add05e818633e3db52350085ebdcfcdeb7a6e8ef7b399b817acc6e4da"
+  }
+}
