@@ -8257,7 +8257,10 @@ try:
         digest.update(chunk)
         remaining = memoryview(chunk)
         while remaining:
-            remaining = remaining[os.write(temporary_fd, remaining):]
+            written = os.write(temporary_fd, remaining)
+            if written <= 0 or written > len(remaining):
+                raise OSError("short atomic install write")
+            remaining = remaining[written:]
     after = os.fstat(source_fd)
     current = os.stat(source, follow_symlinks=False)
     if total != before.st_size or generation(before) != generation(after) \
