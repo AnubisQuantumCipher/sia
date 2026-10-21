@@ -1,8 +1,10 @@
 # Bounded continuity transport, proposed version 1
 
 Status: proposed format with fixed-frame decoding and typed classifier
-composition under verification. The I/O adapter and installed integration are
-unimplemented.
+composition under verification. A disposable one-request I/O prototype now
+exists; installed integration remains unimplemented. See the
+[I/O evidence report](../docs/CONTINUITY-IO.md) for its limited tested scope,
+resource assumptions and retained review failures.
 The transition policy's full-project proof is still incomplete. This proposal
 does not replace the existing Python JSON proposal codec or relax any acceptance
 gate.

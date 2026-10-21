@@ -4,6 +4,23 @@ Operator-directed scope, 2026-10-19. Baseline:
 `1f6b6667b0bc5e29b29e6d2d8f2a7b71edcee46c`.
 This is a requirements and acceptance ledger, not a completed assurance claim.
 
+The additive [completion contract](ASSURANCE-COMPLETION-CONTRACT-20261021.txt)
+was incorporated on 2026-10-21. The [source manifest](ASSURANCE-COMPLETION-CONTRACT-EVIDENCE-20261021.json)
+binds the exact compressed original (SHA-256
+`34fe52e2d6dbf80dcf606b88260b3a16736f2dbba1306f06941440c7994df93e`).
+The display copy removes only a surplus terminal newline to pass the existing
+whitespace gate; the initial gate refusal remains recorded. No words changed.
+Its snapshot is historical and its draft label does not imply acceptance.
+Actual GPT-6.1 read-only review found no scope reduction. All A01–A24, G1–G6
+and C01–C14 obligations, fixtures, failures and approved limits remain binding.
+The executable acceptance manifest and prospective workload/numeric budgets
+are OPEN: unresolved values cannot be fitted retrospectively to a passing run.
+No new spending, privileges, job caps or SOUL.md installation follow from this
+document. Declared modular/toolchain assumptions remain explicit; the contract
+prohibits hiding assumptions, not the existence of a trusted boundary.
+Each increment must close a named existing obligation. Engineering acceptance
+and external publication are separate; publication waiting adds no features.
+
 ## Delivery obligations
 
 Finish issue #33, retain reporter credit, verify the installed runtime, publish
@@ -116,6 +133,17 @@ Both complete response-harness proofs still time out at 120 seconds; all failed
 source/reports remain. Matching a transport refusal is not policy success or
 request-instance authentication. No actual I/O or installed restoration is
 claimed from these pure codecs.
+
+The subsequent [disposable I/O increment](CONTINUITY-IO.md) joins the fixed
+frame evaluator and response encoder through a bounded Linux process and
+supervisor. Strict builds, seventeen new controls, the overlapping 96-test
+transport/support suite and all fifteen original runtimes pass. Actual GPT-6.1
+review caught and closed descriptor/cleanup issues; original source, failures
+and limited resource observations remain retained. This is TESTED fixture
+transport, not proved I/O, authenticated inputs or installed restoration.
+Complete harness/full-project proof and all A22/A23 acceptance gates remain
+open. The next protected design obligation is the admission temporal contract;
+fresh committed-source I/O reproduction must first bind this increment.
 
 Installed direct recall also returned request
 `b5f46f6010fd439ab069bf0363bbe074` with the exact queued body and unchanged

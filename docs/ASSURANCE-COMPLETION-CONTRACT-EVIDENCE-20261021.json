@@ -1,0 +1,10 @@
+{
+  "acceptance": "Requirements document, not implementation acceptance",
+  "compressed_path": "docs/evidence/assurance-completion-contract-original-20261021.txt.gz",
+  "compressed_sha256": "082df6af061d8b1bdf5187ee8d4b1ca368df2fcda569f210fb70253629620fb8",
+  "display_sha256": "5ad4f15b9a5928bfdc068552c58c69b8215e6e92f1c93ec91d7e701b70568419",
+  "kind": "Original retained exactly; display only terminal-newline normalized",
+  "original_sha256": "34fe52e2d6dbf80dcf606b88260b3a16736f2dbba1306f06941440c7994df93e",
+  "repair": "Remove surplus terminal newline in display; no words or policy changed",
+  "retained_failure": "git diff --cached --check: new blank line at EOF, supplied line 57"
+}
