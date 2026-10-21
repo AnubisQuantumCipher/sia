@@ -100,3 +100,22 @@ checks behind an explicitly checked helper. That proposal still needs body and
 caller proof, all original runtime controls, and complete all-unit acceptance.
 No performance benefit has been established, and another unchanged full run is
 not justified by these results.
+
+The [shared-rejection follow-up](CONTINUITY-UNBOUND-HELPER-EVIDENCE.json)
+implements that proposal in another external candidate. Both local `Refuse`
+wrappers retain their exact preconditions; their duplicated bodies call the
+new `Check_Unbound_Event` helper. It requires the preceding classification
+branches, the existing one-operation shape, a changed slot and a mismatched
+observation. Its body retains the original observation aggregate and expected
+refusal. No negative vector, fixture, assertion or call order changes.
+Independent actual GPT-6.1 source review found no semantic or domain loss;
+the additional premises remain caller obligations rather than assumptions.
+
+Strict build and the original transition runtime passed. Separate focused
+proofs discharged the helper package, both wrappers and both caller routines,
+with fresh summaries and no non-information diagnostics in their retained raw
+reports. These are separate scoped results; do not add their overlapping
+counts or infer complete coverage. A fresh complete transition-unit diagnostic
+still reached 120 seconds without a summary. No full-project attempt was made
+on this further changed source. It remains **UNADOPTED**, with performance
+improvement and complete acceptance unproved.
