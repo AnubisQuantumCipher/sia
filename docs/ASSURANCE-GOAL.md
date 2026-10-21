@@ -24,22 +24,24 @@ on 2026-10-21 UTC shows v1.8.4 and the correct upstream commit, but verification
 still covers an older snapshot: update-unverified, Manual setup, and standard
 installation unavailable. Marketplace approval/publication remains
 an external gate. Following the later blocking finding, request #12332 was
-retired on 2026-10-21 before moving main. The declaration-only closure is
-[PR #42](https://github.com/AnubisQuantumCipher/sia/pull/42), exact head
-`3f28a585e733beea78cddc09b3fe1484f112d0d5`; its full CI is pending.
-Main still carries the pending declaration. The existing reviewer-block
-exception permits that administrative closure followed by the separate
-fix-only movement; unrelated experimental work stays on this branch.
+retired on 2026-10-21 before moving main. After both full test jobs passed,
+the declaration-only [PR #42](https://github.com/AnubisQuantumCipher/sia/pull/42)
+merged as `fe16ca748022ed80784b69e2599e3fba239a88d0`. The separately reviewed
+fix-only [PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41) then merged
+as `514779ddf9ba6dcd4b5d1dafabac602910751cb3`. Both remote trees were read back;
+the fix matches its tested/reviewed blobs plus only the separately tested
+ROADMAP closure. Post-merge CI is pending. The existing reviewer-block
+exception permits these movements; unrelated experiments stay on this branch.
 These release observations do not qualify the experimental assurance branch
 or any protected service.
 
 The subsequent marketplace review reported a different-account Ollama API
 boundary failure. The single owner reproduced it in a private namespace and
-is developing an isolated administrator-owned account guard in
-`codex/sia-ollama-account-boundary-20261020`. That candidate and its retained
-negative controls do not change frozen main or qualify the installed system.
-Marketplace publication remains blocked on resolving the concrete finding and
-the existing exact-source acceptance/review gates.
+implemented an isolated administrator-owned account guard in
+`codex/sia-ollama-account-boundary-20261020`. The retained isolated negative
+controls remain distinct from the subsequent host observations below.
+Marketplace publication still requires exact-source acceptance and a fresh
+maintainer review/publication cycle.
 The candidate is retained in [PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41),
 including the full-CI failures and subsequent test-fixture repairs. Isolated
 kernel and sudo-delegation evidence does not qualify the host's administrator
@@ -47,18 +49,25 @@ configuration. Both corrected-head full CI runs passed, each reporting 3868
 tests with 21 skips; gbrain-contract and marketplace-freeze also passed.
 The existing actual GPT-6.1 reviewer closed the runbook finding and found no
 concrete surviving bypass or regression in the scoped final deltas. Pinned
-administrator-installation files and a command sheet are prepared, but host
-authentication, commissioning and the actual lifecycle acceptance remain open.
+administrator-installation files and a command sheet were prepared before
+the operator supplied live administrative authorization. The exact merged
+guard is now installed: kernel/service readback, owner embedding, another
+account's transport/HTTP denial, narrow delegation controls, live UFW reload
+and guard stop/start passed. The user Ollama unit was updated and loaded
+without restarting its active process. Actual boot/Ollama restart and installed
+upgrade/uninstall qualification remain open; this is scoped protection evidence.
 The same owner continues the assurance branch with these obligations
 visible, without treating a release blocker as a reason to stop implementation.
 The operator explicitly resumed the Goal and requested qualifying merges on
 2026-10-21. The Goal tool reports active. PR #41 was marked ready for review
 at unchanged head `84140e682ac47d464d314daf5ed9e0e3e277242d` after another
 actual GPT-6.1 source-merge assessment. PR #42 passed all 25 freeze controls
-and the actual workflow gate in a main-push context; its immutable diff is
-only `state=pending` to `state=none`. Required terminal CI remains the next
-merge gate. Neither PR is merged at this observation, and source-merge
-authorization does not discharge host commissioning or release acceptance.
+and the actual workflow gate in a main-push context. Reconciliation against
+its merged main repeated those gates without changing any fix blob, and the
+actual GPT-6.1 reviewer confirmed the composition before PR #41 merged.
+The [selected merge/host receipts](OLLAMA-MERGE-AND-HOST-EVIDENCE-20261021.json)
+retain exact bindings, runtime controls and open gates. Private firewall
+snapshots, original retrieved text and credentials are not published.
 
 The same owner added the fixed Checkpoint representation boundary on this
 experimental branch; see [the source-bound report](CONTINUITY-CHECKPOINT-CODEC.md).
@@ -80,9 +89,9 @@ an exact body match and unchanged launcher/runtime hashes. The
 [readback evidence](INSTALLED-NOTE-RECALL-20261021-V2.json) binds request
 `69b90b6bbcab4e088d461d20a26896d4` to source checkpoint `ab81aeb`.
 This is one direct source-addressed retrieval, not complete capture, semantic
-retrieval, task restoration or an approval. Host administrator authentication
-is still unavailable, and both PR #42 full test jobs remain in progress.
-The Goal remains active; these gates restrict their dependent actions only.
+retrieval, task restoration or an approval. That earlier observation preceded
+the merges and administrative authorization recorded above. The Goal remains
+active; individual gates restrict their dependent actions only.
 
 The next fixed-record increment decodes Current_Evidence; its
 [scoped source/evidence report](CONTINUITY-CURRENT-CODEC.md) retains a strict
@@ -90,8 +99,11 @@ build, all thirteen runtime harnesses and the 73-check core proof. Both complete
 harness diagnostics timed out at the unchanged limit; full-project proof
 remains open. Independent source review's additional nested-refusal control
 was added and tested under all valid availability states. The decoder preserves
-sender descriptors and grants no authority. Outer framing, authentic producers
-and actual installed restoration remain open.
+sender descriptors and grants no authority. The subsequent
+[fixed-frame increment](CONTINUITY-FRAME-CODEC.md) adds exact framing and typed
+classifier composition in memory. Strict build/all fourteen runtimes and the
+scoped 58-check core proof pass; complete harness proof still times out at 120
+seconds. Actual I/O, authentic producers and installed restoration remain open.
 
 Installed direct recall also returned request
 `b5f46f6010fd439ab069bf0363bbe074` with the exact queued body and unchanged

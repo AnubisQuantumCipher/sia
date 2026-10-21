@@ -1,0 +1,291 @@
+{
+  "artifacts": [
+    {
+      "bytes": 359,
+      "path": "merge-freeze-close-20261021-v1/merge-intent.json",
+      "sha256": "524e55ec5d636e99c362d56a12e35674d1bfe6748e4fdc96fb6bcdf12baed1cd"
+    },
+    {
+      "bytes": 2094,
+      "path": "merge-freeze-close-20261021-v1/pr-before.stdout",
+      "sha256": "9dacf7bd2a57d5baf7920044358ec9aa5a850a18f0fce0c2e2777a5d6fc006f4"
+    },
+    {
+      "bytes": 233,
+      "path": "merge-freeze-close-20261021-v1/pr-after.stdout",
+      "sha256": "ddda35e61cc779886d15534c6e16a33ac775a819b75b1ae52fbdcf5c06e2e3a7"
+    },
+    {
+      "bytes": 359,
+      "path": "merge-freeze-close-20261021-v1/merge.command.json",
+      "sha256": "9a1132cfb4139ee1f86506d82cd06579a7f437417564fe1941a140a3b834ed00"
+    },
+    {
+      "bytes": 155,
+      "path": "merge-freeze-close-20261021-v1/retired-request.stdout",
+      "sha256": "aa8f4525acf0c4c1aa96b814a55dcb7c8e283d22e2e697c5b9c6f6e138a1f4cb"
+    },
+    {
+      "bytes": 685,
+      "path": "merge-ollama-fix-20261021-v1/merge-intent.json",
+      "sha256": "80c64937c6d7012ecded9d4696f596d584ab13bc54eb1b0fca958b55c217b133"
+    },
+    {
+      "bytes": 2081,
+      "path": "merge-ollama-fix-20261021-v1/pr-before.stdout",
+      "sha256": "2b65e1d895570c5c8db3d30a5bc8db8db2dcec545a4add8c6e743a5128d3c91e"
+    },
+    {
+      "bytes": 233,
+      "path": "merge-ollama-fix-20261021-v1/pr-after.stdout",
+      "sha256": "71c723487a0dc46f95f84b2825710f22088250c215e8015bb93be3009d5b20de"
+    },
+    {
+      "bytes": 354,
+      "path": "merge-ollama-fix-20261021-v1/merge.command.json",
+      "sha256": "5628e2f3feb35ae05b7135d519860cf1eb5686eefb440939e6a4cb16d40ba09a"
+    },
+    {
+      "bytes": 1023,
+      "path": "ollama-merge-base-20261021-v1/receipt.json",
+      "sha256": "585fc28823f9be92c878e5aef708aab16d9a0a26a82b054f21567e9d4b03fe51"
+    },
+    {
+      "bytes": 4248,
+      "path": "ollama-merge-base-20261021-v1/freeze-unit.stderr",
+      "sha256": "752cc3216f91e786c68b36c22c3ae08c2141f62c1b8aeb487584f58d9e8c4742"
+    },
+    {
+      "bytes": 81,
+      "path": "ollama-merge-base-20261021-v1/actual-main-push-gate.stdout",
+      "sha256": "7bed94f4c91d84f65711a4713dfd9dd2f5bad49f6208b8e936463789cfa97b13"
+    },
+    {
+      "bytes": 1559,
+      "path": "ollama-source-merge-review-20261021.txt",
+      "sha256": "74e244479cb1eca5eecd2aef65486fda85d34f7f48d9b4eac565615c079606c6"
+    },
+    {
+      "bytes": 704,
+      "path": "ollama-merge-composition-review-20261021.txt",
+      "sha256": "21ab683599e400a8169c97c5a8aafe2f6652ea346df09b52cc64fb603e788610"
+    },
+    {
+      "bytes": 727,
+      "path": "ollama-host-commission-20261021-v1/source.json",
+      "sha256": "71afa384f6d7735f5b227d2c41c541ebabecfd4c60978dc4ab27092438615f49"
+    },
+    {
+      "bytes": 321,
+      "path": "ollama-host-commission-20261021-v1/installed-hashes.json",
+      "sha256": "99a612216dd5f93905cc042dd9982f610bbfb96d875e8fa222ffed4e103a5e61"
+    },
+    {
+      "bytes": 4241,
+      "path": "ollama-host-commission-20261021-v1/installation-result.json",
+      "sha256": "3aeba756890d92dcf6bc2c269fc64b9a2dec2d5f48ff658bf3e880d3f4dcdf45"
+    },
+    {
+      "bytes": 5961,
+      "path": "ollama-host-commission-20261021-v1/runtime-result.json",
+      "sha256": "bf0c8b7616146cfd98cb8b94e4d2c4bb3e239009e5c7c309c255f99550060334"
+    },
+    {
+      "bytes": 8578,
+      "path": "ollama-host-commission-20261021-v1/lifecycle-result.json",
+      "sha256": "5391ded45071a4a0f63c1b9fb5969025fc85d379aaeeb5cc8f1f8b89bcd1082c"
+    },
+    {
+      "bytes": 70,
+      "path": "ollama-host-commission-20261021-v1/unrelated-policy-comparison.json",
+      "sha256": "17926f64c02b918375792e5caba929d71f8c7f8a07c057c1a77ddb30fa8ef97e"
+    },
+    {
+      "bytes": 623,
+      "path": "ollama-host-commission-20261021-v1/user-unit-update.json",
+      "sha256": "0335735c4328d79e462b0cf18256fd16a5011bef6cc851f391c2f11699fc151a"
+    },
+    {
+      "bytes": 115,
+      "path": "ollama-host-commission-20261021-v1/owner-embedding.log",
+      "sha256": "efc8f7fedfebf0e0911f77ba59c87ba93c27cce081d0365e6f34c46e41f87523"
+    },
+    {
+      "bytes": 213,
+      "path": "ollama-host-commission-20261021-v1/other-account-denial.log",
+      "sha256": "f8b8f41c0588593d65bc2f3314960e3b05d9f21f8ab0f70fa64c9b088e0a598a"
+    },
+    {
+      "bytes": 240,
+      "path": "ollama-host-commission-20261021-v1/owner-delegation.log",
+      "sha256": "a6de32757988cacdfee2cf8469b580e38c4a9ef865cfbb97df6142ed66e6b9db"
+    },
+    {
+      "bytes": 115,
+      "path": "ollama-host-commission-20261021-v1/owner-embedding-after-reload.log",
+      "sha256": "efc8f7fedfebf0e0911f77ba59c87ba93c27cce081d0365e6f34c46e41f87523"
+    },
+    {
+      "bytes": 197,
+      "path": "ollama-host-commission-20261021-v1/service-readback.log",
+      "sha256": "a1158b7069a315627fe8f9b2b8779b5e5739e2e0f9ce9d061913d3a1ddeb45e6"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-host-commission-20261021-v1/owner-gate-after-lifecycle.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 845,
+      "path": "installed-readiness-after-guard-v1.json",
+      "sha256": "b749b2a5302971309e1ad7916cf056accdc72e5bc04684b6f18a35a1b6cadcd4"
+    },
+    {
+      "bytes": 17,
+      "path": "installed-readiness-after-guard-v1.log",
+      "sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39"
+    },
+    {
+      "bytes": 1569,
+      "path": "installed-note-direct-20261021-v6.json",
+      "sha256": "c470a0dcc1f1007ef6a0deb942a6b7a7a82a76f966d13455ffa47ded4c668a0f"
+    },
+    {
+      "bytes": 138,
+      "path": "installed-note-direct-20261021-v6.log",
+      "sha256": "519221b777bd45e48f28e81a8981fc52f185fd5ec383d046d8834346a179c322"
+    },
+    {
+      "bytes": 1568,
+      "path": "installed-note-direct-20261021-v7.json",
+      "sha256": "7403a2485d693fd123e1ea641eff8367dce5cc9f3a030b1040c7b3adfc9e09ad"
+    },
+    {
+      "bytes": 782,
+      "path": "installed-note-body-comparison-v7.json",
+      "sha256": "b31d0c3876754338d9106cfaf1d3fedf436a957695b5b57c5a64d448cba61376"
+    },
+    {
+      "bytes": 6015,
+      "path": "commission-ollama-host-v1.py",
+      "sha256": "1d3200c2f4dc6f12a2f2b70cd9a1cf82516e8db7d369b0da8d4463ba1cd693e2"
+    },
+    {
+      "bytes": 6527,
+      "path": "probe-ollama-host-v1.py",
+      "sha256": "f98aa9f60e4c90f6126bf7e85da634feafb5fadfc6f93fae3ded91bb7e2c47af"
+    },
+    {
+      "bytes": 2869,
+      "path": "ollama-host-lifecycle-v1.py",
+      "sha256": "8be0606add912a9f4da2dcd4895f53854b0fc21a077a5e4ddf2fddfca2d00584"
+    },
+    {
+      "bytes": 2567,
+      "path": "bounded-read-capture-v1.py",
+      "sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6"
+    },
+    {
+      "bytes": 7145,
+      "path": "retain-ollama-host-evidence-v1.py",
+      "sha256": "0eb22b55c95f9b99c0143482ecf8691656b3fa742764e039330d95b8d5297208"
+    }
+  ],
+  "bundle": {
+    "bytes": 16799,
+    "path": "docs/evidence/ollama-merge-and-host-20261021-v1.tar.gz",
+    "sha256": "dded232c51d6339b3dcf470fc3f8997bffa479c82c527d5581c148d3ebe3e477"
+  },
+  "direct_model_note": {
+    "body_sha256": "ed090df536a24821843d8ee77ce297762cc72f8405a28e1003cb6daada804820",
+    "exact_origin": true,
+    "installed_binaries_unchanged": true,
+    "kind": "OBSERVED exact queued-model-note body; not authority",
+    "limitation": "No complete capture, semantic retrieval, current task restoration or approval claim.",
+    "queued_body_sha256": "ed090df536a24821843d8ee77ce297762cc72f8405a28e1003cb6daada804820",
+    "request_id": "99fb70ba9ba74f5083c13fb572e27700",
+    "request_id_present": true,
+    "returned_origin_line": "[origin:model] notes/2026-10-21-072525-codex-99fb70ba9ba74f5083c13fb572e27700",
+    "same_body": true,
+    "source_checkpoint": "a8c68ee058050bb77cc320710698eb56022457a6",
+    "source_log_sha256": "694d2a06939024e4d0c136b324d4d9aab521e754ebc582bad09887ec7112d9c4"
+  },
+  "installed_source": {
+    "authorization": "Human user authorized pending administrative work in the live conversation; credential is not retained.",
+    "helper": {
+      "sha256": "9f00a649ec27c4531b8e4fa3942c40105e714a1eaf093f4ac0ec971dfc27b3d7",
+      "source": "bin/siaollamaguard.py"
+    },
+    "merged_source": "514779ddf9ba6dcd4b5d1dafabac602910751cb3",
+    "sudoers": {
+      "sha256": "54e165d618219a988d15605c3d0dfa957bfbdaa15457dd24954b5b9e825c5667"
+    },
+    "unit": {
+      "sha256": "f8e2f5501349ed3b3ed05650569ba2186df577ac2322629efc50e6f8b4cfc6db",
+      "source": "systemd/sia-ollama-guard.service"
+    },
+    "user-unit": {
+      "sha256": "4b59e57921335879a7e4d3a830b212085f5b8a2196494ce529ebd680cc21a6be",
+      "source": "systemd/sia-ollama.service"
+    }
+  },
+  "limits": [
+    "Current runtime CLI remains the previously installed version; only reviewed guard and user unit were updated.",
+    "Kernel/systemd/nftables/interpreter/root administrator remain trusted.",
+    "Same-UID code and privileged firewall changes remain outside this account boundary.",
+    "Direct model-note recall is not semantic retrieval accuracy or automatic continuity."
+  ],
+  "merges": [
+    {
+      "headRefOid": "3f28a585e733beea78cddc09b3fe1484f112d0d5",
+      "mergeCommit": {
+        "oid": "fe16ca748022ed80784b69e2599e3fba239a88d0"
+      },
+      "mergedAt": "2026-10-21T07:54:55Z",
+      "state": "MERGED",
+      "url": "https://github.com/AnubisQuantumCipher/sia/pull/42"
+    },
+    {
+      "headRefOid": "84140e682ac47d464d314daf5ed9e0e3e277242d",
+      "mergeCommit": {
+        "oid": "514779ddf9ba6dcd4b5d1dafabac602910751cb3"
+      },
+      "mergedAt": "2026-10-21T07:58:05Z",
+      "state": "MERGED",
+      "url": "https://github.com/AnubisQuantumCipher/sia/pull/41"
+    }
+  ],
+  "native_readiness": {
+    "after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "capture_status": "complete",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "ready"
+    ],
+    "elapsed_seconds": 33.93877738696756,
+    "exit": 0,
+    "kind": "OBSERVED native readiness; not full installed acceptance",
+    "observed_at": "2026-10-21T08:12:04.429989+00:00",
+    "output_sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39"
+  },
+  "open": [
+    "post-merge main CI",
+    "actual boot and Ollama restart execution",
+    "installed upgrade/uninstall lifecycle",
+    "new release and exact-SHA marketplace approval",
+    "complete SIA assurance and continuity mission"
+  ],
+  "private_exclusions": [
+    "full firewall snapshots/status",
+    "original returned note text",
+    "unrelated user configuration"
+  ],
+  "status": "OBSERVED_SOURCE_MERGES_AND_SCOPED_INSTALLED_GUARD_CONTROLS"
+}

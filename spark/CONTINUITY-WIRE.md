@@ -1,7 +1,8 @@
 # Bounded continuity transport, proposed version 1
 
-Status: proposed format with partial fixed-record decoding under verification.
-The full-frame transport, I/O adapter and installed integration are unimplemented.
+Status: proposed format with fixed-frame decoding and typed classifier
+composition under verification. The I/O adapter and installed integration are
+unimplemented.
 The transition policy's full-project proof is still incomplete. This proposal
 does not replace the existing Python JSON proposal codec or relax any acceptance
 gate.
@@ -394,3 +395,12 @@ presence never exempt nested fields from representation validation. The
 vectors, complete refusal controls, strict diagnostics and remaining proof
 gates. A decoded descriptor is still a sender claim, not an authenticated
 observation or authority to restore context.
+
+## Complete request-frame increment
+
+`SIA_Continuity_Frame_Wire` validates the complete fixed in-memory request and
+composes the existing classifiers under an exact decoded-field/result contract.
+The [scoped report](../docs/CONTINUITY-FRAME-CODEC.md) retains the failed build,
+strict compilation/runtime passes, scoped core proof, incomplete harness proof
+and independent review findings. Stream framing, response bytes, process
+resource qualification and authenticated installed restoration remain open.

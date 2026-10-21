@@ -63,6 +63,7 @@ run_check continuity-record-wire-tests 30s spark/bin/continuity_record_wire_test
 run_check continuity-observation-wire-tests 30s spark/bin/continuity_observation_wire_tests
 run_check continuity-checkpoint-wire-tests 30s spark/bin/continuity_checkpoint_wire_tests
 run_check continuity-current-wire-tests 30s spark/bin/continuity_current_wire_tests
+run_check continuity-frame-wire-tests 30s spark/bin/continuity_frame_wire_tests
 run_check proof 600s "${tool_paths[gnatprove]}" -P spark/sia_assurance.gpr -U --mode=all \
     --assumptions --no-inlining --memlimit=512 --timeout=10
 test -s spark/obj/gnatprove/gnatprove.out
