@@ -13,6 +13,14 @@ whitespace gate; the initial gate refusal remains recorded. No words changed.
 Its snapshot is historical and its draft label does not imply acceptance.
 Actual GPT-6.1 read-only review found no scope reduction. All A01–A24, G1–G6
 and C01–C14 obligations, fixtures, failures and approved limits remain binding.
+The additive [second contract epoch](ASSURANCE-COMPLETION-CONTRACT-20261021-V2.txt)
+also makes the complete Power of Ten assessment mandatory for completion.
+Its [source record](ASSURANCE-COMPLETION-CONTRACT-EVIDENCE-20261021-V2.json)
+retains the exact supplied original separately; the first epoch is preserved.
+The [experimental traceability checker](ASSURANCE-ACCEPTANCE-MANIFEST.md)
+keeps the original roster plus all ten rule mappings and exposes missing
+evidence. Its structural checks cannot replace the detailed campaign criteria,
+semantic adequacy review, proof gates or actual installed acceptance.
 The executable acceptance manifest and prospective workload/numeric budgets
 are OPEN: unresolved values cannot be fitted retrospectively to a passing run.
 No new spending, privileges, job caps or SOUL.md installation follow from this
@@ -20,6 +28,15 @@ document. Declared modular/toolchain assumptions remain explicit; the contract
 prohibits hiding assumptions, not the existence of a trusted boundary.
 Each increment must close a named existing obligation. Engineering acceptance
 and external publication are separate; publication waiting adds no features.
+
+The operator-directed ownership transfer on 2026-10-21 preserved this exact
+branch, source checkpoint `1b3829d84002037e329a61c1ecff6ac3909c0210`, uncommitted
+increment and retained evidence. The prior owner explicitly relinquished work
+with no pending local jobs or active helpers. The receiving owner verified the
+handoff bytes and continues the same mission. The narrow
+[acceptance-checker evidence](ASSURANCE-ACCEPTANCE-MANIFEST-EVIDENCE-V1.json)
+retains the independently reproduced numeric-roster omission and repair.
+This checkpoint does not close A21, any Power of Ten rule or system acceptance.
 
 ## Delivery obligations
 
@@ -47,7 +64,10 @@ merged as `fe16ca748022ed80784b69e2599e3fba239a88d0`. The separately reviewed
 fix-only [PR #41](https://github.com/AnubisQuantumCipher/sia/pull/41) then merged
 as `514779ddf9ba6dcd4b5d1dafabac602910751cb3`. Both remote trees were read back;
 the fix matches its tested/reviewed blobs plus only the separately tested
-ROADMAP closure. Post-merge CI is pending. The existing reviewer-block
+ROADMAP closure. The original post-merge runs subsequently passed at both
+exact merge commits: [fix CI](https://github.com/AnubisQuantumCipher/sia/actions/runs/39565748742)
+and [declaration CI](https://github.com/AnubisQuantumCipher/sia/actions/runs/39565366075).
+This resolves only that earlier pending-CI entry. The existing reviewer-block
 exception permits these movements; unrelated experiments stay on this branch.
 These release observations do not qualify the experimental assurance branch
 or any protected service.

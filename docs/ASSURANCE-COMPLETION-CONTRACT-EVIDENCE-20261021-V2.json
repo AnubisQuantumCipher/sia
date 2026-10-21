@@ -1,0 +1,11 @@
+{
+  "authority": "No deviation, privilege, spending or job-cap approval",
+  "change": "Mandatory Power of Ten engineering and completion clause",
+  "compressed_path": "docs/evidence/assurance-completion-contract-original-20261021-v2.txt.gz",
+  "compressed_sha256": "b0477f581dddedfffa692740842676bd750b11ae9fe96eb7e2c14e23f4c31f62",
+  "display_sha256": "76431f681acc5cab8a6093971e7d9e6a6f8c2a745046635df66bb7c1b121afdd",
+  "kind": "New additive requirement epoch, not acceptance",
+  "original_sha256": "8bded174be1221037a5b8094d7952ecd05ffe0064ff73683dd20a07e4a2d3ea0",
+  "preservation": "v1 artifacts unchanged; only terminal newline normalized in v2 display",
+  "supersedes_requirement_display": "docs/ASSURANCE-COMPLETION-CONTRACT-20261021.txt"
+}
