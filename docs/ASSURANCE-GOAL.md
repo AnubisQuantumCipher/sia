@@ -149,10 +149,17 @@ The [fixed response increment](CONTINUITY-RESPONSE-CODEC.md) then adds exact
 64-byte result encoding/decoding and request-family/exit matching. Strict build,
 all fifteen runtimes and the scoped 31-check core proof pass after a report-name
 retention refusal was repaired without changing the checker or semantics.
-Both complete response-harness proofs still time out at 120 seconds; all failed
+Both original complete response-harness proofs timed out at 120 seconds; all failed
 source/reports remain. Matching a transport refusal is not policy success or
 request-instance authentication. No actual I/O or installed restoration is
 claimed from these pure codecs.
+
+The later [response-harness proof repair](CONTINUITY-RESPONSE-HARNESS-REPAIR.md)
+isolates the original unused-family body behind a statically called, typed
+helper while preserving every original loop, domain and assertion. Independent
+review, strict build, all fifteen runtimes and complete response-harness proof
+pass on the exact retained overlay. Full-project proof and committed-source
+reproduction remain separate required gates; no system acceptance follows.
 
 The subsequent [disposable I/O increment](CONTINUITY-IO.md) joins the fixed
 frame evaluator and response encoder through a bounded Linux process and

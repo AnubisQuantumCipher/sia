@@ -103,6 +103,13 @@ CI treats Python warnings as errors for the focused checker suite. Comprehensive
 pinned Python static analysis remains OPEN; the bounded AST inventory alone
 cannot close that requirement or prove a complete call graph.
 
+The [independent committed-source reproduction](ASSURANCE-MANIFEST-COMMITTED-EVIDENCE-V1.json)
+uses a fresh archive of `b947dbdd41f3a36f2e9a35cca8fa5dd3955e6ff7`.
+All 30 focused tests pass with warnings treated as errors. Its actual draft
+audit returns `INCOMPLETE`, `authority: NONE`, with 434 metadata gaps. Those
+results belong to that exact source and plan snapshot; later document changes
+require a new draft. They establish checker behavior, not system acceptance.
+
 The smallest sound next step is to freeze the detailed criterion and oracle
 roster, including numeric workload/resource budgets, while completing the
 protected-slot schema/freshness design. Then qualify the disposable protected

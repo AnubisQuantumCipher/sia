@@ -1,0 +1,1587 @@
+{
+  "bundle": {
+    "bytes": 440391,
+    "path": "docs/evidence/continuity-response-harness-repair-v1.tar.gz",
+    "sha256": "c47b0d5145e6b3bd03ece389a899803af689c10d6bf9eb7ccdb339cec56f022d"
+  },
+  "committed_source_reproduction": "OPEN; these are committed base plus exact single-file development overlay results",
+  "complete_response_harness_coverage": {
+    "exact_declaration_location_match": true,
+    "full_project_coverage": "NOT ESTABLISHED",
+    "reported_entity_count": 9,
+    "source_declaration_count": 9,
+    "unit": "continuity_response_wire_tests"
+  },
+  "complete_response_harness_proof": {
+    "assumptions": "Ordinary modular dependencies retained verbatim in raw report and summary",
+    "covered_entities": [
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Process_Correlation",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 161
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Literal_Results",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 44
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Header",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 99
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Unused_Values",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 69
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Refuse",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 28
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Unused_Families",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 90
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Codes",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 127
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Reserved",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 150
+        }
+      },
+      {
+        "name": "Continuity_Response_Wire_Tests",
+        "source_location": {
+          "column": 11,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 7
+        }
+      }
+    ],
+    "justified": 0,
+    "pragma_assume": [],
+    "raw_diagnostics": "No non-information entries in warn_error/flow/proof",
+    "reported_total": 90,
+    "skip_flow_proof": [],
+    "skip_proof": [],
+    "total_row": "Total                            90    25 (28%)    65 (72%)           .          .",
+    "unproved": 0
+  },
+  "focused_helper_proof": {
+    "assumptions": "Ordinary modular dependencies retained verbatim in raw report and summary",
+    "covered_entities": [
+      {
+        "name": "Continuity_Response_Wire_Tests.Check_Unused_Values",
+        "source_location": {
+          "column": 14,
+          "file": "continuity_response_wire_tests.adb",
+          "line": 69
+        }
+      }
+    ],
+    "justified": 0,
+    "pragma_assume": [],
+    "raw_diagnostics": "No non-information entries in warn_error/flow/proof",
+    "reported_total": 9,
+    "skip_flow_proof": [],
+    "skip_proof": [],
+    "total_row": "Total                             9    5 (56%)    4 (44%)           .          .",
+    "unproved": 0
+  },
+  "full_project_proof": "UNRUN for repaired overlay; inherited all-unit failure remains OPEN",
+  "historical_evidence": {
+    "literal_helper": {
+      "exit": 0,
+      "proof": {
+        "assumptions": "Ordinary modular dependencies retained verbatim in raw report and summary",
+        "covered_entities": [
+          {
+            "name": "Continuity_Response_Wire_Tests.Check_Literal_Results",
+            "source_location": {
+              "column": 14,
+              "file": "continuity_response_wire_tests.adb",
+              "line": 44
+            }
+          }
+        ],
+        "justified": 0,
+        "pragma_assume": [],
+        "raw_diagnostics": "No non-information entries in warn_error/flow/proof",
+        "reported_total": 13,
+        "skip_flow_proof": [],
+        "skip_proof": [],
+        "total_row": "Total                            13    4 (31%)    9 (69%)           .          .",
+        "unproved": 0
+      },
+      "scope": "Check_Literal_Results only"
+    },
+    "unused_families": {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "continuity_response_wire_tests.adb",
+        "--limit-subp=continuity_response_wire_tests.adb:69",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "command_limit": "120s",
+      "elapsed_seconds": 120.00579265697161,
+      "exit": 124,
+      "fresh_summary_present": false,
+      "status": "FAILED_TIMEOUT; never relabeled by later success"
+    }
+  },
+  "installed_continuity_and_protected_authority": "OPEN; no installed effect or authority grant",
+  "kind": "SCOPED DEVELOPMENT RESPONSE-HARNESS REPAIR; not full-project or installed acceptance",
+  "members": [
+    {
+      "bytes": 1872,
+      "path": "README.md",
+      "sha256": "b2d770c4016b1cccfc9795965419c10a80800d22ee22c1c7ef8b7ec611df9468"
+    },
+    {
+      "bytes": 5975,
+      "path": "original/helper/driver.py",
+      "sha256": "747493d75526af0bb38528b3537210ba1c5c60a805c1748afe03114009fb4329"
+    },
+    {
+      "bytes": 82,
+      "path": "original/helper/gcc-version.command.json",
+      "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+    },
+    {
+      "bytes": 2,
+      "path": "original/helper/gcc-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/helper/gcc-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 231,
+      "path": "original/helper/gcc-version.stdout",
+      "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+    },
+    {
+      "bytes": 85,
+      "path": "original/helper/gnatls-version.command.json",
+      "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+    },
+    {
+      "bytes": 2,
+      "path": "original/helper/gnatls-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/helper/gnatls-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 222,
+      "path": "original/helper/gnatls-version.stdout",
+      "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+    },
+    {
+      "bytes": 93,
+      "path": "original/helper/gnatprove-version.command.json",
+      "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+    },
+    {
+      "bytes": 2,
+      "path": "original/helper/gnatprove-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/helper/gnatprove-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 396,
+      "path": "original/helper/gnatprove-version.stdout",
+      "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+    },
+    {
+      "bytes": 91,
+      "path": "original/helper/gprbuild-version.command.json",
+      "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+    },
+    {
+      "bytes": 2,
+      "path": "original/helper/gprbuild-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/helper/gprbuild-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 233,
+      "path": "original/helper/gprbuild-version.stdout",
+      "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+    },
+    {
+      "bytes": 536,
+      "path": "original/helper/inspection.json",
+      "sha256": "0dfe8d011bf8bfe0a7603ed589d263ad4eedd0609eab7f245d7b6ce76c4cf456"
+    },
+    {
+      "bytes": 577,
+      "path": "original/helper/preparation.json",
+      "sha256": "c97967b384c439a569b7c7018ab65c34e569c54631b01f0cee9f70df18dfe485"
+    },
+    {
+      "bytes": 295,
+      "path": "original/helper/proof.command",
+      "sha256": "093f78659f96db3468c1692e917ae764cb984ae9cd416c28237d77ae6b1d4b63"
+    },
+    {
+      "bytes": 373,
+      "path": "original/helper/proof.command.json",
+      "sha256": "8a7dbaf19ebef77be1d47b25ad51ce9be952dfcd0058295ae792e9de3bc1eb7b"
+    },
+    {
+      "bytes": 2,
+      "path": "original/helper/proof.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 1225,
+      "path": "original/helper/proof.stderr",
+      "sha256": "c5c6b58c9adef4eb35d614868c3617254e9dbc31b2c1e88a2bb2ac7a8f991711"
+    },
+    {
+      "bytes": 344,
+      "path": "original/helper/proof.stdout",
+      "sha256": "fe6afdd2e09e6af45133076356da29d58ad0d8f89cd7b13b7bc233beb80fa6da"
+    },
+    {
+      "bytes": 39307,
+      "path": "original/helper/raw/continuity_response_wire_tests.spark",
+      "sha256": "6266833ac0e680fa71699959abf9a3768e5b09259641cc383cfc239b4aa0bbe5"
+    },
+    {
+      "bytes": 2365,
+      "path": "original/helper/raw/gnatprove.out",
+      "sha256": "0913563c494963dbf03ec965974c1866e64b6ce5adf8cbde35015dd05decaff6"
+    },
+    {
+      "bytes": 1045,
+      "path": "original/helper/receipt.json",
+      "sha256": "3ac745d3e00efc3dc5640b647816d71bfd35b3053f030fd578b65c43a06444e0"
+    },
+    {
+      "bytes": 14596,
+      "path": "original/helper/source-hashes-after.json",
+      "sha256": "1b8a08a5996c171a02a2ff53b5dd77bbfb761fc3053859dbc7b581a9ae216c21"
+    },
+    {
+      "bytes": 14596,
+      "path": "original/helper/source-hashes-before.json",
+      "sha256": "1b8a08a5996c171a02a2ff53b5dd77bbfb761fc3053859dbc7b581a9ae216c21"
+    },
+    {
+      "bytes": 2392,
+      "path": "original/helper/tool-hashes-after.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 2392,
+      "path": "original/helper/tool-hashes-before.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 472,
+      "path": "original/helper/tool-paths.json",
+      "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+    },
+    {
+      "bytes": 921600,
+      "path": "original/source.tar",
+      "sha256": "2bef1f5afa13cb2ad783c7fb1d084ec480f8f9ae1ec0a7bca3a6fb13aa765f65"
+    },
+    {
+      "bytes": 5975,
+      "path": "original/unused/driver.py",
+      "sha256": "0f65c11cf0d2c513342f7fc92e103053b6ff55c2ab087ced88c0c599e562f3e2"
+    },
+    {
+      "bytes": 82,
+      "path": "original/unused/gcc-version.command.json",
+      "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+    },
+    {
+      "bytes": 2,
+      "path": "original/unused/gcc-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/unused/gcc-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 231,
+      "path": "original/unused/gcc-version.stdout",
+      "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+    },
+    {
+      "bytes": 85,
+      "path": "original/unused/gnatls-version.command.json",
+      "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+    },
+    {
+      "bytes": 2,
+      "path": "original/unused/gnatls-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/unused/gnatls-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 222,
+      "path": "original/unused/gnatls-version.stdout",
+      "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+    },
+    {
+      "bytes": 93,
+      "path": "original/unused/gnatprove-version.command.json",
+      "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+    },
+    {
+      "bytes": 2,
+      "path": "original/unused/gnatprove-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/unused/gnatprove-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 396,
+      "path": "original/unused/gnatprove-version.stdout",
+      "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+    },
+    {
+      "bytes": 91,
+      "path": "original/unused/gprbuild-version.command.json",
+      "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+    },
+    {
+      "bytes": 2,
+      "path": "original/unused/gprbuild-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "original/unused/gprbuild-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 233,
+      "path": "original/unused/gprbuild-version.stdout",
+      "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+    },
+    {
+      "bytes": 470,
+      "path": "original/unused/inspection.json",
+      "sha256": "86b25d9bb62bd3dc9b7d10d0eecdb4643727b7ee3f9ed879d8f764b8636ae581"
+    },
+    {
+      "bytes": 577,
+      "path": "original/unused/preparation.json",
+      "sha256": "eb32d315f9cf2e1a7db955bc1e8422ec1e49eab3d56f4fee3b9a3b27fc903c61"
+    },
+    {
+      "bytes": 295,
+      "path": "original/unused/proof.command",
+      "sha256": "425671b9be6fdb6dc66acff78f8f49a64d6209a7e6682717940a544d35426ee4"
+    },
+    {
+      "bytes": 373,
+      "path": "original/unused/proof.command.json",
+      "sha256": "30234d5c88fec9208c66dd59a1c875abe252cde3a1eddd2d87382f0d71763f13"
+    },
+    {
+      "bytes": 4,
+      "path": "original/unused/proof.exit",
+      "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+    },
+    {
+      "bytes": 0,
+      "path": "original/unused/proof.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 155,
+      "path": "original/unused/proof.stdout",
+      "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+    },
+    {
+      "bytes": 1049,
+      "path": "original/unused/receipt.json",
+      "sha256": "0a5e080880c1d6eecf0e173d75fe4f573365be2e92de0c6ef25344344afc1728"
+    },
+    {
+      "bytes": 14596,
+      "path": "original/unused/source-hashes-after.json",
+      "sha256": "1b8a08a5996c171a02a2ff53b5dd77bbfb761fc3053859dbc7b581a9ae216c21"
+    },
+    {
+      "bytes": 14596,
+      "path": "original/unused/source-hashes-before.json",
+      "sha256": "1b8a08a5996c171a02a2ff53b5dd77bbfb761fc3053859dbc7b581a9ae216c21"
+    },
+    {
+      "bytes": 2392,
+      "path": "original/unused/tool-hashes-after.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 2392,
+      "path": "original/unused/tool-hashes-before.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 472,
+      "path": "original/unused/tool-paths.json",
+      "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+    },
+    {
+      "bytes": 211,
+      "path": "repair/archive.command.json",
+      "sha256": "970619846db185339248fcdaf7c7c2dcfe440f7d9481b09fe150e64f60e08de3"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/archive.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/archive.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/archive.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 14596,
+      "path": "repair/committed-source-hashes.json",
+      "sha256": "1b8a08a5996c171a02a2ff53b5dd77bbfb761fc3053859dbc7b581a9ae216c21"
+    },
+    {
+      "bytes": 244,
+      "path": "repair/complete-response-harness/command",
+      "sha256": "7f383953c2db3ece813cdebd019564fe6a9b35302f8374c82c5ccda87910003f"
+    },
+    {
+      "bytes": 317,
+      "path": "repair/complete-response-harness/command.json",
+      "sha256": "e5ddc703e823af596a60bd8e88366fddc8a42463d8d7676fbe8e21eac93dda73"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/complete-response-harness/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 6923,
+      "path": "repair/complete-response-harness/inspection.json",
+      "sha256": "b29e2933a6324e0b8c4926619a505971e6de7ddcdf0686373ccf42efe6111316"
+    },
+    {
+      "bytes": 167580,
+      "path": "repair/complete-response-harness/raw/continuity_response_wire_tests.spark",
+      "sha256": "cc5dc93c82fe3e1fee1d5efb2756dc0b6bbd26ba9cceb87b6ef41ce15f350731"
+    },
+    {
+      "bytes": 10179,
+      "path": "repair/complete-response-harness/raw/gnatprove.out",
+      "sha256": "1ed17c467ecab0ad943c5612a4a384dc4a44ef0b6d7767dba303bd67ae21ec13"
+    },
+    {
+      "bytes": 563,
+      "path": "repair/complete-response-harness/result.json",
+      "sha256": "fe28130dff89d55412053640fb4f90afeb5d3c4f6fe84dd318b009212e077e01"
+    },
+    {
+      "bytes": 9103,
+      "path": "repair/complete-response-harness/stderr",
+      "sha256": "8435ea29f23daee647c19c770e72a7a967a39a529213111ff1caa5cd8dca543a"
+    },
+    {
+      "bytes": 340,
+      "path": "repair/complete-response-harness/stdout",
+      "sha256": "0f6979da32dbed0a05138a4349298bf579d336e57de367930b559080454702c9"
+    },
+    {
+      "bytes": 67,
+      "path": "repair/consolidation-runtime/command",
+      "sha256": "57bddab89a88f46d5b808f51c017f667b4d2d67803ad1e22806bf46da62a418f"
+    },
+    {
+      "bytes": 90,
+      "path": "repair/consolidation-runtime/command.json",
+      "sha256": "5767c2f5922c9d57e3dbf8f97cfbeb9ccb125264a4024e3271f07f109ac1cdab"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/consolidation-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 225,
+      "path": "repair/consolidation-runtime/result.json",
+      "sha256": "0cbc8e2e7cb8d34e2524917fe26b2efd021e327a99e835c9df39840abc678f63"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/consolidation-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/consolidation-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 64,
+      "path": "repair/continuity-runtime/command",
+      "sha256": "96668ceff8c1ae1e6ef285d845ecc405ddc72243846518f6b531a9512fea6a33"
+    },
+    {
+      "bytes": 87,
+      "path": "repair/continuity-runtime/command.json",
+      "sha256": "fe405fa6d482fdd41ec648dde9008c8b18098883f0958cc94e93ddfcd8512cc9"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 220,
+      "path": "repair/continuity-runtime/result.json",
+      "sha256": "d14c265f52872736bd2a79c939fb024c7adf8d67cacf253ffdaa5a83ed7299b6"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 80,
+      "path": "repair/continuity_checkpoint_wire-runtime/command",
+      "sha256": "ee3657eb745eb5860d4a3f005baa560cc0fb9e2e3aa9015ae5a78facd80f92ba"
+    },
+    {
+      "bytes": 103,
+      "path": "repair/continuity_checkpoint_wire-runtime/command.json",
+      "sha256": "0cb3cc12fe190d2b53235a24882a15a2646d6729ef5060479f43ffc3efd25cba"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_checkpoint_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 251,
+      "path": "repair/continuity_checkpoint_wire-runtime/result.json",
+      "sha256": "3903bad1d9ef94bc72ad932274007770eca55ededa07e2ac0b49bd0825340171"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_checkpoint_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_checkpoint_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 77,
+      "path": "repair/continuity_current_wire-runtime/command",
+      "sha256": "82e92f8bc5e76ca0a299aae31934edf3f7adceeb667788dafffeda7d168b30c3"
+    },
+    {
+      "bytes": 100,
+      "path": "repair/continuity_current_wire-runtime/command.json",
+      "sha256": "0d7cdb23ee359db8ed861af1b1513a07cea844e6b9d7a7cd7965482a0e6bdb5a"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_current_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 244,
+      "path": "repair/continuity_current_wire-runtime/result.json",
+      "sha256": "1a0de27e7df21820f158b23aa90b7a46f1720666a9cb6b3529bcc641b1e50e97"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_current_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_current_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 75,
+      "path": "repair/continuity_frame_wire-runtime/command",
+      "sha256": "74d0761ff244cc3ea21cb9bac9a37f9939f3deb63a90f7b5315f55c9708da2af"
+    },
+    {
+      "bytes": 98,
+      "path": "repair/continuity_frame_wire-runtime/command.json",
+      "sha256": "766dbc068ff3ae45bd5b2aa13c5d5676cc3a82985190e944e67ee1141b1b924e"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_frame_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 241,
+      "path": "repair/continuity_frame_wire-runtime/result.json",
+      "sha256": "f08e8c546c5fbda93ad26a5502582d305c59d8e5f073b7575f9c7a3e0fe69970"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_frame_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_frame_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 81,
+      "path": "repair/continuity_observation_wire-runtime/command",
+      "sha256": "d7829526ec3092028e125fca6a09c8d1760384cb314fe6a68dc72c4ccb6ed893"
+    },
+    {
+      "bytes": 104,
+      "path": "repair/continuity_observation_wire-runtime/command.json",
+      "sha256": "c6b4d8101b732ba3000c801f7957582e8c64477f36e9efb767cdcaffd36c08b4"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_observation_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 255,
+      "path": "repair/continuity_observation_wire-runtime/result.json",
+      "sha256": "91b7e79bc8740f35093aa19589fcb709844ba598a02fbf25109560d0e6d5e886"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_observation_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_observation_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 76,
+      "path": "repair/continuity_record_wire-runtime/command",
+      "sha256": "13c4e7975cfbe275e4adbe9916f6987a5552ee3467798be5ac71937b501a6719"
+    },
+    {
+      "bytes": 99,
+      "path": "repair/continuity_record_wire-runtime/command.json",
+      "sha256": "5d4e402838ad22306f8b29f28f70cce6d0522de254edf4155d0eb8110f79b909"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_record_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 244,
+      "path": "repair/continuity_record_wire-runtime/result.json",
+      "sha256": "164890b64c7b61066d76dba7814cf27a9b56de258ad1b78a5667a83fb6fb8a60"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_record_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_record_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 78,
+      "path": "repair/continuity_response_wire-runtime/command",
+      "sha256": "107a4295004f8576d65ccb44a84e65cbbaa3a6c919e55db14c1bbeb972741c5d"
+    },
+    {
+      "bytes": 101,
+      "path": "repair/continuity_response_wire-runtime/command.json",
+      "sha256": "ebde69b6f601254b90cba9ba96ec45a1d0b989849fb1da9a6357300ebb3cb2b4"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_response_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 248,
+      "path": "repair/continuity_response_wire-runtime/result.json",
+      "sha256": "14f91dc99274c331ff4d5b690857931fc2d67b3c66f926a78baee02e0b598ac2"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_response_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_response_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 75,
+      "path": "repair/continuity_transition-runtime/command",
+      "sha256": "b568149ec6c8cf3667746225a6c04b13d3fcb582beef4ccfcbfc6725ca4f44e3"
+    },
+    {
+      "bytes": 98,
+      "path": "repair/continuity_transition-runtime/command.json",
+      "sha256": "8219b21b661433d721d667d625c9fcf59597d55a87de5c4be9333042460d5a3a"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/continuity_transition-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 243,
+      "path": "repair/continuity_transition-runtime/result.json",
+      "sha256": "fe3d832d38c1994cae96bd203ae23a41d3ff9196ed48d8f7b460bef80aded5e4"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_transition-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/continuity_transition-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2426,
+      "path": "repair/coverage-inspection.json",
+      "sha256": "d45d77a4a5cf0a9376cfa91ff5127a904457f646d654c4588d0bb744bee8751d"
+    },
+    {
+      "bytes": 10350,
+      "path": "repair/driver.py",
+      "sha256": "352ce36b24f68a0fc3753b6e63a21025012b655c2e2d466ead4d92c402584a0e"
+    },
+    {
+      "bytes": 295,
+      "path": "repair/focused-helper/command",
+      "sha256": "4ee05456e746350d9f79c3cda4ebf679160b492c057a8acb4020909bda5f3225"
+    },
+    {
+      "bytes": 373,
+      "path": "repair/focused-helper/command.json",
+      "sha256": "69ba52a73cf08e2443d68c06e923e6d68b34f2adf1cd67e7491bc7125603cf50"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/focused-helper/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 1331,
+      "path": "repair/focused-helper/inspection.json",
+      "sha256": "89b660e2e51333dc8c675c8d0cdd3211f3bb0061ee536914930d2d3bd289c5a5"
+    },
+    {
+      "bytes": 9815,
+      "path": "repair/focused-helper/raw/continuity_response_wire_tests.spark",
+      "sha256": "b4f9fd5d1fd50bbd81dcfd9954c99f476bdcbba9031c4131196ec5514309eb1f"
+    },
+    {
+      "bytes": 2361,
+      "path": "repair/focused-helper/raw/gnatprove.out",
+      "sha256": "d0383542333167b8e37bce0c284c7eaad65f18025e482cfacba4e2d59f679476"
+    },
+    {
+      "bytes": 609,
+      "path": "repair/focused-helper/result.json",
+      "sha256": "5231cd742f548ee8e95ea2f2d5412cdf3ca576a3cddcd5ef28cc09f9712c3812"
+    },
+    {
+      "bytes": 763,
+      "path": "repair/focused-helper/stderr",
+      "sha256": "bde3a031fb64aed2f46fd39dc4be30e3dd0ba57d60215b96c93c27ffb2e43e78"
+    },
+    {
+      "bytes": 339,
+      "path": "repair/focused-helper/stdout",
+      "sha256": "1315738d67d7b552187b394766dc08dd0c41d8bd6d3d17be2b46849a429af045"
+    },
+    {
+      "bytes": 82,
+      "path": "repair/gcc-version.command.json",
+      "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/gcc-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/gcc-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 231,
+      "path": "repair/gcc-version.stdout",
+      "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+    },
+    {
+      "bytes": 85,
+      "path": "repair/gnatls-version.command.json",
+      "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/gnatls-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/gnatls-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 222,
+      "path": "repair/gnatls-version.stdout",
+      "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+    },
+    {
+      "bytes": 93,
+      "path": "repair/gnatprove-version.command.json",
+      "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/gnatprove-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/gnatprove-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 396,
+      "path": "repair/gnatprove-version.stdout",
+      "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+    },
+    {
+      "bytes": 91,
+      "path": "repair/gprbuild-version.command.json",
+      "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/gprbuild-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/gprbuild-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 233,
+      "path": "repair/gprbuild-version.stdout",
+      "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+    },
+    {
+      "bytes": 68,
+      "path": "repair/grant_lifetime-runtime/command",
+      "sha256": "3e47fe72226c43017dea7b278897b27db878a53dadf6c4f1042d7066e8bf08de"
+    },
+    {
+      "bytes": 91,
+      "path": "repair/grant_lifetime-runtime/command.json",
+      "sha256": "e8e834ba2e432293efbaba9c5484c2b6df45a91cf9d069f8873cee6793510cfa"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/grant_lifetime-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 229,
+      "path": "repair/grant_lifetime-runtime/result.json",
+      "sha256": "c5a651ef561595f79a283cd5f0f85d115ea5f39afefdcfded6eab2e986294c66"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/grant_lifetime-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/grant_lifetime-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 37,
+      "path": "repair/head.command.json",
+      "sha256": "0257804243cb49c00dd664cb0726931873f97f66687d7fccbade2b6c70a1504e"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/head.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/head.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 41,
+      "path": "repair/head.stdout",
+      "sha256": "f17995dd928c103dca22bdc09de978082b9bdb45bed8dc2e7fd8ebd8cc348a4c"
+    },
+    {
+      "bytes": 2375,
+      "path": "repair/overlay.patch",
+      "sha256": "040832ab9cec75ad09cc25d77812ba1413c3e6845e38809361a0eaf47c4b7706"
+    },
+    {
+      "bytes": 60,
+      "path": "repair/policy-runtime/command",
+      "sha256": "bbb66949d862665ce55b17a6c7aaab55b5bd6874356f8b308994d5572fd5077d"
+    },
+    {
+      "bytes": 83,
+      "path": "repair/policy-runtime/command.json",
+      "sha256": "e427fb4c9fdacbf9f0932ab4b073cef57c778e47282428878080f9ad50787d54"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/policy-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 211,
+      "path": "repair/policy-runtime/result.json",
+      "sha256": "490f48747bc680a3592eeb326e89deea19d828d5a23e7932bc1ea279a9721629"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/policy-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/policy-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 6631,
+      "path": "repair/receipt.json",
+      "sha256": "780252ff4f8590eaaeef5b2ba4321d3ad21d75551d4741c1d783336a10d1ab94"
+    },
+    {
+      "bytes": 71,
+      "path": "repair/request_admission-runtime/command",
+      "sha256": "a4927752ca8555107f42d14929d830cff79216052d9e6d235969526f23c62eec"
+    },
+    {
+      "bytes": 94,
+      "path": "repair/request_admission-runtime/command.json",
+      "sha256": "c75bf7140b866ea7c0aae90495bb3fa22cd4b80e1b4f8f16c3d4916823d5662e"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/request_admission-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 235,
+      "path": "repair/request_admission-runtime/result.json",
+      "sha256": "724e1a3f12ff16aa3fb2b6fb93ba7f2f69d01ed6b18f6faabd3795d034bbb37f"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/request_admission-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/request_admission-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 66,
+      "path": "repair/request_wire-runtime/command",
+      "sha256": "83506b8c6141d2f60ffcdcb323397e442c0e764d0d3bcc75c6bcaab16e628d48"
+    },
+    {
+      "bytes": 89,
+      "path": "repair/request_wire-runtime/command.json",
+      "sha256": "821a1f8a55a3e8e0b231913d89389f40beb3529a13c59971461f0706cecce044"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/request_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 225,
+      "path": "repair/request_wire-runtime/result.json",
+      "sha256": "dcc7673988f8d80d2f04085cd3722f287f4bb9a8d517c86b5d40e85a0273c025"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/request_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/request_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 64,
+      "path": "repair/retraction-runtime/command",
+      "sha256": "d4189efd5e8ef39867719dcc681a4a30dfc91a8c2e8854df6e89548d751f1a68"
+    },
+    {
+      "bytes": 87,
+      "path": "repair/retraction-runtime/command.json",
+      "sha256": "339d3faf5b78c59d20f0a7dc0548a15a1503caa1a8a6e03f5d35ac610bff083b"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/retraction-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 221,
+      "path": "repair/retraction-runtime/result.json",
+      "sha256": "31d6e76bc0335a1923b678a96cf76c800cfa8df2af67055fb25610293b19e8b3"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/retraction-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/retraction-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 609,
+      "path": "repair/source-binding.json",
+      "sha256": "f5f9f12efa86db7ee8de9832f657d1db09dbff344d6e345497a5071105f2a402"
+    },
+    {
+      "bytes": 14596,
+      "path": "repair/source-hashes-after.json",
+      "sha256": "fee28e85e6a21e1555a46516ad0faf2c4f3dfa4ce65c49c8ab63bcac415d0074"
+    },
+    {
+      "bytes": 14596,
+      "path": "repair/source-hashes-before.json",
+      "sha256": "fee28e85e6a21e1555a46516ad0faf2c4f3dfa4ce65c49c8ab63bcac415d0074"
+    },
+    {
+      "bytes": 665,
+      "path": "repair/source-review.txt",
+      "sha256": "fde7b749714a7779ffd149fc04f10a19a2dce05943f6e895cf91dee7e0916901"
+    },
+    {
+      "bytes": 921600,
+      "path": "repair/source.tar",
+      "sha256": "58de017024ff468d4464de67784b7773dace809034765ee4bc4a847daf96cbce"
+    },
+    {
+      "bytes": 136,
+      "path": "repair/strict-build/command",
+      "sha256": "32c6048ad225110880a795f76cbbc4d5595aae146a472b1269fdfd9f02538d28"
+    },
+    {
+      "bytes": 174,
+      "path": "repair/strict-build/command.json",
+      "sha256": "1920a795f719115469592a4893eeff194b740e18800be1d46f6186aa92fbc6c4"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/strict-build/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 305,
+      "path": "repair/strict-build/result.json",
+      "sha256": "652783e56a277cfd453de7b71ed13e9218ecd79080221ee9c09066d84a9e83f7"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/strict-build/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3480,
+      "path": "repair/strict-build/stdout",
+      "sha256": "f3e4eda866bf40a7a98365e61466aad56808cc0f136499f090411ed2b1fdb46e"
+    },
+    {
+      "bytes": 2392,
+      "path": "repair/tool-hashes-after.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 2392,
+      "path": "repair/tool-hashes-before.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 472,
+      "path": "repair/tool-paths.json",
+      "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+    },
+    {
+      "bytes": 65,
+      "path": "repair/transaction-runtime/command",
+      "sha256": "2ba8f78df7a25825e0e6af3704919867b5af9647901a579e6c294421fe1cd7cc"
+    },
+    {
+      "bytes": 88,
+      "path": "repair/transaction-runtime/command.json",
+      "sha256": "c53b7b48d12d3ff8e4ba5032bcf960fe09826c9b223de8715dcf808c17121d09"
+    },
+    {
+      "bytes": 2,
+      "path": "repair/transaction-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 223,
+      "path": "repair/transaction-runtime/result.json",
+      "sha256": "2acec09b2d3421b4ce593486d1e6552c0bccc6c33a0c2a09391444b26a138e4b"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/transaction-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "repair/transaction-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 18576,
+      "path": "retainer.py",
+      "sha256": "14bced8c756e57b6831c3175a02c4e0a25ac603d3897c85c7f197ea3ebfe08de"
+    },
+    {
+      "bytes": 9148,
+      "path": "selected-members.json",
+      "sha256": "9b5689458b46a2f36f608eb3196a7d627df3984c6d27dc4a461d6510f645b92e"
+    },
+    {
+      "bytes": 1616,
+      "path": "source-comparison.json",
+      "sha256": "f505ed3de2e06bb2d4a0debbf27bfcc14f72f7bdd57206e08c4f57416493f6b4"
+    },
+    {
+      "bytes": 8277,
+      "path": "source/original-response-harness.adb",
+      "sha256": "55a0845ea99c1218267a314cd7dd9e260c770346b4dc3eb2563310a41f30a9f0"
+    },
+    {
+      "bytes": 8396,
+      "path": "source/repaired-response-harness.adb",
+      "sha256": "cf2ebb5c07b90a3c2cacc5829ef29a31be25b2fe83598e587755e5727a11dace"
+    }
+  ],
+  "repair_checks": [
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "continuity_response_wire_tests.adb",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1",
+        "--limit-subp=continuity_response_wire_tests.adb:69"
+      ],
+      "elapsed_seconds": 5.728134655975737,
+      "exit": 0,
+      "fresh_summary_present": true,
+      "name": "focused-helper",
+      "passed": true,
+      "scope_inspection": "SCOPED_REPORT_INSPECTION_ONLY"
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gprbuild-aarch64-linux-26.0.0-1/bin/gprbuild",
+        "-p",
+        "-P",
+        "spark/sia_assurance.gpr"
+      ],
+      "elapsed_seconds": 16.159543043002486,
+      "exit": 0,
+      "name": "strict-build",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/policy_tests"
+      ],
+      "elapsed_seconds": 0.00162177300080657,
+      "exit": 0,
+      "name": "policy-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/transaction_tests"
+      ],
+      "elapsed_seconds": 0.0016308550257235765,
+      "exit": 0,
+      "name": "transaction-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_wire_tests"
+      ],
+      "elapsed_seconds": 0.0013256249949336052,
+      "exit": 0,
+      "name": "request_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_admission_tests"
+      ],
+      "elapsed_seconds": 0.0013781210291199386,
+      "exit": 0,
+      "name": "request_admission-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/grant_lifetime_tests"
+      ],
+      "elapsed_seconds": 0.0013848699745722115,
+      "exit": 0,
+      "name": "grant_lifetime-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/retraction_tests"
+      ],
+      "elapsed_seconds": 0.0014807810075581074,
+      "exit": 0,
+      "name": "retraction-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/consolidation_tests"
+      ],
+      "elapsed_seconds": 0.04414549202192575,
+      "exit": 0,
+      "name": "consolidation-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_tests"
+      ],
+      "elapsed_seconds": 0.002248149015940726,
+      "exit": 0,
+      "name": "continuity-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_transition_tests"
+      ],
+      "elapsed_seconds": 0.0018410079646855593,
+      "exit": 0,
+      "name": "continuity_transition-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_record_wire_tests"
+      ],
+      "elapsed_seconds": 0.001655395026318729,
+      "exit": 0,
+      "name": "continuity_record_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_observation_wire_tests"
+      ],
+      "elapsed_seconds": 0.0059828709927387536,
+      "exit": 0,
+      "name": "continuity_observation_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_checkpoint_wire_tests"
+      ],
+      "elapsed_seconds": 0.12260780803626403,
+      "exit": 0,
+      "name": "continuity_checkpoint_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_current_wire_tests"
+      ],
+      "elapsed_seconds": 0.4230375470360741,
+      "exit": 0,
+      "name": "continuity_current_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_frame_wire_tests"
+      ],
+      "elapsed_seconds": 0.23277932801283896,
+      "exit": 0,
+      "name": "continuity_frame_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_response_wire_tests"
+      ],
+      "elapsed_seconds": 0.005522650026250631,
+      "exit": 0,
+      "name": "continuity_response_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "continuity_response_wire_tests.adb",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "elapsed_seconds": 10.245879522990435,
+      "exit": 0,
+      "fresh_summary_present": true,
+      "name": "complete-response-harness",
+      "passed": true,
+      "scope_inspection": "SCOPED_REPORT_INSPECTION_ONLY"
+    }
+  ],
+  "retainer": {
+    "command": "python3 -B retainer.py --check",
+    "gzip": "level9; mtime0; empty filename",
+    "member": "retainer.py",
+    "selection": "Fixed explicit names and bounded regular-file inputs; no directory crawl",
+    "tar": "USTAR; sorted names; mode0644; uid/gid/mtime0; empty owner names"
+  },
+  "schema_version": 1,
+  "scope_limits": [
+    "Conditional on ordinary modular contracts, toolchain and runtime assumptions.",
+    "No source/fixture/domain/assertion/warning/resource-cap weakening is accepted.",
+    "Source review is model assessment; command results are retained execution evidence.",
+    "This retainer verifies correspondence and deterministic packaging; it does not replay proofs or authenticate the toolchain.",
+    "Original normative Power of Ten remains authoritative; this scoped repair is not whole-system compliance or certification."
+  ],
+  "source": {
+    "archive_sha256": "58de017024ff468d4464de67784b7773dace809034765ee4bc4a847daf96cbce",
+    "commit": "b947dbdd41f3a36f2e9a35cca8fa5dd3955e6ff7",
+    "gnat_env_sha256": "155536a81f8d2be134c6e5cacc0c0bf9b57c94ee33659d2b19ea23c2d6ded388",
+    "lock": "flock -n -E 75 /home/sicarii/.worldline-heavy.lock",
+    "overlay_file": "spark/tests/continuity_response_wire_tests.adb",
+    "overlay_sha256": "cf2ebb5c07b90a3c2cacc5829ef29a31be25b2fe83598e587755e5727a11dace",
+    "patch_sha256": "040832ab9cec75ad09cc25d77812ba1413c3e6845e38809361a0eaf47c4b7706",
+    "platform": "Linux-7.2.6-1-aarch64-ARCH-aarch64-with-glibc2.43"
+  },
+  "source_correspondence": {
+    "all_loop_headers_domains_and_order_preserved": true,
+    "assertion_tokens_and_order_preserved": true,
+    "authority_or_production_contract_change": false,
+    "helper_formals": "R : Restoration; T : Transition_Result",
+    "kind": "Exact bounded text correspondence, not a general Ada semantic proof",
+    "locals_preserved": [
+      "      Accepted : Boolean;",
+      "      Item : Frame_Decision;",
+      "      Bytes : Response_Bytes;"
+    ],
+    "loop_headers": [
+      "for Kind in Request_Kind loop",
+      "for Value in Restoration_Code loop",
+      "for Value in Transition_Code loop",
+      "for R in Restoration loop",
+      "for T in Transition_Result loop",
+      "for I in 1 .. 5 loop",
+      "for Value in Digest_Byte loop",
+      "for Value in Digest_Byte loop",
+      "for Value in Digest_Byte loop",
+      "for I in 9 .. 64 loop",
+      "for Value in Digest_Byte range 1 .. 255 loop",
+      "for Value in Restoration_Code loop",
+      "for Status in 0 .. 255 loop",
+      "for Value in Transition_Code loop",
+      "for Status in 0 .. 255 loop",
+      "for Status in 0 .. 255 loop",
+      "for Kind in Request_Kind loop"
+    ],
+    "normalized_moved_body_sha256": "fff6dc67e815836b6dc6c4a471bb1060b771c071b63794cdd31e960ef37d67c7",
+    "original_sha256": "55a0845ea99c1218267a314cd7dd9e260c770346b4dc3eb2563310a41f30a9f0",
+    "repaired_sha256": "cf2ebb5c07b90a3c2cacc5829ef29a31be25b2fe83598e587755e5727a11dace",
+    "semantic_scope": "Independent source review separately confirms every local is overwritten before read and no result escapes; modular proof and runtimes remain separate evidence",
+    "whole_file_equals_exact_extraction_transform": true
+  },
+  "storage": {
+    "retention": "External pinned evidence root; no objects/binaries/solver sessions/storage inventories bundled"
+  }
+}

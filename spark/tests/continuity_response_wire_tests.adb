@@ -66,26 +66,32 @@ procedure Continuity_Response_Wire_Tests with SPARK_Mode is
       end loop;
    end Check_Literal_Results;
 
-   procedure Check_Unused_Families with Global => null, Always_Terminates is
+   procedure Check_Unused_Values (R : Restoration; T : Transition_Result)
+   with Global => null, Always_Terminates is
       Accepted : Boolean;
       Item : Frame_Decision;
       Bytes : Response_Bytes;
    begin
+      Bytes := Encode ((Malformed, R, T));
+      pragma Assert (Bytes = Malformed_Vector);
+      Decode (Bytes, Accepted, Item);
+      pragma Assert (Accepted and then Item =
+        Frame_Decision'(Malformed, Invalid_Checkpoint, Invalid_Before));
+      Bytes := Encode ((Restore_Request, R, T));
+      Decode (Bytes, Accepted, Item);
+      pragma Assert (Accepted and then Item =
+        Frame_Decision'(Restore_Request, R, Invalid_Before));
+      Bytes := Encode ((Transition_Request, R, T));
+      Decode (Bytes, Accepted, Item);
+      pragma Assert (Accepted and then Item =
+        Frame_Decision'(Transition_Request, Invalid_Checkpoint, T));
+   end Check_Unused_Values;
+
+   procedure Check_Unused_Families with Global => null, Always_Terminates is
+   begin
       for R in Restoration loop
          for T in Transition_Result loop
-            Bytes := Encode ((Malformed, R, T));
-            pragma Assert (Bytes = Malformed_Vector);
-            Decode (Bytes, Accepted, Item);
-            pragma Assert (Accepted and then Item =
-              Frame_Decision'(Malformed, Invalid_Checkpoint, Invalid_Before));
-            Bytes := Encode ((Restore_Request, R, T));
-            Decode (Bytes, Accepted, Item);
-            pragma Assert (Accepted and then Item =
-              Frame_Decision'(Restore_Request, R, Invalid_Before));
-            Bytes := Encode ((Transition_Request, R, T));
-            Decode (Bytes, Accepted, Item);
-            pragma Assert (Accepted and then Item =
-              Frame_Decision'(Transition_Request, Invalid_Checkpoint, T));
+            Check_Unused_Values (R, T);
          end loop;
       end loop;
    end Check_Unused_Families;
