@@ -97,8 +97,9 @@ complete committed-source reproduction, independent evidence review and target
 resource qualification remain required. The prior full-project 600-second
 failure is unchanged. No 900-second campaign is authorized or claimed.
 
-The next protocol slice is Current_Evidence decoding, followed by exact outer
-framing and comparison with the existing classifiers. Production integration
+The subsequent [Current_Evidence increment](CONTINUITY-CURRENT-CODEC.md) adds
+that fixed-record decoder. Exact outer framing and comparison with the existing
+classifiers remain next. Production integration
 also requires independently authenticated source/currentness observations,
 fault-tested publication and actual harness lifecycle tests. This increment
 establishes no universal compaction, recall-latency or avionics assurance claim.

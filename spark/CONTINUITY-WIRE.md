@@ -381,6 +381,16 @@ including every inactive slot, under an exact field-correspondence contract.
 The [implementation/evidence report](../docs/CONTINUITY-CHECKPOINT-CODEC.md)
 retains the source-bound strict build and twelve runtime passes, the scoped
 77-check core proof, failed combined-harness proofs and the unadopted prover-order
-experiment. These are experimental representation results. Current_Evidence,
-the outer frame, actual I/O, authentication and installed task restoration
-remain unimplemented or unqualified; the full-project proof remains open.
+experiment. These are experimental representation results. The outer frame,
+actual I/O, authentication and installed task restoration remain unimplemented
+or unqualified; the full-project proof remains open.
+
+## Complete Current_Evidence record increment
+
+`SIA_Continuity_Current_Wire` preserves the fixed current-evidence header,
+both witness records and all claim/operation observations. Availability and
+presence never exempt nested fields from representation validation. The
+[source-bound report](../docs/CONTINUITY-CURRENT-CODEC.md) records independent
+vectors, complete refusal controls, strict diagnostics and remaining proof
+gates. A decoded descriptor is still a sender claim, not an authenticated
+observation or authority to restore context.

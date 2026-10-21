@@ -10,7 +10,8 @@ project SIA_Assurance is
                  "continuity_transition_tests.adb",
                  "continuity_record_wire_tests.adb",
                  "continuity_observation_wire_tests.adb",
-                 "continuity_checkpoint_wire_tests.adb");
+                 "continuity_checkpoint_wire_tests.adb",
+                 "continuity_current_wire_tests.adb");
    package Compiler is
       for Default_Switches ("Ada") use
         ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",

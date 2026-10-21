@@ -84,6 +84,23 @@ retrieval, task restoration or an approval. Host administrator authentication
 is still unavailable, and both PR #42 full test jobs remain in progress.
 The Goal remains active; these gates restrict their dependent actions only.
 
+The next fixed-record increment decodes Current_Evidence; its
+[scoped source/evidence report](CONTINUITY-CURRENT-CODEC.md) retains a strict
+build, all thirteen runtime harnesses and the 73-check core proof. Both complete
+harness diagnostics timed out at the unchanged limit; full-project proof
+remains open. Independent source review's additional nested-refusal control
+was added and tested under all valid availability states. The decoder preserves
+sender descriptors and grants no authority. Outer framing, authentic producers
+and actual installed restoration remain open.
+
+Installed direct recall also returned request
+`b5f46f6010fd439ab069bf0363bbe074` with the exact queued body and unchanged
+launcher/runtime hashes. The retained local records
+`installed-note-direct-20261021-v5.json` and
+`installed-note-body-comparison-v5.json` bind that observation to source
+checkpoint `a2bd8d64b7f92230ce6f49d0f59311c3661ed01b`. It is model prose and
+direct retrieval only; no permission or semantic-continuity guarantee follows.
+
 The expanded goal is a reliable Linux/Omarchy memory system with enforced
 authority boundaries. Python may propose and execute bounded work; Ada/SPARK
 decides consequential policy; Linux must enforce protected writes, identity,
