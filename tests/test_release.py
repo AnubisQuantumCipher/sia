@@ -105,7 +105,8 @@ def _guard_fixture(directory, trace, admitted=True):
     This test-local dispatcher records the exact gate invocation. All other
     Python commands execute normally; production has no bypass setting.
     """
-    guard = shlex.quote(os.path.join(REPO, "bin", "siaollamaguard.py"))
+    guard = shlex.quote(os.path.realpath(
+        os.path.join(REPO, "bin", "siaollamaguard.py")))
     outcome = "admitted" if admitted else "refused"
     status = 0 if admitted else 23
     body = (

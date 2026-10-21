@@ -232,6 +232,12 @@ class IntegrationWiring(unittest.TestCase):
         unit = (ROOT / "systemd/sia-ollama.service").read_text()
         self.assertLess(unit.index("ExecStartPre="), unit.index("ExecStart="))
         self.assertIn("/usr/local/libexec/sia-ollama-guard gate", unit)
+        lines = [line.strip() for line in unit.splitlines()]
+        pre = [line for line in lines if line.startswith("ExecStartPre=")]
+        start = [line for line in lines if line.startswith("ExecStart=")]
+        self.assertEqual(len(start), 1)
+        self.assertEqual(pre, ["ExecStartPre=/usr/bin/python3 -I -S -B "
+                               "/usr/local/libexec/sia-ollama-guard gate"])
 
     def test_installer_guard_precedes_mutations_and_override(self):
         installer = (ROOT / "install.sh").read_text()
