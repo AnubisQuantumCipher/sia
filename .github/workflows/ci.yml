@@ -103,7 +103,11 @@ jobs:
       - name: compile all python
         run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp bin/sia-intent-review
       - name: shell syntax
-        run: bash -n install.sh uninstall.sh bin/sia-setup
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n bin/sia-setup
       - name: release artifact contracts
         run: |
           python3 -m json.tool manifest.json >/dev/null
@@ -159,26 +163,139 @@ jobs:
           chmod 0755 "$BUN_BIN"
           test "$("$BUN_BIN" --version)" = "$BUN_VERSION"
           echo "BUN_BIN=$BUN_BIN" >> "$GITHUB_ENV"
-      - name: build the exact pinned gbrain (mirrors install.sh)
+      - name: build the exact pinned SIA gbrain overlay (mirrors install.sh)
         run: |
           set -euo pipefail
-          PIN="$(sed -n 's/^commit=//p' GBRAIN_PIN)"
-          PIN_VERSION="$(sed -n 's/^version=//p' GBRAIN_PIN)"
-          PIN_LOCK_SHA256="$(sed -n 's/^bun_lock_sha256=//p' GBRAIN_PIN)"
+          # CI binds the same six-field pin and overlay as the installer.
+          # This checkout check is not the installer's hostile-filesystem policy.
+          PIN_PATH="$PWD/GBRAIN_PIN"
+          OVERLAY="$PWD/GBRAIN_OVERLAY.patch"
+          PIN_VALUES="$(python3 -B - "$PIN_PATH" "$OVERLAY" <<'PYPIN'
+          import datetime
+          import hashlib
+          import os
+          import re
+          import stat
+          import sys
+
+          def generation(info):
+              return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_uid,
+                      info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+          def read_regular(path, maximum):
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+              try:
+                  before = os.fstat(fd)
+                  if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                          or before.st_uid != os.geteuid()
+                          or not 0 <= before.st_size <= maximum):
+                      raise ValueError('Unsafe CI pin input')
+                  chunks, remaining = [], before.st_size
+                  while remaining:
+                      chunk = os.read(fd, min(1048576, remaining))
+                      if not chunk:
+                          raise ValueError('Short CI pin input')
+                      chunks.append(chunk)
+                      remaining -= len(chunk)
+                  if os.read(fd, 1) or generation(os.fstat(fd)) != generation(before):
+                      raise ValueError('CI pin input changed')
+                  return b''.join(chunks)
+              finally:
+                  os.close(fd)
+
+          pin = read_regular(sys.argv[1], 65536)
+          overlay = read_regular(sys.argv[2], 16777216)
+          fields = {}
+          for line in pin.decode('utf-8', errors='strict').splitlines():
+              if not line or line.startswith('#'):
+                  continue
+              if line.count('=') != 1:
+                  raise ValueError('Malformed CI pin assignment')
+              key, value = line.split('=', 1)
+              if key in fields:
+                  raise ValueError('Duplicate CI pin field')
+              fields[key] = value
+          patterns = {
+              'commit': r'[0-9a-f]{40}', 'version': r'[0-9]+(?:[.][0-9]+)+',
+              'bun_lock_sha256': r'[0-9a-f]{64}', 'overlay_sha256': r'[0-9a-f]{64}',
+              'overlay_tree_oid': r'[0-9a-f]{40}',
+              'verified': r'[0-9]{4}-[0-9]{2}-[0-9]{2}',
+          }
+          if (fields.keys() != patterns.keys()
+                  or any(re.fullmatch(pattern, fields[key]) is None
+                         for key, pattern in patterns.items())):
+              raise ValueError('Missing, unknown or invalid CI pin field')
+          if (datetime.date.fromisoformat(fields['verified']).isoformat() != fields['verified']
+                  or hashlib.sha256(overlay).hexdigest() != fields['overlay_sha256']):
+              raise ValueError('CI pin date or overlay digest mismatch')
+          selected = ('commit', 'version', 'bun_lock_sha256',
+                      'overlay_sha256', 'overlay_tree_oid')
+          print('\t'.join(fields[key] for key in selected)
+                + '\t' + hashlib.sha256(pin).hexdigest())
+          PYPIN
+          )"
+          IFS=$'\t' read -r PIN PIN_VERSION PIN_LOCK_SHA256 PIN_OVERLAY_SHA256 PIN_OVERLAY_TREE_OID PIN_SHA256 <<< "$PIN_VALUES"
+          task_build_home="$RUNNER_TEMP/gbrain-build-home"
+          mkdir -p "$task_build_home/.config" "$task_build_home/.cache" "$task_build_home/.local/state"
+          task_build_env=(
+            /usr/bin/env -i HOME="$task_build_home" GBRAIN_HOME="$task_build_home"
+            XDG_CONFIG_HOME="$task_build_home/.config" XDG_CACHE_HOME="$task_build_home/.cache"
+            XDG_STATE_HOME="$task_build_home/.local/state" TMPDIR="$RUNNER_TEMP"
+            BUN_INSTALL_CACHE_DIR="$RUNNER_TEMP/bun-cache" PATH=/usr/bin:/bin
+            LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC DO_NOT_TRACK=1 NO_COLOR=1
+            GBRAIN_SKIP_STARTUP_HOOKS=1 GBRAIN_SYNC_NO_DELEGATE=1
+            GBRAIN_NO_BANNER=1 GBRAIN_SELF_UPGRADE_MODE=off
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
+          )
           SRC="$RUNNER_TEMP/gbrain-src"
-          git init -q "$SRC"
-          git -C "$SRC" remote add origin https://github.com/garrytan/gbrain
-          git -C "$SRC" fetch -q --depth 1 origin "$PIN"
-          git -C "$SRC" checkout -q --detach FETCH_HEAD
-          test "$(git -C "$SRC" rev-parse HEAD)" = "$PIN"
+          "${task_build_env[@]}" git init -q "$SRC"
+          "${task_build_env[@]}" git -C "$SRC" remote add origin https://github.com/garrytan/gbrain
+          "${task_build_env[@]}" git -C "$SRC" fetch -q --depth 1 --no-tags origin "$PIN"
+          "${task_build_env[@]}" git -C "$SRC" checkout -q --detach FETCH_HEAD
+          task_head="$("${task_build_env[@]}" git -C "$SRC" rev-parse HEAD)"
+          test "$task_head" = "$PIN"
+          "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+          "${task_build_env[@]}" git -C "$SRC" diff --cached --quiet --no-ext-diff
+          task_untracked="$("${task_build_env[@]}" git -C "$SRC" ls-files --others --exclude-standard)"
+          test -z "$task_untracked"
           printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
-          "$BUN_BIN" install --cwd "$SRC" --frozen-lockfile --production \
-            --ignore-scripts --no-progress
+          task_package_sha256="$(sha256sum "$SRC/package.json" | cut -d' ' -f1)"
+          "${task_build_env[@]}" "$BUN_BIN" install --no-env-file --cwd "$SRC" \
+            --frozen-lockfile --production --ignore-scripts --no-progress
           printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
-          "$BUN_BIN" build --compile --outfile "$RUNNER_TEMP/gbrain-bin" "$SRC/src/cli.ts"
+          printf '%s  %s\n' "$task_package_sha256" "$SRC/package.json" | sha256sum -c -
+          "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+          "${task_build_env[@]}" git -C "$SRC" diff --cached --quiet --no-ext-diff
+          printf '%s  %s\n' "$PIN_OVERLAY_SHA256" "$OVERLAY" | sha256sum -c -
+          "${task_build_env[@]}" git -C "$SRC" apply --check --index --whitespace=error-all "$OVERLAY"
+          "${task_build_env[@]}" git -C "$SRC" apply --index --whitespace=error-all "$OVERLAY"
+          task_source_identity() {
+            task_head="$("${task_build_env[@]}" git -C "$SRC" rev-parse HEAD)"
+            test "$task_head" = "$PIN"
+            task_tree="$("${task_build_env[@]}" git -C "$SRC" write-tree)"
+            test "$task_tree" = "$PIN_OVERLAY_TREE_OID"
+            "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+            task_untracked="$("${task_build_env[@]}" git -C "$SRC" ls-files --others --exclude-standard)"
+            test -z "$task_untracked"
+            printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
+            printf '%s  %s\n' "$task_package_sha256" "$SRC/package.json" | sha256sum -c -
+            printf '%s  %s\n' "$PIN_SHA256" "$PIN_PATH" | sha256sum -c -
+            printf '%s  %s\n' "$PIN_OVERLAY_SHA256" "$OVERLAY" | sha256sum -c -
+          }
+          task_source_identity
+          "${task_build_env[@]}" "$BUN_BIN" build --no-env-file --no-install \
+            --no-compile-autoload-dotenv --no-compile-autoload-bunfig --compile \
+            --outfile "$RUNNER_TEMP/gbrain-bin" "$SRC/src/cli.ts"
+          task_source_identity
           chmod 0755 "$RUNNER_TEMP/gbrain-bin"
-          test "$("$RUNNER_TEMP/gbrain-bin" --version)" = "gbrain $PIN_VERSION"
+          task_version="$("${task_build_env[@]}" "$RUNNER_TEMP/gbrain-bin" --version)"
+          test "$task_version" = "gbrain $PIN_VERSION"
+          printf 'gbrain_base=%s\ngbrain_lock=%s\ngbrain_overlay=%s\ngbrain_tree=%s\n' \
+            "$PIN" "$PIN_LOCK_SHA256" "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID"
+          sha256sum "$BUN_BIN" "$RUNNER_TEMP/gbrain-bin" "$PIN_PATH" "$OVERLAY"
+          task_binary_sha256="$(sha256sum "$RUNNER_TEMP/gbrain-bin" | cut -d' ' -f1)"
           echo "SIA_GBRAIN_BIN=$RUNNER_TEMP/gbrain-bin" >> "$GITHUB_ENV"
+          echo "SIA_GBRAIN_SHA256=$task_binary_sha256" >> "$GITHUB_ENV"
       - name: real-gbrain contract lane
         env:
           PYTHONWARNINGS: error::ResourceWarning
@@ -187,9 +304,11 @@ jobs:
           PYTHON_COLORS: "0"
         run: |
           set -euo pipefail
-          output="$(python3 -m unittest tests.test_gbrain_contract -v 2>&1)" || {
+          printf '%s  %s\n' "$SIA_GBRAIN_SHA256" "$SIA_GBRAIN_BIN" | sha256sum -c -
+          output="$(python3 -m unittest tests.test_gbrain_contract tests.test_gbrain_overlay_contract -v 2>&1)" || {
             printf '%s\n' "$output"; exit 1; }
           printf '%s\n' "$output"
+          printf '%s  %s\n' "$SIA_GBRAIN_SHA256" "$SIA_GBRAIN_BIN" | sha256sum -c -
           # A skip here would mean SIA_GBRAIN_BIN was ignored — the lane must actually run.
           # The one declared exception is GbrainCompiledRenderContract, which needs
           # operator-supplied pinned expectation artifacts (SIA_GBRAIN_COMPILED_*)
