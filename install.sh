@@ -8232,10 +8232,8 @@ source, temporary, mode = sys.argv[1:]
 mode = int(mode, 8)
 source_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
                 | getattr(os, "O_NOFOLLOW", 0))
-source_fd = os.open(source, source_flags)
-temporary_fd = os.open(
-    temporary, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0)
-    | getattr(os, "O_NOFOLLOW", 0))
+source_fd = None
+temporary_fd = None
 
 
 def generation(value):
@@ -8244,6 +8242,10 @@ def generation(value):
 
 
 try:
+    source_fd = os.open(source, source_flags)
+    temporary_fd = os.open(
+        temporary, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0))
     before = os.fstat(source_fd)
     if not stat.S_ISREG(before.st_mode) \
             or before.st_uid != os.geteuid() or before.st_size > MAX_BYTES:
@@ -8269,8 +8271,16 @@ try:
     os.fchmod(temporary_fd, mode)
     os.fsync(temporary_fd)
 finally:
-    os.close(temporary_fd)
-    os.close(source_fd)
+    try:
+        if temporary_fd is not None:
+            closing_fd = temporary_fd
+            temporary_fd = None
+            os.close(closing_fd)
+    finally:
+        if source_fd is not None:
+            closing_fd = source_fd
+            source_fd = None
+            os.close(closing_fd)
 PY
   then
     rm -f -- "$temporary"
