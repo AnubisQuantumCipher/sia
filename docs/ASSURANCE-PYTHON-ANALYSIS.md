@@ -50,7 +50,7 @@ counterexamples refuse. The actual draft remains `INCOMPLETE`, with
 the earlier combined 30-test run that also included four inventory tests.
 The selected analysis reports no diagnostics or stderr, and the exact CI
 shell block passes locally. Remote CI and fresh committed-source reproduction
-remain separate gates.
+were separate unrun gates at that development checkpoint.
 The [versioned evidence](ASSURANCE-PYTHON-ANALYSIS-EVIDENCE-V1.json) separates
 the historical checker repair from the later CI configuration and preserves
 the failed baseline and intermediate configuration. Local empty-rule and
@@ -58,6 +58,25 @@ suppression controls refused as expected; their receipts lack per-fixture
 input hash maps, so independent sealed replay remains required.
 The analysis-document hash binds its snapshot before this evidence-link
 paragraph was added; the CI, analyzer inputs and frozen rule bytes are unchanged.
+
+## Committed-source replay
+
+The [fresh committed replay](ASSURANCE-PYTHON-ANALYSIS-COMMITTED-EVIDENCE-V1.json)
+uses exact `9bd84d19ae2e9907c7129f1e555bf45f9e162eac` source with no overlay.
+All 26 manifest and four inventory tests pass with warnings as errors. The
+exact committed CI block reports no diagnostics or stderr. Separate empty-rule,
+changed-nonempty-rule and suppression fixtures each refuse before analyzer
+output is created. Every executed fixture's complete input bytes and hash map
+were retained before execution and rechecked unchanged afterward; these seals
+are neither signatures nor authenticated custody.
+
+The actual draft/audit remains `INCOMPLETE`, `authority: NONE`, with all 434
+gaps retained. [Independent correspondence review](evidence/assurance-python-analysis-committed-review-v1.json)
+checks source, inputs, receipts and oracles; it does not replay execution.
+This new run does not repair the earlier missing fixture maps retroactively.
+Its source archive binds this document as it appeared at the named commit,
+before this replay section. Remote CI, comprehensive analysis and the other
+mission gates remain separate requirements.
 
 ## Findings outside this lane
 

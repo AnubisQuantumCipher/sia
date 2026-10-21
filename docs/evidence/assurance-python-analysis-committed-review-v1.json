@@ -1,0 +1,18 @@
+{
+  "status": "SCOPED CORRESPONDENCE REVIEW PASSED; no execution replay",
+  "source_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+  "manifest_sha256": "7087f4387f86d231bc9f956208995c9c2a4ff60cb1ca1168110f528fac0fe46c",
+  "bundle_sha256": "6c9b30fd762dc964fc80adb9f178fea32a6ed4af49fc9b294362f9a8cebbd239",
+  "verified": [
+    "All bundle member roster/size/hash correspondence",
+    "All archived regular source bytes match exact 9bd84d19 Git blobs",
+    "Retained original combined 30-test roster/results and INCOMPLETE/NONE audit with 434 gaps",
+    "Exact positive CI scope and separate three fault copies",
+    "Pre-execution seals/command receipt joins, before-start timestamps, full input byte maps, unchanged checks and exact intended mutation-only deltas",
+    "Empty/changed rule and suppression failures match declared stderr oracles",
+    "Historical v2 missing-fixture-map limitation remains explicit"
+  ],
+  "privacy": "No concrete exposure in selected inspected metadata/source/runner/raw results; bounded credential-pattern scan negative, not universal secret detection",
+  "limits": "No tests/analyzer/proof/build replay. Seals are not independent signatures or authenticated custody. Remote CI, P10, proof and system acceptance remain OPEN.",
+  "reviewer": "Configured gpt-6.1-sol per previously independently checked spawn record"
+}
