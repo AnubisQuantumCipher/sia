@@ -119,3 +119,69 @@ counts or infer complete coverage. A fresh complete transition-unit diagnostic
 still reached 120 seconds without a summary. No full-project attempt was made
 on this further changed source. It remains **UNADOPTED**, with performance
 improvement and complete acceptance unproved.
+
+## Array and empty-transition proof decomposition
+
+These external candidates preserve the earlier reference-check extraction,
+capacity mutations and shared rejection helper. They add checked test lemmas;
+the authority packages and original test domains are unchanged. The evidence
+manifest records exact source overlays, commands, raw results, effective
+settings and failed attempts. Full acceptance is evaluated separately from the
+scoped results below.
+
+| Attempt | Observed scoped result |
+| --- | --- |
+| Capacity assertions | Strict build/runtime and focused caller passed; the expensive obligation moved into the new validity assertion |
+| Dispatch frame v1 | Strict compiler rejected missing visibility of digest equality; subsequent checks unrun |
+| Dispatch frame v2 | Build/runtime, array lemma and original concrete mutation caller passed; raw attempts retain solver timeouts followed by successful fallbacks |
+| Initialization lemma v1 | Strict compiler rejected a redundant body import; subsequent checks unrun |
+| Initialization lemma v2 | Build/runtime, both operation helpers and the original capacity-construction caller passed; the caller's raw attempts have no solver timeout |
+| Empty-transition helper | Build/runtime, helper and concrete caller passed; all three original classification checks and exact fixture construction remain |
+| Targeted helper prover order | Strict build/runtime and operation-helper proof passed with CVC5 first for that package only; complete-project speed improvement is not inferred |
+
+The dispatch lemma requires a valid operation array, an active index and an
+exact single-field stage update. Its checked body preserves operation validity,
+identities and canonical padding. The initialization lemma converts the
+fixture's already asserted distinct first identity bytes into full identity
+inequality; active validity and empty-tail premises remain concrete caller
+obligations. Neither lemma grants permission or changes policy decisions.
+
+The empty-transition helper separates exact fixture construction from three
+classification implications. Its premises require valid checkpoints, joined
+task/link/watermark fields and the original empty, planned and dispatched
+operation shapes. The original three calls and their order remain in its body.
+Independent actual GPT-6.1 source review found no lost fixtures, weakened
+domains or changed oracles. That review did not independently rerun the proof.
+
+This is an adaptation of the Power of Ten intent, not a quotation or compliance
+claim. Static calls, fixed array domains, checked contracts and smaller routines
+support controls 1, 2, 4, 5, 6 and 9. Original malformed-input and refusal cases
+support control 7. The explicit project settings and strict compiler failures
+remain visible under controls 8 and 10. No suppression, assumption annotation,
+test exclusion or increased resource cap is introduced. Fixed typed arrays do
+not establish total stack bounds or whole-runtime allocation compliance with
+control 3; those remain separate resource obligations.
+
+The effective GNATprove settings are retained. The existing predicate helper
+and new operation helper use CVC5, Z3, then Alt-Ergo; other units retain their
+original order. All-mode analysis, no-inlining, enabled tagged warnings,
+warnings-as-errors, one job, the per-prover memory limit and per-check deadline
+remain unchanged. The new helper order follows observed fallbacks and is not a
+general claim that one prover is faster.
+
+No scoped pass establishes complete all-unit coverage, committed-source
+reproduction, authenticated evidence production, runtime restoration, installed
+harness support or marketplace delivery. The original failed attempts remain
+part of the evidence rather than being overwritten by later successes.
+
+[Exact-source decomposition evidence](CONTINUITY-DECOMPOSITION-EVIDENCE.json)
+
+The subsequent fresh full attempt passed strict compilation and all eleven
+original runtime harnesses. The unchanged all-unit proof command exited 124
+at its 600-second limit without a fresh summary. Complete coverage validation
+was therefore UNRUN. Tool identities remained unchanged. Completed partial raw
+reports contain no non-information diagnostics, but the transition test unit
+was still in progress and other required units were not completed. These
+observations establish neither complete proof nor an overall speed benefit.
+The combined candidate remains **UNADOPTED**. Do not retry it unchanged as an
+acceptance attempt or use earlier scoped reports to fill missing full coverage.
