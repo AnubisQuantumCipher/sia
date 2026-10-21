@@ -1,0 +1,22 @@
+{
+  "archives": [
+    {
+      "original_path": "docs/evidence/continuity-predicate-extraction-v2.patch",
+      "original_sha256": "7efa5010a2dc5f6b93d027a0e59d45c291febc3dca1dd5bfb260b8f5617af4c0",
+      "path": "docs/evidence/continuity-predicate-extraction-v2.patch.gz",
+      "sha256": "795cf2228f0cb7e665c8fee55aedf32cd9854e6be98ef4722d9192fa697f5df2"
+    },
+    {
+      "original_path": "docs/evidence/continuity-operation-scope-v3.patch",
+      "original_sha256": "3f74bb79ab05e7c847b35642e076fbed7c533d09b03d549ea84bbe7649aa8886",
+      "path": "docs/evidence/continuity-operation-scope-v3.patch.gz",
+      "sha256": "79e5ae03e2c86236b7f33de5583905c1a7ec931d1cf97f7bae4e77b5876bb5b4"
+    }
+  ],
+  "generator_sha256": "3f06ff38e4e0bee7c6de70ea4beff3bbd96d2ee9edc4a872da268e9cef01e4b6",
+  "original_commit": "e1e339f08d1287815172f22e868cc200756cc5b5",
+  "original_manifest": "docs/CONTINUITY-PROOF-SEARCH-EVIDENCE.json",
+  "original_manifest_sha256": "6817bfa34f0fdde82fa2c56d40fd07c27a3df43bcb727e392fa2c279481ac32f",
+  "schema_version": 1,
+  "scope": "Lossless evidence packaging only; candidates remain UNADOPTED"
+}

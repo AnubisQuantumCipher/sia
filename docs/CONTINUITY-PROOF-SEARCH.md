@@ -10,6 +10,14 @@ each source base, archive, overlay, command, tool identity, log and result.
 The two candidate patches are reproducible against their respective archived
 base commits. They are evidence artifacts, not active project source.
 
+The patches are now stored as lossless `.patch.gz` archives; the original patch
+bytes and original manifest remain bound to commit
+`e1e339f08d1287815172f22e868cc200756cc5b5`. The
+[archive manifest](CONTINUITY-PROOF-ARCHIVE-EVIDENCE.json) records both compressed
+and original hashes. Decompress before applying to the recorded base. This
+avoids treating unified-diff context markers as source whitespace violations;
+it changes no patch content and adds no exception to the repository check.
+
 | Experiment | Observed result | Interpretation |
 | --- | --- | --- |
 | Original continuity unit, CVC5-first diagnostic | Exit 124 at the 120-second diagnostic limit; no fresh summary | Changing prover order alone did not establish a complete unit result |
