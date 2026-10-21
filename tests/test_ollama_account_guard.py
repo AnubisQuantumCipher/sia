@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -31,6 +32,11 @@ def observed_table():
 
 def encode(value):
     return json.dumps(value).encode()
+
+
+def identity(uid):
+    """Only the guard sees this identity; stdlib os stays untouched."""
+    return SimpleNamespace(getuid=lambda: uid, geteuid=lambda: uid)
 
 
 class Configuration(unittest.TestCase):
@@ -66,7 +72,7 @@ class Configuration(unittest.TestCase):
                     GUARD._root_file(str(candidate), 11)
 
     def test_root_apply_required(self):
-        with mock.patch.object(GUARD.os, "geteuid", return_value=1000):
+        with mock.patch.object(GUARD, "os", identity(1000)):
             with self.assertRaises(GUARD.Refusal):
                 GUARD.apply(1000)
 
@@ -114,14 +120,14 @@ class KernelShape(unittest.TestCase):
             self.assertFalse(GUARD.table_matches(raw, 0))
 
     def test_existing_mismatch_is_never_replaced(self):
-        with mock.patch.object(GUARD.os, "geteuid", return_value=0), \
+        with mock.patch.object(GUARD, "os", identity(0)), \
              mock.patch.object(GUARD, "_run", return_value=(0, b"{}")) as run:
             with self.assertRaises(GUARD.Refusal):
                 GUARD.apply(1000)
             self.assertEqual(run.call_count, 1)
 
     def test_successful_command_with_wrong_readback_refuses(self):
-        with mock.patch.object(GUARD.os, "geteuid", return_value=0), \
+        with mock.patch.object(GUARD, "os", identity(0)), \
              mock.patch.object(GUARD, "_run",
                                side_effect=[(1, b"absent"), (0, b""), (0, b"{}")]):
             with self.assertRaises(GUARD.Refusal):
@@ -134,8 +140,7 @@ class ProcessBoundary(unittest.TestCase):
         files = {GUARD.CONFIG: b"1000\n", GUARD.HELPER: source,
                  GUARD.UNIT: GUARD.ROOT_UNIT.encode()}
         with mock.patch.object(GUARD, "_root_file", side_effect=lambda p, limit: files[p]), \
-             mock.patch.object(GUARD.os, "getuid", return_value=1000), \
-             mock.patch.object(GUARD.os, "geteuid", return_value=1000), \
+             mock.patch.object(GUARD, "os", identity(1000)), \
              mock.patch.object(GUARD, "_manager_matches", return_value=True), \
              mock.patch.object(GUARD, "_run", side_effect=[(0, b"active"), (1, b"drift")]) as run:
             with self.assertRaisesRegex(GUARD.Refusal, "fresh administrator kernel check"):
