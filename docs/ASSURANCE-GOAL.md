@@ -70,7 +70,7 @@ fixtures, accepted cases, negative controls and compatibility must survive.
 | A12 | Linux enforcement and bypass resistance | Restricted actuator actually owns protected state; hostile same-user tests; no Python bypass of denial | UNRUN |
 | A13 | Reproducible acceptance and controlled release | Exact source/toolchain, strict CI, offline verifier, independent GPT-6.1 review, installed readback and marketplace receipt | PARTIAL: fresh committed-source policy runner and bounded-model runner tested; v1.8.4 release/tag readback complete and marketplace request filed; complete offline system verifier, portable proof CI and marketplace publication UNRUN |
 | A14 | Documentation and pictures | Audit measured versus illustrative figures; proposed versus implemented diagrams; accurate proof and maturity claims | PARTIAL: repository claims corrected and historical preview inspected; unattached illustrative visualization unavailable; final enforced-architecture documentation pending |
-| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: caller cutoff diagnosed, guidance corrected, repeated installed-runtime readiness and no-touch recall passed; universal latency not established |
+| A15 | Recall reliability | Preserve lock/readiness gates; diagnose actual deadlines; bounded waiting and explicit failure; repeat real recall | PARTIAL: installed CLI readiness and bounded no-touch recall passed again; current checkpoint markers were absent from the ad-hoc result. Timing, relevance and restoration remain separate; see INSTALLED-CONTINUITY-OBSERVATION-20261021.json |
 | A16 | Authoritative history and capture gaps | Preserved original provenance, identity and ordering; explicit missing/unavailable capture; guarantees scoped to successfully captured events | PARTIAL: origin/completeness predicates exist; complete lifecycle and gap acceptance OPEN |
 | A17 | Authoritative retrieval and retirement | SPARK-governed current read/retire decisions, durable replay/tombstone evidence and no bypass | OPEN: protected Query proposed; full retirement and production mediation UNRUN |
 | A18 | Replaceable derived memory | Versioned evidence-linked dreams/summaries/embeddings; retraction and rebuild preserve authoritative history | End-to-end acceptance UNRUN |
@@ -93,6 +93,24 @@ Source completeness must distinguish observed empty, not observed, unavailable,
 and verified complete. Authentication of a model record never makes its content
 source evidence or factual truth. SIA recall never grants WORLDLINE PRIME or
 other systems' authorization; those systems authenticate evidence independently.
+
+## Installed continuity observation, 2026-10-21 UTC
+
+The [source-bound observation](INSTALLED-CONTINUITY-OBSERVATION-20261021.json)
+records successful readiness and no-touch recall through the absolute installed
+CLI path, with its executable hash unchanged. The installed MCP server uses
+that same absolute CLI and a 240-second request budget. The worktree's plain
+`sia` command resolves to its candidate, so it is not an installed-path test.
+
+The returned results were older derived/model content and did not contain the
+current checkpoint commit or evidence-manifest marker. This is one ad-hoc
+retrieval observation, not a held-out score or proof of absence from storage.
+It does not close A22/A23. The actual brainstem and user `ollama.service` were
+active with zero reported restarts; the different candidate service name was
+inactive. These checks do not establish the uninstalled administrator-owned
+guard, future latency, source-capture completeness or correct continuation.
+Original retrieved bodies remain local; this public manifest binds their log
+by digest without copying private memory contents.
 
 ## Proof boundary
 
