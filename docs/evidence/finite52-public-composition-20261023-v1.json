@@ -1,0 +1,193 @@
+{
+  "acceptance": false,
+  "actual_target_status": "TESTED_PUBLIC_COMPOSITION_FINITE_52",
+  "analysis": {
+    "ruff_sha256": "7ac5f222f6b5db43a5551f7d21c3245e6f71f7b17c4271504d656721bb8bce05",
+    "scope": "Eight selected Python modules, literal historical167 rule selector and syntax script. No source suppression/ignore flags or fixes.",
+    "strict_stderr": "",
+    "strict_stdout": "[]",
+    "syntax_stderr": "",
+    "syntax_stdout": ""
+  },
+  "archive": {
+    "path": "finite52-preservation-20261023-v3.tar.gz",
+    "sha256": "03ad72b0182621b3185fe531972a99a67d15b1dd0a99eca02328782fc16254cf"
+  },
+  "authority": "NONE",
+  "clean_prospective_admission": false,
+  "date": "2026-10-23",
+  "evidence_checks": {
+    "address_space": "Inherited root limits; separate profile AS2GiB is not actual test/analysis AS.",
+    "cleanup": "Held direct pidfd, fixed120/125 tests or30/35 analysis, one shared cleanup<=5; no hostile descendant closure or syscall WCET claim.",
+    "core_limit_bytes": 0,
+    "native_profile_before_after_exact_historical_match": true,
+    "private_home_tmp_empty": true,
+    "reserve_bytes": 10000000000,
+    "root_file_limit_bytes": 536870912,
+    "selected_module_origins8_join": true,
+    "source10_archive_inputs4_tools6_ruff_before_after_equal": true
+  },
+  "limits": "Inert checkpoint and finite run observations only. Actual encoder V6 proof remains ATTEMPTED_NOT_COMPLETED; typed filename diagnostic remains INCOMPLETE. No lifecycle repair qualification, native3, complete proof, isolated authority/actuator, protected publication/query/recovery, installed path, compaction continuity, retrieval, restore, release or marketplace acceptance.",
+  "matched_test_lines": [
+    "test_more_than64_sequential_identities_keep_complete_journal (test_process_accounting.AccountingControls.test_more_than64_sequential_identities_keep_complete_journal) ... ok",
+    "test_65_live_refuses_without_changing64_or_losing_witness (test_process_accounting.AccountingControls.test_65_live_refuses_without_changing64_or_losing_witness) ... ok",
+    "test_pid_reuse_requires_two_confirmations_and_explicit_retirement (test_process_accounting.AccountingControls.test_pid_reuse_requires_two_confirmations_and_explicit_retirement) ... ok",
+    "test_ambiguous_observations_never_retire (test_process_accounting.AccountingControls.test_ambiguous_observations_never_retire) ... ok",
+    "test_unreadable_observation_retains_active_and_journals_uncertainty (test_process_accounting.AccountingControls.test_unreadable_observation_retains_active_and_journals_uncertainty) ... ok",
+    "test_short_write_keeps_real_partial_bytes_and_uncommitted_witness (test_process_accounting.AccountingControls.test_short_write_keeps_real_partial_bytes_and_uncommitted_witness) ... ok",
+    "test_full_write_exception_and_fsync_failure_are_sticky (test_process_accounting.AccountingControls.test_full_write_exception_and_fsync_failure_are_sticky) ... ok",
+    "test_record_and_file_budgets_refuse_before_write (test_process_accounting.AccountingControls.test_record_and_file_budgets_refuse_before_write) ... ok",
+    "test_failed_retirement_record_keeps_the_original_identity (test_process_accounting.AccountingControls.test_failed_retirement_record_keeps_the_original_identity) ... ok",
+    "test_mid_scan_failure_preserves_previously_committed_child (test_process_accounting.AccountingControls.test_mid_scan_failure_preserves_previously_committed_child) ... ok",
+    "test_pidfd_cleanup_signals_owned_handle_and_closes_only_owned_fd (test_process_accounting.AccountingControls.test_pidfd_cleanup_signals_owned_handle_and_closes_only_owned_fd) ... ok",
+    "test_reused_pid_cleanup_never_signals_replacement (test_process_accounting.AccountingControls.test_reused_pid_cleanup_never_signals_replacement) ... ok",
+    "test_cleanup_signal_error_and_close_error_both_retained_without_retry (test_process_accounting.AccountingControls.test_cleanup_signal_error_and_close_error_both_retained_without_retry) ... ok",
+    "test_each_pre_enroll_observation_failure_retains_seen_not_owned (test_process_accounting_v2_failures.V2FailureControls.test_each_pre_enroll_observation_failure_retains_seen_not_owned) ... ok",
+    "test_uncertain_parent_or_starttime_never_grants_child_cleanup (test_process_accounting_v2_failures.V2FailureControls.test_uncertain_parent_or_starttime_never_grants_child_cleanup) ... ok",
+    "test_read_primary_and_both_close_fault_objects_and_json_are_complete (test_process_accounting_v2_failures.V2FailureControls.test_read_primary_and_both_close_fault_objects_and_json_are_complete) ... ok",
+    "test_validation_before_closes_cannot_be_masked_by_close_errors (test_process_accounting_v2_failures.V2FailureControls.test_validation_before_closes_cannot_be_masked_by_close_errors) ... ok",
+    "test_uncertainty_record_failure_retains_original_all_close_diagnostics (test_process_accounting_v2_failures.V2FailureControls.test_uncertainty_record_failure_retains_original_all_close_diagnostics) ... ok",
+    "test_absent_record_failure_remains_unresolved_without_more_reads (test_process_accounting_v2_failures.V2FailureControls.test_absent_record_failure_remains_unresolved_without_more_reads) ... ok",
+    "test_stat_acquisition_primary_and_directory_close_are_both_preserved (test_process_accounting_v2_failures.V2FailureControls.test_stat_acquisition_primary_and_directory_close_are_both_preserved) ... ok",
+    "test_cleanup_serialization_preserves_proc_faults_and_pidfd_close_fault (test_process_accounting_v2_failures.V2FailureControls.test_cleanup_serialization_preserves_proc_faults_and_pidfd_close_fault) ... ok",
+    "test_child_read_and_close_real_fd_keep_original_graph_and_caller (test_process_accounting_v3_failures.V3FailureControls.test_child_read_and_close_real_fd_keep_original_graph_and_caller) ... ok",
+    "test_child_validation_plus_close_retains_both_before_return (test_process_accounting_v3_failures.V3FailureControls.test_child_validation_plus_close_retains_both_before_return) ... ok",
+    "test_oversized_primary_has_bounded_incomplete_graph_after_all_closes (test_process_accounting_v3_failures.V3FailureControls.test_oversized_primary_has_bounded_incomplete_graph_after_all_closes) ... ok",
+    "test_custom_str_cannot_run_or_prevent_either_close_or_pending_error (test_process_accounting_v3_failures.V3FailureControls.test_custom_str_cannot_run_or_prevent_either_close_or_pending_error) ... ok",
+    "test_close_error_custom_str_does_not_skip_second_release (test_process_accounting_v3_failures.V3FailureControls.test_close_error_custom_str_does_not_skip_second_release) ... ok",
+    "test_primary_interrupt_exit_and_other_baseexception_keep_all_closes (test_process_accounting_v3_failures.V3FailureControls.test_primary_interrupt_exit_and_other_baseexception_keep_all_closes) ... ok",
+    "test_partial_fixture_open_write_and_stat_open_release_all_prior_slots (test_process_accounting_v3_failures.V3FailureControls.test_partial_fixture_open_write_and_stat_open_release_all_prior_slots) ... ok",
+    "test_after_fixture_return_journal_failure_still_closes_caller (test_process_accounting_v3_failures.V3FailureControls.test_after_fixture_return_journal_failure_still_closes_caller) ... ok",
+    "test_dup_setup_failure_keeps_caller_owned_until_final_close (test_process_accounting_v3_failures.V3FailureControls.test_dup_setup_failure_keeps_caller_owned_until_final_close) ... ok",
+    "test_valid_mutated_builtin_slot_formats_current_literal_scalar (test_process_accounting_v4_slots.V4SlotControls.test_valid_mutated_builtin_slot_formats_current_literal_scalar) ... ok",
+    "test_custom_strerror_on_exact_oserror_keeps_graph_all_closes_no_callback (test_process_accounting_v4_slots.V4SlotControls.test_custom_strerror_on_exact_oserror_keeps_graph_all_closes_no_callback) ... ok",
+    "test_oversized_independent_strerror_refuses_before_unbounded_format (test_process_accounting_v4_slots.V4SlotControls.test_oversized_independent_strerror_refuses_before_unbounded_format) ... ok",
+    "test_direct_slot_failure_legacy_consumer_cannot_skip_owned_pidfd_close (test_process_accounting_v4_slots.V4SlotControls.test_direct_slot_failure_legacy_consumer_cannot_skip_owned_pidfd_close) ... ok",
+    "test_slot_graph_survives_failed_uncertainty_journal_without_cleanup_grant (test_process_accounting_v4_slots.V4SlotControls.test_slot_graph_survives_failed_uncertainty_journal_without_cleanup_grant) ... ok",
+    "test_raising_exception_metaclass_never_called_and_incomplete (test_process_accounting_v6_metaclass.V6IdentityControls.test_raising_exception_metaclass_never_called_and_incomplete) ... ok",
+    "test_true_exception_metaclass_never_called_and_incomplete (test_process_accounting_v6_metaclass.V6IdentityControls.test_true_exception_metaclass_never_called_and_incomplete) ... ok",
+    "test_raising_payload_metaclass_len_iter_never_called_sticky_no_write (test_process_accounting_v6_metaclass.V6IdentityControls.test_raising_payload_metaclass_len_iter_never_called_sticky_no_write) ... ok",
+    "test_true_payload_metaclass_len_iter_never_called_sticky_no_write (test_process_accounting_v6_metaclass.V6IdentityControls.test_true_payload_metaclass_len_iter_never_called_sticky_no_write) ... ok",
+    "test_primary_child_and_close_consumers_keep_graph_caller_and_pending (test_process_accounting_v6_metaclass.V6IdentityControls.test_primary_child_and_close_consumers_keep_graph_caller_and_pending) ... ok",
+    "test_pidfd_consumer_keeps_both_refusals_one_close_and_no_signal (test_process_accounting_v6_metaclass.V6IdentityControls.test_pidfd_consumer_keeps_both_refusals_one_close_and_no_signal) ... ok",
+    "test_unmixed_pairs_keep_two_observations_and_original_reconcile (test_known_identity_sampling.KnownIdentitySamplingControls.test_unmixed_pairs_keep_two_observations_and_original_reconcile) ... ok",
+    "test_refresh_present_absent_absent_commits_only_after_all_records (test_known_identity_sampling.KnownIdentitySamplingControls.test_refresh_present_absent_absent_commits_only_after_all_records) ... ok",
+    "test_refresh_absent_owned_owned_accepts_existing_identity_only (test_known_identity_sampling.KnownIdentitySamplingControls.test_refresh_absent_owned_owned_accepts_existing_identity_only) ... ok",
+    "test_scan_uses_selected_third_owned_parent_for_children (test_known_identity_sampling.KnownIdentitySamplingControls.test_scan_uses_selected_third_owned_parent_for_children) ... ok",
+    "test_oscillation_reuse_and_wrong_pid_refuse_without_fourth_sample (test_known_identity_sampling.KnownIdentitySamplingControls.test_oscillation_reuse_and_wrong_pid_refuse_without_fourth_sample) ... ok",
+    "test_read_errors_at_each_position_propagate_without_further_observation (test_known_identity_sampling.KnownIdentitySamplingControls.test_read_errors_at_each_position_propagate_without_further_observation) ... ok",
+    "test_resample_journal_failures_keep_original_and_sticky_partial_evidence (test_known_identity_sampling.KnownIdentitySamplingControls.test_resample_journal_failures_keep_original_and_sticky_partial_evidence) ... ok",
+    "test_discovery_mixed_pairs_do_not_use_known_identity_resampling (test_known_identity_sampling.KnownIdentitySamplingControls.test_discovery_mixed_pairs_do_not_use_known_identity_resampling) ... ok",
+    "test_real_unix_socket_is_lstat_only_in_both_collectors (test_socket_inventory.SocketInventoryControls.test_real_unix_socket_is_lstat_only_in_both_collectors) ... ok",
+    "test_unrelated_special_types_still_refuse_without_content_acquisition (test_socket_inventory.SocketInventoryControls.test_unrelated_special_types_still_refuse_without_content_acquisition) ... ok",
+    "test_socket_endpoint_identity_drift_is_refused (test_socket_inventory.SocketInventoryControls.test_socket_endpoint_identity_drift_is_refused) ... ok"
+  ],
+  "original_private_receipt_sha256": "fd6e0f497f6efb7f75656f2de19de0ffefb2e52046a6cdd3e179ff8a51827edf",
+  "privacy_projection": "Host stat identities/timestamps, exception object IDs, private absolute paths and full private maps/graphs/profile details are excluded. SHA references do not imply public reproducibility of excluded host/tool/runtime closure.",
+  "procedure_status": "NONPASS_PRELAUNCH_READER_EXIT_NOT_GATED",
+  "processes": {
+    "strict167": {
+      "closed": true,
+      "deadline_expired": false,
+      "exit": 0,
+      "reaped": true,
+      "root_deadline_expired": false,
+      "root_seconds": 35,
+      "signal": "NOT_ATTEMPTED",
+      "target_seconds": 30
+    },
+    "syntax": {
+      "closed": true,
+      "deadline_expired": false,
+      "exit": 0,
+      "reaped": true,
+      "root_deadline_expired": false,
+      "root_seconds": 35,
+      "signal": "NOT_ATTEMPTED",
+      "target_seconds": 30
+    },
+    "tests": {
+      "closed": true,
+      "deadline_expired": false,
+      "exit": 0,
+      "reaped": true,
+      "root_deadline_expired": false,
+      "root_seconds": 125,
+      "signal": "NOT_ATTEMPTED",
+      "target_seconds": 120
+    }
+  },
+  "root_incident": {
+    "corrected_post_run_full_rows_current": 15,
+    "corrected_post_run_tool": "84536e",
+    "fact": "Root misread nested input_map.files as a direct row map. The reader asserted before checking15 rows. The orchestration awaited completion but did not gate later execution on returned exit_code. No successful prelaunch root row readback is claimed.",
+    "failed_reader_exit": 1,
+    "failed_reader_tool": "3f82c5",
+    "future_guard": "Dependent tool invocations must check returned exit_code==0. No rerun was used to erase this incident.",
+    "later_execution_exit": 0,
+    "later_execution_tool": "1cf813",
+    "original_private_incident_sha256": "b4a094432193b44b13b97d45f104c41da0f5e314c5c30b902996836ba00225d6",
+    "separate_controller_checks": "The reviewed selected controller independently performed its archive/source/config/tool/profile checks before and after the finite run. Those support finite TESTED observations only; they do not repair the missed prospective root gate.",
+    "status": "PROCEDURAL_NONPASS"
+  },
+  "schema": "sia-finite52-public-replay-observation.v1",
+  "selected_composition": {
+    "candidates/observer.py.txt": {
+      "bytes": 14238,
+      "sha256": "e5e1ea1d67d5fdadc417a4f69f607192b7d591cc196272343fb58b03c2e5e41e"
+    },
+    "candidates/root-entry.py.txt": {
+      "bytes": 35314,
+      "sha256": "41958f7b72d93ac879b0337205fdfeeb7162ee28dc3b9d7d2c4b0ef196642b14"
+    },
+    "process_accounting.py": {
+      "bytes": 23528,
+      "sha256": "3b0079a891351ce1b29bc8cf7abfff566db8d23e23ba9277e83e9cc2038837ae"
+    },
+    "test_known_identity_sampling.py": {
+      "bytes": 11836,
+      "sha256": "440de37090d8b02e2372b0501df404a08386b87c4446ab8925e091e92c645b3f"
+    },
+    "test_process_accounting.py": {
+      "bytes": 12329,
+      "sha256": "5523c7b4128a5170deed0ca5affac8fff727700206a6ae95a991be2a21520d55"
+    },
+    "test_process_accounting_v2_failures.py": {
+      "bytes": 15396,
+      "sha256": "0a7de0c513b7e8a3d5aa24e1c950e7050d02b4c4bc0af48e8ed9441fad1d452f"
+    },
+    "test_process_accounting_v3_failures.py": {
+      "bytes": 12922,
+      "sha256": "6c6296294af150189d1394e73afcca59647b17ea9f2b2592d328d39027d27a71"
+    },
+    "test_process_accounting_v4_slots.py": {
+      "bytes": 6829,
+      "sha256": "80216519358635988e05beb873eda4d7a866f86902f43cfe387adefe8b599f11"
+    },
+    "test_process_accounting_v6_metaclass.py": {
+      "bytes": 11382,
+      "sha256": "00b570e4c4d213fd1ce9e726711ceb94bfdea44ecc1cd95116cf4dff2301670f"
+    },
+    "test_socket_inventory.py": {
+      "bytes": 8208,
+      "sha256": "a6354a658e46f3f5dec5c8ed379975d5e0c70fd38717fa55191dce128fdb615f"
+    }
+  },
+  "selected_controller_sha256": "ce3cbb3f47ee2e188a2244c203fab3715a072fafca8f61dd9763071208d4ad30",
+  "source_review_feedback_sha256": "194a989ddb2cd140c2c78625145d4c03ac4d17480dc163b0e94bc284ed61a516",
+  "status": "OBSERVED_FINITE_52_PASS_PROCEDURAL_NONPASS",
+  "test_stderr": {
+    "bytes": 9852,
+    "sha256": "c5159205d96d947f48e5326ceaa38fe9567144b1ee9968590f34e981e2494683",
+    "text": "test_more_than64_sequential_identities_keep_complete_journal (test_process_accounting.AccountingControls.test_more_than64_sequential_identities_keep_complete_journal) ... ok\ntest_65_live_refuses_without_changing64_or_losing_witness (test_process_accounting.AccountingControls.test_65_live_refuses_without_changing64_or_losing_witness) ... ok\ntest_pid_reuse_requires_two_confirmations_and_explicit_retirement (test_process_accounting.AccountingControls.test_pid_reuse_requires_two_confirmations_and_explicit_retirement) ... ok\ntest_ambiguous_observations_never_retire (test_process_accounting.AccountingControls.test_ambiguous_observations_never_retire) ... ok\ntest_unreadable_observation_retains_active_and_journals_uncertainty (test_process_accounting.AccountingControls.test_unreadable_observation_retains_active_and_journals_uncertainty) ... ok\ntest_short_write_keeps_real_partial_bytes_and_uncommitted_witness (test_process_accounting.AccountingControls.test_short_write_keeps_real_partial_bytes_and_uncommitted_witness) ... ok\ntest_full_write_exception_and_fsync_failure_are_sticky (test_process_accounting.AccountingControls.test_full_write_exception_and_fsync_failure_are_sticky) ... ok\ntest_record_and_file_budgets_refuse_before_write (test_process_accounting.AccountingControls.test_record_and_file_budgets_refuse_before_write) ... ok\ntest_failed_retirement_record_keeps_the_original_identity (test_process_accounting.AccountingControls.test_failed_retirement_record_keeps_the_original_identity) ... ok\ntest_mid_scan_failure_preserves_previously_committed_child (test_process_accounting.AccountingControls.test_mid_scan_failure_preserves_previously_committed_child) ... ok\ntest_pidfd_cleanup_signals_owned_handle_and_closes_only_owned_fd (test_process_accounting.AccountingControls.test_pidfd_cleanup_signals_owned_handle_and_closes_only_owned_fd) ... ok\ntest_reused_pid_cleanup_never_signals_replacement (test_process_accounting.AccountingControls.test_reused_pid_cleanup_never_signals_replacement) ... ok\ntest_cleanup_signal_error_and_close_error_both_retained_without_retry (test_process_accounting.AccountingControls.test_cleanup_signal_error_and_close_error_both_retained_without_retry) ... ok\ntest_each_pre_enroll_observation_failure_retains_seen_not_owned (test_process_accounting_v2_failures.V2FailureControls.test_each_pre_enroll_observation_failure_retains_seen_not_owned) ... ok\ntest_uncertain_parent_or_starttime_never_grants_child_cleanup (test_process_accounting_v2_failures.V2FailureControls.test_uncertain_parent_or_starttime_never_grants_child_cleanup) ... ok\ntest_read_primary_and_both_close_fault_objects_and_json_are_complete (test_process_accounting_v2_failures.V2FailureControls.test_read_primary_and_both_close_fault_objects_and_json_are_complete) ... ok\ntest_validation_before_closes_cannot_be_masked_by_close_errors (test_process_accounting_v2_failures.V2FailureControls.test_validation_before_closes_cannot_be_masked_by_close_errors) ... ok\ntest_uncertainty_record_failure_retains_original_all_close_diagnostics (test_process_accounting_v2_failures.V2FailureControls.test_uncertainty_record_failure_retains_original_all_close_diagnostics) ... ok\ntest_absent_record_failure_remains_unresolved_without_more_reads (test_process_accounting_v2_failures.V2FailureControls.test_absent_record_failure_remains_unresolved_without_more_reads) ... ok\ntest_stat_acquisition_primary_and_directory_close_are_both_preserved (test_process_accounting_v2_failures.V2FailureControls.test_stat_acquisition_primary_and_directory_close_are_both_preserved) ... ok\ntest_cleanup_serialization_preserves_proc_faults_and_pidfd_close_fault (test_process_accounting_v2_failures.V2FailureControls.test_cleanup_serialization_preserves_proc_faults_and_pidfd_close_fault) ... ok\ntest_child_read_and_close_real_fd_keep_original_graph_and_caller (test_process_accounting_v3_failures.V3FailureControls.test_child_read_and_close_real_fd_keep_original_graph_and_caller) ... ok\ntest_child_validation_plus_close_retains_both_before_return (test_process_accounting_v3_failures.V3FailureControls.test_child_validation_plus_close_retains_both_before_return) ... ok\ntest_oversized_primary_has_bounded_incomplete_graph_after_all_closes (test_process_accounting_v3_failures.V3FailureControls.test_oversized_primary_has_bounded_incomplete_graph_after_all_closes) ... ok\ntest_custom_str_cannot_run_or_prevent_either_close_or_pending_error (test_process_accounting_v3_failures.V3FailureControls.test_custom_str_cannot_run_or_prevent_either_close_or_pending_error) ... ok\ntest_close_error_custom_str_does_not_skip_second_release (test_process_accounting_v3_failures.V3FailureControls.test_close_error_custom_str_does_not_skip_second_release) ... ok\ntest_primary_interrupt_exit_and_other_baseexception_keep_all_closes (test_process_accounting_v3_failures.V3FailureControls.test_primary_interrupt_exit_and_other_baseexception_keep_all_closes) ... ok\ntest_partial_fixture_open_write_and_stat_open_release_all_prior_slots (test_process_accounting_v3_failures.V3FailureControls.test_partial_fixture_open_write_and_stat_open_release_all_prior_slots) ... ok\ntest_after_fixture_return_journal_failure_still_closes_caller (test_process_accounting_v3_failures.V3FailureControls.test_after_fixture_return_journal_failure_still_closes_caller) ... ok\ntest_dup_setup_failure_keeps_caller_owned_until_final_close (test_process_accounting_v3_failures.V3FailureControls.test_dup_setup_failure_keeps_caller_owned_until_final_close) ... ok\ntest_valid_mutated_builtin_slot_formats_current_literal_scalar (test_process_accounting_v4_slots.V4SlotControls.test_valid_mutated_builtin_slot_formats_current_literal_scalar) ... ok\ntest_custom_strerror_on_exact_oserror_keeps_graph_all_closes_no_callback (test_process_accounting_v4_slots.V4SlotControls.test_custom_strerror_on_exact_oserror_keeps_graph_all_closes_no_callback) ... ok\ntest_oversized_independent_strerror_refuses_before_unbounded_format (test_process_accounting_v4_slots.V4SlotControls.test_oversized_independent_strerror_refuses_before_unbounded_format) ... ok\ntest_direct_slot_failure_legacy_consumer_cannot_skip_owned_pidfd_close (test_process_accounting_v4_slots.V4SlotControls.test_direct_slot_failure_legacy_consumer_cannot_skip_owned_pidfd_close) ... ok\ntest_slot_graph_survives_failed_uncertainty_journal_without_cleanup_grant (test_process_accounting_v4_slots.V4SlotControls.test_slot_graph_survives_failed_uncertainty_journal_without_cleanup_grant) ... ok\ntest_raising_exception_metaclass_never_called_and_incomplete (test_process_accounting_v6_metaclass.V6IdentityControls.test_raising_exception_metaclass_never_called_and_incomplete) ... ok\ntest_true_exception_metaclass_never_called_and_incomplete (test_process_accounting_v6_metaclass.V6IdentityControls.test_true_exception_metaclass_never_called_and_incomplete) ... ok\ntest_raising_payload_metaclass_len_iter_never_called_sticky_no_write (test_process_accounting_v6_metaclass.V6IdentityControls.test_raising_payload_metaclass_len_iter_never_called_sticky_no_write) ... ok\ntest_true_payload_metaclass_len_iter_never_called_sticky_no_write (test_process_accounting_v6_metaclass.V6IdentityControls.test_true_payload_metaclass_len_iter_never_called_sticky_no_write) ... ok\ntest_primary_child_and_close_consumers_keep_graph_caller_and_pending (test_process_accounting_v6_metaclass.V6IdentityControls.test_primary_child_and_close_consumers_keep_graph_caller_and_pending) ... ok\ntest_pidfd_consumer_keeps_both_refusals_one_close_and_no_signal (test_process_accounting_v6_metaclass.V6IdentityControls.test_pidfd_consumer_keeps_both_refusals_one_close_and_no_signal) ... ok\ntest_unmixed_pairs_keep_two_observations_and_original_reconcile (test_known_identity_sampling.KnownIdentitySamplingControls.test_unmixed_pairs_keep_two_observations_and_original_reconcile) ... ok\ntest_refresh_present_absent_absent_commits_only_after_all_records (test_known_identity_sampling.KnownIdentitySamplingControls.test_refresh_present_absent_absent_commits_only_after_all_records) ... ok\ntest_refresh_absent_owned_owned_accepts_existing_identity_only (test_known_identity_sampling.KnownIdentitySamplingControls.test_refresh_absent_owned_owned_accepts_existing_identity_only) ... ok\ntest_scan_uses_selected_third_owned_parent_for_children (test_known_identity_sampling.KnownIdentitySamplingControls.test_scan_uses_selected_third_owned_parent_for_children) ... ok\ntest_oscillation_reuse_and_wrong_pid_refuse_without_fourth_sample (test_known_identity_sampling.KnownIdentitySamplingControls.test_oscillation_reuse_and_wrong_pid_refuse_without_fourth_sample) ... ok\ntest_read_errors_at_each_position_propagate_without_further_observation (test_known_identity_sampling.KnownIdentitySamplingControls.test_read_errors_at_each_position_propagate_without_further_observation) ... ok\ntest_resample_journal_failures_keep_original_and_sticky_partial_evidence (test_known_identity_sampling.KnownIdentitySamplingControls.test_resample_journal_failures_keep_original_and_sticky_partial_evidence) ... ok\ntest_discovery_mixed_pairs_do_not_use_known_identity_resampling (test_known_identity_sampling.KnownIdentitySamplingControls.test_discovery_mixed_pairs_do_not_use_known_identity_resampling) ... ok\ntest_real_unix_socket_is_lstat_only_in_both_collectors (test_socket_inventory.SocketInventoryControls.test_real_unix_socket_is_lstat_only_in_both_collectors) ... ok\ntest_unrelated_special_types_still_refuse_without_content_acquisition (test_socket_inventory.SocketInventoryControls.test_unrelated_special_types_still_refuse_without_content_acquisition) ... ok\ntest_socket_endpoint_identity_drift_is_refused (test_socket_inventory.SocketInventoryControls.test_socket_endpoint_identity_drift_is_refused) ... ok\n\n----------------------------------------------------------------------\nRan 52 tests in 0.436s\n\nOK\n",
+    "transformation": "IDENTITY; complete52 ordered methods and terminal summary, no skips."
+  },
+  "test_stdout": {
+    "original_bytes": 2089,
+    "original_sha256": "e9a8c722e96de7818457ea8e14aa2241201a58eb842b2edd8afbb7215167d8c0",
+    "public_bytes": 1401,
+    "public_sha256": "6db0760f986cd858eab51c5c23e520c7ec6a3b3e3f0855a051ab2618712984ba",
+    "text": "{\"process_accounting\": {\"file\": \"<EXTRACTED_SOURCE>/process_accounting.py\", \"sha256\": \"3b0079a891351ce1b29bc8cf7abfff566db8d23e23ba9277e83e9cc2038837ae\"}, \"test_known_identity_sampling\": {\"file\": \"<EXTRACTED_SOURCE>/test_known_identity_sampling.py\", \"sha256\": \"440de37090d8b02e2372b0501df404a08386b87c4446ab8925e091e92c645b3f\"}, \"test_process_accounting\": {\"file\": \"<EXTRACTED_SOURCE>/test_process_accounting.py\", \"sha256\": \"5523c7b4128a5170deed0ca5affac8fff727700206a6ae95a991be2a21520d55\"}, \"test_process_accounting_v2_failures\": {\"file\": \"<EXTRACTED_SOURCE>/test_process_accounting_v2_failures.py\", \"sha256\": \"0a7de0c513b7e8a3d5aa24e1c950e7050d02b4c4bc0af48e8ed9441fad1d452f\"}, \"test_process_accounting_v3_failures\": {\"file\": \"<EXTRACTED_SOURCE>/test_process_accounting_v3_failures.py\", \"sha256\": \"6c6296294af150189d1394e73afcca59647b17ea9f2b2592d328d39027d27a71\"}, \"test_process_accounting_v4_slots\": {\"file\": \"<EXTRACTED_SOURCE>/test_process_accounting_v4_slots.py\", \"sha256\": \"80216519358635988e05beb873eda4d7a866f86902f43cfe387adefe8b599f11\"}, \"test_process_accounting_v6_metaclass\": {\"file\": \"<EXTRACTED_SOURCE>/test_process_accounting_v6_metaclass.py\", \"sha256\": \"00b570e4c4d213fd1ce9e726711ceb94bfdea44ecc1cd95116cf4dff2301670f\"}, \"test_socket_inventory\": {\"file\": \"<EXTRACTED_SOURCE>/test_socket_inventory.py\", \"sha256\": \"a6354a658e46f3f5dec5c8ed379975d5e0c70fd38717fa55191dce128fdb615f\"}}\n",
+    "transformation": "Replace the eight exact extracted-source-root path prefixes with <EXTRACTED_SOURCE>. Module hashes and other bytes unchanged."
+  }
+}
