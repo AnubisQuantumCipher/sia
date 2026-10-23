@@ -5,8 +5,7 @@ beside Hu and Heka.*
 
 **Give your machine local memory.** SIA stores a persistent local corpus,
 indexes it semantically, and compacts older day pages into weekly summaries.
-A resident daemon
-tails the evidence your machine already produces — package installs, journal
+A resident daemon tails the evidence your machine already produces — package installs, journal
 errors, git commits, optional Git-backed Obsidian vault records, agent
 sessions, notifications, and any log you point it at — into a git-versioned
 markdown corpus, indexed into a typed knowledge graph with **local**
@@ -21,8 +20,7 @@ daemon signs its own acts.
 **Current release: v1.8.4.** Dated grading retains its evidence, refused grades
 retry with diagnostics, and expired proposals no longer block bulk acceptance.
 Maintenance preserves phase clocks and explicitly limits gbrain to its declared
-local maintenance phases. See
-[the changelog](CHANGELOG.md) for the complete changes.
+local maintenance phases. See [the changelog](CHANGELOG.md) for the complete changes.
 
 **Storage recovery introduced in v1.8.0.** Two receipts bind storage by device and inode
 number — the installer's corpus receipt and the delivery epoch's adoption —
