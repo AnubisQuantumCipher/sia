@@ -1085,7 +1085,7 @@ fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
 
 def read_journal():
-    descriptor = os.open(journal_name, flags, dir_fd=parent_fd)
+    descriptor = os.open(journal_name, flags | os.O_NONBLOCK, dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
