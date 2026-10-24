@@ -38,6 +38,11 @@ ownership repair. Its fixtures include known effects followed by refusal and
 fresh retry. It does not supply a durable migration journal, protected permission,
 original payload authentication, source retirement or installed qualification.
 
+`EVENT-PACK-COVERAGE-PLAN-20261024.md` adds an unactivated, callback-free
+transport partition with exact prior-record preservation and legacy fallback.
+Its request bounds do not establish global inventory, source authenticity or
+protected transition authority; all retirement gates below remain binding.
+
 ## Transaction invariants
 
 - The source of truth is the exact admitted legacy/pack bytes, their stable

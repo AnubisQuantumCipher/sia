@@ -33,12 +33,18 @@ def _record(identifier, raw, prefix, previous):
         raise ValueError("event pack record bytes are invalid")
 
 
+def header_size(organ, prefix):
+    """Validated wire-header size, independent of payload interpretation."""
+    organ_raw, _prefix_raw = _route(organ, prefix)
+    return len(MAGIC) + 1 + len(organ_raw) + 3 + 1 + 4 + 32
+
+
 def encode(organ, prefix, records):
     """Encode a strictly ordered tuple without interpreting legacy bytes."""
     organ_raw, prefix_raw = _route(organ, prefix)
     if type(records) is not tuple or not 1 <= len(records) <= MAX_RECORDS:
         raise ValueError("event pack record count is invalid")
-    header_size = len(MAGIC) + 1 + len(organ_raw) + 3 + 1 + 4 + 32
+    framing = header_size(organ, prefix)
     body = bytearray()
     previous = b""
     for item in records:
@@ -46,7 +52,7 @@ def encode(organ, prefix, records):
             raise ValueError("event pack record shape is invalid")
         identifier, raw = item
         _record(identifier, raw, prefix_raw, previous)
-        if header_size + len(body) + 68 + len(raw) > MAX_BYTES:
+        if framing + len(body) + 68 + len(raw) > MAX_BYTES:
             raise ValueError("event pack exceeds its byte bound")
         body.extend(identifier)
         body.extend(len(raw).to_bytes(4, "big"))
