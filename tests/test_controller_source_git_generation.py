@@ -6,12 +6,10 @@ it does not authenticate corpus truth, source events, or later engine state.
 """
 
 import contextlib
-import copy
 import hashlib
 import json
 import os
 from pathlib import Path
-import stat
 import subprocess
 import sys
 import tempfile
@@ -50,6 +48,7 @@ def _digest(value):
 
 class ControllerSourceGitGeneration(unittest.TestCase):
     def setUp(self):
+        self.assertEqual(os.path.expanduser("~"), sia_test_home.ISOLATED_HOME)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -93,6 +92,77 @@ class ControllerSourceGitGeneration(unittest.TestCase):
         return self.helper()(
             source_batch_sha256=BATCH_SHA256,
             event_closure_sha256=CLOSURE_SHA256)
+
+    def _alternate_corpus(self):
+        alternate = self.root / "alternate"
+        alternate.mkdir()
+        self._git("-C", str(alternate), "init", "-q", "-b", "foreign")
+        (alternate / "foreign.md").write_text("foreign seed\n", encoding="utf-8")
+        self._git("-C", str(alternate), "add", "foreign.md")
+        self._git("-C", str(alternate), "-c", "user.email=fixture@example.invalid",
+                  "-c", "user.name=Fixture", "commit", "-q", "-m", "foreign")
+        return alternate
+
+    def test_ambient_repository_selection_cannot_redirect_corpus_commit(self):
+        alternate = self._alternate_corpus()
+        before = self._git("rev-parse", "HEAD")
+        foreign_head = self._git("-C", str(alternate), "rev-parse", "HEAD")
+        foreign_index = (alternate / ".git" / "index").read_bytes()
+        (alternate / "pending.md").write_text("foreign pending\n", encoding="utf-8")
+        (self.corpus / "intended.md").write_text("intended\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {
+                "GIT_DIR": str(alternate / ".git"),
+                "GIT_WORK_TREE": str(alternate)}):
+            result = self._call()
+        self.assertEqual(result["before_commit_oid"], before)
+        self.assertNotEqual(result["corpus_commit_oid"], before)
+        self.assertEqual(result["corpus_commit_oid"], self._git("rev-parse", "HEAD"))
+        self.assertEqual(self._git("status", "--porcelain"), "")
+        self.assertEqual(self._git("-C", str(alternate), "rev-parse", "HEAD"),
+                         foreign_head)
+        self.assertEqual((alternate / ".git" / "index").read_bytes(), foreign_index)
+        self.assertEqual(self._git("-C", str(alternate), "status", "--porcelain"),
+                         "?? pending.md")
+
+    def test_ambient_index_cannot_replace_the_corpus_index(self):
+        external_index = self.root / "external-index"
+        (self.corpus / "intended.md").write_text("intended\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": str(external_index)}):
+            result = self._call()
+        self.assertFalse(external_index.exists())
+        self.assertTrue(result["clean"])
+        self.assertEqual(self._git("status", "--porcelain"), "")
+        self.assertEqual(self._git("show", "HEAD:intended.md"), "intended")
+
+    def test_git_environment_is_owned_at_every_launch(self):
+        inherited = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.worktree",
+            "GIT_CONFIG_VALUE_0": str(self.root / "wrong-tree"),
+            "GIT_CONFIG_PARAMETERS": "'core.bare=true'",
+            "GIT_OBJECT_DIRECTORY": str(self.root / "wrong-objects"),
+            "GIT_COMMON_DIR": str(self.root / "wrong-common"),
+            "GIT_NAMESPACE": "foreign",
+            "SIA_SOURCE_GIT_ENV_TEST": "preserved",
+        }
+        expected = {
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        real_run = sialib._run_bounded_text_process
+
+        def observed(command, **kwargs):
+            environment = kwargs["env"]
+            self.assertEqual({key: value for key, value in environment.items()
+                              if key.startswith("GIT_")}, expected)
+            self.assertEqual(environment["SIA_SOURCE_GIT_ENV_TEST"], "preserved")
+            return real_run(command, **kwargs)
+
+        with mock.patch.dict(os.environ, inherited), mock.patch.object(
+                sialib, "_run_bounded_text_process", side_effect=observed):
+            result = self._call()
+        self.assertTrue(result["clean"])
 
     def test_exact_generation_uses_pinned_executable_and_repository_descriptors(self):
         before = self._git("rev-parse", "HEAD")

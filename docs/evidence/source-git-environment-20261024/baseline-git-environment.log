@@ -1,0 +1,198 @@
+test_ambient_index_cannot_replace_the_corpus_index (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_ambient_index_cannot_replace_the_corpus_index) ... FAIL
+test_ambient_repository_selection_cannot_redirect_corpus_commit (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_ambient_repository_selection_cannot_redirect_corpus_commit) ... FAIL
+test_clean_retry_returns_the_exact_current_generation_without_a_commit (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_clean_retry_returns_the_exact_current_generation_without_a_commit) ... ok
+test_exact_generation_uses_pinned_executable_and_repository_descriptors (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_exact_generation_uses_pinned_executable_and_repository_descriptors) ... ok
+test_git_environment_is_owned_at_every_launch (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_git_environment_is_owned_at_every_launch) ... FAIL
+test_named_repository_replacement_refuses_without_switching_authority (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_named_repository_replacement_refuses_without_switching_authority) ... ok
+test_symlinked_repository_or_executable_refuses_before_subprocess (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_symlinked_repository_or_executable_refuses_before_subprocess) ... ok
+test_ambient_index_cannot_replace_the_corpus_index (tests.test_controller_source_git_content.ControllerSourceGitContent.test_ambient_index_cannot_replace_the_corpus_index) ... FAIL
+test_ambient_repository_selection_cannot_redirect_corpus_commit (tests.test_controller_source_git_content.ControllerSourceGitContent.test_ambient_repository_selection_cannot_redirect_corpus_commit) ... FAIL
+test_clean_retry_returns_the_exact_current_generation_without_a_commit (tests.test_controller_source_git_content.ControllerSourceGitContent.test_clean_retry_returns_the_exact_current_generation_without_a_commit) ... ok
+test_exact_generation_uses_pinned_executable_and_repository_descriptors (tests.test_controller_source_git_content.ControllerSourceGitContent.test_exact_generation_uses_pinned_executable_and_repository_descriptors) ... ok
+test_git_environment_is_owned_at_every_launch (tests.test_controller_source_git_content.ControllerSourceGitContent.test_git_environment_is_owned_at_every_launch) ... FAIL
+test_invalid_content_pin_refuses_before_any_git_process (tests.test_controller_source_git_content.ControllerSourceGitContent.test_invalid_content_pin_refuses_before_any_git_process) ... ok
+test_named_repository_replacement_refuses_without_switching_authority (tests.test_controller_source_git_content.ControllerSourceGitContent.test_named_repository_replacement_refuses_without_switching_authority) ... ok
+test_symlinked_repository_or_executable_refuses_before_subprocess (tests.test_controller_source_git_content.ControllerSourceGitContent.test_symlinked_repository_or_executable_refuses_before_subprocess) ... ok
+
+======================================================================
+FAIL: test_ambient_index_cannot_replace_the_corpus_index (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_ambient_index_cannot_replace_the_corpus_index)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 133, in test_ambient_index_cannot_replace_the_corpus_index
+    self.assertFalse(external_index.exists())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_ambient_repository_selection_cannot_redirect_corpus_commit (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_ambient_repository_selection_cannot_redirect_corpus_commit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 118, in test_ambient_repository_selection_cannot_redirect_corpus_commit
+    self.assertEqual(result["before_commit_oid"], before)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '5a3a5c900efd01e22e396f565215b1cb4bf04b45' != 'fca8afc648df0f15a934b441d75d2dead05882da'
+- 5a3a5c900efd01e22e396f565215b1cb4bf04b45
++ fca8afc648df0f15a934b441d75d2dead05882da
+
+
+======================================================================
+FAIL: test_git_environment_is_owned_at_every_launch (tests.test_controller_source_git_generation.ControllerSourceGitGeneration.test_git_environment_is_owned_at_every_launch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 165, in test_git_environment_is_owned_at_every_launch
+    result = self._call()
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 93, in _call
+    return self.helper()(
+           ~~~~~~~~~~~~~^
+        source_batch_sha256=BATCH_SHA256,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        event_closure_sha256=CLOSURE_SHA256)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/sialib.py", line 6410, in _controller_source_corpus_commit_generation
+    return siasourcegit.commit_generation(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        globals(), source_batch_sha256=source_batch_sha256,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        event_closure_sha256=event_closure_sha256)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 196, in commit_generation
+    return _commit_generation(
+        owner, source_batch_sha256=source_batch_sha256,
+        publication_sha256=event_closure_sha256)
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 217, in _commit_generation
+    object_format = _one_line(source, _run(
+                                      ~~~~^
+        owner, source, held, ["rev-parse", "--show-object-format"],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        label="source Git object format"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 173, in _run
+    result = owner["_run_bounded_text_process"](
+        command, env=environment, timeout=60,
+        cwd=owner["_chain_descriptor_path"](held.root_fd),
+        pass_fds=(held.executable_fd, held.root_fd), label=label,
+        output_limit=owner["MAX_EXTERNAL_OUTPUT_BYTES"])
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 158, in observed
+    self.assertEqual({key: value for key, value in environment.items()
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      if key.startswith("GIT_")}, expected)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'GIT_PAGER': 'cat', 'GIT_CONFIG_COUNT': '1', '[361 chars] '0'} != {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_[44 chars] '0'}
+- {'GIT_COMMON_DIR': '/tmp/tmpst17njs3/wrong-common',
+-  'GIT_CONFIG_COUNT': '1',
+-  'GIT_CONFIG_GLOBAL': '/dev/null',
+? ^
+
++ {'GIT_CONFIG_GLOBAL': '/dev/null',
+? ^
+
+-  'GIT_CONFIG_KEY_0': 'core.worktree',
+-  'GIT_CONFIG_PARAMETERS': "'core.bare=true'",
+   'GIT_CONFIG_SYSTEM': '/dev/null',
+-  'GIT_CONFIG_VALUE_0': '/tmp/tmpst17njs3/wrong-tree',
+-  'GIT_NAMESPACE': 'foreign',
+-  'GIT_OBJECT_DIRECTORY': '/tmp/tmpst17njs3/wrong-objects',
+-  'GIT_PAGER': 'cat',
+   'GIT_TERMINAL_PROMPT': '0'}
+
+======================================================================
+FAIL: test_ambient_index_cannot_replace_the_corpus_index (tests.test_controller_source_git_content.ControllerSourceGitContent.test_ambient_index_cannot_replace_the_corpus_index)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 133, in test_ambient_index_cannot_replace_the_corpus_index
+    self.assertFalse(external_index.exists())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_ambient_repository_selection_cannot_redirect_corpus_commit (tests.test_controller_source_git_content.ControllerSourceGitContent.test_ambient_repository_selection_cannot_redirect_corpus_commit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 118, in test_ambient_repository_selection_cannot_redirect_corpus_commit
+    self.assertEqual(result["before_commit_oid"], before)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '5a3a5c900efd01e22e396f565215b1cb4bf04b45' != 'fca8afc648df0f15a934b441d75d2dead05882da'
+- 5a3a5c900efd01e22e396f565215b1cb4bf04b45
++ fca8afc648df0f15a934b441d75d2dead05882da
+
+
+======================================================================
+FAIL: test_git_environment_is_owned_at_every_launch (tests.test_controller_source_git_content.ControllerSourceGitContent.test_git_environment_is_owned_at_every_launch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 165, in test_git_environment_is_owned_at_every_launch
+    result = self._call()
+  File "/tmp/sia-review-source/tests/test_controller_source_git_content.py", line 22, in _call
+    return self.helper()(
+           ~~~~~~~~~~~~~^
+        source_batch_sha256=generation.BATCH_SHA256,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        content_publication_sha256=generation.CLOSURE_SHA256)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/sialib.py", line 6420, in _controller_source_corpus_commit_generation_v2
+    return siasourcegit.commit_content_generation(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        globals(), source_batch_sha256=source_batch_sha256,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        content_publication_sha256=content_publication_sha256)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 204, in commit_content_generation
+    return _commit_generation(
+        owner, source_batch_sha256=source_batch_sha256,
+        publication_sha256=content_publication_sha256)
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 217, in _commit_generation
+    object_format = _one_line(source, _run(
+                                      ~~~~^
+        owner, source, held, ["rev-parse", "--show-object-format"],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        label="source Git object format"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/sia-review-source/bin/siasourcegit.py", line 173, in _run
+    result = owner["_run_bounded_text_process"](
+        command, env=environment, timeout=60,
+        cwd=owner["_chain_descriptor_path"](held.root_fd),
+        pass_fds=(held.executable_fd, held.root_fd), label=label,
+        output_limit=owner["MAX_EXTERNAL_OUTPUT_BYTES"])
+  File "/usr/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/tmp/sia-review-source/tests/test_controller_source_git_generation.py", line 158, in observed
+    self.assertEqual({key: value for key, value in environment.items()
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      if key.startswith("GIT_")}, expected)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'GIT_PAGER': 'cat', 'GIT_CONFIG_COUNT': '1', '[361 chars] '0'} != {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_[44 chars] '0'}
+- {'GIT_COMMON_DIR': '/tmp/tmp4c5i1xn1/wrong-common',
+-  'GIT_CONFIG_COUNT': '1',
+-  'GIT_CONFIG_GLOBAL': '/dev/null',
+? ^
+
++ {'GIT_CONFIG_GLOBAL': '/dev/null',
+? ^
+
+-  'GIT_CONFIG_KEY_0': 'core.worktree',
+-  'GIT_CONFIG_PARAMETERS': "'core.bare=true'",
+   'GIT_CONFIG_SYSTEM': '/dev/null',
+-  'GIT_CONFIG_VALUE_0': '/tmp/tmp4c5i1xn1/wrong-tree',
+-  'GIT_NAMESPACE': 'foreign',
+-  'GIT_OBJECT_DIRECTORY': '/tmp/tmp4c5i1xn1/wrong-objects',
+-  'GIT_PAGER': 'cat',
+   'GIT_TERMINAL_PROMPT': '0'}
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.304s
+
+FAILED (failures=6)
