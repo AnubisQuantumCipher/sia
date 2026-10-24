@@ -47,4 +47,3 @@ def _size(value, limit, active=None, depth=0):
     if size > limit:
         _refuse("complete-byte-capacity")
     return size
-
