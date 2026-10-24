@@ -1,0 +1,69 @@
+{
+  "schema": "sia-event-index-pack-experiment-v1",
+  "status": "EXPERIMENTAL_TRANSPORT_TESTED_NOT_ACTIVE",
+  "acceptance": false,
+  "source_base": "c6ef31880e5bb4b962b7acad9c9113874dd7e391",
+  "source_hashes": {
+    "bin/siaeventpack.py": "3f8fa19b98147e88487c365b5bebe272f06b2f66a702ab9439d23de6c82ff29d",
+    "tests/test_event_pack.py": "951c8fa11d72a2ccaeab5ddaabb07bb62bc248a44c3ff9d40c52624ff894e419",
+    "docs/EVENT-INDEX-PACK-CONTRACT-20261024.md": "bc800232ae561a73bfec7f801a6bf525fefab9e43c89182cdc4219ebaae7790e"
+  },
+  "tests": {
+    "roster": [
+      "tests.test_event_pack",
+      "tests.test_event_epoch_admission_integrity",
+      "tests.test_sia.EpochMerge"
+    ],
+    "count": 49,
+    "elapsed_reported_seconds": "6.295",
+    "exit": 0,
+    "source_inventory_unchanged": true,
+    "whole_job_elapsed_ns": 7076535888,
+    "deadline_seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_limit_bytes": 536870912,
+    "raw_stderr_sha256": "a0220ca09983d1e5aac6250ba8d54a10a93f07da204f3dc7ddb6c50f5e633903",
+    "full_source_inventory_receipt_sha256": "b131b8b31b6ed9ae2b0c128b9b4a3f46e1bfd5dc69957d4a23a6eb16d5355e70",
+    "source_loading": "Direct compile of selected codec bytes; no pyc; transitive runtime remains an assumption"
+  },
+  "static": {
+    "profile": "existing167 selected rules; ignore-noqa",
+    "exit": 0,
+    "diagnostics": 0,
+    "scope": [
+      "/home/sicarii/Work/sia-assurance-checkpoint-20261023/bin/siaeventpack.py",
+      "/home/sicarii/Work/sia-assurance-checkpoint-20261023/tests/test_event_pack.py",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/capsule-source-composition-v1/run_checks_v3.py",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/capsule-source-composition-v1/pack_v3_case.py",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/capsule-source-composition-v1/pack_capacity_wait_probe.py"
+    ],
+    "receipt_sha256": "a5b2933b5dfa711e50a895941f9237ed6153a5b293bed1f70656b4ec1fc9fe6a"
+  },
+  "metadata_observation": {
+    "status": "OBSERVED_METADATA_CAPACITY_ONLY",
+    "encountered": 62507,
+    "legacy_files": 59974,
+    "metadata_sized_groups": 16034,
+    "metadata_overflow_groups": 0,
+    "receipt_sha256": "7c1f0203afceab6fe49a60ef2653b157bb4c4f49129b4570e9affd0cb23eef60",
+    "limitation": "Cooperative lease; no content, canonical entry, epoch lineage, migration or backup validation. Same-user hostile mutation not excluded.",
+    "prior_busy_refusal_retained": true
+  },
+  "independent_review": {
+    "model": "actual GPT-6.1",
+    "scope": "read-only source/raw; no independent execution",
+    "code_review_sha256": "aeea0a0fb1f8154a96844d8792f816342e5b7910df749eb4e14398f6f58c4f95",
+    "loader_review_sha256": "312e2f8d90c43fcc343b59e81d547367053d8e80fc084f8f9f36ff9dd074e326"
+  },
+  "not_implemented": [
+    "dual-format lookup",
+    "fresh owner policy and lineage enforcement for packs",
+    "conflict and oversized/saturated group fallback integration",
+    "durable pack publication",
+    "migration journal and crash recovery",
+    "verification before legacy retirement",
+    "SPARK authority contracts/proof",
+    "full installed capture and restore qualification"
+  ],
+  "policy": "No original cap, source selection, runtime lookup, live data, authorization or release gate changed."
+}
