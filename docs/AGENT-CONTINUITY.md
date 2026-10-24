@@ -5,6 +5,12 @@ source-backed gap assessment; implementation acceptance OPEN. One owner retains
 the existing assurance worktree, changes, proof campaigns and negative evidence.
 No universal no-loss, correct-recall or error-free continuation claim is made.
 
+The [approval-restoration contract](CONTINUITY-APPROVAL-RESTORATION-CONTRACT-20261024.md)
+records the repeated old-reply/new-proposal misbinding and the missing production
+boundary. Its [acceptance roster](CONTINUITY-APPROVAL-RESTORATION-CASES-20261024.json)
+is unimplemented and unrun. Existing reference-only policy and the fixed synthetic
+Codex pilot do not establish general approval restoration or action authority.
+
 ## Observed gaps
 
 At base `313159eb3c3a69f804178e42ac007bb8791f4edb`,

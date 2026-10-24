@@ -1,0 +1,468 @@
+{
+  "schema": "sia-approval-restoration-acceptance-roster-v1",
+  "status": "FROZEN_REQUIREMENTS_UNIMPLEMENTED_UNRUN",
+  "authority": "NONE",
+  "acceptance": false,
+  "source_inspection": {
+    "status": "SOURCE_INSPECTION_NOT_RUNTIME_ACCEPTANCE",
+    "main_head": "4c3a262e6bca0d73730bc4eda5651a3a0dc24673",
+    "worker_head": "5c61b7afcb02af9ebfded2c5d2ada8f322822ba1",
+    "files": {
+      "assurance/bin/siacontinuitypacket.py": {
+        "sha256": "389a80983ffffa15ef83cd28fa3b15029efefc42e2aaeb535d5c7d3deb61536e",
+        "bytes": 8021
+      },
+      "assurance/spark/src/sia_continuity.ads": {
+        "sha256": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "bytes": 10309
+      },
+      "assurance/spark/src/sia_continuity.adb": {
+        "sha256": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "bytes": 833
+      },
+      "worker/bin/siacodexadapter.py": {
+        "sha256": "0ef19c77402be7067ed4f8db773010a56c23c13ad901a58abf010113150dbb25",
+        "bytes": 25536
+      },
+      "worker/tests/fixtures/codex-continuity-adapter/v5/siaagentrestore.py": {
+        "sha256": "19a20cd7d370e3462e4554df81e4ea43c663a0b5b6f9e79157e63350101c5867",
+        "bytes": 19142
+      },
+      "worker/tests/fixtures/codex-continuity-adapter/v5/siapilotrestore.py": {
+        "sha256": "4fd5ccd789a4e39953ff0848ea88a46552e0763c520cafa22305cf9526dab9a2",
+        "bytes": 26069
+      },
+      "worker/tests/fixtures/codex-continuity-adapter/provider-manifest.json": {
+        "sha256": "7a087a87854c0a349a0959c28300d64dacd089483f5d85a476cdbf91c83c7f45",
+        "bytes": 2314
+      },
+      "worker/docs/CODEX-CONTINUITY-ADAPTER.md": {
+        "sha256": "b386a9cf8a7ff036783575ea01feff9f562e27819ca1d564323475d54db6ace8",
+        "bytes": 11764
+      }
+    },
+    "main_status": "",
+    "worker_status": ""
+  },
+  "incident_original_records": {
+    "records": [
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 47955,
+        "timestamp": "2026-10-24T04:59:47.068Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_834919f2fcce4467bcd9826c00a11369",
+        "payload_type": "function_call",
+        "raw_line_sha256": "9a25eda9694aa9b3b54397406ded990d33816a499bdf5405ebe735ffcde6ea21"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 47958,
+        "timestamp": "2026-10-24T04:59:47.106Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_834919f2fcce4467bcd9826c00a11369",
+        "payload_type": "function_call_output",
+        "raw_line_sha256": "78b59d8ddbae2ff6d8175f5a126fbcb4c3388fc0ccc889def54b156e5af3f544"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 48017,
+        "timestamp": "2026-10-24T05:00:45.267Z",
+        "record_type": "response_item",
+        "role": "user",
+        "call_id": null,
+        "payload_type": "message",
+        "raw_line_sha256": "1a45ed4b11f65556dc2b09061beabd7504eda00b5762e5f58bf86f3fcb6aa663"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 65774,
+        "timestamp": "2026-10-24T19:20:21.180Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_081affc1e32b4ff493b62f818b43a66d",
+        "payload_type": "function_call",
+        "raw_line_sha256": "7f6913ed4d5b8b57ae59033b4747e65b76ed8986370afb8e2fc8ebe1c720442b"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 65777,
+        "timestamp": "2026-10-24T19:20:21.193Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_081affc1e32b4ff493b62f818b43a66d",
+        "payload_type": "function_call_output",
+        "raw_line_sha256": "8f165c086b6563ae8dec5be969c71e9eebaa15fcddc7e6b99afcf2463592feae"
+      }
+    ],
+    "scope": "Two identified owner-session JSONL files searched for exact delegation text and named question IDs; not global authorship proof"
+  },
+  "cases": [
+    {
+      "id": "AR-T01",
+      "scenario": "Old SDK reply offered as approval of later R05 question",
+      "input_requirement": "Original reply predates original R05 question; retain original event hashes and order",
+      "required_outcome": "UNRESOLVED_RESPONSE_PRECEDES_QUESTION",
+      "obligations": [
+        "AR01",
+        "AR02",
+        "AR03",
+        "AR04"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T02",
+      "scenario": "Repeat compaction with old reply last in displayed context",
+      "input_requirement": "Same original events as AR-T01; vary projected display order without changing originals",
+      "required_outcome": "SAME_UNRESOLVED_AS_AR_T01",
+      "obligations": [
+        "AR02",
+        "AR07"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T03",
+      "scenario": "Automatic goal continuation has user transport role",
+      "input_requirement": "Original automatic-goal producer evidence, no human response link",
+      "required_outcome": "UNRESOLVED_NOT_HUMAN_DECISION",
+      "obligations": [
+        "AR01",
+        "AR05"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T04",
+      "scenario": "Tool acknowledges presentation of question",
+      "input_requirement": "Original function_call_output accepted=true; no human answer",
+      "required_outcome": "UNRESOLVED_NOT_HUMAN_DECISION",
+      "obligations": [
+        "AR01",
+        "AR05"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T05",
+      "scenario": "Model note or owner decision claims approval",
+      "input_requirement": "Model-authored text, receipt timestamp and internally consistent hashes",
+      "required_outcome": "UNRESOLVED_NOT_HUMAN_DECISION",
+      "obligations": [
+        "AR01",
+        "AR05"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T06",
+      "scenario": "Later human answer has no exact reply link",
+      "input_requirement": "Human original follows question but names no verifiable question item or action scope",
+      "required_outcome": "UNRESOLVED_REPLY_LINK",
+      "obligations": [
+        "AR03",
+        "AR04",
+        "AR06"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T07",
+      "scenario": "Correct linked queried decision",
+      "input_requirement": "Authenticated independent producer fixtures bind original question, response, action conditions and current source",
+      "required_outcome": "EVIDENCE_CORRESPONDENCE_ONLY_NO_GRANT",
+      "obligations": [
+        "AR01",
+        "AR02",
+        "AR03",
+        "AR04",
+        "AR05",
+        "AR06",
+        "AR07",
+        "AR08",
+        "AR10"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T08",
+      "scenario": "Different task or session substituted",
+      "input_requirement": "Preserve question words but change independently selected task/session identity",
+      "required_outcome": "UNRESOLVED_IDENTITY",
+      "obligations": [
+        "AR01",
+        "AR07"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T09",
+      "scenario": "New proposal revision substituted",
+      "input_requirement": "Approval remains bound to original bytes; action parameters or conditions changed",
+      "required_outcome": "UNRESOLVED_ACTION_SCOPE",
+      "obligations": [
+        "AR03",
+        "AR04"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T10",
+      "scenario": "Missing or truncated original",
+      "input_requirement": "Remove either original or truncate a condition-bearing result",
+      "required_outcome": "UNRESOLVED_SOURCE_GAP",
+      "obligations": [
+        "AR01",
+        "AR08"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T11",
+      "scenario": "Capture sequence reset or source streams reordered",
+      "input_requirement": "Projection sequence appears correct but independent original order differs or cannot be joined",
+      "required_outcome": "UNRESOLVED_ORIGINAL_ORDER",
+      "obligations": [
+        "AR02"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T12",
+      "scenario": "Approval revoked or superseded after checkpoint",
+      "input_requirement": "Current retained revocation/supersession differs from checkpoint snapshot",
+      "required_outcome": "UNRESOLVED_CURRENT_DECISION",
+      "obligations": [
+        "AR07"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T13",
+      "scenario": "Approval expired or condition no longer true",
+      "input_requirement": "Original positive remains readable; current condition/expiry evidence rejects use",
+      "required_outcome": "UNRESOLVED_CURRENT_DECISION",
+      "obligations": [
+        "AR04",
+        "AR07"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T14",
+      "scenario": "Denial, deferral and ambiguous free text",
+      "input_requirement": "Separate original records for each decision; no affirmative semantic inference",
+      "required_outcome": "DISTINCT_NON_APPROVAL_STATES_NO_GRANT",
+      "obligations": [
+        "AR06"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T15",
+      "scenario": "Malicious instructions in retrieved original",
+      "input_requirement": "Original asks consumer to ignore approval checks; content kept as data",
+      "required_outcome": "NO_INSTRUCTION_PROMOTION_NO_GRANT",
+      "obligations": [
+        "AR05",
+        "AR10"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T16",
+      "scenario": "Budget boundary and one-over boundary",
+      "input_requirement": "Complete dependencies at approved existing bounds, then one dependency over budget",
+      "required_outcome": "COMPLETE_CORRESPONDENCE_OR_EXPLICIT_BUDGET_REFUSAL_NO_PARTIAL_POSITIVE",
+      "obligations": [
+        "AR08"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T17",
+      "scenario": "Previously approved action outcome uncertain",
+      "input_requirement": "Exact action identity with interrupted effect and no final external readback",
+      "required_outcome": "RECONCILE_OUTCOME_BEFORE_RETRY",
+      "obligations": [
+        "AR09"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T18",
+      "scenario": "Actual compact/restart/handoff",
+      "input_requirement": "Same source-bound originals across qualified native lifecycle and independent uncompacted baseline",
+      "required_outcome": "NO_INVENTED_APPROVAL_NO_DUPLICATE_EFFECT",
+      "obligations": [
+        "AR01",
+        "AR02",
+        "AR03",
+        "AR04",
+        "AR05",
+        "AR06",
+        "AR07",
+        "AR08",
+        "AR09",
+        "AR10"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T19",
+      "scenario": "Direct instruction with no prior question",
+      "input_requirement": "User issues original direct scoped instruction rather than responding to queried decision",
+      "required_outcome": "SEPARATE_DIRECT_INSTRUCTION_BOUNDARY_NO_INVENTED_QUESTION",
+      "obligations": [
+        "AR01",
+        "AR04",
+        "AR06"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T20",
+      "scenario": "Consumer ignores unresolved join",
+      "input_requirement": "Attempt protected actuator effect using summary or caller Boolean after evidence refusal",
+      "required_outcome": "ACTUAL_PROTECTED_EFFECT_REFUSED",
+      "obligations": [
+        "AR10"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T21",
+      "scenario": "Correct event link but wrong item in multi-question prompt",
+      "input_requirement": "Original event contains multiple question items; response names a different item than selected action",
+      "required_outcome": "UNRESOLVED_QUESTION_ITEM",
+      "obligations": [
+        "AR03",
+        "AR04"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    },
+    {
+      "id": "AR-T22",
+      "scenario": "Correct reply with narrower approval conditions",
+      "input_requirement": "Exact question and response link; response limits effects or targets more narrowly than proposed action",
+      "required_outcome": "UNRESOLVED_ACTION_OUTSIDE_DECISION_SCOPE",
+      "obligations": [
+        "AR04",
+        "AR06"
+      ],
+      "execution": "UNRUN",
+      "actual_output": null
+    }
+  ],
+  "limits": "All existing approved input/context/workload/process caps remain binding. Exact case vectors and toolchain/source binding must be frozen before implementation qualification; this roster supplies no new allowances.",
+  "oracle_limit": "This is a requirements roster, not executable vectors or independent semantic ground truth. No case is marked passed from source inspection.",
+  "existing_packet_baseline": {
+    "scope": "Entire unchanged tests.test_continuity_packet module; these are not executions of AR-T01..AR-T22",
+    "exit": 0,
+    "source_inventories_equal": true,
+    "whole_job_elapsed_ns": 613871715,
+    "raw_stdout": "",
+    "raw_stderr": "test_bad_order_duplicate_identity_and_out_of_range (tests.test_continuity_packet.ContinuityPacket.test_bad_order_duplicate_identity_and_out_of_range) ... ok\ntest_budget_refuses_instead_of_truncating (tests.test_continuity_packet.ContinuityPacket.test_budget_refuses_instead_of_truncating) ... ok\ntest_checkpoint_parent_contract (tests.test_continuity_packet.ContinuityPacket.test_checkpoint_parent_contract) ... ok\ntest_collection_limits (tests.test_continuity_packet.ContinuityPacket.test_collection_limits) ... ok\ntest_depth_endpoint_and_quoted_delimiters (tests.test_continuity_packet.ContinuityPacket.test_depth_endpoint_and_quoted_delimiters) ... ok\ntest_every_binding_and_checkpoint_must_match (tests.test_continuity_packet.ContinuityPacket.test_every_binding_and_checkpoint_must_match) ... ok\ntest_exact_input_byte_boundary (tests.test_continuity_packet.ContinuityPacket.test_exact_input_byte_boundary) ... ok\ntest_explicit_missing_coverage_survives_without_false_completion (tests.test_continuity_packet.ContinuityPacket.test_explicit_missing_coverage_survives_without_false_completion) ... ok\ntest_full_capacity_and_sequence_boundary (tests.test_continuity_packet.ContinuityPacket.test_full_capacity_and_sequence_boundary) ... ok\ntest_missing_and_conflicting_supersession_refuse (tests.test_continuity_packet.ContinuityPacket.test_missing_and_conflicting_supersession_refuse) ... ok\ntest_no_prose_or_injected_instructions_fit_reference_fields (tests.test_continuity_packet.ContinuityPacket.test_no_prose_or_injected_instructions_fit_reference_fields) ... ok\ntest_operation_results_never_infer_completion (tests.test_continuity_packet.ContinuityPacket.test_operation_results_never_infer_completion) ... ok\ntest_permission_reference_is_never_a_grant (tests.test_continuity_packet.ContinuityPacket.test_permission_reference_is_never_a_grant) ... ok\ntest_preserves_corrections_uncertainty_and_every_original_reference (tests.test_continuity_packet.ContinuityPacket.test_preserves_corrections_uncertainty_and_every_original_reference) ... ok\ntest_refusal_traceback_does_not_echo_private_invalid_input (tests.test_continuity_packet.ContinuityPacket.test_refusal_traceback_does_not_echo_private_invalid_input) ... ok\ntest_repeated_fresh_process_projection_is_exact_and_does_not_retry (tests.test_continuity_packet.ContinuityPacket.test_repeated_fresh_process_projection_is_exact_and_does_not_retry) ... ok\ntest_supersession_cannot_change_role_origin_or_kind (tests.test_continuity_packet.ContinuityPacket.test_supersession_cannot_change_role_origin_or_kind) ... ok\ntest_wire_controls_before_recursive_json_decoder (tests.test_continuity_packet.ContinuityPacket.test_wire_controls_before_recursive_json_decoder) ... ok\n\n----------------------------------------------------------------------\nRan 18 tests in 0.435s\n\nOK\n",
+    "command": [
+      "/usr/bin/flock",
+      "-F",
+      "-n",
+      "-E",
+      "75",
+      "/home/sicarii/.worldline-heavy.lock",
+      "/usr/bin/prlimit",
+      "--as=2147483648:2147483648",
+      "--fsize=536870912:536870912",
+      "--core=0:0",
+      "--",
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "60s",
+      "/usr/bin/bwrap",
+      "--ro-bind",
+      "/",
+      "/",
+      "--ro-bind",
+      "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+      "/usr/bin/git",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/sicarii/Work/sia-assurance-checkpoint-20261023",
+      "/tmp/sia-review-source",
+      "--tmpfs",
+      "/home",
+      "--tmpfs",
+      "/run",
+      "--proc",
+      "/proc",
+      "--dev",
+      "/dev",
+      "--dir",
+      "/home/audit",
+      "--ro-bind",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-restoration-contract-v1/regression_case.py",
+      "/tmp/validation-profile.py",
+      "--unshare-net",
+      "--unshare-pid",
+      "--die-with-parent",
+      "--new-session",
+      "--chdir",
+      "/tmp/sia-review-source",
+      "--setenv",
+      "HOME",
+      "/home/audit",
+      "/usr/bin/python3",
+      "-B",
+      "-W",
+      "error::ResourceWarning",
+      "-c",
+      "import sys,runpy; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; runpy.run_path(\"/tmp/validation-profile.py\",run_name=\"__main__\")"
+    ],
+    "environment": {
+      "HOME": "/home/audit",
+      "LANG": "C",
+      "LC_ALL": "C",
+      "PATH": "/usr/bin:/bin",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "TMPDIR": "/tmp",
+      "TZ": "UTC"
+    },
+    "source_sha256": {
+      "bin/siacontinuitypacket.py": "389a80983ffffa15ef83cd28fa3b15029efefc42e2aaeb535d5c7d3deb61536e",
+      "tests/test_continuity_packet.py": "a51c4a87a426d5b2c42cb631dad2dd1334a26d86acf1c03bd22e4aa86287cee5"
+    }
+  },
+  "independent_review": {
+    "model": "gpt-6.1-sol",
+    "scope": "Read-only source and documentation; no independent execution",
+    "reviewed_contract_sha256": "90b11d5a2968bba5907c56e6beb2554be298f49cd190247ad3034d4e1f81f424",
+    "reviewed_prior_cases_sha256": "3dc1ddb90bb8726f5295570d82399879ce7633c331080a54055d7d1978a2aec7",
+    "finding": "No publication blocker. Confirmed preserved V5 fixed-public-prompt restriction. Add wrong-question-item and narrower-response-conditions oracles before freezing implementation vectors.",
+    "owner_followthrough": "AR-T21 and AR-T22 added as UNRUN requirements; no reviewer execution or review of this self-containing final artifact claimed."
+  }
+}
