@@ -125,3 +125,14 @@ semantic-reducer cache; inclusive fold time includes current owner admission.
 Repeated sizing is a separate measured frontier, including the remaining
 recursive event-plan traversal. Addressing that frontier must preserve original
 byte/depth/type/cycle contracts and does not close R05 by itself.
+
+## Nonrecursive page-sizing checkpoint
+
+[The page-sizing traversal repair](PAGE-SIZING-TRAVERSAL-20261024.md) replaces
+the recursive event-plan walk with explicit ancestry frames. Its exact-source
+controls retain byte/depth/type/cycle limits, callback ordering, cleanup and
+exception precedence. The integrated 161-test run still has the two known
+current-projector cache failures. The original seven static findings remain.
+Small-fixture profiles do not establish a speed improvement; this is a control
+flow repair, not useful-cache evidence or R05 closure. Preserve the original
+reuse oracle and all admission checks while addressing the cache architecture.

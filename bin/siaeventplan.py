@@ -103,10 +103,30 @@ def _text_size(value, limit, *, quoted=True):
     return size
 
 
-def _size(value, limit, active=None, depth=0):
-    """Admission before serialization/copy/hash, retaining native stat ints."""
-    if type(limit) is not int or limit <= 0 or depth > 64:
-        _refuse("complete-byte-capacity")
+class _PageSizeFrame:
+    """One active native container; no queue proportional to its width."""
+
+    __slots__ = ("identity", "container", "mapping", "entries", "size", "limit", "depth")
+
+    def __init__(self, value, limit, depth):
+        self.depth = depth
+        self.identity, self.container = id(value), value
+        self.mapping, self.entries = type(value) is dict, enumerate(value)
+        self.size, self.limit = 2, limit
+
+    def next_child(self, end):
+        entry = next(self.entries, end)
+        if entry is end:
+            return end
+        position, item = entry
+        self.size += bool(position)
+        if self.mapping:
+            self.size += _text_size(item, self.limit - self.size) + 1
+            item = self.container[item]
+        return item, self.limit - self.size, self.depth + 1
+
+
+def _scalar_size(value, limit):
     kind = type(value)
     if value is None:
         size = 4
@@ -121,33 +141,92 @@ def _size(value, limit, active=None, depth=0):
             _refuse("native-integer-capacity")
     elif kind is str:
         return _text_size(value, limit)
-    elif kind in (dict, list):
-        if len(value) > limit:
-            _refuse("complete-byte-capacity")
-        active = set() if active is None else active
-        identity = id(value)
-        if identity in active:
-            _refuse("cyclic-json")
-        active.add(identity)
-        try:
-            size = 2
-            for position, item in enumerate(value):
-                size += bool(position)
-                if kind is dict:
-                    size += _text_size(item, limit - size) + 1
-                    child = value[item]
-                else:
-                    child = item
-                size += _size(child, limit - size, active, depth + 1)
-                if size > limit:
-                    _refuse("complete-byte-capacity")
-        finally:
-            active.remove(identity)
     else:
         _refuse("non-native-json")
     if size > limit:
         _refuse("complete-byte-capacity")
     return size
+
+
+def _open_size_frame(value, limit, depth, active, frames):
+    if len(value) > limit:
+        _refuse("complete-byte-capacity")
+    identity = id(value)
+    if identity in active:
+        _refuse("cyclic-json")
+    active.add(identity)
+    retained = False
+    try:
+        frames.append(_PageSizeFrame(value, limit, depth))
+        retained = True
+    finally:
+        if not retained:
+            active.remove(identity)
+
+
+def _unwind_size_frames(frames, active):
+    """Attempt each outer cleanup once, preserving exception precedence."""
+    pending = None
+    while frames:
+        try:
+            try:
+                if pending is not None:
+                    context = BaseException.__context__.__get__(pending)
+                    try:
+                        raise pending
+                    finally:
+                        # Re-raising under the original sizing exception must
+                        # not replace the intervening cleanup-failure chain.
+                        BaseException.__context__.__set__(pending, context)
+            finally:
+                frame = frames.pop()
+                active.remove(frame.identity)
+        except BaseException as error:
+            # As with nested finally blocks, cleanup does not swallow even
+            # interpreter-exit exceptions. The outermost failure propagates.
+            if not frames:
+                raise
+            pending = error
+
+
+def _size(value, limit, active=None, depth=0):
+    """Iterative admission with the original local byte and ancestry bounds.
+
+    Each frame preserves its parent's remaining budget and lookup ordering.
+    Only active ancestors occupy scratch; no descendants are queued. Native
+    container growth still consumes the original finite byte budget. This is
+    not a fixed-allocation or hostile-interpreter guarantee.
+    """
+    frames, end = [], object()
+    active = set() if active is None else active
+    try:
+        while True:
+            if type(limit) is not int or limit <= 0 or depth > 64:
+                _refuse("complete-byte-capacity")
+            if type(value) in (dict, list):
+                _open_size_frame(value, limit, depth, active, frames)
+                size = None
+            else:
+                size = _scalar_size(value, limit)
+            while frames:
+                frame = frames[-1]
+                if size is not None:
+                    frame.size += size
+                    if frame.size > frame.limit:
+                        _refuse("complete-byte-capacity")
+                child = frame.next_child(end)
+                if child is not end:
+                    value, limit, depth = child
+                    break
+                size = frame.size
+                frames.pop()
+                active.remove(frame.identity)
+                if size > frame.limit:
+                    _refuse("complete-byte-capacity")
+            else:
+                return size
+    finally:
+        _unwind_size_frames(frames, active)
 
 
 def _json(owner, value):
