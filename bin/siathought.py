@@ -32,6 +32,7 @@ import threading as _threading
 os = None
 siaqueue = None
 MAX_EVENT_INDEX_BYTES = None
+MAX_EVENT_INDEX_RECORDS = None
 
 def _canonical_thought_page_record(thought):
     """Project a compatibility-named generated entry into its page record."""
@@ -3776,6 +3777,18 @@ def _publish_event_index_entries(entries):
         _before_corpus_mutation()
         ensure_durable_directory(os.path.dirname(path))
         atomic_write(path, encoded.decode("utf-8"))
+    _verify_event_index_entries(entries)
+
+
+def _verify_event_index_entries(entries):
+    """Observe complete exact coverage before any source retirement begins."""
+    if not isinstance(entries, list) or len(entries) > MAX_EVENT_INDEX_RECORDS:
+        raise ValueError("consolidated event index batch exceeds its bound")
+    for entry in entries:
+        expected = _canonical_event_index_entry(entry)
+        actual = _read_event_index_entry(expected["organ"], expected["event_id"])
+        if actual != expected:
+            raise ValueError("consolidated event index publication readback differs")
 
 
 # Event-id rosters reconstructed from retained sources for epochs that
