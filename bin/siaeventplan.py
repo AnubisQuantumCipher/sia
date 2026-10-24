@@ -7,6 +7,7 @@ before-view for validation. No source, index, cursor or delivery is committed.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -740,6 +741,31 @@ def _decode(owner, value):
     return raw
 
 
+def _checked_version(owner, page, raw, *, before=False):
+    """Bind a projector result to an admitted image before it enters replay.
+
+    The caller has already checked page shape, raw capacity and raw digest.
+    This is source-byte binding, not authentication of the source's claims.
+    """
+    image = page["before"] if before else page
+    identity = {"subject": page["slug"], "origin": page["origin"],
+                "source_sha256": image["raw_sha256"],
+                "content_sha256": image["raw_sha256"]}
+    wire = json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False).encode("utf-8")
+    expected = {**identity, "content": raw.decode("utf-8", errors="strict"),
+                "version_sha256": hashlib.sha256(wire).hexdigest()}
+    version = owner["_corpus_page_version_from_bytes"](slug=identity["subject"], raw=raw)
+    if type(version) is not dict or len(version) != len(expected) \
+            or any(type(key) is not str or type(value) is not str
+                   for key, value in version.items()) \
+            or version != expected:
+        _refuse("projected-version-source-binding")
+    # Preserve alias visibility for existing late-mutation refusal checks.
+    # The public projection boundary performs the final checked detachment.
+    return version
+
+
 def _images(owner, plan):
     files = {row["relative"]: row["before"] for row in plan["read_dependencies"]["files"]}
     result = {}
@@ -757,11 +783,11 @@ def _images(owner, plan):
             _refuse("nonwrite-page-byte-change")
         if page["write"] and raw == old:
             _refuse("write-without-appended-image")
-        version = owner["_corpus_page_version_from_bytes"](slug=page["slug"], raw=raw)
+        version = _checked_version(owner, page, raw)
         if version["version_sha256"] != page["version_sha256"] or version["origin"] != page["origin"]:
             _refuse("target-version-binding")
         if old is not None:
-            previous = owner["_corpus_page_version_from_bytes"](slug=page["slug"], raw=old)
+            previous = _checked_version(owner, page, old, before=True)
             if previous["origin"] != version["origin"]:
                 _refuse("retained-page-origin-change")
         result[relative] = {"raw": raw, "before": old, "page": page}

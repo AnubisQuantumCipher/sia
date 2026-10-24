@@ -369,7 +369,7 @@ def _advance(owner, *, checkpoint, expected_checkpoint_sha256, delta, expected_d
              for row in current["first_associations"]}
     associations = []
     replay._fold_entry(owner, request, entry, intake, associations, versions, active, first)
-    intake["pages"], intake["current_versions"] = list(versions.values()), list(active.values())
+    intake["pages"], intake["current_versions"] = replay._version_pages(versions), list(active.values())
     current.update(updates)
     current["first_associations"] = [
         {"source_id": key[0], "event_id": key[1], "semantic_id": semantic,

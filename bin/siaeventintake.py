@@ -499,10 +499,10 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
             if slug in current and (image["before"] is None
                                     or versions[current[slug]]["content"].encode("utf-8") != image["before"]):
                 _refuse("unexplained-page-version-change")
-            for raw in (image["before"], image["raw"]):
+            for before, raw in ((True, image["before"]), (False, image["raw"])):
                 if raw is None:
                     continue
-                version = owner["_corpus_page_version_from_bytes"](slug=slug, raw=raw)
+                version = pages._checked_version(owner, image["page"], raw, before=before)
                 pin = version["version_sha256"]
                 if pin in versions and not _same(owner, version, versions[pin]):
                     _refuse("page-version-collision")
@@ -535,11 +535,20 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
             associations.append(association)
 
 
+def _version_pages(versions):
+    """Retain checked identities across later projector invocations."""
+    for pin, version in versions.items():
+        if type(version) is not dict or type(version.get("version_sha256")) is not str \
+                or version["version_sha256"] != pin:
+            _refuse("page-version-identity-changed")
+    return list(versions.values())
+
+
 def _project(owner, request):
     intake, associations, versions, current, first = _intake(request), [], {}, {}, {}
     for entry in request["history"]["entries"]:
         _fold_entry(owner, request, entry, intake, associations, versions, current, first)
-    intake["pages"], intake["current_versions"] = list(versions.values()), list(current.values())
+    intake["pages"], intake["current_versions"] = _version_pages(versions), list(current.values())
     return _result(request, intake, associations)
 
 
