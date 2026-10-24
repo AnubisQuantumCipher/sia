@@ -1,0 +1,14 @@
+Actual GPT-6.1 read-only review: **the corrected tests meaningfully reproduce R05; no production repair is established.**
+
+The warm/cold comparison first requires ordinary acceptance, then requires fresh validation under the changed context to refuse. This prevents an ineffective mutation from counting as a demonstrated cache bypass. The corrected decoder fixture explicitly requires nonempty captured events. Nested aliases, unchanged callbacks with changed captured/global policy, limits and changed-image controls cover distinct dependencies.
+
+Verified test SHA:
+`acf0cb9d8f7d64c8b250d4779d7d724403eea0fe65aac362e8b0636abe47e0ce`
+
+The corrected raw log matches its receipt hash and reports 14 methods with 12 failures. Those failures demonstrate stale admission; they are not passing product evidence.
+
+Keep the original `RetainedImageMemo` derivation-count oracle unchanged. Removing caching is not an acceptable completed repair if it breaks that contract or the resource envelope. The timed-out overlay supplies neither correctness acceptance nor performance qualification.
+
+The profile is appropriately limited to small fixtures. The static inventory explicitly leaves semantic frontiers unresolved; it cannot certify a complete cache key. Next step remains a closed dependency boundary separating reusable pure derivation from current admission checks, followed by both original reuse and new refusal controls under unchanged limits.
+
+No tests or jobs executed by me.
