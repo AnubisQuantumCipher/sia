@@ -126,8 +126,10 @@ class GbrainContract(unittest.TestCase):
             stream.write(
                 "---\ntitle: alpha\n---\n# alpha\n"
                 f"The {PAGE_TOKEN} lives here with organs/test context.\n")
-        # gbrain sync reads through git objects: uncommitted files are invisible to the
-        # walker, so the corpus must be a committed git repository — as SIA's real corpus is.
+        # SIA's publication contract binds the corpus to a committed generation.
+        # gbrain can index uncommitted working-tree files; it does not enforce
+        # that boundary itself. Keep this fixture committed and rely on SIA's
+        # clean-generation checks (or an exact committed export), not the walker.
         for argv in (("git", "init", "-q"),
                      ("git", "add", "-A"),
                      ("git", "-c", "user.email=contract@test", "-c", "user.name=contract",

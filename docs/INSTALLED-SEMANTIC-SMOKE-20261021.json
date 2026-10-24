@@ -1,0 +1,85 @@
+{
+  "artifacts": [
+    {
+      "path": "installed-semantic-recall-20261021-v1.json",
+      "sha256": "15e68b908557a869c669dfa78b762d800ecb16ea6f8c3be70aab40e1e3d1c348"
+    },
+    {
+      "path": "installed-semantic-recall-20261021-v1.log",
+      "sha256": "ebb6906d940826360cd8820c3e51c74c4827e9e82c3976de2635eab3ab3971ce"
+    },
+    {
+      "path": "installed-note-body-comparison-v5.json",
+      "sha256": "0beecd5c7411a1d5ef9a1c62ec459842bdae37e3b907a8d46b5a392df4dfcc7b"
+    },
+    {
+      "path": "read-semantic-smoke-v1.py",
+      "sha256": "845f5efd8b885f6c379ad9fcb7ebeed72ca9970753e12f23969723a2d7dbda95"
+    },
+    {
+      "path": "bounded-read-capture-v1.py",
+      "sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6"
+    }
+  ],
+  "classification": "TARGET_NOT_SURFACED",
+  "direct_target_readback": {
+    "body_sha256": "2c827af53fbfa3dd2464f7cc3adab9f58d58f5ef4417f67457ddf6747379a538",
+    "exact_origin": true,
+    "installed_binaries_unchanged": true,
+    "kind": "OBSERVED exact queued-model-note body; not authority",
+    "limitation": "No complete capture, semantic retrieval, current task restoration or approval claim.",
+    "queued_body_sha256": "2c827af53fbfa3dd2464f7cc3adab9f58d58f5ef4417f67457ddf6747379a538",
+    "request_id": "b5f46f6010fd439ab069bf0363bbe074",
+    "request_id_present": true,
+    "returned_origin_line": "[origin:model] notes/2026-10-21-065834-codex-b5f46f6010fd439ab069bf0363bbe074",
+    "same_body": true,
+    "source_checkpoint": "a2bd8d64b7f92230ce6f49d0f59311c3661ed01b",
+    "source_log_sha256": "163e99d31747141a1060c4712c17845a28b8d4c74303cb3f6039e9d4a5eba94c"
+  },
+  "intended_target_request": "b5f46f6010fd439ab069bf0363bbe074",
+  "intended_target_returned": false,
+  "kind": "OBSERVED development semantic smoke; not held-out evaluation",
+  "limitations": [
+    "One chosen query; no retrieval-accuracy estimate.",
+    "No absence of storage or indexing inferred from a miss.",
+    "Model note is neither truth nor authorization.",
+    "No automatic continuity, future latency or full installed-closure claim.",
+    "Raw retrieved memory text remains in local evidence, not this manifest."
+  ],
+  "observation": {
+    "capture_helper_sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+    "capture_status": "complete",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "ask",
+      "SIA assurance single implementation owner Current_Evidence next step",
+      "--no-touch"
+    ],
+    "elapsed_seconds": 54.33552211499773,
+    "executable_after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "executable_before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "exit": 0,
+    "kind": "OBSERVED one installed semantic query; not continuity acceptance",
+    "limitations": [
+      "Model-origin note, not authorization or truth.",
+      "One development smoke query does not establish retrieval accuracy.",
+      "No full installed dependency-closure attestation.",
+      "Output pipe bound does not alter backend file limits."
+    ],
+    "log_sha256": "ebb6906d940826360cd8820c3e51c74c4827e9e82c3976de2635eab3ab3971ce",
+    "maximum_log_bytes": 1048576,
+    "observed_at": "2026-10-21T07:13:14.943556+00:00",
+    "queue_receipt_sha256": "b2a52411a95896fa65cd03c7363a43c42c03da5622e61b9f4c61496c3ba25ecd",
+    "request_id": "b5f46f6010fd439ab069bf0363bbe074",
+    "runner_sha256": "845f5efd8b885f6c379ad9fcb7ebeed72ca9970753e12f23969723a2d7dbda95"
+  },
+  "reported_boundary": "boundary: senses live \u00b7 chains pass \u00b7 graph complete \u00b7 6 span(s) redacted at ingest \u00b7 semantic recall \u00b7 associative rerank off by measured default; retrieval.associative_rerank enables it \u00b7 absence of recall \u2260 evidence of absence",
+  "request_id_field_meaning": "Intended query target; not a returned-match claim.",
+  "retained_private_root": "/home/sicarii/Work/sia-assurance-evidence-20261019"
+}

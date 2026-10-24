@@ -1,0 +1,23 @@
+Independent source review by the existing GPT-6.1 reviewer
+Recorded 2026-10-21; model-generated assessment, not execution evidence.
+
+No blocker found. The diff against
+9463b588843ec05b3cd39208e15eb2d75f1e72f5 contains exactly the six described
+lines; all original fixtures, assignments, assertions and contracts remain.
+
+The invariant correctly preserves every byte outside the two operation digest
+regions against Bytes'Loop_Entry. Each loop update touches only those excluded
+regions, so initialization and preservation are valid obligations. This exposes
+scalar/padding facts across the proof cut point without adding an assumption,
+exclusion or weaker oracle. It fits Power of Ten's explicit, locally verifiable
+invariant discipline.
+
+Inspected SHA-256:
+tests b4ad291d1baa864f595333d6f6d817e22dde7b3aecdb50faf41df01dc8970e71
+ads   019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084
+adb   a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c
+
+The reported focused diagnostic pass supports this decomposition; I did not
+independently inspect its receipts in this review. Retain the earlier failed
+preservation check. Full-project proof remains pending, with no integration
+or whole-system acceptance established.

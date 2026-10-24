@@ -1,0 +1,25 @@
+Retained model-generated independent evidence review by the existing read-only
+/root/assurance_architecture_review agent, actual GPT-6.1.
+
+Actual GPT-6.1 reviewer. No concrete evidence-integrity or claims blocker found
+for this non-final checkpoint.
+
+Verified current source matches v3; retained artifact hashes, bundle hash and
+member hashes agree. Public archive contains no storage-preflight metadata.
+The core report covers only sia_continuity_current_wire: 73 discharged checks,
+all 12 entities analyzed, no justified/unproved checks, informational raw
+diagnostics only, and empty Assume/skip annotation arrays. Ordinary modular
+dependencies remain explicit.
+
+Documentation preserves v1's compiler failure and both complete-harness
+timeouts. It neither combines scoped results into full coverage nor drops
+original obligations.
+
+Inspected SHA-256 (document before adding its review link):
+document 5a4ee2364778aa5bfb4165c120151b3c13094e31d4e11d1b3056a93564eda9fe
+manifest 24386da15038fb7a8857f78464c805110b6e81e1435cc5cb5926c22d53598d7a
+bundle   908b86922cdb13487856142f1711961d3616d323b2bec43787a5ab788a6f1b41
+
+Read-only correspondence review, without independent replay. Complete
+harness/full-project proof, coverage and committed-source reproduction remain
+open. No jobs or edits performed.

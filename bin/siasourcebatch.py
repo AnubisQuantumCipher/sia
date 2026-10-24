@@ -19,7 +19,6 @@ serializers and validators.
 
 import base64
 import contextlib
-import copy
 import os
 import re
 import stat
@@ -211,83 +210,126 @@ def _hex(value, reason="digest-shape"):
         refuse(reason)
 
 
-def _json_size(owner, value, ceiling, *, ascii_only):
-    """Count canonical JSON before allocation, copying, or hashing."""
-    if type(ceiling) is not int or ceiling <= 0:
-        refuse("complete-byte-capacity")
-    active = set()
-    total = 0
+class _JsonSizeCounter:
+    __slots__ = ("ceiling", "total")
 
-    def add(amount):
-        nonlocal total
-        total += amount
-        if total > ceiling:
+    def __init__(self, ceiling):
+        self.ceiling, self.total = ceiling, 0
+
+    def add(self, amount):
+        self.total += amount
+        if self.total > self.ceiling:
             refuse("complete-byte-capacity")
 
-    def visit(item, depth):
+
+def _json_string_size(item, counter, ascii_only):
+    if _live._count_ascii_json_string(item, counter.add, ascii_only=ascii_only):
+        return
+    counter.add(2)
+    for character in item:
+        point = ord(character)
+        if 0xD800 <= point <= 0xDFFF:
+            refuse("unpaired-surrogate")
+        if character in '"\\\b\f\n\r\t':
+            counter.add(2)
+        elif point < 0x20:
+            counter.add(6)
+        elif ascii_only and point >= 0x7F:
+            counter.add(6 if point <= 0xFFFF else 12)
+        else:
+            counter.add(len(character.encode("utf-8")))
+
+
+def _json_scalar_size(owner, item, counter, ascii_only):
+    kind = type(item)
+    if item is None:
+        counter.add(4)
+    elif kind is bool:
+        counter.add(4 if item else 5)
+    elif kind is int:
+        if item.bit_length() > counter.ceiling:
+            refuse("native-integer-capacity")
+        try:
+            counter.add(len(str(item)))
+        except ValueError:
+            refuse("native-integer-capacity")
+    elif kind is float:
+        if not owner["math"].isfinite(item):
+            refuse("nonfinite-json-number")
+        counter.add(len(repr(item)))
+    elif kind is str:
+        _json_string_size(item, counter, ascii_only)
+    else:
+        refuse("noncanonical-json-value")
+
+
+class _JsonSizeFrame:
+    __slots__ = ("identity", "entries", "mapping", "first")
+
+    def __init__(self, item):
+        self.identity = id(item)
+        self.mapping = type(item) is dict
+        self.entries = iter(item.items() if self.mapping else item)
+        self.first = True
+
+    def take(self, counter, end, ascii_only, depth):
+        entry = next(self.entries, end)
+        if entry is end:
+            return end
+        if not self.first:
+            counter.add(1)
+        self.first = False
+        if self.mapping:
+            key, child = entry
+            if type(key) is not str:
+                refuse("nontext-json-key")
+            if depth > 64:
+                refuse("complete-json-depth")
+            _json_string_size(key, counter, ascii_only)
+            counter.add(1)
+            return child
+        return entry
+
+
+def _json_size(owner, value, ceiling, *, ascii_only):
+    """Count JSON without recursive calls or a width-sized traversal queue.
+
+    Frames retain only the active ancestry, within the existing depth limit.
+    Each container contributes bytes and each subsequent entry adds a comma;
+    the unchanged byte ceiling bounds traversal of growing native containers.
+    Python allocation and callback behavior remain environmental assumptions.
+    """
+    if type(ceiling) is not int or ceiling <= 0:
+        refuse("complete-byte-capacity")
+    counter = _JsonSizeCounter(ceiling)
+    frames, active = [], set()
+    end = object()
+    item, depth = value, 0
+    while True:
         if depth > 64:
             refuse("complete-json-depth")
         kind = type(item)
-        if item is None:
-            add(4)
-        elif kind is bool:
-            add(4 if item else 5)
-        elif kind is int:
-            if item.bit_length() > ceiling:
-                refuse("native-integer-capacity")
-            try:
-                add(len(str(item)))
-            except ValueError:
-                refuse("native-integer-capacity")
-        elif kind is float:
-            if not owner["math"].isfinite(item):
-                refuse("nonfinite-json-number")
-            add(len(repr(item)))
-        elif kind is str:
-            if _live._count_ascii_json_string(item, add, ascii_only=ascii_only):
-                return
-            add(2)
-            for character in item:
-                point = ord(character)
-                if 0xD800 <= point <= 0xDFFF:
-                    refuse("unpaired-surrogate")
-                if character in '"\\\b\f\n\r\t':
-                    add(2)
-                elif point < 0x20:
-                    add(6)
-                elif ascii_only and point >= 0x7F:
-                    add(6 if point <= 0xFFFF else 12)
-                else:
-                    add(len(character.encode("utf-8")))
-        elif kind in (dict, list):
+        if kind is dict or kind is list:
             identity = id(item)
             if identity in active:
                 refuse("cyclic-json")
             if len(item) > ceiling:
                 refuse("complete-byte-capacity")
             active.add(identity)
-            try:
-                add(2)
-                entries = item.items() if kind is dict else item
-                for index, entry in enumerate(entries):
-                    if index:
-                        add(1)
-                    if kind is dict:
-                        key, child = entry
-                        if type(key) is not str:
-                            refuse("nontext-json-key")
-                        visit(key, depth + 1)
-                        add(1)
-                        visit(child, depth + 1)
-                    else:
-                        visit(entry, depth + 1)
-            finally:
-                active.remove(identity)
+            counter.add(2)
+            frames.append(_JsonSizeFrame(item))
         else:
-            refuse("noncanonical-json-value")
-
-    visit(value, 0)
-    return total
+            _json_scalar_size(owner, item, counter, ascii_only)
+        while frames:
+            frame = frames[-1]
+            item = frame.take(counter, end, ascii_only, len(frames))
+            if item is not end:
+                depth = len(frames)
+                break
+            active.remove(frame.identity)
+            frames.pop()
+        else:
+            return counter.total
 
 
 def _json_bytes(owner, value, ceiling, *, ascii_only):
@@ -332,10 +374,40 @@ def _same_component(owner, first, second):
     return _component_bytes(owner, first) == _component_bytes(owner, second)
 
 
+def _paired_rows(left, right, reason):
+    """Pair admitted lists within their initial length; refuse roster drift.
+
+    Only iterator advancement errors are translated. Errors in a caller's
+    loop body retain their original meaning. Same-length replacement and ABA
+    mutation still require the surrounding content/identity checks.
+    """
+    limit = len(left)
+    if len(right) != limit:
+        refuse(reason)
+    pairs = zip(left, right, strict=True)
+    for _ in range(limit):
+        try:
+            pair = next(pairs)
+        except StopIteration:
+            refuse(reason)
+        except ValueError as exc:
+            refuse(reason, upstream=exc)
+        yield pair
+    if len(left) != limit or len(right) != limit:
+        refuse(reason)
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError as exc:
+        refuse(reason, upstream=exc)
+    refuse(reason)
+
+
 def _generation(info):
     return dict(zip(FILE_GENERATION_KEYS, (
         info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-        info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)))
+        info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns), strict=True))
 
 
 def _directory_generation(info):
@@ -633,7 +705,7 @@ def _validate_epoch_context(owner, epoch, *, include_history=False):
     if len(catalog["sources"]) != len(expected_ids):
         refuse("source-catalog-roster")
     for position, (row, source_id) in enumerate(
-            zip(catalog["sources"], expected_ids)):
+            _paired_rows(catalog["sources"], expected_ids, "source-catalog-roster")):
         _keys(row, {"source_id", "collector", "organ", "custom_name"},
               "source-catalog-row")
         if row["source_id"] != source_id \
@@ -968,10 +1040,11 @@ class _RuntimeConfiguration:
         if native_bytes(owner, projection) != self.projection_raw \
                 or custom_indexes != self.custom_indexes \
                 or len(identities["senses"]) != len(self.identities["senses"]) \
+                or len(identities["exported"]) != len(self.identities["exported"]) \
                 or any(current is not original for current, original in zip(
-                    identities["senses"], self.identities["senses"])) \
+                    identities["senses"], self.identities["senses"], strict=True)) \
                 or any(current is not original for current, original in zip(
-                    identities["exported"], self.identities["exported"])):
+                    identities["exported"], self.identities["exported"], strict=True)):
             refuse("runtime-selection-changed")
         self.held.current()
 
@@ -1428,7 +1501,7 @@ def _plan_events(owner, collected, runtime, files, epoch, epoch_raw):
     grouped = {}
     for _source_id, events, records in collected["events"]:
         _events_current(owner, events, records)
-        for event, record in zip(events, records):
+        for event, record in _paired_rows(events, records, "source-event-roster-changed"):
             grouped.setdefault((record["organ"], record["ts"][:10]), []).append(
                 event)
     plans_by_organ = {}
@@ -2266,7 +2339,7 @@ def _validate_cursor(owner, proposal, source_ids):
             or len(proposal["steps"]) != len(source_ids):
         refuse("cursor-proposal-contract")
     cursor = owner["copy"].deepcopy(proposal["before_value"])
-    for source_id, step in zip(source_ids, proposal["steps"]):
+    for source_id, step in _paired_rows(source_ids, proposal["steps"], "cursor-proposal-contract"):
         _keys(step, CURSOR_STEP_KEYS, "cursor-step-shape")
         if step["source_id"] != source_id \
                 or type(step["removed_keys"]) is not list \
@@ -2292,7 +2365,7 @@ def _validate_cursor(owner, proposal, source_ids):
 def _validate_refusal_intents(owner, intents, source_ids):
     if type(intents) is not list or len(intents) != len(source_ids):
         refuse("refusal-intent-roster")
-    for source_id, intent in zip(source_ids, intents):
+    for source_id, intent in _paired_rows(source_ids, intents, "refusal-intent-roster"):
         _keys(intent, REFUSAL_INTENT_KEYS, "refusal-intent-shape")
         if intent["source_id"] != source_id \
                 or type(intent["record_refusals"]) is not list \
@@ -2390,25 +2463,19 @@ def _validate_retained_projection(owner, batch, event_batches):
         refuse("intake-projection-binding")
 
 
-# Byte-identical retained batches validated earlier in this process (see the
-# capture memo in siasourcecheckpoint): the identity digest runs every call,
-# the derivation only for an image not yet validated under these constants.
+# Compatibility slots for existing diagnostic cleanup. Admission never reads
+# or publishes cached success; every call checks the current policy.
 _VALIDATED_BATCHES = {}
 _VALIDATED_BATCHES_LIMIT = 8
 
 
 def validate_batch(owner, batch, expected_batch_sha256):
-    """Validate a retained source batch without consulting current sources."""
+    """Validate retained input against current policy on every call."""
     _json_size(owner, batch, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
-    memo_key = (expected_batch_sha256, native_sha(owner, batch),
-                owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
-    if memo_key in _VALIDATED_BATCHES:
-        return copy.deepcopy(_VALIDATED_BATCHES[memo_key][0])
-    result = _validate_batch_image(owner, batch, expected_batch_sha256)
-    if len(_VALIDATED_BATCHES) >= _VALIDATED_BATCHES_LIMIT:
-        _VALIDATED_BATCHES.clear()
-    _VALIDATED_BATCHES[memo_key] = (copy.deepcopy(result),)
-    return result
+    # Preserve original digest and owner reads before full admission.
+    _memo_key = (expected_batch_sha256, native_sha(owner, batch),
+                 owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
+    return _validate_batch_image(owner, batch, expected_batch_sha256)
 
 
 def _validate_batch_image(owner, batch, expected_batch_sha256):

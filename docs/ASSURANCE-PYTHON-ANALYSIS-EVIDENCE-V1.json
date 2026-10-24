@@ -1,0 +1,476 @@
+{
+  "analysis": {
+    "final_receipt": "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/receipt.json",
+    "local_platform": "Linux aarch64",
+    "rule_file_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "stable_rule_count": 167,
+    "status": "Retained local exact-CI step passed; remote/x86_64 CI UNRUN",
+    "version": "Ruff 0.17.1"
+  },
+  "authority": "NONE",
+  "base_commit": "1292d328ebc27680a040a263a7445cb04b2d82bd",
+  "behavior": {
+    "actual_audit_exit": 2,
+    "actual_draft_authority": "NONE",
+    "actual_draft_status": "INCOMPLETE",
+    "gaps": 434,
+    "manifest_tests": 26,
+    "original_counterexamples": "4 REFUSED",
+    "receipt": "evidence/acceptance-static-repair-v1/receipt.json"
+  },
+  "bundle": {
+    "path": "docs/evidence/assurance-python-analysis-v1.tar.gz",
+    "sha256": "8c845c033410d7f2dc10ee4419fe52528a15e3de9d3f6dbab4c00aa5a4c27446"
+  },
+  "kind": "Retained partial Python correctness-analysis increment; no system acceptance",
+  "limits": [
+    "No new analyzer, test, build or proof execution by this retainer.",
+    "No wheels, virtualenv, executables, private corpus or operational handoff included.",
+    "Historical base plus Python overlay is distinct from later CI/docs snapshot.",
+    "Original negative-control receipts lack per-fixture input hashes; they are retained local observations.",
+    "Unrelated live Ada/Goal edits are excluded; complete system/proof/P10 acceptance remains OPEN.",
+    "Parser/preview bounds are not disk quotas, WCET, static allocation proof or authenticated custody.",
+    "Producer/model identity and approval authenticity are not established by hashes."
+  ],
+  "members": {
+    "evidence/acceptance-static-repair-v1/audit.receipt.json": {
+      "bytes": 368,
+      "sha256": "bd7d66c7679c4e99e389552bde0ac64fedfbcea77b6ca4498d28093f7ea6523b"
+    },
+    "evidence/acceptance-static-repair-v1/audit.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-static-repair-v1/audit.stdout": {
+      "bytes": 24688,
+      "sha256": "cb1c7d88fadec34e956f717e5dfbc76607776586948e91aedfbc81a8228e4eff"
+    },
+    "evidence/acceptance-static-repair-v1/counterexamples.receipt.json": {
+      "bytes": 307,
+      "sha256": "1fc42109dac0fcfff5bed325bba2b3f93271372057adf8515afdfa4f05846bf7"
+    },
+    "evidence/acceptance-static-repair-v1/counterexamples.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-static-repair-v1/counterexamples.stdout": {
+      "bytes": 917,
+      "sha256": "ffb903496b3b609a25c1c9b52c93eb42305d45793d43d1f95fa0e64e452357f3"
+    },
+    "evidence/acceptance-static-repair-v1/draft.receipt.json": {
+      "bytes": 251,
+      "sha256": "b7fb1a2bdb68dce9e48b2dff8b7cd97a3bab7052e25db9e5dccb498879d79360"
+    },
+    "evidence/acceptance-static-repair-v1/draft.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-static-repair-v1/draft.stdout": {
+      "bytes": 93275,
+      "sha256": "954f749fc2f5bd7d43ead06902cba9731f4766edb067795908264ec5a93aafa8"
+    },
+    "evidence/acceptance-static-repair-v1/receipt.json": {
+      "bytes": 3585,
+      "sha256": "0fe1d13be5335ad3508c12d9c95c1992c1a08023039f2a6b91cc047f9d8081c0"
+    },
+    "evidence/acceptance-static-repair-v1/tests.receipt.json": {
+      "bytes": 274,
+      "sha256": "dce09af7f1ef053357540ede95f060b812412565b71c901b0473c3e924dbeeb8"
+    },
+    "evidence/acceptance-static-repair-v1/tests.stderr": {
+      "bytes": 4653,
+      "sha256": "2fd8e5c4853ccc82588ffc91fc99f8aee45a1d43bda8a92149186e9300d47d05"
+    },
+    "evidence/acceptance-static-repair-v1/tests.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-static-repair-v1/verify.py": {
+      "bytes": 3587,
+      "sha256": "4fad9b4e8377a769ce880d843fe3b4299d102ea536efbce6338853637951cd87"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/0.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/0.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/1.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/1.stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/ci-step.sh": {
+      "bytes": 1851,
+      "sha256": "51f3826f7a148c5c27196f8b8672bb5caf525591c140c31e4c062b7d82d750ee"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/receipt.json": {
+      "bytes": 1794,
+      "sha256": "3080973d8718458afc28525bdf506aad70e8f60e02335b458e75264c205454a9"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/sia-assurance-checker-ruff.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v1/sia-assurance-checker-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/ci-step.sh": {
+      "bytes": 2332,
+      "sha256": "d35d5dd03d96b08e7557751f81f219193b0a1037f3f72062dc7db160b09de647"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/empty-rules/receipt.json": {
+      "bytes": 416,
+      "sha256": "87b034cba9f4f0892db489d83f12f336905faf22f75a91e594d450cc4f41e8dc"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/empty-rules/stderr": {
+      "bytes": 39,
+      "sha256": "67ef86069d0e123a2727e828f1730818947b007cc9806872917ee04acd0d0601"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/empty-rules/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/positive/receipt.json": {
+      "bytes": 353,
+      "sha256": "1bb893726d1c5b2cb4bd34a00d6a4a0c610c5e997139b6a4243b4c7445e02060"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/positive/sia-assurance-checker-ruff.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/positive/sia-assurance-checker-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/positive/stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/positive/stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/receipt.json": {
+      "bytes": 3103,
+      "sha256": "49c573d6b48dc006be36b26077102a872c47dc64ad1b2b1914de36d491b3bc97"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/suppression/receipt.json": {
+      "bytes": 416,
+      "sha256": "d5934b9da0394ddfdf91930f2d1295bc038d32781cc546549448e85c58f47720"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/suppression/stderr": {
+      "bytes": 84,
+      "sha256": "be65fcfa8882e2fdb153ef14af4bc1675e030b75bea3003a9a0a8690dedaca36"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/suppression/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/syntax/receipt.json": {
+      "bytes": 365,
+      "sha256": "40d470f553e3428b7250592634029d5acef0cf1eb4c4a8a98771b0c58483e556"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/syntax/stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/actual-ci-step-v2/syntax/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/baseline-all.receipt.json": {
+      "bytes": 1408,
+      "sha256": "c3b9cf55ef77b39361d4626d53a6ba2c9daad65a973ceeb431079bade52a2ee5"
+    },
+    "evidence/assurance-analysis-tools-v1/baseline-all.stderr.log": {
+      "bytes": 306,
+      "sha256": "418671d2c1f15e1ab7bd145569d8bd8c4c087ddf7a88fb75908bc6ae6019dec1"
+    },
+    "evidence/assurance-analysis-tools-v1/baseline-all.stdout.json": {
+      "bytes": 1495649,
+      "sha256": "ba4ae4604d82a88972271c7683e22b909952cc157fffa05b81ac68f48f40dace"
+    },
+    "evidence/assurance-analysis-tools-v1/candidate-lane-v1/receipt.json": {
+      "bytes": 1590,
+      "sha256": "b44914f8451eefce742283a3a8a979a2e45ba9549dfca7f456e866d6b4f53fba"
+    },
+    "evidence/assurance-analysis-tools-v1/candidate-lane-v1/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/candidate-lane-v1/stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence/assurance-analysis-tools-v1/install.log": {
+      "bytes": 334,
+      "sha256": "fa6776947382dc5554ec4195b85f5396d5698094097c8a0696e4106995b26ec7"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/all-rule-metadata.receipt.json": {
+      "bytes": 1525,
+      "sha256": "24feb605cccccb04cdac2dc96644eb81891f3d5e3374f08436a5074ae05ea394"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/all-rule-metadata.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/all-rule-metadata.stdout.json": {
+      "bytes": 1584699,
+      "sha256": "7bfff1cdae4ecda796097a2c1bcd3abcf86d480d44a7ddbfd8ea3b8fc116ce58"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/candidate-ci-snippet.yml.txt": {
+      "bytes": 2701,
+      "sha256": "0391ff0beec4bceefe4718e7dc436577361ad01502de5bd7269acad53d5e66c0"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/candidate-scope.json": {
+      "bytes": 1849,
+      "sha256": "5ce48634925023ef880b968f61168b0a67dd2ff04d7e687c225c31132020e7a6"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/check-help.receipt.json": {
+      "bytes": 772,
+      "sha256": "9a7b94c1a890adb532888795981f827bac41bcba0c1cbb113018923723e16258"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/check-help.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/check-help.stdout.txt": {
+      "bytes": 6292,
+      "sha256": "aae7a75a970c047855a54b82d238a81b97565dd2cdf1e2a4275ca7ccf8f5b313"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings-v2.receipt.json": {
+      "bytes": 1766,
+      "sha256": "91dc4e7c2b8b2de7ea8dbaaf9f44ce89198d84005d26465f4d069cf34e6da6bb"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings-v2.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings-v2.stdout.txt": {
+      "bytes": 19788,
+      "sha256": "451d9a4e9e9374b8ca31247ce2fe1f9513de37b53fc28ae1e5ee2c5146550569"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings.receipt.json": {
+      "bytes": 1835,
+      "sha256": "0d7b3a4ba069cb991c73f6dd5e476a9508eb232a7da162524c8797901636c222"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings.stderr.txt": {
+      "bytes": 232,
+      "sha256": "ff249b379791679aa45e8eea11a594c0accf9ade53fb189c2873d2c614f480bd"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/checker-settings.stdout.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/derive.py": {
+      "bytes": 4339,
+      "sha256": "657d4a87268b41b3f10adfb515f0949c73d8e3e0e836e8093341004cb364276d"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/expanded-stable-rule-codes.txt": {
+      "bytes": 1022,
+      "sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/expanded-stable-rules.json": {
+      "bytes": 37542,
+      "sha256": "be24ce930ec180044d935b03201e2f529aa1995e7de54fb15e0f1b892504435e"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/explicit-files-v2.receipt.json": {
+      "bytes": 1866,
+      "sha256": "be77d72c8c14e36e8921ce66bef40659b7b438c99c7827ebd45762598dad308e"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/explicit-files-v2.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/explicit-files-v2.stdout.txt": {
+      "bytes": 183,
+      "sha256": "942c37aa44a6411c88f3e08db7c215ecaba557410edb56b329f4122ef98869e3"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/linux-wheel-derivation.json": {
+      "bytes": 1465,
+      "sha256": "db08f15d29d083dcde5164fa61eb549211c4241a498d97c3091a98767ba2e5e6"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/prospective-lane-report.txt": {
+      "bytes": 5463,
+      "sha256": "592a5d23a5fa92cbb37c9209784809e2bd1a9d1a431defe0197f9413239e6779"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/prospective-lane.binding.json": {
+      "bytes": 4324,
+      "sha256": "cd562a8cb19e55e51486d3147655f35424131dce6501d12847dd8d8314e85a85"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/prospective-ruff-requirement.txt": {
+      "bytes": 171,
+      "sha256": "ab65a9f9c71cb6f0a1f7e0fe0ce90fff4b0cac6a95f547260dc57d2beb017690"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/rule-help.receipt.json": {
+      "bytes": 769,
+      "sha256": "21f5dc4e750008a480e0c6bf384d9f8625a6ca9771d740af37e15b8bbc8c6c37"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/rule-help.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/rule-help.stdout.txt": {
+      "bytes": 1507,
+      "sha256": "58fb60b88ea33a154f861d0a146706f68054dfa362c7023a819d0d1e361f8e95"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/rule-selection-derivation.json": {
+      "bytes": 628,
+      "sha256": "2d2a862f57793a937c18829b612a9d6cb78bc48c81334f0755bcb77d29d84657"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/selected-baseline-projection.json": {
+      "bytes": 1330,
+      "sha256": "74c5328066856a4094d836359058317db109005d2485f3865b1d3891912c6788"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/test-settings-v2.receipt.json": {
+      "bytes": 1763,
+      "sha256": "f4652e489eb2ace84aae660646901161b02e5a4105f644517e8043e13ffec9f1"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/test-settings-v2.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/test-settings-v2.stdout.txt": {
+      "bytes": 19791,
+      "sha256": "ea071ffedd2e8841c6405b9481ad7b50034429af5a7a2ab8587efd250de2785a"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/version.receipt.json": {
+      "bytes": 756,
+      "sha256": "71ba7b673f4463230f9d7a09a89b41d0412cf81a2fe4717e239409e35cce91aa"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/version.stderr.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/assurance-analysis-tools-v1/prospective-lane-v1/version.stdout.txt": {
+      "bytes": 12,
+      "sha256": "027fa459f46a02ce06da5b43de9da2bdcccf90a32acecdce930b4c1739fc4814"
+    },
+    "evidence/assurance-analysis-tools-v1/provisioning-inputs.json": {
+      "bytes": 1310,
+      "sha256": "190678436730e0e5601c5b17344ef800930887664a0413b6bfebbb37d1427281"
+    },
+    "evidence/assurance-analysis-tools-v1/requirements.txt": {
+      "bytes": 228,
+      "sha256": "0e6b7b643ba6574ccf12957a475032def8055cf1ed2b8ee44ee55a6d7311c9d5"
+    },
+    "evidence/assurance-analysis-tools-v1/ruff-0.17.1-pypi.json": {
+      "bytes": 37191,
+      "sha256": "ab19d131524b999f40cb213baa08dfc01998b0e631a71e0661bab06bce5f1474"
+    },
+    "evidence/assurance-analysis-tools-v1/static-analysis-scope-review-v1.binding.json": {
+      "bytes": 1101,
+      "sha256": "4128a7403ae105475a1d24551dfd208e848e09ab8bb71a881ef4d3ba36e02654"
+    },
+    "evidence/assurance-analysis-tools-v1/static-analysis-scope-review-v1.txt": {
+      "bytes": 9195,
+      "sha256": "75c8a77a7abcd62b1855470673512a23dd9e469c876615c1abaa7a65fd04ffc4"
+    },
+    "evidence/independent-python-analysis-review-v1.binding.json": {
+      "bytes": 2007,
+      "sha256": "30b60496537934dbadbec913812c7fcdc165b6fe15e1ce3c073ee23ebbdb94b1"
+    },
+    "evidence/independent-python-analysis-review-v1.txt": {
+      "bytes": 3896,
+      "sha256": "b01b57703daa586d4122bff2fc9adbd1c4dd8e752a146a7c7fa98a5daa8ecb70"
+    },
+    "evidence/original-roster-counterexamples.py": {
+      "bytes": 1656,
+      "sha256": "5671ec1c3fcdb805f9f53b7f0ed3524e1421bf24b87c956edc936e89818bf5dd"
+    },
+    "evidence/packaging-staging-refusal-v0.json": {
+      "bytes": 657,
+      "sha256": "77d8fa93688e1166358e08c39430c11263eb792b49c47842c3e3276d1bb4e457"
+    },
+    "evidence/prepare-python-analysis-package.py": {
+      "bytes": 12239,
+      "sha256": "ea7b6ce69af096940fff55776fec852df4794c750512d90627d5ad1f6dbed973"
+    },
+    "retain-assurance-python-analysis-v1.py": {
+      "bytes": 20233,
+      "sha256": "d7838c95f1c685afc6d464989affe7ab16ae5d6418cf91e4233f18ddd231214b"
+    },
+    "source/analysis-snapshot/.github/workflows/ci.yml": {
+      "bytes": 21619,
+      "sha256": "bfbd0c3cbbbcf68bdcc736d7c54daa79727666804446626dadce7d048a1245b0"
+    },
+    "source/analysis-snapshot/docs/ASSURANCE-ACCEPTANCE-MANIFEST.md": {
+      "bytes": 7447,
+      "sha256": "0ee3ca30d5d8fbf7c5c5b9d58d588f117facf8955ab1414e719e9da7ddd95a99"
+    },
+    "source/analysis-snapshot/docs/ASSURANCE-PYTHON-ANALYSIS.md": {
+      "bytes": 5096,
+      "sha256": "72918316527dc891251352b8b93cfbe55dcdf3a15bce5a6c15e464309528c20c"
+    },
+    "source/analysis-snapshot/docs/evidence/assurance-ruff-rules-v1.txt": {
+      "bytes": 1022,
+      "sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741"
+    },
+    "source/base-1292d32.tar": {
+      "bytes": 532480,
+      "sha256": "e15c87a3227ac34022b90bdd8ac3f8417658f8623743f9a9f1e3fdde4572cb8f"
+    },
+    "source/base-archive.receipt.json": {
+      "bytes": 2921,
+      "sha256": "4849302cf8f4f1ae3e57dd09324766d7156e6e6321db58c8bd2391c8874e01f0"
+    },
+    "source/base-files.txt": {
+      "bytes": 2134,
+      "sha256": "2a3040eff0226501874b946332559eb774344ddbf004936548ba61599d2ef5b0"
+    },
+    "source/base-sha256.json": {
+      "bytes": 6371,
+      "sha256": "66e5aa870ad0d6dbda71b1ff9cbdd45e4f6560faffe40a74666a7585e3f6363b"
+    },
+    "source/epochs.json": {
+      "bytes": 1050,
+      "sha256": "7d18d1debd86de2bc94a0dac12aa690853a107d8abf2fad1eeafcca1449f4e10"
+    },
+    "source/historical-ci-v1.yml": {
+      "bytes": 21068,
+      "sha256": "e2d86e56e81ab1a5e2fb6bbd221e791c7a845dd6a1b61b1524e91a4968d2da04"
+    },
+    "source/repair-overlay/scripts/assurance_acceptance_manifest.py": {
+      "bytes": 35605,
+      "sha256": "b8279659f2374fc74f607b988f9ba8866c8cd47158aa1683feedfe838cfa268a"
+    },
+    "source/repair-overlay/tests/test_assurance_acceptance_manifest.py": {
+      "bytes": 22268,
+      "sha256": "68cc114c5315f5f2c76be235f0690b5ca0265e140058ccaedc1a220cd2e8ff37"
+    }
+  },
+  "retained_negative_results": [
+    "Unfiltered ALL baseline: exit 1, 1832 diagnostics plus incompatible-rule warnings",
+    "Prospective metadata option conflict: exit 2",
+    "Packaging staging source-identity refusal",
+    "Final empty-rule and suppression controls: exit 1"
+  ],
+  "review": "evidence/independent-python-analysis-review-v1.txt",
+  "source_epochs": {
+    "excluded": [
+      "Live unrelated Current Ada overlay",
+      "Any later ASSURANCE-GOAL append"
+    ],
+    "historical_repair": {
+      "base_commit": "1292d328ebc27680a040a263a7445cb04b2d82bd",
+      "description": "Exact base plus only two Python files; before later CI/docs and Current Ada work.",
+      "overlay_sha256": {
+        "scripts/assurance_acceptance_manifest.py": "b8279659f2374fc74f607b988f9ba8866c8cd47158aa1683feedfe838cfa268a",
+        "tests/test_assurance_acceptance_manifest.py": "68cc114c5315f5f2c76be235f0690b5ca0265e140058ccaedc1a220cd2e8ff37"
+      }
+    },
+    "later_analysis_snapshot_sha256": {
+      ".github/workflows/ci.yml": "bfbd0c3cbbbcf68bdcc736d7c54daa79727666804446626dadce7d048a1245b0",
+      "docs/ASSURANCE-ACCEPTANCE-MANIFEST.md": "0ee3ca30d5d8fbf7c5c5b9d58d588f117facf8955ab1414e719e9da7ddd95a99",
+      "docs/ASSURANCE-PYTHON-ANALYSIS.md": "72918316527dc891251352b8b93cfbe55dcdf3a15bce5a6c15e464309528c20c",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741"
+    }
+  }
+}

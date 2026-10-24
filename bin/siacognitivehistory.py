@@ -85,7 +85,7 @@ def _bounded_json(value):
                 _fail("capture integer exceeds its exact JSON range")
         elif item is None or kind is bool:
             pass
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if len(item) > MAX_CAPTURE_BYTES - used or id(item) in active:
                 _fail("capture container is excessive or cyclic")
             active.add(id(item))

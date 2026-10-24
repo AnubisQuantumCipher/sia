@@ -5,8 +5,7 @@ beside Hu and Heka.*
 
 **Give your machine local memory.** SIA stores a persistent local corpus,
 indexes it semantically, and compacts older day pages into weekly summaries.
-A resident daemon
-tails the evidence your machine already produces — package installs, journal
+A resident daemon tails the evidence your machine already produces — package installs, journal
 errors, git commits, optional Git-backed Obsidian vault records, agent
 sessions, notifications, and any log you point it at — into a git-versioned
 markdown corpus, indexed into a typed knowledge graph with **local**
@@ -21,8 +20,7 @@ daemon signs its own acts.
 **Current release: v1.8.4.** Dated grading retains its evidence, refused grades
 retry with diagnostics, and expired proposals no longer block bulk acceptance.
 Maintenance preserves phase clocks and explicitly limits gbrain to its declared
-local maintenance phases. See
-[the changelog](CHANGELOG.md) for the complete changes.
+local maintenance phases. See [the changelog](CHANGELOG.md) for the complete changes.
 
 **Storage recovery introduced in v1.8.0.** Two receipts bind storage by device and inode
 number — the installer's corpus receipt and the delivery epoch's adoption —
@@ -52,6 +50,9 @@ check and exact off-path restore verification. Inspect the live schedule at
 any time with `sia backup schedule`.
 
 ![Example SIA cockpit](preview.png)
+
+This example screenshot is historical; its displayed counts and status are
+not a live health report or an assurance result for your machine.
 
 Example SIA cockpit. This static preview is not current machine state, a live
 readiness result, or evidence of cognitive performance.
@@ -189,6 +190,10 @@ Ed25519 hash-chained lifecycle ledger: signed transitions and results
   separates the last-published snapshot from an explicitly requested live
   `sia ready` check, and a reversible workspace lock keeps the cockpit on one
   focused Hyprland workspace. Plus a bar widget with the live event count.
+  This experimental branch also adds `sia cockpit --window`: a detachable
+  native window using the same interface and command paths. Switch back with
+  `sia cockpit --overlay`. See the [qualification record](docs/COCKPIT-WINDOW.md);
+  this addition is not included in the v1.8.4 marketplace target.
 - **Agents everywhere.** An MCP server for the documented Claude Code, Codex
   CLI, and Grok integrations (plus compatible stdio MCP clients), and a skill
   for skill-reading harnesses. Tools cover reinforcing recall, a read-only
@@ -218,12 +223,24 @@ today. The candidate policy layer — usage salience, co-return reinforcement,
 graph propagation, novelty scoring, a bounded attention window, stability,
 and rehearsal — is shipped as deterministic behavior, and the
 [whitepaper](docs/WHITEPAPER.md) is explicit about its evidentiary status:
-the associative tie-breaker matched the unmodified hybrid query on the historical probe
-set and did not beat it, and this release contains no controlled evidence
+the associative tie-breaker tied the initial historical probe set and then
+underperformed the unmodified hybrid query on the expanded source-gated set,
+so it is disabled by default. This release contains no controlled evidence
 that rehearsal improves answer quality. The policies are explicit hypotheses
 with instruments attached (`sia bench`, the nightly drift tripwire, the
 calibration record), not established improvements. Keep evidence and model
 separate in the docs the way the corpus keeps them separate in memory.
+
+### Experimental assurance work
+
+The isolated assurance branch contains Ada/SPARK policy packages and retained
+proof/test evidence for their stated pure contracts. These packages are not
+installed authorization for the released memory service. They do not establish
+filesystem durability, protected signing, hostile-process isolation or empirical
+cognitive improvement. The [assurance goal](docs/ASSURANCE-GOAL.md) records the
+remaining acceptance work, and the [protocol](docs/ASSURANCE-PROTOCOL.md)
+describes the proposed enforcement boundary. Related systems' proof claims do
+not transfer to SIA.
 
 ## Sixty seconds after install
 

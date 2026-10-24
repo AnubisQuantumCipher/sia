@@ -1,0 +1,31 @@
+Independent GPT-6.1 evidence review; recorded 2026-10-21.
+Model-generated assessment, not independent execution authentication.
+
+No overstatement or checkpoint blocker found.
+
+Verified read-only: manifest hashes match retained receipts, archives, overlays,
+logs and focused products; current overlay matches development-v6. Recorded
+before/after proof-tool hashes agree. Copied failed/passing summaries match
+retained originals.
+
+The evidence accurately distinguishes:
+- Claim diagnostic: 30 checks discharged, one selected subprogram.
+- Transition v1: 45 checks, one unproved Valid (After_Payload (Bytes))
+  preservation obligation.
+- Transition v2: 47 checks discharged, same selected subprogram.
+- Full development-v6: strict build and eleven runtimes passed; full proof
+  exited 124, with no fresh final summary or coverage result.
+
+The generator binds retained bytes; it is owner-authored evidence tooling,
+not independent execution authentication. Ordinary modular proof dependencies
+remain. Complete-project acceptance remains unestablished.
+
+Exact reviewed document hashes:
+5137b4e7e3604709840f4584d6de37b54f8624a31be71913223a795542b87891  CONTINUITY-OBSERVATION-FRAME-EVIDENCE.json
+9488f6201d3cb0b1f9f983ae10f012769f86d3c920ef61153257b4f21c360e6a  CONTINUITY-OBSERVATION-PROOF-REPAIR.md
+bf87bef5f4f6b9436c970f44fdb91c09ae27ac11e649bef3936afd608b25e4fd  frame-after-v2.txt
+92de12e1f0159aa857c6bce751b057bc0e151dd5af1aa27f5df30754b59d0578  frame-before-v1.txt
+824e0cf47d06dff44ed7b242c259c441dbfb33eff5b7bd0956b9510cd48f3bc7  frame-review-v1.txt
+
+No proofs, builds or tests were run. The external wrapper experiment was not
+included in this review.

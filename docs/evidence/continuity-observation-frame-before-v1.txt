@@ -1,0 +1,36 @@
+=========================
+Summary of SPARK analysis
+=========================
+
+--------------------------------------------------------------------------------
+SPARK Analysis results        Total      Flow     Provers   Justified   Unproved
+--------------------------------------------------------------------------------
+Data Dependencies                 1         1           .           .          .
+Flow Dependencies                 .         .           .           .          .
+Initialization                    2         2           .           .          .
+Non-Aliasing                      .         .           .           .          .
+Run-time Checks                  32         .     32 (Z3)           .          .
+Assertions                        9         .      8 (Z3)           .          1
+Functional Contracts              .         .           .           .          .
+LSP Verification                  .         .           .           .          .
+Termination                       1         1           .           .          .
+Concurrency                       .         .           .           .          .
+--------------------------------------------------------------------------------
+Total                            45    4 (9%)    40 (89%)           .     1 (2%)
+
+
+max steps used for successful proof: 1
+
+============================
+Most difficult proved checks
+============================
+
+No check found with max time greater than 1 second
+
+========================
+Detailed analysis report
+========================
+
+Analyzed 1 unit
+in unit continuity_observation_wire_tests, 1 subprograms and packages out of 1 analyzed
+  Continuity_Observation_Wire_Tests.Check_Transition_Operations at continuity_observation_wire_tests.adb:186 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and not proved, 40 checks out of 41 proved

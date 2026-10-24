@@ -3161,7 +3161,7 @@ def corpus_origin(slug, ptype=""):
                 directory_fd = next_fd
             fd = os.open(parts[-1] + ".md",
                          os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                         | getattr(os, "O_NOFOLLOW", 0),
+                         | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
                          dir_fd=directory_fd)
         finally:
             os.close(directory_fd)
@@ -3946,6 +3946,7 @@ def process_tree_isolation():
 def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                               label="subprocess", output_limit=None,
                               isolate_process_tree=False,
+                              require_pid_namespace=False,
                               retain_output=True, progress_interval=None,
                               progress_label=None):
     """Run one external reader with bounded output and lifetime (siaprocess)."""
@@ -3954,6 +3955,7 @@ def _run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
         command, env=env, timeout=timeout, cwd=cwd, pass_fds=pass_fds,
         label=label, output_limit=output_limit,
         isolate_process_tree=isolate_process_tree,
+        require_pid_namespace=require_pid_namespace,
         retain_output=retain_output, progress_interval=progress_interval,
         progress_label=progress_label,
         limits={"MAX_SOURCE_NAME_CHARS": MAX_SOURCE_NAME_CHARS,

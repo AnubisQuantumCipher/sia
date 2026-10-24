@@ -1,0 +1,72 @@
+{
+  "bundle": {
+    "file_manifest_sha256": "3d1844bcc626e224ce7d4bd016491fbb9282939ebdfd2f80101d86e5d94cd2ca",
+    "path": "docs/evidence/assurance-ci-os-shim-v1.tar.gz",
+    "sha256": "6a6ac615c8f9073cf5808f82eca91f4361f450047b101eed3fc72cf294daf666",
+    "source_dependency": "Complete unchanged repository source is git commit081c855102b0c447e64dbed3056bb4aaf4b3ecf9. Bundle contains exact targetbefore/after, patch, runner, source/tool/input maps and raw focusedresults, not all repository source or tool binaries. This is not a complete offline acceptance verifier."
+  },
+  "change": "Patch only CHECK.os to a module-local shim; preserve actual filesystem replacement/refusal and assert stdlib os.open unchanged plus actual moved directory/symlink.",
+  "limits": [
+    "Only test changed; checker runtime authority remains NONE.",
+    "Full new remoteCI required; no fullsuite pass claimed.",
+    "Ada working changes excluded from this checkpoint.",
+    "Prior exactsource proofs/evidence remain bound to their originalcommits and are not repinned."
+  ],
+  "problem": "Remote1292 fullsuite reported3992 tests, onefailure,21skips: new process-wide os.open patch violated existing guard. The guard and accepted-site inventory are unchanged.",
+  "remote_failure": {
+    "job_id": 119192912689,
+    "retained_full_log_sha256": "7b01906d4d6e680d8f8bec067d324fee2c1be462fc79d5bdf3a644555f7a2ab2",
+    "run": "https://github.com/AnubisQuantumCipher/sia/actions/runs/39588779606"
+  },
+  "review": {
+    "artifact": "independent-review.json within bundle",
+    "configured_model": "gpt-6.1-sol",
+    "sha256": "0f296c5c67b31bcb02cf4e48be39dd074e8421e4fe3fdcca3c7c4ed2c93fd70d",
+    "type": "source and retained evidence audit; no independentexecution rerun"
+  },
+  "source": {
+    "archive_sha256": "de260a2249f155bdd38a8ce39a473a8a548425e184fda182423de91a5dd12380",
+    "base_commit": "081c855102b0c447e64dbed3056bb4aaf4b3ecf9",
+    "before_sha256": "68cc114c5315f5f2c76be235f0690b5ca0265e140058ccaedc1a220cd2e8ff37",
+    "candidate_sha256": "b1c94222c4b2da580b405ac19d3bdd0931a4d86e20c0365238193c265bc72301",
+    "only_overlay": "tests/test_assurance_acceptance_manifest.py",
+    "review": "root implementation/preparation only, independentreviewpending",
+    "scope": "CI guard expected failure on baseline; fulloriginalmanifest+inventory tests and originaltwoOSguards on candidate; exactpinnedCIstaticblock; no fullsuite claim",
+    "target": "tests/test_assurance_acceptance_manifest.py"
+  },
+  "status": "SCOPED_TEST_AND_STATIC_PASS; FULL_SUITE_AND_SYSTEM_ACCEPTANCE_OPEN",
+  "verification": {
+    "assurance": "No proof or system acceptance claim",
+    "base_commit": "081c855102b0c447e64dbed3056bb4aaf4b3ecf9",
+    "candidate_sha256": "b1c94222c4b2da580b405ac19d3bdd0931a4d86e20c0365238193c265bc72301",
+    "checks": {
+      "baseline-guard": {
+        "elapsed_seconds": 2.9008477029856294,
+        "exit": 1,
+        "expected_exit": 1,
+        "sources_unchanged": true,
+        "stderr_sha256": "fb5ed70a2dff4463c526d44336a16c23b20ecc4d0942d1b2a1a34efa68c91edd",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate-static": {
+        "elapsed_seconds": 0.07966553600272164,
+        "exit": 0,
+        "expected_exit": 0,
+        "sources_unchanged": true,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stdout_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "candidate-tests": {
+        "elapsed_seconds": 3.2281190939829685,
+        "exit": 0,
+        "expected_exit": 0,
+        "sources_unchanged": true,
+        "stderr_sha256": "af4cdfcaa2b77a5e925b5be2fdc8083694aa0233fbfad418bedddf28fd819fff",
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "full_suite": "UNRUN locally; remote1292 failed retained; laterCI required",
+    "status": "SCOPED_TEST_AND_STATIC_PASS",
+    "tools_unchanged": true
+  }
+}

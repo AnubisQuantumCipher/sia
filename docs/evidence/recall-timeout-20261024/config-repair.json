@@ -1,0 +1,21 @@
+{
+  "status": "CONFIGURATION_READBACK_VERIFIED",
+  "before_sha256": "4709cb9f005c6e25d737dd6b04a52445a1fae5aa67d4c200d6b9aba41ca590e0",
+  "after_sha256": "c46425a77b619c397723d45ff8193c3029cebfad9579639a3154c795d85c4b7b",
+  "only_change": "mcp_servers.sia.tool_timeout_sec = 240",
+  "cli_readbacks": [
+    {
+      "executable": "/home/sicarii/.local/share/mise/installs/codex/latest/bin/codex",
+      "returncode": 0,
+      "tool_timeout_sec": 240.0
+    },
+    {
+      "executable": "/usr/lib/chatgpt/resources/codex",
+      "returncode": 0,
+      "tool_timeout_sec": 240.0
+    }
+  ],
+  "active_connection_reload": "UNVERIFIED",
+  "server_budget_changed": false,
+  "proof_test_job_caps_changed": false
+}

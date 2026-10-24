@@ -1,0 +1,21 @@
+{
+  "url": "https://man7.org/linux/man-pages/man2/clock_gettime.2.html",
+  "observed_at": "2026-10-21T09:31:42.743413+00:00",
+  "source_sha256": "7d7948bcf8400a786c2795b24e8da979d6e01610f7b8ea6bf1ab97f06205fb69",
+  "bytes": 30379,
+  "headers": {
+    "Last-Modified": "Thu, 08 Oct 2026 17:39:35 GMT",
+    "ETag": "\"76ab-65d57b70ec3c0\"",
+    "Content-Type": "text/html"
+  },
+  "clock_selection": "Linux CLOCK_BOOTTIME, integer nanoseconds; new disposable protocol design only",
+  "local_observation": {
+    "CLOCK_BOOTTIME_available": true,
+    "clock_gettime_ns_available": true,
+    "nonnegative_sample": true
+  },
+  "limits": [
+    "API availability is not clock-producer authentication.",
+    "No suspend, VM rollback, protected provider or timing-bound execution was qualified."
+  ]
+}

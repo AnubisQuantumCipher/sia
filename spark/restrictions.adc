@@ -1,0 +1,7 @@
+pragma Restrictions (No_Allocators);
+pragma Restrictions (No_Implicit_Heap_Allocations);
+pragma Restrictions (No_Unchecked_Deallocation);
+pragma Restrictions (No_Recursion);
+pragma Restrictions (No_Dispatch);
+pragma Restrictions (No_Access_Subprograms);
+pragma Assertion_Policy (Check);

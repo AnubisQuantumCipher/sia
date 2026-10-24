@@ -1,0 +1,187 @@
+{
+  "kind": "OBSERVED installed exact-note readback; no continuity qualification",
+  "request_id": "1b49d0a969a4473a860c183b159552a0",
+  "origin": "model",
+  "note_source_checkpoint": "9c831d23af5b86815933789230d8249e2da2aea6",
+  "direct_read": {
+    "kind": "installed direct-read observation, not continuity acceptance",
+    "observed_at": "2026-10-21T04:51:40.004012+00:00",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "recall",
+      "notes/2026-10-21-041157-codex-1b49d0a969a4473a860c183b159552a0",
+      "--no-touch"
+    ],
+    "request_id": "1b49d0a969a4473a860c183b159552a0",
+    "exit": 0,
+    "capture_status": "complete",
+    "capture_helper_sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+    "correction": "Output is pipe-bounded; no RLIMIT_FSIZE is imposed on backend files.",
+    "elapsed_seconds": 38.74356957396958,
+    "maximum_log_bytes": 1048576,
+    "log_sha256": "c52d8ee66730a425706a2c49a4a2bf5455f17c4b508c773f7e4d20794821bd1f",
+    "executable_before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "executable_after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "runner_sha256": "7a06477a6296f4e6f86d21cbfa484fb4eb109cac0175e0f641e730b18e5f837b",
+    "slug_provenance": {
+      "author": "codex",
+      "queued_at": "2026-10-21T04:11:57Z",
+      "invocation_id": "exec-102cca64-ecb1-4968-8187-67c59a8c397f",
+      "materializer_sha256": "c490167045a0094e77833aa187d5547db7f19f24cfda008e81a5aaf08ccbba17"
+    },
+    "limitations": [
+      "Model-origin note only; no approval or truth claim.",
+      "Direct recall does not establish semantic retrieval.",
+      "Hashes do not cover the full installed dependency closure."
+    ]
+  },
+  "body_comparison": {
+    "kind": "exact queued-model-note body comparison; not authority or semantic retrieval acceptance",
+    "returned_origin_line": "[origin:model] notes/2026-10-21-041157-codex-1b49d0a969a4473a860c183b159552a0",
+    "body_sha256": "fe7cb7f18dd7873cc1140a9ac2473eac8b0bd4eff4407437aa0403a2b3cce5cc",
+    "queued_body_sha256": "fe7cb7f18dd7873cc1140a9ac2473eac8b0bd4eff4407437aa0403a2b3cce5cc",
+    "same_body": true,
+    "request_id_present": true,
+    "source_checkpoint_present": true,
+    "source_log_sha256": "c52d8ee66730a425706a2c49a4a2bf5455f17c4b508c773f7e4d20794821bd1f",
+    "limitation": "One exact note was returned through installed recall. This does not establish complete capture, semantic retrieval, current-head restoration, approvals or future latency."
+  },
+  "readiness": {
+    "exit": 0,
+    "capture_status": "complete",
+    "elapsed_seconds": 20.634116559987888,
+    "observed_at": "2026-10-21T04:54:37.652336+00:00",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "ready"
+    ],
+    "output_sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39",
+    "capture_helper_sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+    "before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "scope": "Installed readiness observation after corrected recall; no guard commissioning or complete continuity acceptance."
+  },
+  "failures_and_corrections": [
+    "The request-ID query returned no matches. query is an alias of semantic ask, not a keyword-only lookup; the initial probe description was corrected.",
+    "Direct probe v1 returned gbrain subprocess timed out, exit 255. Its extra RLIMIT_FSIZE applied to all child files, not just output, and confounds ordinary-runtime interpretation.",
+    "Probe v2 bounded only its output pipe and returned the exact note. Runs also differed in live load; the cause of the earlier timeout remains UNPROVEN.",
+    "During v2, the CLI was observed waiting for the brainstem-held corpus lease. This is one snapshot, not a complete latency profile."
+  ],
+  "limits": [
+    "This is one source-addressed model note, not a recovered authoritative checkpoint or an approval.",
+    "No semantic-retrieval score, complete capture, complete index coverage or future latency guarantee follows.",
+    "The process-group capture fixture is not hostile-process containment.",
+    "Installed launcher/runtime hashes are not the full dependency closure.",
+    "No installed SIA code, service configuration, firewall or resource policy was changed."
+  ],
+  "retained_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "artifacts": [
+    {
+      "path": "continuity-note-20261021-v2.json",
+      "sha256": "c2f595703b71c3ffc8ed76336e1c480e227c6b3b81bb5633634f31305f7cb36a",
+      "bytes": 607
+    },
+    {
+      "path": "continuity-note-20261021-v2.log",
+      "sha256": "a16410e2e75d2ec07a1b1a7698573659600799a5c975253aa37a402158af0eb0",
+      "bytes": 130
+    },
+    {
+      "path": "read-queued-note-v1.py",
+      "sha256": "fde6a700c64d6fbb1d44d8ee86cfdac4098eb72ee988567ed0cec42a803e90fd",
+      "bytes": 2264
+    },
+    {
+      "path": "installed-note-lookup-20261021-v1.json",
+      "sha256": "e9842fa23b47e90d477c6053bad4cc9de67a56a37db3e1a65cbf8763f1c9d638",
+      "bytes": 1317
+    },
+    {
+      "path": "installed-note-lookup-20261021-v1.log",
+      "sha256": "d0c677281c290ad0bd33898f43702d57f0ceeb1849bd3eefba74528d9e9f69f8",
+      "bytes": 207
+    },
+    {
+      "path": "installed-note-lookup-correction-v1.json",
+      "sha256": "5d4c741c9a0aaa278595e54fdae146aeccd761bced2740bb99299f56d092fd69",
+      "bytes": 864
+    },
+    {
+      "path": "read-queued-note-direct-v1.py",
+      "sha256": "e2c5550d8a63378903ee4c32151815c6c7174f97df1148da64c96a7b96c32cfb",
+      "bytes": 2482
+    },
+    {
+      "path": "installed-note-direct-20261021-v1.json",
+      "sha256": "4f9ac728bcdd30fb29a1501455b3fbcd95ec1189a360f7d8fcc1e3e36e5f3e9c",
+      "bytes": 1609
+    },
+    {
+      "path": "installed-note-direct-20261021-v1.log",
+      "sha256": "def8476d443b430403e72f265f43c59597716c442cab58e574fc18357cfe0cf9",
+      "bytes": 27
+    },
+    {
+      "path": "read-queued-note-direct-v2.py",
+      "sha256": "7a06477a6296f4e6f86d21cbfa484fb4eb109cac0175e0f641e730b18e5f837b",
+      "bytes": 2861
+    },
+    {
+      "path": "installed-note-direct-20261021-v2.json",
+      "sha256": "3ac6b379cc6ec05e5b589b9373bbd6499419dc1a304cd6676a56f5f48d93c0b3",
+      "bytes": 1771
+    },
+    {
+      "path": "installed-note-direct-20261021-v2.log",
+      "sha256": "c52d8ee66730a425706a2c49a4a2bf5455f17c4b508c773f7e4d20794821bd1f",
+      "bytes": 2065
+    },
+    {
+      "path": "bounded-read-capture-v1.py",
+      "sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+      "bytes": 2567
+    },
+    {
+      "path": "test-bounded-read-capture-v1.py",
+      "sha256": "d7a77691f0b6a63d5cb77a4557d83d7535e27177b9862c965178870f65e7f2bf",
+      "bytes": 1780
+    },
+    {
+      "path": "bounded-read-capture-controls-v1.json",
+      "sha256": "375ab711cc18950d89853c56f4bdf1eac4ecf12a7101f4af123d19a72fb4ac44",
+      "bytes": 452
+    },
+    {
+      "path": "installed-note-direct-v2-process-v1.json",
+      "sha256": "1a390e1a950db3a23b8d3e93607532ce501610fef3106db891df604be1b650a0",
+      "bytes": 2285
+    },
+    {
+      "path": "installed-note-body-comparison-v1.json",
+      "sha256": "bf46b5cc14a58baf0be0cf3e884e8b3da506c8571f861404817858abe4089e27",
+      "bytes": 757
+    },
+    {
+      "path": "installed-ready-20261021-v3.json",
+      "sha256": "15620be1abdbe0af8307b8d2742b0f3572559976533c4a12dd4e3638bb96e976",
+      "bytes": 999
+    },
+    {
+      "path": "installed-ready-20261021-v3.log",
+      "sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39",
+      "bytes": 17
+    }
+  ]
+}

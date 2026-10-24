@@ -1,0 +1,148 @@
+{
+  "schema": "sia.uninstall-fence-completion-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "7ee21953757eb4088ef1dd70fd35db09b8f5898a",
+  "problem": "The final uninstall fence helper ignored Python failure. Its caller uses ||, disabling implicit errexit, so finalization errors could clear the recovery marker and report armed=0/success.",
+  "change": "Explicitly return failure from the shell helper when Python fails, before marker clearance and armed-state reset. Python finalization bytes and journal protocol are unchanged.",
+  "source_sha256": {
+    "uninstall.sh": "c51524ac275dcb47051a6190238205fcc913233e93924518572037ac0b33b169",
+    "tests/test_uninstall_fence_completion.py": "790a57605c2943d6f95df6fcf9e56c7cdebe6b3f89480a525d4fe98664b0ed5b",
+    "tests/test_release.py": "47abb8ddb593b31df2a31586058717006e91e9b79147d6f6d5a239e185c12585"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 14,
+    "failures_reported": 12,
+    "source_unchanged": true,
+    "source_sha256": {
+      "uninstall.sh": "7a39d7bb3c47bbbe39fc7193c1ecedbb923542e8e2954169492e62556be73520",
+      "tests/test_uninstall_fence_completion.py": "790a57605c2943d6f95df6fcf9e56c7cdebe6b3f89480a525d4fe98664b0ed5b",
+      "tests/test_release.py": "47abb8ddb593b31df2a31586058717006e91e9b79147d6f6d5a239e185c12585"
+    },
+    "log": "evidence/uninstall-fence-completion-20261024/baseline-qualified-fence-completion.log.gz"
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 14,
+    "elapsed_seconds": 5.694,
+    "source_unchanged": true
+  },
+  "test_scope": "Eight new exact-helper/private-filesystem methods plus six unchanged full-uninstaller integration methods with controlled external commands. Normal completion, absence, invalid/missing journal, changed inode, partial restore, injected chmod/fsync/unlink failures and SIGTERM. No installed uninstall.",
+  "test_names": "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_uninstall_fence_completion', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_state_and_reports_each_integration', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_unowned_mcp_registration', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_runtime_when_systemd_is_indeterminate', 'tests.test_release.ReleaseContract.test_uninstaller_returns_nonzero_and_names_failures', 'tests.test_release.ReleaseContract.test_uninstaller_fences_legacy_launchers_before_integration_mutation', 'tests.test_release.ReleaseContract.test_uninstaller_drains_legacy_mcp_then_mutates_behind_durable_fence']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)",
+  "execution": {
+    "command": [
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "60s",
+      "/usr/bin/bwrap",
+      "--ro-bind",
+      "/",
+      "/",
+      "--ro-bind",
+      "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+      "/usr/bin/git",
+      "--tmpfs",
+      "/tmp",
+      "--ro-bind",
+      "/home/sicarii/Work/sia-assurance-kernel-20261019",
+      "/tmp/sia-review-source",
+      "--tmpfs",
+      "/home",
+      "--tmpfs",
+      "/run",
+      "--proc",
+      "/proc",
+      "--dev",
+      "/dev",
+      "--dir",
+      "/home/audit",
+      "--unshare-net",
+      "--unshare-pid",
+      "--die-with-parent",
+      "--new-session",
+      "--chdir",
+      "/tmp/sia-review-source",
+      "--setenv",
+      "HOME",
+      "/home/audit",
+      "/usr/bin/python3",
+      "-B",
+      "-W",
+      "error::ResourceWarning",
+      "-c",
+      "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_uninstall_fence_completion', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_state_and_reports_each_integration', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_unowned_mcp_registration', 'tests.test_release.ReleaseContract.test_uninstaller_preserves_runtime_when_systemd_is_indeterminate', 'tests.test_release.ReleaseContract.test_uninstaller_returns_nonzero_and_names_failures', 'tests.test_release.ReleaseContract.test_uninstaller_fences_legacy_launchers_before_integration_mutation', 'tests.test_release.ReleaseContract.test_uninstaller_drains_legacy_mcp_then_mutates_behind_durable_fence']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)"
+    ],
+    "runner_sha256": "9ac8e0609f53fa052a977fc56d9e34d680a4293a78b606c043c025515b3dc1f7",
+    "environment": "Inherited runner environment; bwrap explicitly sets private HOME, hides host /home and /run, read-only root/source, private /tmp and unshared network/PID. No claim of a fully hermetic environment."
+  },
+  "static": {
+    "new_test_and_runner": "PASS_ZERO_FROZEN_RULE_DIAGNOSTICS",
+    "syntax": "PASS_COMPILE_ONLY",
+    "shell_syntax": "PASS_BASH_N",
+    "shellcheck": "UNAVAILABLE; complete shell static analysis UNPROVEN",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "no_suppressions_added": true
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "result": "No blocker for narrow failure-propagation repair",
+    "scope": "Exact source and retained raw evidence",
+    "independent_execution": false
+  },
+  "initial_evidence_correction": "The first baseline injector used a global mode variable overwritten by the exact helper. Its fault subcases do not establish intended injection. Corrected baseline-v2 raw establishes injected faults; final same-test baseline adds explicit expected diagnostic assertions. Both earlier logs retained. Initial unused os import F401 was removed; diagnostic retained.",
+  "power_of_ten": "P07 checked-result repair. No claim that P02/P03/P04 or full Python/shell assurance is satisfied.",
+  "artifacts": {
+    "baseline-fence-completion.log.gz": {
+      "bytes": 1185,
+      "sha256": "1d466b03bcafc0149b6dc7186864c09e32425c8b74a1dd5a64d004d51b1e8939",
+      "encoding": "gzip",
+      "uncompressed_bytes": 15434,
+      "uncompressed_sha256": "4813cb0707198a617e896733c71caeba4bbd766fe4c398a7747374faa1d82aad"
+    },
+    "baseline-v2-fence-completion.log.gz": {
+      "bytes": 1409,
+      "sha256": "c0aeb1c271185cd3bdc2a71784a48b02c263a14362cf01d8cae2af8a555ddf3d",
+      "encoding": "gzip",
+      "uncompressed_bytes": 17211,
+      "uncompressed_sha256": "fdf28dff090e3fa7352583ec4fbfb1ffa514607e28d2b243e9b1d69afa30df2c"
+    },
+    "baseline-qualified-fence-completion.log.gz": {
+      "bytes": 1601,
+      "sha256": "6b487fb99c76d840c1440cee620183a4cd6342e8a871b209b5d6131f78d87eab",
+      "encoding": "gzip",
+      "uncompressed_bytes": 18094,
+      "uncompressed_sha256": "8b40f3a24fc5d32999d7b5826a0fb1ca0c0d23e699bd50cee7172c4c3596dc41"
+    },
+    "candidate-qualified-fence-completion.log": {
+      "bytes": 2541,
+      "sha256": "3ec272baa1d82455314ea9220198731c5552d6f738891edae86689e6f370c7d8"
+    },
+    "fence-static.stdout.json": {
+      "bytes": 795,
+      "sha256": "7429f4d13c068338dc22a69a49c1fe993a6f62f3f1bbb7e69009a1b8d26bccf8"
+    },
+    "fence-static-final.stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "fence-static-final.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fence-bash-n.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "fence-bash-n.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "limits": [
+    "Partial mode restoration can precede a later failure; this change does not roll it back or prove complete legacy-launch exclusion.",
+    "Failure after journal unlink or during marker removal remains an incomplete recovery state. Retained marker and armed status are not proof of recoverability.",
+    "No power-loss durability, installed-uninstall acceptance, whole-system proof or release qualification.",
+    "Every existing assurance, continuity, recovery and marketplace gate remains binding."
+  ]
+}

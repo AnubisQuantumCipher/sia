@@ -1,0 +1,14 @@
+Actual GPT-6.1 read-only review: **no blocker found for this bounded encoding-scratch repair**.
+
+The production diff preserves exact sizing while replacing whole-string Unicode encoding with bounded chunks. Lower-bound refusal precedes encoding; the live ASCII fast path remains intact. Surrogate prechecking preserves the helper’s important contract: returning `False` leaves `add` untouched. Existing production callers of the newly restricted helpers supply chunks.
+
+The tests use actual encoding and serializer lengths as independent oracles, covering exact/one-under capacities, chunk edges, nested keys/values, surrogates and unquoted text. Raw hashes match receipts: corrected predecessor reports 19 failures across 40 methods; candidate passes the same 40 methods. No independent execution performed.
+
+Reviewed hashes:
+- `sialiveloop.py`: `083ffe0e93cf54b6097c5b06469bdd5a084fa09e913cee7597e8b2ca01089943`
+- `siaeventplan.py`: `190c605d0f95ba552d7c432c7b01ca3dc754472808bd0f362c58e07e1796a8f8`
+- Tests: `6da72833122b3ff0c6c1d0c907e26ab2d793c65be09a00ef588d6c7ff125d772`
+
+Keep claims narrow: strings already exist in memory; whole-string scans remain, and traced scratch observations do not prove process RSS, allocation-free execution or worst-case latency. Static evidence retains eight unchanged plan diagnostics. R05 is unaffected and remains open.
+
+No additional blocking control identified here. Exact committed-source reproduction and original performance/capacity qualification remain required.

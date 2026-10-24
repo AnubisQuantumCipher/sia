@@ -1,0 +1,3006 @@
+{
+  "active_candidate": "development-v7; v8 prover-order change UNADOPTED",
+  "attempts": [
+    {
+      "artifacts": [
+        {
+          "bytes": 17999,
+          "path": "continuity-checkpoint-wire-development-v1/receipt.json",
+          "sha256": "7348e24f20f685ab2e644cd2f9e0bab420a4e89b9c23dcb7f129ab4b7600ad88"
+        },
+        {
+          "bytes": 1726,
+          "path": "continuity-checkpoint-wire-development-v1/build.log",
+          "sha256": "9d9bf0f9b9be338cb9e15c7724fb2e7b4b9af27e0980274e7ea65bdefb3c8682"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v1/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v1/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5074,
+          "path": "continuity-checkpoint-wire-development-v1/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "7a4bc767c27c098015e8040b6282fb305ed96ec9cfec767c236172818396ff41"
+        },
+        {
+          "bytes": 2527,
+          "path": "continuity-checkpoint-wire-development-v1/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f"
+        },
+        {
+          "bytes": 8032,
+          "path": "continuity-checkpoint-wire-development-v1/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "c33e98c82f10b9fc1d5b4c38ef49188b8d792c03fb623e25c013251285a82203"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 9.06760673498502,
+          "exit": 4,
+          "fresh_proof_summary": null,
+          "name": "build"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v1",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "7a4bc767c27c098015e8040b6282fb305ed96ec9cfec767c236172818396ff41",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "c33e98c82f10b9fc1d5b4c38ef49188b8d792c03fb623e25c013251285a82203",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22271,
+          "path": "continuity-checkpoint-wire-development-v2/receipt.json",
+          "sha256": "66fc08a5a7b6e04853bf232222ffa5933ed745dcbde9b4e26e655821ba04ad68"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v2/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v2/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 1410,
+          "path": "continuity-checkpoint-wire-development-v2/core-proof.log",
+          "sha256": "b6c8a7237d7413e673e541bfb7f20f36b9e1aa2dc392e595ad764a91d082cea7"
+        },
+        {
+          "bytes": 4707,
+          "path": "continuity-checkpoint-wire-development-v2/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "2f5bbb0b4cba489e148b9dec8343ed663c6807c6ba0dc08b1251421cb4a9d8af"
+        },
+        {
+          "bytes": 1491,
+          "path": "continuity-checkpoint-wire-development-v2/core-proof-raw/gnatprove.out",
+          "sha256": "d9a49e8f6b8d21650e6f369b7d0990f768db055c78e3c864d96b200ffa7bd54b"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v2/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v2/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5074,
+          "path": "continuity-checkpoint-wire-development-v2/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "7a4bc767c27c098015e8040b6282fb305ed96ec9cfec767c236172818396ff41"
+        },
+        {
+          "bytes": 2527,
+          "path": "continuity-checkpoint-wire-development-v2/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f"
+        },
+        {
+          "bytes": 8191,
+          "path": "continuity-checkpoint-wire-development-v2/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "cdae80a035a253079136f2436e085215943a0c2fe98444810c3dc55f3f365d9c"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.030168066034093,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0015543450135737658,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.001480220991652459,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.0013996810303069651,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.001339140988420695,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.001562843972351402,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.0014139729901216924,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.040171386033762246,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002231832011602819,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.0020604600431397557,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.0015259700012393296,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.0060359659837558866,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.11993405199609697,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 2.4860469460254535,
+          "exit": 1,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v2",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "7a4bc767c27c098015e8040b6282fb305ed96ec9cfec767c236172818396ff41",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "cdae80a035a253079136f2436e085215943a0c2fe98444810c3dc55f3f365d9c",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22266,
+          "path": "continuity-checkpoint-wire-development-v3/receipt.json",
+          "sha256": "3e3cc33ad9db4a1dd79caf92d15e1c6234f2e4e6c3ffe4785f86c63bddf7feb6"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v3/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v3/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 7282,
+          "path": "continuity-checkpoint-wire-development-v3/core-proof.log",
+          "sha256": "29b30024a07af782826f066b21db0ff693116bdcd2b7038fc2c47686d61bcf23"
+        },
+        {
+          "bytes": 127007,
+          "path": "continuity-checkpoint-wire-development-v3/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "f7dd74dbfac1f8c4d9e1045b6791cde4cbf6b7e20d4aba65652a22ea3c6fc08c"
+        },
+        {
+          "bytes": 13643,
+          "path": "continuity-checkpoint-wire-development-v3/core-proof-raw/gnatprove.out",
+          "sha256": "f33da3b72f02fd5b21aafe270e2a40afca4aa3f719d199fdd4cfa86302389056"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v3/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v3/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v3/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2527,
+          "path": "continuity-checkpoint-wire-development-v3/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f"
+        },
+        {
+          "bytes": 8211,
+          "path": "continuity-checkpoint-wire-development-v3/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "90973369cf0c1a332800d910eec2a3f68bef3bd6380efcfb841fbfb71eb5f9cc"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.285466336994432,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0017136780079454184,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.005512611009180546,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.0016183460247702897,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.001429641037248075,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.001417641993612051,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.001662720984313637,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.04178397502982989,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002610204042866826,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.002025714027695358,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.001659554021898657,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.005992477992549539,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.11966210696846247,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 23.600118381960783,
+          "exit": 1,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v3",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "55c980013763f545ab1c258096a200535890c6338ec5b80eeb8bc7a28dfcc61f",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "90973369cf0c1a332800d910eec2a3f68bef3bd6380efcfb841fbfb71eb5f9cc",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22268,
+          "path": "continuity-checkpoint-wire-development-v4/receipt.json",
+          "sha256": "0b8d5cb8f94d9f0be46c744a3876997067ebb822d3c280ca6b756819759d06ae"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v4/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v4/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 890,
+          "path": "continuity-checkpoint-wire-development-v4/core-proof.log",
+          "sha256": "f322533cc2fd2c28f3522fd0848fd905fe6f44b1a2505ab756bfb2d159c4659c"
+        },
+        {
+          "bytes": 3890,
+          "path": "continuity-checkpoint-wire-development-v4/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "4ae7b5d4410030de4b8d8ffe7a097f8747cf75ed198a9b2fe4e8ffa4ad49a002"
+        },
+        {
+          "bytes": 1513,
+          "path": "continuity-checkpoint-wire-development-v4/core-proof-raw/gnatprove.out",
+          "sha256": "775bd5f7ddf62d4c5d0cf75e6ca08aab0008df2d065e79c899040b0a988dd8f0"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v4/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v4/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v4/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2823,
+          "path": "continuity-checkpoint-wire-development-v4/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "f5a0accf4bc5ec5db055932c5c511b3b338ccf374e271e7964eeaa55ea61e918"
+        },
+        {
+          "bytes": 15437,
+          "path": "continuity-checkpoint-wire-development-v4/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.489557081018575,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0014659050502814353,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.0013963220408186316,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.001327697013039142,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.0014165720203891397,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.0013966549886390567,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.001440945954527706,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.040852078003808856,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002385605010204017,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.002137482981197536,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.001529487024527043,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.005904784018639475,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.11762773501686752,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 3.125574376026634,
+          "exit": 1,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v4",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "f5a0accf4bc5ec5db055932c5c511b3b338ccf374e271e7964eeaa55ea61e918",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22271,
+          "path": "continuity-checkpoint-wire-development-v5/receipt.json",
+          "sha256": "ccf8c9b0e60a7892eed7ef440ed82f9da46549aabd32fee0d00bfa5ed47eed1b"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v5/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v5/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 7358,
+          "path": "continuity-checkpoint-wire-development-v5/core-proof.log",
+          "sha256": "e574fae85bac07fbe616572b9a3ac0b7e179f09c02a437bd142191013955e9d2"
+        },
+        {
+          "bytes": 127835,
+          "path": "continuity-checkpoint-wire-development-v5/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "7fe623a5e4a1ead337f96c96ce8606caf82cfba5dffaee1bc6410401e2a33a6d"
+        },
+        {
+          "bytes": 13643,
+          "path": "continuity-checkpoint-wire-development-v5/core-proof-raw/gnatprove.out",
+          "sha256": "996b89473c9070c59eb0d65ac144600bdb5fbd4c7cc119c72a6a52a7d743b2b6"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v5/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v5/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v5/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2927,
+          "path": "continuity-checkpoint-wire-development-v5/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "f796e69fd7d1a5a3914615203b5a96f1566708624a7fc100e0ef90d5fec46cd4"
+        },
+        {
+          "bytes": 15437,
+          "path": "continuity-checkpoint-wire-development-v5/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.973651973996311,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0017199880094267428,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.0016680300468578935,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.001596738991793245,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.0015431150095537305,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.0016276969690807164,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.0014915730571374297,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.04051447001984343,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.0024816080112941563,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.001945986005011946,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.0015931560192257166,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.006174373964313418,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.12499022000702098,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 23.951888084004167,
+          "exit": 1,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v5",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "f796e69fd7d1a5a3914615203b5a96f1566708624a7fc100e0ef90d5fec46cd4",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22922,
+          "path": "continuity-checkpoint-wire-development-v6/receipt.json",
+          "sha256": "d20b806552f3a5a66103852439e1e10d2407c1dbd9272dd645f933509fd92785"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v6/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v6/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 7022,
+          "path": "continuity-checkpoint-wire-development-v6/core-proof.log",
+          "sha256": "0bb617d8c836758e37faa7e25e0b0e47515e719b274c7b836dacd07ea3056605"
+        },
+        {
+          "bytes": 155,
+          "path": "continuity-checkpoint-wire-development-v6/harness-proof.log",
+          "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v6/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "d89527438eb9d4edbcf56a4803167d118209eb1221bdb445b492521fc6113f6e"
+        },
+        {
+          "bytes": 13642,
+          "path": "continuity-checkpoint-wire-development-v6/core-proof-raw/gnatprove.out",
+          "sha256": "dabcba9f9d0aad1dcc2ed23eadec8b2bd110ec03e288d051bb0dc5bc33d434c3"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v6/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "d89527438eb9d4edbcf56a4803167d118209eb1221bdb445b492521fc6113f6e"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v6/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v6/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v6/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2983,
+          "path": "continuity-checkpoint-wire-development-v6/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef"
+        },
+        {
+          "bytes": 15437,
+          "path": "continuity-checkpoint-wire-development-v6/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.240718480024952,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0016652009799145162,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.0015759090310893953,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.001433410041499883,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.001413577003404498,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.0013827020302414894,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.0014698270242661238,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.040369977010414004,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002231447957456112,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.001693241996690631,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.001477868005167693,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.005889805965125561,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.12217405100818723,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 24.71075500495499,
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_checkpoint_wire_tests.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 120.00464170699706,
+          "exit": 124,
+          "fresh_proof_summary": false,
+          "name": "harness-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v6",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22924,
+          "path": "continuity-checkpoint-wire-development-v7/receipt.json",
+          "sha256": "633eef3fb245182362dfb03471030835ce534d33ba74089e77849f45cea6eefe"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v7/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v7/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 7022,
+          "path": "continuity-checkpoint-wire-development-v7/core-proof.log",
+          "sha256": "625004c99cf5fa7e1c5c68b4b32df3f629ebafef86e1eb526cd37d427dc370a5"
+        },
+        {
+          "bytes": 155,
+          "path": "continuity-checkpoint-wire-development-v7/harness-proof.log",
+          "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v7/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "40adf5cf22d411289fb88030f6a13430d1ddb4e5e992f395c140eeb9bab80d99"
+        },
+        {
+          "bytes": 13642,
+          "path": "continuity-checkpoint-wire-development-v7/core-proof-raw/gnatprove.out",
+          "sha256": "dabcba9f9d0aad1dcc2ed23eadec8b2bd110ec03e288d051bb0dc5bc33d434c3"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v7/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "40adf5cf22d411289fb88030f6a13430d1ddb4e5e992f395c140eeb9bab80d99"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-wire-development-v7/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v7/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v7/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2983,
+          "path": "continuity-checkpoint-wire-development-v7/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef"
+        },
+        {
+          "bytes": 16167,
+          "path": "continuity-checkpoint-wire-development-v7/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.28290387103334,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0017056289943866432,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.0016781290178187191,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.0013972530141472816,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.0013425449724309146,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.0013117530033923686,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.0014216289855539799,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.04433473403332755,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002500797971151769,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.0017626300104893744,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.0014581279829144478,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.005710388999432325,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.12483168003382161,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 25.72560915502254,
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_checkpoint_wire_tests.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 120.01414455700433,
+          "exit": 124,
+          "fresh_proof_summary": false,
+          "name": "harness-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v7",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 22924,
+          "path": "continuity-checkpoint-wire-development-v8/receipt.json",
+          "sha256": "1bf1f33ede66a6268f627d80ac7fdbde954b830b52f4c41db789f6f239214126"
+        },
+        {
+          "bytes": 2831,
+          "path": "continuity-checkpoint-wire-development-v8/build.log",
+          "sha256": "d63a77469d8c299945cfb25d58f0e3acfc95ce4bee24275e3b4ba24b7140b337"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/policy-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/transaction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/request-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/request-admission-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/grant-lifetime-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/retraction-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/consolidation-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/continuity-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/continuity-transition-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/continuity-record-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/continuity-observation-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 0,
+          "path": "continuity-checkpoint-wire-development-v8/continuity-checkpoint-wire-tests.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 7022,
+          "path": "continuity-checkpoint-wire-development-v8/core-proof.log",
+          "sha256": "8481a896f20c545d016d70ca9c705fca6e13f798dba968421c7a884b99f0578e"
+        },
+        {
+          "bytes": 155,
+          "path": "continuity-checkpoint-wire-development-v8/harness-proof.log",
+          "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v8/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "cc5de8ff8619bfc46c9d5733d3a9ecbecde39a18ffb372bdccc6cd17203bc7da"
+        },
+        {
+          "bytes": 13642,
+          "path": "continuity-checkpoint-wire-development-v8/core-proof-raw/gnatprove.out",
+          "sha256": "dabcba9f9d0aad1dcc2ed23eadec8b2bd110ec03e288d051bb0dc5bc33d434c3"
+        },
+        {
+          "bytes": 130188,
+          "path": "continuity-checkpoint-wire-development-v8/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+          "sha256": "cc5de8ff8619bfc46c9d5733d3a9ecbecde39a18ffb372bdccc6cd17203bc7da"
+        },
+        {
+          "bytes": 1397,
+          "path": "continuity-checkpoint-wire-development-v8/source/spark/sia_assurance.gpr",
+          "sha256": "2be63931fa584287db31f0d81983087df08fcdc4b22f631b935be702d76c9803"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-wire-development-v8/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-wire-development-v8/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2983,
+          "path": "continuity-checkpoint-wire-development-v8/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef"
+        },
+        {
+          "bytes": 16167,
+          "path": "continuity-checkpoint-wire-development-v8/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gprbuild",
+            "-p",
+            "-P",
+            "spark/sia_assurance.gpr"
+          ],
+          "elapsed_seconds": 12.13711070700083,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "build"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/policy_tests"
+          ],
+          "elapsed_seconds": 0.0015542610199190676,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "policy-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/transaction_tests"
+          ],
+          "elapsed_seconds": 0.0013259680126793683,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "transaction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_wire_tests"
+          ],
+          "elapsed_seconds": 0.0015122609911486506,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/request_admission_tests"
+          ],
+          "elapsed_seconds": 0.0014960099942982197,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "request-admission-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/grant_lifetime_tests"
+          ],
+          "elapsed_seconds": 0.0013968850253149867,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "grant-lifetime-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/retraction_tests"
+          ],
+          "elapsed_seconds": 0.0014321350026875734,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "retraction-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/consolidation_tests"
+          ],
+          "elapsed_seconds": 0.04359608795493841,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "consolidation-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_tests"
+          ],
+          "elapsed_seconds": 0.002274473023135215,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_transition_tests"
+          ],
+          "elapsed_seconds": 0.001649260986596346,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-transition-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_record_wire_tests"
+          ],
+          "elapsed_seconds": 0.0014349260018207133,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-record-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_observation_wire_tests"
+          ],
+          "elapsed_seconds": 0.008310473000165075,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-observation-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "30s",
+            "spark/bin/continuity_checkpoint_wire_tests"
+          ],
+          "elapsed_seconds": 0.12360759102739394,
+          "exit": 0,
+          "fresh_proof_summary": null,
+          "name": "continuity-checkpoint-wire-tests"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "sia_continuity_checkpoint_wire.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 29.557932995958254,
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "name": "core-proof"
+        },
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_checkpoint_wire_tests.adb",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 120.01264814200113,
+          "exit": 124,
+          "fresh_proof_summary": false,
+          "name": "harness-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-wire-development-v8",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "2be63931fa584287db31f0d81983087df08fcdc4b22f631b935be702d76c9803",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 18720,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/receipt.json",
+          "sha256": "fe1b3cc0ad79837c8db0b747d11f8108266cd93bee2a8831ca09329b70a349ef"
+        },
+        {
+          "bytes": 434,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof.log",
+          "sha256": "e8404af5de2340306e4b396624f09566c49d1e1b97256738af006d14270c9404"
+        },
+        {
+          "bytes": 649,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof-raw/continuity_checkpoint_wire_tests.spark",
+          "sha256": "05a8f0b55181c8e35195fe274fc626677ce053c192d1fe7d26fb7742e70b2824"
+        },
+        {
+          "bytes": 319,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof-raw/gnatprove.out",
+          "sha256": "a3bb051646e27cf6103ab61a1c0fcc6111640d41f1afb2d826e76295ef806c3b"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2983,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef"
+        },
+        {
+          "bytes": 15437,
+          "path": "continuity-checkpoint-canonical-diagnostic-v1/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_checkpoint_wire_tests.adb",
+            "--limit-subp=continuity_checkpoint_wire_tests.adb:11",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 2.860496219014749,
+          "exit": 1,
+          "fresh_proof_summary": true,
+          "name": "canonical-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-canonical-diagnostic-v1",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "d9ad875dcce134bc48e8b3e768859696f6ec7c385f7c198475d8817804990787",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 18721,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/receipt.json",
+          "sha256": "b54df722a87e82926d057dc33b3c649739a2f50d2c5bf0ee594d15b8913d7d0d"
+        },
+        {
+          "bytes": 1638,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof.log",
+          "sha256": "b86d1e7fcf72ec5042593b23a8b398ec6ea162bb024bd542318f2e5f17d27aa1"
+        },
+        {
+          "bytes": 20472,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof-raw/continuity_checkpoint_wire_tests.spark",
+          "sha256": "5937560b5d07068eb74d33dad007f07bcfd38d1946ef06a85261dda4a713af4c"
+        },
+        {
+          "bytes": 2667,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof-raw/gnatprove.out",
+          "sha256": "3687feb7773176384f7c7793a64cfe1e7a6afee7150b1fd8dedd1db04563004b"
+        },
+        {
+          "bytes": 1147,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/source/spark/sia_assurance.gpr",
+          "sha256": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96"
+        },
+        {
+          "bytes": 3394,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/source/spark/verify-policy.sh",
+          "sha256": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+        },
+        {
+          "bytes": 5082,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/source/spark/src/sia_continuity_checkpoint_wire.ads",
+          "sha256": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588"
+        },
+        {
+          "bytes": 2983,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/source/spark/src/sia_continuity_checkpoint_wire.adb",
+          "sha256": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef"
+        },
+        {
+          "bytes": 16167,
+          "path": "continuity-checkpoint-canonical-diagnostic-v2/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+          "sha256": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75"
+        }
+      ],
+      "base_commit": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+      "checks": [
+        {
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_checkpoint_wire_tests.adb",
+            "--limit-subp=continuity_checkpoint_wire_tests.adb:12",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "elapsed_seconds": 112.96951743494719,
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "name": "canonical-proof"
+        }
+      ],
+      "directory": "continuity-checkpoint-canonical-diagnostic-v2",
+      "proof_tools_after": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "proof_tools_before": {
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+      },
+      "source_files": {
+        "spark/sia_assurance.gpr": "f5c282eebe9b7b4d7085a36da4a5e0aeeaef9b0b954338a733e5518297765c96",
+        "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+        "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75",
+        "spark/verify-policy.sh": "656dabcb0a5f543f3967f62936459924c85b1e4d611cd5d6805c5ad4a13ebccd"
+      },
+      "tools_unchanged": true
+    }
+  ],
+  "core": {
+    "assumptions": "Ordinary modular dependency contracts and external toolchain assumptions remain.",
+    "checker": {
+      "bytes": 6834,
+      "path": "continuity-checkpoint-wire-development-v7/source/spark/check-proof-summary.py",
+      "sha256": "579ce21dd36e3dabe4f36dee82f500eb6456564aa69747573f3d241726061e59"
+    },
+    "non_claim": "Not a full-project check or proof of installed continuity.",
+    "raw": {
+      "bytes": 130188,
+      "path": "continuity-checkpoint-wire-development-v7/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "sha256": "40adf5cf22d411289fb88030f6a13430d1ddb4e5e992f395c140eeb9bab80d99"
+    },
+    "status": "SCOPED_REPORTED_CHECKS_DISCHARGED",
+    "summary": {
+      "bytes": 13642,
+      "path": "continuity-checkpoint-wire-development-v7/core-proof-raw/gnatprove.out",
+      "sha256": "dabcba9f9d0aad1dcc2ed23eadec8b2bd110ec03e288d051bb0dc5bc33d434c3"
+    },
+    "summary_total_row": "Total                            77    26 (34%)    51 (66%)           .          .",
+    "unit": "sia_continuity_checkpoint_wire"
+  },
+  "full_project_proof": "UNPROVEN; prior full attempt reached 600 seconds",
+  "integration": "UNIMPLEMENTED: frame, current-evidence codec, authenticated producers, actual harness restoration",
+  "kind": "Scoped checkpoint decoder evidence; experimental and uninstalled",
+  "limits": [
+    "One job; 512 MB per prover; 10 seconds per check.",
+    "Build 120 seconds, each runtime 30 seconds, focused proof 120 seconds.",
+    "No warning suppression, assumption annotation or original fixture removal.",
+    "No physical stack budget, WCET or whole-system assurance claim."
+  ],
+  "retained_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "support": [
+    {
+      "bytes": 75926,
+      "path": "checkpoint-prover-order-effective-settings-v8.json",
+      "sha256": "4307295315cc8c803e35284f78ac07926b24cfdf142ac3ef04e386d00df80731"
+    },
+    {
+      "bytes": 1548,
+      "path": "checkpoint-codec-source-review-v1.txt",
+      "sha256": "ef45d83a73a242f4824404f9b883b5c0312a6596e2dfdd5aafcc528e2197bc42"
+    },
+    {
+      "bytes": 1458,
+      "path": "checkpoint-codec-source-review-v2.txt",
+      "sha256": "5272c3a7eaaf94502d3d83368b4baa8619e31bdffce92cf0b7e528e3f29c05aa"
+    },
+    {
+      "bytes": 1462,
+      "path": "checkpoint-layout-jackal-20261021.json",
+      "sha256": "83da2c3f437fdae97891e3e620ed6cf6e75a3f8318ac40743a64dcc138450864"
+    },
+    {
+      "bytes": 1442,
+      "path": "checkpoint-vector-0-jackal-20261021.json",
+      "sha256": "ef5a4c1698fc66c9412e83ba77ee876ea520c8b7f42fccb917024ba47026f25e"
+    },
+    {
+      "bytes": 1442,
+      "path": "checkpoint-vector-1-jackal-20261021.json",
+      "sha256": "8248ad6079a2b509f0ede36aaa4a2c9c77ada5d9a997d100e8b5d4ad0c4e60fd"
+    },
+    {
+      "bytes": 6595,
+      "path": "run-continuity-observation-wire-development-v2.py",
+      "sha256": "300b12f0255aa2cfa0befcab320eb5480516f73fd084583f36cb9bdfcfe22ecd"
+    },
+    {
+      "bytes": 5137,
+      "path": "run-continuity-checkpoint-wire-development-v1.py",
+      "sha256": "8601829f25b0759c13a6f9d62410a7d62ae6c8d6ef29b8b4b957f53626bc6315"
+    },
+    {
+      "bytes": 2077,
+      "path": "run-checkpoint-canonical-diagnostic-v1.py",
+      "sha256": "288461b68b5c97161fe31f449f118000d36f80ec9b81ffa3bb63429c39119c68"
+    },
+    {
+      "bytes": 2401,
+      "path": "run-checkpoint-canonical-diagnostic-v2.py",
+      "sha256": "0b9c6665914f4c334b9f611332713b2e976a21ba8fcbb7c07fa8edc8e584d9ea"
+    },
+    {
+      "bytes": 8615,
+      "path": "retain-checkpoint-wire-evidence-v2.py",
+      "sha256": "0c785d2f227fe6eeb0e0695191d13c1ad9dc311e8bb8423ca2a16282e76b3533"
+    }
+  ],
+  "versioned_bundle": {
+    "bytes": 388586,
+    "members": [
+      "checkpoint-codec-source-review-v1.txt",
+      "checkpoint-codec-source-review-v2.txt",
+      "checkpoint-layout-jackal-20261021.json",
+      "checkpoint-prover-order-effective-settings-v8.json",
+      "checkpoint-vector-0-jackal-20261021.json",
+      "checkpoint-vector-1-jackal-20261021.json",
+      "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof-raw/continuity_checkpoint_wire_tests.spark",
+      "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof-raw/gnatprove.out",
+      "continuity-checkpoint-canonical-diagnostic-v1/canonical-proof.log",
+      "continuity-checkpoint-canonical-diagnostic-v1/receipt.json",
+      "continuity-checkpoint-canonical-diagnostic-v1/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-canonical-diagnostic-v1/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-canonical-diagnostic-v1/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-canonical-diagnostic-v1/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-canonical-diagnostic-v1/source/spark/verify-policy.sh",
+      "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof-raw/continuity_checkpoint_wire_tests.spark",
+      "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof-raw/gnatprove.out",
+      "continuity-checkpoint-canonical-diagnostic-v2/canonical-proof.log",
+      "continuity-checkpoint-canonical-diagnostic-v2/receipt.json",
+      "continuity-checkpoint-canonical-diagnostic-v2/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-canonical-diagnostic-v2/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-canonical-diagnostic-v2/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-canonical-diagnostic-v2/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-canonical-diagnostic-v2/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v1/base.tar",
+      "continuity-checkpoint-wire-development-v1/build.log",
+      "continuity-checkpoint-wire-development-v1/receipt.json",
+      "continuity-checkpoint-wire-development-v1/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v1/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v1/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v1/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v1/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v2/build.log",
+      "continuity-checkpoint-wire-development-v2/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v2/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v2/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v2/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v2/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v2/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v2/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v2/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v2/core-proof.log",
+      "continuity-checkpoint-wire-development-v2/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v2/policy-tests.log",
+      "continuity-checkpoint-wire-development-v2/receipt.json",
+      "continuity-checkpoint-wire-development-v2/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v2/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v2/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v2/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v2/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v2/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v2/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v2/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v2/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v3/build.log",
+      "continuity-checkpoint-wire-development-v3/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v3/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v3/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v3/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v3/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v3/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v3/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v3/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v3/core-proof.log",
+      "continuity-checkpoint-wire-development-v3/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v3/policy-tests.log",
+      "continuity-checkpoint-wire-development-v3/receipt.json",
+      "continuity-checkpoint-wire-development-v3/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v3/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v3/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v3/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v3/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v3/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v3/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v3/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v3/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v4/build.log",
+      "continuity-checkpoint-wire-development-v4/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v4/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v4/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v4/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v4/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v4/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v4/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v4/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v4/core-proof.log",
+      "continuity-checkpoint-wire-development-v4/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v4/policy-tests.log",
+      "continuity-checkpoint-wire-development-v4/receipt.json",
+      "continuity-checkpoint-wire-development-v4/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v4/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v4/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v4/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v4/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v4/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v4/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v4/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v4/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v5/build.log",
+      "continuity-checkpoint-wire-development-v5/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v5/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v5/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v5/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v5/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v5/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v5/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v5/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v5/core-proof.log",
+      "continuity-checkpoint-wire-development-v5/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v5/policy-tests.log",
+      "continuity-checkpoint-wire-development-v5/receipt.json",
+      "continuity-checkpoint-wire-development-v5/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v5/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v5/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v5/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v5/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v5/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v5/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v5/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v5/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v6/build.log",
+      "continuity-checkpoint-wire-development-v6/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v6/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v6/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v6/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v6/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v6/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v6/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v6/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v6/core-proof.log",
+      "continuity-checkpoint-wire-development-v6/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v6/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v6/harness-proof.log",
+      "continuity-checkpoint-wire-development-v6/policy-tests.log",
+      "continuity-checkpoint-wire-development-v6/receipt.json",
+      "continuity-checkpoint-wire-development-v6/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v6/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v6/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v6/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v6/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v6/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v6/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v6/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v6/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v7/build.log",
+      "continuity-checkpoint-wire-development-v7/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v7/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v7/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v7/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v7/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v7/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v7/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v7/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v7/core-proof.log",
+      "continuity-checkpoint-wire-development-v7/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v7/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v7/harness-proof.log",
+      "continuity-checkpoint-wire-development-v7/policy-tests.log",
+      "continuity-checkpoint-wire-development-v7/receipt.json",
+      "continuity-checkpoint-wire-development-v7/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v7/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v7/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v7/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v7/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v7/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v7/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v7/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v7/transaction-tests.log",
+      "continuity-checkpoint-wire-development-v8/build.log",
+      "continuity-checkpoint-wire-development-v8/consolidation-tests.log",
+      "continuity-checkpoint-wire-development-v8/continuity-checkpoint-wire-tests.log",
+      "continuity-checkpoint-wire-development-v8/continuity-observation-wire-tests.log",
+      "continuity-checkpoint-wire-development-v8/continuity-record-wire-tests.log",
+      "continuity-checkpoint-wire-development-v8/continuity-tests.log",
+      "continuity-checkpoint-wire-development-v8/continuity-transition-tests.log",
+      "continuity-checkpoint-wire-development-v8/core-proof-raw/gnatprove.out",
+      "continuity-checkpoint-wire-development-v8/core-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v8/core-proof.log",
+      "continuity-checkpoint-wire-development-v8/grant-lifetime-tests.log",
+      "continuity-checkpoint-wire-development-v8/harness-proof-raw/sia_continuity_checkpoint_wire.spark",
+      "continuity-checkpoint-wire-development-v8/harness-proof.log",
+      "continuity-checkpoint-wire-development-v8/policy-tests.log",
+      "continuity-checkpoint-wire-development-v8/receipt.json",
+      "continuity-checkpoint-wire-development-v8/request-admission-tests.log",
+      "continuity-checkpoint-wire-development-v8/request-wire-tests.log",
+      "continuity-checkpoint-wire-development-v8/retraction-tests.log",
+      "continuity-checkpoint-wire-development-v8/source/spark/sia_assurance.gpr",
+      "continuity-checkpoint-wire-development-v8/source/spark/src/sia_continuity_checkpoint_wire.adb",
+      "continuity-checkpoint-wire-development-v8/source/spark/src/sia_continuity_checkpoint_wire.ads",
+      "continuity-checkpoint-wire-development-v8/source/spark/tests/continuity_checkpoint_wire_tests.adb",
+      "continuity-checkpoint-wire-development-v8/source/spark/verify-policy.sh",
+      "continuity-checkpoint-wire-development-v8/transaction-tests.log",
+      "retain-checkpoint-wire-evidence-v2.py",
+      "run-checkpoint-canonical-diagnostic-v1.py",
+      "run-checkpoint-canonical-diagnostic-v2.py",
+      "run-continuity-checkpoint-wire-development-v1.py",
+      "run-continuity-observation-wire-development-v2.py"
+    ],
+    "path": "docs/evidence/continuity-checkpoint-wire-diagnostics-v2.tar.gz",
+    "reproduction": "Extract retained base.tar, then overlay the five source paths from the selected attempt. Run its recorded commands under the declared limits.",
+    "sha256": "5ca52a905e688b0991f88855437395a2bced5ac4c8090d49623f396db6400bf8"
+  }
+}

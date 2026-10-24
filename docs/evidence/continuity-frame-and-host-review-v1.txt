@@ -1,0 +1,23 @@
+Retained model-generated report from the existing actual GPT-6.1 reviewer.
+Read-only source/artifact correspondence, not independent replay or live-state
+attestation. No jobs, edits or host operations performed by the reviewer.
+
+No concrete blocker found to pushing this experimental evidence checkpoint.
+
+Verified source/artifact hashes and bundle correspondence. Frame evidence
+matches v3: core 58 checks/all 14 entities, clean raw channels and empty
+Assume/skip annotations; complete-harness timeout remains explicit. No stale
+harness result is promoted to acceptance.
+
+Selected host receipts support the documented scoped observations. Bundles
+exclude full firewall snapshots, private storage metadata and successful
+recall's original note text. Documentation preserves unchanged Ollama PID/no
+restart, prior consolidation refusal, subsequent readiness/readback and
+remaining lifecycle/marketplace gates.
+
+Reviewed manifest SHA-256:
+frame 42ceb51f31c83ce14da968ae3062ad0597447ca7578c4aa44599224a0c87b40e
+host  3d9aba2643f46e0e76e02ef033dcefd86c2079256fbada5a4963dfed6a5b7abb
+
+Post-merge CI, boot, managed Ollama restart, upgrade/uninstall, other-account
+sudo execution, complete proof and system acceptance remain open.

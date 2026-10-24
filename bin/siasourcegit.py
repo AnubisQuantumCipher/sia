@@ -162,7 +162,10 @@ def _run(owner, source, held, arguments, *, label, allowed=(0,)):
         "-c", "commit.gpgsign=false",
         *arguments,
     ]
-    environment = dict(os.environ)
+    # The held corpus descriptor owns repository selection. Ambient Git
+    # variables can override cwd, the index, object storage and -c settings.
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith("GIT_")}
     environment.update({
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_SYSTEM": "/dev/null",

@@ -1,0 +1,7 @@
+Actual GPT-6.1 read-only review: no blocker for this one-line CAS-journal repair, pending static qualification.
+O_NONBLOCK lets FIFO acquisition reach the existing regular-file refusal without waiting for a peer. Descriptor cleanup, journal generation checks, validation and recovery behavior remain unchanged.
+Tests meaningfully check FIFO non-consumption, preserved files/identities, lock release, malformed input, successful recovery and normal publication/archive paths. Raw hashes match receipts: predecessor fails the FIFO deadline control; candidate passes all ten tests.
+Reviewed install.sh SHA256: 127dcf5aa6f59939b20d69885f384c9fd899962bb38b1858695ca776f486b3bc
+Reviewed test SHA256: 445635c49ceedf2aaa32a902fa8d3d0fa181ed9d285094912b2413694f521e49
+No independent execution performed. This does not bound lock contention or regular-file storage latency, qualify installed recovery, or establish broader durability. Retain pending static results and reproduce exact committed source before closing this checkpoint.
+Owner static disposition: frozen helper analysis remains NONPASS with four unchanged B904 findings. No suppression or new diagnostics. New tests/runner and compile-only/bash syntax pass. Publish only non-final scoped repair; exact committed-source run follows.

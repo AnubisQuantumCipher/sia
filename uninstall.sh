@@ -295,7 +295,7 @@ def current_generation(path):
 
 
 def open_owned_regular(path):
-    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
              | getattr(os, "O_NOFOLLOW", 0))
     descriptor = os.open(path, flags)
     value = os.fstat(descriptor)
@@ -3711,7 +3711,9 @@ complete_uninstall_launch_fence() {
       || [ -e "$RUNTIME_BIN_DIR" ] || [ -L "$RUNTIME_BIN_DIR" ]; then
     public_remains=1
   fi
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY'
+  # The caller handles failure with ||, which disables errexit in this function.
+  # Retain the recovery marker and armed state unless finalization succeeds.
+  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY' || return 1
 import json
 import os
 import stat

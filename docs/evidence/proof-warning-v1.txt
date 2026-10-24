@@ -1,0 +1,1154 @@
+=========================
+Summary of SPARK analysis
+=========================
+
+------------------------------------------------------------------------------------------------------------------------
+SPARK Analysis results        Total         Flow                                          Provers   Justified   Unproved
+------------------------------------------------------------------------------------------------------------------------
+Data Dependencies               102          102                                                .           .          .
+Flow Dependencies                 5            5                                                .           .          .
+Initialization                   31           31                                                .           .          .
+Non-Aliasing                      .            .                                                .           .          .
+Run-time Checks                 127            .                                         127 (Z3)           .          .
+Assertions                      182            .                182 (CVC5 1%, Trivial 6%, Z3 93%)           .          .
+Functional Contracts            244            .    244 (CVC5 0%, Trivial 1%, Z3 99%, altergo 0%)           .          .
+LSP Verification                  .            .                                                .           .          .
+Termination                      97           97                                                .           .          .
+Concurrency                       .            .                                                .           .          .
+------------------------------------------------------------------------------------------------------------------------
+Total                           788    235 (30%)                                        553 (70%)           .          .
+
+
+max steps used for successful proof: 125740
+
+============================
+Most difficult proved checks
+============================
+
+continuity_tests.adb:371:7: precondition proved in max 9 seconds
+continuity_tests.adb:648:7: precondition proved in max 7 seconds
+continuity_tests.adb:80:22: assertion proved in max 4 seconds
+continuity_tests.adb:588:10: assertion proved in max 4 seconds
+continuity_tests.adb:431:30: assertion proved in max 3 seconds
+continuity_tests.adb:595:22: assertion proved in max 3 seconds
+continuity_tests.adb:376:7: precondition proved in max 3 seconds
+continuity_tests.adb:579:13: loop invariant after first iteration proved in max 2 seconds
+continuity_tests.adb:374:7: precondition proved in max 2 seconds
+continuity_tests.adb:164:22: assertion proved in max 2 seconds
+
+========================
+Detailed analysis report
+========================
+
+Analyzed 16 units
+in unit consolidation_tests, 8 subprograms and packages out of 8 analyzed
+  Consolidation_Tests at consolidation_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+effects on parameters and Global variables of Consolidation_Tests depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check_Binding_Byte
+  effects on parameters and Global variables of Consolidation_Tests.Check_Capacity
+  effects on parameters and Global variables of Consolidation_Tests.Check_Invalid_State
+  effects on parameters and Global variables of Consolidation_Tests.Check_Results
+  effects on parameters and Global variables of Consolidation_Tests.Check_Single_Day
+  effects on parameters and Global variables of Consolidation_Tests.Check_Zero_And_Count
+absence of run-time errors of Consolidation_Tests depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of Consolidation_Tests.Check_Binding_Byte
+  effects on parameters and Global variables of Consolidation_Tests.Check_Capacity
+  effects on parameters and Global variables of Consolidation_Tests.Check_Invalid_State
+  effects on parameters and Global variables of Consolidation_Tests.Check_Results
+  effects on parameters and Global variables of Consolidation_Tests.Check_Single_Day
+  effects on parameters and Global variables of Consolidation_Tests.Check_Zero_And_Count
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check at consolidation_tests.adb:23 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+absence of run-time errors of Consolidation_Tests.Check depends on
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Binding_Byte at consolidation_tests.adb:67 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (14 checks)
+absence of run-time errors of Consolidation_Tests.Check_Binding_Byte depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Capacity at consolidation_tests.adb:167 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (15 checks)
+absence of run-time errors of Consolidation_Tests.Check_Capacity depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Invalid_State at consolidation_tests.adb:94 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of Consolidation_Tests.Check_Invalid_State depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Results at consolidation_tests.adb:43 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Consolidation_Tests.Check_Results depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Single_Day at consolidation_tests.adb:152 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Consolidation_Tests.Check_Single_Day depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  Consolidation_Tests.Check_Zero_And_Count at consolidation_tests.adb:125 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+absence of run-time errors of Consolidation_Tests.Check_Zero_And_Count depends on
+  effects on parameters and Global variables of Consolidation_Tests.Check
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Plan
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+in unit continuity_tests, 26 subprograms and packages out of 26 analyzed
+  Continuity_Tests at continuity_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+effects on parameters and Global variables of Continuity_Tests depends on
+  effects on parameters and Global variables of Continuity_Tests.Check_Claim_Capacity
+  effects on parameters and Global variables of Continuity_Tests.Check_Claim_Partition
+  effects on parameters and Global variables of Continuity_Tests.Check_Context_Byte
+  effects on parameters and Global variables of Continuity_Tests.Check_Empty_And_Identity
+  effects on parameters and Global variables of Continuity_Tests.Check_Freshness_And_Durability
+  effects on parameters and Global variables of Continuity_Tests.Check_Gaps
+  effects on parameters and Global variables of Continuity_Tests.Check_Operation_Capacity
+  effects on parameters and Global variables of Continuity_Tests.Check_Operation_Partition
+  effects on parameters and Global variables of Continuity_Tests.Check_Operations
+  effects on parameters and Global variables of Continuity_Tests.Check_Permission_Origin
+  effects on parameters and Global variables of Continuity_Tests.Check_Supersession
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+absence of run-time errors of Continuity_Tests depends on
+  effects on parameters and Global variables of Continuity_Tests.Capacity_Claim
+  effects on parameters and Global variables of Continuity_Tests.Capacity_Operation
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Claim_Capacity
+  effects on parameters and Global variables of Continuity_Tests.Check_Claim_Partition
+  effects on parameters and Global variables of Continuity_Tests.Check_Context_Byte
+  effects on parameters and Global variables of Continuity_Tests.Check_Empty_And_Identity
+  effects on parameters and Global variables of Continuity_Tests.Check_Freshness_And_Durability
+  effects on parameters and Global variables of Continuity_Tests.Check_Gaps
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Check_Operation_Capacity
+  effects on parameters and Global variables of Continuity_Tests.Check_Operation_Partition
+  effects on parameters and Global variables of Continuity_Tests.Check_Operations
+  effects on parameters and Global variables of Continuity_Tests.Check_Permission_Origin
+  effects on parameters and Global variables of Continuity_Tests.Check_Supersession
+  effects on parameters and Global variables of Continuity_Tests.Corrected_Properties
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Claim
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Predecessor
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Sequence
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of Continuity_Tests.Pending_Properties
+  effects on parameters and Global variables of Continuity_Tests.Permission_Properties
+  effects on parameters and Global variables of Continuity_Tests.Uncertain_Properties
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Capacity_Claim at continuity_tests.adb:559 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of Continuity_Tests.Capacity_Claim fully established
+  Continuity_Tests.Capacity_Operation at continuity_tests.adb:609 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of Continuity_Tests.Capacity_Operation fully established
+  Continuity_Tests.Check at continuity_tests.adb:265 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of Continuity_Tests.Check depends on
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Claim_Capacity at continuity_tests.adb:568 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (14 checks)
+absence of run-time errors of Continuity_Tests.Check_Claim_Capacity depends on
+  effects on parameters and Global variables of Continuity_Tests.Capacity_Claim
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Claim_Partition at continuity_tests.adb:173 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of Continuity_Tests.Check_Claim_Partition depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Check_Context_Byte at continuity_tests.adb:296 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (32 checks)
+absence of run-time errors of Continuity_Tests.Check_Context_Byte depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Empty_And_Identity at continuity_tests.adb:513 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (14 checks)
+absence of run-time errors of Continuity_Tests.Check_Empty_And_Identity depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Freshness_And_Durability at continuity_tests.adb:336 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (15 checks)
+absence of run-time errors of Continuity_Tests.Check_Freshness_And_Durability depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Gaps at continuity_tests.adb:365 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (9 checks)
+absence of run-time errors of Continuity_Tests.Check_Gaps depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Observed at continuity_tests.adb:277 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Continuity_Tests.Check_Observed depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Operation_Capacity at continuity_tests.adb:616 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (15 checks)
+absence of run-time errors of Continuity_Tests.Check_Operation_Capacity depends on
+  effects on parameters and Global variables of Continuity_Tests.Capacity_Operation
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Operation_Partition at continuity_tests.adb:193 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+absence of run-time errors of Continuity_Tests.Check_Operation_Partition depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  Continuity_Tests.Check_Operations at continuity_tests.adb:477 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)
+absence of run-time errors of Continuity_Tests.Check_Operations depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of Continuity_Tests.Uncertain_Properties
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Permission_Origin at continuity_tests.adb:445 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (12 checks)
+absence of run-time errors of Continuity_Tests.Check_Permission_Origin depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Claim
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of Continuity_Tests.Pending_Properties
+  effects on parameters and Global variables of Continuity_Tests.Permission_Properties
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Check_Supersession at continuity_tests.adb:394 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (25 checks)
+absence of run-time errors of Continuity_Tests.Check_Supersession depends on
+  effects on parameters and Global variables of Continuity_Tests.Check
+  effects on parameters and Global variables of Continuity_Tests.Check_Observed
+  effects on parameters and Global variables of Continuity_Tests.Corrected_Properties
+  effects on parameters and Global variables of Continuity_Tests.Expected
+  effects on parameters and Global variables of Continuity_Tests.Initial_Properties
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Predecessor
+  effects on parameters and Global variables of Continuity_Tests.Invalid_Sequence
+  effects on parameters and Global variables of Continuity_Tests.Observe
+  effects on parameters and Global variables of SIA_Continuity.Classify
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Corrected_Properties at continuity_tests.adb:98 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+the postcondition of Continuity_Tests.Corrected_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Corrected_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Expected at continuity_tests.adb:236 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of Continuity_Tests.Expected depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Initial_Properties at continuity_tests.adb:87 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+the postcondition of Continuity_Tests.Initial_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Initial_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Invalid_Claim at continuity_tests.adb:133 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+the postcondition of Continuity_Tests.Invalid_Claim depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Invalid_Claim depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Invalid_Predecessor at continuity_tests.adb:112 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+the postcondition of Continuity_Tests.Invalid_Predecessor depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Invalid_Predecessor depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Invalid_Sequence at continuity_tests.adb:122 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+the postcondition of Continuity_Tests.Invalid_Sequence depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Invalid_Sequence depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Observe at continuity_tests.adb:211 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of Continuity_Tests.Observe depends on
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+absence of run-time errors of Continuity_Tests.Observe depends on
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  Continuity_Tests.Pending_Properties at continuity_tests.adb:157 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+the postcondition of Continuity_Tests.Pending_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Pending_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Permission_Properties at continuity_tests.adb:143 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+the postcondition of Continuity_Tests.Permission_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Permission_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  Continuity_Tests.Uncertain_Properties at continuity_tests.adb:72 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+the postcondition of Continuity_Tests.Uncertain_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+absence of run-time errors of Continuity_Tests.Uncertain_Properties depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+in unit grant_lifetime_tests, 3 subprograms and packages out of 3 analyzed
+  Grant_Lifetime_Tests at grant_lifetime_tests.adb:5 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+effects on parameters and Global variables of Grant_Lifetime_Tests depends on
+  effects on parameters and Global variables of Grant_Lifetime_Tests.Check_Changed_Domain
+  effects on parameters and Global variables of Grant_Lifetime_Tests.Check_Invalid_And_Matching
+absence of run-time errors of Grant_Lifetime_Tests depends on
+  effects on parameters and Global variables of Grant_Lifetime_Tests.Check_Changed_Domain
+  effects on parameters and Global variables of Grant_Lifetime_Tests.Check_Invalid_And_Matching
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Classify_Scoped
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Same_Domain
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  Grant_Lifetime_Tests.Check_Changed_Domain at grant_lifetime_tests.adb:17 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of Grant_Lifetime_Tests.Check_Changed_Domain depends on
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Classify_Scoped
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Same_Domain
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  Grant_Lifetime_Tests.Check_Invalid_And_Matching at grant_lifetime_tests.adb:31 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of Grant_Lifetime_Tests.Check_Invalid_And_Matching depends on
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Classify_Scoped
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Same_Domain
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+in unit policy_tests, 4 subprograms and packages out of 4 analyzed
+  Policy_Tests at policy_tests.adb:3 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+effects on parameters and Global variables of Policy_Tests depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Admit_Source_Evidence
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+absence of run-time errors of Policy_Tests depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Admit_Source_Evidence
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+  Policy_Tests.Check_Provenance at policy_tests.adb:14 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+effects on parameters and Global variables of Policy_Tests.Check_Provenance depends on
+  effects on parameters and Global variables of SIA_Policy.Admit_Source_Evidence
+absence of run-time errors of Policy_Tests.Check_Provenance depends on
+  effects on parameters and Global variables of SIA_Policy.Admit_Source_Evidence
+  Policy_Tests.Check_Publication at policy_tests.adb:50 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (13 checks)
+effects on parameters and Global variables of Policy_Tests.Check_Publication depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+absence of run-time errors of Policy_Tests.Check_Publication depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+  Policy_Tests.Reject_Witness at policy_tests.adb:30 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+effects on parameters and Global variables of Policy_Tests.Reject_Witness depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+absence of run-time errors of Policy_Tests.Reject_Witness depends on
+  effects on parameters and Global variables of SIA_Policy.Acknowledge
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+in unit request_admission_tests, 5 subprograms and packages out of 5 analyzed
+  Request_Admission_Tests at request_admission_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+effects on parameters and Global variables of Request_Admission_Tests depends on
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Fields
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Frame
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Identity
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Lifetime
+absence of run-time errors of Request_Admission_Tests depends on
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Fields
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Frame
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Identity
+  effects on parameters and Global variables of Request_Admission_Tests.Check_Lifetime
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Classify_Frame
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Admission_Tests.Check_Fields at request_admission_tests.adb:60 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Request_Admission_Tests.Check_Fields depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  Request_Admission_Tests.Check_Frame at request_admission_tests.adb:87 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (9 checks)
+absence of run-time errors of Request_Admission_Tests.Check_Frame depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Classify_Frame
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Admission_Tests.Check_Identity at request_admission_tests.adb:39 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)
+absence of run-time errors of Request_Admission_Tests.Check_Identity depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  Request_Admission_Tests.Check_Lifetime at request_admission_tests.adb:15 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (11 checks)
+absence of run-time errors of Request_Admission_Tests.Check_Lifetime depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+in unit request_wire_tests, 8 subprograms and packages out of 8 analyzed
+  Request_Wire_Tests at request_wire_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+effects on parameters and Global variables of Request_Wire_Tests depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Base
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Digest
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Generations
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Header
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Length
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Reserved
+absence of run-time errors of Request_Wire_Tests depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Base
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Digest
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Generations
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Header
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Length
+  effects on parameters and Global variables of Request_Wire_Tests.Check_Reserved
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check at request_wire_tests.adb:13 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Request_Wire_Tests.Check depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Base at request_wire_tests.adb:25 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Base depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Digest at request_wire_tests.adb:41 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Digest depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Generations at request_wire_tests.adb:77 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Generations depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Header at request_wire_tests.adb:104 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Header depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Length at request_wire_tests.adb:131 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Length depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  Request_Wire_Tests.Check_Reserved at request_wire_tests.adb:121 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Request_Wire_Tests.Check_Reserved depends on
+  effects on parameters and Global variables of Request_Wire_Tests.Check
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+in unit retraction_tests, 8 subprograms and packages out of 8 analyzed
+  Retraction_Tests at retraction_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+effects on parameters and Global variables of Retraction_Tests depends on
+  effects on parameters and Global variables of Retraction_Tests.Check_Byte
+  effects on parameters and Global variables of Retraction_Tests.Check_Exhaustion
+  effects on parameters and Global variables of Retraction_Tests.Check_Malformed_Retained
+  effects on parameters and Global variables of Retraction_Tests.Check_Origins
+  effects on parameters and Global variables of Retraction_Tests.Check_Scalars
+  effects on parameters and Global variables of Retraction_Tests.Check_Zero
+absence of run-time errors of Retraction_Tests depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of Retraction_Tests.Check_Byte
+  effects on parameters and Global variables of Retraction_Tests.Check_Exhaustion
+  effects on parameters and Global variables of Retraction_Tests.Check_Malformed_Retained
+  effects on parameters and Global variables of Retraction_Tests.Check_Origins
+  effects on parameters and Global variables of Retraction_Tests.Check_Scalars
+  effects on parameters and Global variables of Retraction_Tests.Check_Zero
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check at retraction_tests.adb:20 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of Retraction_Tests.Check depends on
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Byte at retraction_tests.adb:67 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (15 checks)
+absence of run-time errors of Retraction_Tests.Check_Byte depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Exhaustion at retraction_tests.adb:173 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of Retraction_Tests.Check_Exhaustion depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Malformed_Retained at retraction_tests.adb:119 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of Retraction_Tests.Check_Malformed_Retained depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Origins at retraction_tests.adb:42 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Retraction_Tests.Check_Origins depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Scalars at retraction_tests.adb:94 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)
+absence of run-time errors of Retraction_Tests.Check_Scalars depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  Retraction_Tests.Check_Zero at retraction_tests.adb:145 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of Retraction_Tests.Check_Zero depends on
+  effects on parameters and Global variables of Retraction_Tests.Check
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Plan
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+in unit sia_consolidation, 7 subprograms and packages out of 7 analyzed
+  SIA_Consolidation at sia_consolidation.ads:5 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Consolidation fully established
+  SIA_Consolidation.Classify at sia_consolidation.ads:78 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of SIA_Consolidation.Classify depends on
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  SIA_Consolidation.Complete at sia_consolidation.ads:59 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Consolidation.Complete fully established
+  SIA_Consolidation.Plan at sia_consolidation.ads:88 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Consolidation.Plan depends on
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+absence of run-time errors of SIA_Consolidation.Plan depends on
+  effects on parameters and Global variables of SIA_Consolidation.Classify
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Qualifies
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  SIA_Consolidation.Qualifies at sia_consolidation.ads:73 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Consolidation.Qualifies depends on
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+  effects on parameters and Global variables of SIA_Consolidation.Valid_State
+  SIA_Consolidation.Valid_Batch at sia_consolidation.ads:45 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of SIA_Consolidation.Valid_Batch fully established
+  SIA_Consolidation.Valid_State at sia_consolidation.ads:67 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Consolidation.Valid_State depends on
+  effects on parameters and Global variables of SIA_Consolidation.Complete
+  effects on parameters and Global variables of SIA_Consolidation.Valid_Batch
+in unit sia_continuity, 14 subprograms and packages out of 14 analyzed
+  SIA_Continuity at sia_continuity.ads:6 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity fully established
+  SIA_Continuity.Classify at sia_continuity.ads:210 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Continuity.Classify depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+absence of run-time errors of SIA_Continuity.Classify depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready
+  effects on parameters and Global variables of SIA_Continuity.Fresh
+  effects on parameters and Global variables of SIA_Continuity.Joined
+  effects on parameters and Global variables of SIA_Continuity.Same_Task
+  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  SIA_Continuity.Coverage_Consistent at sia_continuity.ads:130 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of SIA_Continuity.Coverage_Consistent fully established
+  SIA_Continuity.Coverage_Ready at sia_continuity.ads:136 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Coverage_Ready fully established
+  SIA_Continuity.Fresh at sia_continuity.ads:179 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Fresh fully established
+  SIA_Continuity.Joined at sia_continuity.ads:187 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Joined depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  SIA_Continuity.Same_Task at sia_continuity.ads:172 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Same_Task fully established
+  SIA_Continuity.Uncertain_Operations at sia_continuity.ads:203 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of SIA_Continuity.Uncertain_Operations fully established
+  SIA_Continuity.Valid at sia_continuity.ads:163 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Valid depends on
+  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claims
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operations
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  SIA_Continuity.Valid_Claim at sia_continuity.ads:89 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Valid_Claim fully established
+  SIA_Continuity.Valid_Claims at sia_continuity.ads:115 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of SIA_Continuity.Valid_Claims depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Predecessor
+  SIA_Continuity.Valid_Operation at sia_continuity.ads:145 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity.Valid_Operation fully established
+  SIA_Continuity.Valid_Operations at sia_continuity.ads:152 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of SIA_Continuity.Valid_Operations depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  SIA_Continuity.Valid_Predecessor at sia_continuity.ads:97 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+absence of run-time errors of SIA_Continuity.Valid_Predecessor fully established
+in unit sia_grant_lifetime, 3 subprograms and packages out of 3 analyzed
+  SIA_Grant_Lifetime at sia_grant_lifetime.ads:6 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Grant_Lifetime fully established
+  SIA_Grant_Lifetime.Classify_Scoped at sia_grant_lifetime.ads:24 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of SIA_Grant_Lifetime.Classify_Scoped depends on
+  effects on parameters and Global variables of SIA_Grant_Lifetime.Same_Domain
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  SIA_Grant_Lifetime.Same_Domain at sia_grant_lifetime.ads:19 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Grant_Lifetime.Same_Domain fully established
+in unit sia_policy, 7 subprograms and packages out of 7 analyzed
+  SIA_Policy at sia_policy.ads:2 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Policy fully established
+  SIA_Policy.Acknowledge at sia_policy.ads:67 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Policy.Acknowledge depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+absence of run-time errors of SIA_Policy.Acknowledge depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Publication_Joined
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+  SIA_Policy.Admit_Source_Evidence at sia_policy.ads:48 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Policy.Admit_Source_Evidence fully established
+absence of run-time errors of SIA_Policy.Admit_Source_Evidence fully established
+  SIA_Policy.Bound_Durable at sia_policy.ads:37 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Policy.Bound_Durable depends on
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  SIA_Policy.Publication_Joined at sia_policy.ads:56 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Policy.Publication_Joined depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+absence of run-time errors of SIA_Policy.Publication_Joined depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Policy.Source_Complete
+  SIA_Policy.Same_Binding at sia_policy.ads:32 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Policy.Same_Binding fully established
+  SIA_Policy.Source_Complete at sia_policy.ads:43 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Policy.Source_Complete fully established
+in unit sia_request_admission, 4 subprograms and packages out of 4 analyzed
+  SIA_Request_Admission at sia_request_admission.ads:6 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Request_Admission fully established
+  SIA_Request_Admission.Classify at sia_request_admission.ads:30 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of SIA_Request_Admission.Classify depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  SIA_Request_Admission.Classify_Frame at sia_request_admission.ads:44 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Request_Admission.Classify_Frame depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+absence of run-time errors of SIA_Request_Admission.Classify_Frame depends on
+  effects on parameters and Global variables of SIA_Request_Admission.Classify
+  effects on parameters and Global variables of SIA_Request_Admission.Matches
+  effects on parameters and Global variables of SIA_Request_Wire.Decode
+  effects on parameters and Global variables of SIA_Request_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  SIA_Request_Admission.Matches at sia_request_admission.ads:19 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Request_Admission.Matches fully established
+in unit sia_request_wire, 5 subprograms and packages out of 5 analyzed
+  SIA_Request_Wire at sia_request_wire.ads:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Request_Wire fully established
+  SIA_Request_Wire.Decode at sia_request_wire.ads:59 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (17 checks)
+the postcondition of SIA_Request_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+absence of run-time errors of SIA_Request_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  SIA_Request_Wire.Decoded_As at sia_request_wire.ads:44 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (7 checks)
+absence of run-time errors of SIA_Request_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Request_Wire.Generation_Value
+  effects on parameters and Global variables of SIA_Request_Wire.Valid
+  SIA_Request_Wire.Generation_Value at sia_request_wire.ads:20 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (24 checks)
+absence of run-time errors of SIA_Request_Wire.Generation_Value fully established
+  SIA_Request_Wire.Valid at sia_request_wire.ads:33 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Request_Wire.Valid fully established
+in unit sia_retraction, 6 subprograms and packages out of 6 analyzed
+  SIA_Retraction at sia_retraction.ads:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Retraction fully established
+  SIA_Retraction.Classify at sia_retraction.ads:58 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of SIA_Retraction.Classify depends on
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  SIA_Retraction.Plan at sia_retraction.ads:73 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Retraction.Plan depends on
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+absence of run-time errors of SIA_Retraction.Plan depends on
+  effects on parameters and Global variables of SIA_Retraction.Classify
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+  effects on parameters and Global variables of SIA_Retraction.Valid_State
+  SIA_Retraction.Valid_Descriptor at sia_retraction.ads:36 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Retraction.Valid_Descriptor fully established
+  SIA_Retraction.Valid_Request at sia_retraction.ads:40 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of SIA_Retraction.Valid_Request depends on
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  SIA_Retraction.Valid_State at sia_retraction.ads:48 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Retraction.Valid_State depends on
+  effects on parameters and Global variables of SIA_Retraction.Valid_Descriptor
+  effects on parameters and Global variables of SIA_Retraction.Valid_Request
+in unit sia_transactions, 5 subprograms and packages out of 5 analyzed
+  SIA_Transactions at sia_transactions.ads:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Transactions fully established
+  SIA_Transactions.Bound_Request at sia_transactions.ads:35 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Transactions.Bound_Request depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  SIA_Transactions.Decide at sia_transactions.ads:41 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of SIA_Transactions.Decide depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  SIA_Transactions.Reduce at sia_transactions.ads:57 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Transactions.Reduce depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Successor
+absence of run-time errors of SIA_Transactions.Reduce depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  SIA_Transactions.Successor at sia_transactions.ads:30 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Transactions.Successor fully established
+in unit transaction_tests, 5 subprograms and packages out of 5 analyzed
+  Transaction_Tests at transaction_tests.adb:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+effects on parameters and Global variables of Transaction_Tests depends on
+  effects on parameters and Global variables of Transaction_Tests.Check_Pairs
+  effects on parameters and Global variables of Transaction_Tests.Check_Path
+  effects on parameters and Global variables of Transaction_Tests.Check_Retry
+absence of run-time errors of Transaction_Tests depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Reduce
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  effects on parameters and Global variables of Transaction_Tests.Check_Pairs
+  effects on parameters and Global variables of Transaction_Tests.Check_Path
+  effects on parameters and Global variables of Transaction_Tests.Check_Retry
+  effects on parameters and Global variables of Transaction_Tests.Check_Triple
+  Transaction_Tests.Check_Pairs at transaction_tests.adb:35 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of Transaction_Tests.Check_Pairs depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  effects on parameters and Global variables of Transaction_Tests.Check_Triple
+  Transaction_Tests.Check_Path at transaction_tests.adb:91 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (13 checks)
+absence of run-time errors of Transaction_Tests.Check_Path depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Reduce
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  Transaction_Tests.Check_Retry at transaction_tests.adb:46 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Transaction_Tests.Check_Retry depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Reduce
+  effects on parameters and Global variables of SIA_Transactions.Successor
+  Transaction_Tests.Check_Triple at transaction_tests.adb:13 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+absence of run-time errors of Transaction_Tests.Check_Triple depends on
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  effects on parameters and Global variables of SIA_Policy.Same_Binding
+  effects on parameters and Global variables of SIA_Transactions.Bound_Request
+  effects on parameters and Global variables of SIA_Transactions.Decide
+  effects on parameters and Global variables of SIA_Transactions.Successor

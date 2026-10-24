@@ -528,7 +528,7 @@ def current_generation(path):
 
 
 def open_owned_regular(path):
-    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
              | getattr(os, "O_NOFOLLOW", 0))
     descriptor = os.open(path, flags)
     value = os.fstat(descriptor)
@@ -1085,7 +1085,7 @@ fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
 
 def read_journal():
-    descriptor = os.open(journal_name, flags, dir_fd=parent_fd)
+    descriptor = os.open(journal_name, flags | os.O_NONBLOCK, dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
@@ -1734,7 +1734,7 @@ path = sys.argv[1]
 parent = os.path.dirname(path)
 limit = 16_777_216
 flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
-    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
 try:
     fd = os.open(path, flags)
 except FileNotFoundError:
@@ -3737,7 +3737,12 @@ flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
          | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0))
 descriptor = os.open(path, flags, 0o700)
 try:
-    os.write(descriptor, source.encode("utf-8"))
+    remaining = memoryview(source.encode("utf-8"))
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if not 0 < written <= len(remaining):
+            raise OSError("short stable launcher write")
+        remaining = remaining[written:]
     os.fchmod(descriptor, 0o755)
     os.fsync(descriptor)
 finally:
@@ -8230,12 +8235,10 @@ import sys
 MAX_BYTES = 1_048_576
 source, temporary, mode = sys.argv[1:]
 mode = int(mode, 8)
-source_flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+source_flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
                 | getattr(os, "O_NOFOLLOW", 0))
-source_fd = os.open(source, source_flags)
-temporary_fd = os.open(
-    temporary, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0)
-    | getattr(os, "O_NOFOLLOW", 0))
+source_fd = None
+temporary_fd = None
 
 
 def generation(value):
@@ -8244,10 +8247,20 @@ def generation(value):
 
 
 try:
+    source_fd = os.open(source, source_flags)
+    temporary_fd = os.open(
+        temporary, os.O_WRONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0))
     before = os.fstat(source_fd)
     if not stat.S_ISREG(before.st_mode) \
             or before.st_uid != os.geteuid() or before.st_size > MAX_BYTES:
         raise RuntimeError("atomic install source is unsafe or oversized")
+    stage_before = os.fstat(temporary_fd)
+    if not stat.S_ISREG(stage_before.st_mode) \
+            or stage_before.st_uid != os.geteuid() or stage_before.st_nlink != 1 \
+            or (stage_before.st_dev, stage_before.st_ino) == (before.st_dev, before.st_ino):
+        raise RuntimeError("atomic install stage is unsafe or aliases source")
+    os.ftruncate(temporary_fd, 0)
     total = 0
     digest = hashlib.sha256()
     while chunk := os.read(source_fd, MAX_BYTES):
@@ -8257,7 +8270,10 @@ try:
         digest.update(chunk)
         remaining = memoryview(chunk)
         while remaining:
-            remaining = remaining[os.write(temporary_fd, remaining):]
+            written = os.write(temporary_fd, remaining)
+            if written <= 0 or written > len(remaining):
+                raise OSError("short atomic install write")
+            remaining = remaining[written:]
     after = os.fstat(source_fd)
     current = os.stat(source, follow_symlinks=False)
     if total != before.st_size or generation(before) != generation(after) \
@@ -8266,8 +8282,16 @@ try:
     os.fchmod(temporary_fd, mode)
     os.fsync(temporary_fd)
 finally:
-    os.close(temporary_fd)
-    os.close(source_fd)
+    try:
+        if temporary_fd is not None:
+            closing_fd = temporary_fd
+            temporary_fd = None
+            os.close(closing_fd)
+    finally:
+        if source_fd is not None:
+            closing_fd = source_fd
+            source_fd = None
+            os.close(closing_fd)
 PY
   then
     rm -f -- "$temporary"
@@ -9158,7 +9182,7 @@ def stable_regular(path, maximum, label):
     cloexec = getattr(os, "O_CLOEXEC", None)
     if nofollow is None or cloexec is None:
         raise ValueError(label + " cannot be opened with required flags")
-    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
@@ -9259,7 +9283,7 @@ def stable_regular(path, maximum, label):
     cloexec = getattr(os, "O_CLOEXEC", None)
     if nofollow is None or cloexec is None:
         raise ValueError(label + " cannot be opened with required flags")
-    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec)
+    descriptor = os.open(path, os.O_RDONLY | nofollow | cloexec | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 \
@@ -11281,7 +11305,11 @@ inspect_mcp_server() {
 print_mcp_add_command() {
   case "$1" in
     claude) echo "  claude mcp add --scope user sia -- python3 $BINDIR/sia-mcp" ;;
-    codex) echo "  codex mcp add sia -- python3 $BINDIR/sia-mcp" ;;
+    codex)
+      echo "  codex mcp add sia -- python3 $BINDIR/sia-mcp"
+      echo "  Then set tool_timeout_sec = 240 in the existing SIA server entry in ~/.codex/config.toml."
+      echo "  Verify with: codex mcp get sia --json (reload an existing MCP connection if needed)."
+      ;;
     grok) echo "  grok mcp add --scope user sia -- python3 $BINDIR/sia-mcp" ;;
   esac
 }

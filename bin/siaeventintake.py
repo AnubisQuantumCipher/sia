@@ -149,6 +149,53 @@ def _shape(owner, request):
     _entries_shape(owner, request, history, source_ids, previous=history["started_at"])
 
 
+def _bounded_rows(values, reason):
+    """Read live admitted rows, yielding no more than their initial count.
+
+    Final length checks also detect deletion of the last already-yielded row.
+    Equal-length replacement and ABA changes are not detected. Callbacks and
+    native interpreter operations must still terminate independently.
+    """
+    limit = len(values)
+    rows = iter(values)
+    for _position in range(limit):
+        try:
+            value = next(rows)
+        except StopIteration:
+            _refuse(reason)
+        yield value
+    if len(values) != limit:
+        _refuse(reason)
+    try:
+        next(rows)
+    except StopIteration:
+        return
+    _refuse(reason)
+
+
+def _paired_rows(left, right):
+    """Bound traversal to the initial roster; retain current element reads."""
+    limit = len(left)
+    if len(right) != limit:
+        _refuse("complete-collector-roster")
+    pairs = zip(left, right, strict=True)
+    for _position in range(limit):
+        try:
+            pair = next(pairs)
+        except (StopIteration, ValueError):
+            _refuse("complete-collector-roster")
+        yield pair
+    if len(left) != limit or len(right) != limit:
+        _refuse("complete-collector-roster")
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError:
+        _refuse("complete-collector-roster")
+    _refuse("complete-collector-roster")
+
+
 def _entries_shape(owner, request, history, source_ids, *, previous):
     """Validate represented entries, without asserting a complete history."""
     observed_at = request["observed_at"]
@@ -174,7 +221,7 @@ def _entries_shape(owner, request, history, source_ids, *, previous):
         _list(returns["runs"], len(source_ids), "complete-collector-roster")
         if len(returns["runs"]) != len(source_ids):
             _refuse("complete-collector-roster")
-        for source_id, run in zip(source_ids, returns["runs"]):
+        for source_id, run in _paired_rows(source_ids, returns["runs"]):
             _keys(run, {"source_id", "events"}, "collector-return-shape")
             if run["source_id"] != source_id:
                 _refuse("collector-return-order")
@@ -349,7 +396,7 @@ def _pins(owner, request):
 def _member(owner, plan, images):
     """Validate supplied exact Events and represented target semantics, not I/O."""
     records, prepared = {}, {}
-    for record in plan["input_records"]:
+    for record in _bounded_rows(plan["input_records"], "plan-record-roster-changed"):
         event = owner["_event_from_replay_record"](record)
         if event.organ != plan["organ"] or record["ts"][:10] != plan["date"] \
                 or not _same(owner, owner["_event_replay_record"](event), record):
@@ -366,7 +413,7 @@ def _member(owner, plan, images):
     targets, before_lines, epochs = {}, {}, {}
     page_by_slug = {page["slug"]: page for page in plan["pages"]}
     day_parts = {}
-    for page in plan["pages"]:
+    for page in _bounded_rows(plan["pages"], "complete-target-page-roster"):
         slug = page["slug"]
         image = images[slug + ".md"]
         if slug.startswith("events/"):
@@ -382,7 +429,7 @@ def _member(owner, plan, images):
                 slug, dependency_capture=pages._TargetView(owner, slug, image["raw"]))
     files = {row["relative"]: row["before"] for row in plan["read_dependencies"]["files"]}
     additions, appended = {}, []
-    for admission in plan["admissions"]:
+    for admission in _bounded_rows(plan["admissions"], "complete-plan-admissions"):
         event_id, slug = admission["event_id"], admission["slug"]
         if slug not in page_by_slug or admission["semantic_id"] != records[event_id][0] \
                 or admission["version_sha256"] != page_by_slug[slug]["version_sha256"]:
@@ -400,7 +447,7 @@ def _member(owner, plan, images):
             continue
         if slug not in targets:
             _refuse("event-admission-target")
-        matches = [owner["EVENT_MARKER_RE"].fullmatch(line) for line in targets[slug]]
+        matches = [owner["EVENT_MARKER_RE"].fullmatch(line) for line in _bounded_rows(targets[slug], "event-marker-roster-changed")]
         matches = [match for match in matches if match is not None and match.group("id") == event_id]
         if len(matches) != 1 or (matches[0].group("semantic"), matches[0].group("payload")) != records[event_id]:
             _refuse("exact-event-marker-binding")
@@ -416,7 +463,7 @@ def _member(owner, plan, images):
             _refuse("admission-disposition")
     if plan["appended_event_ids"] != appended:
         _refuse("complete-appended-roster")
-    for page in plan["pages"]:
+    for page in _bounded_rows(plan["pages"], "complete-target-page-roster"):
         if page["write"] and (not additions.get(page["slug"]) or targets[page["slug"]]
                               != before_lines[page["slug"]] + additions[page["slug"]]):
             _refuse("exact-event-entry-preservation")
@@ -429,6 +476,33 @@ def _member(owner, plan, images):
         _refuse("complete-target-page-roster")
 
 
+def _derive_association(row, candidate, prior):
+    """Derive one row from admitted data without callbacks or state mutation.
+
+    Inputs contain only the already-checked scalar observation/admission fields.
+    The caller reserves their aggregate capacity before replay and owns its
+    accumulators. A returned reason refuses the transition without an update.
+    This helper does not admit events, authenticate pins or authorize effects.
+    """
+    if prior is None:
+        if candidate is None:
+            return "missing-first-observation", None, None
+        observation = dict(candidate)
+        first_observation = observation
+        status = "first-observation"
+    else:
+        semantic, observation = prior
+        if semantic != row["semantic_id"]:
+            return "repeated-source-association-conflict", None, None
+        first_observation = None
+        status = "already-observed"
+    association = {**row, "admission": dict(row["admission"]),
+                   "observation_id": observation["id"],
+                   "observation_version_sha256": observation["version_sha256"],
+                   "observation_timestamp": observation["timestamp"], "status": status}
+    return None, first_observation, association
+
+
 def _fold_entry(owner, request, entry, intake, associations, versions, current, first):
     """Apply one already-admitted entry to private replay accumulators.
 
@@ -439,15 +513,15 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
     """
     catalog = request["source_catalog"]["sources"]
     returns, grouped, admissions = entry["source_returns"], {}, {}
-    for source, run in zip(catalog, returns["runs"]):
-        for record in run["events"]:
+    for source, run in _paired_rows(catalog, returns["runs"]):
+        for record in _bounded_rows(run["events"], "returned-event-roster-changed"):
             event = owner["_event_from_replay_record"](record)
             if event.organ != source["organ"] \
                     or not _same(owner, owner["_event_replay_record"](event), record):
                 _refuse("collector-event-binding")
             grouped.setdefault((event.organ, record["ts"][:10]), []).append(record)
     actual_groups, organs = set(), []
-    for row in entry["event_batches"]:
+    for row in _bounded_rows(entry["event_batches"], "complete-event-batch-roster"):
         batch = row["batch"]
         members = pages._member_structure(owner, batch["members"])
         body = pages._batch_body(owner, members)
@@ -457,13 +531,13 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
         pages._member_pins(owner, batch["members"], [plan["plan_sha256"] for plan in batch["members"]])
         images = pages._union_images(owner, members)
         organs.append(batch["organ"])
-        for plan in members:
+        for plan in _bounded_rows(members, "batch-member-roster-changed"):
             key = (plan["organ"], plan["date"])
             if key in actual_groups or key not in grouped or not _same(owner, grouped[key], plan["input_records"]):
                 _refuse("complete-duplicate-return-plan-join")
             actual_groups.add(key)
             _member(owner, plan, images)
-            for admitted in plan["admissions"]:
+            for admitted in _bounded_rows(plan["admissions"], "complete-plan-admissions"):
                 admissions[(plan["organ"], plan["date"], admitted["event_id"])] = {
                     "event_batch_sha256": row["expected_batch_sha256"], "plan_sha256": plan["plan_sha256"],
                     **{key: admitted[key] for key in ("slug", "version_sha256", "disposition")}}
@@ -472,10 +546,10 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
             if slug in current and (image["before"] is None
                                     or versions[current[slug]]["content"].encode("utf-8") != image["before"]):
                 _refuse("unexplained-page-version-change")
-            for raw in (image["before"], image["raw"]):
+            for before, raw in ((True, image["before"]), (False, image["raw"])):
                 if raw is None:
                     continue
-                version = owner["_corpus_page_version_from_bytes"](slug=slug, raw=raw)
+                version = pages._checked_version(owner, image["page"], raw, before=before)
                 pin = version["version_sha256"]
                 if pin in versions and not _same(owner, version, versions[pin]):
                     _refuse("page-version-collision")
@@ -484,37 +558,44 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
                 current[slug] = pin
     if actual_groups != set(grouped) or organs != sorted(set(organs)):
         _refuse("complete-event-batch-roster")
-    for run in returns["runs"]:
-        for position, record in enumerate(run["events"]):
+    for run in _bounded_rows(returns["runs"], "complete-collector-roster"):
+        for position, record in enumerate(_bounded_rows(run["events"], "returned-event-roster-changed")):
             key = (run["source_id"], record["event_id"])
             admitted = admissions[(record["organ"], record["ts"][:10], record["event_id"])]
+            candidate = None
+            prior = first.get(key)
             if key not in first:
                 identifier = _sha(owner, {"schema": "sia-controller-event-association-v1",
                                           "epoch_id": intake["epoch_id"], "source_id": key[0], "event_id": key[1]})
-                observation = {"id": identifier, "timestamp": returns["observed_at"],
-                               "version_sha256": admitted["version_sha256"], "symbol": key[0],
-                               "context": request["profile"]["context"], "native_timestamp": record["ts"]}
+                candidate = {"id": identifier, "timestamp": returns["observed_at"],
+                             "version_sha256": admitted["version_sha256"], "symbol": key[0],
+                             "context": request["profile"]["context"], "native_timestamp": record["ts"]}
+            row = {"source_returns_sha256": entry["expected_source_returns_sha256"],
+                   "source_id": key[0], "return_index": position, "event_id": key[1],
+                   "semantic_id": record["semantic_id"], "admission": admitted}
+            reason, observation, association = _derive_association(row, candidate, prior)
+            if reason is not None:
+                _refuse(reason)
+            if observation is not None:
                 first[key] = (record["semantic_id"], observation)
                 intake["observations"].append(observation)
-                status = "first-observation"
-            else:
-                semantic, observation = first[key]
-                if semantic != record["semantic_id"]:
-                    _refuse("repeated-source-association-conflict")
-                status = "already-observed"
-            associations.append({"source_returns_sha256": entry["expected_source_returns_sha256"],
-                                 "source_id": key[0], "return_index": position, "event_id": key[1],
-                                 "semantic_id": record["semantic_id"], "admission": admitted,
-                                 "observation_id": observation["id"],
-                                 "observation_version_sha256": observation["version_sha256"],
-                                 "observation_timestamp": observation["timestamp"], "status": status})
+            associations.append(association)
+
+
+def _version_pages(versions):
+    """Retain checked identities across later projector invocations."""
+    for pin, version in versions.items():
+        if type(version) is not dict or type(version.get("version_sha256")) is not str \
+                or version["version_sha256"] != pin:
+            _refuse("page-version-identity-changed")
+    return list(versions.values())
 
 
 def _project(owner, request):
     intake, associations, versions, current, first = _intake(request), [], {}, {}, {}
-    for entry in request["history"]["entries"]:
+    for entry in _bounded_rows(request["history"]["entries"], "history-entry-roster-changed"):
         _fold_entry(owner, request, entry, intake, associations, versions, current, first)
-    intake["pages"], intake["current_versions"] = list(versions.values()), list(current.values())
+    intake["pages"], intake["current_versions"] = _version_pages(versions), list(current.values())
     return _result(request, intake, associations)
 
 

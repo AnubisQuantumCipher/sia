@@ -1,0 +1,378 @@
+{
+  "rows": {
+    "baseline": {
+      "sha256": "442043401e7af3fc7949dcf122a7850c9c049d5a8a901006399514561cfb3b91",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventintake.py"
+      ],
+      "returncode": 1,
+      "diagnostics": [
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 63,
+            "row": 177
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventintake.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 62,
+                  "row": 177
+                },
+                "location": {
+                  "column": 62,
+                  "row": 177
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 31,
+            "row": 177
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 177,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 53,
+            "row": 442
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventintake.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 52,
+                  "row": 442
+                },
+                "location": {
+                  "column": 52,
+                  "row": 442
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 24,
+            "row": 442
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 442,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        }
+      ],
+      "stderr": "",
+      "syntax": "PASS",
+      "function_lines": {
+        "_refuse": 5,
+        "_keys": 3,
+        "_list": 3,
+        "_mixed_size": 10,
+        "_wire": 7,
+        "_same": 2,
+        "_sha": 2,
+        "_source_nc": 3,
+        "_context_shape": 43,
+        "_shape": 13,
+        "_entries_shape": 53,
+        "_bindings": 3,
+        "_source_nonclaims": 12,
+        "_intake": 6,
+        "_result": 5,
+        "_reservation": 57,
+        "_reserve": 5,
+        "_catalog": 27,
+        "_pins": 11,
+        "_member": 81,
+        "_fold_entry": 79,
+        "_project": 6,
+        "prepare": 60
+      }
+    },
+    "candidate": {
+      "sha256": "4fc0aa536d695824aba5e4f318e4a969450ac47d4c1c1d197c39d92a3f08d702",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventintake.py"
+      ],
+      "returncode": 1,
+      "diagnostics": [
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 63,
+            "row": 177
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventintake.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 62,
+                  "row": 177
+                },
+                "location": {
+                  "column": 62,
+                  "row": 177
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 31,
+            "row": 177
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 177,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 53,
+            "row": 469
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventintake.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 52,
+                  "row": 469
+                },
+                "location": {
+                  "column": 52,
+                  "row": 469
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 24,
+            "row": 469
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 469,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        }
+      ],
+      "stderr": "",
+      "syntax": "PASS",
+      "function_lines": {
+        "_refuse": 5,
+        "_keys": 3,
+        "_list": 3,
+        "_mixed_size": 10,
+        "_wire": 7,
+        "_same": 2,
+        "_sha": 2,
+        "_source_nc": 3,
+        "_context_shape": 43,
+        "_shape": 13,
+        "_entries_shape": 53,
+        "_bindings": 3,
+        "_source_nonclaims": 12,
+        "_intake": 6,
+        "_result": 5,
+        "_reservation": 57,
+        "_reserve": 5,
+        "_catalog": 27,
+        "_pins": 11,
+        "_member": 81,
+        "_derive_association": 25,
+        "_fold_entry": 77,
+        "_project": 6,
+        "prepare": 60
+      }
+    },
+    "tests": {
+      "sha256": "3216917f76faddbd12192501ab992304dcfdf63f3a0cc4541e73d831cf5f287c",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-kernel-20261019/tests/test_association_derivation.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "function_lines": {
+        "supplied_row": 6,
+        "first_candidate": 4,
+        "test_first_observation_preserves_every_supplied_field": 10,
+        "test_repeat_keeps_original_observation_and_current_admission": 11,
+        "test_conflict_returns_no_update_and_changes_no_inputs": 6,
+        "test_missing_first_candidate_refuses_without_partial_result": 6,
+        "test_results_do_not_alias_admitted_scalar_records": 12,
+        "test_repeat_is_deterministic_and_leaves_prior_unchanged": 7,
+        "setUp": 4,
+        "project_and_record_identities": 12,
+        "test_duplicate_and_cross_source_identity_calls_keep_original_order": 11,
+        "test_later_entry_does_not_rehash_or_replace_first_observation": 12,
+        "observed": 4
+      }
+    },
+    "runner": {
+      "sha256": "f761d23b03cdb83d6e28609342af31567324fd55e2819d45d4e858955d077883",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_association_derivation.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "function_lines": {
+        "source_pins": 3,
+        "command_for": 13,
+        "main": 34
+      }
+    },
+    "baseline-runner": {
+      "sha256": "4e3e3489f61b7cde09de5a42cee8bf85cabf5941fe059cdfe3f5712f3f646e14",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_association_derivation-baseline.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "function_lines": {
+        "source_pins": 3,
+        "command_for": 13,
+        "main": 34
+      }
+    }
+  },
+  "comparison": {
+    "baseline_diagnostics": 2,
+    "candidate_diagnostics": 2,
+    "same_code_message_multiset": true,
+    "new": []
+  }
+}

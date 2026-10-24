@@ -1,0 +1,15 @@
+Actual GPT-6.1 reviewer: /root/assurance_architecture_review
+Read-only evidence correspondence review, 2026-10-21 UTC.
+
+No blocker found for retaining this non-final experimental checkpoint.
+
+Verified active source matches development-v7; recorded source/artifact hashes and archive member hashes agree. The core report identifies the expected unit, 77 discharged checks, no justified/unproved checks, informational raw diagnostics only, and empty Assume/skip annotation arrays. Ordinary modular dependency assumptions remain explicit.
+
+Latest frame invariants preserve bytes outside the actual mutation regions without removing fixtures or oracles. Documentation accurately retains compiler/proof failures, the limited canonical diagnostic, complete-harness timeouts and unadopted v8 prover-order change.
+
+Inspected SHA-256:
+document 30742c91e148b096ece94c066f47be4f2faef616ff134d7a95e967c0e14f9f30
+manifest f4b14e120a14cc952da2feb6b2bad2a1048a63323754b01d6db614825aa17b54
+bundle   5ca52a905e688b0991f88855437395a2bced5ac4c8090d49623f396db6400bf8
+
+This verifies retained evidence correspondence, not independent proof replay. Complete harness/full-project proof, coverage and committed-source reproduction remain open. No jobs or edits performed.

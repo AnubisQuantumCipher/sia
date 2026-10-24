@@ -1,0 +1,34 @@
+Independent read-only review
+Reviewer: existing assurance_architecture_review agent, actual GPT-6.1
+Scope: record-codec development-v3 source and retained focused evidence.
+No reviewer edits or test/proof jobs were performed.
+
+No blocker found for this scoped checkpoint.
+
+Verified read-only:
+
+- Current and retained proof-source hashes match the manifest; harness hash is
+  9ad644796403d7fd79d7c81f8f07ce82a2ddf215b450058c7d13bbd4c07953a8.
+- Delta assignments preserve the original mutations, byte sweeps, assertions,
+  invariants and nonuniform digest controls.
+- Recorded build, ten runtimes and both focused proofs exited zero.
+- Versioned summaries report 82 core and 230 overlapping harness/core checks,
+  with no justified or unproved checks.
+- Saved raw channels contain only informational diagnostics, no declared
+  assumptions/exclusions, and STOP_REASON_NONE.
+- Manifest, logs, receipt, archive and copied summaries match their recorded
+  hashes. Prior failures remain visible.
+
+The evidence correctly remains owner-authored scoped development evidence with
+acceptance false. Next acceptance boundary is fresh committed reproduction and
+complete-project proof/raw coverage. Framing, producer authenticity, I/O,
+delivery and installation remain unproved or unimplemented.
+
+Reviewer clarification of "no declared assumptions/exclusions":
+
+Yes. I meant the saved raw arrays pragma_assume, skip_flow_proof and skip_proof
+were empty.
+
+Ordinary modular dependency assumptions remain in GNATprove reports. The focused
+proof is conditional on those dependencies and the toolchain's semantics; it is
+neither assumption-free nor a whole-system proof.

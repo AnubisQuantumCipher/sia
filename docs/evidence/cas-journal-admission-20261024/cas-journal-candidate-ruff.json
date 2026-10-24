@@ -1,0 +1,78 @@
+[
+  {
+    "cell": null,
+    "code": "B904",
+    "end_location": {
+      "column": 73,
+      "row": 706
+    },
+    "filename": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/cas-journal-candidate-helper.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 706
+    },
+    "message": "Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling",
+    "name": "raise-without-from-inside-except",
+    "noqa_row": 706,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/raise-without-from-inside-except"
+  },
+  {
+    "cell": null,
+    "code": "B904",
+    "end_location": {
+      "column": 74,
+      "row": 759
+    },
+    "filename": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/cas-journal-candidate-helper.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 759
+    },
+    "message": "Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling",
+    "name": "raise-without-from-inside-except",
+    "noqa_row": 759,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/raise-without-from-inside-except"
+  },
+  {
+    "cell": null,
+    "code": "B904",
+    "end_location": {
+      "column": 70,
+      "row": 811
+    },
+    "filename": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/cas-journal-candidate-helper.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 811
+    },
+    "message": "Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling",
+    "name": "raise-without-from-inside-except",
+    "noqa_row": 811,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/raise-without-from-inside-except"
+  },
+  {
+    "cell": null,
+    "code": "B904",
+    "end_location": {
+      "column": 79,
+      "row": 824
+    },
+    "filename": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/cas-journal-candidate-helper.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 824
+    },
+    "message": "Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling",
+    "name": "raise-without-from-inside-except",
+    "noqa_row": 824,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/raise-without-from-inside-except"
+  }
+]

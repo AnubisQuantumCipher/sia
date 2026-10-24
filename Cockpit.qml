@@ -1,4 +1,4 @@
-// SIA COCKPIT — full-screen mission control for the Omarchy Brain.
+// SIA COCKPIT — shared overlay and desktop window for the Omarchy Brain.
 // Overlay kind: summoned from the bar widget or SUPER+SHIFT+B, dismissed
 // with Esc / ✕ / click on the header brand. Pixels only — renders the
 // brainstem service snapshots; authoritative state is gbrain + the signed corpus.
@@ -20,6 +20,11 @@ Item {
   property var shell: ({})
   property var manifest: ({})
   property bool opened: false
+  property bool windowed: false
+  onWindowedChanged: {
+    if (root.windowed) setupYield.stop()
+    else if (root.opened && root.setupTerminalPresented) setupYield.restart()
+  }
   property bool workspaceLockLoaded: false
   property string workspaceLockName: ""
   property string workspaceLockFeedback: ""
@@ -207,7 +212,7 @@ Item {
     root.workspaceLockActive && root.focusedWorkspaceName !== ""
       && root.focusedWorkspaceName !== root.workspaceLockName
   readonly property bool cockpitVisible:
-    root.opened && !root.workspaceLockMismatch
+    root.opened && (root.windowed || !root.workspaceLockMismatch)
   // Let the compositor move the finished surface. Repainting a full-screen
   // opacity/translation every frame stalls the software Qt renderer.
   Timer {
@@ -2091,6 +2096,7 @@ Item {
   }
 
   function toggleWorkspaceLock() {
+    if (root.windowed) return
     root.loadWorkspaceLock()
     if (root.workspaceLockActive) {
       root.clearWorkspaceLock()
@@ -2140,7 +2146,10 @@ Item {
     // A late start supersedes the deadline's honest "never observed": the
     // deadline reports what had been seen by then, not a final verdict.
     if (root.setupTerminalPresented)
-      return "Setup terminal started. This cockpit steps aside in a moment so that window is in front; SIA holds it open at the end, on success and on a named refusal. Reopen SIA any time for progress. This gate clears only after the matching resident release reaches first light."
+      return "Setup terminal started. "
+        + (root.windowed ? "Follow its progress in the installer terminal. "
+           : "This cockpit steps aside in a moment so that window is in front; ")
+        + "SIA holds it open at the end, on success and on a named refusal. Reopen SIA any time for progress. This gate clears only after the matching resident release reaches first light."
     if (root.setupTerminalMissing)
       return "Setup terminal requested, but SIA never observed the installer shell start. If it starts later it is the real installer and holds itself open. Otherwise open a terminal yourself and run install.sh from the plugin checkout, or repair the terminal handler on this desktop, then try again."
     return "Setup terminal requested. Waiting for the installer shell to start…"
@@ -2265,11 +2274,13 @@ Item {
       payload = typeof payloadJson === "string"
         ? JSON.parse(payloadJson || "{}") : (payloadJson || ({}))
     } catch (e) { payload = ({}) }
+    if (!root.isPlainRecord(payload)) payload = ({})
+    root.windowed = payload && payload.presentation === "window"
     root.loadWorkspaceLock()
     // A layer-shell surface is not a Hyprland toplevel, so the lock gates
     // visibility against the live focused workspace rather than claiming a
     // compositor workspace assignment. A direct summon elsewhere releases it.
-    if (root.workspaceLockMismatch) root.clearWorkspaceLock()
+    if (!root.windowed && root.workspaceLockMismatch) root.clearWorkspaceLock()
     opened = true
     workspaceLockFeedback = ""
     intentReviewFeedback = ""
@@ -2318,6 +2329,35 @@ Item {
   // answers with the exact release it has actually loaded.
   function loadedReleaseVersion(ignored) {
     return Model.releaseVersion()
+  }
+
+  // Called through the existing shell facade. Repeated requests and changes
+  // of presentation preserve pending operation identities and current inputs.
+  // The receipt confirms local presentation state, not compositor visibility
+  // or memory readiness. An older plugin cannot accidentally acknowledge it.
+  function showPresentation(presentation) {
+    if (presentation !== "window" && presentation !== "overlay")
+      return "invalid-presentation"
+    if (!root.opened) {
+      if (!root.shell || typeof root.shell.summon !== "function"
+          || !root.shell.summon(root.pluginId,
+               JSON.stringify({presentation: presentation})))
+        return "shell-unavailable"
+    } else {
+      root.windowed = presentation === "window"
+      if (!root.windowed && root.workspaceLockMismatch)
+        root.clearWorkspaceLock()
+    }
+    if (!root.cockpitVisible || root.windowed !== (presentation === "window"))
+      return "presentation-unavailable"
+    Qt.callLater(function() {
+      if (!root.cockpitVisible) return
+      if (root.setupActionAllowed) firstLightButton.forceActiveFocus()
+      else if (root.continuitySheetOpen) root.focusContinuityPage()
+      else keyCatcher.forceActiveFocus()
+      graphCanvas.requestPaint()
+    })
+    return "sia-cockpit-v1:" + presentation
   }
 
   function close() {
@@ -2696,6 +2736,7 @@ Item {
           && root.restoreCorrelationLost
           && parsed.state === "prepared"
           && nextPreparedId !== ""
+          && nextPreparedId !== root.restoreExpectedPreparedId
           && !currentPublicationStale) {
         root.restoreRequestId = ""
         root.restoreExpectedPreparedId = ""
@@ -2789,11 +2830,11 @@ Item {
       root.setupLaunchRequested = true
       setupPresenceApply.stop()
       setupPresenceDeadline.stop()
-      // This cockpit is a layer-shell overlay above every normal window and
+      // The overlay is a layer-shell surface above every normal window and
       // holds the keyboard while visible, so the terminal it just asked for
       // opens behind it.  Step aside once that shell is known to be running;
       // the installing lifecycle reports progress when the cockpit reopens.
-      setupYield.restart()
+      if (!root.windowed) setupYield.restart()
     } catch (e) { }
   }
 
@@ -3748,12 +3789,16 @@ Item {
       } else {
         if (awaitRestoreVerification) {
           root.restoreVerificationPending = false
-          root.restoreCorrelationLost = false
+          // A launcher failure can follow durable worker admission. Retain
+          // uncertainty until a new authenticated preparation reconciles it.
+          root.restoreCorrelationLost = true
           root.restoreRequestId = ""
-          root.restoreExpectedPreparedId = ""
+          root.restoreExpectedPreparedId = restorePreparedId
         }
         root.continuityActionOk = accepted
-        root.continuityActionMsg = detail !== "" ? detail
+        root.continuityActionMsg = awaitRestoreVerification
+          ? "Restore handoff outcome is uncertain. Inspect continuity status and prepare again before retrying."
+          : detail !== "" ? detail
           : operationLabel + (accepted ? " accepted." : " was refused.")
       }
       stdinPayload = ""
@@ -3816,17 +3861,36 @@ Item {
 
   PanelWindow {
     id: win
-    visible: root.cockpitVisible
+    visible: root.cockpitVisible && !root.windowed
     anchors { top: true; bottom: true; left: true; right: true }
     color: root.bg
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "sia-cockpit"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.cockpitVisible
+    WlrLayershell.keyboardFocus: root.cockpitVisible && !root.windowed
       ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+  }
 
-    Item {
+  FloatingWindow {
+    id: detachedWindow
+    visible: root.cockpitVisible && root.windowed
+    title: "SIA — Omarchy Brain"
+    color: root.bg
+    // Leave initial space for the desktop bar and window decorations.
+    // The compositor owns subsequent user resizing and placement.
+    implicitWidth: Math.max(960, Math.min(1280,
+      Math.floor((screen ? screen.width : 1280) * 0.85)))
+    implicitHeight: Math.max(640, Math.min(800,
+      Math.floor((screen ? screen.height : 800) * 0.85)))
+    minimumSize: Qt.size(960, 640)
+    onClosed: { if (root.windowed && root.opened) root.dismiss() }
+  }
+
+  // One visual tree and one set of readers/processes, whichever surface
+  // hosts it. Reparenting does not reload Model.js or recreate the cockpit.
+  Item {
       id: keyCatcher
+      parent: root.windowed ? detachedWindow.contentItem : win.contentItem
       anchors.fill: parent
       focus: true
       enabled: root.cockpitVisible
@@ -3949,6 +4013,7 @@ Item {
           }
           Rectangle {
             id: workspaceLockControl
+            visible: !root.windowed
             readonly property real maximumTextWidth: Style.space(180)
             activeFocusOnTab: true
             Accessible.role: Accessible.Button
@@ -4221,7 +4286,9 @@ Item {
           id: keysHint
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          text: "hover = inspect · click = lock · L = workspace lock · R = replay · Esc = close · sia ask \"…\""
+          text: "hover = inspect · click = lock"
+            + (root.windowed ? "" : " · L = workspace lock")
+            + " · R = replay · Esc = close · sia ask \"…\""
           color: Qt.alpha(root.fg, 0.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -4562,36 +4629,68 @@ Item {
                 font.bold: true
               }
               Grid {
+                id: statusCounts
+                width: vitalsCol.width
                 columns: 2
                 columnSpacing: Style.space(14)
                 rowSpacing: Style.space(2)
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
+                readonly property real labelWidth: Math.max(
+                  memoriesLabel.implicitWidth, linksLabel.implicitWidth,
+                  eventsLabel.implicitWidth, entriesLabel.implicitWidth)
+                readonly property real valueWidth: Math.max(0,
+                  width - labelWidth - columnSpacing)
+                Text { id: memoriesLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "memories"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.pages) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: linksLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "links"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentGraph ? String(root.currentStatus.graph_edges) : "—"
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: eventsLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "events today"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: String(root.eventsToday)
                        color: root.accent; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "entries kept"; color: Qt.alpha(root.fg, 0.55)
+                Text { id: entriesLabel; width: statusCounts.labelWidth
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "entries kept"; color: Qt.alpha(root.fg, 0.55)
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.thoughtStreamCountText()
+                Text { width: statusCounts.valueWidth; wrapMode: Text.Wrap
+                       textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.thoughtStreamCountText()
                        color: root.fg; font.bold: true
                        font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: "usage-tracked pages"; color: Qt.alpha(root.fg, 0.55)
-                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
-                Text { textFormat: Text.PlainText; renderType: Text.NativeRendering; text: root.currentStatus && root.currentStatus.mind
-                         ? root.currentStatus.mind.nodes + " · " + root.currentStatus.mind.edges + " co-return edges"
-                         : "—"
-                       color: root.fg; font.bold: true
-                       font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+              }
+              Text {
+                width: vitalsCol.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: "usage-tracked pages"
+                color: Qt.alpha(root.fg, 0.55)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+              Text {
+                width: vitalsCol.width
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                text: root.currentStatus && root.currentStatus.mind
+                  ? root.currentStatus.mind.nodes + " · "
+                    + root.currentStatus.mind.edges + " co-return edges"
+                  : "—"
+                color: root.fg
+                font.bold: true
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
               }
 
               Text {
@@ -6488,7 +6587,10 @@ Item {
                 anchors.margins: Style.space(8)
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
-                text: "LOCAL BOUNDARY · SIA is unrelated to Sia.tech. Your click asks this desktop to open a terminal; this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
+                text: "LOCAL BOUNDARY · SIA is unrelated to Sia.tech. Your click asks this desktop to open a terminal; "
+                  + (root.windowed ? "this window reports whether the installer shell starts. "
+                     : "this cockpit is an overlay above every window, so it steps aside once the installer shell is observed to start, and reports if it never is. ")
+                  + "SIA holds that terminal open at the end, on success and on a named refusal. This cockpit stays locked until the matching runtime publishes status after `sia ready`."
                 wrapMode: Text.WordWrap
                 color: Qt.alpha(root.fg, 0.65)
                 font.family: root.fontFamily
@@ -6588,6 +6690,5 @@ Item {
           }
         }
       }
-    }
   }
 }

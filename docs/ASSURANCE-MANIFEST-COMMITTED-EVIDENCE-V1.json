@@ -1,0 +1,189 @@
+{
+  "actual_draft_audit": {
+    "audit": "evidence/acceptance-manifest-committed-reproduction-v1/audit.json",
+    "authority": "NONE",
+    "draft": "evidence/acceptance-manifest-committed-reproduction-v1/draft.json",
+    "exit": 2,
+    "gaps": 434,
+    "status": "INCOMPLETE"
+  },
+  "authority": "NONE",
+  "bundle": {
+    "path": "docs/evidence/assurance-manifest-committed-reproduction-v1.tar.gz",
+    "sha256": "b1a58e47374a44f1af5a39ea6422396c3b716bf472562dcc35a944b3d37bda00"
+  },
+  "kind": "Portable exact-committed-source checker reproduction; no system acceptance",
+  "limits": [
+    "No new tests are run by this retainer; it checks retained byte identities.",
+    "No build, proof, install, system, Power-of-Ten compliance or release acceptance.",
+    "Hashes do not authenticate producers, actual model identity or custody.",
+    "All existing failed evidence and A/G/C/P acceptance obligations remain binding.",
+    "Bounded Python allocation and filesystem operations are not formally proved."
+  ],
+  "members": {
+    "evidence/acceptance-manifest-committed-reproduction-v1/audit.json": {
+      "bytes": 24688,
+      "sha256": "cb1c7d88fadec34e956f717e5dfbc76607776586948e91aedfbc81a8228e4eff"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/audit.receipt.json": {
+      "bytes": 1155,
+      "sha256": "a4efae179a80b33507648323a40b173c48191c72fae10d2f23cf872f5752eff7"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/audit.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/committed-reproduction.binding.json": {
+      "bytes": 8849,
+      "sha256": "976a9d6c4c5b7066685ae3bb2b5dae75200f08a0535e11514f097b91eb281a18"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/committed-reproduction.receipt.json": {
+      "bytes": 11077,
+      "sha256": "b69ae36e138b8d30bfd2ce623a1e61a5941df4ad6820a4af69bd916566a0f26c"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/committed-reproduction.report.txt": {
+      "bytes": 2254,
+      "sha256": "2176a1e337bb7b80a21f710ddd3c7df129e5c2a20ca89777a1a89d18251a17a6"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/draft.json": {
+      "bytes": 93275,
+      "sha256": "923347b9c88e54a60b4271e78dc3291dd3447e8d4db002acc2e2779fd15937f5"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/draft.receipt.json": {
+      "bytes": 1022,
+      "sha256": "0a580d2fb3c0b14ce97f1527b0bd6738ad9392a3de2ca68f2bb6072f985cc58a"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/draft.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/focused-tests.receipt.json": {
+      "bytes": 987,
+      "sha256": "23f917383c02841d95ed92ea60ce2b1aba214a25836f78df9029ddd40335a797"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/focused-tests.stderr.log": {
+      "bytes": 5281,
+      "sha256": "5935849f2ccf523def49a7e78ca61226ba97f1a03164aa5de2e7df42fc99ac8b"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/focused-tests.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/git-archive.receipt.json": {
+      "bytes": 3045,
+      "sha256": "97a625f70932802ba094d67f42f4df8ee27ce52af9a681471abd456bfa740fe1"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/git-archive.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/git-archive.stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/interpreter.json": {
+      "bytes": 348,
+      "sha256": "8fee02272233f939ed8dedaffb60ed350b08035a524f5481055dfd6fc9a2eae3"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/reproduce.py": {
+      "bytes": 8841,
+      "sha256": "99b3d92e38e716bbdbd2d209f3554f74cbc160fde14eba541ecd4f4aa938bb65"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/source-files.txt": {
+      "bytes": 2134,
+      "sha256": "2a3040eff0226501874b946332559eb774344ddbf004936548ba61599d2ef5b0"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/source-git-blobs.json": {
+      "bytes": 4979,
+      "sha256": "e7192d1f47046466222c4117e6fb5d655f03975a32799dffff88a9e0c1277db2"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/source-sha256.json": {
+      "bytes": 6371,
+      "sha256": "e005309aba50656c2dee240a1a47f04bea3c6b43e7939078ac0b3b02bdd3c7bc"
+    },
+    "evidence/acceptance-manifest-committed-reproduction-v1/source.tar": {
+      "bytes": 532480,
+      "sha256": "8eb8f391e6cb1490fcdc9ec4e3bc34ddc5db625fda095e5b85f9c8a8a91cd93b"
+    },
+    "retain-assurance-manifest-committed-reproduction-v1.py": {
+      "bytes": 9133,
+      "sha256": "fb634ef1efc4f6ef3d6003635d7f0f9ed82b81a91cd48e0abc6c8d04824888f9"
+    }
+  },
+  "preservation": "Original raw fields and output bytes retained without modification.",
+  "report": "evidence/acceptance-manifest-committed-reproduction-v1/committed-reproduction.report.txt",
+  "reproduction_receipt": "evidence/acceptance-manifest-committed-reproduction-v1/committed-reproduction.receipt.json",
+  "source_archive": {
+    "member": "evidence/acceptance-manifest-committed-reproduction-v1/source.tar",
+    "sha256": "8eb8f391e6cb1490fcdc9ec4e3bc34ddc5db625fda095e5b85f9c8a8a91cd93b"
+  },
+  "source_commit": "b947dbdd41f3a36f2e9a35cca8fa5dd3955e6ff7",
+  "source_files_sha256": {
+    ".github/workflows/ci.yml": "d4fa4a077c29a4ed79754ecf9df7f614f460f11221aa08cda25d15efdd772554",
+    "docs/AGENT-CONTINUITY.md": "41b482504a0673353bda72eccfee3d421de8df1f98b0533099fd9bb5517da12a",
+    "docs/ASSURANCE-ACCEPTANCE-MANIFEST.md": "5f2e226d1202fbd47071c11894c88ca1b7a60d95aaa43bf60007dc01048808a4",
+    "docs/ASSURANCE-COMPLETION-CONTRACT-20261021-V2.txt": "76431f681acc5cab8a6093971e7d9e6a6f8c2a745046635df66bb7c1b121afdd",
+    "docs/ASSURANCE-GOAL.md": "72bdfaa80d4df892ab93783549554749e823ac229123bbf9e7f163dae63bdfaf",
+    "docs/ASSURANCE-IMPLEMENTATION-GATES.md": "0b8fb7d7700402d6f68fad66fd3805f00b893ff91e1174062c3e8ebc558b2651",
+    "docs/POWER-OF-TEN-ASSESSMENT.md": "b9cfaffc74af62875288c2da0185c00f848fe21ce83b02b432164a8393ea11bc",
+    "scripts/assurance_acceptance_manifest.py": "9a0b90df6c0e82c669ec71d767117b990ca24b4fe77bad8b9dcbc0cf7e7139b9",
+    "scripts/assurance_source_inventory.py": "f809d025b8beabac6dbfeab1d3942e4ac723e4004932d912b92b7424dcae6ccb",
+    "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+    "spark/sia_assurance.gpr": "d439a1e2908c70643c951d296294a87c3ba2756be6b1d0bb4c9a6bd4814ebe49",
+    "spark/src/sia_consolidation.adb": "66b24e1a6d846948cb80f6ec5960efa34247de16dc718ef8200645d02db6bf7b",
+    "spark/src/sia_consolidation.ads": "a93f44ff93265dd47d22b7d2268ed3a33566476894b85292b0d693a9ddc69db9",
+    "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+    "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+    "spark/src/sia_continuity_checkpoint_wire.adb": "91b167299b9e75914d27a6471576974739658e95e48613fa3f6b6f2b9c598bef",
+    "spark/src/sia_continuity_checkpoint_wire.ads": "2324fc75e06758724fca1cf6c7283e9628b404c18ba25645827a5b39c14eb588",
+    "spark/src/sia_continuity_current_wire.adb": "0450a7581e66976b79dc818eced42cced3116b9d4b12d4e1e0bed4f1bc4707d7",
+    "spark/src/sia_continuity_current_wire.ads": "0d61a18678020acc82717893df3ace1b5802d104b05afc71e89c81aec161b83f",
+    "spark/src/sia_continuity_frame_wire.adb": "ca25697747a087a6d07c9d2a1f335d4079c458545e6e24e01361cf17d282ca24",
+    "spark/src/sia_continuity_frame_wire.ads": "eeb9ce9acb10f77d5886baac3529f3fe9a4f6f21e8318c3f1850f09aca639422",
+    "spark/src/sia_continuity_observation_wire.adb": "a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c",
+    "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+    "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+    "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+    "spark/src/sia_continuity_response_wire.adb": "7883ffaef9dbd8632fe4e175b5c7036f0f60ad835546640d31c8b5650b69e87a",
+    "spark/src/sia_continuity_response_wire.ads": "25d28f5d4f0a7d8f06380cef18eeaede613ec562c7d7743c6b7b841f030cc88b",
+    "spark/src/sia_continuity_transitions.adb": "43f7c5d7a5455472d5f25aa2e9fceb9e866cededa81f0e6047df45684c21ba5e",
+    "spark/src/sia_continuity_transitions.ads": "cfaf19687229927154d4a57a3b4297ab7d3d6d9a36283ea944527a4bc5bdf97c",
+    "spark/src/sia_grant_lifetime.adb": "ce77559dc338d6e5c4ef1698cbb1cba13f6dc156f97ea5efe34b9fa65aa71d33",
+    "spark/src/sia_grant_lifetime.ads": "d4422783fe86bda25bfe600c606dc9a2b34cb4c18346931d6b9238fcbbaed8a8",
+    "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+    "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+    "spark/src/sia_request_admission.adb": "f659845d7824e496437d85198c07feedd42653ab214c9ba87a9d079962376dad",
+    "spark/src/sia_request_admission.ads": "504f44d9de1ff24454bf17397e07723d4fe4276faa7dfa1ab0b5e61d4663efd3",
+    "spark/src/sia_request_wire.adb": "43c12bd6834dd61f182ff22d6a9251a78fa4ab1d09db0ea9f057f0233172ad47",
+    "spark/src/sia_request_wire.ads": "5951173ec3a72aed2c7ab698fe8a624d375ef53ab3e2c141ac780048b5b20b6f",
+    "spark/src/sia_retraction.adb": "8f46ecf35ae52ed73b0e8930bc918104c0c61fd3c716fb9156f31801fe162fdb",
+    "spark/src/sia_retraction.ads": "d3bb90b07723fa5d3d9e704668fc3e2d640b3d4ae9781d9dd4403a43e8c6db9e",
+    "spark/src/sia_transactions.adb": "d1973627ca3a3666323d3366e99ebcd532da6af64ccaa1af711832a07540ab5e",
+    "spark/src/sia_transactions.ads": "f5cdba695062958aca31705ab855dc02f4c33e1754dbf8a44964a7dbf9754a8c",
+    "spark/tests/consolidation_tests.adb": "3ed890bd9224790b944aeb19454cbdcaecefc8d86cd74187932d76450cb98c06",
+    "spark/tests/continuity_checkpoint_wire_tests.adb": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75",
+    "spark/tests/continuity_current_wire_tests.adb": "20a1a6a5bbacedd9d17b4c38168dba2ddedb6fdcd877be61cb6b565af6d9f4f6",
+    "spark/tests/continuity_frame_wire_tests.adb": "a4ed19432058b3f8994957a21de5238ef86a86d9703dff8fb713fa47bc89d0fa",
+    "spark/tests/continuity_observation_wire_tests.adb": "b4ad291d1baa864f595333d6f6d817e22dde7b3aecdb50faf41df01dc8970e71",
+    "spark/tests/continuity_record_wire_tests.adb": "9ad644796403d7fd79d7c81f8f07ce82a2ddf215b450058c7d13bbd4c07953a8",
+    "spark/tests/continuity_response_wire_tests.adb": "55a0845ea99c1218267a314cd7dd9e260c770346b4dc3eb2563310a41f30a9f0",
+    "spark/tests/continuity_tests.adb": "e0a0ce61eceaf284a8c876522a8f4fce8226374523cfa152c92fea3814c0e41b",
+    "spark/tests/continuity_transition_tests.adb": "c92b660d3731beccd3dc55c32e8280af8c3da028f6172ec04c338945dbd44955",
+    "spark/tests/grant_lifetime_tests.adb": "0a9ce2e5da5d3dbf53614051d3cdf8d7445184497189bab0a8937a02ab612fda",
+    "spark/tests/policy_tests.adb": "66bf8f497c4b3a46eca75b1fce2cc31553868bacd2ebb015050f75199b5517b9",
+    "spark/tests/request_admission_tests.adb": "b6fb146f33a20cbc435b085b36a5ddbdf1a2d179ed961789a2e8a14348cb8e2c",
+    "spark/tests/request_wire_tests.adb": "79283a1cec85946f893092b32ba34d964db6ed45b6da3e99be8e8c187a5435db",
+    "spark/tests/retraction_tests.adb": "7250c3bdcac34938147c90b160dd9cf5a88b7c800261b0ffc577ea1e3fd30478",
+    "spark/tests/transaction_tests.adb": "3ed63f9fd391ad1da5f6575450545bbcecddb9c9aac31969cd35c1034dea46ba",
+    "tests/test_assurance_acceptance_manifest.py": "42266c89da09869889095aab496a2746b80795adb9b66176d41e23e0e33cc498",
+    "tests/test_assurance_source_inventory.py": "c99f3dfeab533260cbd6195503ead25784d22e2fdd61fa70cca9b7f63bac4d9b"
+  },
+  "tests": {
+    "count": "30",
+    "exit": 0,
+    "receipt": "evidence/acceptance-manifest-committed-reproduction-v1/focused-tests.receipt.json",
+    "status": "TESTED",
+    "summary": "Ran 30 tests in 0.376s",
+    "warnings": "error"
+  }
+}

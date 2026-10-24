@@ -1,0 +1,99 @@
+{
+  "schema": "sia.association-derivation-extraction.v1",
+  "status": "SCOPED_TESTED_REVIEWED_PREREQUISITE_NOT_R05_REPAIR",
+  "base_commit": "a4e63f18d3cb5862017057515c93db785913d343",
+  "purpose": "Separate first-observation/association calculation from owner callbacks in the shared legacy/checkpoint replay path.",
+  "change": "New data-only derivation returns a refusal reason or detached observation/association. Caller retains conditional first-only identity hashing, accumulator ownership, event/page admission, ordered version processing and failure propagation.",
+  "source_sha256": {
+    "bin/siaeventintake.py": "4fc0aa536d695824aba5e4f318e4a969450ac47d4c1c1d197c39d92a3f08d702",
+    "tests/test_association_derivation.py": "3216917f76faddbd12192501ab992304dcfdf63f3a0cc4541e73d831cf5f287c"
+  },
+  "results": {
+    "baseline": {
+      "status": "PASS",
+      "tests_reported": 88,
+      "elapsed_seconds": 27.378,
+      "source_unchanged": true,
+      "output_sha256": "adbdf49a3c21b8365ba7067b0557a9051245abed1c3887fb5d6dabd3e73888cb"
+    },
+    "candidate": {
+      "status": "PASS",
+      "tests_reported": 96,
+      "elapsed_seconds": 31.075,
+      "source_unchanged": true,
+      "output_sha256": "7851d25a8ac3a8b4fe782d3a4dfb56ce92c474c2c4639bcc96804e81c732701d"
+    }
+  },
+  "rosters": "Baseline88 original page/intake/capture/memo methods. Candidate same88 plus8 new derivation and real hash-order controls. These are different explicitly declared rosters, not a failed-baseline bug repair.",
+  "contract": {
+    "domain": "Private internal helper; ordinary already-admitted scalar observation/admission records. Not an arbitrary-object decoder or authority boundary.",
+    "state": "Does not mutate row, candidate or prior. Returns detached scalar observation and admission records. Caller owns and updates private replay accumulators.",
+    "identity": "Caller keys prior by exact source/event pair and hashes only first occurrences. No sorting or deduplication of the association stream.",
+    "repeat": "Semantic mismatch returns original refusal reason and no update. Valid repeat retains first observation identity/version/time and current admission.",
+    "failure": "Missing first candidate returns typed reason and no partial result. Existing caller maps reasons through original refusal path. Discard private accumulators on failure.",
+    "resources": "Original input/output reservation and replay limits remain in caller. New helper has no loop and fixed caller-supplied fields; Python allocation and whole-job bounds are not formally established."
+  },
+  "static": {
+    "product": "NONPASS: two unchanged diagnostics; same code/message multiset, no suppression",
+    "new_tests_and_runners": "PASS, zero frozen strict diagnostics; compile-only PASS",
+    "new_helper_lines": 25,
+    "whole_module_P10": "UNPROVEN; original long mixed admission routine remains"
+  },
+  "independent_review": {
+    "model": "GPT-6.1",
+    "result": "No blocker for prerequisite extraction within admitted scalar-data domain",
+    "independent_execution": false
+  },
+  "open": [
+    "Outer legacy and compact admission memos remain unsound. No R05 closure or speed improvement claimed.",
+    "Complete owner/context dependency separation, mutation/reentrancy/concurrency and resource qualification remain open.",
+    "Original SPARK, SDK, C, Linux enforcement, continuity, installed-runtime and release gates remain mandatory."
+  ],
+  "evidence_directory": "docs/evidence/association-derivation-20261024",
+  "artifacts": {
+    "baseline-association-derivation.json": {
+      "sha256": "c0d8f56fdc461397fb17f6f72410923d10442651d155517684205a553e92549f",
+      "bytes": 3885
+    },
+    "baseline-association-derivation.log.gz": {
+      "sha256": "bb0cfa013c8f0eaa1af8b3bca8875b21ab8bb209e1268ec5f1c31373c28e0f4a",
+      "bytes": 3023,
+      "uncompressed_sha256": "adbdf49a3c21b8365ba7067b0557a9051245abed1c3887fb5d6dabd3e73888cb",
+      "uncompressed_bytes": 18007
+    },
+    "candidate-association-derivation.json": {
+      "sha256": "b04ea5166b657c463ba623293318ae56918a4e2c141de76042fc934fb96986cf",
+      "bytes": 4139
+    },
+    "candidate-association-derivation.log.gz": {
+      "sha256": "67209785b9b3a91e6f19e5eb8aac3ea3e06671ee577d8ee177e617a5897c4ebf",
+      "bytes": 3245,
+      "uncompressed_sha256": "7851d25a8ac3a8b4fe782d3a4dfb56ce92c474c2c4639bcc96804e81c732701d",
+      "uncompressed_bytes": 19463
+    },
+    "association-derivation-static.json": {
+      "sha256": "043c683cb82a960d4a78a48bde1bb0c04b3d254ed43de7f75ba85535d803325d",
+      "bytes": 16151
+    },
+    "association-derivation-independent-review.txt": {
+      "sha256": "9990f2b073eabb42c80da22ca37074ca5e2b3154567cc6db09ff07356ffa67f8",
+      "bytes": 1383
+    },
+    "run_association_derivation.py": {
+      "sha256": "f761d23b03cdb83d6e28609342af31567324fd55e2819d45d4e858955d077883",
+      "bytes": 3782
+    },
+    "run_association_derivation-baseline.py": {
+      "sha256": "4e3e3489f61b7cde09de5a42cee8bf85cabf5941fe059cdfe3f5712f3f646e14",
+      "bytes": 3750
+    },
+    "run_association_derivation-committed.py": {
+      "sha256": "f02da90b816de6c2e8ce8bbe50c4ca56ab521eab46b0927cea175d0d282d9430",
+      "bytes": 3778
+    },
+    "association-committed-runner-static.json": {
+      "sha256": "caf7df2cf6bb41a57d68fee506ea57297075ce653e7ba6fc1e30c0222d00c800",
+      "bytes": 1874
+    }
+  }
+}

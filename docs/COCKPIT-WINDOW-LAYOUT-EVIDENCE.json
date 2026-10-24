@@ -1,0 +1,41 @@
+{
+  "base_commit": "f8556634cded934b78bf4866309c795a00356685",
+  "limitations": [
+    "Controlled fixture data and one display; not live memory readiness.",
+    "The previous lifecycle pass did not establish unclipped content.",
+    "Full CI, live Hyprland and claimed installed paths remain open.",
+    "No Power of Ten, whole-system assurance or certification claim."
+  ],
+  "local_evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "previous_receipt_sha256": "d02db327111e9fea854a4c92063d21964af21bfb182143941429ba5f7d576b94",
+  "regression": {
+    "output": "cockpit-status-wrap-regression-v1.log",
+    "result": "TESTED",
+    "seconds": "27.659",
+    "tests": 176
+  },
+  "retained_artifacts_sha256": {
+    "cockpit-omarchy-development-v5/host-window.png": "9e18da078f476edcaa782fdc2e576b72ab0937f2e36cb73df9d0e5fd25413f1b",
+    "cockpit-omarchy-development-v6/host-window.png": "dc2c3e3228e2f690e4212d6a5af5924fd7e7644accb722ac8037b7bd8f033d1b",
+    "cockpit-omarchy-development-v6/receipt.json": "c89d5e0921b3be07e638fa3169f765cec9157e4383d498405acff06a9d46088b",
+    "cockpit-status-wrap-lint-v1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cockpit-status-wrap-regression-v1.log": "da8bdefe1311e39589ad31e2631479b7297cdca96328dfba5661739652775155",
+    "cockpit-window-development-v12/receipt.json": "eeed7d1fd292789ac97af87c5b55f6441b6ee61ece53ad9c136a0ad206bc41a9",
+    "continuity-incremental-and-cockpit-review-v1.txt": "83a950ac0d1732eb21404dbfb06003e6f0e48d9be79d3183ae759ffe95be19b4"
+  },
+  "review": {
+    "model": "GPT-6.1",
+    "origin": "model",
+    "report": "continuity-incremental-and-cockpit-review-v1.txt"
+  },
+  "schema": "sia-cockpit-layout-evidence-v1",
+  "source_sha256": {
+    "Cockpit.qml": "c3771f6049b32b5d79ad58b403b10569983efd454e73b15b108125104335fc51",
+    "LiveView.qml": "bc60c89bc794890126126905305848c4e8998dfb424593023ef135a5291a550c",
+    "Model.js": "c7f2f92b8b372b04c1b88c10e6cc7afdf4c6ae6dece60292ce9a2baeb09e7798",
+    "Panel.qml": "7f13d83d21d9628d12b9ccfa6151c16819ca8e7e70931a586e336c131e2793bc",
+    "bin/sia": "abf6de1d5ceb281ca641a46c8530d036343f47b9ce9d39b88185049813de754d"
+  },
+  "status": "TESTED_SCOPES_WITH_OPEN_GATES",
+  "visual_observation": "v5 clipped the usage count; v6 displays the wrapped fixture value."
+}

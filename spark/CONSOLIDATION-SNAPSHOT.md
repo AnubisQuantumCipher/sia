@@ -1,0 +1,626 @@
+# Immutable consolidation discovery candidate
+
+Status: experimental admitted snapshot discovery. The resident scanner is unchanged and the
+cursor-churn defect remains OPEN. This is not a new accepted retention policy.
+
+## Implemented primitive
+
+`bin/siaconsolidationsnapshot.py` reads a page from one full Git tree object ID.
+The tree is type-checked before enumeration. A cursor is an entry offset in that
+immutable tree, never an offset in the changing worktree or a moving branch.
+Each call uses the existing bounded subprocess runner, restricts child output,
+and rejects malformed records, unsupported entry kinds, unsafe names, truncated
+output, excess records and invalid page bounds.
+
+The primitive uses Git's documented
+[`ls-tree --full-tree -z`](https://git-scm.com/docs/git-ls-tree.html)
+format, without recursive enumeration. Replacement objects are disabled and
+lazy fetch/protocol use are disabled for these commands. These process settings
+are not OS-enforced network isolation or protection from hostile same-user code.
+
+Tests use real Git objects and the real bounded runner. They show that one tree's
+pages remain unchanged after file replacement, new arrivals, a newer commit and
+a Git replacement mapping. The newer tree separately exposes the new arrival.
+Blob identities, missing objects and cursors beyond the tree refuse. Malformed
+record/name/type and byte/entry/page bounds also have negative tests.
+
+The reader materializes one bounded tree listing on each page call. Its byte
+ceiling is 16,777,216; its tree-entry ceiling is 4096 and its page ceiling is
+1024. These are prototype limits, not an approved change to accepted corpus
+capacity. CPython and Git still allocate dynamically. Reading a bounded tree
+does not prove bounded total recovery or worst-case execution time.
+
+## Trust and compatibility obligations
+
+- A full object name pins a Git namespace under the assumption that the local
+  Git implementation and object store preserve object integrity. The helper
+  does not independently recompute the raw tree-object hash.
+- A tree ID alone is not a retention pin. The prototype now supports a
+  generation-bound commit reference, but production must durably bind it to
+  the named transaction before admitting the scan and qualify its retirement.
+- The prototype rejects control-character names, unsupported entry types and
+  non-UTF-8 output. The legacy walker can ignore some non-candidate names.
+  Compatibility and refusal behavior must be explicitly reconciled before
+  integration; tests of the new reader cannot silently authorize regressions.
+- The helper's subprocess callback is trusted. No caller-supplied Boolean or
+  tree listing may become protected source authenticity or deletion authority.
+
+## Integration gate
+
+1. Specify a versioned persisted discovery schema with exact retained commit,
+   tree IDs, offsets, cutoff, generation and transaction identity. Reject missing
+   or mismatched bindings. Define crash ordering for reference and state writes.
+2. Preserve all pending legacy claims and their source/ledger bindings.
+   Migration may not clear debt or reinterpret incomplete v1 state as complete.
+3. Define which arrivals belong to the admitted snapshot and how later eligible
+   arrivals are durably scheduled. Continue capture without losing events or
+   manufacturing coverage. This boundary has not yet been accepted.
+4. Revalidate complete live day shards, content identities, Git retention,
+   protection/open-take windows, epoch/index lineage and unlink conditions.
+   Immutable discovery alone is never authority to delete a changed source.
+5. Account for absent or corrupt objects, ref loss, directory/entry ceilings,
+   UTF-8/path compatibility, replay, cutoff rollover and storage exhaustion.
+6. Prove the regression completes while current-day writes continue; retain
+   late-arrival, source-conflict and restart negative controls. Then qualify
+   the selected resident path and installed recall before release.
+
+The existing characterization remains unchanged until the integrated behavior
+is deliberately repaired and its new acceptance evidence is reviewed.
+
+## Retention-pin primitive
+
+`pin_commit` admits only a full available commit identity and a canonical
+generation. Its reference is `refs/sia/consolidation/<generation>`. Creation
+uses Git's [expected-old-value update](https://git-scm.com/docs/git-update-ref.html)
+with an absent-reference precondition and no symbolic dereference. Identical
+replay is accepted; a conflicting or symbolic reference refuses. Readback must
+match. Git fsync hardening is requested explicitly. This is not evidence of
+power-loss durability of all preexisting objects, packed references or storage.
+
+`check_pin` is a separate read-only operation for already admitted state.
+It refuses a missing or different reference and an unavailable commit; it never
+recreates the missing reference. Integration must preserve that distinction:
+creation retries before admission are not authority to repair missing pins after
+admission. Both operations require the caller's exclusive corpus lease; they
+do not exclude hostile same-user Git writers.
+
+The tests replace HEAD with an independent root, expire fixture reflogs, pack
+references and run real garbage collection. The pin retains the original commit
+and tree; exact replay still works with packed refs. After exact fixture-only
+pin removal, the negative control confirms the original commit is collected.
+Another test rejects a symbolic pin without changing its target. These commands
+operate only on disposable test repositories, never on the installed corpus.
+
+Four snapshot tests pass. No production reference is created by this checkpoint.
+Admission journaling and fresh-process cuts now have the limited evidence below.
+Power-loss behavior, aggregate reference budgets, retirement, orphan-pin recovery
+and persisted scanner schema integration remain OPEN.
+
+## Experimental admission journal
+
+`siaconsolidationadmission.admit` now serializes one exact request under the
+existing corpus lease. It persists `planned` before creating the reference,
+then persists `admitted` only after exact pin readback. Recovery of `planned`
+may finish creating that same pin. Recovery of `admitted` uses `check_pin` and
+cannot recreate a missing pin. The journal binds schema, generation,
+transaction digest, cutoff, commit and phase. Conflicting fields refuse before
+changing the retained request. Malformed state is not silently normalized.
+
+The transaction digest is currently caller-supplied; it is not an authenticated
+producer or a proved binding to the installed named maintenance transaction.
+The fixed journal path permits one outstanding request. There is deliberately
+no implicit replacement, cleanup or retirement policy. Integrating repeated
+generations requires those transitions and their evidence, not deletion of a
+blocking journal.
+
+Exception-injection tests interrupt after plan persistence, after pin creation
+and after admission persistence, then reload and resume the exact request.
+Other tests remove an admitted pin, conflict the request, or corrupt retained
+fields and require refusal without journal repair. These tests use real
+bounded Git commands, the corpus lease and atomic journal writes in isolated
+storage. They do not establish actual process-death, torn-write or power-loss
+behavior of this new journal.
+
+The first development run failed because the composed fixture's lock path
+still referenced its separate isolated HOME while its STATE was relocated.
+The fixture now binds the corpus lock to its own STATE directory. This did not
+require bypassing or mocking the lease.
+
+## Fresh-process admission cuts
+
+`tests.test_consolidation_admission_exec` uses distinct interpreter executions
+and actual SIGKILL after each of these returned operations:
+
+- Persist the planned journal, before creating the reference.
+- Create and read back the pin, before persisting admitted state.
+- Persist admitted state, before returning success.
+
+The parent checks the exact journal fields and whether the reference is present
+at each cut. Fresh recovery and a second fresh replay must return the same
+admitted record and leave the journal bytes unchanged on replay. The real corpus
+lease, Git operations and atomic writer execute in an explicitly marked disposable
+HOME. Original source bytes and the unrelated named maintenance marker must stay
+unchanged; no epoch is created by admission.
+
+Negative controls remove an admitted pin, introduce a conflicting pin after the
+planned cut, and explicitly truncate a planned journal. Recovery must refuse
+without replacing the retained journal or reference. The truncated-file control
+is deliberate corruption, not an observed storage tear. A separate worker guard
+requires explicit disposable-HOME opt-in before importing the runtime.
+
+The combined admission exec, admission exception, snapshot and existing
+consolidation exec suites pass 20 tests. SIGKILL at returned operation boundaries
+establishes only these process-death cases. It does not establish failures inside
+Git or the atomic writer, storage power-loss durability, authenticated transaction
+production, the complete resident path, or a bound on recovery time. The new
+tests do not enable the experimental journal in production.
+
+Exact-source reproduction for the process-death checkpoint:
+
+- Commit: `6fbe1fa8f5a7cec74adf3e254f1fd58e99e9eb04`.
+- Git archive SHA-256: `ddcf1b49f032677e37834af114b4cf885b7e573ab8f51a5d3ffd4ab4a808df82`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Command: `python3 -B -m unittest tests.test_consolidation_admission_exec tests.test_consolidation_admission tests.test_consolidation_snapshot tests.test_consolidation_exec_recovery -v`.
+- Exit: 0; the retained raw log reports 20 tests passed.
+- External evidence directory: `consolidation-admission-exec-reproduction-v1`
+  under the mission evidence root; it retains archive, extracted source, raw log
+  and receipt. Independent GPT-6.1 read-only review is retained as
+  `consolidation-admission-exec-review-v1.txt`; it found no blocker for this
+  limited component scope and does not supply certification independence.
+
+## Admitted immutable traversal
+
+`siaconsolidationdiscovery.discover` composes the retained admission journal,
+read-only pin verification and exact commit-tree resolution under the corpus
+lease. It traverses the corpus root, `events` and one organ level with a stack
+bounded to three frames. Each resumed frame must match its parent entry and
+the root must match the admitted commit. The returned cursor includes the exact
+admission record. Moving HEAD and replacement objects are not traversal inputs.
+
+Each call accepts a bounded work budget. A visited entry or exhausted frame
+consumes a unit; empty trees cannot create an uncharged loop. Ancestors are
+visited one entry at a time so the active child remains anchored to the last
+parent entry. Leaf entries are read in bounded batches. Candidate output is
+limited by the same budget and includes path, blob identity, organ, date and
+shard number. Existing event-path parsing and the pinned cutoff decide which
+paths are candidates; blob identity is not live-source validation.
+
+The copied input cursor is never advanced in place. If a later descendant read
+fails after private progress, no result is returned and the caller can replay
+the original cursor. This is not durable exactly-once delivery: the production
+consumer must atomically retain the next cursor together with its pending
+candidate batch before acknowledging or consuming that batch.
+
+Tests cover continuing atomic replacements and commits between single-unit
+steps, deterministic replay, immutable candidate blob identities and a late old
+day remaining intact outside the admitted snapshot. Additional controls cover
+multiple organs, shards, the exclusive cutoff boundary, invalid calendar dates,
+empty corpus/events trees, batching equivalence, changed bindings, missing pins
+and a descendant-read failure after private advancement. The combined discovery,
+admission, snapshot and prior recovery suites pass 32 tests.
+
+One passing test deliberately records an **UNPROVEN boundary**: a forged
+completed cursor can return no candidates despite eligible sources existing.
+Structural validation cannot authenticate traversal history. This API is only
+an internal candidate pending a durable owner and, for a hostile same-user threat
+model, a protected authority boundary. It must not be exposed as a caller-owned
+completion certificate or used to clear recovery debt. The production legacy
+churn characterization remains unchanged and still records the known defect.
+
+Remaining integration work:
+
+- Persist pending candidates and cursor as one recoverable state, bind their
+  consumption to the named maintenance transaction, and forbid skipping a batch.
+- Preserve legacy claims and debt through explicit migration.
+- Durably schedule post-snapshot arrivals without including them in this
+  snapshot's completion claim or repeatedly restarting this snapshot.
+- Preserve all live complete-shard, source identity, protection, open-take,
+  epoch/index lineage and unlink revalidation gates.
+- Qualify pin lifecycle/resource budgets, filename compatibility, failures within
+  durable operations, selected resident restart and actual recall.
+
+The default budget and finite per-command timeout do not establish a wall-clock
+deadline: lease waiting, Git/CPython allocation and full bounded tree-listing
+materialization remain in the runtime assumptions. No Power of Ten compliance,
+whole-system liveness, formal proof or release qualification is claimed here.
+
+Exact-source traversal reproduction:
+
+- Commit: `218c18acd8367974fa0fb2e0ecfead10dedb6843`.
+- Git archive SHA-256: `214f4344ab36bb9e623d483bc462dc127d74d39750ce2304c5c66b4105d5338c`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Exit: 0; raw log reports 32 tests passed, including the explicitly
+  negative forged-cursor and legacy-churn characterizations.
+- External evidence: `consolidation-discovery-reproduction-v1` retains the
+  exact archive, extracted source, command, raw log and receipt.
+- Independent GPT-6.1 review: `consolidation-discovery-review-v2.txt`,
+  read-only inspection with no blocker in the stated component scope.
+
+Command:
+
+```sh
+python3 -B -m unittest tests.test_consolidation_discovery tests.test_consolidation_admission_exec tests.test_consolidation_admission tests.test_consolidation_snapshot tests.test_consolidation_exec_recovery tests.test_consolidation_backlog_recovery -v
+```
+
+## Durable candidate and live-claim staging
+
+`siaconsolidationdelivery` now owns an experimental on-disk handoff record.
+Its public operations accept the expected admission and a bounded work budget;
+they do not accept a caller cursor or acknowledgment. The existing strict
+state-file reader, corpus lease and atomic writer are used.
+
+| Phase | Retained work | Permitted progress in this checkpoint |
+|---|---|---|
+| `scan` | Last cursor from an empty candidate page | Read and atomically retain the next page |
+| `pending` | Before-cursor, exact next cursor and candidate batch | Replay that batch or derive live claims |
+| `claimed` | Same batch plus bounded selected live claims and remaining days | Revalidate all sources live, then persist execution intent |
+| `executing` | Unchanged before-cursor, batch and claims; durable attempt intent | Resume exact-lineage effects; no acknowledgment |
+| `effects-returned` | Same cursor, batch and claims after checked executor return | Replay the attempt observation; no retirement or settlement |
+| `complete` | Exhausted discovery with no outstanding candidate batch | Revalidate admission/pin and replay the observation |
+
+The next cursor of a nonempty page is retained inside its pending batch; it
+does not replace the before-cursor. Loading pending work recomputes its exact
+page against the pinned snapshot and rejects omitted candidates or a cursor
+jump. A different later requested budget cannot replace that outstanding batch.
+Missing delivery state restarts from the snapshot root; this can replay work
+and is not rollback detection. Protected state ownership and authenticated
+traversal history remain unimplemented. `complete` is not publication or
+consolidation settlement authority, and a caller must not use it to clear debt.
+
+The new `_observe_consolidation_claims` helper is extracted from the original
+claim-preparation path. Legacy preparation still performs its original state
+update and uses the same source-directory and content checks. The delivery
+path uses this helper to derive claims from the retained batch, then atomically
+stores them together. It requires every selected day and every selected
+candidate path to appear in the live claims. Missing observations refuse
+without discarding the pending batch.
+
+Staging additionally requires every claimed source to remain live and match the
+existing source validator. This is deliberately distinct from legacy execution
+recovery: the legacy validator can accept a missing source with exact retained
+epoch lineage, while this staging phase has executed no consolidation. The
+initial independent review found that using the legacy validator alone violated
+the staging contract. A regression using actual legacy consolidation and real
+epoch lineage failed before the fix (`ValueError not raised`). The staging-only
+presence check repairs that defect without changing legacy recovery semantics.
+The failing source, log and receipt remain in
+`consolidation-delivery-missing-source-negative-v1` externally.
+
+Another retained negative control showed that ordinary Python dictionary
+equality accepted Boolean/integer substitutions in a persisted batch. Exact
+replay now compares canonical JSON encodings, preserving those type distinctions.
+The pre-repair test failed for both substitutions; its source and raw evidence
+remain in `consolidation-delivery-typed-replay-negative-v1`.
+
+The staging tests retain exceptions before and after batch/claim persistence,
+mutated-return and malformed-state controls, missing and changed sources, and
+exact source digest checks. Additional workers perform actual SIGKILL after
+batch persistence and after claim persistence; fresh interpreters must replay
+the exact records with unchanged original source and maintenance-marker bytes.
+These are returned-operation cuts, not failures inside a filesystem write,
+storage power loss or a resident-service campaign.
+
+The expanded check also exposed stale release export expectations for
+`_canonical_consolidation_queue` and `_canonical_consolidation_claims`. An AST
+comparison found both omissions in the pre-change base as well as the working
+tree. Both names are now explicitly pinned; exact export equality remains
+required. The original failed run is retained in
+`consolidation-delivery-development-v2`, with the source-list diagnosis in
+`consolidation-delivery-export-pin-diagnosis-v1.json`.
+
+The delivery serialization ceiling is currently 1,048,576 bytes; its reader
+inherits the larger existing state-reader ceiling. These are prototype resource
+limits, not an approved reduction of supported corpus/claim capacity. CPython
+allocation, authenticated producer/currentness, full capacity compatibility,
+execution/retirement, late-arrival handoff and legacy migration remain open.
+At the staging checkpoint there was no transition out of a nonempty claimed
+batch. The execution-attempt extension below adds intent and returned-effect
+states; there is still no acknowledgment shortcut or batch retirement.
+
+Exact-source staging reproduction:
+
+- Commit: `cfd7727b404264b5b6de5a7e63a85de440e06653`.
+- Git archive SHA-256: `a875e237ab893131f7188e4a225dfe419a08fce72fe4607e6988d901d0b015c4`.
+- Runtime: Python 3.14.7; git version 2.55.0.
+- Exit: 0; the retained raw log reports 86 tests passed.
+- External evidence: `consolidation-delivery-reproduction-v1` retains the
+  archive, extracted source, exact command, raw output and receipt. It covers
+  delivery/discovery/admission, fresh-process cuts, original EpochMerge and
+  exemplar cases, module ownership and explicit facade export contracts.
+- Independent GPT-6.1 review: `consolidation-delivery-review-v3.txt`;
+  the earlier blocker and both pre-repair failing regressions remain retained.
+
+The source-bound result qualifies only the staged component and the named
+regressions. The installed runtime, execution/retirement protocol and full
+assurance/release gates remain incomplete.
+
+## Reusable claim effects
+
+The legacy consolidation executor now separates source selection and validation,
+epoch preparation, publication, and exact-source cleanup into named routines.
+`consolidate_corpus` retains pre-consolidation Git commit, live protection
+observations, cutoff calculation, scan/claim preparation, and acknowledgment.
+The internal `_execute_consolidation_claims` performs the effects under its
+caller's corpus lease and does not acknowledge or change the retained claims.
+It is not an authenticated front door or a SPARK authority boundary.
+
+Day-level pins, take windows, safety tags, contiguous shards, exact claim and
+recovery lineage, clean tracked Git sources, bounded reads, stable file identity,
+event completeness, epoch capacity, index publication order, and directory
+synchronization remain in the execution path. Preparation refusals retain the
+whole weekly group before mutation. Effect failures propagate; a later retry
+uses retained epoch lineage without merging source counts again.
+
+The new executor tests require retained claim bytes on success and refusal,
+protected-day preservation, changed-source rejection, and source retention
+after injected index-publication failure. Retry must leave epoch bytes
+unchanged while completing cleanup. An AST check enforces at most sixty
+physical lines for the fourteen explicitly named executor routines, including
+the legacy entry point. This is a local routine-size check, not Python
+termination, resource, or whole-program control-flow proof.
+
+The expanded development run reports 90 passing tests. The initial run's three
+new test setup errors are retained in `consolidation-executor-development-v1`;
+the fixture incorrectly passed a label to the zero-argument corpus lease API.
+The corrected fixture uses the real lease and pins the existing exact-claim
+refusal message. No production guard was changed for those test corrections.
+Independent review is retained in `consolidation-executor-review-v1.txt`.
+
+The executor-refactor checkpoint did not enable staged execution. The subsequent
+extension below persists execution intent before allowing missing-source
+recovery. Consumer completion, cursor advancement and retirement still require
+qualification with fresh process cuts. The installed churn defect, protected
+ownership, late-arrival handoff, capacity compatibility, and release gates
+remain open.
+
+Exact-source executor reproduction:
+
+- Commit: `6251b4924a25ab16f96756c8b04e9ce0907d5388`.
+- Git archive SHA-256: `099f90bc6d0dfdea678335ba54950011860700485687938dab2097f7f7149b73`.
+- Python 3.14.7; git version 2.55.0; 90 tests passed, exit 0.
+- External evidence: `consolidation-executor-reproduction-v1` retains
+  the archive, extracted source, command, receipt and raw output.
+- Review addendum: `consolidation-executor-review-v2.txt` confirms the
+  fixture corrections and development-source hashes; archive reproduction
+  completed afterward. The reviewer did not rerun the suite.
+- No installed-runtime change, staged execution transition, SPARK change
+  or whole-system equivalence proof is included in this checkpoint.
+
+## Durable execution attempts
+
+`siaconsolidationdelivery.execute_claims` is an internal experimental consumer.
+Under the actual corpus lease it revalidates the retained admission, pin,
+traversal and claims. A `claimed` record still requires every source to be live.
+Only a retained `executing` record permits the legacy missing-source recovery
+rule, which requires exact epoch lineage. A missing source without that lineage
+refuses even after intent. Merely finding pre-existing epoch lineage cannot
+authorize a `claimed` record to skip initial live-source validation.
+
+Before the first epoch effect, the consumer performs the existing corpus
+precommit, observes current pins/importance and take windows, and persists
+`executing`. Recovery observes protection again under the lease and calls the
+same extracted executor. Only a successful return with well-formed bounded
+attempt counts can persist `effects-returned`. Those counts are checked as an
+interface result but are not retained or used as authority.
+
+Neither state advances the traversal cursor, removes claims, changes legacy
+scan acknowledgment, clears maintenance debt, settles a ledger, or declares
+publication readiness. Protected, capacity-limited and other retained sources
+can remain after the executor returns. Replay of `effects-returned` revalidates
+claim/source lineage but does not repeat effects. Qualification of every source
+outcome and exact event-index completeness remains required before retirement.
+
+The final phase's exact encoded size is checked before precommit or source
+effects. An initial implementation checked only the current/intent state; a
+near-limit journal could fit `executing` but not the longer `effects-returned`
+phase. A negative test reproduced source cleanup followed by final-state size
+refusal. Its source, failing preservation oracle and raw output are retained in
+`consolidation-execution-capacity-negative-v1`. The preflight repairs this
+deterministic encoding edge; it does not reserve disk space or guarantee the
+later atomic write succeeds. A failed write retains execution intent for retry.
+
+A negative control removes a real event-index leaf after effects return.
+Replaying the returned-attempt state still succeeds and does not repair that
+leaf. This explicitly demonstrates that the state is **not** an index
+completeness witness or a safe settlement predicate. It is not a waived
+retirement requirement; no retirement API exists yet.
+
+Tests exercise intent-writer failures, failed precommit, fresh protection
+observations, malformed executor results, missing source refusal, index
+publication failure and partial cleanup replay. A separate disposable worker
+uses actual SIGKILL after persisted intent, epoch writing, first-source
+unlink, executor return and persisted returned state. Fresh interpreters must
+retain exact claims and maintenance-marker bytes, preserve original source
+bytes in the admitted Git commit, and avoid duplicate epoch counts.
+These are cuts after returned operations, not torn writes or storage power loss.
+
+The fixture explicitly opts into a disposable HOME before importing SIA.
+No installed dispatch or legacy scan migration is changed. Retained journal
+integrity remains cooperative same-user state, not authenticated history:
+phase forgery, rollback and hostile same-user writes require the still-open
+protected producer/actuator boundary. Resource/WCET bounds, snapshot-versus-live
+source retention, aggregate capacity, all-batch outcomes, late arrivals,
+retirement and the complete selected resident campaign remain open.
+
+Exact-source execution-attempt reproduction:
+
+- Final source: `c54080e9e36305aa1141d6ff29b74dafa46060ea`.
+- Git archive SHA-256: `e8d5477e0e95529972841cbd1e61b70e976ab9b076ae33a8753d74fcb08e749e`.
+- Python 3.14.7; git version 2.55.0; 104 targeted tests passed, exit 0.
+- Evidence: `consolidation-execution-reproduction-v2` retains archive,
+  extracted source, exact command, receipt and raw output.
+- Independent GPT-6.1 reviews: `consolidation-execution-review-v1.txt`,
+  `consolidation-execution-review-v2.txt` and
+  `consolidation-execution-review-v3.txt`. Review did not rerun the suite.
+- Earlier source `f63738b968a07c00ceb3954eade0770f965ebb87` passed
+  its then-current 103 tests in `consolidation-execution-reproduction-v1`.
+  The later capacity negative control exposed its missing preflight; that
+  earlier green result is not acceptance of the repaired boundary.
+- Development-v3 captured source before a comment-only edit clarifying
+  that the encoding check does not reserve space. The final archived-source
+  run above binds the actual committed bytes, including that clarification.
+
+## Selected-source outcome observation
+
+`siaconsolidationdelivery.inspect_outcomes` revalidates the retained admission,
+pin, traversal and claims under the actual corpus lease. It requires an
+`effects-returned` attempt, then freshly observes selected days. It accepts no
+previous observation or caller acknowledgment. The result declares
+`coverage: selected-claims-only` and explicitly lists unclaimed batch days.
+It does not persist a receipt, advance a cursor, remove claims, clear debt,
+authorize retirement or establish readiness.
+
+An all-live day is `retained` only after the existing exact source/shard
+validation. Mixed live/missing sources within a day refuse as partial cleanup.
+An all-missing day is `compacted` only after checking declared epoch dates,
+source manifest and event roster, exact claimed source lineage, and every
+expected marker-index entry reconstructed from the original source bytes.
+The original path-plus-NUL-plus-byte digest must equal the retained claim.
+A structurally valid but wrong index entry, omitted roster or removed index
+leaf therefore refuses even after an earlier successful observation.
+
+`compacted` has this limited meaning. It does not independently verify epoch
+summary prose, aggregate counts, exemplars, unrelated sources or entries,
+truth of recorded events, or authenticated execution history. Legacy source
+text without recognized event markers has no marker-index obligation under
+the inherited parser; this is explicitly characterized, not represented as
+complete natural-language indexing. Results are mutable observations made
+under the lease, not authority that survives later filesystem changes.
+
+The observer first reads the admitted commit. For a selected live source that
+changed after admission, it searches at most 64 current-HEAD path-history
+commits, with an 8192-byte history output cap and the existing per-page byte
+cap on each blob. Every candidate must have a full object identity and match
+the exact claimed digest. History exhaustion, unavailable originals, malformed
+identities or runner failures refuse; bounded search failure is not evidence
+that the original never existed. Git, strict UTF-8 decoding and existing
+source/index parsers remain trusted dependencies. Aggregate latency, lease
+waiting, memory and WCET are unproved.
+
+The fallback history is not independently pinned. A real history rewrite and
+GC control removes a later claimed original while preserving an independently
+checked current root; observation then refuses and leaves claims/debt intact.
+A separate search-budget control refuses while a direct exact-object read
+still recovers the original. Durable retention of later originals is required
+before retirement can rely on these observations.
+
+The expanded development suite passes 116 tests. It includes fresh-interpreter
+observation after all five existing SIGKILL/recovery cuts, index deletion and
+restoration, wrong canonical index data, omitted event rosters, explicit
+unclaimed days, history refusal boundaries and legacy no-marker sources.
+A forged-phase control demonstrates that content observations cannot
+authenticate execution history. A same-day partial-cleanup control refuses.
+The source copies, hashes, exact command and output are retained externally in
+`consolidation-outcomes-development-v2`; the earlier 113-test run is retained
+in `consolidation-outcomes-development-v1`.
+
+These observations close a selected-source checking gap, not the all-batch
+consumer protocol. Protected retained-source eligibility, whole-day paging,
+immutable later-source retention, durable outcomes and retirement, late-arrival
+handoff, installed migration, protected ownership and the complete resident
+acceptance campaign remain open. No SPARK or installed runtime change is made.
+
+Exact-source outcome-observer reproduction:
+
+- Source: `4082ac8190ab68e1f818f60494192b0023fdef5a`.
+- Git archive SHA-256: `e21561a3d236ee67c5e7446688df607f87442f16d8398f2b5f87f72804ed4ece`.
+- Python 3.14.7; git version 2.55.0; 116 targeted tests passed, exit 0.
+- `consolidation-outcomes-reproduction-v1` externally retains the archive,
+  extracted source, command, tool versions, receipt and raw output.
+- Independent GPT-6.1 review: `consolidation-outcomes-review-v1.txt` and
+  `consolidation-outcomes-review-v2.txt`. The addendum checked all five
+  implementation/test hashes against the development receipt and reviewed
+  its completed output; the reviewer did not rerun the tests.
+- The five-file syntax inventory is retained in development-v2 as
+  `source-inventory.json`, with status `inventory-only` and no findings in
+  its limited checks. This does not establish Power of Ten compliance,
+  loop termination, absence of indirect calls or bounded allocation.
+
+## Exact original retention before execution
+
+The delivery consumer now requires a separate
+`sia-consolidation-originals-v1` journal before it can persist execution intent.
+Its binding is SHA-256 of canonical JSON containing the complete admitted
+record and canonical selected-claim state. This includes pending days and
+claim source identities, not just a set of filenames. The fixed journal binds
+that digest to one exact commit and a `planned` or `retained` phase. The
+dedicated direct reference is
+`refs/sia/consolidation-originals/<full-binding-digest>`.
+
+Under the actual corpus lease, claimed execution first revalidates every live
+source and performs the existing precommit. The retention helper selects that
+exact HEAD commit and verifies the bytes of every claimed source against its
+path-bound digest. Only then does it persist `planned`, create or replay the
+exact absent-CAS pin, read it back, and persist `retained`. Current protection
+is observed before execution intent and effects. A planned retry keeps its
+original commit even if HEAD advances; it does not substitute a new commit.
+
+Already executing or returned work requires the retained journal, exact
+direct pin, available commit and exact claimed bytes. Missing journals,
+missing/different/symbolic pins, mismatched bindings, malformed records or
+different original bytes refuse without recreating retained state. The
+delivery outcome observer reads this checked commit directly. Its previous
+bounded HEAD-history fallback remains only in the explicitly unretained
+diagnostic helper; historical refusal controls are retained for that scope.
+The delivery API no longer depends on that fallback's search window.
+
+The journal permits one claim set. It deliberately has no implicit replacement,
+pin removal or cleanup path. Later batches need an explicit lifecycle that
+preserves outstanding evidence. Existing experimental `executing` or
+`effects-returned` records without this new retention journal refuse;
+they cannot bootstrap retention after destructive effects. No installed state
+is migrated, and no production compatibility or convergence claim follows.
+
+Binding input is limited to 1,048,576 encoded bytes and the retained record to
+4096 encoded bytes. The shared state reader's larger existing input ceiling
+applies before parsing and this smaller canonical-record check. A near-limit
+planned record can fit when the longer retained phase does not: in that case
+the pin may already exist, but sources remain live and execution intent is not
+written. This is recoverable partial retention, not a no-side-effect refusal
+or disk-space reservation. Aggregate storage/ref lifecycle, CPU, memory,
+subprocess latency and lease waiting remain unproved.
+
+Git and its object store, SHA-256 binding, parsers and the bounded runner are
+trusted dependencies. The protocol requests Git fsync and uses existing atomic
+journal writes, but returned-operation cuts are not storage power-loss proof.
+Cooperative lease ownership does not authenticate state against hostile
+same-user writers. Retained bytes establish availability and identity within
+those assumptions, not source truth or permission to retire or publish.
+
+The initial development run retained one fixture failure: `git symbolic-ref`
+recursively resolved the injected target through HEAD, while the test expected
+the immediate target. The fixture now uses `--no-recurse`; production reference
+validation was unchanged. Raw failure output and source are retained in
+`consolidation-originals-development-v1`.
+
+Development-v3 passes 127 targeted tests. Actual SIGKILL cuts after planning,
+pinning and retention now independently join the exact journal phase, canonical
+claim binding, commit, source bytes and expected pin presence before recovery.
+Fresh processes also recover versions observed after admission through those
+cuts and partial cleanup; subsequent HEAD replacement, packed references and
+GC preserve exact originals for further fresh-process replay and inspection.
+The original execution cuts and admitted-source checks remain in the suite.
+
+Other controls cover planned replay after HEAD advances, missing journals
+after intent, missing/different/symbolic retained pins, conflicting planned
+pins, nonzero pin-creation results, wrong original bytes, failed journal writes,
+malformed state and record-size refusal. Exact pin removal followed by real GC
+provides the negative control: the original object becomes unavailable, the
+independent root still exists and the observer refuses without repairing state.
+The old unretained-history search failures remain explicitly diagnostic tests.
+Independent review is retained in `consolidation-originals-review-v1.txt` and
+`consolidation-originals-review-v2.txt`; reviewers did not rerun the suite.
+
+Exact-source original-retention reproduction:
+
+- Source: `5667541ed7e76964e75dd3e524d79e4dbda2451b`.
+- Git archive SHA-256: `e16a7e3ac29b12227f7842ca0780beff1fb63b8245ca9fa06ddced3dccf5d7c3`.
+- Python 3.14.7; git version 2.55.0; 127 targeted tests passed, exit 0.
+- External `consolidation-originals-reproduction-v1` retains the archive,
+  extracted source, exact command, tool versions, receipt and raw output.
+- Independent GPT-6.1 reviews v1/v2 found no scoped implementation blocker;
+  neither review reran the tests. The archived-source run completed afterward.
+- Seven-file source inventory in development-v3 is `inventory-only`, with no
+  findings in its limited syntax checks. It is not a compliance verdict.
+- No installed runtime, SPARK policy, retirement, whole-batch acknowledgment
+  or publication-readiness boundary is changed or accepted by this result.

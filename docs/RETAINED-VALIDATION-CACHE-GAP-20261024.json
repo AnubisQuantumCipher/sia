@@ -1,0 +1,168 @@
+{
+  "schema": "sia.retained-validation-cache-gap.v1",
+  "status": "FAILED_REGRESSION_REPRODUCED_NOT_REPAIRED",
+  "base_commit": "33a5f2997404ade69ad52a28cf896a22a27a53f9",
+  "finding": "R05 / audit finding24: cached legacy and compact retained validation can accept after current policy would refuse.",
+  "production_changes": false,
+  "source_sha256": {
+    "bin/siasourcebatch.py": "aa411e730787b5ea2749ecadc331d1e0fef4ff43b171a5327f3b4e452289725b",
+    "bin/siasourcecheckpoint.py": "4ad72687a8619565c6e5a6ac7ee8c52b41ab16b20cf3dca8afef37800bfc4336",
+    "tests/test_retained_validation_context.py": "acf0cb9d8f7d64c8b250d4779d7d724403eea0fe65aac362e8b0636abe47e0ce",
+    "tests/test_retained_image_memo.py": "c1c4c43d902e03147ab989707e0b5b9ec719bf62962c18700eb82bae6261ee2d",
+    "tests/test_source_checkpoint_capture.py": "725de1274312a1d178e7f91d43ecbaefa971fd74bbd37904e9af5a2c2969ecde"
+  },
+  "corrected_baseline": {
+    "status": "FAILED",
+    "tests_reported": 14,
+    "elapsed_seconds": 34.073,
+    "source_unchanged": true,
+    "output_sha256": "8e7aa2a5d8355cdb6182bde4013c8dfaf3a9cbfe1df1e05f6d68ada9c90ae25e"
+  },
+  "failure_classification": "12 warm accepted / cold refused subtest failures across 14 methods; original capture and memo controls pass. Imported fixture class accounts for seven methods.",
+  "initial_test_error": "Initial compact decoder case had no new events and did not exercise decoder. Its cold-accepted failure was a test-fixture error, not stale admission. Corrected fixture requires a nonempty capture. Both versions retained.",
+  "rejected_experiment": "Fresh-only private overlay reached unchanged 60-second limit with no completion footer; original memo control was not reached. It cannot qualify correctness or resource compatibility. Its one corrected decoder diagnostic pass is not whole-roster acceptance.",
+  "profile": "Observed on small private fixtures only, initial empty compact fixture; no maximum-capacity, whole-job or unprofiled latency qualification.",
+  "inventory": "Conservative static reachability with unresolved dynamic/nested/method frontiers; not complete semantic dependency proof.",
+  "static": "Corrected test and retained scoped analysis tools pass frozen strict rules and compile-only checks; no product compliance claim.",
+  "independent_review": {
+    "model": "GPT-6.1",
+    "result": "Corrected tests meaningfully reproduce gap; production repair remains open.",
+    "independent_execution": false
+  },
+  "acceptance": "All original reuse and new refusal controls, closed dependency boundary, original resource limits, transitive validation and installed-runtime gates remain mandatory. No skip, xfail, cap increase or release authorization.",
+  "evidence_directory": "docs/evidence/retained-validation-cache-gap-20261024",
+  "artifacts": {
+    "baseline-corrected-retained-validation-context.json": {
+      "sha256": "0cd2aa20ffe48e5e8237ccc5bfed5d118e2d7ad582a851aa12a4f38149875a36",
+      "bytes": 2861
+    },
+    "baseline-retained-validation-context.json": {
+      "sha256": "7599de534841cf8715dc8205b45adb9a4553409b0845ffcd40a3fb6844eb2f94",
+      "bytes": 2851
+    },
+    "retained-validation-context-initial-test.py": {
+      "sha256": "6c969c4c656ac0fb4b043605ed8e17e3a89fe859bb80e9ee7f2e30f5a5cbbce4",
+      "bytes": 6471
+    },
+    "fresh-experiment-retained-validation-context.json": {
+      "sha256": "6c23512761f10531a31fcdd4dcb3831f2f5623900c3548c3df500c84467080bf",
+      "bytes": 3367
+    },
+    "fresh-decoder-diagnostic-retained-validation-context.json": {
+      "sha256": "2202d7fa3e6e702b64e3f3151888decfe34ced11202fbbfae1691f907e64e7c9",
+      "bytes": 3474
+    },
+    "fresh-decoder-corrected-retained-validation-context.json": {
+      "sha256": "55b05cbacd5904903fa57d066dc7417d183349c07b57d9ce872fe630109c0d97",
+      "bytes": 3471
+    },
+    "retained-validation-dependency-inventory.json": {
+      "sha256": "765153ef1f0cf10435a209fc53cac6463bc72f2616ed04edde36ef57562fe698",
+      "bytes": 239200
+    },
+    "retained-validation-profile-output.json": {
+      "sha256": "2691d627e3d5a3f6e458cbcdec223d8ad73c248382fb3b1905b1c7f0b244cc98",
+      "bytes": 197940
+    },
+    "retained-validation-profile-receipt.json": {
+      "sha256": "1982a8e6568a5fb12295ef9afc4d9e6ce11d7007e05efff4a3866d259d3c6755",
+      "bytes": 94393
+    },
+    "retained-validation-final-static.json": {
+      "sha256": "7f0a763463f399cc6285867d18b43b6931a4db7c0d78629d7037a4b0884160eb",
+      "bytes": 12486
+    },
+    "retained-validation-initial-static.json": {
+      "sha256": "8e491d99468e649aaecb111ca78879a15d456c7d2b92f4ee333aa73b8f3d4181",
+      "bytes": 1780
+    },
+    "retained-validation-experiment-static.json": {
+      "sha256": "bb6b621e1db1ba70403909f51bf89d88e1e5afc5afb65064276e95c138adeddc",
+      "bytes": 2056
+    },
+    "retained-validation-independent-review.txt": {
+      "sha256": "82bab6ffde099059921d4e5a30d4380b5c8b56527aec53eac247a0a1a6f77f21",
+      "bytes": 1478
+    },
+    "run_retained_validation_context.py": {
+      "sha256": "db30ef205aa02d0f5b8f3608d2cce62620198d4328365ea9d84bb9fddcd3f2b7",
+      "bytes": 3483
+    },
+    "run_retained_validation_context-corrected.py": {
+      "sha256": "b9abb4d9f5997a44b1502a759166f5969f736ad51c28ecc66b6845ac0f085dc1",
+      "bytes": 3481
+    },
+    "run_retained_validation_fresh_experiment.py": {
+      "sha256": "35aa6347caf3913590cf77f7291cc5e7085e4c04446ee7f175cf7acd7b61f68d",
+      "bytes": 4095
+    },
+    "run_retained_validation_fresh_decoder.py": {
+      "sha256": "e05c99e74867ee44f3b99b239062cea4250dee305d40f586a1eb140ccd4e4411",
+      "bytes": 4154
+    },
+    "run_retained_validation_fresh_decoder-corrected.py": {
+      "sha256": "2eddd3b4b40969bee0531d2c5a254fdba3260775ee591eea92c6fe0276a8d272",
+      "bytes": 4153
+    },
+    "run_retained_validation_profile.py": {
+      "sha256": "ee3b8adfea9d6ca6ee4290229b15395da47a2aaf21b6c5786b0e8bc3a9b5fa01",
+      "bytes": 2584
+    },
+    "profile_retained_validation.py": {
+      "sha256": "f8505aaf7ea3f2822eaf9dbdb6c1cc6039b023ad427abc7766e4c920dd5c268f",
+      "bytes": 3117
+    },
+    "inventory_retained_validation.py": {
+      "sha256": "a4d9f1cccd56e5aa16b66cd6a96b85025d74873d0eef6939f5722ccfe131067c",
+      "bytes": 5279
+    },
+    "rejected-fresh-siasourcebatch.py.txt": {
+      "sha256": "b19113510b20d6966efc156ab03c42a8759c21a972b33805c98bfeb4c99d9300",
+      "bytes": 112160
+    },
+    "rejected-fresh-siasourcecheckpoint.py.txt": {
+      "sha256": "706c5f99196457b072d8fa6ec40e7a7b1d3399fe29dc03edca8c68b3a2da5afd",
+      "bytes": 30966
+    },
+    "baseline-corrected-retained-validation-context.log.gz": {
+      "sha256": "e97c52c777ad84cf6abbfee71fbc6a014bdb6179d96fd103c6669bfb36947c41",
+      "bytes": 1503,
+      "uncompressed": {
+        "sha256": "8e7aa2a5d8355cdb6182bde4013c8dfaf3a9cbfe1df1e05f6d68ada9c90ae25e",
+        "bytes": 23387
+      }
+    },
+    "baseline-retained-validation-context.log.gz": {
+      "sha256": "8ff381fb94b76d60140471f3f826ddb09ae2e3c06403fae9bf49308598960c06",
+      "bytes": 1560,
+      "uncompressed": {
+        "sha256": "9f844db0fb3a5fe40ec2c97caf96a7523fab695b359c041074723658229ad26d",
+        "bytes": 23101
+      }
+    },
+    "fresh-experiment-retained-validation-context.log.gz": {
+      "sha256": "e4b832b3fe213d1c8dad2976e045af36cb12ce134ea82e9b1989f94577a8638b",
+      "bytes": 503,
+      "uncompressed": {
+        "sha256": "6c9066459d564f3fd9447104a899e72b165dcb45b5f2bc6df769c12071e666bd",
+        "bytes": 2640
+      }
+    },
+    "fresh-decoder-diagnostic-retained-validation-context.log.gz": {
+      "sha256": "e332ac132f638764bd4140fb283904eba6c82ba9da1e79b2d0f2209fad3e0704",
+      "bytes": 443,
+      "uncompressed": {
+        "sha256": "6fa2195f8e41677701f2614a146aad9febe72ca38da1d27c1c976ffff6ea7d8f",
+        "bytes": 1587
+      }
+    },
+    "fresh-decoder-corrected-retained-validation-context.log.gz": {
+      "sha256": "c191288d1f2f6448104f6ccd8dbe5535641fa7d8ae7efc4becf60a514719a059",
+      "bytes": 148,
+      "uncompressed": {
+        "sha256": "24ed2b8b950f1b0abce7efbf6cddd92cfca935473cf3a61d696a768628e2a3d9",
+        "bytes": 269
+      }
+    }
+  }
+}

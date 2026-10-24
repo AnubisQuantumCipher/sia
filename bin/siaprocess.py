@@ -47,9 +47,27 @@ def probe_pid_namespace(unshare=UNSHARE):
     return completed.returncode == 0
 
 
+def _bounded_launch_command(command, *, isolate_process_tree,
+                            require_pid_namespace, isolation):
+    """Select the actual launcher; required namespaces never fall back."""
+    if not isinstance(require_pid_namespace, bool):
+        raise ValueError("bounded subprocess PID-namespace requirement is invalid")
+    if require_pid_namespace and (
+            not isolate_process_tree or type(isolation) is not str
+            or isolation != "pid-namespace"):
+        raise ValueError("bounded subprocess requires PID-namespace isolation")
+    if isolate_process_tree and isolation == "pid-namespace":
+        return [
+            UNSHARE, "--user", "--map-root-user", "--pid",
+            "--fork", "--kill-child", "--mount-proc", "--",
+            *command]
+    return command
+
+
 def run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                              label="subprocess", output_limit=None,
                              isolate_process_tree=False,
+                             require_pid_namespace=False,
                              retain_output=True, progress_interval=None,
                              progress_label=None, limits, isolation,
                              await_exit, reap_group):
@@ -63,7 +81,8 @@ def run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
     Drain both pipes concurrently in a fresh process group. Optional PID
     isolation also contains descendants that call ``setsid()`` where the host
     permits an unprivileged PID namespace (the caller probes and announces
-    the process-group fallback). Retained bytes
+    the process-group fallback). Required PID namespaces refuse unavailable
+    or malformed launch modes before Popen. Retained bytes
     require strict UTF-8; discard mode only counts them. Progress output uses a
     constant caller label and never echoes child output.
     """
@@ -97,12 +116,9 @@ def run_bounded_text_process(command, *, env, timeout, cwd, pass_fds=(),
                     r"[A-Za-z0-9][A-Za-z0-9 ._-]*", progress_label))):
         raise ValueError("invalid progress label")
     original_command = list(command)
-    launch_command = original_command
-    if isolate_process_tree and isolation == "pid-namespace":
-        launch_command = [
-            UNSHARE, "--user", "--map-root-user", "--pid",
-            "--fork", "--kill-child", "--mount-proc", "--",
-            *original_command]
+    launch_command = _bounded_launch_command(
+        original_command, isolate_process_tree=isolate_process_tree,
+        require_pid_namespace=require_pid_namespace, isolation=isolation)
     process = None
     group_reaped = False
     selector = selectors.DefaultSelector()

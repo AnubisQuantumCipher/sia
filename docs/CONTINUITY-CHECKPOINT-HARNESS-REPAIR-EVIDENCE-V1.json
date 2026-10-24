@@ -1,0 +1,1974 @@
+{
+  "bundle": {
+    "bytes": 473625,
+    "members": [
+      {
+        "bytes": 422,
+        "portable_path": "authorization/takeover-checkpoint-complete-a97-root-authorization-v1.json",
+        "role": "root inspection/authorization; not independent approval of preparer's own runner",
+        "sha256": "314b5f7522af7341db1bea643f51bd272c67a108d4372f2eda89507775e495fc"
+      },
+      {
+        "bytes": 25316,
+        "portable_path": "campaign/archive-correspondence.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "63d2610f723f8529c34d696515f2edc60cf1cd45160471bf1a9e592320195388"
+      },
+      {
+        "bytes": 212,
+        "portable_path": "campaign/archive.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "ab34861ee3383dec4375bffdabb8949d666e71ea437116ef2f4cab57749cc984"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/archive.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/archive.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/archive.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 16167,
+        "portable_path": "campaign/base-checkpoint-9bd.adb",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "ca71eca3eff0effbd27e209c433f19faf4e2a82391c40831862569cbf1839a75"
+      },
+      {
+        "bytes": 107,
+        "portable_path": "campaign/base-tree.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "20a07879df5fc80c8d475f36619e93c23eeec7659062771cf44fcdea13453fdf"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/base-tree.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/base-tree.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 11913,
+        "portable_path": "campaign/base-tree.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "2390d53682cae50bf916d2133b9b431bc22a5ce08077b7b335a3015d45de6c2e"
+      },
+      {
+        "bytes": 9775,
+        "portable_path": "campaign/checkpoint-9bd-to-a97.patch",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "bf047be671722e4d354b161372333119b282f83308bd6f74fa606c78c4682dfe"
+      },
+      {
+        "bytes": 246,
+        "portable_path": "campaign/complete-checkpoint-harness/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "1bbe24c3be47a79c2d50bcfe60955f74dd0fa7afb73586569c6ff5efdfb79957"
+      },
+      {
+        "bytes": 319,
+        "portable_path": "campaign/complete-checkpoint-harness/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "11ae4b425ac3fc5ba214d262963219620cb7d43f30c8eb5533e1d5fd586215a1"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/complete-checkpoint-harness/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 16461,
+        "portable_path": "campaign/complete-checkpoint-harness/generated-proof-output-hashes.json",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "cd6b778c1c1f1fb302a1fec00c26f724799024aedb2ab5d4bc2d90373b36dc40"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/complete-checkpoint-harness/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 128645,
+        "portable_path": "campaign/complete-checkpoint-harness/inspection.json",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "f332c79c04b0c8488c7481e0acfbe759580eaca86580f232ec19eecd00529c54"
+      },
+      {
+        "bytes": 235676,
+        "portable_path": "campaign/complete-checkpoint-harness/raw/continuity_checkpoint_wire_tests.spark",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "7b5db956a179a5a970303f2cab273e725595f5da4d583144cc17b41cfec53aa0"
+      },
+      {
+        "bytes": 17480,
+        "portable_path": "campaign/complete-checkpoint-harness/raw/gnatprove.out",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "345a059b92acfe6ac5fc2834b9317abca482e37b878230ca7e049055570f2629"
+      },
+      {
+        "bytes": 512,
+        "portable_path": "campaign/complete-checkpoint-harness/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "a1a207cd5cc2674d1b4aa9ba18a40b62418f1d4e0c92a78e53202dccc86c41cd"
+      },
+      {
+        "bytes": 15578,
+        "portable_path": "campaign/complete-checkpoint-harness/retained-generated/continuity_checkpoint_wire_tests.adb.stderr",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "9b2823dc699b212bebca105d2afcf217ea83a0f10f356ee0a13c85392ec1f654"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/complete-checkpoint-harness/retained-generated/continuity_checkpoint_wire_tests.adb.stdout",
+        "role": "complete fresh unit raw report, summary and generated identity",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 15577,
+        "portable_path": "campaign/complete-checkpoint-harness/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "bdc67e85ab7598979891079b1ff6edee6c59604795d4abd2982df9e3cf226f3a"
+      },
+      {
+        "bytes": 342,
+        "portable_path": "campaign/complete-checkpoint-harness/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "49106ce97eb418fbae668eb03a91f6424d9853ce0cc0a55296e6bed346aa5caa"
+      },
+      {
+        "bytes": 67,
+        "portable_path": "campaign/consolidation-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "57bddab89a88f46d5b808f51c017f667b4d2d67803ad1e22806bf46da62a418f"
+      },
+      {
+        "bytes": 90,
+        "portable_path": "campaign/consolidation-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "5767c2f5922c9d57e3dbf8f97cfbeb9ccb125264a4024e3271f07f109ac1cdab"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/consolidation-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/consolidation-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 226,
+        "portable_path": "campaign/consolidation-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "b3f504ec82db4b0777afcacc2c7a771f4bf4f8f7873aff16e3da036a235a8f19"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/consolidation-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/consolidation-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 64,
+        "portable_path": "campaign/continuity-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "96668ceff8c1ae1e6ef285d845ecc405ddc72243846518f6b531a9512fea6a33"
+      },
+      {
+        "bytes": 87,
+        "portable_path": "campaign/continuity-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "fe405fa6d482fdd41ec648dde9008c8b18098883f0958cc94e93ddfcd8512cc9"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 221,
+        "portable_path": "campaign/continuity-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "50606db5ef05b34e684c1519f83fe398729a30af2d752a414f24b95c2fe1af6f"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 80,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "ee3657eb745eb5860d4a3f005baa560cc0fb9e2e3aa9015ae5a78facd80f92ba"
+      },
+      {
+        "bytes": 103,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "0cb3cc12fe190d2b53235a24882a15a2646d6729ef5060479f43ffc3efd25cba"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 251,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "50a642e85363867e8953682dda1616320a38ef3c8bd551d8bb5cf5309536e487"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 77,
+        "portable_path": "campaign/continuity_current_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "82e92f8bc5e76ca0a299aae31934edf3f7adceeb667788dafffeda7d168b30c3"
+      },
+      {
+        "bytes": 100,
+        "portable_path": "campaign/continuity_current_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "0d7cdb23ee359db8ed861af1b1513a07cea844e6b9d7a7cd7965482a0e6bdb5a"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_current_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_current_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 244,
+        "portable_path": "campaign/continuity_current_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "6fbbb0738c6451bfa3468c8472bcf9ccf8f3e824d9cbd9e70489abf5693309e4"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_current_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_current_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 75,
+        "portable_path": "campaign/continuity_frame_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "74d0761ff244cc3ea21cb9bac9a37f9939f3deb63a90f7b5315f55c9708da2af"
+      },
+      {
+        "bytes": 98,
+        "portable_path": "campaign/continuity_frame_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "766dbc068ff3ae45bd5b2aa13c5d5676cc3a82985190e944e67ee1141b1b924e"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_frame_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_frame_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 241,
+        "portable_path": "campaign/continuity_frame_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "71f74287ca75874aa73383e933246808ed8cfed58fb72e28365a63c5742be1ae"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_frame_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_frame_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 81,
+        "portable_path": "campaign/continuity_observation_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "d7829526ec3092028e125fca6a09c8d1760384cb314fe6a68dc72c4ccb6ed893"
+      },
+      {
+        "bytes": 104,
+        "portable_path": "campaign/continuity_observation_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "c6b4d8101b732ba3000c801f7957582e8c64477f36e9efb767cdcaffd36c08b4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_observation_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_observation_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 254,
+        "portable_path": "campaign/continuity_observation_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "a662c21b2f579a152b2ca41e0105d1f15e80a4f024f86518b18a5c93dbe9fff7"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_observation_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_observation_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 76,
+        "portable_path": "campaign/continuity_record_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "13c4e7975cfbe275e4adbe9916f6987a5552ee3467798be5ac71937b501a6719"
+      },
+      {
+        "bytes": 99,
+        "portable_path": "campaign/continuity_record_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "5d4e402838ad22306f8b29f28f70cce6d0522de254edf4155d0eb8110f79b909"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_record_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_record_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 245,
+        "portable_path": "campaign/continuity_record_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "6c13a2c86ecb45614cfe925bda86c03ace89f1547cf13e42412cac61af7af58e"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_record_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_record_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 78,
+        "portable_path": "campaign/continuity_response_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "107a4295004f8576d65ccb44a84e65cbbaa3a6c919e55db14c1bbeb972741c5d"
+      },
+      {
+        "bytes": 101,
+        "portable_path": "campaign/continuity_response_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "ebde69b6f601254b90cba9ba96ec45a1d0b989849fb1da9a6357300ebb3cb2b4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_response_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_response_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 249,
+        "portable_path": "campaign/continuity_response_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "4db36373d07a23938994b014a31a61fcd235c9c08d4b78c857b8c5bdfa951fc7"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_response_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_response_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 75,
+        "portable_path": "campaign/continuity_transition-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "b568149ec6c8cf3667746225a6c04b13d3fcb582beef4ccfcbfc6725ca4f44e3"
+      },
+      {
+        "bytes": 98,
+        "portable_path": "campaign/continuity_transition-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "8219b21b661433d721d667d625c9fcf59597d55a87de5c4be9333042460d5a3a"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_transition-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/continuity_transition-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 243,
+        "portable_path": "campaign/continuity_transition-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "14d2725d028bcd01c7f1b75b55945f53c35e49fc8f9646ea50a5734b07529d42"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_transition-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_transition-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 21924,
+        "portable_path": "campaign/driver.py",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "2a56a3c50c09592b80530d2e83f3f450b611a0c3d23d8df6461ca23b93df3d35"
+      },
+      {
+        "bytes": 231,
+        "portable_path": "campaign/effective-compiler-switches/continuity_checkpoint_wire_tests.cswi",
+        "role": "actual textual compiler switches; not a binary or session",
+        "sha256": "85cd7bdd7d5d4fd78a0ced24c41641b0f94cd9670c063df382f099b4ab1b2b55"
+      },
+      {
+        "bytes": 231,
+        "portable_path": "campaign/extract.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "593230b4580560cd1b0c33ba1405fa42585def179b33ef17cec50b5ae57b7aa5"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/extract.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/extract.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/extract.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 82,
+        "portable_path": "campaign/gcc-version.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gcc-version.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gcc-version.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 231,
+        "portable_path": "campaign/gcc-version.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+      },
+      {
+        "bytes": 85,
+        "portable_path": "campaign/gnatls-version.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gnatls-version.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gnatls-version.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 222,
+        "portable_path": "campaign/gnatls-version.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+      },
+      {
+        "bytes": 93,
+        "portable_path": "campaign/gnatprove-version.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gnatprove-version.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gnatprove-version.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 396,
+        "portable_path": "campaign/gnatprove-version.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+      },
+      {
+        "bytes": 91,
+        "portable_path": "campaign/gprbuild-version.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gprbuild-version.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gprbuild-version.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 233,
+        "portable_path": "campaign/gprbuild-version.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+      },
+      {
+        "bytes": 68,
+        "portable_path": "campaign/grant_lifetime-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "3e47fe72226c43017dea7b278897b27db878a53dadf6c4f1042d7066e8bf08de"
+      },
+      {
+        "bytes": 91,
+        "portable_path": "campaign/grant_lifetime-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e8e834ba2e432293efbaba9c5484c2b6df45a91cf9d069f8873cee6793510cfa"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/grant_lifetime-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/grant_lifetime-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 229,
+        "portable_path": "campaign/grant_lifetime-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9375b1ef51cfc7036b8300546d67542879f0290c6677e627b8088e131c70383b"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/grant_lifetime-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/grant_lifetime-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 120,
+        "portable_path": "campaign/inherited-tool-manifest.command.json",
+        "role": "actual metadata command and raw channels",
+        "sha256": "d4e3d1a98b1e1872cb3c11362f4babe963a5da78d365ce48e2fbc0a5fc9aa0d4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/inherited-tool-manifest.exit",
+        "role": "actual metadata command and raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/inherited-tool-manifest.stderr",
+        "role": "actual metadata command and raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 65920,
+        "portable_path": "campaign/inherited-tool-manifest.stdout",
+        "role": "actual metadata command and raw channels",
+        "sha256": "250b3b9d827212a12f865ee1966ab19d4b7370497ee654a6b2a016102049d7ee"
+      },
+      {
+        "bytes": 862,
+        "portable_path": "campaign/launch.sh",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "67ae14fcf93cb833581067acfad4cbddc9fa4f1436021b765bae91eed186f752"
+      },
+      {
+        "bytes": 20015,
+        "portable_path": "campaign/overlay-continuity_checkpoint_wire_tests.adb",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738"
+      },
+      {
+        "bytes": 60,
+        "portable_path": "campaign/policy-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "bbb66949d862665ce55b17a6c7aaab55b5bd6874356f8b308994d5572fd5077d"
+      },
+      {
+        "bytes": 83,
+        "portable_path": "campaign/policy-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e427fb4c9fdacbf9f0932ab4b073cef57c778e47282428878080f9ad50787d54"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/policy-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/policy-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 213,
+        "portable_path": "campaign/policy-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e5382c240576b6af2e8c3c35d3ecb3dae1c375cbcef4338a5e5e52fafceebdf8"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/policy-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/policy-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 6373,
+        "portable_path": "campaign/receipt.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "eb9fe64c42e3fd5cfefe0abf57ccde6ac0967aeeb26d719292e324399f87a606"
+      },
+      {
+        "bytes": 71,
+        "portable_path": "campaign/request_admission-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "a4927752ca8555107f42d14929d830cff79216052d9e6d235969526f23c62eec"
+      },
+      {
+        "bytes": 94,
+        "portable_path": "campaign/request_admission-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "c75bf7140b866ea7c0aae90495bb3fa22cd4b80e1b4f8f16c3d4916823d5662e"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/request_admission-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/request_admission-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 235,
+        "portable_path": "campaign/request_admission-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "95316f3f6757924d3ccef8ea34ba02416b79161b567abe68713af207cf2734c0"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_admission-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_admission-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 66,
+        "portable_path": "campaign/request_wire-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "83506b8c6141d2f60ffcdcb323397e442c0e764d0d3bcc75c6bcaab16e628d48"
+      },
+      {
+        "bytes": 89,
+        "portable_path": "campaign/request_wire-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "821a1f8a55a3e8e0b231913d89389f40beb3529a13c59971461f0706cecce044"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/request_wire-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/request_wire-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 224,
+        "portable_path": "campaign/request_wire-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "392f02e0adf472d6d61d6fdf2b1ed308507735331ccda019b0c42ee51f38e082"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_wire-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_wire-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 64,
+        "portable_path": "campaign/retraction-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "d4189efd5e8ef39867719dcc681a4a30dfc91a8c2e8854df6e89548d751f1a68"
+      },
+      {
+        "bytes": 87,
+        "portable_path": "campaign/retraction-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "339d3faf5b78c59d20f0a7dc0548a15a1503caa1a8a6e03f5d35ac610bff083b"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/retraction-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/retraction-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 221,
+        "portable_path": "campaign/retraction-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "aee0183a7aec6224f88c1903b0000e36553003f48d7ea2dc7f0fb2041bedbdc2"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/retraction-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/retraction-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 1460,
+        "portable_path": "campaign/selected-raw-audit.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "4b778ba2b43625b6aafacb071626f5e908c3794601e1e3b63e4d7d06a56be63b"
+      },
+      {
+        "bytes": 339712,
+        "portable_path": "campaign/selected-raw-source-session-mapping.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "44bf95625bbbf22591bcaee9820aff2c6436a8e1672f82e9f8fadca932fcd381"
+      },
+      {
+        "bytes": 4702,
+        "portable_path": "campaign/source-binding.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "eb304e890da81d52b64bb2537cc30794473b604804e995cf3ab001860349c9af"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "campaign/source-hashes-after.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "9a983ed8bec8126375e91270122f1854750f64a2937cda45ec0387cdd3eb09a7"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "campaign/source-hashes-before.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "9a983ed8bec8126375e91270122f1854750f64a2937cda45ec0387cdd3eb09a7"
+      },
+      {
+        "bytes": 57420,
+        "portable_path": "campaign/source-output-hashes.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "848a07d5900f2152ca4a6d96349e46401f30b5b76ebd4d2c10056c321a1a721e"
+      },
+      {
+        "bytes": 1909,
+        "portable_path": "campaign/source-review.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "5e874888ea1096a922336ffc771725b9e2944f4b983545739a891906764eb2ba"
+      },
+      {
+        "bytes": 88970,
+        "portable_path": "campaign/source-roster.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "670c17dccb4f2ec61ecb662842a405bedda1911c6d82648b583ddce42ed37038"
+      },
+      {
+        "bytes": 921600,
+        "portable_path": "campaign/source.tar",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d"
+      },
+      {
+        "bytes": 798,
+        "portable_path": "campaign/storage-preflight.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "6529e64e26ef8d18dee06588eb550bc025647f92f9f849f6f6905612753a6379"
+      },
+      {
+        "bytes": 140,
+        "portable_path": "campaign/strict-build/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "468a55fdfbd1e49640cbff738a477e52c1903daf0f23025a92bc4e94d88df7bb"
+      },
+      {
+        "bytes": 183,
+        "portable_path": "campaign/strict-build/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e1e554b20e5682763cd026fc1a27895b7584d1cc62e005efa9c5e2799faed3fd"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/strict-build/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/strict-build/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 316,
+        "portable_path": "campaign/strict-build/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "449519ff543f56f648cd6be369f8c7e07bec11ac32d0f379c5caeef5777af76b"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/strict-build/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 3606,
+        "portable_path": "campaign/strict-build/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "b162129bc1aa0899773ce340db2146101dc59e11eb32c658f5a26abef664d667"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "campaign/tool-hashes-after.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "campaign/tool-hashes-before.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 472,
+        "portable_path": "campaign/tool-paths.json",
+        "role": "exact a97 campaign source/tool/receipt and scoped prerequisites",
+        "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+      },
+      {
+        "bytes": 65,
+        "portable_path": "campaign/transaction-runtime/command",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "2ba8f78df7a25825e0e6af3704919867b5af9647901a579e6c294421fe1cd7cc"
+      },
+      {
+        "bytes": 88,
+        "portable_path": "campaign/transaction-runtime/command.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "c53b7b48d12d3ff8e4ba5032bcf960fe09826c9b223de8715dcf808c17121d09"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/transaction-runtime/exit",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 451,
+        "portable_path": "campaign/transaction-runtime/input-seal.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "553203ad58119bab9ec05a4136411e9997057bc70dd60dded12b5ebe7487931b"
+      },
+      {
+        "bytes": 223,
+        "portable_path": "campaign/transaction-runtime/result.json",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "7b70b477b107baa8d7e95e8bdb13c9bccb19ef217a24420bfda8db56160784d8"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/transaction-runtime/stderr",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/transaction-runtime/stdout",
+        "role": "actual stage argv/input seal/exit/raw channels",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 1147,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-cut-facts.patch",
+        "role": "original canonical timeout patch/conclusion/local generated hash roster",
+        "sha256": "d2a7ff804ed1ea7ac28705857efb671bcc1a5df5603af58d19b885c0a3ef4442"
+      },
+      {
+        "bytes": 377,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/command.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "0cfd9b33f41e7af31df7888ce7a7cee70964c67751ac50df6d4544e6dde5a5e2"
+      },
+      {
+        "bytes": 4,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/exit",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+      },
+      {
+        "bytes": 146,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/inspection.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "73629531e46bf915f67f6f6123e417140bd6de838691178a7dc9b7b7d70f52bd"
+      },
+      {
+        "bytes": 482,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/result.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "8089c26598158ac6d5982ee0739e5bf050dc75735aacee28a942166a5b7f1ddf"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/stderr",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 155,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/canonical-proof/stdout",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+      },
+      {
+        "bytes": 2304,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/diagnostic-conclusion.json",
+        "role": "original canonical timeout patch/conclusion/local generated hash roster",
+        "sha256": "5c95dbce58d3967bc0a69599c8b641db01834ff19d43abe09c8ad357b27b830b"
+      },
+      {
+        "bytes": 17545,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/generated-proof-output-inventory.json",
+        "role": "original canonical timeout patch/conclusion/local generated hash roster",
+        "sha256": "8bcf596d9210a0a5bc527875a6c30fcc3fe4016380a0c38014be142be148218e"
+      },
+      {
+        "bytes": 16824,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/overlay-continuity_checkpoint_wire_tests.adb",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "670c229abc600e8c4128fa5bd4fe5d42dafb44046b532649f048dffc863dbcda"
+      },
+      {
+        "bytes": 1708,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/receipt.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f93310f4091195dbb27b7ff0782f815db6a4d2dfe343dcc2472e36a570dce2b3"
+      },
+      {
+        "bytes": 140,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/retained-generated/why31Yxsmw",
+        "role": "exact retained internal quantified-pattern warning; not suppressed",
+        "sha256": "703c032df6a97e77db58c902f35345b634e450b9b9782228b0273062657428e8"
+      },
+      {
+        "bytes": 595,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/source-binding.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "28d270335bb1f1c41ccc59cefbd80321e572a273f9d7762e47861fe385f6928e"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/source-maps/source-hashes-after.json",
+        "role": "historical source before/after identities",
+        "sha256": "7a545b78bb945f59b7d52fe8c44d069080d1a4c1ed79655519c15c58bf0a1b12"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/source-maps/source-hashes-before.json",
+        "role": "historical source before/after identities",
+        "sha256": "7a545b78bb945f59b7d52fe8c44d069080d1a4c1ed79655519c15c58bf0a1b12"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/tool-hashes-after.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-canonical-cut-diagnostic-v1/tool-hashes-before.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 319,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/command.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "11ae4b425ac3fc5ba214d262963219620cb7d43f30c8eb5533e1d5fd586215a1"
+      },
+      {
+        "bytes": 4,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/exit",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+      },
+      {
+        "bytes": 15299,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/generated-proof-output-hashes.json",
+        "role": "local historical generated tree identity",
+        "sha256": "46422d65fa319265bbb2784b60a191e5cc97babe9d78b50a3928377452afe467"
+      },
+      {
+        "bytes": 113,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/inspection.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "5862dc4d8e41c6b5ab94eebbf2e06a2e92523c8e6df415efecf57cfe9c5484fc"
+      },
+      {
+        "bytes": 516,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/result.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "15ad3fb7047ef805f29b8d5883b98c941aee6f0a63b7ed1bb77966c40ab9a6eb"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/stderr",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 155,
+        "portable_path": "history/takeover-checkpoint-complete-v3/complete-checkpoint-harness/stdout",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+      },
+      {
+        "bytes": 18405,
+        "portable_path": "history/takeover-checkpoint-complete-v3/overlay-continuity_checkpoint_wire_tests.adb",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "30424013109d8463a30e72f88a1d3a656954eead8bfda2b97d62c54bbbb69c6b"
+      },
+      {
+        "bytes": 6386,
+        "portable_path": "history/takeover-checkpoint-complete-v3/receipt.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "d4483d4d0cf05fa207de10d800692eeeef22119ae11399f0099a807514a9eda3"
+      },
+      {
+        "bytes": 4073,
+        "portable_path": "history/takeover-checkpoint-complete-v3/source-binding.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "57d8456b41be21d9f224844028d2812b3764d891733baa48d7c6e044904f89e8"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-complete-v3/source-maps/source-hashes-after.json",
+        "role": "historical source before/after identities",
+        "sha256": "e0032d68da62011c024e2038d9a5d3624af754aa8eefb2ae271057f8fc3b5862"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-complete-v3/source-maps/source-hashes-before.json",
+        "role": "historical source before/after identities",
+        "sha256": "e0032d68da62011c024e2038d9a5d3624af754aa8eefb2ae271057f8fc3b5862"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-complete-v3/tool-hashes-after.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-complete-v3/tool-hashes-before.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 378,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/command.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "cd2ead3f67686f65acdb3a820df21adb9fa0ccd88aef4c2444d90162f01260eb"
+      },
+      {
+        "bytes": 4,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/exit",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+      },
+      {
+        "bytes": 10623,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/generated-proof-output-hashes.json",
+        "role": "local historical generated tree identity",
+        "sha256": "aae64c9d3e4ed1a3a6f2c1d249a56b0c0ae5f6ad802f0e5e99b613164fa3ca2f"
+      },
+      {
+        "bytes": 146,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/inspection.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "73629531e46bf915f67f6f6123e417140bd6de838691178a7dc9b7b7d70f52bd"
+      },
+      {
+        "bytes": 629,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/result.json",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "e71b24478aff6acf7ed2df6e801d1ca408cfd61c9d1764d9e3f384476f54c2ad"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/stderr",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 155,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/inactive-operation-helper-proof/stdout",
+        "role": "historical timeout command/raw channels/refusal",
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+      },
+      {
+        "bytes": 19505,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/overlay-continuity_checkpoint_wire_tests.adb",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "1f9fd818d7cb454a65237da19759ab37653a08e254404828759f5bce23394529"
+      },
+      {
+        "bytes": 2000,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/receipt.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "2eff2e369492d724cb4b7a04773fb478332c5d5ad472b6c08372e5cb0fc6a2a3"
+      },
+      {
+        "bytes": 43681,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/retained-generated/why3zSfkDp",
+        "role": "exact retained solver output; unmapped diagnostic, not asserted as source counterexample",
+        "sha256": "dcf91d57a6f64eee23a32fd7a263049e7bd8e3b1dd0cc0239effe80d03866aeb"
+      },
+      {
+        "bytes": 814,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/source-binding.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "1fd85eada1be7f122c110d0f9105fd1259cd065eb49fbc329b58016a46efd0f7"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/source-maps/source-hashes-after.json",
+        "role": "historical source before/after identities",
+        "sha256": "1db6b9cbd8fe3ca88458667039df031e1f983b352fc5cf54d89f6797a74a7d04"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/source-maps/source-hashes-before.json",
+        "role": "historical source before/after identities",
+        "sha256": "1db6b9cbd8fe3ca88458667039df031e1f983b352fc5cf54d89f6797a74a7d04"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/tool-hashes-after.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "history/takeover-checkpoint-operation-helper-diagnostic-v1/tool-hashes-before.json",
+        "role": "source-pinned distinct historical timeout; never converted to pass",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 6215,
+        "portable_path": "independent-audit/REVIEW.txt",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "b66a2b9d4d40153e47392bde02df98957c5e82e0b6b2f2cec42c272be0bc3f79"
+      },
+      {
+        "bytes": 4430,
+        "portable_path": "independent-audit/audit-binding.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "8d67a5d372fb987b99a766602014b61c26c324d6fe0b3a7ddec27ed6b3993276"
+      },
+      {
+        "bytes": 687,
+        "portable_path": "independent-audit/audit-invocation.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "1115144e4cae5a4b5aac2bb16d28b8bfdafb15236bacdf264e1c61dbfd829637"
+      },
+      {
+        "bytes": 741,
+        "portable_path": "independent-audit/audit-result.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "903c97d475ed72a53deadc28075a633d17898e600927866e19bb18491cb0f378"
+      },
+      {
+        "bytes": 687,
+        "portable_path": "independent-audit/audit-v1-failed-invocation.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "0f7f5f9bcb37252d04a78495e2bedfbf47deed718955cdff7a9d2e2c8fb96964"
+      },
+      {
+        "bytes": 741,
+        "portable_path": "independent-audit/audit-v1-failed-result.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "2ffafdfe4c33d832c32a0fbcb23b83411c70dee9be9ce34381ac761629b2605e"
+      },
+      {
+        "bytes": 23136,
+        "portable_path": "independent-audit/audit-v1-failed.py",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "5a9ffdb3215dd132eb3ca04e2ed5c28081afa3fca10c6a487d560bb3392d92fb"
+      },
+      {
+        "bytes": 1107,
+        "portable_path": "independent-audit/audit-v1-failed.stderr",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "71660b50acc6c2b33be1eb35c5504b3a0bb00bce6ce656b54dfa2d93dce3182e"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "independent-audit/audit-v1-failed.stdout",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 687,
+        "portable_path": "independent-audit/audit-v2-failed-invocation.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "8932c7dabcca1f7abf0754c00f91ecbcf12236658c288cc45d6efec2577cd457"
+      },
+      {
+        "bytes": 742,
+        "portable_path": "independent-audit/audit-v2-failed-result.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "bb646cbc95f5a0972ad6f73cc448b34f4be354dc37f9844c5574b7f343dce926"
+      },
+      {
+        "bytes": 23481,
+        "portable_path": "independent-audit/audit-v2-failed.py",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "4fa4983e34ca8e3931660e6a7dd40d41fe0654841d82b3de25c2fb92893a88b6"
+      },
+      {
+        "bytes": 956,
+        "portable_path": "independent-audit/audit-v2-failed.stderr",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "aed0c4f6bfc4c491c456f64ba7034f81a43a2afaabc3b89714962bbe10f99b8e"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "independent-audit/audit-v2-failed.stdout",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 23985,
+        "portable_path": "independent-audit/audit.py",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "2ad933238dd6ba78e506879da2c581557939a5855f05ae1d698f91dace5b6c96"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "independent-audit/audit.stderr",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 69,
+        "portable_path": "independent-audit/audit.stdout",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "4c652b9dc0fe38a2fe06c4f8cdf794a70e7ec2489666d64bbd36f3f00bc2b88f"
+      },
+      {
+        "bytes": 160245,
+        "portable_path": "independent-audit/audited-inputs.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "407eb9635bdf0a74ca618910d8b5d2c548528f2f0ba2b24e8a18d35eeac3f33c"
+      },
+      {
+        "bytes": 832155,
+        "portable_path": "independent-audit/raw-source-session-mapping.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "ca1edcab42348b3fb6cd3cac013499b4a4baa04afef935bb9a572ff996708d65"
+      },
+      {
+        "bytes": 11666,
+        "portable_path": "independent-audit/review.json",
+        "role": "post-run audit and source/session mapping, including exact failed auditor drafts",
+        "sha256": "338ca59754ffed56834aff97121b8c461c007cb540f200df26e63d99bed1a556"
+      },
+      {
+        "bytes": 6564,
+        "portable_path": "preparation/PLAN.txt",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "c78eee0d7e2e0a5270db55c23b395b1cadb66ca1e7b56e33f0e0ffd52b5e8a4b"
+      },
+      {
+        "bytes": 3749,
+        "portable_path": "preparation/commands.json",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "40e8549416a094928bb2d6f30f1a176febdd0b7fc88b2ae2602215f10de7c81d"
+      },
+      {
+        "bytes": 18003,
+        "portable_path": "preparation/driver-from-v3.diff",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "4c16c06e4721367538aa40713a7404ff74fbf322c30b87af204e192472cb281b"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "preparation/expected-tool-pins.json",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2503,
+        "portable_path": "preparation/full-obligations.pyfrag",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "b1a143b33539f41c6daf184be88197d626ecdade6474bdda2643da7265a53c87"
+      },
+      {
+        "bytes": 3873,
+        "portable_path": "preparation/preparation-binding.json",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "524f002fb549a5305c277ccaf57426dd10de6e8f7490a3b11ec40809ea326c44"
+      },
+      {
+        "bytes": 559,
+        "portable_path": "preparation/preparation-failure-v1.json",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "b6a7cc31a732e73899640d84230d04032cceda9b1ea2a147e3d2d3339d1963d7"
+      },
+      {
+        "bytes": 4342,
+        "portable_path": "preparation/preparation-receipt.json",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "087bd0bb0040839dc1fbd8aee4babfa176e76b12383d39db79a2d2cf4d219eb9"
+      },
+      {
+        "bytes": 8617,
+        "portable_path": "preparation/prepare-v1-failed.py",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "5522113fcebf68fe3f157a0e914af55b8389082287b15372599634b9101bda0a"
+      },
+      {
+        "bytes": 10431,
+        "portable_path": "preparation/prepare.py",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "310f83c18b24c6dcaab54c6597c3e71a48434b8607224df6b5695f9b11db73ce"
+      },
+      {
+        "bytes": 1182,
+        "portable_path": "preparation/retain-overlay.pyfrag",
+        "role": "frozen preparation, finite command plan and retained metadata failure",
+        "sha256": "cb8afa2657470555fd0bc694913801b78d4329ee69af5b79c12f4997a8b0c42d"
+      },
+      {
+        "bytes": 3730,
+        "portable_path": "publication/PACKAGING-LIMITATIONS.txt",
+        "role": "bounded roster derivation and explicit packaging limits; no packaging execution",
+        "sha256": "154827790e0c0bca29e4c35738b6b0643ca084ce6fc20812a649004c37efb77a"
+      },
+      {
+        "bytes": 2960,
+        "portable_path": "publication/historical-failure-index.json",
+        "role": "bounded roster derivation and explicit packaging limits; no packaging execution",
+        "sha256": "3e46de53f89fd058fb5ac6681d1e218209e9c5278e03898252807cccb3f41e01"
+      },
+      {
+        "bytes": 14164,
+        "portable_path": "publication/prepare-roster.py",
+        "role": "bounded roster derivation and explicit packaging limits; no packaging execution",
+        "sha256": "e66b6c824dfc8e08e6f92eb7884ffdcc4aa461e1a838dd70a89c578bd2b34f58"
+      }
+    ],
+    "path": "docs/evidence/continuity-checkpoint-complete-a97-v1.tar.gz",
+    "sha256": "a8995cacf5ea4ce9cf28e3d43fba4641a17b14e1bc8c2161933b48214ca32ef6"
+  },
+  "change": "Use local typed case helpers and explicit byte/validity facts while preserving original fixtures, domains, call order and complete assertions. Retain full unchanged-byte frame contracts. No production source change.",
+  "committed_source_reproduction": "OPEN; exact base-plus-overlay evidence only",
+  "historical_failures": "The bundle retains three source-pinned proof timeouts and failed metadata preparation/auditor drafts. No failure is erased.",
+  "independent_complete_campaign_audit": {
+    "actual_sequence": [
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "120s",
+          "/home/sicarii/opt/gnat/gprbuild-aarch64-linux-26.0.0-1/bin/gprbuild",
+          "-p",
+          "-j1",
+          "-P",
+          "spark/sia_assurance.gpr"
+        ],
+        "elapsed_seconds": 16.565682003973052,
+        "exit": 0,
+        "name": "strict-build",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/policy_tests"
+        ],
+        "elapsed_seconds": 0.0015911799855530262,
+        "exit": 0,
+        "name": "policy-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/transaction_tests"
+        ],
+        "elapsed_seconds": 0.0014294279972091317,
+        "exit": 0,
+        "name": "transaction-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_wire_tests"
+        ],
+        "elapsed_seconds": 0.001761138963047415,
+        "exit": 0,
+        "name": "request_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_admission_tests"
+        ],
+        "elapsed_seconds": 0.0013483020011335611,
+        "exit": 0,
+        "name": "request_admission-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/grant_lifetime_tests"
+        ],
+        "elapsed_seconds": 0.0012638019979931414,
+        "exit": 0,
+        "name": "grant_lifetime-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/retraction_tests"
+        ],
+        "elapsed_seconds": 0.0012609270052053034,
+        "exit": 0,
+        "name": "retraction-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/consolidation_tests"
+        ],
+        "elapsed_seconds": 0.043237051053438336,
+        "exit": 0,
+        "name": "consolidation-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_tests"
+        ],
+        "elapsed_seconds": 0.0022125589894130826,
+        "exit": 0,
+        "name": "continuity-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_transition_tests"
+        ],
+        "elapsed_seconds": 0.0018819309771060944,
+        "exit": 0,
+        "name": "continuity_transition-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_record_wire_tests"
+        ],
+        "elapsed_seconds": 0.0019592660246416926,
+        "exit": 0,
+        "name": "continuity_record_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_observation_wire_tests"
+        ],
+        "elapsed_seconds": 0.006077630969230086,
+        "exit": 0,
+        "name": "continuity_observation_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_checkpoint_wire_tests"
+        ],
+        "elapsed_seconds": 0.12461202702252194,
+        "exit": 0,
+        "name": "continuity_checkpoint_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_current_wire_tests"
+        ],
+        "elapsed_seconds": 0.4235079329810105,
+        "exit": 0,
+        "name": "continuity_current_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_frame_wire_tests"
+        ],
+        "elapsed_seconds": 0.23388580803293735,
+        "exit": 0,
+        "name": "continuity_frame_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_response_wire_tests"
+        ],
+        "elapsed_seconds": 0.0074808510253205895,
+        "exit": 0,
+        "name": "continuity_response_wire-runtime",
+        "passed": true
+      },
+      {
+        "command": [
+          "/usr/bin/timeout",
+          "--kill-after=5s",
+          "120s",
+          "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+          "-P",
+          "spark/sia_assurance.gpr",
+          "-u",
+          "continuity_checkpoint_wire_tests.adb",
+          "--mode=all",
+          "--assumptions",
+          "--no-inlining",
+          "--memlimit=512",
+          "--timeout=10",
+          "-j1"
+        ],
+        "elapsed_seconds": 119.16434785898309,
+        "exit": 0,
+        "fresh_summary_present": true,
+        "name": "complete-checkpoint-harness",
+        "passed": true
+      }
+    ],
+    "all_project_combined_worktree_installed_system_p10_release_acceptance": "OPEN",
+    "all_source_oracles_and_original_domains": "PRESERVED_AND_COVERED",
+    "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+    "execution_provenance": "Root authored/applied additive facts and executed; reviewer authored preparation and audited retained actual outputs later",
+    "limits": [
+      "Post-run audit of retained evidence, not independently repeated execution",
+      "173 is the actual one-unit reported total, not a project or sum-of-scopes total",
+      "No WCET, stack, output-disk quota or full environment-isolation claim",
+      "No XML unknown attempt relabelled Valid; final functional proof-tree branches checked separately"
+    ],
+    "new_proof_build_runtime_or_lock_execution_by_auditor": false,
+    "only_overlay": {
+      "spark/tests/continuity_checkpoint_wire_tests.adb": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738"
+    },
+    "ordinary_modular_assumptions": "RETAINED: local dependencies and imported Claim_Payload/Operation_Payload/Decode Posts/effects/AoRTE plus Valid effects/AoRTE; imported provider bodies not proved by this command",
+    "preparation_provenance": {
+      "binding_sha256": "524f002fb549a5305c277ccaf57426dd10de6e8f7490a3b11ec40809ea326c44",
+      "explicit_members": 19,
+      "pre_run_independent_runner_review_claimed": false,
+      "preparer": "manifest_takeover_review",
+      "root_authorization": {
+        "at_utc": "2026-10-21T14:19:54.689909+00:00",
+        "binding_sha256": "524f002fb549a5305c277ccaf57426dd10de6e8f7490a3b11ec40809ea326c44",
+        "root_inspection": "Full driver, delta and launcher read; finite fresh exact9bd+a97 build/all15runtime/completeunit gates accepted for execution; caps unchanged. Independent post-run audit required.",
+        "source": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738"
+      }
+    },
+    "prior_failures_unknowns": "UNCHANGED; no retry or cap increase",
+    "proof_scope": "COMPLETE_CHECKPOINT_TEST_UNIT_ONLY",
+    "raw_summary": {
+      "Store_Canonical_Claim_full_Post": "PROVED",
+      "all_four_loop_invariants": "INITIALIZATION_AND_PRESERVATION_PROVED",
+      "generated_files_hash_verified": 133,
+      "justified": 0,
+      "outer_main": "ALL_MODE_COVERED; no explicit termination aspect or invented standalone termination VC",
+      "reported_total": 173,
+      "total_row": "Total                           173    60 (35%)                                       113 (65%)           .          .",
+      "unproved": 0
+    },
+    "reviewer_claims_independent_pre_run_preparation_review_or_execution": false,
+    "source_binding": {
+      "archive_sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d",
+      "archived_members_verified": 134,
+      "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+      "complete_source_output_roster_verified": 477,
+      "only_overlay": {
+        "spark/tests/continuity_checkpoint_wire_tests.adb": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738"
+      },
+      "source_files_stable": 134,
+      "unrelated_worktree_changes_copied": false
+    },
+    "status": "COMPLETE_CHECKPOINT_A97_POST_RUN_SOURCE_RAW_AUDIT_PASSED_WITH_LIMITATIONS",
+    "tool_binding": {
+      "before_after_and_actual_readback": "MATCH",
+      "hash_map": {
+        "/home/sicarii/opt/gnat/env.sh": "155536a81f8d2be134c6e5cacc0c0bf9b57c94ee33659d2b19ea23c2d6ded388",
+        "/home/sicarii/opt/gnat/gnat-aarch64-linux-16.1.0-1/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnat-aarch64-linux-16.1.0-1/bin/gnatls": "8f94099aaece72e3dfdda659b4f14fa9a83a5a71e436510097a991dfb8d5ad29",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78",
+        "/home/sicarii/opt/gnat/gprbuild-aarch64-linux-26.0.0-1/bin/gprbuild": "fcf2bab30eff76c521a4800a7ead41615bf36b678851fb0268f6a930b6cfc0fb",
+        "/usr/bin/flock": "c82e1ed523ce89dbffd2cde8665a89bc1adc6c5b50ce34db96d2d453d537e8f8",
+        "/usr/bin/git": "83ac7a82150b3c8dc03830ab10e3dd1500b54ad9d5f02cbf4f95da65afc326ce",
+        "/usr/bin/python3.14": "c6bc1ef497b896b7575c546b13f9bafe52e2066f184fdd3fec6af4b5b6349947",
+        "/usr/bin/tar": "6de44f7be8296c8f17b4ff0e7f615a20fc2ca0104bc274c212eb844649a83f5b",
+        "/usr/bin/timeout": "7539e28e3fc02160564cc93739e03d0d3e001a6fae58671371403a46b643439b"
+      },
+      "paths": {
+        "flock": "/usr/bin/flock",
+        "gcc": "/home/sicarii/opt/gnat/gnat-aarch64-linux-16.1.0-1/bin/gcc",
+        "git": "/usr/bin/git",
+        "gnatls": "/home/sicarii/opt/gnat/gnat-aarch64-linux-16.1.0-1/bin/gnatls",
+        "gnatprove": "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+        "gprbuild": "/home/sicarii/opt/gnat/gprbuild-aarch64-linux-26.0.0-1/bin/gprbuild",
+        "python3": "/usr/bin/python3.14",
+        "tar": "/usr/bin/tar",
+        "timeout": "/usr/bin/timeout"
+      }
+    },
+    "worktree_edits": false
+  },
+  "independent_package_correspondence_audit": {
+    "actions": "Read-only exact package/script/roster/retained evidence inspection and independent in-memory byte reconstruction plus this external receipt only. No packager execution/new physical extraction/proof/build/test/worktree/lock/Git/publication/subagent action.",
+    "actual_model": "gpt-6.1-sol",
+    "actual_scoped_result_binding": {
+      "all15_original_runtimes": "PASS retained",
+      "complete_checkpoint_test_unit_reported_checks": 173,
+      "explicit_Assume_skip_Proof_skip_Flow": [],
+      "justified": 0,
+      "limits": "This package review binds saved result bytes and scope, not a new execution/full source semantic acceptance or general full-project proof.",
+      "modular_dependencies": "Nonempty and retained; imported provider bodies not proved by this unit command.",
+      "raw_summary_total": "Total                           173    60 (35%)                                       113 (65%)           .          .",
+      "reported_entities": 16,
+      "strict_build": "PASS retained",
+      "unproved": 0
+    },
+    "archive_sha256": "a8995cacf5ea4ce9cf28e3d43fba4641a17b14e1bc8c2161933b48214ca32ef6",
+    "at_utc": "2026-10-21T14:53:47.620282+00:00",
+    "correspondence": {
+      "all_member_original_sources_archive_three_existing_extractions_match": true,
+      "complete_manifest_field_projection_verified": true,
+      "exclusions": "No ELF/obj/bin/cache/full Why3 session/tool/environment contents in selected payload or exact nested source archive. Script+roster+archive+manifest relocated root copies are exact; root fresh-check exit0 and matching receipt retained.",
+      "explicit_members": 259,
+      "identical_preparation_alias_references": "Every retained alias source/hash matched canonical portable byte; no hidden dedup omission.",
+      "independent_in_memory_tar_gzip_byte_reproduction": true,
+      "nested_source_headers_including_directories": 142,
+      "nested_source_regular_files": 134,
+      "only_checkpoint_overlay": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738",
+      "source_archive_sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d"
+    },
+    "findings": [],
+    "historical_failures": [
+      {
+        "campaign": "takeover-checkpoint-canonical-cut-diagnostic-v1",
+        "exit": 124,
+        "receipt_sha256": "f93310f4091195dbb27b7ff0782f815db6a4d2dfe343dcc2472e36a570dce2b3",
+        "source_sha256": "670c229abc600e8c4128fa5bd4fe5d42dafb44046b532649f048dffc863dbcda"
+      },
+      {
+        "campaign": "takeover-checkpoint-complete-v3",
+        "exit": 124,
+        "receipt_sha256": "d4483d4d0cf05fa207de10d800692eeeef22119ae11399f0099a807514a9eda3",
+        "source_sha256": "30424013109d8463a30e72f88a1d3a656954eead8bfda2b97d62c54bbbb69c6b"
+      },
+      {
+        "campaign": "takeover-checkpoint-operation-helper-diagnostic-v1",
+        "exit": 124,
+        "receipt_sha256": "2eff2e369492d724cb4b7a04773fb478332c5d5ad472b6c08372e5cb0fc6a2a3",
+        "source_sha256": "1f9fd818d7cb454a65237da19759ab37653a08e254404828759f5bce23394529"
+      }
+    ],
+    "manifest_sha256": "26fb9a474c96817bf8ff1c6a6a7875285031c8b29a8eeb93e6c99e3e5a45ed29",
+    "package_binding_sha256": "1957f5c7544ff53d5ec2a26c64f761698ec434ec0203801e1794e62244789e9c",
+    "packager_sha256": "82d953f3ef5266f7b9799a90f5bb8e24f3e66e3c4ba7c87c30621ea1a7b27db4",
+    "provenance": "Package author executed both original mechanical methods; root separately inspected and ran relocated check. Underlying campaign preparer later audited retained source/raw outputs; metadata explicitly declines independent pre-run preparation review or independently repeated execution. This is a separate actual GPT-6.1 package correspondence review. Original PENDING/historical source states retained unchanged.",
+    "qualification": "Suitable for source/doc/bundle nonfinal checkpoint publication within retained scope. Root controlled staging/commit/push/readback still separate. Combined-worktree, committed reproduction, whole-project/provider/system/P10/resource/installed/release acceptance remain OPEN.",
+    "reconstruct_sha256": "95aaf336ac557ff69a8a6cbb7f57cedfe1726b572e764882bbb57b3a4bd5e7c3",
+    "retained_draft_failure_member_paths": [
+      "preparation/preparation-failure-v1.json",
+      "publication/historical-failure-index.json"
+    ],
+    "retainer": "Bounded fixed259 members,1MiB/member,32MiB aggregate/compressed/expanded budgets, safe sorted regular paths, exclusive fresh outputs, deterministic gzip/tar metadata, full manifest projection. Relocated --check uses local pinned roster and needs four unchanged files. Recreating from originals/reconstruct.py uses retained absolute paths and pinned Python/zlib; no universal-runtime byte identity or standalone final system verifier claim.",
+    "root_readback_execution_sha256": "ce020aa27bd935f4e36ece281f784403eeb423b829c56a2e18b004436e3c7cc5",
+    "roster_sha256": "d8fef8ecc54807e39102514b272455d51825c9743fb3399574510bfcf83ff502",
+    "smallest_next": "Root may use the reviewed unchanged package in the explicitly scoped nonfinal checkpoint; preserve exact member/manifest/source pins and all failure/provenance limits. No assurance rerun required by this package audit.",
+    "status": "INDEPENDENT CHECKPOINT PACKAGE CORRESPONDENCE/SCOPE REVIEW PASS FOR NONFINAL CHECKPOINT ONLY"
+  },
+  "input_sha256": {
+    "takeover-checkpoint-complete-a97-independent-audit-v1/review.json": "338ca59754ffed56834aff97121b8c461c007cb540f200df26e63d99bed1a556",
+    "takeover-checkpoint-portable-package-independent-review-v1.json": "8501520dd864a2fb8f4e4b3338c84ad066394e5ba285f2ff6a8befa1e3901dd0",
+    "takeover-checkpoint-portable-package-v1/continuity-checkpoint-complete-a97-v1.tar.gz": "a8995cacf5ea4ce9cf28e3d43fba4641a17b14e1bc8c2161933b48214ca32ef6",
+    "takeover-checkpoint-portable-package-v1/package-manifest.json": "26fb9a474c96817bf8ff1c6a6a7875285031c8b29a8eeb93e6c99e3e5a45ed29"
+  },
+  "limits": [
+    "No extracted source duplicate, compiled objects/binaries, caches, full Why3 sessions/config or tool executables",
+    "No private environment values, operational notes, credentials or unrelated active worktree sources",
+    "No recursive audit expansion or duplicate historical archives; full original generated trees remain local, bound by audited hashes/mapping",
+    "Hashes establish correspondence, not authentication or semantic acceptance",
+    "Full generated sessions stay local; portable raw/source/session mapping and complete hash rosters retained",
+    "Historical failures and metadata draft failures remain failed; no unchanged campaign rerun",
+    "Checker uses local pinned roster; archive+manifest+script+roster can be relocated for checking only",
+    "Recreating from original inputs uses retained absolute source paths; assurance commands need pinned tools/path adaptation",
+    "No combined-worktree/full-project/provider/committed-reproduction/installed/system/P10/release acceptance",
+    "The complete-unit run passed close to its unchanged timeout; no timing margin or WCET claim.",
+    "Historical package metadata says review pending; the later embedded audit records its result.",
+    "No whole-system Power of Ten compliance, installed safety, certification or release acceptance.",
+    "Original fixtures, domains, assertions, contracts, warnings and proof limits remain binding."
+  ],
+  "problem": "The original complete Checkpoint test-unit proof exceeded its fixed cap.",
+  "schema_version": 1,
+  "source": {
+    "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+    "only_overlay": {
+      "spark/tests/continuity_checkpoint_wire_tests.adb": "a97d60c565d5d2381628d6df50889395d89d9fd35ac48ff02adf03f9f5c5a738"
+    }
+  },
+  "source_audit_provenance": "Audit author prepared runner; root inspected/authorized/applied additive facts/executed; later source/raw audit is not independent pre-run runner review or new execution",
+  "status": "COMPLETE_CHECKPOINT_UNIT_SCOPED_PASS; SYSTEM_ACCEPTANCE_OPEN"
+}

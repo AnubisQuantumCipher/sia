@@ -1,0 +1,22 @@
+Actual GPT-6.1 independent read-only source and retained-evidence review.
+No concrete correspondence or overclaim blocker found in the final checkpoint.
+
+Manifest 4ef902475b868beac5438f97986991071fbe038c3df3cd9eca958041de890eeb
+Bundle   eb1e89000da43e648167834ba855a0f6ec7900db582395c958490aa948c7b5dc
+
+The supplied hashes match. Retained source/log/artifact hashes agree, active
+executable source matches v3, and pure-source hashes remain unchanged.
+Recorded strict builds, seventeen new tests, transport-support controls and
+fifteen runtimes passed. The two resource witnesses bind the same v3 binary;
+they establish neither worst-case stack/memory sufficiency nor WCET.
+Earlier cleanup findings and failed resource-witness attempts remain separate
+retained evidence. No commands were replayed; no jobs or edits performed.
+
+The separate source review confirmed the closed-family helper guard and
+completion-contract incorporation, preserving the supplied contract hash,
+existing obligations, historical-snapshot status, OPEN prospective budgets
+and declared assumptions. It grants no additional authority or acceptance.
+
+Exact committed-source reproduction, complete proofs and installed harness
+qualification remained open at review time. This is not independent execution,
+protected-service acceptance, deployment qualification or certification.

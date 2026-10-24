@@ -754,8 +754,13 @@ The additive `_run_controller_source_transaction_v3` owning entry invokes
 leases. Every request supplies journal limits, their pin, the original
 adoption pin, an initial-operation callback and a controller clock. Only
 actually unadopted legacy completion permits a null adoption pin; existing
-adoption must match the caller's independent pin. Initial/pending delegation
-can still finish a legacy transaction without relabeling its source schema.
+adoption must match the caller's independent pin before completed-state
+advancement or WAL adoption. Once adopted, a pending transaction resumes its
+retained publication authority; new rollover pins are not reauthorization of
+that existing transaction and cannot select different captured inputs. This
+phase distinction also permits initial/pending delegation to finish a legacy
+transaction without relabeling its source schema. Per-invocation reauthorization
+for pending work is not an implemented guarantee.
 A retained source-v3 WAL is admitted and recovered before another sequence,
 clock, epoch preparation or native collection. Without a WAL the runner
 prepares or observes the actual adopted epoch, reserves the sequence,

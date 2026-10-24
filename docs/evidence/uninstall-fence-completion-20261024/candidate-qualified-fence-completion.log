@@ -1,0 +1,19 @@
+test_absent_public_paths_keep_removal_marker (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_absent_public_paths_keep_removal_marker) ... ok
+test_changed_surviving_identity_retains_both_gates (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_changed_surviving_identity_retains_both_gates) ... ok
+test_invalid_journals_are_retained_without_completion (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_invalid_journals_are_retained_without_completion) ... ok
+test_marker_removal_failure_keeps_completion_armed (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_marker_removal_failure_keeps_completion_armed) ... ok
+test_partial_restoration_is_failure_with_recovery_marker (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_partial_restoration_is_failure_with_recovery_marker) ... ok
+test_success_restores_survivor_and_retires_journal_and_marker (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_success_restores_survivor_and_retires_journal_and_marker) ... ok
+test_survivor_without_journal_cannot_clear_marker (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_survivor_without_journal_cannot_clear_marker) ... ok
+test_syscall_errors_and_interruption_do_not_report_completion (tests.test_uninstall_fence_completion.UninstallFenceCompletion.test_syscall_errors_and_interruption_do_not_report_completion) ... ok
+test_uninstaller_preserves_state_and_reports_each_integration (tests.test_release.ReleaseContract.test_uninstaller_preserves_state_and_reports_each_integration) ... ok
+test_uninstaller_preserves_unowned_mcp_registration (tests.test_release.ReleaseContract.test_uninstaller_preserves_unowned_mcp_registration) ... ok
+test_uninstaller_preserves_runtime_when_systemd_is_indeterminate (tests.test_release.ReleaseContract.test_uninstaller_preserves_runtime_when_systemd_is_indeterminate) ... ok
+test_uninstaller_returns_nonzero_and_names_failures (tests.test_release.ReleaseContract.test_uninstaller_returns_nonzero_and_names_failures) ... ok
+test_uninstaller_fences_legacy_launchers_before_integration_mutation (tests.test_release.ReleaseContract.test_uninstaller_fences_legacy_launchers_before_integration_mutation) ... ok
+test_uninstaller_drains_legacy_mcp_then_mutates_behind_durable_fence (tests.test_release.ReleaseContract.test_uninstaller_drains_legacy_mcp_then_mutates_behind_durable_fence) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 5.694s
+
+OK

@@ -1,0 +1,28 @@
+{
+  "observed_at": "2026-10-24T18:23:06.668024+00:00",
+  "records": [
+    {
+      "command": [
+        "lslocks",
+        "-J",
+        "-o",
+        "PID,COMMAND,TYPE,MODE,PATH"
+      ],
+      "returncode": 0,
+      "stdout": "[{\"pid\": 1667286, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"READ\", \"path\": \"/home/sicarii/.local/state/sia.lifecycle.lock\"}, {\"pid\": 1667286, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"READ\", \"path\": \"/home/sicarii/.local/state/sia.lifecycle.lock\"}, {\"pid\": 1667286, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"READ\", \"path\": \"/home/sicarii/.local/state/sia.lifecycle.lock\"}, {\"pid\": 1667286, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"WRITE\", \"path\": \"/home/sicarii/.local/state/sia/brainstem-owner.lock\"}, {\"pid\": 2305291, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"READ\", \"path\": \"/home/sicarii/.local/state/sia.lifecycle.lock\"}, {\"pid\": 2305291, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"READ\", \"path\": \"/home/sicarii/.local/state/sia.lifecycle.lock\"}, {\"pid\": 2305291, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"WRITE\", \"path\": \"/home/sicarii/.local/state/sia/corpus-owner.lock\"}, {\"pid\": 2305291, \"command\": \"python3\", \"type\": \"FLOCK\", \"mode\": \"WRITE\", \"path\": \"/home/sicarii/.local/state/sia/gbrain-owner.lock\"}]",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "ps",
+        "-p",
+        "2305291,1667286",
+        "-o",
+        "pid,ppid,etimes,stat,wchan:28,comm"
+      ],
+      "returncode": 0,
+      "stdout": "    PID    PPID ELAPSED STAT WCHAN                        COMMAND\n2305291 2305290      51 S    ep_poll                      python3\n1667286    1293  404602 SNs  hrtimer_nanosleep            python3\n",
+      "stderr": ""
+    }
+  ]
+}

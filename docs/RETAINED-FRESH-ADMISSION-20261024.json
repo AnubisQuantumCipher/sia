@@ -1,0 +1,836 @@
+{
+  "schema": "sia-fresh-admission-evidence-v1",
+  "status": "TESTED_SUBSETS_ACCEPTANCE_INCOMPLETE",
+  "base_commit": "79a9e39eee58dfe88b32536a9d3a8a1fcd99b14e",
+  "source_sha256": {
+    "bin/siasourcebatch.py": "f52524c752dddce4e42c1e4cbc77e1c42680c3c30141e70e16fd6d6112d37e2f",
+    "bin/siasourcecheckpoint.py": "bff0a539dc07b5ce2cc7c7d997f6d914e0103a91a750a3add83e432689fe2eb2",
+    "tests/test_retained_image_memo.py": "0a31cad9d9b5bce7b6d2fb495866e0a1783892c1e0f4da551f69b8bcddb7f815",
+    "tests/test_retained_validation_preflight.py": "6808b5311fb8569c8a9925e36bf78ddb3748b2d68a6a08e47099036aaeab102f"
+  },
+  "members": [
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/PROPOSAL.md.gz",
+      "sha256": "2b7a2e28e26af620967d17c8b2594ae8fb0fd947057dcc21138f131a5afb56d8",
+      "original_sha256": "ba5a95d2a1f3d19044c0183046e8b374d74357cafad8a5984572af2a68fd9c9f",
+      "original_bytes": 4594
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/RESULTS.md.gz",
+      "sha256": "0e1ebe24a32b3a9494f96e790001d1a1bfce150ee4e736c5198ea20e7fb39d00",
+      "original_sha256": "adfa70faca148f66c96cd580bae78e5fdc3f6da2b1421b11524df726e2cd1a6f",
+      "original_bytes": 1478
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/candidate.patch.gz",
+      "sha256": "562368245e74ed7115845856c8cace4bb0cee5299c745d1aadb9da83cceb85bd",
+      "original_sha256": "ea44d09c2a71e26dd12381882a8185fd6f618c4aa45046f6fc40a1d52fc6f116",
+      "original_bytes": 3228
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/review.txt.gz",
+      "sha256": "53bb8fca4345e4223f7e5321f34f693b25998d1032756a533217cdc55f136c10",
+      "original_sha256": "fd989a5f38a7f0cca8e998c1aa1c3799ca9998ac178b975941da81f47b96b37d",
+      "original_bytes": 1333
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/workload-result.json.gz",
+      "sha256": "0f101faaeb6cbf09612bd67764ead1536cadcea64be7940f067affc3ce6ac09a",
+      "original_sha256": "a52762f9c3cd5384f9a6fe6c09e46b06de89471d63a1d210493ed85e85d2bb1c",
+      "original_bytes": 152873
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-current-admission-proposal-v2/workload.stderr.gz",
+      "sha256": "36f7116794aad7acebc0463d6428131398a9361435d864a0a07803a226e97085",
+      "original_sha256": "ea297aee8a303ffd568a9581e11c99c46ec038e0077c09952796a84383a9293d",
+      "original_bytes": 4267
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/DECISION.md.gz",
+      "sha256": "cb33e53ebf05225d53ddc1de82e940c2a0bd14df12d18ae50a143659d2241f02",
+      "original_sha256": "74c56fcc8e5b4edfb94b94cb165a6cd8f077698a3b854124cb7d7f2d1d841aef",
+      "original_bytes": 892
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/original-test_retained_image_memo.py.gz",
+      "sha256": "a3b908b53f491ad6ede918836ac07f9f38346e86984e0ced29063a7c11571370",
+      "original_sha256": "c1c4c43d902e03147ab989707e0b5b9ec719bf62962c18700eb82bae6261ee2d",
+      "original_bytes": 2868
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/workload-result.json.gz",
+      "sha256": "68c56c3c809abca65945bffdf4335b60d701b37f9bdff365f3995d1a792181a3",
+      "original_sha256": "28643079f11d9e1b3fa9699c389227e47356751d360c9224da401e0a5ccd56eb",
+      "original_bytes": 151388
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/workload.stderr.gz",
+      "sha256": "46df40c98c3fc4484b125146c73ec0d980fded171b45cbed5f786b030ad30afd",
+      "original_sha256": "c9f299be69b066de42117f02fd0f947875e288726f4859172ce46ac0e23a0915",
+      "original_bytes": 3006
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/static-result.json.gz",
+      "sha256": "35fb1235bfb7bbb7843401748cfd27c46fc2290bbdf4fc7ea5c971e2a09efd63",
+      "original_sha256": "4c123564b7cae45ecfe709666e94f79ee9ae83f4ec463115d504b947546ce9c8",
+      "original_bytes": 3121
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v1/static.stdout.gz",
+      "sha256": "c62b143aea4e8c43e6cae5698466d64aa6fb181f1ff2590a4490a3f4dd3ada4d",
+      "original_sha256": "793e6a5b9575f7a117e5422231366c7dd3a07b6a23680e5fa5e30c83fd26eacc",
+      "original_bytes": 841
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/run_adoption.py.gz",
+      "sha256": "afee856c65880a5e67b0ceb8e061bc666980e5df73ac9af7bcab9e36fc63cd31",
+      "original_sha256": "90705ee8711104b9402ea420fbe7db99d28e6562fd7c74478611abe14feaf050",
+      "original_bytes": 2838
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/workload-result.json.gz",
+      "sha256": "09355f607f3022cd59db1a0b853e4a3186ac5a724c2b9f933b2e0d5bda6a669d",
+      "original_sha256": "6f2298e18d446955c7cb63b2325a1c67cb31e8ed8d551f5d56066e458ef69428",
+      "original_bytes": 151388
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/workload.stderr.gz",
+      "sha256": "97b6fc3d8ed31a1c9e5751c62db6c73ff7cc19eb2b4981d6e7523f860014e402",
+      "original_sha256": "ae60502fc6b211dedc60432eefce4d5aa0edec6137d891ce3bd1b8ccfed12427",
+      "original_bytes": 3006
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/static-result.json.gz",
+      "sha256": "d73206c2062de3e106fc475dada954a6e23f49fc4fdb4ecc4b0bb05b9b5d815b",
+      "original_sha256": "e4556388f7d5895452f6bb19cf9df507f7ab44258638b06282ce0d1ae13c0f9c",
+      "original_bytes": 3121
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/static.stdout.gz",
+      "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+      "original_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "original_bytes": 2
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/static.stderr.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/independent-review.txt.gz",
+      "sha256": "f41a2ff792a8507448587118ced0dfbb77b05b5040567f600785cc2ab72d5a56",
+      "original_sha256": "8d29c3ed75c7bd5654f965fc0c58bfa1572ecb63c73070ab83d487afefcab3b8",
+      "original_bytes": 1580
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-adoption-v2/final-source-binding.json.gz",
+      "sha256": "fc68928811f4b275e4ab6c0485fab36dedde84cb408b3a1694a69282b5b38b92",
+      "original_sha256": "a1e5c10d2c5eb1fd98e4289e80b2b17e7c97f77cab5f87e82f4aedd34b37e4cc",
+      "original_bytes": 435
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-integration-v1/run_adoption.py.gz",
+      "sha256": "d6ecb6aca983495791f0977525c29b74d8577438e2cc4e53671feae97858121c",
+      "original_sha256": "1685d02145d22985879660b88f8cb3b17bda09ed8752df34135cf99205979f7f",
+      "original_bytes": 2797
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-integration-v1/workload-result.json.gz",
+      "sha256": "599b3add2dc18395d485ca87f82daba550837a1179e3179fcb3ef8ded83b977c",
+      "original_sha256": "9cfdfe4620d5c92c9a68a4554d157560007ff240e3ef266764b452bc1a0122df",
+      "original_bytes": 151357
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-integration-v1/workload.stdout.gz",
+      "sha256": "bea81782dfd011427397e5220ae81e0b130be432688ae06198279d5c3f4c7625",
+      "original_sha256": "71811b4400b9c2c7eb2b4bb4a7659d7c32f8d85c988d6ac8ce25c8213965380d",
+      "original_bytes": 468
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-integration-v1/workload.stderr.gz",
+      "sha256": "5c497c8a52aba8d437d22e550da6a509c531c3ab385a24dfde6ba8984d53f017",
+      "original_sha256": "a90a9f2004266205eff7def6e2ad30c721106d09c319d1b6c87bb1a9e1365063",
+      "original_bytes": 1419
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/run_probe.py.gz",
+      "sha256": "b1f057681b824f3e7e35ab5d64abdddfb057acc509a36e994ceb70e178eb6b26",
+      "original_sha256": "5afb317bfc20c4c4df8a7d751cc1f7593a81607e0d5f9de93c4820db0540ed9c",
+      "original_bytes": 2377
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/workload_probe.py.gz",
+      "sha256": "0a0be1955aec5e4baedd9d3d67e4251396ad22e76f40608dda8de263b836ef13",
+      "original_sha256": "be2be920ab62db8a5b3eb6ac43d89fcd061dea03b9f9d781dee9187144863033",
+      "original_bytes": 5919
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/result.json.gz",
+      "sha256": "61135e5c36096d8635bb54a06af3cd52ae5b8fdc4c3c1ebaadf976fcb7b29b25",
+      "original_sha256": "5d7494f6df1a4d5bc591bd8afadf19dd1f9607c845856184e336c9cc66d798e7",
+      "original_bytes": 151553
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/stdout.gz",
+      "sha256": "04a1676bf6d729487495684b0bd057177fe15aae94d9e476eb89e29c3195c916",
+      "original_sha256": "bbab5257a512b4529362036909cd8d159acfb478f340ce47b6082b07e6e96d4e",
+      "original_bytes": 34087
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/stderr.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/comparison.json.gz",
+      "sha256": "27ee57c208e496da4098b424808823356c8f2666bc7379c316fa473fc15d7a13",
+      "original_sha256": "5b2826dad300331ffdc0ea13437cdff56d13fdf697b25e0d112c990c5e796fea",
+      "original_bytes": 31858
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/retained-batch.json.gz",
+      "sha256": "29f595522f1c96bdeca6b4d5e234a2bd85ef53ec2f02cbd715e719e52cd9de16",
+      "original_sha256": "089bc463f0047aea7442f9b6ff690b30f6affc06fa621ce6bfb073a608487518",
+      "original_bytes": 3771273
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load000.txt.gz",
+      "sha256": "03f427d098540b3029863aa5dbef29abc9a11eb996f4d2adac852a95c019d21c",
+      "original_sha256": "67e54f7f9618451ce57338c6a2e707ab23c4f44595f37d436e67b9609c410549",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load001.txt.gz",
+      "sha256": "732eedce127be75e72ed3ad98ff0d81cc6e549dd2dff8a3ac271b383b8f49cb2",
+      "original_sha256": "3b734d94cb9a5bc63a053c65aec04ba3627cd4bcadc5de6d4c398993a27f5b64",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load002.txt.gz",
+      "sha256": "8cc9992ab00175579e05222716b373d19b096716d5d924ce067d286a4370d3ed",
+      "original_sha256": "9a70ce70c23eac44195d297fca63a7caad4646227e7126842c752305799482f1",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load003.txt.gz",
+      "sha256": "3a1680adc5a4fef35fa121f8fea4c7455c6b60f5fb51b9b7fff863649ef4ddf3",
+      "original_sha256": "de621e7ebd1dc42c68907721bfb7f36570956efe39a9c6840391a5b2e29b1fd9",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load004.txt.gz",
+      "sha256": "0b0d24fe75017e939b5118386df0f3cc0e388e8be122926bb9310e8e866ec81f",
+      "original_sha256": "ed61e5e033548a558902bf3530c8263a46a4cfae7808accdb9c76a968704d9dc",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load005.txt.gz",
+      "sha256": "d2aaa6a93d4c47922b77c45c00cd03121ab7e34a377130fd5d9db133738fc173",
+      "original_sha256": "55ff4f82549995659fee06230792bc9a33ad0cae6569bf6dd079e6913cdc2d5e",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load006.txt.gz",
+      "sha256": "e930776e916e461f7dc2cf669bece2761f00eadd6895a6707408926c1a94d89d",
+      "original_sha256": "473ed3f11e11de9d9a0c3d1b28d4f9a86f8c3c8f2e7feab569a34032f40e207b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load007.txt.gz",
+      "sha256": "c60655faf4ba156319bd2cb7eb239516f822ca6b295b3151578289a2481af80a",
+      "original_sha256": "ecfc1244b86ac65879347cc3ac35910cfb559e424ebe9c4c3c322a4a54975ce0",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load008.txt.gz",
+      "sha256": "c1a871b9b1e0046af6d2b083b92114957f0f15deec873ceddd2b31eaa80e8526",
+      "original_sha256": "dfb1b874281c7dfa25a928e5df28778ed68b59e183e4baf78281fc0f3a0729e4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load009.txt.gz",
+      "sha256": "9e8ac95158df62692c56b686543c448558cc137657c20df00e6585988c0166e9",
+      "original_sha256": "9c7ccb38632ff15bd5eb97d102e9657364b2bb47e44b93322c1076282c7f1612",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load010.txt.gz",
+      "sha256": "7eb83b295cd1f9dd6037cadec97405ace3a5f9e4b1ef1c72471d0eb23cf6129f",
+      "original_sha256": "97a9bba8901f8aab934bd81a1eed24650760fb3cc4bddc8941618ffdc9faa413",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load011.txt.gz",
+      "sha256": "bd9c6f763c78d0fa42fc3e26dae9e2d948a7a315df11570bd65893f3fa05ecf8",
+      "original_sha256": "d230eefaf0671ce1642d7a29dc8e7696fdfbc1d7b696a0ffcdb3b67062f57981",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load012.txt.gz",
+      "sha256": "943ac9161f2e2d449e578811a808fe2c0337f9c78143f9935aa0fa796e49982d",
+      "original_sha256": "b3f64d0167b680c772f17aff4ff3b539cad1513cda028438250618d1f94c43d6",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load013.txt.gz",
+      "sha256": "db54efd2b92c28e1e5b7749288e164e46840cb162ad3d0a2f3859962856c702d",
+      "original_sha256": "e0e54dc74f481f824b1bb2e1320b3c49d7f2f84451527779b9b00f65f3d2c953",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load014.txt.gz",
+      "sha256": "102ad884219f03d0a3a45cb11af54c16116e1420110b878fe695832a7eb227c4",
+      "original_sha256": "fa84782e0571179e288502be22c8760ebef5aede710a1b32c5676f7e7c126265",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load015.txt.gz",
+      "sha256": "a21a2dce7301decffa588694e4b3593ada87e6f1173cf35c1c7af8731e5d6adc",
+      "original_sha256": "d4595dd86b72e0c372cf5232cead8ecfa640efe4dfdc87819bbda0a9eac3c089",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load016.txt.gz",
+      "sha256": "07b13a0c515f18dbae539faa37176aa0a64cd6a5f582593aa6aec69ead51dab4",
+      "original_sha256": "5f0bbf0ff1126d2a96ab3d65a48d79225a34ccf05f52e13e93a8752626653df1",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load017.txt.gz",
+      "sha256": "e4313b629048ad4e681e9616b072a673605917c3b4f98938f300b1709263b0eb",
+      "original_sha256": "c725207d4f3536c777906625d7374440b4bc37b16f77a06a27b76854215b6491",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load018.txt.gz",
+      "sha256": "9effaa56e0873ab4b75ed02c24e140ffef8b8f1d28ef3cdf958dc331acbe08a6",
+      "original_sha256": "6428bf22b00526b70c8fb7aeb759c41aa7aba990ee78fe9860d59a50573f6fea",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load019.txt.gz",
+      "sha256": "10e2a5906be64804476d9685b1fabd900354d88a07ad8c0973240fb7ba3e68ad",
+      "original_sha256": "f62d10b2ee0fd7de914739642b1e3802fd97d70329a11e55a5538470925f4fb6",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load020.txt.gz",
+      "sha256": "ba0a31f452f9bc55a458f6e6713ab92d84b7b19fd8a42bb18af53c33e10f5f8e",
+      "original_sha256": "480d95ded802eef72849607abdcf69c97ff152b64111278569dddecd37f1f545",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load021.txt.gz",
+      "sha256": "4f87fa2ffbb4eddf131fdd10103e5e28fb9f4e0b7a84f5e7eeb09a3f64b63f97",
+      "original_sha256": "1a9c11ff91d302ced35d54a39ba50766c29935ccb75afd9b9f0bcb120eac946f",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load022.txt.gz",
+      "sha256": "9825c2249d786d30c07aa82736ebdca10c8693950a542d09a91d8579d9d32e7e",
+      "original_sha256": "b537c1df9c9a71ce5acb9f02f2189164365c7c822935cba84881f64d4663f960",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load023.txt.gz",
+      "sha256": "822c660f94f86bbaa707360604efb948a35c2b230b3c87fa7c73adbf1aacbf32",
+      "original_sha256": "151300ceecef9509780df27c7aa0ebc6cfaf9bceba62b18c4f468bd98a02996c",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load024.txt.gz",
+      "sha256": "85748ee92cf67482020fd5f8a7a8d2d7dbeb8867d277a6a4b19293ff866a9bfe",
+      "original_sha256": "869c7323473ebbf180d390a2f7963b3f261d33424f6d3dbd09544864925ca827",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load025.txt.gz",
+      "sha256": "230a63493aff7c921f183322ad4ed6f65b574d18c72c2e06a5aece6c4b47563e",
+      "original_sha256": "75427f9936bffe3594c796924de8fb27fd5b97177431907988f145be43a51b3b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load026.txt.gz",
+      "sha256": "85c930089ce27ce79a35184f15efddb61f678613fbf35b130634d6fe861aecf5",
+      "original_sha256": "b452888e98638944341b1f85572a01ac5c4b5de0d5f99ad9266792e0dd918a2a",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load027.txt.gz",
+      "sha256": "1839adf4be1fb868518da6e366c47101194b733a0e60eee68a67548d29d639c7",
+      "original_sha256": "78fec02b36d1e7175dda49ee348454bac21505bf25218fa630538d45e6af1a58",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load028.txt.gz",
+      "sha256": "159de7c60f41bb52f13a2ff769e909da15ce7d90cb6a81c52868826f79c6f246",
+      "original_sha256": "733900c0d224066adbcfe4c9e9380b0050908cba9102b42af8a1b304119e7619",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load029.txt.gz",
+      "sha256": "7ed590debb2f1246d04bad660e240339835c649cbf3751293506c7dd8a6bce08",
+      "original_sha256": "1a2ad582f369ba24dec6f5963681f60542c8aa3c885bf33b924a980e559dd738",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load030.txt.gz",
+      "sha256": "80be2c521d73a477792c77cde80494b66bc77ff3422ef7ac009bbdd289f59856",
+      "original_sha256": "465ea4e0d99c1e7c5270c9aeaf33c5f6d773c5a881211ee2d974540e500d6d3b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load031.txt.gz",
+      "sha256": "49bbafbc2acc82bebc49990e39f117083593cc11b9fb6f69ccb8391a2f4f302e",
+      "original_sha256": "9f7c29d38c185a35ee3186b34962a63b47d5c35417b168f899e12ad8b42e715e",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load032.txt.gz",
+      "sha256": "85958cc9fd1751e20a540b4fb3b09a9648181679ec5a7eaba80a59d8eba8e105",
+      "original_sha256": "e627193fb5ecaebd493525dfe159d8d1660b52ffcb1fe91eb63c3741a758f1c4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load033.txt.gz",
+      "sha256": "67174f711258e17e6fb6fb1eba4c155ca1f7e4c4627bde0010dd4fb45aecfd08",
+      "original_sha256": "fbae13e08064bf55d1d0593bc368fb5763851502349f81f53caf0a7907062b39",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load034.txt.gz",
+      "sha256": "e88098177c6721e75f18cbf6b81e33d51c03b3fd9ddc6d143a957bf12db151a6",
+      "original_sha256": "52f85dcad471899230737abd37c780775461cefa080b83d1938da3008dbf7117",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load035.txt.gz",
+      "sha256": "b0d401cdda6212f7dd3751924a96455feec6a3fc6b2377bf26b98bb986e4b956",
+      "original_sha256": "b074d7fea2728e1c63cfd2262512487a31dd6ea083640185a21595cdb139db68",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load036.txt.gz",
+      "sha256": "524cf6b56e56465f390b9f211e8eeb8a39867303389f68f3977381d527382133",
+      "original_sha256": "3fbcb6ebeb6dafe16aa6fa05da0f7364f120ac4d9a8b1ee2f64d3cc33359428d",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load037.txt.gz",
+      "sha256": "a6d74c59f1a47ad9290cb7d2489e3e1cd93507c4f120d61c57fce539180e1fce",
+      "original_sha256": "77b9ebbaf2ea177637511984d0307258c9d7506fab64508202c255c8de5d3ece",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load038.txt.gz",
+      "sha256": "acb3816dbd13bf5adb0e61e147df39b32f44f36c0273a31beb588b44bc1b78e9",
+      "original_sha256": "3bee3db85fdddaf4853d99cc22f6ce1e7db998d3fa298268188db63e64704cf0",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load039.txt.gz",
+      "sha256": "1b16a0a2dc7fbb567771f49db699b37fe1518a2d3b87363fe4296d39d7639018",
+      "original_sha256": "782825cf021b685483ece86dde9fdf265cdbff0b2360820584f15c95beb475c8",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load040.txt.gz",
+      "sha256": "e4519a0ed830dd940b988eab4cac063dd8821ad145eb1e4c03368ff4a90bb27e",
+      "original_sha256": "5144346ceb462072301224c9ebf71ef46e0082e2f269875c54bd6ac0511a08d0",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load041.txt.gz",
+      "sha256": "248a7f690c2df8f8637cbcbf67c84f9820dc2b4063b5c708e8f68f213dba9150",
+      "original_sha256": "ced89c1e2df753a45e66bc4a193fcb4b325209b21de48193123c95125aad4878",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load042.txt.gz",
+      "sha256": "c237e55a868af43afe2e5bfdd59d2c5eba9399d2b2d2d450ca12530afc0a07a9",
+      "original_sha256": "a87c30d560fb7acfcb983c0c2929184ed7b586e61c2b45e13f70b7a4b9534963",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load043.txt.gz",
+      "sha256": "d90d9510baed5b38fcd616012a274bcefd3a2f8d59cdca29380c934c2dd35dfc",
+      "original_sha256": "ce824bdd71bdd2158d3796c2e809f2a4d40a3b3720f345dbab5761f988abcee5",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load044.txt.gz",
+      "sha256": "b969562c2cf5035fad421451ffc88a301e4625a7d99f6e8b0fe5a0b4420fcfc3",
+      "original_sha256": "749917f67685f8a1c6a10aced66de662ad0ff866dd85e35f7ad146490995f3c5",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load045.txt.gz",
+      "sha256": "3f039154d244dbf47ac22310abea8363df680784b40a19edb8ceecf56a205dc1",
+      "original_sha256": "2573732424365059956a70bddf116901f7c6071e6869203972a646b4fffc9f7f",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load046.txt.gz",
+      "sha256": "936cfdb4cc827df47877659f389b9a8d843c6cfa37a716bdb8d15905b81fe873",
+      "original_sha256": "2149e577832e23f14428e89388b014fafc2e3da8cdd68dddaec63befc9ce4ab0",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load047.txt.gz",
+      "sha256": "6a3d405de0bd00092fd4c807c547105a118649a1f512f510f124747d84048761",
+      "original_sha256": "72b72a5b555f9edc2c50f8433763c74e46b25e87ea3dddcf9e507d44a30ca11b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load048.txt.gz",
+      "sha256": "55b1181cfdf9d957c0518c2c8b1934c9082ff273ad556c7ff5e82bbfb9e79581",
+      "original_sha256": "40d343dab3ad10a3ef468ab8e710dc113e4581cc27b0e0d91cafb1552bbca6fa",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load049.txt.gz",
+      "sha256": "b612cc8acfc0897c8c83807756f8cd4e58d36f7c2274338821ead054b758d823",
+      "original_sha256": "1e40784f418e3202bf5972ac8448d612fc8e7d93338482057a8734e0666f3267",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load050.txt.gz",
+      "sha256": "7949e19f65363995ff50c200c2105e4b5d4e8e742388abeda32841ae299e8157",
+      "original_sha256": "19e26ba2e6090492735632dd1a5a8d5f17cb8de97934318ce3c3c7ca2fade908",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load051.txt.gz",
+      "sha256": "6a43d0da29cfb770003f5764a5c8f49a7441620b67ec36c170c10b10883e262c",
+      "original_sha256": "ebf7fa008694bcf7d1ecb3cebac99e1b893fde44b74a66d798f18be414ebf5d5",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load052.txt.gz",
+      "sha256": "5319563e896395958c9a641d24fcf496560263b7a6b7fd39712d3d473d14aa04",
+      "original_sha256": "3c5753eab0a6d4d0dae1e510e49dbcf3a4365539379936a90c29ed54cfd911a0",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load053.txt.gz",
+      "sha256": "d2ed4d622589acbb5aced0739d21a265b5d982e642bc2fe716d8755093e1941d",
+      "original_sha256": "fd5df31e541620718676caf2d58cd57d4e4cb24bec2b3eeadb5864b5dd32e3d9",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load054.txt.gz",
+      "sha256": "f1e038fbbcc747d9182276414098c8056c0d80e885e6a41e84e22d510c0c548f",
+      "original_sha256": "ef972d69a3591bd2e80537badad858501b36b2fef95660cf71c4d2ce572b9799",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load055.txt.gz",
+      "sha256": "e9fa89b108c44badcc86ad6e81def27c53cd6544e08548af11188f357cbb1543",
+      "original_sha256": "04874e8bc114fd8fc0e87614d2a04fb544fdd9073f330b997f71bf696707f194",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load056.txt.gz",
+      "sha256": "9ea09fbd1724ff3756e28e13b62e64bf7ce4987a93fef2efc06e2ef1cfd5ebe6",
+      "original_sha256": "a739bb4e468f371e9b252b33a5c64927d5fea098c6c9ee04b4b2ba284a0435a1",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load057.txt.gz",
+      "sha256": "68928c864a7bf3ab9b1fbd0eda49d73b36f0347a66cd2ee03a2b9e9493b30d0b",
+      "original_sha256": "2b6f15f208a201978f43dd35607bae9717a6d1ca7e9136d13f334b37a87339e9",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load058.txt.gz",
+      "sha256": "7c3d893863f1026273e37179cd26ecdbf90fa9573afcfeadcbd6173e2d3a0334",
+      "original_sha256": "674e152f45ac4013079c530c8ed5a3fcb2b68a803ea9d33ecfb4dd6c4da965d4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load059.txt.gz",
+      "sha256": "9130d65b577d860df3fb9c536aff72f1e482e723e791803bd2e23c35aa2d9fe1",
+      "original_sha256": "3c65a59d827dbee2ee5ed5a75fd3d91350a5fd41b123f5ad7ed8a050eb48baa1",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load060.txt.gz",
+      "sha256": "ad2acd9653404647b8521193162dfaaa23d3c6fcc3888bbf18e7cb5a226a10f1",
+      "original_sha256": "722ea58287e9e848fc21baa70dab17c3c378247be8a22f564d702ce78efd9f51",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load061.txt.gz",
+      "sha256": "67a759775a0bbec7d7b7a7e0e68358ae0053829d5528cc65f2b633b2af6dcef2",
+      "original_sha256": "509eb676b4eaff78ebf86853b3446f045a463fbc4fbabbca2e70afab3e1b228f",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load062.txt.gz",
+      "sha256": "403bb52e4e309ee9a0e9525e74d1f360619d5d372e87e9e6d08627e41ae637d1",
+      "original_sha256": "48511370bbe2c0a90325132b370c16d5ac76e36dfd03acd0077146541de04e93",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load063.txt.gz",
+      "sha256": "8205fbc0a4d9a1dbf65140aedf08e6de785de849784ff1a218135b7dfc8ecebf",
+      "original_sha256": "09d0040d584d9ada354a1777f925cb4a1025cbd822548e3885885a2a7d41184d",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load064.txt.gz",
+      "sha256": "a478e77d02c3c6ca0bb2c02d9faee53d0548f94672b67a8cc2d0f2edbf6e12df",
+      "original_sha256": "3d28bc02d8abb3ebcaaaef9fa2fb6ac4f854e41bc32ca5e45bc756a8ee4aa52d",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load065.txt.gz",
+      "sha256": "488532a244947d39c8542d7892c4f86b22da4998eb93fe06cb2f1bee261f988e",
+      "original_sha256": "1498d133d669e9e7ace629fcc8632be7117cdfd32a824493960a1fefdc8b440a",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load066.txt.gz",
+      "sha256": "c957bf54cc1f73b0058318c4a491cabd39722656e2f9816dd2f7bc60f369c317",
+      "original_sha256": "1ce8e9cdf2ac8fdca37f8ff3bf40974e044d4e8532eb7b08ff1322a59135b7b6",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load067.txt.gz",
+      "sha256": "ec30ca203dc5338cb363988fa48e08e8971b388b70f72f408e4f93c70a978f52",
+      "original_sha256": "03c7a5515572f08519159132aed57ac112fd4497ec057be45bc86d99643c8d07",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load068.txt.gz",
+      "sha256": "6f3c678001410dd1aa57ce546cc416625987f5890796ee2e67ffe12086020a7a",
+      "original_sha256": "5fa648c8066f9542ebab09257fc706fc034a08d740ef295b83b4579866831fd1",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load069.txt.gz",
+      "sha256": "7f8d459757473e2ccc2f5b36104df25c4fa0a80466c178d9eab83e8e849e7808",
+      "original_sha256": "56d2769aeececd9efb78f7a8268a43ee7300d5e25d59474cf48fb9f9561d01d3",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load070.txt.gz",
+      "sha256": "455550e832c93f89917a12aa591a9021d23ce689fd01dff47a9de08c22675654",
+      "original_sha256": "51e7baf0c11d5a00451a125e6f51b0dfdb588e40aae89a88b02f13894fd4aafd",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load071.txt.gz",
+      "sha256": "16e2177a426debcfbb9e1ca03ae23c75a3ffa8abcf9e4b936b315d0b1d8610b4",
+      "original_sha256": "6c1ef884d25bb5ab47bcd2a57ebf211426c1130d2003a2d9cd30e6d4b7b00269",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load072.txt.gz",
+      "sha256": "95b1029513187b1b0f2b1c0dc59a82280f4536666f624d4bf0d71bbdd84d2939",
+      "original_sha256": "298f86655f8b4b9f01c3b05af094be1dddf97018c2bafb01f0b633f3bf2f062e",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load073.txt.gz",
+      "sha256": "661eb328935e49bdae5c25dd9d2fbeb09ecf92231057fa5c88760869b5a6b384",
+      "original_sha256": "bcbee0196588ae42d1a3df5c958969944d58e5f82ee72f13e6db3deab62f330e",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load074.txt.gz",
+      "sha256": "0920dfc7d87e1cf139455f2efe189b7d98579f25b7ce58c545e927b2956992c4",
+      "original_sha256": "669deab1ad2aab8f08259bc0be980e5e38e9b5ca044500f57e7c69316335028a",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load075.txt.gz",
+      "sha256": "a0805f015277bd70a71e895246d652aef89753f6317bbf3614f6610c308bfe80",
+      "original_sha256": "0a434198fc4576c041a5f4248b40a0db12f6f141f032ec2ef4e382f44745b3e5",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load076.txt.gz",
+      "sha256": "82e14f131463a4c8683cab1f264059f933df3223b75c610a0d9c9e29705e8fb3",
+      "original_sha256": "de7ffbb39a00142e111e900942761a0311ff263612ff4b96332dcfcd1ebab12b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load077.txt.gz",
+      "sha256": "70c49d43b300c79afe1a4b0652d6ee3806c3e7218c0ecfa8ef15321ae1057132",
+      "original_sha256": "331b805b8cd9b7f30582f2d7815bdd009901540e8f68914ba269a5bf044ebd0e",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load078.txt.gz",
+      "sha256": "2eac18e72bfa6f4f69827c926c1cc27da9ac074509837c0bbf616a054ab80a59",
+      "original_sha256": "844db3d1008ca4bedbf91db0be8bfbc4557e5f708ff1ada7082dc5fc3e3c47f5",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load079.txt.gz",
+      "sha256": "8ed28430b7b452102ad3981ad07514b118d91377c7ba4fc093168851aac2c4d3",
+      "original_sha256": "b3dc4fa68bf0556bfc0b7eb3ec3b99c091877a7729a1f94d9691cffc460673fe",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load080.txt.gz",
+      "sha256": "e8b19399dcd61793b68875d086487cedafdf122e57586006fc9c2a0ed4f02ffd",
+      "original_sha256": "c82741f17a9803b342f687a5e6d3e6626cf057be4fef194921b2fc4f6cd68d3b",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load081.txt.gz",
+      "sha256": "030894d7f7270b28f5d25d4bed13e1f8d112175d524a1b49f02a4edb07dc8a23",
+      "original_sha256": "382737e29d2408cf7b394beb85f10c1fb0e3e5289e0b7f2b44600b14c3cf140f",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load082.txt.gz",
+      "sha256": "2854788092b846951b69c5fd43b60d983f39581dc5abcb58ecc388178e0b89ee",
+      "original_sha256": "40b7dce38c626cc875dd82b4dfc3dc7528de582d15a99e29f1bfe92db1f0f684",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load083.txt.gz",
+      "sha256": "9fcc8159992b5d38597557b045a2af1b6e6196f8f776ac16a6cc09371351f1c7",
+      "original_sha256": "b9008dc70395902d5d1da215321ec0edfa8320609d4038147d8b48ae71dd27fe",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load084.txt.gz",
+      "sha256": "621702f35f95053d15797befedc62b4052e11cc00da5a035781c54f582d11258",
+      "original_sha256": "7615feb0b447f1e072016ff86faa23a1f1d73d4892d68729192f9581054e2c63",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load085.txt.gz",
+      "sha256": "4ac3006cf42b55c02ca022d624a2e328f3ab727db867f54234ca9b38dc4b8dab",
+      "original_sha256": "5ef46a05a734a973a2a7cb2a7eac910a6bdc7596a643fb74a5a467cdc4169390",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load086.txt.gz",
+      "sha256": "4ea325ee15f4d7af25fd288b337c8da3a3d704f1baa0fe95647a785078515eee",
+      "original_sha256": "22a7ed1292ab6dc3e8a0bb16379dc7eb28bed0b5e9b1e87461dc584989099ff4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load087.txt.gz",
+      "sha256": "03c849d850d47786e5184a7c93d06403487c95ab51663e7fbf8976f11a9e7056",
+      "original_sha256": "76e5ed96dc7dd08394a159f4feb9eb7113a68ad5c605268cc600fb7a69dc9ed4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load088.txt.gz",
+      "sha256": "5745bd5dca5f53e00e087445d38ec938a637e11b512744bfb9a562f9172bcaeb",
+      "original_sha256": "80e277d0c02306c446f0e32be8d434da14d154729ed17b9468928197cb6913a8",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load089.txt.gz",
+      "sha256": "abaf0c4da7560c4185a158a71e01aa1b022d01c5ad48547dd04bc198defaaefd",
+      "original_sha256": "400e4156e4de7711b4bcb8d018ce989340f7f469821bb43ddf1790c1c33e796a",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load090.txt.gz",
+      "sha256": "6887f3e8fdab0e0b6e40a7817aecf9a34fe9bcedd29ca9a4188a7e2120ca4f00",
+      "original_sha256": "671999bb591542b636a2c8d64a074cc89ecc58127019df4b4dcbf089a2d6a8ce",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load091.txt.gz",
+      "sha256": "6f0df4e00fa27b66eecec73c8134cef1470a86b8ed3fdcbee385349c299b3aab",
+      "original_sha256": "3566f972c73384a523cd073aac283a3738135a2436ceef6c54340b398908d617",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load092.txt.gz",
+      "sha256": "84dfabf2f48f31d5429624be891ad7c0030a3b8f33553b1177c9dda37cff7a3d",
+      "original_sha256": "8047fc46a88778cff800bb977ed9f392bfe455d32d0172d85c65edc289880a11",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load093.txt.gz",
+      "sha256": "a8926b85b4c3834132696d2d425742d5ccc0be3fa3ccce86caef924ff2add161",
+      "original_sha256": "489e7ec3a5d99b70076a94d046919878380b7b232f132cf7f8c7a0e15e49e381",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load094.txt.gz",
+      "sha256": "a0bce5155c325ded67b30802075cc237fd4deb43f474a42319d07a4b5ba4b37c",
+      "original_sha256": "869b5a79431f6398b8d5150c16f4596aa0c5433d0b783df260ea2343f59101bb",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load095.txt.gz",
+      "sha256": "be14a91218ce4841bb17a9b123ea62e034fc91bb4fcf151e390e0259f6d565ab",
+      "original_sha256": "134036ab56a0cd336792fabaf55455e2050385a47c2c580c704481548d75427c",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load096.txt.gz",
+      "sha256": "f076c6fc6538db38aa5dae5bfc77fe0a93f274c3aafd858ea7fcb6db2d7780fd",
+      "original_sha256": "578e7257e60290635fa89d7a13ca48c4324195d592418f0cc8283a6fc66a297f",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load097.txt.gz",
+      "sha256": "a7eaac5d4c8c12b0ac4085253dc11879e9fcc36061905dc884f594813ac2e2f7",
+      "original_sha256": "bb8d439858334f4b353a4843060ea59ca17798b4285a11c6b9f78b0b4d1438c2",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load098.txt.gz",
+      "sha256": "25f108a505171375fc5890a0fce6e6a24abd78ddd090ea76025c9d5b2f770502",
+      "original_sha256": "b87a64e483e8d2600639489d6701d94b861e38d99180ff796f2af036a2093401",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load099.txt.gz",
+      "sha256": "6a4876ac2d2bb540b1d789fd402ed199f6534433d829e44a6c65cc9acf55ed79",
+      "original_sha256": "ed00036b02a56df0fba1a1ddf012acfdbde16c90c1c4c4c97cd0b80cd2d8686c",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load100.txt.gz",
+      "sha256": "a50287c02f442d5da0e3697cc504a59fbec897626c764c39ec7348bbc83b06d7",
+      "original_sha256": "9d279d6b4c6f8444fb49d4ac431e65e0e51792323245665e432d99d4632acdd4",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load101.txt.gz",
+      "sha256": "53dcfe777c77a1e3829cd67958a7df545cbbc49f1dd06d6c1fc96a5c8e398f6b",
+      "original_sha256": "4de58e85f333edea0c947285acfaea21d405b9d7e4b7c41d6b2ffd195dd97176",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load102.txt.gz",
+      "sha256": "3e336802341e4f42d567cec9707b33b185daeb7ba59d8a1fd012eb04a0ac01a7",
+      "original_sha256": "8c495cd91aec4b6f7d136fde5569a7dfaddf095130ae312dd715a2d14b7c0c24",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/r05-fresh-admission-workload-v1/artifacts/load103.txt.gz",
+      "sha256": "6b3b769fc3a0c61c3f578c87fd30455f250c7b15ccae554d86c7db0e44f22b56",
+      "original_sha256": "446b41cffd874927a980e9cdc741a1ee417478a48386e1e64d810d3be034d48d",
+      "original_bytes": 1140
+    },
+    {
+      "path": "docs/evidence/retained-fresh-admission-20261024/build-fresh-admission-evidence.py.gz",
+      "sha256": "1e1802deeba8c4a8e93a6ef598798f6fcfb8be79145edee6f98bc60ee6938ea6",
+      "original_sha256": "ccf9cd3f5700a49bb1d63bc9dceee2980f7c562bf184edb4203ba58465a813e7",
+      "original_bytes": 3335
+    }
+  ],
+  "limits": "Original runtime caps unchanged; no release authority."
+}
