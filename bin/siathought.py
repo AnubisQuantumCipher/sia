@@ -5,8 +5,8 @@ generated records, retrieval-policy state, and scheduled maintenance. They do
 not assert cognition or biological processes.
 
 This is the third bounded child of ``sialib`` and it follows the same
-bind/invoke façade as ``siasenses`` and ``siagraph``: it imports no SIA
-module, so one runtime state survives the dynamic aliases the test suite
+bind/invoke façade as ``siasenses`` and ``siagraph``: it never imports
+``sialib``, so one runtime state survives the dynamic aliases the test suite
 loads sialib under, and explicit test patches of these helpers are mirrored
 back into intra-module calls.  See ``docs/ARCHITECTURE.md``.
 
@@ -25,7 +25,10 @@ ABI state remains in the core.
 """
 
 import contextlib as _contextlib
+import os
 import threading as _threading
+
+import siaqueue
 
 def _canonical_thought_page_record(thought):
     """Project a compatibility-named generated entry into its page record."""
@@ -3787,8 +3790,13 @@ def _retained_source_text(rel, expected_sha256, slug):
             rel.encode("utf-8") + b"\0" + raw).hexdigest() == expected_sha256
 
     path = os.path.join(CORPUS, rel)
+    # A special leaf must not wait for a peer before type validation. This
+    # admits only regular live sources; it does not confine parent traversal.
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     try:
-        with open(path, "rb") as stream:
+        descriptor = os.open(path, flags)
+        with siaqueue.regular_file_stream(
+                descriptor, label="retained consolidation source") as stream:
             raw = stream.read(MAX_EVENT_PAGE_BYTES + 1)
     except (FileNotFoundError, NotADirectoryError):
         raw = None

@@ -1,0 +1,8 @@
+Actual GPT-6.1 read-only review: no blocker for this narrow retained-source repair checkpoint.
+The nonblocking, no-follow leaf open rejects special files before reading. regular_file_stream assumes descriptor ownership and closes on validation/conversion failure, including the tested interruptions. Exact live-byte digest matching and existing missing/changed/oversized historical fallbacks remain intact; unsafe special leaves deliberately refuse rather than fall back.
+Explicit os/siaqueue imports introduce no second sialib instance or export; existing bind/invoke rebinding remains operative. Tests cover real FIFO behavior, non-consumption, descriptor cleanup, exact bytes, history recovery and original ownership/binding controls.
+Current hashes match receipts:
+Product: 34f8e28903e0f036f67da0ce220839aa9dd1f7a109cfc65c652e6800f06b4d85
+Tests: 99183ee3ca8e269023f042bafd836bf81b6bb55087c0e7ecab28896cdde3ffa0
+Raw-log hashes match: predecessor fails; candidate passes 29 tests; expanded candidate passes 42. Static comparison records no new diagnostics, while product analysis remains NONPASS.
+No independent execution performed. Parent confinement, arbitrary interruption/close failures, whole-history deadlines, installed recovery and full proof remain unproved. Next step is exact committed-source reproduction under unchanged gates.
