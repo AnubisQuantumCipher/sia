@@ -1,3 +1,7 @@
+> Successor status: the [focused refinement proof](CONTINUITY-APPROVAL-DESCRIPTOR-REFINEMENT-20261024.md)
+> now discharges the descriptor obligations. The failed attempts and evidence
+> below remain historical facts; protected integration and release remain open.
+
 # Approval selection descriptor refinement
 
 **FAILED PROOF / UNACTIVATED; actual protected integration remains OPEN.** This extends the

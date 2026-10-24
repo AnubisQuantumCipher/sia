@@ -11,7 +11,38 @@ package body SIA_Continuity.Approvals.Descriptors with SPARK_Mode is
       return Word (Bytes (Offset + 1 .. Offset + 8));
    end Word_Payload;
 
-   procedure Recover_Digits (Bytes : Word) is null;
+   procedure Digest_Unique
+     (Left, Right : Descriptor_Bytes; Offset : Digest_Offset) is null;
+
+   procedure Low_Digit (High : Generation; Low : Digest_Byte) is null;
+
+   procedure Recover_Digits (Bytes : Word) is
+      P1 : constant Generation := Generation (Bytes (1));
+      P2 : constant Generation := P1 * 256 + Generation (Bytes (2));
+      P3 : constant Generation := P2 * 256 + Generation (Bytes (3));
+      P4 : constant Generation := P3 * 256 + Generation (Bytes (4));
+      P5 : constant Generation := P4 * 256 + Generation (Bytes (5));
+      P6 : constant Generation := P5 * 256 + Generation (Bytes (6));
+      P7 : constant Generation := P6 * 256 + Generation (Bytes (7));
+      P8 : constant Generation := P7 * 256 + Generation (Bytes (8));
+      Value : constant Generation := Word_Value (Bytes);
+   begin
+      pragma Assert (Value / 2 ** 56 = P1);
+      pragma Assert (Value / 2 ** 48 = P2);
+      pragma Assert (Value / 2 ** 40 = P3);
+      pragma Assert (Value / 2 ** 32 = P4);
+      pragma Assert (Value / 2 ** 24 = P5);
+      pragma Assert (Value / 2 ** 16 = P6);
+      pragma Assert (Value / 2 ** 8 = P7);
+      pragma Assert (Value / 2 ** 0 = P8);
+      Low_Digit (P1, Bytes (2));
+      Low_Digit (P2, Bytes (3));
+      Low_Digit (P3, Bytes (4));
+      Low_Digit (P4, Bytes (5));
+      Low_Digit (P5, Bytes (6));
+      Low_Digit (P6, Bytes (7));
+      Low_Digit (P7, Bytes (8));
+   end Recover_Digits;
 
    procedure Word_Unique (Left, Right : Word) is
    begin
@@ -20,8 +51,22 @@ package body SIA_Continuity.Approvals.Descriptors with SPARK_Mode is
    end Word_Unique;
 
    procedure Prefix_Unique
-     (Left, Right : Descriptor_Bytes; Scope : Context; Item : Current_Selection)
-   is null;
+     (Left, Right : Descriptor_Bytes; Scope : Context; Item : Current_Selection) is
+   begin
+      pragma Assert (for all I in 1 .. 8 => Left (I) = Right (I));
+      Digest_Unique (Left, Right, 8);
+      Digest_Unique (Left, Right, 40);
+      Digest_Unique (Left, Right, 72);
+      Digest_Unique (Left, Right, 104);
+      Digest_Unique (Left, Right, 136);
+      Digest_Unique (Left, Right, 168);
+      Digest_Unique (Left, Right, 200);
+      Digest_Unique (Left, Right, 232);
+      Digest_Unique (Left, Right, 264);
+      Digest_Unique (Left, Right, 296);
+      Digest_Unique (Left, Right, 328);
+      Digest_Unique (Left, Right, 360);
+   end Prefix_Unique;
 
    procedure Generations_Unique
      (Left, Right : Descriptor_Bytes; Item : Current_Selection) is

@@ -107,6 +107,17 @@ package SIA_Continuity.Approvals.Descriptors with SPARK_Mode, Pure is
          (if Accepted then Content_Matches (Bytes, Scope, Item)
           else Scope = Empty_Context and then Item = Empty_Selection);
 private
+   procedure Low_Digit (High : Generation; Low : Digest_Byte)
+   with Ghost, Global => null, Always_Terminates,
+     Pre => High <= 2 ** 55 - 1,
+     Post => (High * 256 + Generation (Low)) mod 256 = Generation (Low);
+
+   procedure Digest_Unique
+     (Left, Right : Descriptor_Bytes; Offset : Digest_Offset)
+   with Ghost, Global => null, Always_Terminates,
+     Pre => Digest_Payload (Left, Offset) = Digest_Payload (Right, Offset),
+     Post => (for all I in Offset + 1 .. Offset + 32 => Left (I) = Right (I));
+
    procedure Recover_Digits (Bytes : Word)
    with Ghost, Global => null, Always_Terminates,
      Pre => Bytes (1) <= 127,

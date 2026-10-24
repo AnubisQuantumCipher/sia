@@ -1,0 +1,1391 @@
+{
+  "status": "FOCUSED_REPRESENTATION_PROVED_RUNTIME_TESTED_UNACTIVATED",
+  "base_commit": "2cbffc7b0f93822d7bce768d52fe4427a0e0acc5",
+  "source": {
+    "files": {
+      "spark/approval_descriptor.gpr": {
+        "sha256": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "bytes": 1429
+      },
+      "spark/restrictions.adc": {
+        "sha256": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "bytes": 287
+      },
+      "spark/src/sia_policy.ads": {
+        "sha256": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "bytes": 2703
+      },
+      "spark/src/sia_policy.adb": {
+        "sha256": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "bytes": 1041
+      },
+      "spark/src/sia_continuity.ads": {
+        "sha256": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "bytes": 10309
+      },
+      "spark/src/sia_continuity.adb": {
+        "sha256": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "bytes": 833
+      },
+      "spark/src/sia_continuity-approvals.ads": {
+        "sha256": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "bytes": 11766
+      },
+      "spark/src/sia_continuity-approvals.adb": {
+        "sha256": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "bytes": 1005
+      },
+      "spark/tests/continuity_approval_tests.adb": {
+        "sha256": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "bytes": 180
+      },
+      "spark/tests/continuity_approval_test_support.ads": {
+        "sha256": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "bytes": 123
+      },
+      "spark/tests/continuity_approval_test_support.adb": {
+        "sha256": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "bytes": 19973
+      },
+      "spark/src/sia_continuity_record_wire.ads": {
+        "sha256": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "bytes": 5567
+      },
+      "spark/src/sia_continuity_record_wire.adb": {
+        "sha256": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "bytes": 1759
+      },
+      "spark/src/sia_continuity-approvals-descriptors.ads": {
+        "sha256": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "bytes": 7309
+      },
+      "spark/src/sia_continuity-approvals-descriptors.adb": {
+        "sha256": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "bytes": 4834
+      },
+      "spark/tests/continuity_descriptor_tests.adb": {
+        "sha256": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "bytes": 267
+      },
+      "spark/tests/continuity_descriptor_test_support.ads": {
+        "sha256": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "bytes": 127
+      },
+      "spark/tests/continuity_descriptor_test_support.adb": {
+        "sha256": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638",
+        "bytes": 8721
+      }
+    }
+  },
+  "toolchain": {
+    "command": [
+      "bash",
+      "-c",
+      "source /home/sicarii/opt/gnat/env.sh; gnatprove --version; gprbuild --version"
+    ],
+    "exit": 0,
+    "stdout": "FSF 16.1.0\nWhy3 for gnatprove version 1.8.2+git\n/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo: Alt-Ergo version 2.6.1\n/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5: This is cvc5 version 1.3.2 [git 86cecd8 on branch HEAD]\n/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3: Z3 version 4.15.4 - 64 bit\nGPRBUILD 26.0.0 (2026-04-15) (aarch64-linux-gnu)\nCopyright (C) 2004-2026, AdaCore\nThis is free software; see the source for copying conditions.\nThere is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+    "stderr": ""
+  },
+  "build": {
+    "command": [
+      "/usr/bin/flock",
+      "-n",
+      "-F",
+      "/home/sicarii/.worldline-heavy.lock",
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "60s",
+      "bash",
+      "-c",
+      "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+      "bash",
+      "gprbuild",
+      "-p",
+      "-P",
+      "spark/approval_descriptor.gpr",
+      "-j1"
+    ],
+    "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+    "before": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "exit": 0,
+    "elapsed_ns": 2932114352,
+    "after": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "unchanged": true
+  },
+  "runtime": {
+    "command": [
+      "/usr/bin/flock",
+      "-n",
+      "-F",
+      "/home/sicarii/.worldline-heavy.lock",
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "60s",
+      "bash",
+      "-c",
+      "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+      "bash",
+      "spark/descriptor-bin/continuity_descriptor_tests"
+    ],
+    "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+    "before": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "exit": 0,
+    "elapsed_ns": 8463497,
+    "after": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "unchanged": true
+  },
+  "proof": {
+    "command": [
+      "/usr/bin/flock",
+      "-n",
+      "-F",
+      "/home/sicarii/.worldline-heavy.lock",
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "120s",
+      "bash",
+      "-c",
+      "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+      "bash",
+      "gnatprove",
+      "-P",
+      "spark/approval_descriptor.gpr",
+      "-U",
+      "--mode=all",
+      "--assumptions",
+      "--no-inlining",
+      "--memlimit=512",
+      "--timeout=10",
+      "-j1"
+    ],
+    "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+    "before": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "exit": 0,
+    "elapsed_ns": 87652745596,
+    "after": {
+      "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+      "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+      "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+      "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+      "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+      "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+      "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+      "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+      "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+      "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+      "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+      "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+      "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+      "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+      "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+      "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+      "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+      "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+    },
+    "unchanged": true
+  },
+  "proof_report": "=========================\nSummary of SPARK analysis\n=========================\n\n------------------------------------------------------------------------------------\nSPARK Analysis results        Total         Flow      Provers   Justified   Unproved\n------------------------------------------------------------------------------------\nData Dependencies                68           68            .           .          .\nFlow Dependencies                 4            4            .           .          .\nInitialization                   10           10            .           .          .\nNon-Aliasing                      .            .            .           .          .\nRun-time Checks                 123            .     123 (Z3)           .          .\nAssertions                       11            .      11 (Z3)           .          .\nFunctional Contracts             67            .      67 (Z3)           .          .\nLSP Verification                  .            .            .           .          .\nTermination                      68           68            .           .          .\nConcurrency                       .            .            .           .          .\n------------------------------------------------------------------------------------\nTotal                           351    150 (43%)    201 (57%)           .          .\n\n\nmax steps used for successful proof: 12871\n\n============================\nMost difficult proved checks\n============================\n\nNo check found with max time greater than 1 second\n\n========================\nDetailed analysis report\n========================\n\nAnalyzed 9 units\nin unit continuity_approval_test_support, 0 subprograms and packages out of 0 analyzed\nin unit continuity_approval_tests, 0 subprograms and packages out of 0 analyzed\nin unit continuity_descriptor_test_support, 0 subprograms and packages out of 0 analyzed\nin unit continuity_descriptor_tests, 0 subprograms and packages out of 0 analyzed\nin unit sia_continuity, 18 subprograms and packages out of 18 analyzed\n  SIA_Continuity at sia_continuity.ads:6 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity fully established\n  SIA_Continuity.Claims_Valid at sia_continuity.ads:116 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)\nabsence of run-time errors of SIA_Continuity.Claims_Valid depends on\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  SIA_Continuity.Classify at sia_continuity.ads:225 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nthe postcondition of SIA_Continuity.Classify depends on\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  effects on parameters and Global variables of SIA_Continuity.Fresh\n  effects on parameters and Global variables of SIA_Continuity.Joined\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Same_Task\n  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations\n  effects on parameters and Global variables of SIA_Continuity.Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claims\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operations\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\nabsence of run-time errors of SIA_Continuity.Classify depends on\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  effects on parameters and Global variables of SIA_Continuity.Fresh\n  effects on parameters and Global variables of SIA_Continuity.Joined\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Same_Task\n  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations\n  effects on parameters and Global variables of SIA_Continuity.Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claims\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operations\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Coverage_Consistent at sia_continuity.ads:143 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Coverage_Consistent depends on\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  SIA_Continuity.Coverage_Ready at sia_continuity.ads:147 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Coverage_Ready fully established\n  SIA_Continuity.Coverage_Valid at sia_continuity.ads:135 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nabsence of run-time errors of SIA_Continuity.Coverage_Valid fully established\n  SIA_Continuity.Fresh at sia_continuity.ads:194 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Fresh fully established\n  SIA_Continuity.Joined at sia_continuity.ads:202 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Joined depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Operations_Valid at sia_continuity.ads:163 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)\nabsence of run-time errors of SIA_Continuity.Operations_Valid depends on\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  SIA_Continuity.Predecessor_Valid at sia_continuity.ads:97 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)\nabsence of run-time errors of SIA_Continuity.Predecessor_Valid fully established\n  SIA_Continuity.Same_Task at sia_continuity.ads:187 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Same_Task fully established\n  SIA_Continuity.Uncertain_Operations at sia_continuity.ads:218 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nabsence of run-time errors of SIA_Continuity.Uncertain_Operations fully established\n  SIA_Continuity.Valid at sia_continuity.ads:178 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid depends on\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claims\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operations\n  SIA_Continuity.Valid_Claim at sia_continuity.ads:89 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid_Claim fully established\n  SIA_Continuity.Valid_Claims at sia_continuity.ads:131 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid_Claims depends on\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  SIA_Continuity.Valid_Operation at sia_continuity.ads:156 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid_Operation fully established\n  SIA_Continuity.Valid_Operations at sia_continuity.ads:174 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid_Operations depends on\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  SIA_Continuity.Valid_Predecessor at sia_continuity.ads:112 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Valid_Predecessor depends on\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\nin unit sia_continuity-approvals, 14 subprograms and packages out of 14 analyzed\n  SIA_Continuity.Approvals at sia_continuity-approvals.ads:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals fully established\n  SIA_Continuity.Approvals.Active_Permission at sia_continuity-approvals.ads:81 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Active_Permission fully established\n  SIA_Continuity.Approvals.Classify_Link at sia_continuity-approvals.ads:176 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Classify_Link depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Key_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Ordered\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Reply_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Scope_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Selection_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Sources_Ready\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Has_Permission at sia_continuity-approvals.ads:88 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Has_Permission depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Active_Permission\n  SIA_Continuity.Approvals.Key_Matches at sia_continuity-approvals.ads:92 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Key_Matches fully established\n  SIA_Continuity.Approvals.Ordered at sia_continuity-approvals.ads:126 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Ordered fully established\n  SIA_Continuity.Approvals.Original_Ready at sia_continuity-approvals.ads:104 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Original_Ready depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Reply_Matches at sia_continuity-approvals.ads:134 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Reply_Matches fully established\n  SIA_Continuity.Approvals.Restore at sia_continuity-approvals.ads:227 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)\nthe postcondition of SIA_Continuity.Approvals.Restore depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Active_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Classify_Link\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Has_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Key_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Ordered\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Reply_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Scope_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Selection_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Slot_Status\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Slots_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Sources_Ready\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Classify\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  effects on parameters and Global variables of SIA_Continuity.Fresh\n  effects on parameters and Global variables of SIA_Continuity.Joined\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Same_Task\n  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations\n  effects on parameters and Global variables of SIA_Continuity.Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claims\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operations\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\nabsence of run-time errors of SIA_Continuity.Approvals.Restore depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Active_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Classify_Link\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Has_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Key_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Ordered\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Reply_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Scope_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Selection_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Slot_Status\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Slots_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Sources_Ready\n  effects on parameters and Global variables of SIA_Continuity.Claims_Valid\n  effects on parameters and Global variables of SIA_Continuity.Classify\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Consistent\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Ready\n  effects on parameters and Global variables of SIA_Continuity.Coverage_Valid\n  effects on parameters and Global variables of SIA_Continuity.Fresh\n  effects on parameters and Global variables of SIA_Continuity.Joined\n  effects on parameters and Global variables of SIA_Continuity.Operations_Valid\n  effects on parameters and Global variables of SIA_Continuity.Predecessor_Valid\n  effects on parameters and Global variables of SIA_Continuity.Same_Task\n  effects on parameters and Global variables of SIA_Continuity.Uncertain_Operations\n  effects on parameters and Global variables of SIA_Continuity.Valid\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claim\n  effects on parameters and Global variables of SIA_Continuity.Valid_Claims\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operation\n  effects on parameters and Global variables of SIA_Continuity.Valid_Operations\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Scope_Matches at sia_continuity-approvals.ads:143 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Scope_Matches fully established\n  SIA_Continuity.Approvals.Selection_Matches at sia_continuity-approvals.ads:151 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Selection_Matches depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Slot_Status at sia_continuity-approvals.ads:197 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Slot_Status depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Active_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Classify_Link\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Key_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Ordered\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Reply_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Scope_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Selection_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Sources_Ready\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Slots_Ready at sia_continuity-approvals.ads:211 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Slots_Ready depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Active_Permission\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Classify_Link\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Key_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Ordered\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Reply_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Scope_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Selection_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Slot_Status\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Sources_Ready\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Continuity.Approvals.Sources_Ready at sia_continuity-approvals.ads:114 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Sources_Ready depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Original_Ready\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\nin unit sia_continuity-approvals-descriptors, 19 subprograms and packages out of 19 analyzed\n  SIA_Continuity.Approvals.Descriptors at sia_continuity-approvals-descriptors.ads:4 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors fully established\n  SIA_Continuity.Approvals.Descriptors.Content_Matches at sia_continuity-approvals-descriptors.ads:82 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Content_Matches depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.Decode at sia_continuity-approvals-descriptors.ads:97 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Content_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Valid\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Content_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Valid\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.Digest_Payload at sia_continuity-approvals-descriptors.ads:32 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Digest_Payload fully established\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Digest_Payload fully established\n  SIA_Continuity.Approvals.Descriptors.Digest_Unique at sia_continuity-approvals-descriptors.ads:115 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Digest_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Digest_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  SIA_Continuity.Approvals.Descriptors.Form_Value at sia_continuity-approvals-descriptors.ads:10 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Form_Value fully established\n  SIA_Continuity.Approvals.Descriptors.Generations_Match at sia_continuity-approvals-descriptors.ads:62 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Generations_Match depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.Generations_Unique at sia_continuity-approvals-descriptors.ads:146 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Generations_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Unique\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Generations_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Unique\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.Low_Digit at sia_continuity-approvals-descriptors.ads:110 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Low_Digit fully established\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Low_Digit fully established\n  SIA_Continuity.Approvals.Descriptors.Prefix_Matches at sia_continuity-approvals-descriptors.ads:44 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Prefix_Matches depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  SIA_Continuity.Approvals.Descriptors.Prefix_Unique at sia_continuity-approvals-descriptors.ads:139 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (14 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Prefix_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Prefix_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  SIA_Continuity.Approvals.Descriptors.Recover_Digits at sia_continuity-approvals-descriptors.ads:121 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (69 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Recover_Digits depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Recover_Digits depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.State_Value at sia_continuity-approvals-descriptors.ads:16 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.State_Value fully established\n  SIA_Continuity.Approvals.Descriptors.Tail_Matches at sia_continuity-approvals-descriptors.ads:71 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Tail_Matches depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  SIA_Continuity.Approvals.Descriptors.Tail_Unique at sia_continuity-approvals-descriptors.ads:152 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Tail_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Tail_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  SIA_Continuity.Approvals.Descriptors.Unique at sia_continuity-approvals-descriptors.ads:90 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Content_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Unique\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Content_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Digest_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Form_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Match\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Generations_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Prefix_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.State_Value\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Matches\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Tail_Unique\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Payload\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Word_Unique\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity.Approvals.Descriptors.Valid at sia_continuity-approvals-descriptors.ads:22 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Valid fully established\n  SIA_Continuity.Approvals.Descriptors.Word_Payload at sia_continuity-approvals-descriptors.ads:38 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Word_Payload fully established\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Word_Payload fully established\n  SIA_Continuity.Approvals.Descriptors.Word_Unique at sia_continuity-approvals-descriptors.ads:133 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)\nthe postcondition of SIA_Continuity.Approvals.Descriptors.Word_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity.Approvals.Descriptors.Word_Unique depends on\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Low_Digit\n  effects on parameters and Global variables of SIA_Continuity.Approvals.Descriptors.Recover_Digits\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nin unit sia_continuity_record_wire, 15 subprograms and packages out of 15 analyzed\n  SIA_Continuity_Record_Wire at sia_continuity_record_wire.ads:5 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire fully established\n  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:108 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)\nthe postcondition of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:115 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)\nthe postcondition of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:123 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)\nthe postcondition of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:76 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (9 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:88 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:99 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid\n  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value\n  SIA_Continuity_Record_Wire.Kind_Value at sia_continuity_record_wire.ads:32 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Kind_Value fully established\n  SIA_Continuity_Record_Wire.Origin_Value at sia_continuity_record_wire.ads:41 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Origin_Value fully established\n  SIA_Continuity_Record_Wire.Phase_Value at sia_continuity_record_wire.ads:53 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Phase_Value fully established\n  SIA_Continuity_Record_Wire.Role_Value at sia_continuity_record_wire.ads:47 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Role_Value fully established\n  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:59 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established\n  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:66 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established\n  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:71 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established\n  SIA_Continuity_Record_Wire.Word_Value at sia_continuity_record_wire.ads:21 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)\nabsence of run-time errors of SIA_Continuity_Record_Wire.Word_Value fully established\nin unit sia_policy, 7 subprograms and packages out of 7 analyzed\n  SIA_Policy at sia_policy.ads:2 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Policy fully established\n  SIA_Policy.Acknowledge at sia_policy.ads:67 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nthe postcondition of SIA_Policy.Acknowledge depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Publication_Joined\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  effects on parameters and Global variables of SIA_Policy.Source_Complete\nabsence of run-time errors of SIA_Policy.Acknowledge depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Publication_Joined\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  effects on parameters and Global variables of SIA_Policy.Source_Complete\n  SIA_Policy.Admit_Source_Evidence at sia_policy.ads:48 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nthe postcondition of SIA_Policy.Admit_Source_Evidence fully established\nabsence of run-time errors of SIA_Policy.Admit_Source_Evidence fully established\n  SIA_Policy.Bound_Durable at sia_policy.ads:37 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Policy.Bound_Durable depends on\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  SIA_Policy.Publication_Joined at sia_policy.ads:56 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)\nthe postcondition of SIA_Policy.Publication_Joined depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  effects on parameters and Global variables of SIA_Policy.Source_Complete\nabsence of run-time errors of SIA_Policy.Publication_Joined depends on\n  effects on parameters and Global variables of SIA_Policy.Bound_Durable\n  effects on parameters and Global variables of SIA_Policy.Same_Binding\n  effects on parameters and Global variables of SIA_Policy.Source_Complete\n  SIA_Policy.Same_Binding at sia_policy.ads:32 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Policy.Same_Binding fully established\n  SIA_Policy.Source_Complete at sia_policy.ads:43 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)\nabsence of run-time errors of SIA_Policy.Source_Complete fully established\n",
+  "proof_report_pin": {
+    "sha256": "0e43d98bede6d4e30869bca78294238d633417b10ebe4c41aa1d2ffbaf2c3b85",
+    "bytes": 48741
+  },
+  "proof_stdout": "Phase 1 of 3: generation of data representation information ...\nPhase 2 of 3: generation of Global contracts ...\nPhase 3 of 3: flow analysis and proof ...\nSuccess: all checks proved (351 checks).\nSummary logged in /home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10/spark/descriptor-obj/gnatprove/gnatprove.out\n",
+  "proof_diagnostics": " info: range check proved\n--> sia_continuity-approvals-descriptors.adb:5:22\n\n info: length check proved\n--> sia_continuity-approvals-descriptors.adb:5:22\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:11:20\n\n info: length check proved\n--> sia_continuity-approvals-descriptors.adb:11:20\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:21:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:21:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:21:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:22:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:22:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:22:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:23:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:23:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:23:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:24:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:24:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:24:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:25:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:25:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:25:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:26:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:26:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:26:44\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:27:38\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.adb:27:44\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:27:44\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:28:38\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:30:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:30:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:31:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:31:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:32:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:32:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:33:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:33:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:34:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:34:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:35:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:35:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:36:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:36:28\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:37:22\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.adb:37:28\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:38:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:39:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:40:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:41:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:42:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:43:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:44:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:49:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:50:07\n\n info: assertion proved\n--> sia_continuity-approvals-descriptors.adb:56:22\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:57:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:58:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:59:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:60:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:61:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:62:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:63:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:64:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:65:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:66:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:67:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:68:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:74:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:75:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:76:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:85:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:86:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:87:07\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:115:21\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:116:23\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.adb:117:31\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:121:32\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.adb:122:34\n\n info: implicit aspect Always_Terminates on \"Form_Value\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:10:13\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:14:09\n\n info: implicit aspect Always_Terminates on \"State_Value\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:16:13\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:20:09\n\n info: implicit aspect Always_Terminates on \"Valid\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:22:13\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.ads:23:07\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:28:09\n\n info: implicit aspect Always_Terminates on \"Digest_Payload\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:32:13\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:34:09\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:35:14\n\n info: implicit aspect Always_Terminates on \"Word_Payload\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:38:13\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:40:09\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:41:14\n\n info: implicit aspect Always_Terminates on \"Prefix_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:44:13\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.ads:47:07\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:60:09\n\n info: implicit aspect Always_Terminates on \"Generations_Match\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:62:13\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:66:29\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:67:31\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:68:39\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:69:09\n\n info: implicit aspect Always_Terminates on \"Tail_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:71:13\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.ads:77:40\n\n info: range check proved\n--> sia_continuity-approvals-descriptors.ads:78:42\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:79:09\n\n info: implicit aspect Always_Terminates on \"Content_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:82:13\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:88:09\n\n info: aspect Always_Terminates on \"Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:90:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:92:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:95:14\n\n info: aspect Always_Terminates on \"Decode\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:97:14\n\n info: initialization of \"Accepted\" proved\n--> sia_continuity-approvals-descriptors.ads:98:33\n\n info: initialization of \"Scope\" proved\n--> sia_continuity-approvals-descriptors.ads:99:07\n\n info: initialization of \"Item\" proved\n--> sia_continuity-approvals-descriptors.ads:99:28\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:100:09\n\n info: flow dependencies proved\n--> sia_continuity-approvals-descriptors.ads:101:06\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:102:14\n\n info: aspect Always_Terminates on \"Low_Digit\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:110:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:111:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:113:14\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.ads:113:20\n\n info: overflow check proved\n--> sia_continuity-approvals-descriptors.ads:113:26\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:113:46\n\n info: aspect Always_Terminates on \"Digest_Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:115:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:117:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:119:14\n\n info: index check proved\n--> sia_continuity-approvals-descriptors.ads:119:63\n\n info: index check proved\n--> sia_continuity-approvals-descriptors.ads:119:75\n\n info: aspect Always_Terminates on \"Recover_Digits\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:121:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:122:16\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:124:14\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:124:14\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:124:33\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:125:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:125:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:125:48\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:126:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:126:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:126:48\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:127:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:127:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:127:48\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:128:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:128:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:128:48\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:129:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:129:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:129:48\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:130:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:130:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:130:47\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:131:18\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:131:37\n\n info: division check proved\n--> sia_continuity-approvals-descriptors.ads:131:47\n\n info: aspect Always_Terminates on \"Word_Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:133:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:134:16\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:136:17\n\n info: precondition proved\n--> sia_continuity-approvals-descriptors.ads:136:37\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:137:14\n\n info: aspect Always_Terminates on \"Prefix_Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:139:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:141:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:144:14\n\n info: aspect Always_Terminates on \"Generations_Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:146:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:148:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:150:14\n\n info: aspect Always_Terminates on \"Tail_Unique\" has been proved, subprogram will terminate\n--> sia_continuity-approvals-descriptors.ads:152:14\n\n info: data dependencies proved\n--> sia_continuity-approvals-descriptors.ads:154:16\n\n info: postcondition proved\n--> sia_continuity-approvals-descriptors.ads:156:14\n info: range check proved\n--> sia_continuity_record_wire.adb:11:32\n\n info: range check proved\n--> sia_continuity_record_wire.adb:12:28\n\n info: range check proved\n--> sia_continuity_record_wire.adb:13:40\n\n info: precondition proved\n--> sia_continuity_record_wire.adb:14:24\n\n info: range check proved\n--> sia_continuity_record_wire.adb:14:42\n\n info: range check proved\n--> sia_continuity_record_wire.adb:15:32\n\n info: range check proved\n--> sia_continuity_record_wire.adb:16:34\n\n info: range check proved\n--> sia_continuity_record_wire.adb:17:35\n\n info: range check proved\n--> sia_continuity_record_wire.adb:18:37\n\n info: range check proved\n--> sia_continuity_record_wire.adb:31:32\n\n info: range check proved\n--> sia_continuity_record_wire.adb:32:30\n\n info: range check proved\n--> sia_continuity_record_wire.adb:33:40\n\n info: range check proved\n--> sia_continuity_record_wire.adb:34:40\n\n info: range check proved\n--> sia_continuity_record_wire.adb:35:34\n\n info: precondition proved\n--> sia_continuity_record_wire.adb:50:30\n\n info: range check proved\n--> sia_continuity_record_wire.adb:50:48\n\n info: range check proved\n--> sia_continuity_record_wire.adb:51:44\n\n info: implicit aspect Always_Terminates on \"Word_Value\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:21:13\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:22:36\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:22:46\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:23:41\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:24:41\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:25:41\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:26:41\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:27:41\n\n info: overflow check proved\n--> sia_continuity_record_wire.ads:28:40\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:30:09\n\n info: implicit aspect Always_Terminates on \"Kind_Value\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:32:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:39:09\n\n info: implicit aspect Always_Terminates on \"Origin_Value\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:41:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:45:09\n\n info: implicit aspect Always_Terminates on \"Role_Value\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:47:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:51:09\n\n info: implicit aspect Always_Terminates on \"Phase_Value\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:53:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:57:09\n\n info: implicit aspect Always_Terminates on \"Valid\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:59:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:64:09\n\n info: implicit aspect Always_Terminates on \"Valid\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:66:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:69:09\n\n info: implicit aspect Always_Terminates on \"Valid\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:71:13\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:74:09\n\n info: implicit aspect Always_Terminates on \"Decoded_As\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:76:13\n\n info: range check proved\n--> sia_continuity_record_wire.ads:78:31\n\n info: range check proved\n--> sia_continuity_record_wire.ads:79:27\n\n info: range check proved\n--> sia_continuity_record_wire.ads:80:39\n\n info: precondition proved\n--> sia_continuity_record_wire.ads:81:23\n\n info: range check proved\n--> sia_continuity_record_wire.ads:81:41\n\n info: range check proved\n--> sia_continuity_record_wire.ads:82:31\n\n info: range check proved\n--> sia_continuity_record_wire.ads:83:33\n\n info: range check proved\n--> sia_continuity_record_wire.ads:84:34\n\n info: range check proved\n--> sia_continuity_record_wire.ads:85:36\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:86:09\n\n info: implicit aspect Always_Terminates on \"Decoded_As\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:88:13\n\n info: range check proved\n--> sia_continuity_record_wire.ads:91:31\n\n info: range check proved\n--> sia_continuity_record_wire.ads:92:29\n\n info: range check proved\n--> sia_continuity_record_wire.ads:93:39\n\n info: range check proved\n--> sia_continuity_record_wire.ads:94:39\n\n info: range check proved\n--> sia_continuity_record_wire.ads:95:33\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:97:09\n\n info: implicit aspect Always_Terminates on \"Decoded_As\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:99:13\n\n info: precondition proved\n--> sia_continuity_record_wire.ads:104:29\n\n info: range check proved\n--> sia_continuity_record_wire.ads:104:47\n\n info: range check proved\n--> sia_continuity_record_wire.ads:105:43\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:106:09\n\n info: aspect Always_Terminates on \"Decode\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:108:14\n\n info: initialization of \"Accepted\" proved\n--> sia_continuity_record_wire.ads:109:28\n\n info: initialization of \"Item\" proved\n--> sia_continuity_record_wire.ads:109:52\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:110:09\n\n info: flow dependencies proved\n--> sia_continuity_record_wire.ads:111:06\n\n info: postcondition proved\n--> sia_continuity_record_wire.ads:112:14\n\n info: aspect Always_Terminates on \"Decode\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:115:14\n\n info: initialization of \"Accepted\" proved\n--> sia_continuity_record_wire.ads:116:32\n\n info: initialization of \"Item\" proved\n--> sia_continuity_record_wire.ads:117:07\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:118:09\n\n info: flow dependencies proved\n--> sia_continuity_record_wire.ads:119:06\n\n info: postcondition proved\n--> sia_continuity_record_wire.ads:120:14\n\n info: aspect Always_Terminates on \"Decode\" has been proved, subprogram will terminate\n--> sia_continuity_record_wire.ads:123:14\n\n info: initialization of \"Accepted\" proved\n--> sia_continuity_record_wire.ads:124:30\n\n info: initialization of \"Item\" proved\n--> sia_continuity_record_wire.ads:124:54\n\n info: data dependencies proved\n--> sia_continuity_record_wire.ads:125:09\n\n info: flow dependencies proved\n--> sia_continuity_record_wire.ads:126:06\n\n info: postcondition proved\n--> sia_continuity_record_wire.ads:127:14\n info: implicit aspect Always_Terminates on \"Same_Binding\" has been proved, subprogram will terminate\n--> sia_policy.ads:32:13\n\n info: data dependencies proved\n--> sia_policy.ads:35:09\n\n info: implicit aspect Always_Terminates on \"Bound_Durable\" has been proved, subprogram will terminate\n--> sia_policy.ads:37:13\n\n info: data dependencies proved\n--> sia_policy.ads:41:09\n\n info: implicit aspect Always_Terminates on \"Source_Complete\" has been proved, subprogram will terminate\n--> sia_policy.ads:43:13\n\n info: data dependencies proved\n--> sia_policy.ads:45:09\n\n info: implicit aspect Always_Terminates on \"Admit_Source_Evidence\" has been proved, subprogram will terminate\n--> sia_policy.ads:48:13\n\n info: data dependencies proved\n--> sia_policy.ads:51:09\n\n info: postcondition proved\n--> sia_policy.ads:52:14\n\n info: implicit aspect Always_Terminates on \"Publication_Joined\" has been proved, subprogram will terminate\n--> sia_policy.ads:56:13\n\n info: data dependencies proved\n--> sia_policy.ads:57:09\n\n info: postcondition proved\n--> sia_policy.ads:58:14\n\n info: implicit aspect Always_Terminates on \"Acknowledge\" has been proved, subprogram will terminate\n--> sia_policy.ads:67:13\n\n info: data dependencies proved\n--> sia_policy.ads:69:09\n\n info: postcondition proved\n--> sia_policy.ads:70:14\n info: implicit aspect Always_Terminates on \"Valid_Claim\" has been proved, subprogram will terminate\n--> sia_continuity.ads:89:13\n\n info: data dependencies proved\n--> sia_continuity.ads:95:09\n\n info: implicit aspect Always_Terminates on \"Predecessor_Valid\" has been proved, subprogram will terminate\n--> sia_continuity.ads:97:13\n\n info: index check proved\n--> sia_continuity.ads:101:21\n\n info: index check proved\n--> sia_continuity.ads:103:28\n\n info: index check proved\n--> sia_continuity.ads:104:37\n\n info: index check proved\n--> sia_continuity.ads:105:37\n\n info: index check proved\n--> sia_continuity.ads:106:37\n\n info: index check proved\n--> sia_continuity.ads:109:23\n\n info: data dependencies proved\n--> sia_continuity.ads:110:09\n\n info: implicit aspect Always_Terminates on \"Valid_Predecessor\" has been proved, subprogram will terminate\n--> sia_continuity.ads:112:13\n\n info: data dependencies proved\n--> sia_continuity.ads:114:09\n\n info: implicit aspect Always_Terminates on \"Claims_Valid\" has been proved, subprogram will terminate\n--> sia_continuity.ads:116:13\n\n info: index check proved\n--> sia_continuity.ads:120:31\n\n info: index check proved\n--> sia_continuity.ads:121:18\n\n info: index check proved\n--> sia_continuity.ads:123:23\n\n info: index check proved\n--> sia_continuity.ads:123:47\n\n info: range check proved\n--> sia_continuity.ads:124:46\n\n info: index check proved\n--> sia_continuity.ads:125:56\n\n info: index check proved\n--> sia_continuity.ads:128:37\n\n info: index check proved\n--> sia_continuity.ads:128:60\n\n info: data dependencies proved\n--> sia_continuity.ads:129:09\n\n info: implicit aspect Always_Terminates on \"Valid_Claims\" has been proved, subprogram will terminate\n--> sia_continuity.ads:131:13\n\n info: data dependencies proved\n--> sia_continuity.ads:133:09\n\n info: implicit aspect Always_Terminates on \"Coverage_Valid\" has been proved, subprogram will terminate\n--> sia_continuity.ads:135:13\n\n info: index check proved\n--> sia_continuity.ads:140:49\n\n info: data dependencies proved\n--> sia_continuity.ads:141:09\n\n info: implicit aspect Always_Terminates on \"Coverage_Consistent\" has been proved, subprogram will terminate\n--> sia_continuity.ads:143:13\n\n info: data dependencies proved\n--> sia_continuity.ads:145:09\n\n info: implicit aspect Always_Terminates on \"Coverage_Ready\" has been proved, subprogram will terminate\n--> sia_continuity.ads:147:13\n\n info: data dependencies proved\n--> sia_continuity.ads:154:09\n\n info: implicit aspect Always_Terminates on \"Valid_Operation\" has been proved, subprogram will terminate\n--> sia_continuity.ads:156:13\n\n info: data dependencies proved\n--> sia_continuity.ads:161:09\n\n info: implicit aspect Always_Terminates on \"Operations_Valid\" has been proved, subprogram will terminate\n--> sia_continuity.ads:163:13\n\n info: index check proved\n--> sia_continuity.ads:165:64\n\n info: index check proved\n--> sia_continuity.ads:167:22\n\n info: index check proved\n--> sia_continuity.ads:171:28\n\n info: index check proved\n--> sia_continuity.ads:171:55\n\n info: data dependencies proved\n--> sia_continuity.ads:172:09\n\n info: implicit aspect Always_Terminates on \"Valid_Operations\" has been proved, subprogram will terminate\n--> sia_continuity.ads:174:13\n\n info: data dependencies proved\n--> sia_continuity.ads:176:09\n\n info: implicit aspect Always_Terminates on \"Valid\" has been proved, subprogram will terminate\n--> sia_continuity.ads:178:13\n\n info: data dependencies proved\n--> sia_continuity.ads:185:09\n\n info: implicit aspect Always_Terminates on \"Same_Task\" has been proved, subprogram will terminate\n--> sia_continuity.ads:187:13\n\n info: data dependencies proved\n--> sia_continuity.ads:192:09\n\n info: implicit aspect Always_Terminates on \"Fresh\" has been proved, subprogram will terminate\n--> sia_continuity.ads:194:13\n\n info: data dependencies proved\n--> sia_continuity.ads:200:09\n\n info: implicit aspect Always_Terminates on \"Joined\" has been proved, subprogram will terminate\n--> sia_continuity.ads:202:13\n\n info: data dependencies proved\n--> sia_continuity.ads:216:09\n\n info: implicit aspect Always_Terminates on \"Uncertain_Operations\" has been proved, subprogram will terminate\n--> sia_continuity.ads:218:13\n\n info: index check proved\n--> sia_continuity.ads:220:26\n\n info: data dependencies proved\n--> sia_continuity.ads:221:09\n\n info: implicit aspect Always_Terminates on \"Classify\" has been proved, subprogram will terminate\n--> sia_continuity.ads:225:13\n\n info: data dependencies proved\n--> sia_continuity.ads:227:09\n\n info: postcondition proved\n--> sia_continuity.ads:228:14\n info: initialization of \"Status\" proved\n--> sia_continuity-approvals.adb:7:07\n\n info: loop invariant initialization proved\n--> sia_continuity-approvals.adb:18:13\n\n info: loop invariant preservation proved\n--> sia_continuity-approvals.adb:18:13\n\n info: range check proved\n--> sia_continuity-approvals.adb:18:55\n\n info: implicit aspect Always_Terminates on \"Active_Permission\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:81:13\n\n info: index check proved\n--> sia_continuity-approvals.ads:85:32\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:86:09\n\n info: implicit aspect Always_Terminates on \"Has_Permission\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:88:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:90:09\n\n info: implicit aspect Always_Terminates on \"Key_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:92:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:102:09\n\n info: implicit aspect Always_Terminates on \"Original_Ready\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:104:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:112:09\n\n info: implicit aspect Always_Terminates on \"Sources_Ready\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:114:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:124:09\n\n info: implicit aspect Always_Terminates on \"Ordered\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:126:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:132:09\n\n info: implicit aspect Always_Terminates on \"Reply_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:134:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:141:09\n\n info: implicit aspect Always_Terminates on \"Scope_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:143:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:149:09\n\n info: implicit aspect Always_Terminates on \"Selection_Matches\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:151:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:174:09\n\n info: implicit aspect Always_Terminates on \"Classify_Link\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:176:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:195:09\n\n info: implicit aspect Always_Terminates on \"Slot_Status\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:197:13\n\n info: range check proved\n--> sia_continuity-approvals.ads:202:42\n\n info: index check proved\n--> sia_continuity-approvals.ads:203:23\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:209:09\n\n info: implicit aspect Always_Terminates on \"Slots_Ready\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:211:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:217:09\n\n info: implicit aspect Always_Terminates on \"Restore\" has been proved, subprogram will terminate\n--> sia_continuity-approvals.ads:227:13\n\n info: data dependencies proved\n--> sia_continuity-approvals.ads:230:09\n\n info: postcondition proved\n--> sia_continuity-approvals.ads:232:08\n\n info: range check proved\n--> sia_continuity-approvals.ads:242:34\n\n info: range check proved\n--> sia_continuity-approvals.ads:246:32\n",
+  "integrity_audit": {
+    "status": "EXACT_SOURCE_SCOPE_AUDITED",
+    "changed_source_paths": [
+      "spark/src/sia_continuity-approvals-descriptors.ads",
+      "spark/src/sia_continuity-approvals-descriptors.adb"
+    ],
+    "public_contracts_identical": true,
+    "decode_body_identical": true,
+    "original_tests_project_dependencies_identical": true,
+    "publisher_matches_tested_source": true,
+    "total_row": "Total                           351    150 (43%)    201 (57%)           .          .",
+    "units": [
+      "in unit continuity_approval_test_support, 0 subprograms and packages out of 0 analyzed",
+      "in unit continuity_approval_tests, 0 subprograms and packages out of 0 analyzed",
+      "in unit continuity_descriptor_test_support, 0 subprograms and packages out of 0 analyzed",
+      "in unit continuity_descriptor_tests, 0 subprograms and packages out of 0 analyzed",
+      "in unit sia_continuity, 18 subprograms and packages out of 18 analyzed",
+      "in unit sia_continuity-approvals, 14 subprograms and packages out of 14 analyzed",
+      "in unit sia_continuity-approvals-descriptors, 19 subprograms and packages out of 19 analyzed",
+      "in unit sia_continuity_record_wire, 15 subprograms and packages out of 15 analyzed",
+      "in unit sia_policy, 7 subprograms and packages out of 7 analyzed"
+    ],
+    "source_assume_suppress_import_findings": [],
+    "runtime_test_spak_off_count_by_source": {
+      "spark/tests/continuity_approval_tests.adb": 1,
+      "spark/tests/continuity_approval_test_support.ads": 1,
+      "spark/tests/continuity_approval_test_support.adb": 1,
+      "spark/tests/continuity_descriptor_tests.adb": 1,
+      "spark/tests/continuity_descriptor_test_support.ads": 1,
+      "spark/tests/continuity_descriptor_test_support.adb": 1
+    },
+    "proof_report_sha256": "0e43d98bede6d4e30869bca78294238d633417b10ebe4c41aa1d2ffbaf2c3b85",
+    "previous_manifest_sha256": "f694a8b1c505ee30477fc780c97b08c63f78c4c738236d8b80d05c2e95964934",
+    "original_aggregate_project": "UNCHANGED_NOT_PROVED_BY_THIS_FOCUSED_RUN",
+    "setup_inspection_failures": "Git diff attempted from evidence directory; not a repository; no mutation. Correct publisher diff follows."
+  },
+  "binary_after_run": {
+    "sha256": "b378495c4b5912e142f3a1ab9e8acba90aeccc38ba440991dd99372fa89bc176",
+    "bytes": 1485424
+  },
+  "attempts": {
+    "build-candidate10-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 2932114352,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "build-candidate8-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate8",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 3180948510,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "build-candidate9-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate9",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 3079817573,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "build-negative10-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-negative10",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "a36965a39edf8befcdadad996d9f753f459f46025aa8ef91921357bb17809294",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "b5f2a8d43055467c5e6663e1e3ef7db20ceccb4bd69d895cd453ab487d564ddd",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 3281851675,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "a36965a39edf8befcdadad996d9f753f459f46025aa8ef91921357bb17809294",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "b5f2a8d43055467c5e6663e1e3ef7db20ceccb4bd69d895cd453ab487d564ddd",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "proof-candidate10-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gnatprove",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-U",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 87652745596,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "proof-candidate8-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gnatprove",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-U",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate8",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 1,
+      "elapsed_ns": 3284088322,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "proof-candidate9-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "gnatprove",
+        "-P",
+        "spark/approval_descriptor.gpr",
+        "-U",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate9",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 124,
+      "elapsed_ns": 120038003760,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "runtime-candidate10-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "spark/descriptor-bin/continuity_descriptor_tests"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate10",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 8463497,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "runtime-candidate8-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "spark/descriptor-bin/continuity_descriptor_tests"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate8",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 16082102,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "runtime-candidate9-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "spark/descriptor-bin/continuity_descriptor_tests"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-candidate9",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 0,
+      "elapsed_ns": 16040787,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "e366edd078495e868ddd558f7f1bcf9424ba8e6bfa6a8a29b5d08779f97541a2",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    },
+    "runtime-negative10-result.json": {
+      "command": [
+        "/usr/bin/flock",
+        "-n",
+        "-F",
+        "/home/sicarii/.worldline-heavy.lock",
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "60s",
+        "bash",
+        "-c",
+        "ulimit -c 0; ulimit -f 524288; ulimit -v 2097152; source /home/sicarii/opt/gnat/env.sh; exec \"$@\"",
+        "bash",
+        "spark/descriptor-bin/continuity_descriptor_tests"
+      ],
+      "cwd": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2/stage-negative10",
+      "before": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "a36965a39edf8befcdadad996d9f753f459f46025aa8ef91921357bb17809294",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "b5f2a8d43055467c5e6663e1e3ef7db20ceccb4bd69d895cd453ab487d564ddd",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "exit": 1,
+      "elapsed_ns": 8306410,
+      "after": {
+        "spark/approval_descriptor.gpr": "30a2ea948a6e0a39b93e044c5a7a0be65d2bc8a9ce2b63cab235d38e1c668cc2",
+        "spark/restrictions.adc": "0855c2fd557d0d7b3807a2bc233a75b1202117ef345b7cd222e9ab42c6dfa4b1",
+        "spark/src/sia_policy.ads": "0f234cf2c9839d75c57423bdab2b6f75070bff622b47e99ade9575b5008e2a54",
+        "spark/src/sia_policy.adb": "144fd9411e209ad142faedc807facfd5a0880fd42fe1d87861da3afd3acd363d",
+        "spark/src/sia_continuity.ads": "57ad5e1bcd86b27b4bf9b9a389901b7fae346db8592511c59742731d3f9c69fc",
+        "spark/src/sia_continuity.adb": "4dfd9db91b99e6da42b810a46867acf9f32cfbf1b7e0149ebf6f384dcf9515bb",
+        "spark/src/sia_continuity-approvals.ads": "99360427e0ddb1eebb7a09e43c069b412c7aad5455f3a27c6bb65e896532baa9",
+        "spark/src/sia_continuity-approvals.adb": "1ffc401e4edab2278482055d41154ee474393371f1b08dc7f92a8ddc75cb4e6c",
+        "spark/tests/continuity_approval_tests.adb": "7682080f1a78acf009d5ef7b7bb29d98f0b028bcb9f227b1c605be9310ae7df4",
+        "spark/tests/continuity_approval_test_support.ads": "b30fb983e6efdd8bb4667d84ecfef32431e7e1a49814bfddb7c5fb909bddb357",
+        "spark/tests/continuity_approval_test_support.adb": "37b636c531ac50e80fd53e8c5d340847992b176b5eefaedc36cd4ae8911e7aff",
+        "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+        "spark/src/sia_continuity_record_wire.adb": "06d86822f893443693fb6cc1e25fb3b712570cc21d3636894d5a400b4d367ac6",
+        "spark/src/sia_continuity-approvals-descriptors.ads": "a36965a39edf8befcdadad996d9f753f459f46025aa8ef91921357bb17809294",
+        "spark/src/sia_continuity-approvals-descriptors.adb": "b5f2a8d43055467c5e6663e1e3ef7db20ceccb4bd69d895cd453ab487d564ddd",
+        "spark/tests/continuity_descriptor_tests.adb": "e24b740bc28011b18934e11c416912f3b36d7ae2da5959ec428b931e536260e1",
+        "spark/tests/continuity_descriptor_test_support.ads": "c99a45ab52e9c75334fa046c09687eb696148d39197ac9f802ef69b12ed71eea",
+        "spark/tests/continuity_descriptor_test_support.adb": "3a539552dd1bcb63da1929ccbe3102f962227808870065c3324655e7c0c63638"
+      },
+      "unchanged": true
+    }
+  },
+  "negative_stderr": "\nraised ADA.ASSERTIONS.ASSERTION_ERROR : continuity_descriptor_test_support.adb:183\n",
+  "failure_classifications": {
+    "setup": {
+      "available_bytes": 17945956352,
+      "reserve_bytes": 10000000000,
+      "previous_turn": "PROGRESS",
+      "setup_failure": "Initial exec rejected missing cwd before any process; directory created explicitly.",
+      "hypothesis": "Expose high-three-byte quotient and per-digest correspondence to discharge reported proof gaps; preserve public contracts and all original caps.",
+      "backup": "Historical status only; fresh recovery remains unproved; no cleanup."
+    },
+    "candidate8": {
+      "classification": "STRICT_SPARK_OPERATOR_REASSOCIATION_WARNING_ERROR",
+      "exit": 1,
+      "not_analyzed": "Descriptor proof skipped due missing parentheses in arithmetic bridge",
+      "repair": "Explicit grouping; warning remains enabled",
+      "negative8": "PREPARED_UNRUN"
+    },
+    "candidate9": "Outer timeout124; no complete summary; byte7 recovery reported unresolved.",
+    "candidate10": "All351 checks discharged in complete focused report; earlier failures retained.",
+    "negative8_and_negative9": "Source prepared; build/runtime UNRUN.",
+    "negative10": "Coherent spec+decoder reversal; build0/runtime1 at independent nonuniform oracle183."
+  },
+  "previous_sealed_evidence": {
+    "directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v1",
+    "manifest": {
+      "sha256": "f694a8b1c505ee30477fc780c97b08c63f78c4c738236d8b80d05c2e95964934",
+      "bytes": 22092
+    },
+    "archive": {
+      "sha256": "7c8dd51c4104d9ab4a2d5f96c788f9de1777deaa8e74178afa7316507e0fc8dd",
+      "bytes": 20341454
+    }
+  },
+  "reviews": {
+    "REVIEW-candidate10.txt": "Actual GPT-6.1 read-only candidate10 review; no independent execution. No domain restriction or weakened conclusion. Original word guard/recovery post retained; Low_Digit private arithmetic obligation not imported/assumed. Prefix bound reasoning is source reasoning until proved; acceptance requires every initialization overflow, quotient assertion, helper precondition/postcondition, not just caller. Production decode/public contracts/tests unchanged. Previous timeout/regional partial proofs retained.\nSpec 99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076\nBody 2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616\nNo producer/integration/R05/release acceptance follows.\n",
+    "REVIEW-candidate8.txt": "Actual GPT-6.1 read-only candidate7-to8 source comparison; no independent execution. No weakened obligation or production semantic change. Digest_Unique derives regional byte equality from original exact payload correspondence; complete offset domain preserved. Prefix calls cover original digests and header. Quotient assertion is plausible source reasoning, not proved arithmetic. Complete focused proof must discharge added assertion, helper bodies and all call premises.\nSpec acd95274d3e64e1fd29fb9454b27fd04eb104a26319f487cc0d8aa7e2012bdd9\nBody 529dea8a01c727a89c5408abce8bc376ac87038348d7cb590ef0432df2ee53d2\nNo source-level blocker; prior failure and protected integration gates remain.\n",
+    "REVIEW-proof.txt": "Actual GPT-6.1 read-only retained proof/source audit; no independent execution. Earlier blockers closed for candidate10 focused project. Complete351checks150flow201prover0justified0unproved; all19descriptor entities analyzed including supporting lemmas and Unique; no non-info raw diagnostics. Before/after hashes match frozen source and publisher. Negative10 builds and rejects at unchanged independent oracle. Ordinary modular dependencies remain; zero Assume not assumption-free. Tests/main SPARKoff. Original authentication/hash binding/protected selection/generic restoration/actuator/AR-T remain unproved.\nSpec 99ba9059dbdfaed7c4e0b32f5f45d6da28ef2ba89d3aceb33244e4e8d32ee076\nBody 2cc4e4a0ae676c47f6f5ea8da3f6ac0f75758636b17f2fd182597394723f0616\nReport 0e43d98bede6d4e30869bca78294238d633417b10ebe4c41aa1d2ffbaf2c3b85\nNo remaining concrete focused-proof blocker. Preserve prior failures; no whole-project/R05/release acceptance.\n"
+  },
+  "runtime_scope": "Synthetic typed controls. Original tests unchanged; runtime main/support SPARK-off.",
+  "assumptions": "Full modular dependencies retained in report. Trusted compiler/provers/runtime and future original-source producer premises remain; no source Assume/Suppress/Import.",
+  "not_established": [
+    "original-byte authentication",
+    "human decision semantics",
+    "protected current selection",
+    "descriptor/hash/custody binding",
+    "actual generic restoration",
+    "actuator enforcement",
+    "system resource bounds",
+    "whole-system proof",
+    "installation",
+    "release",
+    "marketplace publication"
+  ],
+  "original_roster": "AR-T01..AR-T22 ALL_UNRUN at actual protected/generic boundary",
+  "r05": "UNVERIFIED_PENDING; useful expensive reuse AND fresh current-policy validation required",
+  "system_acceptance": false,
+  "installed": false,
+  "archive": {
+    "file": "source-and-proof-trees.tar.gz",
+    "sha256": "31ad3107755c44fc92bef407b7c2d3eb0d2fcd90c9546cc0c8f000713b448ade",
+    "bytes": 15826343,
+    "trees": [
+      "stage-candidate10",
+      "stage-candidate8",
+      "stage-candidate9",
+      "stage-negative10",
+      "stage-negative8",
+      "stage-negative9"
+    ],
+    "original_trees_retained": true
+  },
+  "local_evidence": {
+    "directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/approval-descriptor-v2",
+    "members": {
+      "REVIEW-candidate10.txt": {
+        "sha256": "d9f282f1fa2b69548d2e07559fcd376e493faceca6d03d6fedcadf345c061808",
+        "bytes": 702
+      },
+      "REVIEW-candidate8.txt": {
+        "sha256": "ac65501e5eee4b8d8af95115139bad1a0e085753d4771ab4e8e7a9d135772324",
+        "bytes": 694
+      },
+      "REVIEW-proof.txt": {
+        "sha256": "d09f60f0c838bcbaa07a6a01c343348e58787baa53074e7faeb06179bc1d9c46",
+        "bytes": 935
+      },
+      "build-candidate10-inputs.json": {
+        "sha256": "07da34a2068d61cec7b0074649ddff3a9bab5b4703582dd94f96037ad5e1f709",
+        "bytes": 2599
+      },
+      "build-candidate10-result.json": {
+        "sha256": "f7f6db164e6b7a03e3bae2856ddb471cdeb9cc199aba816a88b7a7445707cc7e",
+        "bytes": 4737
+      },
+      "build-candidate10.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "build-candidate10.stdout": {
+        "sha256": "715942fa8cb56e643561d263f4a296681ba5d0c64e321556141c7482c60e997a",
+        "bytes": 695
+      },
+      "build-candidate8-inputs.json": {
+        "sha256": "c6bf507d6f3b0f203f33a283fccbfe588ee9b07cc7d6251718253b5d0cbdb6dc",
+        "bytes": 2598
+      },
+      "build-candidate8-result.json": {
+        "sha256": "b8c7a813dccff89d8ef3d999f8e127c707d4f183087ddf84a9218774b733e467",
+        "bytes": 4736
+      },
+      "build-candidate8.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "build-candidate8.stdout": {
+        "sha256": "715942fa8cb56e643561d263f4a296681ba5d0c64e321556141c7482c60e997a",
+        "bytes": 695
+      },
+      "build-candidate9-inputs.json": {
+        "sha256": "109266ba3e1f76e4d0806979c8767306bd71634431d8443bf96520f5e617a93e",
+        "bytes": 2598
+      },
+      "build-candidate9-result.json": {
+        "sha256": "ce1bd47c5a955dbd8e7ef8abc02504ba571acc1d9b6a7b54a9fd478a7a057190",
+        "bytes": 4736
+      },
+      "build-candidate9.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "build-candidate9.stdout": {
+        "sha256": "715942fa8cb56e643561d263f4a296681ba5d0c64e321556141c7482c60e997a",
+        "bytes": 695
+      },
+      "build-negative10-inputs.json": {
+        "sha256": "747a8c7b1875934caff9e06a4d583779c9ea3736f7865f4f5c116b9915d69ec5",
+        "bytes": 2598
+      },
+      "build-negative10-result.json": {
+        "sha256": "57f911913f9fcf9d3fb419b7a075e7aae78e72fcf1e533c52c77d73f77d5f160",
+        "bytes": 4736
+      },
+      "build-negative10.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "build-negative10.stdout": {
+        "sha256": "715942fa8cb56e643561d263f4a296681ba5d0c64e321556141c7482c60e997a",
+        "bytes": 695
+      },
+      "candidate8-failure.json": {
+        "sha256": "c5bed074456eeb495be1d8b7f610311923c66b023abca20b080154884f118791",
+        "bytes": 271
+      },
+      "driver-static-candidate10.json": {
+        "sha256": "f0e449c642e6fa2b5f83723026435c5fc94c60dad69709b72d3cdec3558150ab",
+        "bytes": 3353
+      },
+      "driver-static-candidate8.json": {
+        "sha256": "1064f1a4ee2be079a25799c268d6fe77dc8391c9210a21ebd6287e324d8ab98f",
+        "bytes": 1936
+      },
+      "git-diff-check.json": {
+        "sha256": "732883d74fff105b6916110dd67928d04765fdfa4fce96791f3d3be410b4440f",
+        "bytes": 48
+      },
+      "integrity-audit.json": {
+        "sha256": "7b51b957c12d73531b27197985d2c320d464310b82dd8236e2d4b187d713a48e",
+        "bytes": 2129
+      },
+      "package_refinement.py": {
+        "sha256": "1c85ac6c9447edf39ed3178eec377930a3c366c7987253b8c0338f0157769cca",
+        "bytes": 6129
+      },
+      "preflight.json": {
+        "sha256": "0fdf0c6838bd8ec53b556d46e0fef9897f42df592ba229a764a1ad32966578ef",
+        "bytes": 454
+      },
+      "prepare_candidate10.py": {
+        "sha256": "dd5f2d155e7a470fb85ef070a2640f03ada55151688f67ace129c1fa6be2bd4a",
+        "bytes": 2659
+      },
+      "prepare_candidate8.py": {
+        "sha256": "f505e531135325afe3ae5d7a3cafce8f34f561c1da4a8f77d26683d6b43f3c6b",
+        "bytes": 3478
+      },
+      "proof-candidate10-inputs.json": {
+        "sha256": "8decfeb8c976b70699affb86eac68501ddc9bb34555fcb3c2823a3ad61bcfa61",
+        "bytes": 2703
+      },
+      "proof-candidate10-result.json": {
+        "sha256": "4ff2e2bcfa67093d3b1aaccbad600260a6734b93ce9b64ed2dbf2b177781c9d7",
+        "bytes": 4842
+      },
+      "proof-candidate10.stderr": {
+        "sha256": "f889ba8843cfeeaf39b06c4922005fd85f1b9ed064de3620fb2b0c14a835e396",
+        "bytes": 30544
+      },
+      "proof-candidate10.stdout": {
+        "sha256": "be677c2b1b47f56371124c04449f08796b222dfc951326a5c189909da7156acf",
+        "bytes": 379
+      },
+      "proof-candidate8-inputs.json": {
+        "sha256": "ee1310aa1f4f9f1091f871aa5fb34d7435b0568f416508adf8a99b07cd361812",
+        "bytes": 2702
+      },
+      "proof-candidate8-result.json": {
+        "sha256": "804acf51d67d6bb87219889849f5de192a401487372fe3c50deb58fd155babd4",
+        "bytes": 4840
+      },
+      "proof-candidate8.stderr": {
+        "sha256": "de4d73de15eabd961caff8a14f09c1c7e8f65d890015b28c951d7c797fd91eb1",
+        "bytes": 425
+      },
+      "proof-candidate8.stdout": {
+        "sha256": "988e0c3036a5b81b12c34b576294c11c142d42b3f5cd7212a4e4904f671bd2dd",
+        "bytes": 337
+      },
+      "proof-candidate9-inputs.json": {
+        "sha256": "bde5320660a4fdbfcd3c313f56143375b83ec70443d3f5c7efdab87b98cdd81b",
+        "bytes": 2702
+      },
+      "proof-candidate9-result.json": {
+        "sha256": "ba02e896eb27c80ff74a3fb831bee50148354fd5d8cf7909060187df4f9a6f36",
+        "bytes": 4844
+      },
+      "proof-candidate9.stderr": {
+        "sha256": "4838cf7149cebc0729d50478878efff96717fc27c876ead9cae99bce6a8f7cf1",
+        "bytes": 23455
+      },
+      "proof-candidate9.stdout": {
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d",
+        "bytes": 155
+      },
+      "run_candidate10.py": {
+        "sha256": "ca23d883a9099a2ad9a6564e3f57b1c70603f12a8f0842300a4fbd6465d1300b",
+        "bytes": 2425
+      },
+      "run_candidate8.py": {
+        "sha256": "d26d697a1b1f42ae2069ae63f4dbe640d1772278adf6f5fcd5208ae7bcdd21db",
+        "bytes": 2419
+      },
+      "run_candidate9.py": {
+        "sha256": "b5dec6a4b8fcbcc86f66e36e93592df0164bd3c36a1a59a18c02a6d6b44ff695",
+        "bytes": 2419
+      },
+      "run_negative10.py": {
+        "sha256": "74a91f49781cfbb9c15be2a8445165ecaf270ff072c73b701edb50db8c3d9b7a",
+        "bytes": 2419
+      },
+      "run_negative8.py": {
+        "sha256": "b20f1481220ab8b9576be438a6670a0c18e46f8897b10b823e8141a78c702156",
+        "bytes": 2413
+      },
+      "run_negative9.py": {
+        "sha256": "265d1339b608008daba9ec15a3e384577b8d2859bcf2e0fcd0bda71707c96069",
+        "bytes": 2413
+      },
+      "runtime-candidate10-inputs.json": {
+        "sha256": "78cb9f5ac11e1c6e3d0773b083a5680a6fca337fbfeaac06e53ae6e147375d0e",
+        "bytes": 2571
+      },
+      "runtime-candidate10-result.json": {
+        "sha256": "77eb56987bdcb0791fcfe16598821213e4b0a53cc8efa3e5a5960ccf14946edf",
+        "bytes": 4706
+      },
+      "runtime-candidate10.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-candidate10.stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-candidate8-inputs.json": {
+        "sha256": "de01ecd55c4e2184c3bd947cf5cf9dccf06e6a3912559eda017822995c88b6fe",
+        "bytes": 2570
+      },
+      "runtime-candidate8-result.json": {
+        "sha256": "365f25a2df2dce8328395c139f635e9edc4790905c9a6d1f1074b204943c2cd9",
+        "bytes": 4706
+      },
+      "runtime-candidate8.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-candidate8.stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-candidate9-inputs.json": {
+        "sha256": "8e6be3ec1e4df69d7d9920299e04ed2d8f76a7ac3e7259a012235b0f52c72ade",
+        "bytes": 2570
+      },
+      "runtime-candidate9-result.json": {
+        "sha256": "b6557910d3b263eb4d35964e428028ee2e0586dd6d6102ae7b11efdec68b3e1e",
+        "bytes": 4706
+      },
+      "runtime-candidate9.stderr": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-candidate9.stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "runtime-negative10-inputs.json": {
+        "sha256": "1b414307158ead7dedd05a15fa352e9996a628925272010d82f30f5f350b33ae",
+        "bytes": 2570
+      },
+      "runtime-negative10-result.json": {
+        "sha256": "f174f9f02ff5d90248f2f670a40384dc6de768ec651ed013901d762cfb06770b",
+        "bytes": 4705
+      },
+      "runtime-negative10.stderr": {
+        "sha256": "443e685e30e560f79f2ee37fd559ac96c01732488af9b03278dafd3f73e310dc",
+        "bytes": 84
+      },
+      "runtime-negative10.stdout": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "source-and-proof-trees.tar.gz": {
+        "sha256": "31ad3107755c44fc92bef407b7c2d3eb0d2fcd90c9546cc0c8f000713b448ade",
+        "bytes": 15826343
+      },
+      "source-candidate10-before.json": {
+        "sha256": "11220101ec21e4d6507b09306d8067545b428f99661dbe65fdc18a6c4a3b49c3",
+        "bytes": 2886
+      },
+      "source-candidate8-before.json": {
+        "sha256": "15163210af55186f418c18b65931c7acfc7e5ba0fbd7d1d9759188b89283685a",
+        "bytes": 2886
+      },
+      "source-candidate9-before.json": {
+        "sha256": "079c370acfc6afc4ac3f79f79d3b1c70638ab5ebf1047fc82b5f7a8f42cef6bc",
+        "bytes": 2886
+      },
+      "source-negative10-before.json": {
+        "sha256": "34dce6a29dc87ea62b8fbdc49b5565326dc1f67ecd88dfc05f195437e268c11b",
+        "bytes": 2886
+      },
+      "source-negative8-before.json": {
+        "sha256": "4e86c223e94d6c14028f30e03bbf96b699933c7353321fbe52f17f95640f2b4d",
+        "bytes": 2886
+      },
+      "source-negative9-before.json": {
+        "sha256": "592e212334f35bba2a020ee8c38310cc65caa921922b0eee04687e103f00cc80",
+        "bytes": 2886
+      },
+      "toolchain.json": {
+        "sha256": "3a4f57ce87fc87c2e2ea06669fa89d1c16efa9bb602a1767ec178feadf01a4e3",
+        "bytes": 813
+      }
+    }
+  }
+}
