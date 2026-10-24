@@ -239,6 +239,27 @@ def _same(owner, first, second):
     return _json(owner, first) == _json(owner, second)
 
 
+def _paired_rows(left, right, reason):
+    """Preserve live reads, but refuse length drift within the initial bound."""
+    limit = len(left)
+    if len(right) != limit:
+        _refuse(reason)
+    pairs = zip(left, right, strict=True)
+    for _position in range(limit):
+        try:
+            pair = next(pairs)
+        except (StopIteration, ValueError):
+            _refuse(reason)
+        yield pair
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError:
+        _refuse(reason)
+    _refuse(reason)
+
+
 def _hash(owner, raw):
     return owner["hashlib"].sha256(raw).hexdigest()
 
@@ -246,7 +267,7 @@ def _hash(owner, raw):
 def _generation(info):
     return dict(zip(F_KEYS, (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
                             info.st_gid, info.st_nlink, info.st_size,
-                            info.st_mtime_ns, info.st_ctime_ns)))
+                            info.st_mtime_ns, info.st_ctime_ns), strict=True))
 
 
 def _directory(info):
@@ -623,7 +644,7 @@ def prepare(owner, *, organ, date, events):
     try:
         event_roster = tuple(events)
         records = [owner["_event_replay_record"](event) for event in event_roster]
-        event_records = {id(event): record for event, record in zip(event_roster, records)}
+        event_records = {id(event): record for event, record in zip(event_roster, records, strict=True)}
         planned = owner["_plan_event_day_update"](
             organ, date, event_roster, dependency_capture=capture)
         selected = {shard["slug"] for shard in planned["shards"]
@@ -1100,7 +1121,7 @@ def _semantic_join(owner, plan, images, live):
     pages = {page["slug"]: page for page in plan["pages"]}
     additions, appended = {}, []
     prior_appended_part = None
-    for values, admission in zip(prepared, plan["admissions"]):
+    for values, admission in _paired_rows(prepared, plan["admissions"], "complete-admission-roster"):
         event_id, semantic, line, payload, base_line = values
         slug = admission["slug"]
         if slug not in pages or admission["semantic_id"] != semantic \
@@ -1295,12 +1316,12 @@ def _member_structure(owner, plans):
 def _member_pins(owner, plans, expected):
     if type(expected) is not list or len(expected) != len(plans):
         _refuse("batch-independent-member-pins")
-    for plan, pin in zip(plans, expected):
+    for plan, pin in _paired_rows(plans, expected, "batch-independent-member-pins"):
         _hex(pin)
         if plan["plan_sha256"] != pin:
             _refuse("batch-independent-member-pins")
     # Caller order is checked above, before the deterministic output sort.
-    for plan, pin in zip(plans, expected):
+    for plan, pin in _paired_rows(plans, expected, "batch-independent-member-pins"):
         body = {key: value for key, value in plan.items() if key != "plan_sha256"}
         if _hash(owner, _json(owner, body)) != pin:
             _refuse("batch-member-digest")
@@ -1594,11 +1615,11 @@ def _batch_pins(owner, batches, expected):
     if type(expected) is not list or len(expected) != len(batches):
         _refuse("closure-independent-batch-pins")
     # Check caller order before the deterministic organ sort or any digest.
-    for batch, pin in zip(batches, expected):
+    for batch, pin in _paired_rows(batches, expected, "closure-independent-batch-pins"):
         _hex(pin)
         if batch["batch_sha256"] != pin:
             _refuse("closure-independent-batch-pins")
-    for batch, pin in zip(batches, expected):
+    for batch, pin in _paired_rows(batches, expected, "closure-independent-batch-pins"):
         body = {key: value for key, value in batch.items() if key != "batch_sha256"}
         if _hash(owner, _json(owner, body)) != pin:
             _refuse("closure-batch-digest")
