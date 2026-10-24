@@ -25,10 +25,12 @@ ABI state remains in the core.
 """
 
 import contextlib as _contextlib
-import os
 import threading as _threading
 
-import siaqueue
+# Unbound dependency slots. Normal owner binding supplies these before calls;
+# partial bind() retains prior values, as for the other runtime dependencies.
+os = None
+siaqueue = None
 
 def _canonical_thought_page_record(thought):
     """Project a compatibility-named generated entry into its page record."""

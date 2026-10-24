@@ -8,6 +8,11 @@ import sys
 import tempfile
 import unittest
 
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
 
 SOURCE = Path(__file__).resolve().parents[1] / "bin/sia-brainstem"
 WORKER = """
@@ -52,7 +57,7 @@ print(json.dumps({'outcome': outcome, 'before': before, 'after': after,
 
 class PluginRegistrationAdmission(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(dir=sia_test_home.ISOLATED_HOME)
         self.addCleanup(temporary.cleanup)
         self.home = Path(temporary.name)
         self.plugin = self.home / ".config/omarchy/plugins/khephri.sia"
