@@ -93,7 +93,7 @@ def _bounded(value, maximum):
                 _fail("JSON integer exceeds its exact range")
         elif kind is bool or item is None:
             pass
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if len(item) > maximum - used or id(item) in active:
                 _fail("JSON container is excessive or cyclic")
             active.add(id(item))

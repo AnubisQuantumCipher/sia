@@ -309,7 +309,7 @@ def _json_size(owner, value, ceiling, *, ascii_only):
         if depth > 64:
             refuse("complete-json-depth")
         kind = type(item)
-        if kind in (dict, list):
+        if kind is dict or kind is list:
             identity = id(item)
             if identity in active:
                 refuse("cyclic-json")

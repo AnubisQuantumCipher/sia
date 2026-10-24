@@ -203,7 +203,8 @@ def _size(value, limit, active=None, depth=0):
         while True:
             if type(limit) is not int or limit <= 0 or depth > 64:
                 _refuse("complete-byte-capacity")
-            if type(value) in (dict, list):
+            kind = type(value)
+            if kind is dict or kind is list:
                 _open_size_frame(value, limit, depth, active, frames)
                 size = None
             else:

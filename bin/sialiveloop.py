@@ -259,7 +259,7 @@ def _size(value, ceiling):
             if not math.isfinite(item):
                 _fail("nonfinite-json-number")
             add(len(repr(item)))
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if id(item) in active:
                 _fail("cyclic-json")
             active.add(id(item))

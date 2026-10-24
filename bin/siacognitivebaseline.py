@@ -85,7 +85,7 @@ def _bounded(value, maximum=MAX_ARTIFACT_BYTES):
                 _fail("nonfinite JSON value")
         elif kind is bool or item is None:
             pass
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if id(item) in active or len(item) > maximum - used:
                 _fail("cyclic or excessive JSON container")
             active.add(id(item))
