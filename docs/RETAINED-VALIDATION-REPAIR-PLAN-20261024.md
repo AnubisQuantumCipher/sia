@@ -108,3 +108,20 @@ not close R05, establish a complete immutable validation context, or demonstrate
 a speed improvement. Page admission, ordered version processing and current
 owner policy still require separation. Both outer admission memos remain
 unqualified, and the original reuse/performance and system gates remain open.
+
+## Closed-reducer experiment: rejected production insertion
+
+[The replay transition experiment](REPLAY-TRANSITION-EXPERIMENT-20261024.md)
+retains a passing immutable-data reducer and two concrete integration
+counterexamples. Equal-value replacement loses the first callback mapping;
+rereading an unused candidate after the original comparison adds a refusal.
+The private adapter is rejected. The new warm/cold projector regression remains
+RED for both capture formats. The original reuse oracle is unchanged.
+
+Before another extraction, establish meaningful reusable cost after preserving
+captured reads, comparison outcomes, live aliases and refusal order. Include
+snapshot, exact-key and storage costs. The small profile does not justify a
+semantic-reducer cache; inclusive fold time includes current owner admission.
+Repeated sizing is a separate measured frontier, including the remaining
+recursive event-plan traversal. Addressing that frontier must preserve original
+byte/depth/type/cycle contracts and does not close R05 by itself.
