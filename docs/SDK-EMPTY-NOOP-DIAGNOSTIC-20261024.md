@@ -1,5 +1,10 @@
 # SDK complete-fixture diagnostic
 
+**Subsequent disposition: REJECTED for adoption.** The later
+[audit-hook diagnostic](SDK-SWEEP-NEGATIVE-RESULTS-20261024.md) reproduces a
+cleanup failure despite the fixture pass below. This historical test evidence
+and its archive remain preserved; they are not current candidate acceptance.
+
 The private empty-scratch candidate completed **179 tests in 90.147 seconds**
 under the unchanged 120-second work limit. Source identities and hashes matched
 before and after execution. This is TESTED fixture behavior, not adoption of the

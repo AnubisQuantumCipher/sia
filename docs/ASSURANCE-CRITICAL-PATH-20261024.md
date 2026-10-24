@@ -8,7 +8,7 @@ fixtures, domain, budgets and permission limits remain controlling.
 | Order | Gate or blocker | Observable completion condition |
 | --- | --- | --- |
 | 1 | R05 stale retained admission | Current policy and callback checks execute on warm calls; reuse is limited to closed derivation inputs. Original stale-admission regressions, expensive-reuse intent, callback/refusal order and original resource envelope pass together. Merely moving validation behind another name is insufficient. |
-| 2 | SDK runtime qualification | v6 private fixture discovery passed 179 tests in 90.147 seconds under the original 120-second cap with source unchanged. Omitted-call semantic disposition remains OPEN; this pass is not candidate adoption. Resolve the required observable contract, then fresh source/output admission and actual SDK observation. v5 remains rejected. |
+| 2 | SDK runtime qualification | v6 is rejected after an audit-hook cleanup regression despite its earlier full fixture pass. The all-call v7 successor passed 26 targeted tests and the audit control, but its full suite timed out under the original 120-second cap. Preserve actual errors/callback order and all cleanup effects in a concrete faster successor before another full run. Fresh source/output admission and actual SDK observation remain required. |
 | 3 | C/SPARK and Linux prerequisites | Original strict C analysis completes without unresolved diagnostics, full required SPARK obligations are discharged with assumptions retained, and credential preservation, protected manager image and teardown constraints have exact-source evidence. C4/C5/C6 failures remain visible; no viable successor route is yet established by the latest structural review. |
 | 4 | Protected publication, query and interruption recovery | End-to-end protected writes and receipts pass the original positive, refusal, replay and crash cases. Outcome queries require independently current authorization. Interrupted actions reconcile durable outcomes before any retry. Policy results must be enforced by the actual restricted runtime. |
 | 5 | Installed continuity, semantics and recovery | Qualified harness lifecycle and repeated-compaction scenarios restore source-backed task state without invented approval or duplicate actions; held-out retrieval and off-host recovery campaigns meet the original criteria and publish failures. Verify the installed executable/configuration path claimed, with capture gaps and unsupported hooks explicit. |
@@ -22,9 +22,9 @@ decide. If the decomposition cannot preserve both current admission and the
 original reuse contract, retain that incompatibility explicitly; do not retry
 the failed no-cache approach unchanged or weaken the oracle/deadline.
 
-For SDK work, the [v6 diagnostic](SDK-EMPTY-NOOP-DIAGNOSTIC-20261024.md) now
-retains the complete fixture pass and its unresolved omitted-call semantics.
-No unchanged retry is needed to restate this evidence. The original no-hooks
+For SDK work, the [negative results](SDK-SWEEP-NEGATIVE-RESULTS-20261024.md)
+supersede v6's candidate disposition and retain v7's full-suite timeout.
+No unchanged retry is justified by these results. The original no-hooks
 restriction and actual-error/callback obligations remain controlling. For C,
 the latest structural review identified no redundant analyzer-state dimension;
 another failed-class compiler attempt requires a concrete revised design and
