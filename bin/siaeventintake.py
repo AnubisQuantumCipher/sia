@@ -149,6 +149,27 @@ def _shape(owner, request):
     _entries_shape(owner, request, history, source_ids, previous=history["started_at"])
 
 
+def _paired_rows(left, right):
+    """Bound traversal to the initial roster; retain current element reads."""
+    limit = len(left)
+    if len(right) != limit:
+        _refuse("complete-collector-roster")
+    pairs = zip(left, right, strict=True)
+    for _position in range(limit):
+        try:
+            pair = next(pairs)
+        except (StopIteration, ValueError):
+            _refuse("complete-collector-roster")
+        yield pair
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError:
+        _refuse("complete-collector-roster")
+    _refuse("complete-collector-roster")
+
+
 def _entries_shape(owner, request, history, source_ids, *, previous):
     """Validate represented entries, without asserting a complete history."""
     observed_at = request["observed_at"]
@@ -174,7 +195,7 @@ def _entries_shape(owner, request, history, source_ids, *, previous):
         _list(returns["runs"], len(source_ids), "complete-collector-roster")
         if len(returns["runs"]) != len(source_ids):
             _refuse("complete-collector-roster")
-        for source_id, run in zip(source_ids, returns["runs"]):
+        for source_id, run in _paired_rows(source_ids, returns["runs"]):
             _keys(run, {"source_id", "events"}, "collector-return-shape")
             if run["source_id"] != source_id:
                 _refuse("collector-return-order")
@@ -466,7 +487,7 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
     """
     catalog = request["source_catalog"]["sources"]
     returns, grouped, admissions = entry["source_returns"], {}, {}
-    for source, run in zip(catalog, returns["runs"]):
+    for source, run in _paired_rows(catalog, returns["runs"]):
         for record in run["events"]:
             event = owner["_event_from_replay_record"](record)
             if event.organ != source["organ"] \

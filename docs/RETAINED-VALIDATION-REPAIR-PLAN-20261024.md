@@ -154,3 +154,17 @@ A bounded immutable string-sizing experiment is justified by measured cost,
 but cannot be substituted for the complete R05 requirement merely because
 it yields a passing helper test. Retained text and correction/deletion behavior
 also require explicit assessment. R05 remains FAILED.
+
+## Rejected primitive reuse and intake pairing repair
+
+[The string experiment and intake repair](INTAKE-PAIRING-AND-REUSE-20261024.md)
+retain the private cache's 207-test pass, unchanged larger-workload stale-policy
+failure, and absent evidence of useful complete-validation improvement. The
+cache is NOT ADOPTED; text-retention lifecycle is also unqualified. Original
+reuse instrumentation and outer admission caches are unchanged. R05 is FAILED.
+
+Tracing the live intake path exposed another plain paired traversal. The narrow
+repair refuses source/run length drift within the original count, preserving
+live reads and body exceptions. Original direct-fold controls fail eight cases;
+the candidate passes 94 related tests. This closes the demonstrated paired-loop
+gap only, not arbitrary callback mutation or complete execution bounds.
