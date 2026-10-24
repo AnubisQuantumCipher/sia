@@ -438,8 +438,8 @@ def call_tool(name, args):
                        ["calibration", "--cursor", str(cursor)])
     if name == "note":
         author = str(args.get("author", "agent"))[:40]
-        return run_sia(["note", str(args.get("text", ""))[:2000],
-                        "--from", author])
+        return run_sia(["note", "--from", author, "--",
+                        str(args.get("text", ""))[:2000]])
     if name == "propose_take":
         prop = {"claim": " ".join(str(args.get("claim", "")).split())[:300],
                 "confidence": min(0.99, max(0.01,

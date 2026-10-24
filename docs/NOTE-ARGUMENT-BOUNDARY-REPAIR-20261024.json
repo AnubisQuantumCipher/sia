@@ -1,0 +1,77 @@
+{
+  "schema": "sia.note-argument-boundary-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "5b1519adf9966f45fed7fc8d2c8495bbfd27d8e6",
+  "problem": "Valid MCP text --from was parsed as an author option, producing the wrong author and body; other option-shaped notes were refused.",
+  "change": "MCP sends author options before an explicit end-of-options marker. The CLI supports that marker while retaining unmarked option refusal, input limits and redaction.",
+  "source_sha256": {
+    "bin/sia": "06ebdd60a0073664c481c85945d785e0cc13d84aaa7f06051704d463a423462c",
+    "bin/sia-mcp": "aa896723ad094ef29a7e7ba800c3c835552650940404e6793ef7c33de4a85a92",
+    "tests/test_note_argument_boundary.py": "324bb302143bb08275376303c2e867dcb0c7309619e3c0d8dd6075005c3adaf8",
+    "tests/test_mcp_memory.py": "f511c383da619e08fc967702b3a5c153523741f8f15cfd2598b039843a6ec813",
+    "tests/test_cli.py": "db79d06411ab22f396ee91660fc2a56c0b45b3273eae84fbe9eb318f0859c05f",
+    "bin/siaqueue.py": "dfcbb3f1f098cc238bc1fd294be7b6295da7c19f6cd8e7a76c3fc966868950cd"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "methods": 5,
+    "failures": 11,
+    "errors": 0,
+    "log": "evidence/note-argument-boundary-20261024/baseline-corrected-note-argument-boundary.log.gz",
+    "initial_harness_failure": "Initial fixture indexed a pending tuple as a dictionary. That earlier failure is retained privately; corrected fixture reproduced actual product failures before product edits.",
+    "storage_note": "Lossless gzip preserves unittest trailing spaces while satisfying the repository whitespace gate. Original raw bytes remain hash-bound."
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 64,
+    "elapsed_seconds": 1.08,
+    "source_unchanged": true
+  },
+  "test_scope": "New actual CLI/private queue round-trip tests, complete existing MCP memory module, three unchanged original CLI note tests. MCP subprocess transport mocked.",
+  "test_recipe": "python3 -B -W error::ResourceWarning -m unittest -v tests.test_note_argument_boundary tests.test_mcp_memory tests.test_cli.MutationBoundaries.test_note_rejects_invalid_or_oversized_input_without_traceback tests.test_cli.MutationBoundaries.test_note_binds_redaction_count_to_the_sanitized_queue_request tests.test_cli.StorageReadmission.test_note_refuses_option_shaped_text_instead_of_queueing_it",
+  "execution": "Read-only source/root; private tmp/home/run/dev/proc; unshared network/PID namespaces; 60s timeout with 5s kill grace. No installed state writes.",
+  "static": {
+    "product_status": "NONPASS_EXISTING_DIAGNOSTICS_UNCHANGED",
+    "product_findings": 25,
+    "comparison": "Same filenames, rules, messages, columns and exact affected source lines; insertion-shifted line numbers excluded.",
+    "new_test_and_runner_status": "PASS_ZERO_DIAGNOSTICS",
+    "syntax_status": "PASS_COMPILE_ONLY",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "tool": "ruff 0.17.1",
+    "no_suppressions_added": true
+  },
+  "review": {
+    "model": "GPT-6.1",
+    "result": "No blocker for non-final repair checkpoint",
+    "scope": "Source and retained raw evidence",
+    "independent_execution": false
+  },
+  "artifacts": {
+    "candidate-final-note-argument-boundary.log": {
+      "bytes": 10792,
+      "sha256": "16e237f4530cd3507b8536041a96a7784c3e3543abcc6f5294334e90824f8488"
+    },
+    "note-tests-ruff.stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "note-tests-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "baseline-corrected-note-argument-boundary.log.gz": {
+      "bytes": 826,
+      "sha256": "9c85bc510ed63ed0239c2ca176a763d9bead0f7720f58b3114d5c5280bd5e7d7",
+      "encoding": "gzip",
+      "uncompressed_bytes": 13452,
+      "uncompressed_sha256": "6eec8650f9a22ed3c44ecbe111fbab6b88679d5731dcde048f45d3f1d19898ce"
+    }
+  },
+  "limits": [
+    "No installed CLI transport, brainstem materialization, indexing or publication qualification",
+    "No whole-system proof or static compliance claim",
+    "Inherited seven unfinished files preserved and excluded",
+    "Broader original assurance, recovery, continuity and release gates remain open"
+  ]
+}
