@@ -2736,6 +2736,7 @@ Item {
           && root.restoreCorrelationLost
           && parsed.state === "prepared"
           && nextPreparedId !== ""
+          && nextPreparedId !== root.restoreExpectedPreparedId
           && !currentPublicationStale) {
         root.restoreRequestId = ""
         root.restoreExpectedPreparedId = ""
@@ -3788,12 +3789,16 @@ Item {
       } else {
         if (awaitRestoreVerification) {
           root.restoreVerificationPending = false
-          root.restoreCorrelationLost = false
+          // A launcher failure can follow durable worker admission. Retain
+          // uncertainty until a new authenticated preparation reconciles it.
+          root.restoreCorrelationLost = true
           root.restoreRequestId = ""
-          root.restoreExpectedPreparedId = ""
+          root.restoreExpectedPreparedId = restorePreparedId
         }
         root.continuityActionOk = accepted
-        root.continuityActionMsg = detail !== "" ? detail
+        root.continuityActionMsg = awaitRestoreVerification
+          ? "Restore handoff outcome is uncertain. Inspect continuity status and prepare again before retrying."
+          : detail !== "" ? detail
           : operationLabel + (accepted ? " accepted." : " was refused.")
       }
       stdinPayload = ""

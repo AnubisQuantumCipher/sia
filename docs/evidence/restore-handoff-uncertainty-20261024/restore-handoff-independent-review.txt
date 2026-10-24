@@ -1,0 +1,9 @@
+Actual GPT-6.1 read-only review: no blocker for the narrow nonzero-exit uncertainty repair, subject to pending static/QML qualification.
+The changed settle path retains the attempted preparation identity, blocks retry and avoids claiming success. Requiring a different preparation ID prevents the same cached prepared record from clearing uncertainty. Backend ambiguous-launch retention and UUID-based preparation remain consistent with this behavior.
+The lifted QML/Model tests preserve meaningful positive and refusal controls. Source hashes match:
+QML: dd2401165966136ecb613a473a6f376b88c03377cca3e783597254287d7fe6c4
+Tests: 9ba37faf9f77aa07762e4808bc67cc3a40684306cbc6fb351fe7b5d5bc9846dd
+Raw hashes match receipts: predecessor reports16failures; candidate reports88passing tests. No independent execution performed.
+Remaining correlation limits: a different authenticated ID is not proof that preparation occurred after this uncertain handoff; a still-fresh older different record could satisfy the UI reset condition. Reset therefore relies on current backend publication/reconciliation, not frontend anti-replay enforcement. Correlation is also component-local, and markLaunchFailure remains a separate path outside these new tests.
+Do not claim GUI lifecycle, backend restore, durable cross-restart uncertainty or complete operation correlation from this checkpoint. Retain pending static/qmllint results before publication.
+Owner disposition after review: Python checks PASS; complete-context Qt6 baseline/candidate each retain568 diagnostics with no new diagnostic signatures. QML remains NONPASS. This is a non-final repair checkpoint, not UI/release acceptance; correlation/replay/lifecycle limitations remain open.

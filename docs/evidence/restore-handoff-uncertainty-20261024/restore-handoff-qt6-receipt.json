@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "command": [
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "30s",
+      "/usr/lib/qt6/bin/qmllint",
+      "--ignore-settings",
+      "--max-warnings",
+      "0",
+      "--json",
+      "-",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/restore-handoff-static-baseline/Cockpit.qml"
+    ],
+    "sha256": "c3771f6049b32b5d79ad58b403b10569983efd454e73b15b108125104335fc51",
+    "returncode": 255,
+    "stdout_sha256": "bcb78e4267366465bbc062c6a5764b92024c495a5c64e802dece3479793c3a69",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_bytes": 142896,
+    "stderr_bytes": 0
+  },
+  "candidate": {
+    "command": [
+      "/usr/bin/timeout",
+      "--kill-after=5s",
+      "30s",
+      "/usr/lib/qt6/bin/qmllint",
+      "--ignore-settings",
+      "--max-warnings",
+      "0",
+      "--json",
+      "-",
+      "/home/sicarii/Work/sia-assurance-kernel-20261019/Cockpit.qml"
+    ],
+    "sha256": "dd2401165966136ecb613a473a6f376b88c03377cca3e783597254287d7fe6c4",
+    "returncode": 255,
+    "stdout_sha256": "388c627a5417ae68270b6d7273551d0327cd5a35a0a637ca7d5d10212302d895",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_bytes": 142504,
+    "stderr_bytes": 0
+  }
+}
