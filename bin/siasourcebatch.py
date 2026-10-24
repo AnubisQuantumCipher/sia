@@ -377,10 +377,38 @@ def _same_component(owner, first, second):
     return _component_bytes(owner, first) == _component_bytes(owner, second)
 
 
+def _paired_rows(left, right, reason):
+    """Pair admitted lists within their initial length; refuse roster drift.
+
+    Only iterator advancement errors are translated. Errors in a caller's
+    loop body retain their original meaning. Same-length replacement and ABA
+    mutation still require the surrounding content/identity checks.
+    """
+    limit = len(left)
+    if len(right) != limit:
+        refuse(reason)
+    pairs = zip(left, right, strict=True)
+    for _ in range(limit):
+        try:
+            pair = next(pairs)
+        except StopIteration:
+            refuse(reason)
+        except ValueError as exc:
+            refuse(reason, upstream=exc)
+        yield pair
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError as exc:
+        refuse(reason, upstream=exc)
+    refuse(reason)
+
+
 def _generation(info):
     return dict(zip(FILE_GENERATION_KEYS, (
         info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-        info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)))
+        info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns), strict=True))
 
 
 def _directory_generation(info):
@@ -678,7 +706,7 @@ def _validate_epoch_context(owner, epoch, *, include_history=False):
     if len(catalog["sources"]) != len(expected_ids):
         refuse("source-catalog-roster")
     for position, (row, source_id) in enumerate(
-            zip(catalog["sources"], expected_ids)):
+            _paired_rows(catalog["sources"], expected_ids, "source-catalog-roster")):
         _keys(row, {"source_id", "collector", "organ", "custom_name"},
               "source-catalog-row")
         if row["source_id"] != source_id \
@@ -1013,10 +1041,11 @@ class _RuntimeConfiguration:
         if native_bytes(owner, projection) != self.projection_raw \
                 or custom_indexes != self.custom_indexes \
                 or len(identities["senses"]) != len(self.identities["senses"]) \
+                or len(identities["exported"]) != len(self.identities["exported"]) \
                 or any(current is not original for current, original in zip(
-                    identities["senses"], self.identities["senses"])) \
+                    identities["senses"], self.identities["senses"], strict=True)) \
                 or any(current is not original for current, original in zip(
-                    identities["exported"], self.identities["exported"])):
+                    identities["exported"], self.identities["exported"], strict=True)):
             refuse("runtime-selection-changed")
         self.held.current()
 
@@ -1473,7 +1502,7 @@ def _plan_events(owner, collected, runtime, files, epoch, epoch_raw):
     grouped = {}
     for _source_id, events, records in collected["events"]:
         _events_current(owner, events, records)
-        for event, record in zip(events, records):
+        for event, record in _paired_rows(events, records, "source-event-roster-changed"):
             grouped.setdefault((record["organ"], record["ts"][:10]), []).append(
                 event)
     plans_by_organ = {}
@@ -2311,7 +2340,7 @@ def _validate_cursor(owner, proposal, source_ids):
             or len(proposal["steps"]) != len(source_ids):
         refuse("cursor-proposal-contract")
     cursor = owner["copy"].deepcopy(proposal["before_value"])
-    for source_id, step in zip(source_ids, proposal["steps"]):
+    for source_id, step in _paired_rows(source_ids, proposal["steps"], "cursor-proposal-contract"):
         _keys(step, CURSOR_STEP_KEYS, "cursor-step-shape")
         if step["source_id"] != source_id \
                 or type(step["removed_keys"]) is not list \
@@ -2337,7 +2366,7 @@ def _validate_cursor(owner, proposal, source_ids):
 def _validate_refusal_intents(owner, intents, source_ids):
     if type(intents) is not list or len(intents) != len(source_ids):
         refuse("refusal-intent-roster")
-    for source_id, intent in zip(source_ids, intents):
+    for source_id, intent in _paired_rows(source_ids, intents, "refusal-intent-roster"):
         _keys(intent, REFUSAL_INTENT_KEYS, "refusal-intent-shape")
         if intent["source_id"] != source_id \
                 or type(intent["record_refusals"]) is not list \
