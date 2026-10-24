@@ -149,6 +149,30 @@ def _shape(owner, request):
     _entries_shape(owner, request, history, source_ids, previous=history["started_at"])
 
 
+def _bounded_rows(values, reason):
+    """Read live admitted rows, yielding no more than their initial count.
+
+    Final length checks also detect deletion of the last already-yielded row.
+    Equal-length replacement and ABA changes are not detected. Callbacks and
+    native interpreter operations must still terminate independently.
+    """
+    limit = len(values)
+    rows = iter(values)
+    for _position in range(limit):
+        try:
+            value = next(rows)
+        except StopIteration:
+            _refuse(reason)
+        yield value
+    if len(values) != limit:
+        _refuse(reason)
+    try:
+        next(rows)
+    except StopIteration:
+        return
+    _refuse(reason)
+
+
 def _paired_rows(left, right):
     """Bound traversal to the initial roster; retain current element reads."""
     limit = len(left)
@@ -161,6 +185,8 @@ def _paired_rows(left, right):
         except (StopIteration, ValueError):
             _refuse("complete-collector-roster")
         yield pair
+    if len(left) != limit or len(right) != limit:
+        _refuse("complete-collector-roster")
     try:
         next(pairs)
     except StopIteration:
@@ -370,7 +396,7 @@ def _pins(owner, request):
 def _member(owner, plan, images):
     """Validate supplied exact Events and represented target semantics, not I/O."""
     records, prepared = {}, {}
-    for record in plan["input_records"]:
+    for record in _bounded_rows(plan["input_records"], "plan-record-roster-changed"):
         event = owner["_event_from_replay_record"](record)
         if event.organ != plan["organ"] or record["ts"][:10] != plan["date"] \
                 or not _same(owner, owner["_event_replay_record"](event), record):
@@ -387,7 +413,7 @@ def _member(owner, plan, images):
     targets, before_lines, epochs = {}, {}, {}
     page_by_slug = {page["slug"]: page for page in plan["pages"]}
     day_parts = {}
-    for page in plan["pages"]:
+    for page in _bounded_rows(plan["pages"], "complete-target-page-roster"):
         slug = page["slug"]
         image = images[slug + ".md"]
         if slug.startswith("events/"):
@@ -403,7 +429,7 @@ def _member(owner, plan, images):
                 slug, dependency_capture=pages._TargetView(owner, slug, image["raw"]))
     files = {row["relative"]: row["before"] for row in plan["read_dependencies"]["files"]}
     additions, appended = {}, []
-    for admission in plan["admissions"]:
+    for admission in _bounded_rows(plan["admissions"], "complete-plan-admissions"):
         event_id, slug = admission["event_id"], admission["slug"]
         if slug not in page_by_slug or admission["semantic_id"] != records[event_id][0] \
                 or admission["version_sha256"] != page_by_slug[slug]["version_sha256"]:
@@ -421,7 +447,7 @@ def _member(owner, plan, images):
             continue
         if slug not in targets:
             _refuse("event-admission-target")
-        matches = [owner["EVENT_MARKER_RE"].fullmatch(line) for line in targets[slug]]
+        matches = [owner["EVENT_MARKER_RE"].fullmatch(line) for line in _bounded_rows(targets[slug], "event-marker-roster-changed")]
         matches = [match for match in matches if match is not None and match.group("id") == event_id]
         if len(matches) != 1 or (matches[0].group("semantic"), matches[0].group("payload")) != records[event_id]:
             _refuse("exact-event-marker-binding")
@@ -437,7 +463,7 @@ def _member(owner, plan, images):
             _refuse("admission-disposition")
     if plan["appended_event_ids"] != appended:
         _refuse("complete-appended-roster")
-    for page in plan["pages"]:
+    for page in _bounded_rows(plan["pages"], "complete-target-page-roster"):
         if page["write"] and (not additions.get(page["slug"]) or targets[page["slug"]]
                               != before_lines[page["slug"]] + additions[page["slug"]]):
             _refuse("exact-event-entry-preservation")
@@ -488,14 +514,14 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
     catalog = request["source_catalog"]["sources"]
     returns, grouped, admissions = entry["source_returns"], {}, {}
     for source, run in _paired_rows(catalog, returns["runs"]):
-        for record in run["events"]:
+        for record in _bounded_rows(run["events"], "returned-event-roster-changed"):
             event = owner["_event_from_replay_record"](record)
             if event.organ != source["organ"] \
                     or not _same(owner, owner["_event_replay_record"](event), record):
                 _refuse("collector-event-binding")
             grouped.setdefault((event.organ, record["ts"][:10]), []).append(record)
     actual_groups, organs = set(), []
-    for row in entry["event_batches"]:
+    for row in _bounded_rows(entry["event_batches"], "complete-event-batch-roster"):
         batch = row["batch"]
         members = pages._member_structure(owner, batch["members"])
         body = pages._batch_body(owner, members)
@@ -505,13 +531,13 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
         pages._member_pins(owner, batch["members"], [plan["plan_sha256"] for plan in batch["members"]])
         images = pages._union_images(owner, members)
         organs.append(batch["organ"])
-        for plan in members:
+        for plan in _bounded_rows(members, "batch-member-roster-changed"):
             key = (plan["organ"], plan["date"])
             if key in actual_groups or key not in grouped or not _same(owner, grouped[key], plan["input_records"]):
                 _refuse("complete-duplicate-return-plan-join")
             actual_groups.add(key)
             _member(owner, plan, images)
-            for admitted in plan["admissions"]:
+            for admitted in _bounded_rows(plan["admissions"], "complete-plan-admissions"):
                 admissions[(plan["organ"], plan["date"], admitted["event_id"])] = {
                     "event_batch_sha256": row["expected_batch_sha256"], "plan_sha256": plan["plan_sha256"],
                     **{key: admitted[key] for key in ("slug", "version_sha256", "disposition")}}
@@ -532,8 +558,8 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
                 current[slug] = pin
     if actual_groups != set(grouped) or organs != sorted(set(organs)):
         _refuse("complete-event-batch-roster")
-    for run in returns["runs"]:
-        for position, record in enumerate(run["events"]):
+    for run in _bounded_rows(returns["runs"], "complete-collector-roster"):
+        for position, record in enumerate(_bounded_rows(run["events"], "returned-event-roster-changed")):
             key = (run["source_id"], record["event_id"])
             admitted = admissions[(record["organ"], record["ts"][:10], record["event_id"])]
             candidate = None
@@ -567,7 +593,7 @@ def _version_pages(versions):
 
 def _project(owner, request):
     intake, associations, versions, current, first = _intake(request), [], {}, {}, {}
-    for entry in request["history"]["entries"]:
+    for entry in _bounded_rows(request["history"]["entries"], "history-entry-roster-changed"):
         _fold_entry(owner, request, entry, intake, associations, versions, current, first)
     intake["pages"], intake["current_versions"] = _version_pages(versions), list(current.values())
     return _result(request, intake, associations)

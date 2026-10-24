@@ -168,3 +168,13 @@ repair refuses source/run length drift within the original count, preserving
 live reads and body exceptions. Original direct-fold controls fail eight cases;
 the candidate passes 94 related tests. This closes the demonstrated paired-loop
 gap only, not arbitrary callback mutation or complete execution bounds.
+
+## Selected replay traversal bounds
+
+[Bounded intake traversal](INTAKE-BOUNDED-TRAVERSAL-20261024.md) replaces selected
+callback-bearing list traversals with initial-count guards and repairs terminal
+deletion checks in all three paired-roster helpers. The candidate passes 210
+related tests with original failing baselines retained. The unchanged larger
+synthetic workload still exits 1 with FAILED_STALE_ADMISSION, so this is not an
+R05 repair, whole-system termination proof or release acceptance. Original
+reuse instrumentation and failed-cache obligations remain unchanged.

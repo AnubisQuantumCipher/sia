@@ -251,6 +251,8 @@ def _paired_rows(left, right, reason):
         except (StopIteration, ValueError):
             _refuse(reason)
         yield pair
+    if len(left) != limit or len(right) != limit:
+        _refuse(reason)
     try:
         next(pairs)
     except StopIteration:

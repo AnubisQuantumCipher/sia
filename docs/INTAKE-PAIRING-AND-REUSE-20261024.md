@@ -80,3 +80,12 @@ recovery, held-out retrieval and release/marketplace gates remain open as
 recorded in the execution board. No whole-system assurance, avionics
 certification, universal harness support or lossless-compaction guarantee is
 claimed here.
+
+## Later terminal-deletion counterexample
+
+The subsequent [bounded-traversal repair](INTAKE-BOUNDED-TRAVERSAL-20261024.md)
+found that iterator exhaustion alone missed deletion of an already-yielded final
+row. The earlier evidence above covers its original controls, not that terminal
+case. Final cardinality checks now close the demonstrated edge case in all
+three pairing helpers. New original failures and candidate evidence are retained;
+same-length/ABA mutation and complete system bounds remain unproved.

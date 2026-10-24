@@ -396,6 +396,8 @@ def _paired_rows(left, right, reason):
         except ValueError as exc:
             refuse(reason, upstream=exc)
         yield pair
+    if len(left) != limit or len(right) != limit:
+        refuse(reason)
     try:
         next(pairs)
     except StopIteration:
