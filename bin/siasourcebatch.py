@@ -211,83 +211,128 @@ def _hex(value, reason="digest-shape"):
         refuse(reason)
 
 
-def _json_size(owner, value, ceiling, *, ascii_only):
-    """Count canonical JSON before allocation, copying, or hashing."""
-    if type(ceiling) is not int or ceiling <= 0:
-        refuse("complete-byte-capacity")
-    active = set()
-    total = 0
+class _JsonSizeCounter:
+    __slots__ = ("ceiling", "total")
 
-    def add(amount):
-        nonlocal total
-        total += amount
-        if total > ceiling:
+    def __init__(self, ceiling):
+        self.ceiling, self.total = ceiling, 0
+
+    def add(self, amount):
+        self.total += amount
+        if self.total > self.ceiling:
             refuse("complete-byte-capacity")
 
-    def visit(item, depth):
+
+def _json_string_size(item, counter, ascii_only):
+    if _live._count_ascii_json_string(item, counter.add, ascii_only=ascii_only):
+        return
+    counter.add(2)
+    for character in item:
+        point = ord(character)
+        if 0xD800 <= point <= 0xDFFF:
+            refuse("unpaired-surrogate")
+        if character in '"\\\b\f\n\r\t':
+            counter.add(2)
+        elif point < 0x20:
+            counter.add(6)
+        elif ascii_only and point >= 0x7F:
+            counter.add(6 if point <= 0xFFFF else 12)
+        else:
+            counter.add(len(character.encode("utf-8")))
+
+
+def _json_scalar_size(owner, item, counter, ascii_only):
+    kind = type(item)
+    if item is None:
+        counter.add(4)
+    elif kind is bool:
+        counter.add(4 if item else 5)
+    elif kind is int:
+        if item.bit_length() > counter.ceiling:
+            refuse("native-integer-capacity")
+        try:
+            counter.add(len(str(item)))
+        except ValueError:
+            refuse("native-integer-capacity")
+    elif kind is float:
+        if not owner["math"].isfinite(item):
+            refuse("nonfinite-json-number")
+        counter.add(len(repr(item)))
+    elif kind is str:
+        _json_string_size(item, counter, ascii_only)
+    else:
+        refuse("noncanonical-json-value")
+
+
+class _JsonSizeFrame:
+    __slots__ = ("identity", "entries", "mapping", "first", "pending", "child")
+
+    def __init__(self, item):
+        self.identity = id(item)
+        self.mapping = type(item) is dict
+        self.entries = iter(item.items() if self.mapping else item)
+        self.first, self.pending, self.child = True, False, None
+
+    def take(self, counter, end):
+        if self.pending:
+            counter.add(1)
+            child = self.child
+            self.pending, self.child = False, None
+            return child
+        entry = next(self.entries, end)
+        if entry is end:
+            return end
+        if not self.first:
+            counter.add(1)
+        self.first = False
+        if self.mapping:
+            key, self.child = entry
+            if type(key) is not str:
+                refuse("nontext-json-key")
+            self.pending = True
+            return key
+        return entry
+
+
+def _json_size(owner, value, ceiling, *, ascii_only):
+    """Count JSON without recursive calls or a width-sized traversal queue.
+
+    Frames retain only the active ancestry, within the existing depth limit.
+    Each container contributes bytes and each subsequent entry adds a comma;
+    the unchanged byte ceiling bounds traversal of growing native containers.
+    Python allocation and callback behavior remain environmental assumptions.
+    """
+    if type(ceiling) is not int or ceiling <= 0:
+        refuse("complete-byte-capacity")
+    counter = _JsonSizeCounter(ceiling)
+    frames, active = [], set()
+    end = object()
+    item, depth = value, 0
+    while True:
         if depth > 64:
             refuse("complete-json-depth")
         kind = type(item)
-        if item is None:
-            add(4)
-        elif kind is bool:
-            add(4 if item else 5)
-        elif kind is int:
-            if item.bit_length() > ceiling:
-                refuse("native-integer-capacity")
-            try:
-                add(len(str(item)))
-            except ValueError:
-                refuse("native-integer-capacity")
-        elif kind is float:
-            if not owner["math"].isfinite(item):
-                refuse("nonfinite-json-number")
-            add(len(repr(item)))
-        elif kind is str:
-            if _live._count_ascii_json_string(item, add, ascii_only=ascii_only):
-                return
-            add(2)
-            for character in item:
-                point = ord(character)
-                if 0xD800 <= point <= 0xDFFF:
-                    refuse("unpaired-surrogate")
-                if character in '"\\\b\f\n\r\t':
-                    add(2)
-                elif point < 0x20:
-                    add(6)
-                elif ascii_only and point >= 0x7F:
-                    add(6 if point <= 0xFFFF else 12)
-                else:
-                    add(len(character.encode("utf-8")))
-        elif kind in (dict, list):
+        if kind in (dict, list):
             identity = id(item)
             if identity in active:
                 refuse("cyclic-json")
             if len(item) > ceiling:
                 refuse("complete-byte-capacity")
             active.add(identity)
-            try:
-                add(2)
-                entries = item.items() if kind is dict else item
-                for index, entry in enumerate(entries):
-                    if index:
-                        add(1)
-                    if kind is dict:
-                        key, child = entry
-                        if type(key) is not str:
-                            refuse("nontext-json-key")
-                        visit(key, depth + 1)
-                        add(1)
-                        visit(child, depth + 1)
-                    else:
-                        visit(entry, depth + 1)
-            finally:
-                active.remove(identity)
+            counter.add(2)
+            frames.append(_JsonSizeFrame(item))
         else:
-            refuse("noncanonical-json-value")
-
-    visit(value, 0)
-    return total
+            _json_scalar_size(owner, item, counter, ascii_only)
+        while frames:
+            frame = frames[-1]
+            item = frame.take(counter, end)
+            if item is not end:
+                depth = len(frames)
+                break
+            active.remove(frame.identity)
+            frames.pop()
+        else:
+            return counter.total
 
 
 def _json_bytes(owner, value, ceiling, *, ascii_only):
