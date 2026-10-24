@@ -3,24 +3,27 @@
 Owner: the sole integration owner in thread
 `01a1548c-e4bd-7d10-a4df-b68d11e2b70b`. Carrier: draft PR #43 and
 `codex/sia-assurance-kernel-20261019`. The original A/G/C/P/R obligations,
-fixtures, domain, budgets and permission limits remain controlling.
+fixtures, domain, budgets and permission limits remain controlling. The
+[R05 authorization correction](R05-AUTHORIZATION-CORRECTION-20261024.md)
+supersedes earlier approval claims; no R05 requirement retirement is accepted.
 
 | Order | Gate or blocker | Observable completion condition |
 | --- | --- | --- |
-| 1 | R05 stale retained admission | Current policy and callback checks execute on warm calls; reuse is limited to closed derivation inputs. Original stale-admission regressions, expensive-reuse intent, callback/refusal order and original resource envelope pass together. Merely moving validation behind another name is insufficient. |
+| 1 | R05 current retained admission | Every call performs current policy/callback checks. The [experimental candidate](RETAINED-FRESH-ADMISSION-20261024.md) removes success reuse, but authorization for retiring mandatory expensive reuse and its original count assertion is unverified. Both obligations remain open. Exact-source stale-policy, changed-image/VERSION, original callback/refusal order and full-workload/resource gates remain. Targeted and 161-method replay tests pass; [delivery/resident qualification](RETAINED-DELIVERY-QUALIFICATION-20261024.md) still times out under unchanged caps. |
 | 2 | SDK runtime qualification | v6 is rejected after an audit-hook cleanup regression despite its earlier full fixture pass. The all-call v7 successor passed 26 targeted tests and the audit control, but its full suite timed out under the original 120-second cap. Preserve actual errors/callback order and all cleanup effects in a concrete faster successor before another full run. Fresh source/output admission and actual SDK observation remain required. |
 | 3 | C/SPARK and Linux prerequisites | Original strict C analysis completes without unresolved diagnostics, full required SPARK obligations are discharged with assumptions retained, and credential preservation, protected manager image and teardown constraints have exact-source evidence. C4/C5/C6 failures remain visible; no viable successor route is yet established by the latest structural review. |
 | 4 | Protected publication, query and interruption recovery | End-to-end protected writes and receipts pass the original positive, refusal, replay and crash cases. Outcome queries require independently current authorization. Interrupted actions reconcile durable outcomes before any retry. Policy results must be enforced by the actual restricted runtime. |
 | 5 | Installed continuity, semantics and recovery | Qualified harness lifecycle and repeated-compaction scenarios restore source-backed task state without invented approval or duplicate actions; held-out retrieval and off-host recovery campaigns meet the original criteria and publish failures. Verify the installed executable/configuration path claimed, with capture gaps and unsupported hooks explicit. |
 | 6 | Final composition and release | Reconcile current carrier with current main by content, preserve ACK and Ollama controls, qualify exact-composition regressions/CI and required independent review/execution, align documentation/version, publish immutable tag/release with readback, qualify installed lifecycle, then obtain fresh exact-commit Omarchy verification and catalog readback. Historical marketplace-cycle closure is not approval of this candidate. |
 
-The next bounded milestone is a source-reviewed R05 decomposition identifying
-current admission and a worthwhile reusable computation with closed inputs.
-The refusal-order prerequisite is now tested. Before a new runtime attempt,
-state which diagnosis changed and which original obligation that attempt can
-decide. If the decomposition cannot preserve both current admission and the
-original reuse contract, retain that incompatibility explicitly; do not retry
-the failed no-cache approach unchanged or weaken the oracle/deadline.
+The next bounded milestone is qualification of the composed fresh-admission
+repair through the original full rosters, retained compact public validation
+and source delivery paths under unchanged limits. Retain the missing historical
+large-workload gap. Previous decomposition and no-cache rejection evidence is
+historical. The claimed delegated approval was misbound to an earlier SDK
+question. The proposed contract correction remains unapproved; workload
+deadlines, policy checks, source binding, independent execution and original
+requirements remain controlling.
 
 For SDK work, the [negative results](SDK-SWEEP-NEGATIVE-RESULTS-20261024.md)
 supersede v6's candidate disposition and retain v7's full-suite timeout.
