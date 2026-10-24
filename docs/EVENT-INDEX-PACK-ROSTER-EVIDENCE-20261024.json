@@ -1,0 +1,52 @@
+{
+  "status": "TESTED_EXPERIMENTAL_COMPLETE_ROSTER_NOT_RUNTIME_ACTIVATION",
+  "base_commit": "3a7a54b78188a686b50fae1eea0b702fece4da03",
+  "source_sha256": {
+    "bin/siaeventpackreader.py": "babaf6f21b8c78baa80f6f640d9f75c7f0891bdc4c1e3b17ebfb6ce88abdca2f",
+    "bin/siathought.py": "2ac4d1dd6a4ee9d4cf9c80afbee7e716bb301548ad0db0b61a01c4e6e4700ab3",
+    "tests/test_event_pack_roster.py": "545d52d1c22c210fc93e32110d039db81c96c0e6e5107312f6c47e7a9707191d",
+    "docs/EVENT-INDEX-PACK-ROSTER-20261024.md": "4dda7ee918cefca8ef83e2df48ba510da636c58069c29dac3d383ea3a151952e"
+  },
+  "tests": "136 PASS10.782s; original selected rosters retained; source inventories equal",
+  "whole_job_elapsed_ns": 11222190107,
+  "test_envelope": {
+    "seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_bytes": 536870912,
+    "core_bytes": 0,
+    "isolation": "Original heavy lock, read-only source, private HOME/tmp/run and network/PID isolation"
+  },
+  "static": "Existing167 selected profile zero diagnostics for changed reader/new test/final drivers; thought530 baseline/current and no code-message delta",
+  "negative_evidence": "Original equality admission failed deceptive and raising metaclass controls; initial3B023 and later1PLW1641 test diagnostics retained and corrected without suppression",
+  "independent_review": "ActualGPT6.1 source/raw only; blocker closed; final timing wording corrected; no independent execution",
+  "evidence_sha256": {
+    "roster_v1-result.json": "721c674eb241cc9d81f718486a9bfc1f20084022bcc663c84380853b52c88e19",
+    "roster_v2-result.json": "f8308e3e32c14788841c426c82f30a7c8a399655e4aaba84fc2a1b62134a08a8",
+    "roster_v3-result.json": "e9b0138190ea72a6c94d711780e1fc8fdefa2af0a7e320e362befd6a9364d6ba",
+    "roster_v4-result.json": "ea4ba2fa151014514836712ae5934070fc92107a26727cc8a7be3568a88ebdc6",
+    "roster_v4.stderr": "56d424037be0ac1d1764c0fc9c4e0a0a93d0c780364ee2693eca1385dea13b4a",
+    "metaclass_negative-result.json": "ec83c713e72ade05f6bf8c38d4a51f4da5cd9fb9813443bf7a3a52690dba69d2",
+    "metaclass_negative.stderr": "97b457ead0141765b29de45d0750cfe0dee82315e2b36bcfbf20afd9e9bfac40",
+    "static-new-result.json": "662745a43adc8908ff80e0e00a65d6460b0ef84f6a39aa975feebf50b8eea4c7",
+    "static-new-v3-result.json": "b472899cd684a52f2d054845245f9f9bf616c2ab3e898d62db469ee556c530b4",
+    "static-final-result.json": "6a6d9a241d958ece813b85788cd1e62503df847f1d1120d8a5b57556c10eacbc",
+    "static-thought-baseline-result.json": "2fbf01a1811e524944017b8a2d0e5f164aa3119b485b32efd5c0283ada51a86b",
+    "static-thought-current-result.json": "5bd057f9bca020bacd0ea407bc3c05f95be3811cfbf36607ae056906091b5dad",
+    "static-thought-delta.json": "805277173d74ffde506df9ed4382531d531a63cf38b6c3551ae27cde9958debb",
+    "REVIEW-v2.md": "71a65c71df9509ef869eafb9df806aaaf4eef0c101bb127d5e0edd4deb056fdb",
+    "FINAL-REVIEW.md": "223e8e119e2f4802f6ac756cc76140ecf129ec984a561bb9784091334e689a17",
+    "REVIEW-CORRECTION.json": "1a0930a36e2692714be419afda04292858736b68ec7a9ed365c2d0fca4d5db35"
+  },
+  "raw_evidence_availability": "Retained locally under ownership-transfer-20261024/event-pack-roster-v1; this summary is not a complete offline executable evidence bundle",
+  "open": [
+    "Whole-request allocation and execution cost qualification",
+    "Protected SPARK/native admission and original full writer qualification",
+    "Exact coverage and durable pack publication",
+    "Crash-reconciled migration and verified legacy retirement",
+    "Installed capsule, off-path restore/replay and harness lifecycle",
+    "All original system assurance and release/catalog gates"
+  ],
+  "r05": "Specific approval remains pending; original useful reuse and fresh policy validation remain required",
+  "installed_change": false,
+  "acceptance": false
+}

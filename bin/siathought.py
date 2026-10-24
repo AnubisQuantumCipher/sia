@@ -3936,6 +3936,25 @@ def _missing_event_index_expectations(organ, wanted, *, dependency_capture=None)
     return found
 
 
+def _join_event_index_occurrences(organ, wanted, found, *, dependency_capture=None):
+    """Keep legacy per-identity validation and early conflict ordering."""
+    capture_kw = ({"dependency_capture": dependency_capture}
+                  if dependency_capture is not None else {})
+    missing = set()
+    for event_id in sorted(wanted):
+        entry = _read_event_index_entry(organ, event_id, **capture_kw)
+        if entry is None:
+            missing.add(event_id)
+            continue
+        if event_id in found:
+            raise ValueError(
+                "event identity occurs in live and consolidated evidence")
+        found[event_id] = (
+            entry["epoch_slug"], entry["payload_sha256"],
+            entry["semantic_id"])
+    return missing
+
+
 def _other_event_occurrences(organ, wanted, excluded, *, dependency_capture=None):
     """Find source-native IDs already admitted on another recent day."""
     if not wanted:
@@ -3983,18 +4002,8 @@ def _other_event_occurrences(organ, wanted, excluded, *, dependency_capture=None
             if prior is not None and prior != value:
                 raise ValueError("event identity occurs with conflicting bytes")
             found[event_id] = value
-    missing = set()
-    for event_id in sorted(wanted):
-        entry = _read_event_index_entry(organ, event_id, **capture_kw)
-        if entry is None:
-            missing.add(event_id)
-            continue
-        if event_id in found:
-            raise ValueError(
-                "event identity occurs in live and consolidated evidence")
-        found[event_id] = (
-            entry["epoch_slug"], entry["payload_sha256"],
-            entry["semantic_id"])
+    missing = _join_event_index_occurrences(
+        organ, wanted, found, **capture_kw)
     expected = _missing_event_index_expectations(organ, missing, **capture_kw)
     if expected:
         event_id = sorted(expected)[0]
