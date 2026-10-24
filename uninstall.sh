@@ -3711,7 +3711,9 @@ complete_uninstall_launch_fence() {
       || [ -e "$RUNTIME_BIN_DIR" ] || [ -L "$RUNTIME_BIN_DIR" ]; then
     public_remains=1
   fi
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY'
+  # The caller handles failure with ||, which disables errexit in this function.
+  # Retain the recovery marker and armed state unless finalization succeeds.
+  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY' || return 1
 import json
 import os
 import stat
