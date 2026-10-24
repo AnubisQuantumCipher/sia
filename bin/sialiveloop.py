@@ -137,10 +137,14 @@ _JSON_LONG_ASCII_ESCAPES = tuple(
 
 
 _CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
+_TEXT_CHUNK_CHARACTERS = 4096
+_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def _utf8_length(value):
-    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    """Encode only a bounded scratch chunk; None denotes a lone surrogate."""
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _fail("text-chunk-capacity")
     try:
         return len(value.encode("utf-8", "strict"))
     except UnicodeEncodeError:
@@ -155,6 +159,8 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
     non-ASCII BMP character is six bytes and every astral character twelve.
     No serializer runs and no JSON text is allocated.
     """
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _fail("text-chunk-capacity")
     short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
     long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
     if not ascii_only:
@@ -168,25 +174,24 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
 
 
 def _count_ascii_json_string(item, add, *, ascii_only=False):
-    """Count a JSON string's canonical bytes with C-speed scans.
+    """Count exact canonical bytes with bounded scratch and current budget.
 
-    ASCII contributes its original bytes first, then escape overhead, with no
-    encoded copy. Non-ASCII is counted arithmetically from C-speed string
-    primitives — exactly the bytes the document will carry; the per-character
-    Python loop this replaced made every consistency check of a multi-megabyte
-    retained batch take seconds, and a first light with a week's backlog take
-    hours. Every addition still passes through the caller's complete-document
-    cap. Only a lone surrogate returns to the caller's validation path.
+    The character count is a lower bound checked before encoding. Unicode
+    encoding and escape scans use fixed chunks; no complete encoded copy is
+    allocated before admission. The ASCII lane retains its allocation-free
+    fast path. A surrogate returns to the caller's original refusal path.
     """
     if not item.isascii():
-        # Non-ASCII is counted arithmetically from C-speed string primitives:
-        # exactly the escaped bytes the serializer will write, with no
-        # serializer call and no JSON text allocated before the bound. A
-        # lone surrogate returns to the caller's path, which refuses it.
-        utf8_length = _utf8_length(item)
-        if utf8_length is None:
+        if _SURROGATE.search(item) is not None:
             return False
-        add(_json_string_bytes(item, utf8_length, ascii_only=ascii_only))
+        add(2 + len(item))
+        for offset in range(0, len(item), _TEXT_CHUNK_CHARACTERS):
+            chunk = item[offset:offset + _TEXT_CHUNK_CHARACTERS]
+            utf8_length = _utf8_length(chunk)
+            if utf8_length is None:
+                return False
+            add(_json_string_bytes(chunk, utf8_length, ascii_only=ascii_only)
+                - 2 - len(chunk))
         return True
     add(len('""'))
     add(len(item))

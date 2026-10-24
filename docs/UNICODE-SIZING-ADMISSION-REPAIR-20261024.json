@@ -1,0 +1,180 @@
+{
+  "schema": "sia.unicode-sizing-admission-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "9d47e95da8f0673afcca5435936d98d52c77f5f9",
+  "finding": "Audit32 / R33,R24: Unicode sizing allocated a complete encoded copy before capacity refusal.",
+  "change": "Reject obvious oversize before encoding; limit UTF-8 and escape scratch to checked 4096-character chunks; preserve live ASCII fast path and non-consuming surrogate fallback. Original output-byte limits unchanged.",
+  "source_sha256": {
+    "bin/sialiveloop.py": "083ffe0e93cf54b6097c5b06469bdd5a084fa09e913cee7597e8b2ca01089943",
+    "bin/siaeventplan.py": "190c605d0f95ba552d7c432c7b01ca3dc754472808bd0f362c58e07e1796a8f8",
+    "tests/test_unicode_sizing_admission.py": "6da72833122b3ff0c6c1d0c907e26ab2d793c65be09a00ef588d6c7ff125d772"
+  },
+  "results": {
+    "baseline-final": {
+      "status": "FAILED",
+      "tests_reported": 40,
+      "elapsed_seconds": 2.218,
+      "source_unchanged": true,
+      "output_sha256": "76172f61346f7af7994aaa38cda2c09df7e142817158425b8e339309883ef6b9"
+    },
+    "candidate-final": {
+      "status": "PASS",
+      "tests_reported": 40,
+      "elapsed_seconds": 2.096,
+      "source_unchanged": true,
+      "output_sha256": "545d6c3f6995b035e4f2cd729de1bea9eabf9a5665e8de59661ad6d405679ff8"
+    },
+    "integration": {
+      "status": "PASS",
+      "tests_reported": 88,
+      "elapsed_seconds": 27.29,
+      "source_unchanged": true,
+      "output_sha256": "351d539eaaf6e65ca9986b2444c63940ce5d53c202249cfbbc899b2a19123f5c"
+    }
+  },
+  "baseline_failure_classification": "Final identical test source: 19 failures across 40 methods on predecessor, no errors. Candidate passes same40. Separate original integration roster passes88.",
+  "controls": [
+    "Original five byte-equality/surrogate/speed methods unchanged, including original under-one-second multi-megabyte page sizing limit.",
+    "Original26 pure live-loop methods unchanged.",
+    "Exact and one-under capacities; chunk edges; ASCII/Unicode/astral/control/DEL strings; nested keys and values; raw page text.",
+    "Observed traced scratch for large preconstructed strings; bounded encoder input lengths and early refusal; direct oversized helper refusal.",
+    "Surrogate fallback does not consume caller budget before returning False.",
+    "Original page-plan, intake, capture and memo-reuse integration methods unchanged."
+  ],
+  "initial_corrections": [
+    "Initial test used a mock return value instead of actual encoding and caused three artificial errors; corrected observer records only input lengths and delegates actual encoding. Initial output retained.",
+    "Initial candidate passed38 methods but surrogate fallback could already have counted a prefix. Final precheck preserves the non-consuming False contract; final added control covers it. Initial candidate source and output retained."
+  ],
+  "static": {
+    "live_loop": "PASS, zero frozen strict diagnostics",
+    "event_plan": "NONPASS: eight unchanged diagnostics, same code/message multiset; no suppression",
+    "new_tests_and_runners": "PASS, zero frozen strict diagnostics; compile-only PASS",
+    "whole_module_P10_compliance": "UNPROVEN; existing dynamic runtime, recursion and long routines not qualified by this patch"
+  },
+  "independent_review": {
+    "model": "GPT-6.1",
+    "result": "No blocker at narrow bounded encoding-scratch scope",
+    "independent_execution": false
+  },
+  "limitations": [
+    "Input Python strings already exist in memory. Whole-string scans remain; no worst-case latency, process RSS or allocation-free claim.",
+    "Tracemalloc threshold is a scoped test observation, not a proof of allocator or whole-job memory bounds.",
+    "Existing R05 stale-admission regression remains FAILED; this resource repair does not fix or waive it.",
+    "No installed-runtime, publication, recovery, continuity, cognitive or avionics assurance follows. Original authority/proof and release gates remain open."
+  ],
+  "evidence_directory": "docs/evidence/unicode-sizing-admission-20261024",
+  "artifacts": {
+    "baseline-unicode-sizing-admission.json": {
+      "sha256": "53df2b6969fafb5136d6413b1e729647ca54c3c090fa3eea542575a1cfb8c443",
+      "bytes": 2992
+    },
+    "baseline-unicode-sizing-admission.log.gz": {
+      "sha256": "1ed4154574e43997683819047670add3201df2d662dc36a413e421eb0d2c19d1",
+      "bytes": 5013,
+      "uncompressed_sha256": "e6abdcb1022f3eb61c8ad31bc9694f9718606f9aec0b2da4723d4ee716c1000a",
+      "uncompressed_bytes": 2122601
+    },
+    "baseline-corrected-unicode-sizing-admission.json": {
+      "sha256": "8be399917a59b4eeea6aca392ad7c1b83bc26ab04f6536ef4543de50b4abef1b",
+      "bytes": 3002
+    },
+    "baseline-corrected-unicode-sizing-admission.log.gz": {
+      "sha256": "c9d1ef80bacde105386648a7ec52d61eabb64602db926054f34608a4d1e9ba1b",
+      "bytes": 2314,
+      "uncompressed_sha256": "c231b78413a84e7d94e7487cc986fba07105776b6dd72d0a0b820c709a454c6d",
+      "uncompressed_bytes": 24431
+    },
+    "baseline-final-unicode-sizing-admission.json": {
+      "sha256": "812ca2ba7008a175d63fe31c9ded2119ebe53e042386b507ade74991b0c390c1",
+      "bytes": 3006
+    },
+    "baseline-final-unicode-sizing-admission.log.gz": {
+      "sha256": "d53c5cace3a8fab104065ad69391a1b1f3c9211f0e48ed7d14ddee5681131a9a",
+      "bytes": 2439,
+      "uncompressed_sha256": "76172f61346f7af7994aaa38cda2c09df7e142817158425b8e339309883ef6b9",
+      "uncompressed_bytes": 26343
+    },
+    "candidate-unicode-sizing-admission.json": {
+      "sha256": "9a13b8f29c11537a6a43fd55c474bf255bdeaa46efd89c22c6dfe0d890b03d41",
+      "bytes": 2991
+    },
+    "candidate-unicode-sizing-admission.log.gz": {
+      "sha256": "bf844c55f2978bc2446699f1e9386f9f8a125f14e77dee6b0cccd81580c697e4",
+      "bytes": 1534,
+      "uncompressed_sha256": "37056ccc119cfbf64c0748957e120b11e23dd60a4bf1e81261aec27972b78285",
+      "uncompressed_bytes": 7634
+    },
+    "candidate-final-unicode-sizing-admission.json": {
+      "sha256": "2881aab23c1fd0e13995cee30c3c5eadbc214e0c9bba211b52cddf2e4fd80001",
+      "bytes": 2997
+    },
+    "candidate-final-unicode-sizing-admission.log.gz": {
+      "sha256": "66848026cb0794ad65c982fb5bb63b52dd741b0f9365a57d70af84fd8712dbab",
+      "bytes": 1581,
+      "uncompressed_sha256": "545d6c3f6995b035e4f2cd729de1bea9eabf9a5665e8de59661ad6d405679ff8",
+      "uncompressed_bytes": 7958
+    },
+    "integration-unicode-sizing-admission.json": {
+      "sha256": "7e85dc685ab5a3185a8627f1ba2dec7e087d2472134b9926caf6d76976576abe",
+      "bytes": 3894
+    },
+    "integration-unicode-sizing-admission.log.gz": {
+      "sha256": "b536fd06b6a65c15534691b26831118d996c9487f271c1a5728131e681df580f",
+      "bytes": 3024,
+      "uncompressed_sha256": "351d539eaaf6e65ca9986b2444c63940ce5d53c202249cfbbc899b2a19123f5c",
+      "uncompressed_bytes": 18007
+    },
+    "unicode-sizing-initial-test.py": {
+      "sha256": "aa8897609bde18960d4e7b0e65ad5bc316c439a6f5d7875f55964600b5a09a1e",
+      "bytes": 5022
+    },
+    "unicode-sizing-corrected-initial-test.py": {
+      "sha256": "f0d71e5f7f90ee5b9b9dbf8e77a78446b6d20f3578d7d8050929f88d17dfb53d",
+      "bytes": 5266
+    },
+    "unicode-sizing-static-receipt.json": {
+      "sha256": "95b0c4cd2b3a2c01f91c04991054280857d96fdcdf1c0b71c18de28742f95958",
+      "bytes": 32874
+    },
+    "unicode-sizing-independent-review.txt": {
+      "sha256": "dfcd885af415e672157359a3b97a88aa19c1aa676404671cd130edc7da901c7a",
+      "bytes": 1512
+    },
+    "run_unicode_sizing_admission.py": {
+      "sha256": "c4d54e39c22cc0d9b776dd82a507cf2bc7741ad3995959ba565aeac501437d78",
+      "bytes": 3477
+    },
+    "run_unicode_sizing_admission-corrected.py": {
+      "sha256": "2fd1355d877a422e3be979a56819718a24376658211b5400f2d8735aa10ae0cc",
+      "bytes": 3487
+    },
+    "run_unicode_sizing_admission-final.py": {
+      "sha256": "be26d9397468a39c4412b34782192d2dc88e47787256fd1d0ada957079888c1e",
+      "bytes": 3489
+    },
+    "run_unicode_sizing_admission-final-baseline.py": {
+      "sha256": "7cfe6eca5b117e5ac4af9f9a10967193c643594f996695bce1e3a2656c1e5c06",
+      "bytes": 3497
+    },
+    "run_unicode_sizing_integration.py": {
+      "sha256": "917719fb0b1f48dc7375b13999fbabf282d6ea8c897796592f20b40290a8172a",
+      "bytes": 3644
+    },
+    "initial-candidate-sialiveloop.py.txt": {
+      "sha256": "297049816ec078f215c89ca80db20e603b6986edc58354bbef566bb06d1c3e8c",
+      "bytes": 59744
+    },
+    "initial-candidate-siaeventplan.py.txt": {
+      "sha256": "190c605d0f95ba552d7c432c7b01ca3dc754472808bd0f362c58e07e1796a8f8",
+      "bytes": 76625
+    },
+    "unicode-sizing-execution-runners-static.json": {
+      "sha256": "ff7974d4c7af0162476d997b9e9fe9291acde403938970da7a9030ed71edacb7",
+      "bytes": 3971
+    },
+    "run_unicode_sizing_admission-committed.py": {
+      "sha256": "770656434c0fbbd221e36ad9f13b655b11a06bf00aee9758344de8d44ace4015",
+      "bytes": 3473
+    }
+  }
+}

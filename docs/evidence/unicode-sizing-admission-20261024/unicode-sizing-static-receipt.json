@@ -1,0 +1,841 @@
+{
+  "rows": {
+    "baseline-live": {
+      "path": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/sialiveloop.py",
+      "sha256": "d76bef02bf08b431944047aaaf1e53519b350d5ba03585fd3fe64e4933652719",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/sialiveloop.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "_utf8_length": 6,
+        "_json_string_bytes": 18,
+        "_count_ascii_json_string": 34
+      }
+    },
+    "baseline-plan": {
+      "path": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+      "sha256": "c8e2761c39d0c0bde40580e6a4117b210033ee12b6ee43430a3270889eda7eb5",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py"
+      ],
+      "returncode": 1,
+      "diagnostics": [
+        {
+          "cell": null,
+          "code": "F401",
+          "end_location": {
+            "column": 12,
+            "row": 10
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "safe",
+            "edits": [
+              {
+                "content": "",
+                "end_location": {
+                  "column": 1,
+                  "row": 11
+                },
+                "location": {
+                  "column": 1,
+                  "row": 10
+                }
+              }
+            ],
+            "message": "Remove unused import: `json`"
+          },
+          "location": {
+            "column": 8,
+            "row": 10
+          },
+          "message": "`json` imported but unused",
+          "name": "unused-import",
+          "noqa_row": 10,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/unused-import"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 65,
+            "row": 165
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 64,
+                  "row": 165
+                },
+                "location": {
+                  "column": 64,
+                  "row": 165
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 17,
+            "row": 163
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 163,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 91,
+            "row": 542
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 90,
+                  "row": 542
+                },
+                "location": {
+                  "column": 90,
+                  "row": 542
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 65,
+            "row": 542
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 542,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 63,
+            "row": 994
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 62,
+                  "row": 994
+                },
+                "location": {
+                  "column": 62,
+                  "row": 994
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 30,
+            "row": 994
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 994,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 42,
+            "row": 1189
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 41,
+                  "row": 1189
+                },
+                "location": {
+                  "column": 41,
+                  "row": 1189
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 22,
+            "row": 1189
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1189,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 42,
+            "row": 1194
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 41,
+                  "row": 1194
+                },
+                "location": {
+                  "column": 41,
+                  "row": 1194
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 22,
+            "row": 1194
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1194,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 45,
+            "row": 1488
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 44,
+                  "row": 1488
+                },
+                "location": {
+                  "column": 44,
+                  "row": 1488
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 23,
+            "row": 1488
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1488,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 45,
+            "row": 1492
+          },
+          "filename": "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 44,
+                  "row": 1492
+                },
+                "location": {
+                  "column": 44,
+                  "row": 1492
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 23,
+            "row": 1492
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1492,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        }
+      ],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "_utf8_length": 6,
+        "_json_string_bytes": 18,
+        "_text_size": 26
+      }
+    },
+    "candidate-live": {
+      "path": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/sialiveloop.py",
+      "sha256": "083ffe0e93cf54b6097c5b06469bdd5a084fa09e913cee7597e8b2ca01089943",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/sialiveloop.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "_utf8_length": 8,
+        "_json_string_bytes": 20,
+        "_count_ascii_json_string": 33
+      }
+    },
+    "candidate-plan": {
+      "path": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+      "sha256": "190c605d0f95ba552d7c432c7b01ca3dc754472808bd0f362c58e07e1796a8f8",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py"
+      ],
+      "returncode": 1,
+      "diagnostics": [
+        {
+          "cell": null,
+          "code": "F401",
+          "end_location": {
+            "column": 12,
+            "row": 10
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "safe",
+            "edits": [
+              {
+                "content": "",
+                "end_location": {
+                  "column": 1,
+                  "row": 11
+                },
+                "location": {
+                  "column": 1,
+                  "row": 10
+                }
+              }
+            ],
+            "message": "Remove unused import: `json`"
+          },
+          "location": {
+            "column": 8,
+            "row": 10
+          },
+          "message": "`json` imported but unused",
+          "name": "unused-import",
+          "noqa_row": 10,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/unused-import"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 65,
+            "row": 164
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 64,
+                  "row": 164
+                },
+                "location": {
+                  "column": 64,
+                  "row": 164
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 17,
+            "row": 162
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 162,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 91,
+            "row": 541
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 90,
+                  "row": 541
+                },
+                "location": {
+                  "column": 90,
+                  "row": 541
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 65,
+            "row": 541
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 541,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 63,
+            "row": 993
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 62,
+                  "row": 993
+                },
+                "location": {
+                  "column": 62,
+                  "row": 993
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 30,
+            "row": 993
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 993,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 42,
+            "row": 1188
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 41,
+                  "row": 1188
+                },
+                "location": {
+                  "column": 41,
+                  "row": 1188
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 22,
+            "row": 1188
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1188,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 42,
+            "row": 1193
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 41,
+                  "row": 1193
+                },
+                "location": {
+                  "column": 41,
+                  "row": 1193
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 22,
+            "row": 1193
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1193,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 45,
+            "row": 1487
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 44,
+                  "row": 1487
+                },
+                "location": {
+                  "column": 44,
+                  "row": 1487
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 23,
+            "row": 1487
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1487,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        },
+        {
+          "cell": null,
+          "code": "B905",
+          "end_location": {
+            "column": 45,
+            "row": 1491
+          },
+          "filename": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/siaeventplan.py",
+          "fix": {
+            "applicability": "unsafe",
+            "edits": [
+              {
+                "content": ", strict=False",
+                "end_location": {
+                  "column": 44,
+                  "row": 1491
+                },
+                "location": {
+                  "column": 44,
+                  "row": 1491
+                }
+              }
+            ],
+            "message": "Add explicit value for parameter `strict=`"
+          },
+          "location": {
+            "column": 23,
+            "row": 1491
+          },
+          "message": "`zip()` without an explicit `strict=` parameter",
+          "name": "zip-without-explicit-strict",
+          "noqa_row": 1491,
+          "severity": "error",
+          "url": "https://docs.astral.sh/ruff/rules/zip-without-explicit-strict"
+        }
+      ],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "_utf8_length": 8,
+        "_json_string_bytes": 20,
+        "_text_size": 19
+      }
+    },
+    "new-test": {
+      "path": "/home/sicarii/Work/sia-assurance-kernel-20261019/tests/test_unicode_sizing_admission.py",
+      "sha256": "6da72833122b3ff0c6c1d0c907e26ab2d793c65be09a00ef588d6c7ff125d772",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-kernel-20261019/tests/test_unicode_sizing_admission.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "native_size": 2,
+        "component_size": 2,
+        "test_surrogate_fallback_does_not_consume_budget": 7,
+        "test_private_encoders_refuse_oversized_chunks": 8,
+        "test_obvious_oversize_is_refused_before_encoding": 16,
+        "test_accepted_encoding_calls_have_fixed_chunk_bounds": 12,
+        "test_large_refusal_has_small_observed_traced_scratch": 13,
+        "test_chunk_edges_match_serializer_at_exact_capacity": 10,
+        "test_nested_values_and_keys_keep_complete_budget": 10,
+        "test_surrogates_at_chunk_edges_remain_refused": 8,
+        "test_unquoted_page_size_remains_exact_and_bounded": 7,
+        "observed": 3
+      }
+    },
+    "runner": {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_unicode_sizing_admission-final.py",
+      "sha256": "be26d9397468a39c4412b34782192d2dc88e47787256fd1d0ada957079888c1e",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_unicode_sizing_admission-final.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "source_pins": 3,
+        "command_for": 13,
+        "main": 32
+      }
+    },
+    "baseline-runner": {
+      "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_unicode_sizing_admission-final-baseline.py",
+      "sha256": "7cfe6eca5b117e5ac4af9f9a10967193c643594f996695bce1e3a2656c1e5c06",
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/assurance-analysis-tools-v1/venv/bin/ruff",
+        "check",
+        "--isolated",
+        "--no-cache",
+        "--target-version",
+        "py312",
+        "--select",
+        "A001,A002,A003,A004,A005,A006,B002,B003,B004,B005,B006,B007,B008,B009,B010,B011,B012,B013,B014,B015,B016,B017,B018,B019,B020,B021,B022,B023,B024,B025,B026,B027,B028,B029,B030,B031,B032,B033,B034,B035,B039,B904,B905,B911,B912,BLE001,E401,E402,E701,E702,E703,E711,E712,E713,E714,E721,E722,E731,E741,E742,E743,E902,F401,F402,F403,F404,F405,F406,F407,F501,F502,F503,F504,F505,F506,F507,F508,F509,F521,F522,F523,F524,F525,F541,F601,F602,F621,F622,F631,F632,F633,F634,F701,F702,F704,F706,F707,F722,F811,F821,F822,F823,F841,F842,F901,PLE0100,PLE0101,PLE0115,PLE0116,PLE0117,PLE0118,PLE0237,PLE0241,PLE0302,PLE0303,PLE0304,PLE0305,PLE0307,PLE0308,PLE0309,PLE0604,PLE0605,PLE0643,PLE0704,PLE1132,PLE1142,PLE1205,PLE1206,PLE1300,PLE1307,PLE1310,PLE1507,PLE1519,PLE1520,PLE1700,PLE2502,PLE2510,PLE2512,PLE2513,PLE2514,PLE2515,PLW0108,PLW0120,PLW0127,PLW0128,PLW0129,PLW0131,PLW0133,PLW0177,PLW0211,PLW0245,PLW0406,PLW0602,PLW0603,PLW0604,PLW0642,PLW0711,PLW1501,PLW1507,PLW1508,PLW1509,PLW1510,PLW1641,PLW2101,PLW2901,PLW3301,RUF100",
+        "--ignore-noqa",
+        "--no-fix",
+        "--no-fix-only",
+        "--no-unsafe-fixes",
+        "--no-preview",
+        "--no-respect-gitignore",
+        "--no-force-exclude",
+        "--output-format",
+        "json",
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/run_unicode_sizing_admission-final-baseline.py"
+      ],
+      "returncode": 0,
+      "diagnostics": [],
+      "stderr": "",
+      "syntax": "PASS",
+      "functions": {
+        "source_pins": 3,
+        "command_for": 13,
+        "main": 32
+      }
+    }
+  },
+  "comparison": {
+    "live": {
+      "baseline_count": 0,
+      "candidate_count": 0,
+      "same_code_message_multiset": true,
+      "new": []
+    },
+    "plan": {
+      "baseline_count": 8,
+      "candidate_count": 8,
+      "same_code_message_multiset": true,
+      "new": []
+    }
+  }
+}

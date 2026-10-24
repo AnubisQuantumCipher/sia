@@ -40,10 +40,14 @@ def _refuse(reason):
 
 
 _CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
+_TEXT_CHUNK_CHARACTERS = 4096
+_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def _utf8_length(value):
-    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    """Encode only a bounded scratch chunk; None denotes a lone surrogate."""
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _refuse("text-chunk-capacity")
     try:
         return len(value.encode("utf-8", "strict"))
     except UnicodeEncodeError:
@@ -58,6 +62,8 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
     non-ASCII BMP character is six bytes and every astral character twelve.
     No serializer runs and no JSON text is allocated.
     """
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _refuse("text-chunk-capacity")
     short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
     long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
     if not ascii_only:
@@ -71,28 +77,21 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
 
 
 def _text_size(value, limit, *, quoted=True):
+    """Count before serialization with fixed-size UTF-8/escape scratch."""
     if type(value) is not str:
         _refuse("text-type")
-    # Fast path: arithmetic over C-speed string primitives, identical to the
-    # per-character accounting below (which stays as the reference and the
-    # surrogate refusal path); no serializer runs before the bound.
-    utf8_length = _utf8_length(value)
-    if utf8_length is not None:
-        size = (_json_string_bytes(value, utf8_length) if quoted else utf8_length)
-        if size > limit:
-            _refuse("complete-byte-capacity")
-        return size
     size = 2 if quoted else 0
-    for character in value:
-        code = ord(character)
-        if 0xD800 <= code <= 0xDFFF:
+    if len(value) + size > limit:
+        _refuse("complete-byte-capacity")
+    if _SURROGATE.search(value) is not None:
+        _refuse("invalid-unicode")
+    for offset in range(0, len(value), _TEXT_CHUNK_CHARACTERS):
+        chunk = value[offset:offset + _TEXT_CHUNK_CHARACTERS]
+        utf8_length = _utf8_length(chunk)
+        if utf8_length is None:
             _refuse("invalid-unicode")
-        if quoted and (character in '\\"' or character in "\b\f\n\r\t"):
-            size += 2
-        elif quoted and code < 0x20:
-            size += 6
-        else:
-            size += 1 if code < 0x80 else 2 if code < 0x800 else 3 if code < 0x10000 else 4
+        size += (_json_string_bytes(chunk, utf8_length) - 2
+                 if quoted else utf8_length)
         if size > limit:
             _refuse("complete-byte-capacity")
     return size
