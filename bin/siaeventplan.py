@@ -42,6 +42,7 @@ def _refuse(reason):
 _CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
 _TEXT_CHUNK_CHARACTERS = 4096
 _SURROGATE = re.compile("[\ud800-\udfff]")
+_JSON_UTF8_ASCII_ESCAPE = re.compile(r'["\\\x00-\x1f]')
 
 
 def _utf8_length(value):
@@ -83,6 +84,10 @@ def _text_size(value, limit, *, quoted=True):
     size = 2 if quoted else 0
     if len(value) + size > limit:
         _refuse("complete-byte-capacity")
+    # ASCII is already valid UTF-8. With no JSON escapes, its character
+    # count is its byte count; the current limit was checked above.
+    if value.isascii() and (not quoted or _JSON_UTF8_ASCII_ESCAPE.search(value) is None):
+        return len(value) + size
     if _SURROGATE.search(value) is not None:
         _refuse("invalid-unicode")
     for offset in range(0, len(value), _TEXT_CHUNK_CHARACTERS):
