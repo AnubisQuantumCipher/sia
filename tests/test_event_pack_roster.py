@@ -142,6 +142,78 @@ class PackedRosterBoundary(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "policy changed"):
                 next(iterator)
 
+    def test_equal_boolean_identity_limit_is_not_an_integer_policy(self):
+        capture = self.fixture._capture()
+        with mock.patch.object(self.lib, "MAX_EVENT_INDEX_RECORDS", 1):
+            iterator = lookup.reader.iter_roster_captured(
+                self.lib.__dict__, "org", (self.fixture.event_id,), capture)
+            self.assertEqual(next(iterator)[0], self.fixture.event_id)
+            self.lib.MAX_EVENT_INDEX_RECORDS = True
+            with self.assertRaisesRegex(ValueError, "policy changed"):
+                next(iterator)
+
+    def test_deceptive_record_policy_refuses_without_comparison_hook(self):
+        hooks = []
+
+        class Policy:
+            def __ne__(self, other):
+                hooks.append("comparison")
+                return False
+
+        original = self.lib._validate_event_index_raw
+
+        def validate(*args, **kwargs):
+            entry = original(*args, **kwargs)
+            self.lib.MAX_EVENT_INDEX_BYTES = Policy()
+            return entry
+
+        self.fixture._write_pack()
+        self.fixture.legacy.unlink()
+        with mock.patch.object(self.lib, "MAX_EVENT_INDEX_BYTES", self.lib.MAX_EVENT_INDEX_BYTES), \
+                mock.patch.object(self.lib, "_validate_event_index_raw", validate):
+            with self.assertRaisesRegex(ValueError, "policy changed"):
+                self.fixture._read()
+        self.assertEqual(hooks, [])
+
+    def test_budget_exhaustion_in_later_group_keeps_found_unmodified(self):
+        first = self.identifiers[:64]
+        probe = self.fixture._capture()
+        lookup.reader.read_group_captured(self.lib.__dict__, "org", first, probe)
+        limit = probe.budget.total
+        capture = self.fixture._capture()
+        capture.budget.limit = limit
+        found = {}
+        with self.assertRaisesRegex(ValueError, "complete-byte-capacity"):
+            self._join(found=found, capture=capture)
+        self.assertEqual(found, {})
+        self.assertGreater(capture.budget.total, limit)
+
+    def test_record_policy_change_in_last_capture_check_refuses(self):
+        self.fixture._write_pack()
+        self.fixture.legacy.unlink()
+        capture = self.fixture._capture()
+        validated = False
+        validate_original = self.lib._validate_event_index_raw
+        check_original = capture.check_file
+        limit = self.lib.MAX_EVENT_INDEX_BYTES
+
+        def validate(*args, **kwargs):
+            nonlocal validated
+            result = validate_original(*args, **kwargs)
+            validated = True
+            return result
+
+        def check(path):
+            check_original(path)
+            if validated and path == str(self.fixture.pack):
+                self.lib.MAX_EVENT_INDEX_BYTES = limit + 1
+
+        with mock.patch.object(self.lib, "MAX_EVENT_INDEX_BYTES", limit), \
+                mock.patch.object(self.lib, "_validate_event_index_raw", validate), \
+                mock.patch.object(capture, "check_file", check):
+            with self.assertRaisesRegex(ValueError, "policy changed"):
+                self.fixture._read(capture)
+
     def test_input_mutation_during_validation_refuses(self):
         original = self.lib._validate_event_index_raw
         for mutate_found in (False, True):

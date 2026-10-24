@@ -1,0 +1,279 @@
+{
+  "status": "TESTED_EXPERIMENTAL_POLICY_REPAIR_AND_RESOURCE_OBSERVATIONS",
+  "base_commit": "eb7a29b9b1feb01f3687463f3a8a8345c580b379",
+  "source_sha256": {
+    "bin/siaeventpackreader.py": "5b6d9bac8a63f98fc18c6332a8be9ebf40c9b9834e1d9f435f3395fada518275",
+    "tests/test_event_pack_roster.py": "62d2a35cb507ab4b17130f803907338fc2ef32bcb54d6d1141dda9c8e5f9e41f",
+    "docs/EVENT-INDEX-PACK-CAPACITY-20261024.md": "7f96cd6920e7874da3267d0f9607ebd8af93162f155b6df1c1772e22de212edf",
+    "docs/EVENT-INDEX-PACK-MIGRATION-GATES-20261024.md": "6e4e973d196e5bb5bd7e558ca217cbcd470774036b6f092ff9e2947deefd7a6f"
+  },
+  "regression": "140 PASS11.797s; original selected rosters and caps retained; source inventories equal",
+  "whole_job_elapsed_ns": {
+    "regression_final": 12331788161,
+    "capacity_verified": 18016664820,
+    "planner_final": 6032475368
+  },
+  "test_envelope": {
+    "seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_bytes": 536870912,
+    "core_bytes": 0,
+    "isolation": "Original heavy lock, read-only source, private HOME/tmp/run and network/PID isolation"
+  },
+  "static": "Final selected167 scoped profile zero diagnostics; no measured function over60 source lines; no system warning waiver",
+  "maximum_capacity_observations": [
+    {
+      "scope": "Actual prepare front door with unique fixture events",
+      "request_count": 65536,
+      "status": "REFUSED_BEFORE_CAPTURE",
+      "source_opens": 0,
+      "refusal": "event page plan refused: complete-byte-capacity (organ org, day 2026-01-05, 65536 events, 1310720 summary bytes; plan ceiling 16777216 bytes)",
+      "elapsed_ns": 16645351,
+      "cumulative_process_high_water_rss_kib": 108176
+    },
+    {
+      "mode": "legacy",
+      "status": "REFUSED_COMPLETE_BYTE_CAPACITY",
+      "request_count": 65536,
+      "read_calls": 15054,
+      "file_observations": 15053,
+      "directory_observations": 3,
+      "budget_at_refusal": 16777374,
+      "budget_limit": 16777216,
+      "found_count": 0,
+      "root_descriptor_closed": true,
+      "elapsed_ns": 248537523,
+      "cumulative_process_high_water_rss_kib": 122128,
+      "route_shape": "one-prefix",
+      "scope": "Actual capture/lookup subpath, all requested identities absent"
+    },
+    {
+      "mode": "packed",
+      "status": "REFUSED_COMPLETE_BYTE_CAPACITY",
+      "request_count": 65536,
+      "read_calls": 15286,
+      "file_observations": 15051,
+      "directory_observations": 6,
+      "budget_at_refusal": 16778208,
+      "budget_limit": 16777216,
+      "found_count": 0,
+      "root_descriptor_closed": true,
+      "elapsed_ns": 7845740344,
+      "cumulative_process_high_water_rss_kib": 122128,
+      "route_shape": "one-prefix",
+      "scope": "Actual capture/lookup subpath, all requested identities absent"
+    },
+    {
+      "mode": "legacy",
+      "status": "REFUSED_COMPLETE_BYTE_CAPACITY",
+      "request_count": 65536,
+      "read_calls": 15000,
+      "file_observations": 14999,
+      "directory_observations": 61,
+      "budget_at_refusal": 16777770,
+      "budget_limit": 16777216,
+      "found_count": 0,
+      "root_descriptor_closed": true,
+      "elapsed_ns": 248774115,
+      "cumulative_process_high_water_rss_kib": 122128,
+      "route_shape": "mixed-prefix",
+      "scope": "Actual capture/lookup subpath, all requested identities absent"
+    },
+    {
+      "mode": "packed",
+      "status": "REFUSED_COMPLETE_BYTE_CAPACITY",
+      "request_count": 65536,
+      "read_calls": 14996,
+      "file_observations": 14995,
+      "directory_observations": 116,
+      "budget_at_refusal": 16777804,
+      "budget_limit": 16777216,
+      "found_count": 0,
+      "root_descriptor_closed": true,
+      "elapsed_ns": 8457767267,
+      "cumulative_process_high_water_rss_kib": 122128,
+      "route_shape": "mixed-prefix",
+      "scope": "Actual capture/lookup subpath, all requested identities absent"
+    }
+  ],
+  "planner_fixture_observations": [
+    {
+      "mode": "legacy",
+      "scope": "1024 novel fixture events; actual leased prepare/publish/retry",
+      "prepare_ns": 391321238,
+      "publish_ns": 1209362626,
+      "retry_ns": 485555487,
+      "event_count": 1024,
+      "page_count": 3,
+      "captures": [
+        {
+          "retained_budget_bytes": 4265387,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1417298,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1418335,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1493491,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1493491,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1568676,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1568676,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1611829,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        },
+        {
+          "retained_budget_bytes": 1611829,
+          "budget_limit": 16777216,
+          "file_observations": 1027,
+          "directory_observations": 258
+        }
+      ],
+      "plan_bytes": 1082614,
+      "page_sha256": {
+        "events/org/2026-01-05": "61632c047d872bf56393dead0d9783229f4bf847196ce8b1690809e22d38d804",
+        "events/org/2026-01-05-part-2": "625fdd2d16d9f060210ec0a75badf253094a9196786a1bda78e683bdebf3dd12",
+        "events/org/2026-01-05-part-3": "b11255d68c8ee7465cf62c1fe647fbe14552f1f4805432ea37d039204a8fd1ef"
+      },
+      "cumulative_process_high_water_rss_kib": 61816
+    },
+    {
+      "mode": "packed",
+      "scope": "1024 novel fixture events; actual leased prepare/publish/retry",
+      "prepare_ns": 606781340,
+      "publish_ns": 1914908483,
+      "retry_ns": 744260522,
+      "event_count": 1024,
+      "page_count": 3,
+      "captures": [
+        {
+          "retained_budget_bytes": 5487585,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2639496,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2640533,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2715689,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2715689,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2790874,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2790874,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2834027,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        },
+        {
+          "retained_budget_bytes": 2834027,
+          "budget_limit": 16777216,
+          "file_observations": 1935,
+          "directory_observations": 512
+        }
+      ],
+      "plan_bytes": 1147461,
+      "page_sha256": {
+        "events/org/2026-01-05": "61632c047d872bf56393dead0d9783229f4bf847196ce8b1690809e22d38d804",
+        "events/org/2026-01-05-part-2": "625fdd2d16d9f060210ec0a75badf253094a9196786a1bda78e683bdebf3dd12",
+        "events/org/2026-01-05-part-3": "b11255d68c8ee7465cf62c1fe647fbe14552f1f4805432ea37d039204a8fd1ef"
+      },
+      "cumulative_process_high_water_rss_kib": 69740
+    },
+    {
+      "exact_page_bytes_equal": true
+    }
+  ],
+  "negative_controls": "Boolean/equality and deceptive comparison policy bypass reproduced; final capture callback policy mutation reproduced; repaired without weakening original caps",
+  "independent_review": "ActualGPT6.1 source/raw and documentation only; no independent execution; no concrete checkpoint blocker",
+  "raw_evidence_availability": "Retained locally under ownership-transfer-20261024/event-pack-capacity-v1; summary is not an offline executable evidence bundle",
+  "evidence_sha256": {
+    "regression_final-result.json": "293e6c168f4938f91959fe5b61440b743bccda6dc97bbed8aabd5e51c8e7d2e0",
+    "regression_final.stderr": "84b51f49f7f8610aac044c6837396da295ac6c39f28164938d85d47aeab45a18",
+    "capacity-result.json": "85db22302e1704bcfdbf19578fc588b06d5b53b1ae254740c326fdb94f26a4df",
+    "capacity.stderr": "00d63ce5b8e8b4247e823ad9e8e049a620b0d0fa37f6f8e831d277c1675073eb",
+    "capacity_verified-result.json": "d7b26d7b80792f7c6b637b14e1eb83bd204d939db16ba8dac3fcf4d5d5fb4d8c",
+    "capacity_verified.stdout": "865a82195fe630a67dc144bd1de87b6a90ed550a5406fadae42bc3941dc17236",
+    "planner_final-result.json": "59297258e2c06b38cbaec345f14cd254599f6c317a4cd1f3389480500e17eaef",
+    "planner_final.stdout": "16793e55fd78eb47307995f3c96fdee39dfe69401394a48521527c8685235286",
+    "policy_negative-result.json": "9778caf108bb8ff14c4be47f51214c264f404b110ba0fbd341f3cb94e1c538a7",
+    "policy_negative.stderr": "3962c0bb478983f5a5539a123124051779548de29fd1e139cd7e18f873d9562a",
+    "last_check_negative-result.json": "8eae0bebb41e1f2c2f8f6bfb91371936108797bf6efd56e122f8136498d2e578",
+    "last_check_negative.stderr": "f0b71b68a7357bbd63d5e663c936a950e471846c8a1f3b6ac042369ce1a92fda",
+    "static-final-result.json": "b9c303263c3f61036fdee98f89d477bf1671452a3f41e1daacd71232fa09a8de",
+    "SOURCE-REVIEW.md": "59d6253dd9bfc205527305a6552b45737466450ab56eb2672cd3e6bcb6f5d64c",
+    "DOCUMENT-REVIEW.md": "5216389d769c4cb73f6c053935a82174210170eced4bd1c5efa3b2d74812c4aa"
+  },
+  "open": [
+    "Previously accepted whole-domain compatibility and populated-domain resource qualification",
+    "All named consolidation and outcome readers",
+    "Exact coverage planner and protected SPARK/native authority",
+    "Durable transaction, crash recovery and verified retirement",
+    "Correction/deletion/retention descendants and supported downgrade",
+    "Actual installed capsule/off-path restore and harness lifecycle",
+    "Original R05, full writer and assurance/release/catalog gates"
+  ],
+  "acceptance": false,
+  "installed_change": false
+}

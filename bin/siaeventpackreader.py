@@ -10,6 +10,12 @@ import os
 import siaeventpack
 
 
+def _check_policy(owner, name, expected, reason):
+    current = owner[name]
+    if type(current) is not int or current != expected:
+        raise ValueError(reason)
+
+
 def _optional(capture, path, maximum):
     if type(maximum) is not int or maximum <= 0:
         raise ValueError("event index read capacity is invalid")
@@ -69,12 +75,14 @@ def read_group_captured(owner, organ, identifiers, capture):
                 raise ValueError("event index representations conflict")
             entry = original
         result[identifier] = entry
-    if owner["MAX_EVENT_INDEX_BYTES"] != limit:
-        raise ValueError("event index record policy changed during group lookup")
+    _check_policy(owner, "MAX_EVENT_INDEX_BYTES", limit,
+                  "event index record policy changed during group lookup")
     # All absent/present observations must survive validation of the whole group.
     for path in paths:
         capture.check_file(path)
     capture.check_file(pack_path)
+    _check_policy(owner, "MAX_EVENT_INDEX_BYTES", limit,
+                  "event index record policy changed during group lookup")
     return result
 
 
@@ -113,12 +121,12 @@ def iter_roster_captured(owner, organ, identifiers, capture):
             group = identifiers[start:end]
             rows = read_group_captured(owner, organ, group, capture)
             for identifier in group:
-                if owner["MAX_EVENT_INDEX_RECORDS"] != limit:
-                    raise ValueError("event index identity policy changed during lookup")
+                _check_policy(owner, "MAX_EVENT_INDEX_RECORDS", limit,
+                              "event index identity policy changed during lookup")
                 yield identifier, rows[identifier]
             start = end
-    if owner["MAX_EVENT_INDEX_RECORDS"] != limit:
-        raise ValueError("event index identity policy changed during lookup")
+    _check_policy(owner, "MAX_EVENT_INDEX_RECORDS", limit,
+                  "event index identity policy changed during lookup")
 
 
 def _found_snapshot(found, maximum):
