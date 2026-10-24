@@ -31,6 +31,7 @@ import threading as _threading
 # partial bind() retains prior values, as for the other runtime dependencies.
 os = None
 siaqueue = None
+MAX_EVENT_INDEX_BYTES = None
 
 def _canonical_thought_page_record(thought):
     """Project a compatibility-named generated entry into its page record."""
@@ -3672,6 +3673,35 @@ def _event_index_encoded(entry):
     return encoded
 
 
+def _validate_event_index_raw(raw, organ, event_id, *, dependency_capture=None):
+    """Apply current canonical and epoch policy to one untrusted byte record."""
+    if type(raw) is not bytes or len(raw) > MAX_EVENT_INDEX_BYTES:
+        raise ValueError("consolidated event index entry exceeds its bound")
+    try:
+        entry = _strict_json_loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise ValueError("consolidated event index entry is malformed") from exc
+    entry = _canonical_event_index_entry(entry)
+    if entry["organ"] != organ or entry["event_id"] != event_id \
+            or raw != _event_index_encoded(entry):
+        raise ValueError("consolidated event index path binding is invalid")
+    epoch = _read_epoch_state(
+        entry["epoch_slug"],
+        **({"dependency_capture": dependency_capture}
+           if dependency_capture is not None else {}))
+    source_record = {"rel": entry["source_rel"],
+                     "sha256": entry["source_sha256"]}
+    if entry["source_sha256"] not in epoch["sources"] \
+            or source_record not in epoch["source_manifest"]:
+        raise ValueError(
+            "consolidated event index lacks exact epoch lineage")
+    if epoch["event_ids_declared"] \
+            and entry["event_id"] not in epoch["event_ids"]:
+        raise ValueError(
+            "consolidated event index lacks epoch completeness lineage")
+    return entry
+
+
 def _read_event_index_entry(organ, event_id, *, dependency_capture=None):
     relative = _event_index_relative(organ, event_id)
     path = os.path.join(CORPUS, relative)
@@ -3702,28 +3732,8 @@ def _read_event_index_entry(organ, event_id, *, dependency_capture=None):
                     after.st_mtime_ns, after.st_ctime_ns)
         if observed != finished or len(raw) > MAX_EVENT_INDEX_BYTES:
             raise ValueError("consolidated event index entry changed while read")
-    try:
-        entry = _strict_json_loads(raw.decode("utf-8"))
-    except (UnicodeError, ValueError, RecursionError) as exc:
-        raise ValueError("consolidated event index entry is malformed") from exc
-    entry = _canonical_event_index_entry(entry)
-    if entry["organ"] != organ or entry["event_id"] != event_id \
-            or raw != _event_index_encoded(entry):
-        raise ValueError("consolidated event index path binding is invalid")
-    epoch = _read_epoch_state(
-        entry["epoch_slug"],
-        **({"dependency_capture": dependency_capture}
-           if dependency_capture is not None else {}))
-    source_record = {"rel": entry["source_rel"],
-                     "sha256": entry["source_sha256"]}
-    if entry["source_sha256"] not in epoch["sources"] \
-            or source_record not in epoch["source_manifest"]:
-        raise ValueError(
-            "consolidated event index lacks exact epoch lineage")
-    if epoch["event_ids_declared"] \
-            and entry["event_id"] not in epoch["event_ids"]:
-        raise ValueError(
-            "consolidated event index lacks epoch completeness lineage")
+    entry = _validate_event_index_raw(
+        raw, organ, event_id, dependency_capture=dependency_capture)
     if dependency_capture is not None:
         dependency_capture.check_file(path)
     else:
