@@ -178,7 +178,8 @@ related tests with original failing baselines retained. The unchanged larger
 synthetic workload still exits 1 with FAILED_STALE_ADMISSION, so this is not an
 R05 repair, whole-system termination proof or release acceptance. Original
 reuse instrumentation and failed-cache obligations remain unchanged.
-# Additional cost disposition
+
+## Additional cost disposition
 
 The subsequent [disjoint cost diagnostic](REPLAY-REUSE-COST-DISPOSITION-20261024.md)
 rejects the association-helper cache candidate: constructing its proposed key
@@ -186,3 +187,14 @@ costs more than the observed helper work. The failed instrument and corrected
 run are retained. R05 remains FAILED; no cache, original oracle or workload gate
 changed. A different immutable-input ownership contract requires its own
 compatibility and cost evidence before implementation or acceptance.
+
+## Fresh sizing traversal
+
+[Dictionary key stepping](JSON-KEY-STEP-20261024.md) preserves current key,
+colon, child and refusal checks while removing a pending-key traversal turn.
+The portable 72-test roster and four detected unsafe variants qualify that
+limited source change. A larger synthetic predecessor/empty compact-entry
+profile now identifies repeated sizing cost, with full inputs and failures
+retained. It is not the missing historical workload or a controlled speed
+benchmark. No outer cache, original oracle or reuse requirement changed;
+R05 remains FAILED, with the immutable-input ownership question unresolved.

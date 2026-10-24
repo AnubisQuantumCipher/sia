@@ -265,20 +265,15 @@ def _json_scalar_size(owner, item, counter, ascii_only):
 
 
 class _JsonSizeFrame:
-    __slots__ = ("identity", "entries", "mapping", "first", "pending", "child")
+    __slots__ = ("identity", "entries", "mapping", "first")
 
     def __init__(self, item):
         self.identity = id(item)
         self.mapping = type(item) is dict
         self.entries = iter(item.items() if self.mapping else item)
-        self.first, self.pending, self.child = True, False, None
+        self.first = True
 
-    def take(self, counter, end):
-        if self.pending:
-            counter.add(1)
-            child = self.child
-            self.pending, self.child = False, None
-            return child
+    def take(self, counter, end, ascii_only, depth):
         entry = next(self.entries, end)
         if entry is end:
             return end
@@ -286,11 +281,14 @@ class _JsonSizeFrame:
             counter.add(1)
         self.first = False
         if self.mapping:
-            key, self.child = entry
+            key, child = entry
             if type(key) is not str:
                 refuse("nontext-json-key")
-            self.pending = True
-            return key
+            if depth > 64:
+                refuse("complete-json-depth")
+            _json_string_size(key, counter, ascii_only)
+            counter.add(1)
+            return child
         return entry
 
 
@@ -325,7 +323,7 @@ def _json_size(owner, value, ceiling, *, ascii_only):
             _json_scalar_size(owner, item, counter, ascii_only)
         while frames:
             frame = frames[-1]
-            item = frame.take(counter, end)
+            item = frame.take(counter, end, ascii_only, len(frames))
             if item is not end:
                 depth = len(frames)
                 break
