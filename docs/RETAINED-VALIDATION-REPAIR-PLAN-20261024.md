@@ -89,3 +89,22 @@ mission, with its own outstanding proof, binder, Linux enforcement and end-to-en
 obligations. This checkpoint establishes a reproducible defect and repair
 contract, not whole-system assurance, installed qualification, lossless agent
 continuity, cognitive improvement or avionics certification.
+
+## First implementation checkpoint: shared association derivation
+
+`_derive_association` in `siaeventintake.py` now separates the data-only
+first-observation calculation from callbacks and accumulator writes. Legacy
+replay and checkpoint replay share its caller. The helper accepts private,
+already-admitted scalar records; it is not a new arbitrary-object admission
+API. Identity hashing remains conditional on a first source/event occurrence.
+Repeats retain the original observation identity, version and time while
+carrying current admission. Semantic conflicts return the original refusal
+reason without an update. No input record is mutated.
+
+The [extraction manifest](ASSOCIATION-DERIVATION-EXTRACTION-20261024.json)
+retains original-roster and new contract evidence plus independent source
+review. Two existing product static diagnostics remain. This extraction does
+not close R05, establish a complete immutable validation context, or demonstrate
+a speed improvement. Page admission, ordered version processing and current
+owner policy still require separation. Both outer admission memos remain
+unqualified, and the original reuse/performance and system gates remain open.

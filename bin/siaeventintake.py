@@ -429,6 +429,33 @@ def _member(owner, plan, images):
         _refuse("complete-target-page-roster")
 
 
+def _derive_association(row, candidate, prior):
+    """Derive one row from admitted data without callbacks or state mutation.
+
+    Inputs contain only the already-checked scalar observation/admission fields.
+    The caller reserves their aggregate capacity before replay and owns its
+    accumulators. A returned reason refuses the transition without an update.
+    This helper does not admit events, authenticate pins or authorize effects.
+    """
+    if prior is None:
+        if candidate is None:
+            return "missing-first-observation", None, None
+        observation = dict(candidate)
+        first_observation = observation
+        status = "first-observation"
+    else:
+        semantic, observation = prior
+        if semantic != row["semantic_id"]:
+            return "repeated-source-association-conflict", None, None
+        first_observation = None
+        status = "already-observed"
+    association = {**row, "admission": dict(row["admission"]),
+                   "observation_id": observation["id"],
+                   "observation_version_sha256": observation["version_sha256"],
+                   "observation_timestamp": observation["timestamp"], "status": status}
+    return None, first_observation, association
+
+
 def _fold_entry(owner, request, entry, intake, associations, versions, current, first):
     """Apply one already-admitted entry to private replay accumulators.
 
@@ -488,26 +515,24 @@ def _fold_entry(owner, request, entry, intake, associations, versions, current, 
         for position, record in enumerate(run["events"]):
             key = (run["source_id"], record["event_id"])
             admitted = admissions[(record["organ"], record["ts"][:10], record["event_id"])]
+            candidate = None
+            prior = first.get(key)
             if key not in first:
                 identifier = _sha(owner, {"schema": "sia-controller-event-association-v1",
                                           "epoch_id": intake["epoch_id"], "source_id": key[0], "event_id": key[1]})
-                observation = {"id": identifier, "timestamp": returns["observed_at"],
-                               "version_sha256": admitted["version_sha256"], "symbol": key[0],
-                               "context": request["profile"]["context"], "native_timestamp": record["ts"]}
+                candidate = {"id": identifier, "timestamp": returns["observed_at"],
+                             "version_sha256": admitted["version_sha256"], "symbol": key[0],
+                             "context": request["profile"]["context"], "native_timestamp": record["ts"]}
+            row = {"source_returns_sha256": entry["expected_source_returns_sha256"],
+                   "source_id": key[0], "return_index": position, "event_id": key[1],
+                   "semantic_id": record["semantic_id"], "admission": admitted}
+            reason, observation, association = _derive_association(row, candidate, prior)
+            if reason is not None:
+                _refuse(reason)
+            if observation is not None:
                 first[key] = (record["semantic_id"], observation)
                 intake["observations"].append(observation)
-                status = "first-observation"
-            else:
-                semantic, observation = first[key]
-                if semantic != record["semantic_id"]:
-                    _refuse("repeated-source-association-conflict")
-                status = "already-observed"
-            associations.append({"source_returns_sha256": entry["expected_source_returns_sha256"],
-                                 "source_id": key[0], "return_index": position, "event_id": key[1],
-                                 "semantic_id": record["semantic_id"], "admission": admitted,
-                                 "observation_id": observation["id"],
-                                 "observation_version_sha256": observation["version_sha256"],
-                                 "observation_timestamp": observation["timestamp"], "status": status})
+            associations.append(association)
 
 
 def _project(owner, request):
