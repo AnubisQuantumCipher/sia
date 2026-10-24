@@ -19,7 +19,6 @@ serializers and validators.
 
 import base64
 import contextlib
-import copy
 import os
 import re
 import stat
@@ -2464,25 +2463,19 @@ def _validate_retained_projection(owner, batch, event_batches):
         refuse("intake-projection-binding")
 
 
-# Byte-identical retained batches validated earlier in this process (see the
-# capture memo in siasourcecheckpoint): the identity digest runs every call,
-# the derivation only for an image not yet validated under these constants.
+# Compatibility slots for existing diagnostic cleanup. Admission never reads
+# or publishes cached success; every call checks the current policy.
 _VALIDATED_BATCHES = {}
 _VALIDATED_BATCHES_LIMIT = 8
 
 
 def validate_batch(owner, batch, expected_batch_sha256):
-    """Validate a retained source batch without consulting current sources."""
+    """Validate retained input against current policy on every call."""
     _json_size(owner, batch, owner["MAX_STATE_JSON_BYTES"], ascii_only=True)
-    memo_key = (expected_batch_sha256, native_sha(owner, batch),
-                owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
-    if memo_key in _VALIDATED_BATCHES:
-        return copy.deepcopy(_VALIDATED_BATCHES[memo_key][0])
-    result = _validate_batch_image(owner, batch, expected_batch_sha256)
-    if len(_VALIDATED_BATCHES) >= _VALIDATED_BATCHES_LIMIT:
-        _VALIDATED_BATCHES.clear()
-    _VALIDATED_BATCHES[memo_key] = (copy.deepcopy(result),)
-    return result
+    # Preserve original digest and owner reads before full admission.
+    _memo_key = (expected_batch_sha256, native_sha(owner, batch),
+                 owner.get("MAX_STATE_JSON_BYTES"), owner.get("VERSION"))
+    return _validate_batch_image(owner, batch, expected_batch_sha256)
 
 
 def _validate_batch_image(owner, batch, expected_batch_sha256):

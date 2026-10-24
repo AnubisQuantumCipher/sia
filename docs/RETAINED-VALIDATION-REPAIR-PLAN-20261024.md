@@ -1,8 +1,12 @@
 # Retained validation: open repair contract
 
-Status: **FAILED regression reproduced; production repair UNPROVEN**.
-This extends R05 and the existing assurance mission. It does not replace any
-original acceptance requirement, deadline, fixture, proof or resource limit.
+Status: **Fresh-admission repair in qualification; R05 acceptance INCOMPLETE**.
+The later [approved contract correction](RETAINED-FRESH-ADMISSION-20261024.md)
+supersedes mandatory expensive reuse and only its combined-validator count
+assertion. Historical directions and failures below remain evidence; they are
+not the current requirement for cache insertion.
+This extends R05 and the existing assurance mission. It preserves all other
+acceptance requirements, deadlines, fixtures, proofs and resource limits.
 The source and raw evidence are bound in
 [the gap manifest](RETAINED-VALIDATION-CACHE-GAP-20261024.json).
 
