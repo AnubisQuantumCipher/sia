@@ -3161,7 +3161,7 @@ def corpus_origin(slug, ptype=""):
                 directory_fd = next_fd
             fd = os.open(parts[-1] + ".md",
                          os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-                         | getattr(os, "O_NOFOLLOW", 0),
+                         | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
                          dir_fd=directory_fd)
         finally:
             os.close(directory_fd)
