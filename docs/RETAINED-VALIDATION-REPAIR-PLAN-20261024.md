@@ -136,3 +136,21 @@ current-projector cache failures. The original seven static findings remain.
 Small-fixture profiles do not establish a speed improvement; this is a control
 flow repair, not useful-cache evidence or R05 closure. Preserve the original
 reuse oracle and all admission checks while addressing the cache architecture.
+
+## Larger workload and delegated instrumentation decision
+
+[The synthetic workload baseline](RETAINED-WORKLOAD-BASELINE-20261024.md)
+retains a complete 1,046-event legacy batch and both profiled fresh validation
+and unprofiled public cold/warm calls. Changed current source capacity still
+produces warm acceptance and cold refusal. Two failed fixture preparations are
+retained. The historical large compact capture has not been reconstructed.
+
+The user delegated the pending decision; guarded test-instrumentation
+reconciliation is selected conditionally. The combined-function call count may
+change only after useful closed derivation reuse is implemented and qualified,
+with the original fixture, rejection controls, reuse guarantee, order/aliases,
+full workload and all limits preserved. No test or cache changes here.
+A bounded immutable string-sizing experiment is justified by measured cost,
+but cannot be substituted for the complete R05 requirement merely because
+it yields a passing helper test. Retained text and correction/deletion behavior
+also require explicit assessment. R05 remains FAILED.
