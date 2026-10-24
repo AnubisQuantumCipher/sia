@@ -32,6 +32,12 @@ refusal when a read-only substitution is used for new publication. See
 `EVENT-INDEX-PACK-CONSUMERS-20261024.md`. This does not qualify the mutation
 adapter, activate the reader or close the table's retirement requirements.
 
+`EVENT-INDEX-DELTA-20261024.md` subsequently records an unactivated captured
+legacy-fallback writer, exact intended-write observation and shared capture
+ownership repair. Its fixtures include known effects followed by refusal and
+fresh retry. It does not supply a durable migration journal, protected permission,
+original payload authentication, source retirement or installed qualification.
+
 ## Transaction invariants
 
 - The source of truth is the exact admitted legacy/pack bytes, their stable

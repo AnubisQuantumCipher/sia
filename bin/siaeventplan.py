@@ -12,6 +12,7 @@ import json
 import os
 import re
 import stat
+import sys
 
 
 NON_CLAIMS = [
@@ -316,6 +317,23 @@ def _flags(directory=False):
             | (os.O_DIRECTORY if directory else 0))
 
 
+def _close_descriptor_once(descriptor, first_error, errors):
+    """Linux releases a valid descriptor even when close reports an error."""
+    if descriptor is not None:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            return exc if first_error is None else first_error, errors + 1
+    return first_error, errors
+
+
+def _close_failed_capture(capture, primary):
+    try:
+        capture.close()
+    except OSError as cleanup:
+        raise BaseExceptionGroup("capture operation and cleanup failed", [primary, cleanup]) from None
+
+
 class _Budget:
     def __init__(self, owner, initial):
         self.limit = owner["MAX_STATE_JSON_BYTES"]
@@ -345,16 +363,24 @@ class _Capture:
             _owned_directory(info)
             self.root_identity = _directory(info)
             self.named_current()
-        except BaseException:
-            os.close(self.root_fd)
+        except BaseException as primary:
+            _close_failed_capture(self, primary)
             raise
 
     def close(self):
+        # Consume ownership before close: retrying a Linux close error can
+        # close an unrelated descriptor that has reused the same number.
+        first_error, errors = None, 0
         for collection in (self.files, self.directories):
             for item in collection.values():
                 if item is not None:
-                    os.close(item["fd"])
-        os.close(self.root_fd)
+                    descriptor, item["fd"] = item["fd"], None
+                    first_error, errors = _close_descriptor_once(descriptor, first_error, errors)
+        descriptor, self.root_fd = self.root_fd, None
+        first_error, errors = _close_descriptor_once(descriptor, first_error, errors)
+        if first_error is not None:
+            first_error.add_note(f"capture cleanup reported {errors} descriptor close errors")
+            raise first_error
 
     def relative(self, path):
         path = os.path.abspath(path)
@@ -902,9 +928,74 @@ def _observe(owner, plan, images, required_targets=frozenset()):
     return _observe_closure(owner, plan["read_dependencies"], images, required_targets)
 
 
+def _directory_entry_delta(owner, path, old, now, before_dirs, capture):
+    """An intended ancestor delta still requires its complete child closure."""
+    if path not in before_dirs or path not in capture.directories:
+        _refuse("missing-directory-delta-closure")
+    before, actual = before_dirs[path], capture.directories[path]
+    if now is None or not stat.S_ISDIR(now["mode"]) \
+            or actual is None or actual["entries"] is None:
+        _refuse("incomplete-directory-delta-closure")
+    if before is None:
+        if old is not None:
+            _refuse("directory-delta-absence-binding")
+    elif old is None or before["entries"] is None \
+            or not _same(owner, {key: old[key] for key in D_KEYS}, before["identity"]) \
+            or not _same(owner, {key: now[key] for key in D_KEYS}, before["identity"]):
+        _refuse("directory-delta-identity-binding")
+    if not _same(owner, now, actual["generation"]):
+        _refuse("directory-delta-scan-binding")
+
+
+def _check_closure_directories(owner, deps, capture, writes, allowed_dirs, targets,
+                               allow_directory_entry_deltas):
+    before_dirs = ({row["relative"]: row["before"] for row in deps["directories"]}
+                   if allow_directory_entry_deltas else None)
+    for row in deps["directories"]:
+        relative, before = row["relative"], row["before"]
+        actual = capture.directories[relative]
+        if actual is None:
+            continue
+        if before is not None and before["entries"] is None:
+            continue
+        entries = actual["entries"]
+        if before is None:
+            for entry in entries:
+                path = relative + "/" + entry["name"]
+                if path not in writes and path not in allowed_dirs:
+                    _refuse("foreign-created-directory-member")
+                if path in allowed_dirs and not stat.S_ISDIR(entry["generation"]["mode"]):
+                    _refuse("created-directory-kind")
+                if allow_directory_entry_deltas and path in allowed_dirs:
+                    _directory_entry_delta(
+                        owner, path, None, entry["generation"], before_dirs, capture)
+        else:
+            old = {entry["name"]: entry["generation"] for entry in before["entries"]}
+            now = {entry["name"]: entry["generation"] for entry in entries}
+            exempt = {os.path.basename(path) for path in writes if os.path.dirname(path) == relative}
+            for name in set(old) | set(now):
+                path = relative + "/" + name
+                if name in exempt and path in targets:
+                    continue
+                if allow_directory_entry_deltas and path in allowed_dirs:
+                    _directory_entry_delta(
+                        owner, path, old.get(name), now.get(name), before_dirs, capture)
+                    continue
+                if name not in old or name not in now or not _same(owner, old[name], now[name]):
+                    _refuse("complete-directory-roster")
+        for entry in entries:
+            path = relative + "/" + entry["name"]
+            if path in capture.files and capture.files[path] is not None \
+                    and not _same(owner, entry["generation"], capture.files[path]["generation"]):
+                _refuse("scan-file-generation-binding")
+
+
 def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
-                     allow_target_deltas=True, budget=None):
+                     allow_target_deltas=True, budget=None,
+                     allow_directory_entry_deltas=False):
     """Observe one complete closure under an explicit original/delta policy."""
+    if type(allow_directory_entry_deltas) is not bool:
+        _refuse("directory-delta-policy")
     writes = {relative for relative, image in images.items()
               if allow_target_deltas and image["page"]["write"]}
     allowed_dirs = {ancestor for relative in writes for ancestor in _ancestors(relative)}
@@ -945,40 +1036,12 @@ def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
             else:
                 # Verified dependency: its observation stays, its bytes go.
                 capture.release_bytes(capture.path(relative))
-        for row in deps["directories"]:
-            relative, before = row["relative"], row["before"]
-            actual = capture.directories[relative]
-            if actual is None:
-                continue
-            if before is not None and before["entries"] is None:
-                continue
-            entries = actual["entries"]
-            if before is None:
-                for entry in entries:
-                    path = relative + "/" + entry["name"]
-                    if path not in writes and path not in allowed_dirs:
-                        _refuse("foreign-created-directory-member")
-                    if path in allowed_dirs and not stat.S_ISDIR(entry["generation"]["mode"]):
-                        _refuse("created-directory-kind")
-            else:
-                old = {entry["name"]: entry["generation"] for entry in before["entries"]}
-                now = {entry["name"]: entry["generation"] for entry in entries}
-                exempt = {os.path.basename(path) for path in writes if os.path.dirname(path) == relative}
-                for name in set(old) | set(now):
-                    path = relative + "/" + name
-                    if name in exempt and path in targets:
-                        continue
-                    if name not in old or name not in now or not _same(owner, old[name], now[name]):
-                        _refuse("complete-directory-roster")
-            for entry in entries:
-                path = relative + "/" + entry["name"]
-                if path in capture.files and capture.files[path] is not None \
-                        and not _same(owner, entry["generation"], capture.files[path]["generation"]):
-                    _refuse("scan-file-generation-binding")
+        _check_closure_directories(
+            owner, deps, capture, writes, allowed_dirs, targets, allow_directory_entry_deltas)
         capture.current()
         return capture, targets
-    except BaseException:
-        capture.close()
+    except BaseException as primary:
+        _close_failed_capture(capture, primary)
         raise
 
 
@@ -1203,6 +1266,43 @@ def _result(plan):
                               for page in plan["pages"]], "non_claims": plan["non_claims"]}
 
 
+def _close_known(captures):
+    """Attempt independent owners and retain primary plus cleanup failures."""
+    primary = sys.exception()
+    failures = []
+    for capture in captures:
+        if capture is not None:
+            try:
+                capture.close()
+            except OSError as exc:
+                failures.append(exc)
+    if failures:
+        if primary is not None:
+            raise BaseExceptionGroup("index delta and cleanup failed", [primary] + failures)
+        raise ExceptionGroup("index delta cleanup failed", failures)
+
+
+def _replace_capture(state, new, targets, *, files=frozenset(), directories=frozenset()):
+    """Keep every acquired capture owned through validation and close failure."""
+    old = state["live"]
+    try:
+        old.named_current(exempt_files=files, exempt_directories=directories)
+        state["retired"] = old
+        state["live"] = new
+        state["targets"] = targets
+    except BaseException:
+        if state["live"] is not new:
+            _close_known((new,))
+        raise
+    old.close()
+    state["retired"] = None
+
+
+def _close_state(state):
+    retired, live = state["retired"], state["live"]
+    _close_known((retired, live if live is not retired else None))
+
+
 def _publish_images(owner, deps, images, write_paths, state, *, shared_budget=None):
     """The single guarded write engine; state always owns the latest handles.
 
@@ -1223,26 +1323,15 @@ def _publish_images(owner, deps, images, write_paths, state, *, shared_budget=No
         live.current(exempt_directories=affected_dirs)
         interim, interim_targets = _observe_closure(
             owner, deps, images, targets, budget=shared_budget)
-        try:
-            live.named_current(exempt_directories=affected_dirs)
-        except BaseException:
-            interim.close()
-            raise
-        live.close()
-        live, targets = interim, interim_targets
-        state.update(live=live, targets=targets)
+        _replace_capture(state, interim, interim_targets, directories=affected_dirs)
+        live, targets = state["live"], state["targets"]
         live.current()
         owner["atomic_write"](path, images[relative]["raw"].decode("utf-8", errors="strict"))
         live.current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
         refreshed, refreshed_targets = _observe_closure(
             owner, deps, images, targets | {relative}, budget=shared_budget)
-        try:
-            live.named_current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
-        except BaseException:
-            refreshed.close()
-            raise
-        live.close()
-        state.update(live=refreshed, targets=refreshed_targets)
+        _replace_capture(state, refreshed, refreshed_targets,
+                         files=frozenset({relative}), directories=affected_dirs)
 
 
 def publish(owner, *, plan, expected_plan_sha256):
@@ -1261,7 +1350,7 @@ def publish(owner, *, plan, expected_plan_sha256):
         _refuse("input-copy-change")
     images = _images(owner, admitted)
     live, targets = _observe(owner, admitted, images)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         _semantic_join(owner, admitted, images, live)
         live.current()
@@ -1277,7 +1366,7 @@ def publish(owner, *, plan, expected_plan_sha256):
         state["live"].current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)
 
 
 BATCH_KEYS = frozenset({"schema", "organ", "members", "read_dependencies",
@@ -1510,7 +1599,7 @@ def publish_batch(owner, *, batch, expected_batch_sha256):
     images = _union_images(owner, admitted["members"])
     budget = _Budget(owner, 4096)
     live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         for member in admitted["members"]:
             _semantic_join(owner, member, images, live)
@@ -1526,7 +1615,7 @@ def publish_batch(owner, *, batch, expected_batch_sha256):
         state["live"].current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)
 
 
 CLOSURE_KEYS = frozenset({"schema", "batches", "read_dependencies", "write_order",
@@ -1710,7 +1799,7 @@ def publish_closure(owner, *, closure, expected_closure_sha256):
     _closure_current(owner, request, original_request)
     budget = _Budget(owner, 4096)
     live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         for member in members:
             _semantic_join(owner, member, images, live)
@@ -1736,4 +1825,4 @@ def publish_closure(owner, *, closure, expected_closure_sha256):
         state["live"].named_current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)
