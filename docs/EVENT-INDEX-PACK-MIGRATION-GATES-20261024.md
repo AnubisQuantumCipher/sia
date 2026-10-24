@@ -24,6 +24,14 @@ bound call-site inventory and runtime integration controls must accompany the
 activation change. A legacy-only process cannot be assumed compatible after
 retirement merely because the experimental reader passes.
 
+The subsequent consumer checkpoint adds fixture evidence for preflight,
+identical-entry publication/replay and actual compacted-source outcome inspection,
+and repairs a legacy publication gap where the second read silently skipped a
+conflicting entry. It also demonstrates a known write followed by stale-capture
+refusal when a read-only substitution is used for new publication. See
+`EVENT-INDEX-PACK-CONSUMERS-20261024.md`. This does not qualify the mutation
+adapter, activate the reader or close the table's retirement requirements.
+
 ## Transaction invariants
 
 - The source of truth is the exact admitted legacy/pack bytes, their stable

@@ -3766,6 +3766,9 @@ def _publish_event_index_entries(entries):
         existing = _read_event_index_entry(
             entry["organ"], entry["event_id"])
         if existing is not None:
+            if existing != entry:
+                raise ValueError(
+                    "event identity conflicts with durable consolidation index")
             continue
         encoded = _event_index_encoded(entry)
         relative = _event_index_relative(entry["organ"], entry["event_id"])
