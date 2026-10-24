@@ -35,10 +35,29 @@ including the expected manifests, original negative result and successor.
 Packaging reproduction is not product acceptance; archived absolute paths and
 filesystem identities are historical data, not fresh execution authority.
 
-Next: finish the continuity adapter's remaining static and active-schema
-corrections, qualify current root/child import and native-profile observations,
-external cleanup and final inventory, then separately execute original/adapted
-formatter controls before any complete synthetic adapter campaign. Revalidate
-host endpoints at dispatch. No native hook, actual compaction, authenticated
-delivery, durable acknowledgment, installed update or release is qualified by
-this observation. All original SIA assurance and marketplace gates remain open.
+The later owner disposition supersedes that observation's next-step plan.
+At clean worker commit `5c61b7afcb02af9ebfded2c5d2ada8f322822ba1`, the
+requested static/schema and observer refusal repairs are complete at their
+source-and-mocked-control scope. The retained run passed 58 mocked controls;
+current named source hashes and identity fields still match that run. No new
+runtime execution was performed for this correction. The
+[current dependency record](CONTINUITY-CURRENT-DEPENDENCY-20261024.json)
+binds the source, retained test receipt and limitations. Do not restart those
+completed repairs or treat the mocked run as lifecycle qualification.
+
+Next: the integration owner must qualify the protected fresh-manager-image
+producer and whole privileged lifetime interface, followed by the original
+strict C/SDK/native checks. The latest private C experiment still fails strict
+analysis at the unchanged output cap; it is not adopted. Preserve full
+UID/GID/supplementary-group credentials, original resource limits and all
+existing negative controls. PID/starttime, cgroup names and configured hashes
+do not replace fresh held executable identity across manager re-exec.
+
+The adapter's `dispatch()` deliberately refuses while that prerequisite is
+unqualified. Only after it is established can the finite root-profile fault
+matrix, formatter/import controls and complete adapter lifecycle campaign run
+under separate admission. No additional classifier features are requested.
+Revalidate host endpoints at dispatch. No native hook, actual compaction,
+authenticated delivery, durable acknowledgment, installed update or release is
+qualified by these observations. All original SIA assurance and marketplace
+gates remain open.
