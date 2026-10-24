@@ -1,11 +1,13 @@
 # Retained validation: open repair contract
 
-Status: **Fresh-admission repair in qualification; R05 acceptance INCOMPLETE**.
-The later [approved contract correction](RETAINED-FRESH-ADMISSION-20261024.md)
-supersedes mandatory expensive reuse and only its combined-validator count
-assertion. Historical directions and failures below remain evidence; they are
-not the current requirement for cache insertion.
-This extends R05 and the existing assurance mission. It preserves all other
+Status: **R05 FAILED/INCOMPLETE; requirement-change approval not established**.
+The [authorization correction](R05-AUTHORIZATION-CORRECTION-20261024.md)
+supersedes this report's earlier approval claims. The
+[fresh-admission implementation](RETAINED-FRESH-ADMISSION-20261024.md) remains an
+unapproved experiment. Mandatory useful reuse, the original reuse oracle and
+fresh current-policy validation remain required together. Historical source and
+failure evidence below does not grant permission to change those requirements.
+This extends R05 and the existing assurance mission. It preserves all
 acceptance requirements, deadlines, fixtures, proofs and resource limits.
 The source and raw evidence are bound in
 [the gap manifest](RETAINED-VALIDATION-CACHE-GAP-20261024.json).
@@ -141,7 +143,7 @@ Small-fixture profiles do not establish a speed improvement; this is a control
 flow repair, not useful-cache evidence or R05 closure. Preserve the original
 reuse oracle and all admission checks while addressing the cache architecture.
 
-## Larger workload and delegated instrumentation decision
+## Larger workload and unapproved instrumentation proposal
 
 [The synthetic workload baseline](RETAINED-WORKLOAD-BASELINE-20261024.md)
 retains a complete 1,046-event legacy batch and both profiled fresh validation
@@ -149,11 +151,12 @@ and unprofiled public cold/warm calls. Changed current source capacity still
 produces warm acceptance and cold refusal. Two failed fixture preparations are
 retained. The historical large compact capture has not been reconstructed.
 
-The user delegated the pending decision; guarded test-instrumentation
-reconciliation is selected conditionally. The combined-function call count may
-change only after useful closed derivation reuse is implemented and qualified,
-with the original fixture, rejection controls, reuse guarantee, order/aliases,
-full workload and all limits preserved. No test or cache changes here.
+Guarded test-instrumentation reconciliation was proposed, but its approval was
+incorrectly inferred from a reply to an earlier SDK question. The original
+combined-function call-count oracle remains required; a future change needs
+approval bound to its exact proposal. The original fixture, rejection controls,
+reuse guarantee, order/aliases, full workload and all limits remain required.
+The historical observations in this section do not adopt a test or cache change.
 A bounded immutable string-sizing experiment is justified by measured cost,
 but cannot be substituted for the complete R05 requirement merely because
 it yields a passing helper test. Retained text and correction/deletion behavior

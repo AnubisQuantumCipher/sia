@@ -2,8 +2,10 @@
 
 Status: **association-cache candidate rejected; R05 FAILED; system INCOMPLETE**.
 This checkpoint changes no production source, original test, admission cache,
-resource limit or release gate. The delegated instrumentation decision remains
-conditional on qualifying useful closed reuse. It has not been exercised.
+resource limit or release gate. The instrumentation change was proposed, but
+approval was incorrectly inferred; the
+[authorization correction](R05-AUTHORIZATION-CORRECTION-20261024.md) controls.
+Original useful reuse, its oracle and current-policy admission remain required.
 
 The observed source is `5f57dcf9731801ea1f12e25d72b0bd9f55c7b39c`.
 The accompanying JSON retains the diagnostic sources, unchanged fixture,

@@ -1,17 +1,20 @@
-# Retained source admission: approved contract correction
+# Retained source admission: unapproved experiment
 
-Status: **Implementation checkpoint; acceptance INCOMPLETE**.
+Status: **UNAPPROVED experimental implementation; R05 acceptance INCOMPLETE**.
 
-The user delegated the specific reviewed R05 decision after receiving its
-concrete patch, justification and risk assessment. The selected correction
-retires mandatory expensive reuse. Every call instead executes current retained
-batch or compact-capture validation. Image identity cannot establish the current
-behavior of a mutable callback, closure, policy mapping or decoder.
+The earlier version of this report incorrectly claimed user approval. The
+[source-backed authorization correction](R05-AUTHORIZATION-CORRECTION-20261024.md)
+establishes that the cited human reply concerned an earlier SDK question, not
+either later R05 proposal. Mandatory useful reuse and fresh current-policy
+admission both remain required. Neither requirement has been retired.
 
-This supersedes the earlier conditional permission, which still required useful
-expensive reuse. It changes only that reuse requirement and its combined-validator
-call-count assertion. It does not authorize weaker input/policy checks, larger
-workload deadlines, resource caps, skipped acceptance tests or a release.
+The experimental implementation executes current retained-batch or compact-capture
+validation on every call, and its changed combined-validator count assertion is
+not an accepted replacement for the original reuse oracle. Its exact source and
+technical results below remain evidence of what ran, not permission or acceptance.
+Image identity cannot establish current mutable callback or policy behavior;
+this correction does not authorize restoring stale cached success. Original
+workload deadlines, resource caps, tests and release gates remain binding.
 
 ## Implementation and preserved behavior
 
@@ -22,7 +25,7 @@ compatibility. Validator bodies, callback order, refusal handling and first
 aliases are unchanged. This does not establish immutable or hostile-process
 isolation for Python objects.
 
-The repeated-image test retains the original fixture, changed-image refusal,
+The experimental repeated-image test retains the original fixture, changed-image refusal,
 VERSION change, result equality and conditional detachment assertion, changing
 only the invocation counts to require full current validation. The production
 fixture returns None: the conditional mutable-result assertion does not exercise

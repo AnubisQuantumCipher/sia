@@ -68,13 +68,14 @@ behavior. Storage, lookup, retained text, eviction and correction/deletion
 semantics belong in the cost and privacy assessment. A smaller helper cache is
 not automatically the required expensive-derivation reuse boundary.
 
-The user delegated the pending instrumentation decision. The owner selected
-conditional reconciliation of the combined-function call-count assertion only
-after a useful closed derivation is implemented and qualified. The original
-fixture, changed-image and VERSION controls, detached results, current-policy
-refusals, full workload and resource ceilings remain required. No original
-assertion or cache has changed. A renamed validator, partial dependency key,
-no-cache adoption or inexpensive-helper oracle does not satisfy this decision.
+The earlier claim of delegated instrumentation approval was incorrect; see the
+[source-backed correction](R05-AUTHORIZATION-CORRECTION-20261024.md). Guarded
+reconciliation remains an unapproved proposal. The original combined-function
+call-count oracle, fixture, changed-image and VERSION controls, detached results,
+current-policy refusals, full workload and resource ceilings remain required.
+At the source observed in this report, no original assertion or cache had changed.
+A renamed validator, partial dependency key, no-cache adoption or inexpensive-helper
+oracle does not satisfy the original requirement.
 
 ## Evidence and reproducibility
 

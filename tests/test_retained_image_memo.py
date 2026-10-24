@@ -1,7 +1,9 @@
-"""Retained images require fresh current admission, including repeated inputs.
+"""Experimental fresh-admission checks; not an approved R05 oracle replacement.
 
-The superseded reuse assertion and its failure are retained in the R05 decision
-evidence. Image identity cannot certify mutable callbacks or current policy.
+The original reuse assertion remains required. Its replacement below was made
+under a misbound approval; docs/R05-AUTHORIZATION-CORRECTION-20261024.md records
+the correction. These experimental checks do not establish reuse compliance.
+Image identity cannot certify mutable callbacks or current policy.
 """
 
 try:
