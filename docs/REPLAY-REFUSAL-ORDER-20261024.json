@@ -1,0 +1,46 @@
+{
+  "base_commit": "5183fe4b7f73598a444406e2c0ee4244926ee395",
+  "files": {
+    "docs/ASSURANCE-CRITICAL-PATH-20261024.md": {
+      "bytes": 5129,
+      "sha256": "80ad060cbd08959f1fa8884c871ceb6610e735ae300d2d0be3bc7f82b8572890"
+    },
+    "docs/REPLAY-REFUSAL-ORDER-20261024.md": {
+      "bytes": 3814,
+      "sha256": "be90ff2ae20b0f9e6b45509a12653fde77fe00e88384b5381d5ccc6e3ba0664f"
+    },
+    "docs/evidence/replay-refusal-order-20261024/review.txt": {
+      "bytes": 795,
+      "sha256": "ae56e3a1c7d3657347afdd0fa3405b30c529165cce29826dc88394da08aed488"
+    },
+    "docs/evidence/replay-refusal-order-20261024/run_tests.py": {
+      "bytes": 3838,
+      "sha256": "0da082c7b09cc1093a781814427bd6cda2fdc3bc27a3031e49eca1b3ea1ddc12"
+    },
+    "docs/evidence/replay-refusal-order-20261024/sdk-diagnostics.json": {
+      "bytes": 8087,
+      "sha256": "2e33ed850ff0b06d84fd77dcd1ac6ab551dab69ca830616607d9b5be5564e9bd"
+    },
+    "docs/evidence/replay-refusal-order-20261024/static.json": {
+      "bytes": 2139,
+      "sha256": "bc2740351609867cc1ec4488ad622c497e0e0c75aad7b8ed54dfce1ad267122f"
+    },
+    "docs/evidence/replay-refusal-order-20261024/test-output.log": {
+      "bytes": 20580,
+      "sha256": "a3c96ace6d6e9e15a0840da9b3328c55dc773d41cd221e31c0dc388c0b1ff38c"
+    },
+    "docs/evidence/replay-refusal-order-20261024/test-result.json": {
+      "bytes": 4373,
+      "sha256": "1452271d5f3f2c0d1f80e63f41ab2a1a7a6679abd624635365a3b7f608fadc65"
+    },
+    "tests/test_replay_refusal_order.py": {
+      "bytes": 7753,
+      "sha256": "6db75754b09071c62e2f81fc4cc117c48b3e304e8889b9a87d2a89579d2c1819"
+    }
+  },
+  "independent_execution": false,
+  "reported_seconds": 29.643,
+  "reported_tests": 102,
+  "schema": "sia.refusal-order-evidence.v1",
+  "scope": "Test-only prerequisite; not R05 repair or system acceptance."
+}

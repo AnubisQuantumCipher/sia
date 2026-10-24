@@ -1,0 +1,120 @@
+{
+  "sdk-specialization-measure-v5": {
+    "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/sdk-specialization-measure-v5",
+    "exit": 0,
+    "source_unchanged": true,
+    "source_before": {
+      "origin_probe.py": "004b3484ab93995c9aa330c749fc8d7807d6f4205ba0da35074c73c6e8ad49b0",
+      "production_checker.py": "227f429397e9a7a7fbf9ad5dfa041f4681420c263df747ec8bee982381e34d4f",
+      "test_checker_deadlines.py": "fb2ec41350f41c5c4bc2bb35371685807816b62fe3f8b1132997369a0907501c",
+      "test_diagnostic_additions.py": "027c37784d7a924f2936192628bf4408bd34947711091b622678a56d550969ba",
+      "test_final_boundaries.py": "27d4ac4f3bfe4ef12192e5b69f3fa2bc04dbcc22c4f32430bf2087a8e2769b55",
+      "test_graph_additions.py": "36770723526dfa366728cad29b961ac088da38e3966954819bd8be6eee3b86ea",
+      "test_graph_matrix.py": "3421f1ad76ff69e656dd1a2e912ada2c4688cf770839826e17e84a0349f60995",
+      "test_io_boundaries.py": "44474faa16b4ac8967d60d54b85a94ef0be0ce0f1aecfd86a549e947ae2d81b2",
+      "test_io_completion.py": "18dcc067e263bebcedc520c2319a9c83f34d71791db71893c9be637520f0cd7a",
+      "test_main_resources.py": "69e7fa50cf6f358294a09ef197467cd89fe2c1674110e9cc6342c47e6f424cdd",
+      "test_name_and_snapshot.py": "022b6200d697d4ded86e7a385250aa22530ba3b3e1e831b2f40dfd95b21da633",
+      "test_native_diagnostics.py": "57e38b9cd40f0585ea31d9b61b72334fa716c34347a60fbb67ba3bf3c1adbe0b",
+      "test_preparation_steps.py": "b1b4132efb21fb0ed7536d46dec18058c2a27d57df7f75e4d55d5786f15f5165",
+      "test_resource_additions.py": "9a05148eb5cb0209670d9b6d958fdd60832121706ba974e73605b4d76fb2d0c9",
+      "test_retirement_equivalence.py": "88e34765ef1719b223588a1c2a17ea557613c337a30d97cc2c1bf9258eb55b10",
+      "test_scratch_sweep_trace.py": "0b309bf38ce8371a596afa86a8966c11bf79f65a31d57995c24bc5c7205b4ac0",
+      "test_support.py": "aff1dcda01880c518452300143308621ff448875089858e4abfda3cc5c87a857",
+      "test_sys_fixture_namespace.py": "79915aa510751bc7c49c9f9b2e355ee0c19cb5c96181f17d9262bf028bb721cd"
+    },
+    "scope": "Profiling only; 30s diagnostic work cap and 5s grace. Not full-suite acceptance.",
+    "files": {
+      "result.json": "d5342d264bc6de5834b34f4dee21ef743eac2ed5f9cf2b3e271e7d16a8a9fb8d",
+      "stdout.json": "2077fe023cfe2e3ee8f455b941a921a7962d861de4e3adc4d80ecb89f70b3539",
+      "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "observations": [
+      {
+        "module": "before_specialization",
+        "sweeps": 256,
+        "elapsed_ns": 144618834
+      },
+      {
+        "module": "sia_checker_v2",
+        "sweeps": 256,
+        "elapsed_ns": 203215191
+      },
+      {
+        "module": "sia_checker_v2",
+        "sweeps": 256,
+        "elapsed_ns": 205862725
+      },
+      {
+        "module": "before_specialization",
+        "sweeps": 256,
+        "elapsed_ns": 146488969
+      }
+    ],
+    "decision": "REJECTED: slower in both observed orders; semantic equivalence and complete suite UNRUN. No production adoption."
+  },
+  "sdk-graph-timing-v4": {
+    "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/sdk-graph-timing-v4",
+    "exit": 0,
+    "source_unchanged": true,
+    "source_before": {
+      "origin_probe.py": "83e9c0c1d8ccf43c9b87759b7ad2c92a97904cf3c67d2ca62a9a369214287073",
+      "production_checker.py": "23a19ed571497e0524984dea0cfec0cb8631a41d3ae043ef00cc6169390f260c",
+      "test_checker_deadlines.py": "fb2ec41350f41c5c4bc2bb35371685807816b62fe3f8b1132997369a0907501c",
+      "test_diagnostic_additions.py": "027c37784d7a924f2936192628bf4408bd34947711091b622678a56d550969ba",
+      "test_final_boundaries.py": "27d4ac4f3bfe4ef12192e5b69f3fa2bc04dbcc22c4f32430bf2087a8e2769b55",
+      "test_graph_additions.py": "36770723526dfa366728cad29b961ac088da38e3966954819bd8be6eee3b86ea",
+      "test_graph_matrix.py": "3421f1ad76ff69e656dd1a2e912ada2c4688cf770839826e17e84a0349f60995",
+      "test_io_boundaries.py": "44474faa16b4ac8967d60d54b85a94ef0be0ce0f1aecfd86a549e947ae2d81b2",
+      "test_io_completion.py": "18dcc067e263bebcedc520c2319a9c83f34d71791db71893c9be637520f0cd7a",
+      "test_main_resources.py": "69e7fa50cf6f358294a09ef197467cd89fe2c1674110e9cc6342c47e6f424cdd",
+      "test_name_and_snapshot.py": "022b6200d697d4ded86e7a385250aa22530ba3b3e1e831b2f40dfd95b21da633",
+      "test_native_diagnostics.py": "57e38b9cd40f0585ea31d9b61b72334fa716c34347a60fbb67ba3bf3c1adbe0b",
+      "test_preparation_steps.py": "b1b4132efb21fb0ed7536d46dec18058c2a27d57df7f75e4d55d5786f15f5165",
+      "test_resource_additions.py": "9a05148eb5cb0209670d9b6d958fdd60832121706ba974e73605b4d76fb2d0c9",
+      "test_retirement_equivalence.py": "88e34765ef1719b223588a1c2a17ea557613c337a30d97cc2c1bf9258eb55b10",
+      "test_scratch_sweep_trace.py": "0b309bf38ce8371a596afa86a8966c11bf79f65a31d57995c24bc5c7205b4ac0",
+      "test_support.py": "9902a088d81a92d8cb29631aa62a66b4acda6ce5b465b18528534da4bdbb522f",
+      "test_sys_fixture_namespace.py": "79915aa510751bc7c49c9f9b2e355ee0c19cb5c96181f17d9262bf028bb721cd"
+    },
+    "scope": "Profiling only; original 120s work cap and 5s grace. Not full-suite acceptance.",
+    "files": {
+      "result.json": "0590a29c6076ac7e7207431361cbac1f9d60aea4c780ca465e06866c13ee1039",
+      "stdout.json": "51ee4e880be5e95bb1135ce627f8a69b448092913148fbb7fa3539a82db54c8e",
+      "stderr": "d3a4fd669cc0d02a96fd3d68b4a0cf51bc8f3aef4ced43f65c3533e1fefd0756"
+    },
+    "reported": "Ran 56 tests in 110.935s; OK. Diagnostic subset only."
+  },
+  "sdk-late-clock-profile-v4": {
+    "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/sdk-late-clock-profile-v4",
+    "exit": 0,
+    "source_unchanged": true,
+    "source_before": {
+      "origin_probe.py": "83e9c0c1d8ccf43c9b87759b7ad2c92a97904cf3c67d2ca62a9a369214287073",
+      "production_checker.py": "23a19ed571497e0524984dea0cfec0cb8631a41d3ae043ef00cc6169390f260c",
+      "test_checker_deadlines.py": "fb2ec41350f41c5c4bc2bb35371685807816b62fe3f8b1132997369a0907501c",
+      "test_diagnostic_additions.py": "027c37784d7a924f2936192628bf4408bd34947711091b622678a56d550969ba",
+      "test_final_boundaries.py": "27d4ac4f3bfe4ef12192e5b69f3fa2bc04dbcc22c4f32430bf2087a8e2769b55",
+      "test_graph_additions.py": "36770723526dfa366728cad29b961ac088da38e3966954819bd8be6eee3b86ea",
+      "test_graph_matrix.py": "3421f1ad76ff69e656dd1a2e912ada2c4688cf770839826e17e84a0349f60995",
+      "test_io_boundaries.py": "44474faa16b4ac8967d60d54b85a94ef0be0ce0f1aecfd86a549e947ae2d81b2",
+      "test_io_completion.py": "18dcc067e263bebcedc520c2319a9c83f34d71791db71893c9be637520f0cd7a",
+      "test_main_resources.py": "69e7fa50cf6f358294a09ef197467cd89fe2c1674110e9cc6342c47e6f424cdd",
+      "test_name_and_snapshot.py": "022b6200d697d4ded86e7a385250aa22530ba3b3e1e831b2f40dfd95b21da633",
+      "test_native_diagnostics.py": "57e38b9cd40f0585ea31d9b61b72334fa716c34347a60fbb67ba3bf3c1adbe0b",
+      "test_preparation_steps.py": "b1b4132efb21fb0ed7536d46dec18058c2a27d57df7f75e4d55d5786f15f5165",
+      "test_resource_additions.py": "9a05148eb5cb0209670d9b6d958fdd60832121706ba974e73605b4d76fb2d0c9",
+      "test_retirement_equivalence.py": "88e34765ef1719b223588a1c2a17ea557613c337a30d97cc2c1bf9258eb55b10",
+      "test_scratch_sweep_trace.py": "0b309bf38ce8371a596afa86a8966c11bf79f65a31d57995c24bc5c7205b4ac0",
+      "test_support.py": "9902a088d81a92d8cb29631aa62a66b4acda6ce5b465b18528534da4bdbb522f",
+      "test_sys_fixture_namespace.py": "79915aa510751bc7c49c9f9b2e355ee0c19cb5c96181f17d9262bf028bb721cd"
+    },
+    "scope": "Profiling only; original 120s work cap and 5s grace. Not full-suite acceptance.",
+    "files": {
+      "result.json": "d46f903f108e0728432f2c7df3c045eeaefe4643ca9aff1cf93d86bbdd53f12e",
+      "stdout.json": "d76b9914cd825094a0c0fce43354066eaadfaedb570bf06c5fa5bb802a2200f7",
+      "stderr": "939ff77cc8dfd10d856913e7f32705204960c4a4dbb0f0413a5cfc6cc400d41c"
+    },
+    "reported": "Ran 1 test in 1.766s; OK. No clock replacement."
+  }
+}
