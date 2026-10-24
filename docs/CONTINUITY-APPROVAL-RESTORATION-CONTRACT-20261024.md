@@ -1,6 +1,8 @@
 # Approval restoration: original-event linkage contract
 
-Status: **UNIMPLEMENTED / NOT ACCEPTED**. This design closes a specification
+Status: **GENERIC RUNTIME UNIMPLEMENTED / NOT ACCEPTED**. A subsequent
+[conditional policy candidate](CONTINUITY-APPROVAL-POLICY-20261024.md) implements
+typed correspondence only; original-source/actuator integration remains open. This design closes a specification
 gap under C04/C06/C08/C10/C11/C14 and R02; it does not grant an approval, retire
 R05 reuse, change a resource limit, or qualify a harness. The incident and its
 original-event hashes are retained in

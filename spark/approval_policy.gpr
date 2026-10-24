@@ -1,0 +1,25 @@
+--  Explicit conditional approval-reference proof scope, not whole SIA.
+project Approval_Policy is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "tests");
+   for Source_Files use
+     ("sia_policy.ads", "sia_policy.adb", "sia_continuity.ads",
+      "sia_continuity.adb", "sia_continuity-approvals.ads",
+      "sia_continuity-approvals.adb", "continuity_approval_tests.adb",
+      "continuity_approval_test_support.ads", "continuity_approval_test_support.adb");
+   for Object_Dir use "approval-obj";
+   for Exec_Dir use "approval-bin";
+   for Main use ("continuity_approval_tests.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",
+         "-gnatw.o", "-O2", "-g");
+      for Local_Configuration_Pragmas use "restrictions.adc";
+   end Compiler;
+   package Prove is
+      for Proof_Switches ("Ada") use
+        ("--level=2", "--report=all", "-W=all", "--warnings=error",
+         "--checks-as-errors=on", "--proof-warnings=on",
+         "--prover=z3,cvc5,altergo", "-j1");
+   end Prove;
+end Approval_Policy;
