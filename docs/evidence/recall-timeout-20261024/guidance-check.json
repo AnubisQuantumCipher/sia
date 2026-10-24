@@ -1,0 +1,28 @@
+{
+  "status": "TESTED_SCOPED_PRINT_FUNCTION_AND_SHELL_SYNTAX",
+  "installer_sha256": "d5b029d8e8a3764078b9c9e7d2c5a5c056acdf27ca180e12011c9bf6bbf96e7f",
+  "records": [
+    {
+      "command": [
+        "bash",
+        "-n",
+        "/home/sicarii/Work/sia-note-boundary-checkpoint-20261024/install.sh"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "bash",
+        "-c",
+        "BINDIR=/tmp/sia-test-bin\nprint_mcp_add_command() {\n  case \"$1\" in\n    claude) echo \"  claude mcp add --scope user sia -- python3 $BINDIR/sia-mcp\" ;;\n    codex)\n      echo \"  codex mcp add sia -- python3 $BINDIR/sia-mcp\"\n      echo \"  Then set tool_timeout_sec = 240 in the existing SIA server entry in ~/.codex/config.toml.\"\n      echo \"  Verify with: codex mcp get sia --json (reload an existing MCP connection if needed).\"\n      ;;\n    grok) echo \"  grok mcp add --scope user sia -- python3 $BINDIR/sia-mcp\" ;;\n  esac\n}\n\nprint_mcp_add_command codex\nprint_mcp_add_command claude\nprint_mcp_add_command grok\n"
+      ],
+      "returncode": 0,
+      "stdout": "  codex mcp add sia -- python3 /tmp/sia-test-bin/sia-mcp\n  Then set tool_timeout_sec = 240 in the existing SIA server entry in ~/.codex/config.toml.\n  Verify with: codex mcp get sia --json (reload an existing MCP connection if needed).\n  claude mcp add --scope user sia -- python3 /tmp/sia-test-bin/sia-mcp\n  grok mcp add --scope user sia -- python3 /tmp/sia-test-bin/sia-mcp\n",
+      "stderr": ""
+    }
+  ],
+  "full_installer_execution": "UNRUN",
+  "writes_by_test": "none"
+}

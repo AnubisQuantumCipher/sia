@@ -1566,6 +1566,27 @@ that budget in the client. If it expires, inspect daemon/lock contention and
 preserve independent evidence; do not bypass the consistency lease or retry
 indefinitely. This is a time budget, not a latency guarantee.
 
+For Codex, explicitly set the timeout in the existing SIA entry in
+`~/.codex/config.toml` after registration:
+
+```toml
+[mcp_servers.sia]
+command = "python3"
+args = ["/home/YOUR_USER/.local/share/sia/bin/sia-mcp"]
+tool_timeout_sec = 240
+```
+
+Keep the command, absolute installed path, approval settings and other existing
+fields from your registration; add only the timeout line rather than creating
+a duplicate table. Codex's documented default is 60 seconds, which can expire
+while SIA is still waiting for its corpus lease or completing a valid search.
+Verify `codex mcp get sia --json` reports `tool_timeout_sec: 240`. A running
+client may need to reload its MCP connection; configuration readback alone
+does not prove that an already connected session adopted the setting.
+The SIA server's existing request budget remains unchanged, and requests can
+still fail within that budget. See the official
+[Codex MCP configuration reference](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
 Run only the command for the client you intend to configure, then rerun
 `./install.sh` so SIA can inspect it and create the appropriate durable
 non-ownership guard. For a generic client, create an explicit guard before

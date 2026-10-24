@@ -11298,7 +11298,11 @@ inspect_mcp_server() {
 print_mcp_add_command() {
   case "$1" in
     claude) echo "  claude mcp add --scope user sia -- python3 $BINDIR/sia-mcp" ;;
-    codex) echo "  codex mcp add sia -- python3 $BINDIR/sia-mcp" ;;
+    codex)
+      echo "  codex mcp add sia -- python3 $BINDIR/sia-mcp"
+      echo "  Then set tool_timeout_sec = 240 in the existing SIA server entry in ~/.codex/config.toml."
+      echo "  Verify with: codex mcp get sia --json (reload an existing MCP connection if needed)."
+      ;;
     grok) echo "  grok mcp add --scope user sia -- python3 $BINDIR/sia-mcp" ;;
   esac
 }

@@ -49,6 +49,14 @@ inspect the daemon/lock holder rather than blindly retrying, bypassing locks,
 or claiming memory is absent. Notes are only queued until publication is
 confirmed; retain worktree evidence independently.
 
+For Codex, the default MCP tool timeout is 60 seconds. Its existing
+`[mcp_servers.sia]` entry in `~/.codex/config.toml` should explicitly contain
+`tool_timeout_sec = 240` to allow SIA's existing request budget. Preserve the
+entry's command, arguments and approval settings. Verify with
+`codex mcp get sia --json`; configuration readback does not prove that an
+already connected session reloaded it. See the official
+[Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
 ## When to use
 
 - **Session start / before re-deriving machine history**: `sia ask` first.

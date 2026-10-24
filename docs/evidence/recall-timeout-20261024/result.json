@@ -1,0 +1,22 @@
+{
+  "command": [
+    "timeout",
+    "--kill-after=5s",
+    "240s",
+    "/home/sicarii/.local/bin/sia",
+    "ask",
+    "What evidence explains SIA recall timing out?",
+    "--no-touch"
+  ],
+  "returncode": 0,
+  "elapsed_seconds": 102.84651241602842,
+  "before": {
+    "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+    "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+  },
+  "after": {
+    "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+    "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+  },
+  "scope": "single installed CLI observation; no universal continuity or latency guarantee"
+}
