@@ -57,12 +57,14 @@ class _Directory:
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
         try:
             root = os.open("/", flags)
-            self.chain.append(("/", root, _directory_identity(os.fstat(root))))
+            self.chain.append(("/", root, None))
+            self.chain[-1] = ("/", root, _directory_identity(os.fstat(root)))
             for name in self.path.split("/")[1:]:
                 if not name:
                     continue
                 descriptor = os.open(name, flags, dir_fd=self.chain[-1][1])
-                self.chain.append((name, descriptor, _directory_identity(os.fstat(descriptor))))
+                self.chain.append((name, descriptor, None))
+                self.chain[-1] = (name, descriptor, _directory_identity(os.fstat(descriptor)))
             self.fd = self.chain[-1][1]
             info = os.fstat(self.fd)
             if private and (info.st_uid != os.geteuid()
@@ -265,16 +267,23 @@ class JournalCaptureContext:
         os = self.owner["os"]
         descriptor = os.open(leaf, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                              0o600, dir_fd=self.directory.fd)
-        info = os.fstat(descriptor)
-        self.scratch[leaf] = (descriptor, (info.st_dev, info.st_ino))
-        raw = memoryview(self.sources[scope].raw)
-        while raw:
-            written = os.write(descriptor, raw)
-            if written <= 0:
-                _refuse("operation-seed-short-write")
-            raw = raw[written:]
-        os.fsync(descriptor)
-        self.current()
+        # Pending identity owns cleanup only, never a usable capture. Record
+        # ownership before metadata, writes, or synchronization can fail.
+        self.scratch[leaf] = (descriptor, None)
+        try:
+            info = os.fstat(descriptor)
+            self.scratch[leaf] = (descriptor, (info.st_dev, info.st_ino))
+            raw = memoryview(self.sources[scope].raw)
+            while raw:
+                written = os.write(descriptor, raw)
+                if written <= 0:
+                    _refuse("operation-seed-short-write")
+                raw = raw[written:]
+            os.fsync(descriptor)
+            self.current()
+        except BaseException:
+            self.abort()
+            raise
 
     def settle(self, scope, path):
         """Admit and reseal one cursor file replaced by the journal producer."""
@@ -412,8 +421,12 @@ class JournalCaptureContext:
                     try:
                         held = os.fstat(descriptor)
                         named = os.stat(leaf, dir_fd=self.directory.fd, follow_symlinks=False)
-                        if (held.st_dev, held.st_ino) == identity \
-                                and (named.st_dev, named.st_ino) == identity \
+                        # A failed initial fstat leaves only the held inode as
+                        # identity evidence. Never unlink a different named file.
+                        expected_identity = ((held.st_dev, held.st_ino)
+                                             if identity is None else identity)
+                        if (held.st_dev, held.st_ino) == expected_identity \
+                                and (named.st_dev, named.st_ino) == expected_identity \
                                 and stat.S_ISREG(named.st_mode):
                             os.unlink(leaf, dir_fd=self.directory.fd)
                     except OSError:
