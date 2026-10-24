@@ -1,0 +1,136 @@
+{
+  "schema": "sia.plugin-registration-admission-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "944975a73d53e7721e44e67bc0a6ef593a2102b5",
+  "problem": [
+    "Resident plugin-registration observer blocked opening a FIFO manifest before regular-file validation.",
+    "A child directory descriptor was not registered for finally cleanup until after metadata validation, leaking it when fstat/stat failed."
+  ],
+  "change": "Open manifest with O_NONBLOCK. Register each acquired child before inspecting metadata, and remove the redundant manual close so the existing finally owns cleanup. Preserve path/owner/mode/generation/version checks.",
+  "source_sha256": {
+    "bin/sia-brainstem": "2c111d71b0e115cb266676bdf42b97ccb4e1928b7a71487b74748b603d66e746",
+    "tests/test_plugin_registration_admission.py": "8b668edcd837232e0b73409a9cb1fe90054e39eb32b6e8601d75a018be414a56",
+    "tests/test_cli.py": "db79d06411ab22f396ee91660fc2a56c0b45b3273eae84fbe9eb318f0859c05f"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 6,
+    "failures_reported": 16,
+    "errors_reported": 1,
+    "failure": "No-writer FIFO child timeout and descriptor-count mismatch at four directory components for fstat/stat OSError and KeyboardInterrupt. Other new controls passed.",
+    "source_sha256": {
+      "bin/sia-brainstem": "a89b1ada8f04116feb796598fa3432d1988d3dc4dce9ef226984095870f5832f",
+      "tests/test_plugin_registration_admission.py": "8b668edcd837232e0b73409a9cb1fe90054e39eb32b6e8601d75a018be414a56"
+    },
+    "log": "evidence/plugin-registration-admission-20261024/baseline-registration-admission.log.gz"
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 10,
+    "elapsed_seconds": 3.383,
+    "source_unchanged": true
+  },
+  "test_scope": "Six new methods execute the imported actual helper in subprocesses with private files; four unchanged original tests cover exact valid manifest, symlink/absence, hierarchy swap, pre-ownership stop and pre-pulse stop. Faults are injected, not real device failures.",
+  "test_names": "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_plugin_registration_admission', 'tests.test_cli.MutationBoundaries.test_plugin_registration_observer_is_exact_and_link_safe', 'tests.test_cli.MutationBoundaries.test_plugin_registration_observer_refuses_hierarchy_swap', 'tests.test_cli.MutationBoundaries.test_missing_plugin_stops_before_brainstem_ownership', 'tests.test_cli.MutationBoundaries.test_plugin_removal_stops_before_the_next_resident_pulse']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)",
+  "command": [
+    "/usr/bin/timeout",
+    "--kill-after=5s",
+    "60s",
+    "/usr/bin/bwrap",
+    "--ro-bind",
+    "/",
+    "/",
+    "--ro-bind",
+    "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+    "/usr/bin/git",
+    "--tmpfs",
+    "/tmp",
+    "--ro-bind",
+    "/home/sicarii/Work/sia-assurance-kernel-20261019",
+    "/tmp/sia-review-source",
+    "--tmpfs",
+    "/home",
+    "--tmpfs",
+    "/run",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--dir",
+    "/home/audit",
+    "--unshare-net",
+    "--unshare-pid",
+    "--die-with-parent",
+    "--new-session",
+    "--chdir",
+    "/tmp/sia-review-source",
+    "--setenv",
+    "HOME",
+    "/home/audit",
+    "/usr/bin/python3",
+    "-B",
+    "-W",
+    "error::ResourceWarning",
+    "-c",
+    "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_plugin_registration_admission', 'tests.test_cli.MutationBoundaries.test_plugin_registration_observer_is_exact_and_link_safe', 'tests.test_cli.MutationBoundaries.test_plugin_registration_observer_refuses_hierarchy_swap', 'tests.test_cli.MutationBoundaries.test_missing_plugin_stops_before_brainstem_ownership', 'tests.test_cli.MutationBoundaries.test_plugin_removal_stops_before_the_next_resident_pulse']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)"
+  ],
+  "runner_sha256": "edab5d9d0367524340d895d7eb4b18fd3b4225da40c7b2650b207893968dc305",
+  "static": {
+    "product_status": "NONPASS_EXISTING_DIAGNOSTICS_UNCHANGED",
+    "product_findings": 16,
+    "comparison": "Original strict rules; identical code/message/column/affected-source-line signatures.",
+    "new_test_and_runner_status": "PASS_ZERO_DIAGNOSTICS",
+    "syntax_status": "PASS_COMPILE_ONLY",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "no_suppressions_added": true
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "result": "No blocker for narrow repair checkpoint",
+    "scope": "Exact source and retained raw evidence",
+    "independent_execution": false
+  },
+  "power_of_ten": "P07 failure propagation and resource ownership; P02 admission avoids FIFO rendezvous. No whole-system P02/P03 claim.",
+  "artifacts": {
+    "baseline-registration-admission.log.gz": {
+      "bytes": 1827,
+      "sha256": "7c74f38ce5faca33e46f377e32e13c7cf1c790814280398be42a9472611f9c90",
+      "encoding": "gzip",
+      "uncompressed_bytes": 22963,
+      "uncompressed_sha256": "306888840ca7993381d482425fc1e477f922a75d2549318df3003df08111624b"
+    },
+    "candidate-registration-admission.log": {
+      "bytes": 1737,
+      "sha256": "0a8f01eb59938fcd79f5b1d8422861d3c9a84c9400010585103f544593943f23"
+    },
+    "registration-baseline-ruff.stdout.json.gz": {
+      "bytes": 778,
+      "sha256": "cac7dd2cf94c9f90f1a2513ef852f06de439710f32e8ce66eeb7eaea1b700179",
+      "encoding": "gzip",
+      "uncompressed_bytes": 9014,
+      "uncompressed_sha256": "0570751f0a2617145d9e1840a9c9ffdc2286f5c84a6ccf676d2454b11b5b3de0"
+    },
+    "registration-candidate-ruff.stdout.json.gz": {
+      "bytes": 745,
+      "sha256": "54a21a860ab7abf272f3c136a5927802ef2927fe979bc7683d4619acad8c161a",
+      "encoding": "gzip",
+      "uncompressed_bytes": 8086,
+      "uncompressed_sha256": "f3cfcd7410bc843ed7e7d0618f6c4f37e4aaae7f3652b30c1d014b9faec4870c"
+    },
+    "registration-tests-ruff.stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "registration-tests-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "limits": [
+    "No guarantee for arbitrary asynchronous interruption between acquisition and ownership registration, allocation failure or close failure.",
+    "O_NONBLOCK does not bound regular-file/storage latency.",
+    "No installed daemon qualification, historical recall-timeout diagnosis, full static compliance or whole-system assurance.",
+    "All original proof, continuity, recovery, installation and release gates remain binding."
+  ]
+}

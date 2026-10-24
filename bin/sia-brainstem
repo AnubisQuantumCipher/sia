@@ -97,7 +97,7 @@ def _plugin_registration_present(home=None):
         raise RuntimeError("plugin registration home is invalid")
     directory_flags = (os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
                        | os.O_NOFOLLOW)
-    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     descriptors = []
     hierarchy = []
 
@@ -114,6 +114,7 @@ def _plugin_registration_present(home=None):
                                 dir_fd=descriptor)
             except FileNotFoundError:
                 return False
+            descriptors.append(child)
             info = os.fstat(child)
             current = os.stat(
                 component, dir_fd=descriptor, follow_symlinks=False)
@@ -121,10 +122,8 @@ def _plugin_registration_present(home=None):
                     or info.st_uid != os.geteuid() \
                     or stat.S_IMODE(info.st_mode) & 0o022 \
                     or generation(info) != generation(current):
-                os.close(child)
                 raise RuntimeError("plugin registration directory is unsafe")
             hierarchy.append((descriptor, component, child, generation(info)))
-            descriptors.append(child)
             descriptor = child
         try:
             manifest_fd = os.open("manifest.json", file_flags,
