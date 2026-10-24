@@ -108,6 +108,7 @@ jobs:
           bash -n install.sh
           bash -n uninstall.sh
           bash -n bin/sia-setup
+          bash -n spark/check-event-pack-model.sh
       - name: release artifact contracts
         run: |
           python3 -m json.tool manifest.json >/dev/null
@@ -125,7 +126,8 @@ jobs:
             --security-opt no-new-privileges --read-only \
             -v "$PWD:/mnt:ro" \
             koalaman/shellcheck-alpine@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
-            shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup
+            shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup \
+            /mnt/spark/check-event-pack-model.sh
       - name: real btrfs remount readmission
         run: |
           sudo apt-get update -qq
