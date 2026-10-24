@@ -1726,6 +1726,41 @@ class ContinuityFailureNaming(unittest.TestCase):
     with its numeric-only clause, without ever echoing arbitrary exception
     text that could carry a repository credential (issue #12)."""
 
+    def test_record_bound_reason_requires_the_exact_fixed_refusal(self):
+        import siabackup
+        message = "capsule source tree exceeds its record bound"
+        self.assertEqual(siabackup._named_failure_clause(ValueError(message)),
+                         " Reason: capsule-record-bound.")
+        for extra in (" ", " RESTIC_PASSWORD=private", "\nprivate", "<private>"):
+            with self.subTest(extra=extra):
+                self.assertEqual(siabackup._named_failure_clause(
+                    ValueError(message + extra)), "")
+
+    def test_worker_publishes_record_bound_failure_without_success(self):
+        import siabackup
+        request = {"id": "a" * 32, "action": "upload",
+                   "args": {"scheduled": True}}
+        refusal = ValueError("capsule source tree exceeds its record bound")
+        with mock.patch.object(siabackup, "_exclusive_lock",
+                               return_value=contextlib.nullcontext()), \
+                mock.patch.object(siabackup, "_perform_upload",
+                                  side_effect=refusal) as upload, \
+                mock.patch.object(siabackup, "_publish_status") as publish, \
+                mock.patch.object(siabackup, "_retire_request_artifacts") as retire:
+            self.assertEqual(siabackup._run_request_locked(request), 1)
+        upload.assert_called_once_with(request["args"], request["id"],
+                                       restic_path=None)
+        retire.assert_called_once_with(request)
+        self.assertEqual(publish.call_count, 2)
+        final = publish.call_args.kwargs
+        self.assertEqual(final["state"], "failed")
+        self.assertEqual(final["detail"],
+                         "Continuity operation failed without reporting "
+                         "repository credentials. Reason: capsule-record-bound.")
+        self.assertEqual(final["operation"]["phase"], "failed")
+        self.assertFalse(final["operation"]["ready"])
+        self.assertFalse(final["operation"]["sia_ledger_verified"])
+
     def test_known_capsule_refusals_are_named_and_unknown_text_is_not_echoed(self):
         import siabackup
         clause = siabackup._named_failure_clause(ValueError(

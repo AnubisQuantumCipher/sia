@@ -1124,6 +1124,10 @@ _SAFE_CLAUSE = re.compile(r"[A-Za-z0-9 _.:;=,()/'-]*")
 
 def _named_failure_clause(failure):
     text = str(failure)
+    # This fixed refusal has no safe operator suffix. Match the whole value
+    # so neither paths nor provider text can become a diagnostic payload.
+    if text == "capsule source tree exceeds its record bound":
+        return " Reason: capsule-record-bound."
     for prefix, code in _NAMED_FAILURE_PREFIXES:
         if text.startswith(prefix):
             clause = text[len(prefix):].strip()
