@@ -54,6 +54,7 @@ jobs:
                    'spark/check-proof-summary.py', 'spark/tests/test_proof_summary.py',
                    'spark/tests/test_proof_summary_overloads.py',
                    'spark/check-allocation-controls.py', 'spark/tests/test_allocation_controls.py',
+                   'spark/transport/continuity_process.py', 'spark/tests/test_continuity_command.py',
                    'bin/siaeventpackcapture.py', 'bin/siaeventpackproposal.py',
                    'tests/test_event_pack_proposal.py', 'tests/test_event_pack_admission.py',
                    'tests/test_backup_upload_diagnostics.py')
@@ -80,6 +81,8 @@ jobs:
             spark/tests/test_proof_summary_overloads.py \
             spark/check-allocation-controls.py \
             spark/tests/test_allocation_controls.py \
+            spark/transport/continuity_process.py \
+            spark/tests/test_continuity_command.py \
             bin/siaeventpackcapture.py \
             bin/siaeventpackproposal.py \
             tests/test_event_pack_proposal.py \
@@ -111,6 +114,7 @@ jobs:
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary_overloads.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_allocation_controls.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_continuity_command.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_request_packet.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_grant_record.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_scoped_grant_record.py -v

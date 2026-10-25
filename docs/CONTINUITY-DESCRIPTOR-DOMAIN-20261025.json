@@ -1,0 +1,43 @@
+{
+  "status": "TESTED_DESCRIPTOR_REPRESENTATION_ONLY",
+  "base_commit": "5ce826acd86571f949fcb4a8eaacd99a383f84a8",
+  "source_manifest_sha256": "f30e3431d4c0bf416f9d8f558412c16ae63c760c14e4bd1c43b4eee395f224b3",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "04e9b6ec88f4e24ac96b6b2d056ff9e6936a020f02166d2e8b67f0127ce2bc10",
+    "spark/transport/continuity_process.py": "091c6b49b522ba64bfae42218a8c0ccc755f2feb765a6a95c25a441b5d6eaaa2",
+    "spark/tests/test_continuity_command.py": "a77c05323d2f7bac82c6ac30e34b52d5323b57efc12e39c67646ea53ca898b28",
+    "spark/tests/test_continuity_process.py": "81ae4d6f79fc15ae8f750a2ce1e0d01f1f643ff1dd9d7ed1141933471b104146"
+  },
+  "full_spark_python_tests": {
+    "count": 122,
+    "seconds": "11.173",
+    "exit": 0,
+    "skips": 0
+  },
+  "fresh_builds": "full -c -U compile and normal link of both transport projects; all four commands exit0 empty",
+  "binaries": "all five before/after/final digests match",
+  "static": "frozen Ruff rules, exit0, JSON [], empty stderr; no suppressions",
+  "negative_control": "guard removed: 3 tests fail; failures10/errors1 retained; expected rejection of mutant",
+  "abi": {
+    "native_int_bytes": 4,
+    "getconf_INT_MAX": "2147483647",
+    "python": "3.14.7 (main, Aug 12 2026, 13:41:09) [GCC 16.1.1 20260430]"
+  },
+  "review": "existing actual GPT6.1 source review; no independent execution",
+  "nonclaims": [
+    "no reproduced defect in normal os.open caller",
+    "not descriptor ownership/liveness/custody qualification",
+    "mocked cleanup only in injected invalid-fd launch test; real close(-1) raises OSError",
+    "not complete argv0 or stack/resource bound",
+    "no fresh GNATprove or enlarged historical proof",
+    "not installed continuity or whole-system/release acceptance"
+  ],
+  "all_original_gates": "unchanged including R05 BOTH",
+  "evidence_directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/continuity-descriptor-domain-v1",
+  "public_archive": {
+    "path": "docs/evidence/continuity-descriptor-domain-20261025.tar.gz",
+    "sha256": "5847dd9a9c5c1ea2c8e624dee74e9517e8eb15a9fc085c6d4abda92143235f91",
+    "members": 49,
+    "readback": "all members match hashes"
+  }
+}

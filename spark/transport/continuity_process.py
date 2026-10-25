@@ -7,6 +7,7 @@ import re
 import selectors
 import signal
 import stat
+import struct
 import subprocess
 import time
 
@@ -16,6 +17,7 @@ STDERR_BYTES = 4096
 MAX_EXECUTABLE_BYTES = 8 * 1024 * 1024
 MAX_POLLS = 8192
 MAX_SECONDS = 5.0
+LINUX_DESCRIPTOR_MAX = 2147483647
 PRLIMIT = '/usr/bin/prlimit'
 LIMIT_ARGS = ('--as=268435456', '--stack=16777216', '--cpu=10',
               '--nofile=16', '--nproc=0', '--fsize=0', '--core=0')
@@ -73,6 +75,15 @@ def pin_executable(path, expected):
 
 
 def command(descriptor):
+    """Accept the supported Linux C-int domain, without object conversion hooks.
+
+    This checks representation only; pin_executable establishes the opened fd.
+    Descriptor liveness and exclusive custody are not established here.
+    """
+    if struct.calcsize('@i') != 4:
+        raise ProbeRefusal('unsupported native descriptor ABI')
+    if type(descriptor) is not int or not 0 <= descriptor <= LINUX_DESCRIPTOR_MAX:
+        raise ProbeRefusal('descriptor outside native Linux int domain')
     return [PRLIMIT, *LIMIT_ARGS, '--', f'/proc/self/fd/{descriptor}']
 
 
