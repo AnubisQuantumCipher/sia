@@ -91,6 +91,13 @@ same-process code or detect every transient change.
 
 ## Verification and retained failures
 
+The following records the original frame-only checkpoint. Its adapter scope is
+now extended by [captured complete-stream admission](EVENT-PACK-CAPTURED-ADMISSION.md),
+which retains the original workload, adds full-stream integration and repairs
+ordinary cleanup-error retention. The later report states its separate evidence
+and environmental limits.
+
+
 The first Python candidate passed 366 tests, but its reservation argument and
 cross-language qualification were incomplete. The revised source passed the
 original regression workload plus new controls: **367 tests, no skips**, including

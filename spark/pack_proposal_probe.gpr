@@ -8,6 +8,9 @@ project Pack_Proposal_Probe is
       "sia_continuity_record_wire.ads", "sia_continuity_record_wire.adb",
       "sia_pack_plan_wire.ads", "sia_pack_plan_wire.adb",
       "pack_plan_wire_test_support.ads", "pack_plan_wire_test_support.adb",
+      "sia_pack_manifest_wire.ads", "sia_pack_manifest_wire.adb",
+      "sia_pack_partition.ads", "sia_pack_partition.adb",
+      "sia_pack_proposal.ads", "sia_pack_proposal.adb",
       "pack_proposal_probe.adb");
    for Object_Dir use "pack-proposal-obj";
    for Exec_Dir use "pack-proposal-bin";
