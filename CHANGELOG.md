@@ -54,6 +54,12 @@ expected behavior in [#33](https://github.com/AnubisQuantumCipher/sia/issues/33)
   use a bounded request budget rather than killing recall after 20 seconds,
   and distinguish caller timeouts from engine failures. Consistency leases
   remain required; this is not a latency guarantee.
+- Source acknowledgment recovery completes interrupted directory synchronization
+  before declaring an existing effects archive, source archive, or cursor target
+  durable. Source moves synchronize both rename parents. Synchronization errors
+  leave acknowledgment pending and readiness blocked; completed reads and ACK
+  retries remain effectless. Process-death and injected-error tests cover these
+  recovery windows; this is not a claim of power-loss survival.
 
 Grades remain model-assisted. This does not restore already consolidated day
 pages, revise historical grades, or claim that a model must return TRUE. The

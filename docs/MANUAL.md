@@ -2142,6 +2142,16 @@ Replacing them with SIA's managed artifacts requires the separately printed
 identity/version checks and does not retain a custom unit/runtime; model,
 listener, and ownership verification still run.
 
+### Ollama account guard
+
+This candidate requires a separate administrator-owned firewall guard before
+the ordinary SIA installer can continue. See
+[Ollama local-account guard](OLLAMA-ACCOUNT-GUARD.md) for its exact boundary,
+manual setup, retention after uninstall, and outstanding acceptance gates.
+The current loopback endpoint remains, but the guard rejects clients belonging
+to other ordinary Linux accounts. A missing, inactive, changed or differently
+owned guard refuses startup; runtime version overrides cannot bypass it.
+
 ### Ollama operator drop-in (issue #10)
 
 ollama.service's exact-match `DropInPaths` check would otherwise leave no

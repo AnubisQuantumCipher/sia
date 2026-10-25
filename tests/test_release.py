@@ -99,6 +99,28 @@ def _fake_command(directory, name, body):
     _write(os.path.join(directory, name), "#!/bin/sh\n" + body, 0o755)
 
 
+def _guard_fixture(directory, trace, admitted=True):
+    """Supply only the admin prerequisite for downstream installer tests.
+
+    This test-local dispatcher records the exact gate invocation. All other
+    Python commands execute normally; production has no bypass setting.
+    """
+    guard = shlex.quote(os.path.realpath(
+        os.path.join(REPO, "bin", "siaollamaguard.py")))
+    outcome = "admitted" if admitted else "refused"
+    status = 0 if admitted else 23
+    body = (
+        'if [ "$#" -eq 4 ] && [ "$1" = -I ] && [ "$2" = -S ] '
+        '&& [ "$4" = gate ]; then\n'
+        f'  if [ "$(readlink -f -- "$3")" = {guard} ]; then\n'
+        f"    printf '%s\\n' {outcome} >> {shlex.quote(trace)} || exit 125\n"
+        f"    exit {status}\n"
+        "  fi\n"
+        "fi\n"
+        f'exec {shlex.quote(sys.executable)} "$@"\n')
+    _fake_command(directory, "python3", body)
+
+
 def _load(name, path):
     loader = importlib.machinery.SourceFileLoader(name, path)
     spec = importlib.util.spec_from_loader(name, loader)
@@ -1152,6 +1174,8 @@ class ReleaseContract(unittest.TestCase):
             os.makedirs(fake_bin)
             _fake_command(fake_bin, "systemctl", ABSENT_USER_UNIT)
             _fake_command(fake_bin, "sleep", "exit 0\n")
+            guard_trace = os.path.join(root, "guard-trace")
+            _guard_fixture(fake_bin, guard_trace)
             lock_path = os.path.join(home, ".local/state/sia.lifecycle.lock")
             _write(lock_path, "")
             environment = os.environ.copy()
@@ -1166,10 +1190,11 @@ class ReleaseContract(unittest.TestCase):
                         ["bash", os.path.join(REPO, script)],
                         cwd=REPO, env=environment, text=True,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        check=False)
+                        timeout=30, check=False)
                     self.assertNotEqual(result.returncode, 0, script)
                     self.assertIn("active SIA clients did not leave",
                                   result.stderr, script)
+                self.assertEqual(_read_path(guard_trace), "admitted\n")
 
     def test_uninstaller_fences_legacy_launchers_before_integration_mutation(self):
         uninstaller = _read("uninstall.sh")
@@ -4447,8 +4472,12 @@ printf 'failure aggregated\n'
                 target = os.path.join(home, relative)
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 os.symlink(outside, target)
+                fake_bin = os.path.join(root, "bin")
+                guard_trace = os.path.join(root, "guard-trace")
+                _guard_fixture(fake_bin, guard_trace)
                 environment = os.environ.copy()
                 environment["HOME"] = home
+                environment["PATH"] = fake_bin + os.pathsep + environment["PATH"]
                 scripts = ("install.sh", "uninstall.sh") \
                     if relative in (".config/hypr", ".claude",
                                     ".local/state/sia/managed-install",
@@ -4459,9 +4488,33 @@ printf 'failure aggregated\n'
                         ["bash", os.path.join(REPO, script)],
                         cwd=REPO, env=environment, text=True,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        check=False)
+                        timeout=30, check=False)
                     self.assertNotEqual(result.returncode, 0, script)
+                    self.assertIn("refusing symlinked managed root", result.stderr)
                     self.assertEqual(_read_path(sentinel), "unchanged\n")
+                self.assertEqual(_read_path(guard_trace), "admitted\n")
+
+    def test_installer_guard_refusal_precedes_state_mutation(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = os.path.join(root, "home")
+            os.mkdir(home)
+            fake_bin = os.path.join(root, "bin")
+            trace = os.path.join(root, "guard-trace")
+            _guard_fixture(fake_bin, trace, admitted=False)
+            environment = os.environ.copy()
+            environment.update({
+                "HOME": home,
+                "PATH": fake_bin + os.pathsep + environment["PATH"],
+            })
+            result = subprocess.run(
+                ["bash", os.path.join(REPO, "install.sh")],
+                cwd=REPO, env=environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=30, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("administrator-installed local-account guard", result.stderr)
+            self.assertEqual(_read_path(trace), "refused\n")
+            self.assertEqual(os.listdir(home), [])
 
     def test_installer_refuses_nonempty_unowned_corpus(self):
         with tempfile.TemporaryDirectory() as root:
@@ -4469,6 +4522,8 @@ printf 'failure aggregated\n'
             fake_bin = os.path.join(root, "bin")
             os.makedirs(fake_bin)
             _fake_command(fake_bin, "systemctl", ABSENT_USER_UNIT)
+            guard_trace = os.path.join(root, "guard-trace")
+            _guard_fixture(fake_bin, guard_trace)
             foreign = os.path.join(
                 home, ".local/share/sia/corpus/foreign.txt")
             _write(foreign, "operator data\n")
@@ -4478,10 +4533,12 @@ printf 'failure aggregated\n'
             result = subprocess.run(
                 ["bash", os.path.join(REPO, "install.sh")],
                 cwd=REPO, env=environment, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=30, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("refusing nonempty corpus", result.stderr)
             self.assertEqual(_read_path(foreign), "operator data\n")
+            self.assertEqual(_read_path(guard_trace), "admitted\n")
 
     def test_failure_cleanup_stops_mutated_runtime_without_restart(self):
         installer = _read("install.sh")
