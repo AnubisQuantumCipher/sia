@@ -13,6 +13,13 @@ downloads match the required hashes; the modern guide's contract-inheritance
 error is documented against the Ada Reference Manual. Complete guideline
 applicability, implementation mapping and semantic acceptance remain open.
 
+The [explicit Ada allocation-policy increment](ADA-ALLOCATION-POLICY-20261025.md)
+adds the guide's named restrictions without weakening the existing static
+policy. Strict builds, original Ada runtimes, 110 transport/checker tests and
+the original 378-test captured-pack roster pass for its exact composition.
+Full DYN02 semantic enforcement, stack/RTS bounds, compiler-control CI and fresh
+complete proof remain open; historical allocator-control failures are retained.
+
 | Order | Gate or blocker | Observable completion condition |
 | --- | --- | --- |
 | 1 | R05 current retained admission | Every call performs current policy/callback checks. The [experimental candidate](RETAINED-FRESH-ADMISSION-20261024.md) removes success reuse, but authorization for retiring mandatory expensive reuse and its original count assertion is unverified. Both obligations remain open. Exact-source stale-policy, changed-image/VERSION, original callback/refusal order and full-workload/resource gates remain. Targeted and 161-method replay tests pass; [delivery/resident qualification](RETAINED-DELIVERY-QUALIFICATION-20261024.md) still times out under unchanged caps. |

@@ -1,3 +1,8 @@
+pragma Restrictions (No_Anonymous_Allocators);
+pragma Restrictions (No_Coextensions);
+pragma Restrictions (No_Access_Parameter_Allocators);
+pragma Restrictions (Immediate_Reclamation);
+pragma Restrictions (No_Task_Allocators);
 pragma Restrictions (No_Allocators);
 pragma Restrictions (No_Implicit_Heap_Allocations);
 pragma Restrictions (No_Unchecked_Deallocation);
