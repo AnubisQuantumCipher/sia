@@ -1,0 +1,413 @@
+{
+  "acceptance": false,
+  "archive": {
+    "all_member_hashes_read_back": true,
+    "bytes": 858670,
+    "members": 85,
+    "path": "docs/evidence/native-error-mask-20261025.tar.gz",
+    "sha256": "b750f52edf5d43e83a23aa6cbd0aa30f2205c512090ede2147d2f2ebaf804859"
+  },
+  "excluded_local_files": {
+    "manager-error-mask-compiler-preparation-v2/run/witness_io.c.analyzer.txt": {
+      "bytes": 536870912,
+      "identity": {
+        "st_ctime_ns": 1792913564193083885,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14989452,
+        "st_mode": 33188,
+        "st_mtime_ns": 1792913564193083885,
+        "st_nlink": 1,
+        "st_size": 536870912,
+        "st_uid": 1000
+      },
+      "sha256": "05b1fef546c156fca1d0a6c40c723d4513ba77ca3035cf011af978986a7105e6"
+    },
+    "manager-error-mask-observer-controls-v2/storage-postflight.json": {
+      "bytes": 119798,
+      "identity": {
+        "st_ctime_ns": 1792913727955116304,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14989459,
+        "st_mode": 33188,
+        "st_mtime_ns": 1792913727955116304,
+        "st_nlink": 1,
+        "st_size": 119798,
+        "st_uid": 1000
+      },
+      "sha256": "10d4268078a11c3462451454b39d758011b4b54133f9b332e9ab5912b3899944"
+    },
+    "manager-error-mask-observer-controls-v2/storage-preflight.json": {
+      "bytes": 119798,
+      "identity": {
+        "st_ctime_ns": 1792913331898109286,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14989436,
+        "st_mode": 33188,
+        "st_mtime_ns": 1792913331898109286,
+        "st_nlink": 1,
+        "st_size": 119798,
+        "st_uid": 1000
+      },
+      "sha256": "ed3e77736c1242063d18007e0fc9f8585ff3cc36a12d774dfa7b8764acd969b5"
+    }
+  },
+  "limitations": [
+    "Selected forensic archive, not complete build dependency closure.",
+    "Full incomplete compiler dump remains local; only selected excerpt published.",
+    "Storage reports contain unrelated machine inventory and are retained locally.",
+    "Manual SMT model is not verified C translation or certified solver proof.",
+    "No code adoption, installation, main merge, release or marketplace qualification."
+  ],
+  "local_manifest": {
+    "files": 87,
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-error-mask-observer-controls-v2/EVIDENCE-MANIFEST.json",
+    "sha256": "34d868c292722e3e48731a4ae7d8eea6aa6d3e363b1874617c006b248ec110b3"
+  },
+  "members": {
+    "manager-error-mask-compiler-preparation-v1/CONTROLLER.diff": {
+      "bytes": 2835,
+      "sha256": "7f0d7b327cb162ee2819ede6edf1acff164589ddae61473462d4b4188c753107"
+    },
+    "manager-error-mask-compiler-preparation-v1/CURRENT-INPUTS.json": {
+      "bytes": 613583,
+      "sha256": "ea7b55519f8f368a6353570e74bfc2894bda12d7eaa7ee2128b002c012d47862"
+    },
+    "manager-error-mask-compiler-preparation-v1/OUTER.diff": {
+      "bytes": 15631,
+      "sha256": "15206e204aa50234686ca00f8d59c364cb68342e282c5c1e63d42c7273c7d765"
+    },
+    "manager-error-mask-compiler-preparation-v1/PIN-PLAN.json": {
+      "bytes": 199662,
+      "sha256": "786770c02f8348952683804fa00033645f5ff0fac5e903ffd365c81c1075c7e4"
+    },
+    "manager-error-mask-compiler-preparation-v1/ROOTC-COMPOSED-OBSERVER.py": {
+      "bytes": 19913,
+      "sha256": "f308e14571f04d5dbe70d17c14f3b99b77cb663aac8271067b602fc51a4902a3"
+    },
+    "manager-error-mask-compiler-preparation-v1/controller.py": {
+      "bytes": 16744,
+      "sha256": "8980bfbf67258fa4b03d754d34f12245203689a79acb6a34e27d23539736e7c3"
+    },
+    "manager-error-mask-compiler-preparation-v2/C-root-external-v1/admission.json": {
+      "bytes": 1096161,
+      "sha256": "d976e00c238c42c84f052938cbfe48d1eca9a462b53d813321953ab88d74df79"
+    },
+    "manager-error-mask-compiler-preparation-v2/C-root-external-v1/controller.stderr": {
+      "bytes": 521,
+      "sha256": "1a345a7c0f22862e2e1ef4fb267e9a0d46cfb14b960f6367513decfb2336ce39"
+    },
+    "manager-error-mask-compiler-preparation-v2/C-root-external-v1/controller.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-compiler-preparation-v2/C-root-external-v1/result.json": {
+      "bytes": 1695226,
+      "sha256": "595a5ce508e82e283012fcefe50f84e9ac37dd221ff1ebf1ee29e198b9b7c4ff"
+    },
+    "manager-error-mask-compiler-preparation-v2/CONTROLLER.diff": {
+      "bytes": 2835,
+      "sha256": "897825f52d87bd9fbaf24dbeadc6b5278edf6535a9422354d4d22aa9cbbe6b49"
+    },
+    "manager-error-mask-compiler-preparation-v2/CURRENT-INPUTS.json": {
+      "bytes": 614728,
+      "sha256": "4e05fc6022988aca67547bc8d95b39aeb502f9371df90ec3bcac3be5cb22608c"
+    },
+    "manager-error-mask-compiler-preparation-v2/OUTER.diff": {
+      "bytes": 16673,
+      "sha256": "81364e99c1882159a6e713a7a24071ae9aa217c291fd5b414cc3f281f177431b"
+    },
+    "manager-error-mask-compiler-preparation-v2/PIN-PLAN.json": {
+      "bytes": 200710,
+      "sha256": "bcdf7f353d4976ebbc758dfe40bb97ad3812a968747a3ee8ec4b0527d034beab"
+    },
+    "manager-error-mask-compiler-preparation-v2/ROOTC-COMPOSED-OBSERVER.py": {
+      "bytes": 20908,
+      "sha256": "d2c4b38adc850eb47ac53fd99e486d78f9bc0bed08002d56654143a6c77fbfa2"
+    },
+    "manager-error-mask-compiler-preparation-v2/controller.py": {
+      "bytes": 16744,
+      "sha256": "496b59a498b1fcd670018a266f920fa72988e805fe559074be31bc825f242fb3"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/after.json": {
+      "bytes": 1561709,
+      "sha256": "0eff9433a839e60d6fdc305be4e9fa49477b0d546383dce31bbe2c11be71c10d"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/before.json": {
+      "bytes": 1561709,
+      "sha256": "0eff9433a839e60d6fdc305be4e9fa49477b0d546383dce31bbe2c11be71c10d"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/result.json": {
+      "bytes": 5864,
+      "sha256": "b785af4b0e1298eab79ad2b66aaf238ae87af59c69858d4799fc870137aa69b2"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/stderr": {
+      "bytes": 5558,
+      "sha256": "cd18f45191b0683b357fb476b2d3267078e871873be0586509350d1d9e23c0a2"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-compiler-preparation-v2/run/witness_io.s": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v1/controls.stderr": {
+      "bytes": 6825,
+      "sha256": "9330e55a774849dcd710f53031fc2c7782e1b379e11612d4c3be6a7141257ced"
+    },
+    "manager-error-mask-observer-controls-v1/controls.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v1/readback.py": {
+      "bytes": 5134,
+      "sha256": "354563a55eeb588e037fc4c8fcd75ed31103efe1c544b8c261e63690225832df"
+    },
+    "manager-error-mask-observer-controls-v1/readback.py.diff": {
+      "bytes": 2100,
+      "sha256": "f59121a1598f6f5350269645cf9ef46c936503aeda12a6fa72743490ff2f4ff8"
+    },
+    "manager-error-mask-observer-controls-v1/readback.stderr": {
+      "bytes": 1030,
+      "sha256": "d99efc53d647d047274ee05659c3a6cfc8bfee96a4974d735411cf9d1d13ad08"
+    },
+    "manager-error-mask-observer-controls-v1/readback.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v1/test_candidate_namespace.py": {
+      "bytes": 7604,
+      "sha256": "b6162f780e8810684d4d3a4165392a8a304b593db9d6bc9907ee896264a908f6"
+    },
+    "manager-error-mask-observer-controls-v1/test_candidate_namespace.py.diff": {
+      "bytes": 479,
+      "sha256": "5c4398bc765425dccbed55a47cf093dd886d3015fd2f91d9d1301e5a689851cf"
+    },
+    "manager-error-mask-observer-controls-v1/test_observer_controls.py": {
+      "bytes": 17354,
+      "sha256": "8876342d4c6ed08b742fab3cd93f20c665dc72d9d231d9f2b5019c63bcc5b608"
+    },
+    "manager-error-mask-observer-controls-v1/test_observer_controls.py.diff": {
+      "bytes": 2827,
+      "sha256": "82601be1bbe8c4fc322636a0a94707df3ff41147441d7d41b2e8b4fabb50c63b"
+    },
+    "manager-error-mask-observer-controls-v2/EVIDENCE-MANIFEST.json": {
+      "bytes": 41138,
+      "sha256": "34d868c292722e3e48731a4ae7d8eea6aa6d3e363b1874617c006b248ec110b3"
+    },
+    "manager-error-mask-observer-controls-v2/ci-readback-40171033009.json": {
+      "bytes": 6107,
+      "sha256": "9503d42bca48d4929e13af65eea57adbca6d67e3b568afe62a4b530bd750586a"
+    },
+    "manager-error-mask-observer-controls-v2/command-scope-readback.json": {
+      "bytes": 2836,
+      "sha256": "38e8a3cc6c5bf511b69ba0d0a9f84701c1b8b91c7e1d1c9156beaff859f0612f"
+    },
+    "manager-error-mask-observer-controls-v2/compiler-failure-audit.json": {
+      "bytes": 7499,
+      "sha256": "75c592fdf11a4716afd6201ec9d544ece56eb32ae8fc8f6df24e7daae4d9a045"
+    },
+    "manager-error-mask-observer-controls-v2/controls.stderr": {
+      "bytes": 8231,
+      "sha256": "c5cbf2b0a7c6f7996f61b81e40795c835234459695576319418c6ed8becdbd9f"
+    },
+    "manager-error-mask-observer-controls-v2/controls.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v2/external-admission.json": {
+      "bytes": 9749,
+      "sha256": "8b18748bd647a01707875fad8174e68559d41841d7780e2e6a49611c605addf7"
+    },
+    "manager-error-mask-observer-controls-v2/independent-failure-review.txt": {
+      "bytes": 858,
+      "sha256": "7c28db9d2c541401aa5c034f959ea52694b0502b211421f3981b885a79bc6d72"
+    },
+    "manager-error-mask-observer-controls-v2/independent-review.txt": {
+      "bytes": 1056,
+      "sha256": "7e5e53b553e99ec2755ef969950af43089cbd043210f03f652e3c0865bfbb941"
+    },
+    "manager-error-mask-observer-controls-v2/live-map-readback.json": {
+      "bytes": 731430,
+      "sha256": "eff74b15a02384ee73f1d6552f442d4705e5260b9482c1d613753d2845f8578f"
+    },
+    "manager-error-mask-observer-controls-v2/mw_fail-supergraph.txt": {
+      "bytes": 799,
+      "sha256": "7278e612cb8417aa166903946d04afd3b413a349b5f498182db22304a5fcab8e"
+    },
+    "manager-error-mask-observer-controls-v2/readback.py": {
+      "bytes": 5134,
+      "sha256": "c97274497f1e89444ed4b42f20549d527525d3ae56b6643b972f8fa54e6b0342"
+    },
+    "manager-error-mask-observer-controls-v2/readback.py.diff": {
+      "bytes": 2069,
+      "sha256": "d29bfc36a767b43da44f99faf13023ae100f1ec09da573bcfe51ffaa34d1569c"
+    },
+    "manager-error-mask-observer-controls-v2/readback.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v2/readback.stdout": {
+      "bytes": 94,
+      "sha256": "2b4a23f343a68ae9d0fe0c79a04c59bb952d404a34a99ef09e1ef1e17a13f566"
+    },
+    "manager-error-mask-observer-controls-v2/static-result.json": {
+      "bytes": 7282,
+      "sha256": "007acb046a65330607dbca7413f8f6746daa339496f36d3e468428902f2af599"
+    },
+    "manager-error-mask-observer-controls-v2/static.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v2/static.stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "manager-error-mask-observer-controls-v2/storage-postflight.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v2/storage-preflight.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-observer-controls-v2/test_candidate_namespace.py": {
+      "bytes": 7604,
+      "sha256": "63c4076a2f4d600f130df3a1fba654dbc315e1fb73b1fb3f067e4136ac5aebb1"
+    },
+    "manager-error-mask-observer-controls-v2/test_candidate_namespace.py.diff": {
+      "bytes": 457,
+      "sha256": "27597090a0ee8dd74d4e093fc5967399525fcdc9731bfdea9009b1136990900f"
+    },
+    "manager-error-mask-observer-controls-v2/test_context_revision.py": {
+      "bytes": 3931,
+      "sha256": "45e2344a4a415749e73e930d1044e44d9d09bca2a7c3d3ac6ffe4f13aeacc8d9"
+    },
+    "manager-error-mask-observer-controls-v2/test_observer_controls.py": {
+      "bytes": 17633,
+      "sha256": "bd4e25f6888864b21525bef44546d836cc04b3d43f3642c84de8b7c01c700956"
+    },
+    "manager-error-mask-observer-controls-v2/test_observer_controls.py.diff": {
+      "bytes": 3859,
+      "sha256": "7f151c369d43e044dfdf0f4948ff0425a55c1d5d1d7b2d7bfe725811ff756336"
+    },
+    "manager-error-mask-v1/SOURCE-MANIFEST.json": {
+      "bytes": 3699,
+      "sha256": "cabc0021e059e358b7493774b67888f9749676a7e900c3973020805b9478cb1a"
+    },
+    "manager-error-mask-v1/algebra-and-review.json": {
+      "bytes": 17538,
+      "sha256": "181956771304501d52e020702dc3daec193c5e61277be06d67722cffea696b99"
+    },
+    "manager-error-mask-v1/branch-disposition.json": {
+      "bytes": 18284,
+      "sha256": "67a41979652f6eeb177f6d062089fe78e30af7ce72167052aa9bff9fbaeeab83"
+    },
+    "manager-error-mask-v1/check_mask_model.py": {
+      "bytes": 4353,
+      "sha256": "19c91fb989fc59a7ad6199a32069f33a7c29430200eabf1b8463c959f5179fef"
+    },
+    "manager-error-mask-v1/errno-source-binding.json": {
+      "bytes": 17169,
+      "sha256": "fe1e7e8b29a861531e663662c09bb88ca52427812196cc2fe49cd98dcfe6daaf"
+    },
+    "manager-error-mask-v1/mask-model.smt2": {
+      "bytes": 1012,
+      "sha256": "7d7bba0201f5d8eb2d65fc4d6648d44290634465f50dd19cf3408e9b0daa7573"
+    },
+    "manager-error-mask-v1/metadata-preparation-failure.json": {
+      "bytes": 420,
+      "sha256": "7da56a7b792bb0c9444c45fdb2ba7ca090f94a8ed4f99e371a5d51c011134141"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_fallback.smt2": {
+      "bytes": 996,
+      "sha256": "9c5d18d47b78507722b8860502065753ca571aa8d4459b30f29e987c802229b5"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_fallback.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_fallback.stdout": {
+      "bytes": 4,
+      "sha256": "d9dbf94b05b8314af9ca7f2034e92685c33447917605a7243b1099c693a12e5e"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_range.smt2": {
+      "bytes": 976,
+      "sha256": "64db0a1551734514bc4ae14bcf90480bb881bff13a4a1b63ff5e2394f0e3f1c9"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_range.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-v1/model-check-v1/missing_range.stdout": {
+      "bytes": 4,
+      "sha256": "d9dbf94b05b8314af9ca7f2034e92685c33447917605a7243b1099c693a12e5e"
+    },
+    "manager-error-mask-v1/model-check-v1/original.smt2": {
+      "bytes": 1012,
+      "sha256": "7d7bba0201f5d8eb2d65fc4d6648d44290634465f50dd19cf3408e9b0daa7573"
+    },
+    "manager-error-mask-v1/model-check-v1/original.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-v1/model-check-v1/original.stdout": {
+      "bytes": 6,
+      "sha256": "5c17dfcc2a8f1f30d9e96df6a9825a5030ade046d560332c19de74d93d591a18"
+    },
+    "manager-error-mask-v1/model-check-v1/result.json": {
+      "bytes": 12795,
+      "sha256": "d96603ae7c517c6bac33aabbe484c696e782cb235697ff8ead608812283e0f34"
+    },
+    "manager-error-mask-v1/model-check-v1/wrong_shift.smt2": {
+      "bytes": 1012,
+      "sha256": "b05e11ffa7387ad3d126da17aa590b89851f85e5e6cdec2cda2f0b47d9c25feb"
+    },
+    "manager-error-mask-v1/model-check-v1/wrong_shift.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "manager-error-mask-v1/model-check-v1/wrong_shift.stdout": {
+      "bytes": 4,
+      "sha256": "d9dbf94b05b8314af9ca7f2034e92685c33447917605a7243b1099c693a12e5e"
+    },
+    "manager-error-mask-v1/source/commission.h": {
+      "bytes": 627,
+      "sha256": "694ef12fca9f342b030d9dfcbe0235b664a360c4cfe5625e72b6f0ac21346662"
+    },
+    "manager-error-mask-v1/source/witness.h": {
+      "bytes": 5066,
+      "sha256": "3986f0bda76a072dea4cb1d90f4bd22cab88377512270e69647de8446dff8cfe"
+    },
+    "manager-error-mask-v1/source/witness_io.c": {
+      "bytes": 34741,
+      "sha256": "88f747a5b953070d6cf1fc83fe6c51160ec011a791727fba4880ffd661165313"
+    },
+    "manager-error-mask-v1/v2-context-revision.json": {
+      "bytes": 3637,
+      "sha256": "acf7f5e4183fa6990dd69d6e7ba65cd209e6b973b365dd6634c68d38f0fd087c"
+    },
+    "manager-error-mask-v1/witness_io.diff": {
+      "bytes": 827,
+      "sha256": "64d9ff4d2287c70d0b83afd8070b067dfad9b238b41b47127f5109c844a527fa"
+    },
+    "prepare_manager_error_mask_compiler_v1.py": {
+      "bytes": 10407,
+      "sha256": "782bcd202d9c84beed7861bd37a67c7bc6e8769d52cf45ee197b92e5ef1f65da"
+    },
+    "prepare_manager_error_mask_compiler_v2.py": {
+      "bytes": 12667,
+      "sha256": "f88e9fd569a170fd840234c2c16f5d2db2637dac62fd0f5d4128c486b1b656b5"
+    },
+    "prepare_manager_error_mask_v1.py": {
+      "bytes": 5688,
+      "sha256": "fb0e11054eb8cfd68cc29b505ece80f721be036d9a645ec70c6d529acdfd926b"
+    }
+  },
+  "source_sha256": "88f747a5b953070d6cf1fc83fe6c51160ec011a791727fba4880ffd661165313",
+  "status": "FAILED_NOT_ADOPTED"
+}
