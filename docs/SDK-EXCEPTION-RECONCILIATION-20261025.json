@@ -1,0 +1,23 @@
+{
+  "archive": {
+    "bytes": 105985,
+    "members": 52,
+    "path": "docs/evidence/sdk-exception-reconciliation-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "52cfdcb521da41eab8bebd2b713accabb004ceb5f20e47b65e8259becb273577"
+  },
+  "authority": "NONE",
+  "binding_sha256": "a3c059c0a6a1f189e9676d7294e23603f2743e9dcfa81d38472ef48eb321178e",
+  "bound_files": 32,
+  "raw_analysis": "Retained exit1; exactly three BLE001 diagnostics, not rerun",
+  "runtime_admission": false,
+  "schema": "sia.current-sdk-exception-reconciliation.v1",
+  "status": "APPROVED_EXACT_EXCEPTIONS_ONLY",
+  "tests": {
+    "count": 7,
+    "exit": 0,
+    "seconds": "0.013",
+    "unchanged": true
+  },
+  "whole_system_acceptance": false
+}
