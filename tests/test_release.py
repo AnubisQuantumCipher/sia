@@ -37,7 +37,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 import types
 import unittest
@@ -47,6 +46,9 @@ try:
     import sia_test_home  # test-only import-time path isolation
 except ModuleNotFoundError:
     from tests import sia_test_home  # type: ignore
+
+if os.path.expanduser("~") != sia_test_home.ISOLATED_HOME:
+    raise RuntimeError("release tests require the isolated test home")
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -850,8 +852,9 @@ class ReleaseContract(unittest.TestCase):
 
         for relative, document in (("README.md", readme),
                                    ("docs/MANUAL.md", documents["docs/MANUAL.md"])):
-            self.assertIn("SIA memory read refused", document)
-            self.assertIn("readiness line", document)
+            with self.subTest(readiness_document=relative):
+                self.assertIn("SIA memory read refused", document)
+                self.assertIn("readiness line", document)
 
         for relative in ("docs/WHITEPAPER.md", "SECURITY.md"):
             document = documents[relative].casefold()
@@ -3289,7 +3292,8 @@ retain_unowned_cli_before_fence
                 with self.subTest(label=label):
                     calls = []
 
-                    def systemctl(arguments, _label, *, capture=False):
+                    def systemctl(arguments, _label, *, capture=False,
+                                  calls=calls, fragment=fragment, drop_in=drop_in):
                         calls.append(list(arguments))
                         output = (_brainstem_show(fragment, drop_in=drop_in)
                                   if capture else b"")
@@ -5424,10 +5428,9 @@ ollama_runtime_receipt_valid
             managed = os.path.join(state, "managed-install")
             os.makedirs(share, exist_ok=True)
             os.makedirs(managed, exist_ok=True)
-            active_prefix = (_owned_metadata_shell(installer) + tree +
-                             (selected_functions
-                              if selected_functions is not None else functions) +
-                             "\nstep() { :; }\n")
+            active_prefix = (prefix if selected_functions is None else
+                             _owned_metadata_shell(installer) + tree +
+                             selected_functions + "\nstep() { :; }\n")
             variables = f'''
 SHARE={shlex.quote(share)}
 STATE={shlex.quote(state)}
@@ -7226,6 +7229,7 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
         file_source = uninstaller.split(
             "owned_file_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
                 "\nPY\n}", 1)[0]
+        self.assertIn(file_source, file_function)
         tree_body = uninstaller.split("owned_tree_cas() {", 1)[1].split(
             "\n}\n\nowned_tree_generation()", 1)[0]
         tree_function = "owned_tree_cas() {" + tree_body + "\n}\n"

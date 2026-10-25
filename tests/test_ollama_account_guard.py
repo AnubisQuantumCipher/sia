@@ -18,6 +18,9 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+if os.path.expanduser("~") != sia_test_home.ISOLATED_HOME:
+    raise RuntimeError("account-guard tests require the isolated test home")
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(

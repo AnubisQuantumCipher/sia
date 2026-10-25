@@ -23,6 +23,9 @@ try:
 except ModuleNotFoundError:
     from tests import sia_test_home  # type: ignore
 
+if os.path.expanduser("~") != sia_test_home.ISOLATED_HOME:
+    raise RuntimeError("marketplace tests require the isolated test home")
+
 
 REPO = Path(__file__).resolve().parent.parent
 RELEASE_VERSION = json.loads(
