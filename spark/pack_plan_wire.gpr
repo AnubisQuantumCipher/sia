@@ -1,0 +1,29 @@
+--  Conditional retirement policy only; no protected actuator or whole-system proof.
+project Pack_Plan_Wire is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "tests");
+   for Source_Files use
+     ("sia_policy.ads", "sia_policy.adb", "sia_pack_retirement.ads",
+      "sia_pack_retirement.adb", "pack_retirement_tests.adb",
+      "pack_retirement_test_support.ads", "pack_retirement_test_support.adb",
+      "sia_continuity.ads", "sia_continuity.adb",
+      "sia_continuity_record_wire.ads", "sia_continuity_record_wire.adb",
+      "sia_pack_plan_wire.ads", "sia_pack_plan_wire.adb",
+      "pack_plan_wire_tests.adb", "pack_plan_wire_test_support.ads",
+      "pack_plan_wire_test_support.adb");
+   for Object_Dir use "pack-plan-obj";
+   for Exec_Dir use "pack-plan-bin";
+   for Main use ("pack_retirement_tests.adb", "pack_plan_wire_tests.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",
+         "-gnatw.o", "-O2", "-g");
+      for Local_Configuration_Pragmas use "restrictions.adc";
+   end Compiler;
+   package Prove is
+      for Proof_Switches ("Ada") use
+        ("--level=2", "--report=all", "-W=all", "--warnings=error",
+         "--checks-as-errors=on", "--proof-warnings=on",
+         "--prover=z3,cvc5,altergo", "-j1");
+   end Prove;
+end Pack_Plan_Wire;
