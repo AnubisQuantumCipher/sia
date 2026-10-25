@@ -1,0 +1,162 @@
+{
+  "status": "OBSERVED_DIAGNOSTIC_NOT_STACK_ACCEPTANCE",
+  "source_commit": "52107954fd197b51d940551b88353af720306e14",
+  "source_tree": "a112266fb31a2a216ddcfa1965b7382c5bf31095",
+  "source_changed": false,
+  "main_and_transport_compile": "exit0; empty streams; original strict project switches plus reporting flags; full -U roots",
+  "no_secondary_stack_control": "exit4; NOT_ADOPTED; original complete main-project roster",
+  "reports": {
+    "scope": "Main and two transport project compiler reports; per-function only, no binder/link/runtime closure or call-chain maximum",
+    "su_reports": 102,
+    "ci_reports": 102,
+    "rows": 1324,
+    "nonstatic_rows": [
+      {
+        "report": "source/spark/obj/continuity-probe/sia_continuity_checkpoint_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_checkpoint_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 9696,
+        "qualifier": "dynamic,bounded"
+      },
+      {
+        "report": "source/spark/obj/continuity-probe/sia_continuity_current_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_current_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 10288,
+        "qualifier": "dynamic,bounded"
+      },
+      {
+        "report": "source/spark/obj/probe/sia_continuity_checkpoint_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_checkpoint_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 9696,
+        "qualifier": "dynamic,bounded"
+      },
+      {
+        "report": "source/spark/obj/probe/sia_continuity_current_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_current_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 10288,
+        "qualifier": "dynamic,bounded"
+      },
+      {
+        "report": "source/spark/obj/sia_continuity_checkpoint_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_checkpoint_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 9696,
+        "qualifier": "dynamic,bounded"
+      },
+      {
+        "report": "source/spark/obj/sia_continuity_current_wire.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_continuity_current_wire.adb:2:4:Decode_Header",
+        "bytes_reported": 10288,
+        "qualifier": "dynamic,bounded"
+      }
+    ],
+    "secondary_allocation_edges": [
+      {
+        "report": "source/spark/obj/pack_proposal_probe.ci",
+        "allocation_edges": [
+          "edge: { sourcename: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:pack_proposal_probe__report.11\" targetname: \"system__secondary_stack__ss_allocate\" label: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:120:26\" }",
+          "edge: { sourcename: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:pack_proposal_probe__report.11\" targetname: \"system__secondary_stack__ss_allocate\" label: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:120:26\" }",
+          "edge: { sourcename: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:pack_proposal_probe__report.11\" targetname: \"system__secondary_stack__ss_allocate\" label: \"/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/pack_proposal_probe.adb:120:26\" }"
+        ]
+      }
+    ],
+    "largest_reported_frames": [
+      {
+        "report": "source/spark/obj/continuity_frame_wire_tests.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/continuity_frame_wire_tests.adb:8:1:Continuity_Frame_Wire_Tests",
+        "bytes_reported": 748848,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/consolidation_tests.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/consolidation_tests.adb:4:1:Consolidation_Tests",
+        "bytes_reported": 694240,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity_approval_test_support.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/continuity_approval_test_support.adb:224:4:Check_Empty_And_Extra",
+        "bytes_reported": 316192,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity-probe/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:17:4:Take",
+        "bytes_reported": 241248,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/probe/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:17:4:Take",
+        "bytes_reported": 241248,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:17:4:Take",
+        "bytes_reported": 241248,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity_transition_tests.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/continuity_transition_tests.adb:5:1:Continuity_Transition_Tests",
+        "bytes_reported": 163456,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity-probe/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:36:4:Finish",
+        "bytes_reported": 156048,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/probe/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:36:4:Finish",
+        "bytes_reported": 156048,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/sia_pack_proposal.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/src/sia_pack_proposal.adb:36:4:Finish",
+        "bytes_reported": 156048,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity_tests.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/continuity_tests.adb:4:1:Continuity_Tests",
+        "bytes_reported": 149760,
+        "qualifier": "static"
+      },
+      {
+        "report": "source/spark/obj/continuity_approval_test_support.su",
+        "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/stack-usage-v1/source/spark/tests/continuity_approval_test_support.adb:243:4:Check_History",
+        "bytes_reported": 135792,
+        "qualifier": "static"
+      }
+    ]
+  },
+  "independent_review": {
+    "reviewer": "existing /root/assurance_architecture_review; actual GPT-6.1",
+    "mode": "read-only; no independent execution",
+    "report_sha256": "085493094e33a6d64bb9f5bc84287c23a2fe4c1976c01a8952b442556a2a3e66",
+    "result": "No concrete blocker or correction found for evidence-only checkpoint. Verified raw report inventory, transport exit statuses, six installed runtime source hashes, argument sizing and indirect traceback behavior. No prebuilt RTS correspondence, cumulative maxima or absence of allocation through unreported callees certified.",
+    "next": "Version-bound actual linked entrypoint, binder/elaboration, RTS/C/callback/exception and provisioned primary/secondary storage analysis. Missing bodies remain unknown."
+  },
+  "archive": {
+    "path": "docs/evidence/ada-stack-diagnostic-20261025.tar.gz",
+    "sha256": "7d512c217746bbdf09a75f97c764f31c8db56162e60f9adfabaeb3e2f57b068b",
+    "bytes": 462286,
+    "members": 233,
+    "readback": "all member bytes/hash equal"
+  },
+  "limitations": [
+    "No full runtime/link closure",
+    "No cumulative stack maximum",
+    "No fixed secondary-stack guarantee",
+    "No new proof or runtime execution",
+    "Endpoint hash equality does not establish continuous custody",
+    "Installed/runtime/release/system acceptance remain OPEN"
+  ],
+  "references": {
+    "gcc": "https://gcc.gnu.org/onlinedocs/gcc-16.1.0/gcc/Developer-Options.html",
+    "gnat": "https://docs.adacore.com/gnat_ugx-docs/html/gnat_ugx/gnat_ugx/the_stacks.html"
+  }
+}

@@ -1,3 +1,21 @@
+# Stack diagnostic update — 2026-10-25
+
+OBSERVED / INCOMPLETE. Unchanged source52107954fd197b51d940551b88353af720306e14
+compiled under the main and both existing transport projects with full -U roots
+and stack/callgraph reporting. All three builds exit0; per-function reports are
+not cumulative stack bounds. The No_Secondary_Stack experiment fails on the
+test adapter and is NOT_ADOPTED. Installed runtime sources expose an indirect
+traceback wrapper and potentially heap-growing secondary stack; source-to-prebuilt
+runtime correspondence remains unproved. Full contracts and diagnostics retained.
+
+See [evidence, assumptions and next step](ADA-STACK-DIAGNOSTIC-20261025.md).
+Next: version-bound linked-entrypoint/binder/RTS/C/exception analysis against
+provisioned primary and secondary storage. Missing bodies remain unknown.
+DYN06, full proof, R05 BOTH, all original runtime/installed/release gates remain.
+No installed changes, policy waivers or release acceptance.
+
+---
+
 # Current completion path
 
 Owner: the sole integration owner in thread
