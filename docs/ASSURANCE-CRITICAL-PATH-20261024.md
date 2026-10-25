@@ -7,6 +7,12 @@ fixtures, domain, budgets and permission limits remain controlling. The
 [R05 authorization correction](R05-AUTHORIZATION-CORRECTION-20261024.md)
 supersedes earlier approval claims; no R05 requirement retirement is accepted.
 
+The [exact Ada reference reconciliation](STANDARDS-REFERENCE-RECONCILIATION-20261025.md)
+resolves the missing Ada 95 and mismatched modern-guide files. Both publisher
+downloads match the required hashes; the modern guide's contract-inheritance
+error is documented against the Ada Reference Manual. Complete guideline
+applicability, implementation mapping and semantic acceptance remain open.
+
 | Order | Gate or blocker | Observable completion condition |
 | --- | --- | --- |
 | 1 | R05 current retained admission | Every call performs current policy/callback checks. The [experimental candidate](RETAINED-FRESH-ADMISSION-20261024.md) removes success reuse, but authorization for retiring mandatory expensive reuse and its original count assertion is unverified. Both obligations remain open. Exact-source stale-policy, changed-image/VERSION, original callback/refusal order and full-workload/resource gates remain. Targeted and 161-method replay tests pass; [delivery/resident qualification](RETAINED-DELIVERY-QUALIFICATION-20261024.md) still times out under unchanged caps. |
