@@ -52,7 +52,9 @@ jobs:
               raise SystemExit('Frozen analyzer rule identity mismatch')
           names = ('scripts/assurance_acceptance_manifest.py', 'tests/test_assurance_acceptance_manifest.py',
                    'spark/check-proof-summary.py', 'spark/tests/test_proof_summary.py',
-                   'spark/tests/test_proof_summary_overloads.py')
+                   'spark/tests/test_proof_summary_overloads.py',
+                   'bin/siaeventpackcapture.py', 'bin/siaeventpackproposal.py',
+                   'tests/test_event_pack_proposal.py')
           forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
           for name in names:
               with Path(name).open('rb') as source:
@@ -74,6 +76,9 @@ jobs:
             spark/check-proof-summary.py \
             spark/tests/test_proof_summary.py \
             spark/tests/test_proof_summary_overloads.py \
+            bin/siaeventpackcapture.py \
+            bin/siaeventpackproposal.py \
+            tests/test_event_pack_proposal.py \
             > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
           # Bounded previews only; the exit/stderr/complete-JSON gates below
           # still reject a failure even when its diagnostic output is larger.

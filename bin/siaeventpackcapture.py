@@ -11,6 +11,7 @@ import siaeventpack as codec
 import siaeventpackplan as planner
 import siaeventpackreader as reader
 import siaeventplan as capture_module
+import siaeventpackproposal as proposal
 
 
 POLICIES = ("MAX_EVENT_INDEX_RECORDS", "MAX_EVENT_INDEX_BYTES", "MAX_STATE_JSON_BYTES",
@@ -111,3 +112,129 @@ def prepare_captured(owner, *, organ, prefix, identifiers, capture):
     capture.current()
     _current(owner, capture, policy)
     return result
+
+
+def _proposal_dependencies(owner, capture, policy, key):
+    # Reserve the logical detached-view envelope before constructing it.
+    # Existing path strings, generations and directory entries remain borrowed.
+    capture.budget.reserve((key, "dependency-view"),
+                           4096 + 1024 * (len(capture.files) + len(capture.directories)))
+    dependencies = {"schema": "sia-pack-capture-v1", "policies": list(policy),
+                    "policy_names": list(POLICIES), "sources": capture.dependencies()}
+    size = capture_module._size(dependencies, policy[2])
+    capture.budget.reserve((key, "dependencies"), 4096 + 2 * size)
+    return capture_module._json(owner, dependencies)
+
+
+def _proposal_reservation(count):
+    # At most four full manifests cover retained selection plus transient
+    # reference records, joined records and fallback output. Eight frames cover
+    # fixed rosters, frame concatenation/hash slices and generation digests;
+    # generation JSON is separately limited to a 4096-byte scratch value.
+    # Container allocator overhead is not proved by this logical accounting.
+    manifest_bytes = len(proposal.MANIFEST_TAG) + 8 + 72 * count
+    return 4 * manifest_bytes + 8 * proposal.FRAME_BYTES + 4096
+
+
+def _original_generations(owner, organ, records, capture):
+    result = []
+    for identifier, raw in records:
+        relative = owner["_event_index_relative"](organ, identifier.decode("ascii"))
+        if relative not in capture.files:
+            raise ValueError("pack proposal original was not captured")
+        item = capture.files[relative]
+        if item is None:
+            result.append((False, proposal.ZERO))
+            continue
+        if item["raw"] != raw:
+            raise ValueError("pack proposal original bytes changed")
+        capture_module._generation_shape(item["generation"], capture_module.F_KEYS)
+        capture_module._size(item["generation"], 4096)
+        encoded = capture_module._json(owner, item["generation"])
+        result.append((True, proposal.digest(b"LEGACY-GENERATION", encoded)))
+    return tuple(result)
+
+
+def _proposal_parts(owner, organ, prefix, identifiers, capture, result):
+    packed, represented, fallback = result
+    if packed is None:
+        raise ValueError("pack retirement proposal has no target")
+    selected = tuple(sorted(represented + fallback))
+    if tuple(key.decode("ascii") for key, _raw in selected) != identifiers:
+        raise ValueError("pack proposal selection correspondence")
+    target = codec.decode(packed, organ, prefix)
+    relative = "/".join(("event-packs", organ, prefix[:2], prefix + ".siaep"))
+    if relative not in capture.files:
+        raise ValueError("pack proposal prior was not captured")
+    previous = capture.files[relative]
+    prior_raw = None if previous is None else previous["raw"]
+    if previous is not None and type(prior_raw) is not bytes:
+        raise ValueError("pack proposal prior bytes unavailable")
+    prior = () if prior_raw is None else codec.decode(prior_raw, organ, prefix)
+    _proposal_correspondence(owner, organ, selected, prior, target, represented, fallback, capture)
+    rosters = tuple(proposal.references(organ, prefix, rows)
+                    for rows in (prior, target, represented))
+    selected_bytes = proposal.manifest(proposal.references(organ, prefix, selected))
+    fallback_bytes = proposal.manifest(proposal.references(organ, prefix, fallback))
+    originals = _original_generations(owner, organ, represented, capture)
+    old_target = proposal.digest(b"TARGET", b"\0" if prior_raw is None else b"\1" + prior_raw)
+    new_target = proposal.digest(b"TARGET", b"\1" + packed)
+    return rosters, selected_bytes, fallback_bytes, originals, old_target, new_target
+
+
+def _proposal_correspondence(owner, organ, selected, prior, target, represented, fallback, capture):
+    old = dict(prior)
+    expected = dict(prior)
+    for identifier, raw in selected:
+        relative = owner["_event_index_relative"](organ, identifier.decode("ascii"))
+        if relative not in capture.files:
+            raise ValueError("pack proposal selection was not captured")
+        item = capture.files[relative]
+        original = old.get(identifier) if item is None else item["raw"]
+        if original is None or original != raw:
+            raise ValueError("pack proposal selection bytes mismatch")
+    for identifier, raw in represented:
+        if identifier in expected and expected[identifier] != raw:
+            raise ValueError("pack proposal represented conflict")
+        expected[identifier] = raw
+    if tuple(sorted(expected.items())) != target:
+        raise ValueError("pack proposal target coverage mismatch")
+    for identifier, raw in fallback:
+        relative = owner["_event_index_relative"](organ, identifier.decode("ascii"))
+        if identifier in expected or capture.files[relative] is None \
+                or capture.files[relative]["raw"] != raw:
+            raise ValueError("pack proposal fallback mismatch")
+
+
+def prepare_proposal(owner, *, organ, prefix, identifiers, capture, operation):
+    """Return (frame, selection, fallback, dependencies, transport_result).
+
+    Operation is an untrusted (epoch, transaction, revision, permission) reference.
+    This byte-bound observation grants no authentication or effect authority.
+    Caller retains the live capture and must revalidate at any later use.
+    """
+    proposal.request(operation)
+    policy = _policies(owner)
+    _current(owner, capture, policy)
+    _selection(owner, organ, prefix, identifiers, policy)
+    key = ("event-pack-proposal", organ, prefix)
+    if key in capture.budget.items:
+        raise ValueError("pack proposal already attempted in capture")
+    capture.budget.reserve(key, _proposal_reservation(len(identifiers)))
+    result = prepare_captured(owner, organ=organ, prefix=prefix,
+                              identifiers=identifiers, capture=capture)
+    _current(owner, capture, policy)
+    parts = _proposal_parts(owner, organ, prefix, identifiers, capture, result)
+    rosters, selected, fallback, originals, old_target, new_target = parts
+    dependencies = _proposal_dependencies(owner, capture, policy, key)
+    capture_module._size(capture.root_identity, 4096)
+    corpus = capture_module._json(owner, capture.root_identity)
+    scope = (proposal.digest(b"CORPUS", corpus), proposal.digest(b"CAPTURE", dependencies),
+             proposal.digest(b"SELECTION", selected), proposal.digest(b"FALLBACK", fallback),
+             old_target, new_target)
+    frame = proposal.encode(organ, prefix, operation, scope, *rosters,
+                            len(identifiers), len(result[2]), originals)
+    _current(owner, capture, policy)
+    capture.current()
+    _current(owner, capture, policy)
+    return frame, selected, fallback, dependencies, result

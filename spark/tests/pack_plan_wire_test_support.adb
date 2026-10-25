@@ -1,7 +1,5 @@
 with Ada.Text_IO;
 with SIA_Policy;
-with SIA_Pack_Retirement;
-with SIA_Pack_Plan_Wire;
 package body Pack_Plan_Wire_Test_Support is
    use SIA_Policy;
    use SIA_Pack_Retirement;
