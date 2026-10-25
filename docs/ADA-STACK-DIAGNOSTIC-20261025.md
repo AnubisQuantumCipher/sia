@@ -98,3 +98,11 @@ evidence checkpoint. It did not execute builds or establish whole-stack acceptan
 
 References: [GCC 16.1 developer options](https://gcc.gnu.org/onlinedocs/gcc-16.1.0/gcc/Developer-Options.html)
 and [GNAT stack guide](https://docs.adacore.com/gnat_ugx-docs/html/gnat_ugx/gnat_ugx/the_stacks.html).
+
+## Follow-up: linked continuity adapter
+
+The [subsequent exact-binary diagnostic](LINKED-CONTINUITY-RUNTIME-20261025.md)
+retains binder/link evidence, an observed compiled secondary-stack-to-malloc path,
+and the complete original 17-test process module passing on that new binary.
+It narrows the runtime dependency uncertainty without establishing allocation
+path execution, complete stack bounds, installed behavior or system acceptance.
