@@ -1,3 +1,25 @@
+# Compiler diagnostic plugin build failed — 2026-10-25
+
+The [isolated plugin experiment](NATIVE-FORTIFIED-PLUGIN-20261025.md) failed
+its one strict build in the installed GCC headers. No shared library was
+produced, no behavior controls ran, and no plugin was installed. The source
+review repaired pre/post matching and explicit UNKNOWN refusal defects; that
+is source evidence only. Full raw diagnostics, exact command and tracked
+before/after identities are retained. The original plugin-free analysis gate
+remains unchanged and incomplete. No warning suppression or unchanged retry
+is admitted by this result.
+
+Return to existing SIA obligations while retaining this failed route. The
+prepared recovery scalar decomposition remains uncompiled/unproved; its
+native execution custody prerequisite is still unresolved. Its
+[equivalence proof requires explicit harness coverage](RECOVERY-PROOF-SCOPE-20261025.md),
+which a package-only proof cannot supply. R05 still requires
+meaningful expensive reuse together with fresh current callbacks and policy.
+Live projector aliases must survive until the existing final detachment.
+No new cache candidate is justified by the latest read-only boundary review.
+
+---
+
 # Fortified-call analyzer model diagnostic — 2026-10-25
 
 The [new source-bound compiler diagnostic](NATIVE-FORTIFIED-MODEL-20261025.md)
