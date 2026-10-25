@@ -1,3 +1,16 @@
+# Original R05 test gate restored — 2026-10-25
+
+The [original executable reuse assertion](R05-EXECUTABLE-GATE-RESTORATION-20261025.md)
+is restored without changing production admission. Its complete selected roster
+runs16tests in55.763s and fails exactly that assertion; all other selected controls
+pass. The experimental opposite-count method remains in historical evidence,
+not the active gate. Current-policy tests and all original fixtures/caps remain.
+No skip, expected failure or CI exclusion masks the unmet reuse requirement.
+This corrects test coverage, not the runtime bottleneck. R05 BOTH remains FAILED;
+full workloads, proof, custody, installed continuity and release remain open.
+
+---
+
 # Native startup error propagation — 2026-10-25
 
 TESTED / EXPERIMENTAL. The [continuity adapter guard](NATIVE-STARTUP-GUARD-20261025.md)

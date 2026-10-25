@@ -1,9 +1,9 @@
-"""Experimental fresh-admission checks; not an approved R05 oracle replacement.
+"""Required R05 reuse regression, restored after the approval correction.
 
-The original reuse assertion remains required. Its replacement below was made
-under a misbound approval; docs/R05-AUTHORIZATION-CORRECTION-20261024.md records
-the correction. These experimental checks do not establish reuse compliance.
-Image identity cannot certify mutable callbacks or current policy.
+The original fixture and derivation-count assertions remain binding. Separate
+current-policy tests must also pass; cached success must not bypass them.
+The earlier experimental opposite-count test is retained as historical evidence.
+This test alone proves neither useful speed nor complete resource qualification.
 """
 
 try:
@@ -30,7 +30,7 @@ class RetainedImageMemo(unittest.TestCase):
         self.source._VALIDATED_BATCHES.clear()
         self.addCleanup(self.source._VALIDATED_BATCHES.clear)
 
-    def test_repeated_validation_preserves_image_and_context_checks(self):
+    def test_second_validation_of_the_same_batch_skips_derivation(self):
         with self.idle.completed() as (case, retained, _committed, _status, _generation):
             owner = case.lib.__dict__
             pin = retained["batch_sha256"]
@@ -46,22 +46,22 @@ class RetainedImageMemo(unittest.TestCase):
             with mock.patch.object(self.source, "_validate_batch_image", counted):
                 first = self.source.validate_batch(owner, retained, pin)
                 second = self.source.validate_batch(owner, retained, pin)
-                self.assertEqual(calls, [pin, pin], "every call checks current policy")
+                self.assertEqual(calls, [pin], "the unchanged image is derived once")
                 self.assertEqual(first, second)
                 if first is not None:
                     self.assertIsNot(first, second, "callers receive their own copy")
-                # A changed image is checked again and refused on its pin.
+                # A changed image is never served from the memo: it is derived
+                # again and refused on its pin.
                 mutated = copy.deepcopy(retained)
                 mutated["status"] = "captured-not-published"
                 mutated["observed_at"] = retained["observed_at"] + 1
                 with self.assertRaises(self.source.SourceBatchRefusal):
                     self.source.validate_batch(owner, mutated, pin)
-                self.assertEqual(len(calls), 3)
-                # Changed owner constants still require full admission.
+                self.assertEqual(len(calls), 2)
+                # Different owner constants are a different key.
                 with mock.patch.dict(owner, {"VERSION": "0.0.0"}):
                     self.source.validate_batch(owner, retained, pin)
-                self.assertEqual(len(calls), 4)
-                self.assertEqual(self.source._VALIDATED_BATCHES, {})
+                self.assertEqual(len(calls), 3)
 
 
 if __name__ == "__main__":

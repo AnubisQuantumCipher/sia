@@ -1,0 +1,79 @@
+{
+  "archive": "r05-executable-gate-20261025.tar.gz",
+  "archive_bytes": 84715,
+  "archive_sha256": "5a0b48e748b78b7bfdaac797e00a774f929a70a6b4019ef35193ea75713922ce",
+  "current_policy": "Separate current-context, source-checkpoint and preflight controls PASS",
+  "limitations": "Later original method assertions unreachable after failure. No runtime repair, R05 closure, install or release.",
+  "members": {
+    "arithmetic.json": {
+      "bytes": 1386,
+      "sha256": "accbccded4d0e00e89b99ae29acb8eb5c801ca5d5468eb44addcd8ce4e1c6ff5"
+    },
+    "build_evidence.py": {
+      "bytes": 3362,
+      "sha256": "4a9ee9f767e33e8560db684c8df19228c2bc8888759193d9f5bef2d35227a757"
+    },
+    "experimental-test_retained_image_memo.py": {
+      "bytes": 2997,
+      "sha256": "fbf4ed0065f9f4421416d71acaccd44fc000da9ac74fb55df69cc47f27bfe51e"
+    },
+    "fetch-observation.txt": {
+      "bytes": 500,
+      "sha256": "5f48c1cba40e93c3df209e9c4834581e48e9ad2d22ab146d111705baa5e7582d"
+    },
+    "independent-source-review.txt": {
+      "bytes": 1292,
+      "sha256": "8d81f76df7ae0b4d03f6bf10aba8dbb70ee818461b5bfccb78ad97b2cabd29fa"
+    },
+    "inputs.json": {
+      "bytes": 81689,
+      "sha256": "08734eb9d0ab78a2fe8e8b355ae1cf0e73036f2f86eda59ed2ee2f7cc42cd951"
+    },
+    "original-test_retained_image_memo.py": {
+      "bytes": 2868,
+      "sha256": "c1c4c43d902e03147ab989707e0b5b9ec719bf62962c18700eb82bae6261ee2d"
+    },
+    "preparation.json": {
+      "bytes": 768,
+      "sha256": "6dad96a919f8c9d645437c2add265c78fe5f4846c76e6e8300f60e1073afafe4"
+    },
+    "result.json": {
+      "bytes": 161494,
+      "sha256": "e919950de8881adab9abd8886211105dc43c5e9a9e9a47fd495364d72889d4fe"
+    },
+    "run.py": {
+      "bytes": 4000,
+      "sha256": "cef904442b90696fe6e06be4c201ca962ac1be01d11cefa81ec45a1d2470854d"
+    },
+    "static-result.json": {
+      "bytes": 3149,
+      "sha256": "549b48ddae7f0fb4402f17df8731829c8ca24488409b69d6816b5fe08f719ff3"
+    },
+    "static.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "static.stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "stderr": {
+      "bytes": 4319,
+      "sha256": "81975175e0286951e4913a60de7865f2851d52a746abaf7e8f2d1751bcefda49"
+    },
+    "stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "test_retained_image_memo.py": {
+      "bytes": 2974,
+      "sha256": "ee8326a9bc2e96ca73c79b793822b74e58dfea44198a40e477be24b67e563058"
+    }
+  },
+  "original_test_commit": "ec713cacd2ff77905996e55b9f245bce88897b55",
+  "review": "ActualGPT6.1 read-only source review; no independent execution",
+  "runtime": "16 tests in55.763s; exit1; original reuse assertion FAILED; no skips/errors",
+  "static": "Frozen167-rule partial profile, exit0, zero findings; no whole-tree claim",
+  "status": "TEST_GATE_RESTORED_R05_FAILED_NONFINAL",
+  "tested_base": "01ad7fff8bef8e202fe00b4e723edcf4e34e7084"
+}
