@@ -29,6 +29,11 @@ For SDK work, the [negative results](SDK-SWEEP-NEGATIVE-RESULTS-20261024.md)
 supersede v6's candidate disposition and retain v7's full-suite timeout.
 The [current dependency map and exact-input record](CONTINUITY-CUSTODY-DEPENDENCIES-20261025.md)
 also retain the subsequent v8 full-suite timeout and latest native failure.
+The [complete pair-shape diagnostic](SDK-PAIR-COST-DIAGNOSTIC-20261025.md)
+completed the interrupted method in isolation; its final name in the full-run
+log is not evidence of a reproduced local hang. No faster qualified successor
+or full-suite pass follows. The same readback preserves the already recorded
+three-site SDK exception decision without extending it to R05 or other gates.
 No unchanged retry is justified by these results. The original no-hooks
 restriction and actual-error/callback obligations remain controlling. For C,
 the latest structural review identified no redundant analyzer-state dimension;

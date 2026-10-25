@@ -1,0 +1,83 @@
+{
+  "archive": "evidence/sdk-pair-cost-20261025.tar.gz",
+  "archive_bytes": 34496,
+  "archive_sha256": "490adfbbc464d780724054c3b8ae7c21da0788115b734784dd7278862c7812b4",
+  "authority": "NONE",
+  "files": [
+    {
+      "bytes": 2400,
+      "path": "measure.py",
+      "sha256": "1a1f23bb7d3fa50263cf1c1340833582a3d605ad632fa8b71426efd006d5b7d0"
+    },
+    {
+      "bytes": 2193,
+      "path": "source-static.json",
+      "sha256": "3a3b02e64aad0ffa4c21d17752301e59e95a5be41e67a45be100392990d4c236"
+    },
+    {
+      "bytes": 9798,
+      "path": "admission.json",
+      "sha256": "ad5ac2784e3e0982e5e914a6336aaf6107a99d8cb570a274f669ef066330aede"
+    },
+    {
+      "bytes": 17319,
+      "path": "result.json",
+      "sha256": "9da60f3623a901b40baeb6f11b11c36099535c99302ce88357e18764c85fe686"
+    },
+    {
+      "bytes": 667,
+      "path": "stdout.json",
+      "sha256": "091ec755980d99b9b2a83a663dc398b7080becd8540c8ba3add1821d050f169d"
+    },
+    {
+      "bytes": 274,
+      "path": "stderr",
+      "sha256": "cb0d14fb757efecaf3801e7d871aad712987fe9f096c57f0b9a9ef01c1b3c601"
+    },
+    {
+      "bytes": 1227,
+      "path": "independent-review.txt",
+      "sha256": "120e3ac8866e999d4e99491b3e8afd29b4fdee89d87a7acf55c62b3775927542"
+    },
+    {
+      "bytes": 2073,
+      "path": "scope-readback.json",
+      "sha256": "1ff4a1759cb509c9cf0e8055ac0ca457feeb310c15ffc62a6309166550d79d31"
+    },
+    {
+      "bytes": 3430,
+      "path": "source/runner-source.py",
+      "sha256": "26bbaeb1e4fc4bcf8f5c56df36b368d0deea39821f9a2b488f541c01380d68d0"
+    },
+    {
+      "bytes": 35075,
+      "path": "source/production_checker.py",
+      "sha256": "d08dcee4d335892ce79f25375737ee9c023e5ddc9799962b5c6ff5e0cc3ff042"
+    },
+    {
+      "bytes": 72641,
+      "path": "source/origin_probe.py",
+      "sha256": "4eeca30ff4ac254af668115caf4d3ac85af56634a6fdbef4f043b44e5f46eb97"
+    },
+    {
+      "bytes": 10576,
+      "path": "source/test_support.py",
+      "sha256": "0f6c371963916ea423df3d724a11f41e74cff043420e8497011ac83ee8cea8ee"
+    },
+    {
+      "bytes": 4207,
+      "path": "source/test_name_and_snapshot.py",
+      "sha256": "022b6200d697d4ded86e7a385250aa22530ba3b3e1e831b2f40dfd95b21da633"
+    },
+    {
+      "bytes": 2379,
+      "path": "package_report.py",
+      "sha256": "f998cc0453765adf8c90386cabce9ed8c8347b5e81a476f2a2826f9f61d32cf5"
+    }
+  ],
+  "full_suite_qualification": false,
+  "native_admission": false,
+  "repeated_pack_equal": true,
+  "schema": "sia.sdk-pair-cost-evidence.v1",
+  "status": "INSTRUMENTED_SINGLE_ORIGINAL_METHOD_ONLY"
+}
