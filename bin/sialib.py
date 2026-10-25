@@ -1727,8 +1727,8 @@ def _event_from_replay_record(record):
         values = record.get(field)
         if not isinstance(values, list) \
                 or len(values) > MAX_LEDGER_PENDING_RECORDS \
-                or values != sorted(set(values)) \
-                or any(not isinstance(value, str) for value in values):
+                or any(not isinstance(value, str) for value in values) \
+                or values != sorted(set(values)):
             raise ValueError("event replay record is invalid")
     _canonical_utc_timestamp(record["ts"])
     timestamp = datetime.datetime.strptime(
