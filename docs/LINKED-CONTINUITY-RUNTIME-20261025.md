@@ -77,3 +77,11 @@ source archive, build/runtime commands and logs, binder, map, selected disassemb
 per-object reports and identities. All archive members were read back unchanged.
 Existing independent GPT-6.1 read-only review found no correction to the scoped
 claims; it did not perform independent execution or establish system acceptance.
+
+## Follow-up: selected runtime object correspondence
+
+A [later reproduction diagnostic](RTS-OBJECT-CORRESPONDENCE-20261025.md)
+matched the entire debug-stripped secondary-stack, memory-wrapper and exception
+objects from the same runtime archive. Its exception reports expose dynamic
+frames without compiler upper bounds. This strengthens selected source/object
+correspondence; complete call paths, callbacks and stack budgets remain unresolved.
