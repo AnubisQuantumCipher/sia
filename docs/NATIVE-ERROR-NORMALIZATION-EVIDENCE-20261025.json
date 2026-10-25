@@ -1,0 +1,116 @@
+{
+  "acceptance": false,
+  "archive": "docs/evidence/native-error-normalization-20261025.tar.gz",
+  "archive_bytes": 31269,
+  "archive_sha256": "78066fddf56ccd224790e498ddde3f80fb5d909731a97eb506d04e84a084e718",
+  "files": {
+    "manager-error-normalization-compiler-preparation-v1/CONTROLLER.diff": {
+      "bytes": 2844,
+      "sha256": "94b52a54ce2a9ce26b348806feea32ef74f4391daa5a27789dc380dac6a45520"
+    },
+    "manager-error-normalization-compiler-preparation-v1/run/result.json": {
+      "bytes": 5981,
+      "sha256": "3f337b53d806b5236799caf4501a565d2e024f8ee6a603361305ab19db0c13fa"
+    },
+    "manager-error-normalization-compiler-preparation-v1/run/stderr": {
+      "bytes": 5729,
+      "sha256": "65626b4ccddbe4d9765a1e2f14ba52dbfc3c867918ffcebabe9a7ed09e5b6c6a"
+    },
+    "manager-error-normalization-observer-controls-v1/EVIDENCE-MANIFEST.json": {
+      "bytes": 10368,
+      "sha256": "7972dcc642b1dec0a01c955b46108e042a49096cd773799b96cfe60cd6025b72"
+    },
+    "manager-error-normalization-observer-controls-v1/NO-NATIVE-RETRY-DECISION.json": {
+      "bytes": 822,
+      "sha256": "8bb07ae58c1b422a8596979694841373c2d970216d8b0d238d6ccf174b2294a2"
+    },
+    "manager-error-normalization-observer-controls-v1/command-scope-readback.json": {
+      "bytes": 2908,
+      "sha256": "763315e7b9ff6c502cfacf1144bf53a9a57ee1930348177e401b6f485a9bc7aa"
+    },
+    "manager-error-normalization-observer-controls-v1/compiler-failure-audit.json": {
+      "bytes": 1070,
+      "sha256": "5407c12cb4695f0bea85ccd33688eff8bc126d51cede9ad28530cd7575460c8c"
+    },
+    "manager-error-normalization-observer-controls-v1/controls.stderr": {
+      "bytes": 6825,
+      "sha256": "a067e2def4b224d6f591f5903caa28d6f35254197c99310f5d8fe519a4c6559a"
+    },
+    "manager-error-normalization-observer-controls-v1/independent-failure-review.txt": {
+      "bytes": 802,
+      "sha256": "2877de67787c1df73da7bdd0f0c804ad574aa90fd0774d314bc0403593811998"
+    },
+    "manager-error-normalization-observer-controls-v1/independent-review.txt": {
+      "bytes": 842,
+      "sha256": "04ae4096dda3d554ef7478bc12c3d9bbb415e603a226c71dc4556376426af4ba"
+    },
+    "manager-error-normalization-observer-controls-v1/mw_fail-supergraph.txt": {
+      "bytes": 592,
+      "sha256": "f0ff821ae3189a096ddc82b117e99cd4bff0aac57e65a7aa948af75383c3719f"
+    },
+    "manager-error-normalization-observer-controls-v1/prelaunch-failure-v1.json": {
+      "bytes": 1077,
+      "sha256": "cbf457ec6c8bdb7da512fd64bf0ca302c90f11c9050d5f2d2262ec8aa96b0492"
+    },
+    "manager-error-normalization-observer-controls-v1/readback.stdout": {
+      "bytes": 94,
+      "sha256": "059e398037223f7cbb567a0c4ac9f4124b1b1bfffad5b37a62b196ec135b024b"
+    },
+    "manager-error-normalization-observer-controls-v1/seal-preparation-failure.json": {
+      "bytes": 548,
+      "sha256": "a25403e62dc652b5aee7838c448aff5448def3f14b6dd5bec62284455285b6cf"
+    },
+    "manager-error-normalization-observer-controls-v1/static-addon.json": {
+      "bytes": 1761,
+      "sha256": "a7f4eda9b5822bb4a96cd578c46165f99a909b4f548248e9a99a95cc84c080f8"
+    },
+    "manager-error-normalization-observer-controls-v1/static-result.json": {
+      "bytes": 4210,
+      "sha256": "07812fce7cc436a26eecfcf52bac973dc8ea025bb4981e247550b8bc996fae06"
+    },
+    "manager-error-normalization-observer-controls-v1/test_candidate_namespace.py": {
+      "bytes": 7613,
+      "sha256": "0bf5cf461dad0ca7c97f64715a327b2bc2c172f45fc8d889d525a8f6d41f3209"
+    },
+    "manager-error-normalization-observer-controls-v1/test_observer_controls.py": {
+      "bytes": 17363,
+      "sha256": "73464428abf47f402ca9f54276609c8fb6dbc94556d94c92e7f373a29fd0de72"
+    },
+    "manager-error-normalization-v1/SOURCE-MANIFEST.json": {
+      "bytes": 2986,
+      "sha256": "4639e3cd1caa340ec19155e501ecf68929d6ff007e787a7315eb537d6201a178"
+    },
+    "manager-error-normalization-v1/algebra-and-review.json": {
+      "bytes": 6302,
+      "sha256": "410d82088ae6a3ac786afc20d24333ca23f2f1aa3e68fb58583af96a15c4ec3c"
+    },
+    "manager-error-normalization-v1/errno-source-binding.json": {
+      "bytes": 17169,
+      "sha256": "fe1e7e8b29a861531e663662c09bb88ca52427812196cc2fe49cd98dcfe6daaf"
+    },
+    "manager-error-normalization-v1/source/commission.h": {
+      "bytes": 627,
+      "sha256": "694ef12fca9f342b030d9dfcbe0235b664a360c4cfe5625e72b6f0ac21346662"
+    },
+    "manager-error-normalization-v1/source/witness.h": {
+      "bytes": 5066,
+      "sha256": "3986f0bda76a072dea4cb1d90f4bd22cab88377512270e69647de8446dff8cfe"
+    },
+    "manager-error-normalization-v1/source/witness_io.c": {
+      "bytes": 34255,
+      "sha256": "eca3de50a57a9fe845055e0cdbeb2918ed07b498fe48cc7bbffff12db65eecc3"
+    },
+    "manager-error-normalization-v1/witness_io.diff": {
+      "bytes": 300,
+      "sha256": "85434d7cb62e962f8ab50d77e8ad9a277058ac4d58ec30fcc8ff20bfd0ebff44"
+    }
+  },
+  "limitations": [
+    "Selected forensic evidence, not portable build/run package or complete dependency closure.",
+    "Full incomplete512MiB dump retained locally, bound by failure-audit hash; selected592-byte excerpt included.",
+    "Independent actualGPT6.1 read-only review; no independent execution.",
+    "No current-head C proof, runtime adoption, release, or system assurance established."
+  ],
+  "source_commit_before_diagnostic": "48e91fc72f5e2caaa0da273f2e0333d15e9cdf1a",
+  "status": "FAILED_NOT_ADOPTED"
+}
