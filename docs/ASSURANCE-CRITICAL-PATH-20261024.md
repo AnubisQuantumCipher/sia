@@ -1,3 +1,27 @@
+# Fortified-call analyzer model diagnostic — 2026-10-25
+
+The [new source-bound compiler diagnostic](NATIVE-FORTIFIED-MODEL-20261025.md)
+locates an earlier loss of precision at outgoing control-buffer clearing:
+the checked memset call makes GCC treat caller state as changed. An isolated
+run of the installed compiler reproduces that unknown-effect fallback, while
+ordinary memset uses a modeled fill. The pinned GCC source registers the
+checked handler by name but accepts only the ordinary argument count.
+
+The proposed compiler arity patch is UNBUILT / NOT_ADOPTED. Its existing
+handler still lacks explicit fourth-argument capacity/failure semantics.
+Query diagnostics are intentionally errors under unchanged Werror; they are
+not a successful build or whole-SIA qualification. The internal trace, raw
+outputs, proposed patch and independent source review are retained in the
+[evidence package](NATIVE-FORTIFIED-MODEL-20261025.json).
+
+Next native step: qualify the compiler-model correction and failure paths
+within existing limits before another full witness attempt. Do not remove
+fortification, alter first-fault preservation, suppress warnings or claim
+convergence from this reduced diagnostic. R05 BOTH, original complete proof,
+SDK/custody, installed continuity and all release gates remain open.
+
+---
+
 # Original R05 test gate restored — 2026-10-25
 
 The [original executable reuse assertion](R05-EXECUTABLE-GATE-RESTORATION-20261025.md)
