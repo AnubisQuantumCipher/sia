@@ -53,6 +53,7 @@ jobs:
           names = ('scripts/assurance_acceptance_manifest.py', 'tests/test_assurance_acceptance_manifest.py',
                    'spark/check-proof-summary.py', 'spark/tests/test_proof_summary.py',
                    'spark/tests/test_proof_summary_overloads.py',
+                   'spark/check-allocation-controls.py', 'spark/tests/test_allocation_controls.py',
                    'bin/siaeventpackcapture.py', 'bin/siaeventpackproposal.py',
                    'tests/test_event_pack_proposal.py', 'tests/test_event_pack_admission.py',
                    'tests/test_backup_upload_diagnostics.py')
@@ -77,6 +78,8 @@ jobs:
             spark/check-proof-summary.py \
             spark/tests/test_proof_summary.py \
             spark/tests/test_proof_summary_overloads.py \
+            spark/check-allocation-controls.py \
+            spark/tests/test_allocation_controls.py \
             bin/siaeventpackcapture.py \
             bin/siaeventpackproposal.py \
             tests/test_event_pack_proposal.py \
@@ -107,6 +110,7 @@ jobs:
         run: |
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary_overloads.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_allocation_controls.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_request_packet.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_grant_record.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_scoped_grant_record.py -v
@@ -114,6 +118,34 @@ jobs:
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/resources -p test_cgroup_results.py -v
           timeout --kill-after=5s 30s python3 -B spark/tests/test_continuity_process.py ContinuityEnvelope -v
           timeout --kill-after=5s 30s env PYTHONWARNINGS=error python3 -B -m unittest tests.test_assurance_acceptance_manifest -v
+      # Compile-only controls in the existing job; no new concurrency or proof claim.
+      - name: pinned GNAT allocation compiler controls
+        run: |
+          set -euo pipefail
+          task_gnat_root="$RUNNER_TEMP/sia-allocation-gnat"
+          mkdir "$task_gnat_root"
+          curl --fail --location --silent --show-error --connect-timeout 10 --max-time 60 \
+            --max-filesize 402244219 \
+            https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnat-16.1.0-1/gnat-x86_64-linux-16.1.0-1.tar.gz \
+            --output "$task_gnat_root/toolchain.tar.gz"
+          printf '%s  %s\n' \
+            9f74f58a827a2ad40dd84c72a413e75ea52888e0d8f7e252fba4d26762402703 \
+            "$task_gnat_root/toolchain.tar.gz" | sha256sum -c -
+          timeout --kill-after=5s 60s tar --extract --gzip --no-same-owner --no-same-permissions \
+            --file "$task_gnat_root/toolchain.tar.gz" --directory "$task_gnat_root"
+          task_gnat_compiler="$task_gnat_root/gnat-x86_64-linux-16.1.0-1/bin/gcc"
+          test "$("$task_gnat_compiler" -dumpfullversion)" = '16.1.0'
+          sha256sum "$task_gnat_compiler" spark/restrictions.adc
+          task_control_exit=0
+          prlimit --as=2147483648 --fsize=536870912 --core=0 \
+            timeout --kill-after=5s 60s python3 -B -W error \
+            spark/check-allocation-controls.py --compiler "$task_gnat_compiler" \
+            --output "$RUNNER_TEMP/sia-allocation-results" || task_control_exit=$?
+          # Results and expected negative diagnostics remain in the hosted log.
+          find "$RUNNER_TEMP/sia-allocation-results" -maxdepth 2 -type f \
+            \( -name results.json -o -name stdout -o -name stderr \) \
+            -exec head -c 16384 {} \;
+          test "$task_control_exit" -eq 0
       - name: compile all python
         run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp bin/sia-intent-review
       - name: shell syntax

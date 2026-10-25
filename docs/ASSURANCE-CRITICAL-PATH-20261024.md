@@ -19,6 +19,11 @@ policy. Strict builds, original Ada runtimes, 110 transport/checker tests and
 the original 378-test captured-pack roster pass for its exact composition.
 Full DYN02 semantic enforcement, stack/RTS bounds, compiler-control CI and fresh
 complete proof remain open; historical allocator-control failures are retained.
+The subsequent [compiler-control lane](../spark/allocation-controls/README.md)
+is now declared in the existing hosted job, with a pinned compiler, thirteen
+locally passing compile controls and seven failure-admission tests. Its
+[receipt](ADA-ALLOCATION-CI-20261025.json) distinguishes those local observations
+from still-unverified hosted execution. It does not add full-project proof CI.
 
 | Order | Gate or blocker | Observable completion condition |
 | --- | --- | --- |
