@@ -72,6 +72,7 @@ package SIA_Pack_Partition with SPARK_Mode, Pure is
           Position (Item) = Position (Item'Old) and then
           Selected (Item) = Selected (Item'Old) and then Fallback (Item) = Fallback (Item'Old)
         else Active (Item) and then Value = Record_Value (Selection_Data) and then
+          (Kind = Represented_Record) = Next_Is_Represented (Item'Old, Record_Value (Selection_Data)) and then
           Consumed (Selected (Item)) = Consumed (Selected (Item'Old)) + 1 and then
           Expected (Selected (Item)) = Expected (Selected (Item'Old)) and then
           Expected (Fallback (Item)) = Expected (Fallback (Item'Old)) and then

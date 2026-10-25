@@ -7,6 +7,7 @@ package body SIA_Pack_Plan_Wire with SPARK_Mode is
    end Record_Value;
 
    function Roster_Value (Data : Frame; Start : Roster_Offset) return Roster is
+      pragma Annotate (GNATprove, Hide_Info, "Expression_Function_Body", Record_Start);
    begin
       return (Count => Record_Count (Data (Start + 7)),
               Records => [for I in Record_Index =>
