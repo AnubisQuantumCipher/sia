@@ -1,3 +1,21 @@
+# Runtime callback diagnostic update — 2026-10-25
+
+OBSERVED / INCOMPLETE. [Callback and last-chance evidence](RUNTIME-CALLBACK-CLOSURE-20261025.md)
+extends the selected runtime object correspondence and direct-edge graph. The
+last-chance handler introduces another dynamic frame without a compiler upper
+bound. One stopped debugger child confirms initial callback defaults after
+elaboration under the configured limits; setter routines and relocation-based
+stores remain present. This is not a lifetime invariant or permission to prune
+callback paths. Direct-I/O replacement would not remove the exception runtime's
+independent symbolic-trace/OS-library dependency; no rewrite was adopted.
+
+Next: close native initialization and reachable writer paths with relocation-
+aware evidence and explicit foreign-code assumptions. Full stack bounds, R05
+BOTH and every original acceptance obligation remain open. No new proof,
+installed qualification, merge or release follows.
+
+---
+
 # Stack diagnostic update — 2026-10-25
 
 OBSERVED / INCOMPLETE. Unchanged source52107954fd197b51d940551b88353af720306e14
