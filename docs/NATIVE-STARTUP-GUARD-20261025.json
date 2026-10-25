@@ -1,0 +1,49 @@
+{
+  "status": "TESTED_EXPERIMENTAL_ADAPTER_ONLY",
+  "base_commit": "b71976d497784dd62605cbbc31692dfb3b3036f8",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "44dd586d6b78bd0110824763ef8e2d5bada10b149c324b799ecfef4b56f767e3",
+    "spark/transport/continuity_probe.gpr": "27fdb9295ec9fd5848f06473f7bbb0c8d29df5e81e2cccdaae42008058aa9727",
+    "spark/transport/native/startup_guard.c": "3952cbf7427a2dc4e5ca47974c0387075efbf1e11dd0ccccc3470582f1346903",
+    "spark/tests/native/startup_guard_contract.c": "1d5ea132c3caa98fc3dff39d8bfa12a68a82dceea755fc3cd648f9ef44280866",
+    "spark/tests/test_startup_guard.py": "45bf0bc9b577a810e39a988509de24e785c96ce416e6ba49e711e4f74271ea91"
+  },
+  "final_tests": {
+    "count": 125,
+    "seconds": "11.712",
+    "exit": 0,
+    "skips": 0
+  },
+  "original_roster_preserved": true,
+  "native_fault_cases": "seven return74 before input EOF; no stdout; injector stderr only",
+  "negative_control": "guard removal reaches normal response in seven cases; not parent acceptance evidence",
+  "normal_build": "full Ada/C compilation and corrected default GPR link exit0 with empty streams",
+  "object_correspondence": {
+    "entire_stripped_objects_equal": true,
+    "manual_sha256": "c77d20b21d29bb2be6aad4be9d01bf7691aa933f635f0f0d096f8f9657fa0b78",
+    "integrated_sha256": "c77d20b21d29bb2be6aad4be9d01bf7691aa933f635f0f0d096f8f9657fa0b78"
+  },
+  "static": "strict C/fanalyzer clean; frozen Ruff v2 exit0 [] empty stderr",
+  "retained_failures": [
+    "first integrated link undefined wrappers due archive order",
+    "initial Ruff executable unavailable at ambient PATH, exit127"
+  ],
+  "assumptions": [
+    "single-threaded non-reentrant startup",
+    "native ABI/compiler/linker/libc/kernel remain outside SPARK proof"
+  ],
+  "review": "existing actualGPT6.1 source/raw only; no independent execution",
+  "not_claimed": [
+    "handler readiness or permanent configuration",
+    "complete interception or repeated/asynchronous/reentrant initialization",
+    "whole native proof or fresh SPARK proof",
+    "installed harness/compaction/release/marketplace acceptance"
+  ],
+  "archive": {
+    "path": "docs/evidence/native-startup-guard-20261025.tar.gz",
+    "sha256": "2337a5ac2c6d580e6cfe96e6202df88a46b140234ff9f512f0e0e783d2c97928",
+    "members": 123,
+    "all_member_hashes_read_back": true
+  },
+  "all_original_gates": "unchanged, including R05 BOTH"
+}

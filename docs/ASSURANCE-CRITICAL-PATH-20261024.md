@@ -1,3 +1,20 @@
+# Native startup error propagation — 2026-10-25
+
+TESTED / EXPERIMENTAL. The [continuity adapter guard](NATIVE-STARTUP-GUARD-20261025.md)
+now propagates returned signal-setup failures during GNAT initialization as exit74,
+before request input. The ordinary GPR build includes the strict C guard and
+requires its wrapper symbols. Final integrated125-test roster passes; seven native
+fault cases and guard-removal controls are retained. No SPARK authority decision,
+original restriction or existing test was removed.
+
+This does not establish handler readiness, complete interception, repeated or
+concurrent initialization, cumulative stack bounds or installed continuity. The
+single-thread/non-reentrant startup premise and foreign runtime assumptions remain
+explicit. Full proof, R05 BOTH, harness custody/lifecycle and all release gates stay
+open. Next: qualify the actual harness path against the preserved acceptance gates.
+
+---
+
 # Runtime callback diagnostic update — 2026-10-25
 
 OBSERVED / INCOMPLETE. [Callback and last-chance evidence](RUNTIME-CALLBACK-CLOSURE-20261025.md)

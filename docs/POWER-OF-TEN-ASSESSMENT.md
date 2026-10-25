@@ -199,3 +199,15 @@ sources remain live, and this partial retention is explicit. The protocol
 still relies on cooperative ownership, dynamic Python/Git allocation and
 unproved aggregate resource bounds. It is evidence toward rules 5 and 7,
 not closure of rules 1, 2, 3, 6 or 9, nor whole-system assurance.
+
+
+## 2026-10-25 native initializer error-propagation update
+
+The [experimental continuity startup guard](NATIVE-STARTUP-GUARD-20261025.md)
+adds a scoped rule-by-rule adaptation and retained positive, failure and removal
+controls. It checks observed libc setup errors without assigning readiness or
+publication authority to C. Strict compiler/analyzer checks are in the real GPR
+build and CI contract tests. Original rules and rationales remain normative;
+these cross-language controls are project adaptations. Python/Linux allocation,
+foreign runtime behavior, whole-program bounds and the original unresolved
+acceptance obligations are not reclassified as compliant by this addition.
