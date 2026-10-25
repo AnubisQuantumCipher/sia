@@ -24,7 +24,10 @@ Its contents must not be executed as a qualification campaign.
 - Frozen adapter: `5c61b7afcb02af9ebfded2c5d2ada8f322822ba1`.
 - Native candidate: existing `manager-send-lifetime-source-v1/source`.
 - Native result: existing `manager-send-lifetime-compiler-preparation-v1/run`.
-- SDK result: existing `sdk-loop-finally-v8/full-result.json`.
+- Historical SDK result: existing `sdk-loop-finally-v8/full-result.json`.
+- Current SDK evidence: [complete unchanged fixtures](SDK-FULL-RESOURCE-POLICY-20261025.md),
+  [exact approved exceptions](SDK-EXCEPTION-RECONCILIATION-20261025.md), and
+  [selected installed observation](SDK-INSTALLED-OBSERVATION-20261025.md).
 - Independent custody review: existing `process-custody-review.txt`.
 
 The map below uses snapshot prefixes `native/`, `adapter/`, `product/`, and
@@ -75,23 +78,36 @@ verification before execution; the small inspection archive is not a substitute.
 
 ## Current failures and the next implementation decision
 
-The latest native attempt is `INCOMPLETE_NONPASS`, exit `-25`, with strict
+The retained original native attempt is `INCOMPLETE_NONPASS`, exit `-25`, with strict
 complexity diagnostics, a capped analyzer dump, missing dependency output and
 empty assembly. No behavior-preserving next native change is established.
-Do not rerun unchanged, suppress warnings, omit roots, hide helpers, or raise
-limits. A new source hypothesis must preserve generic aliases, prior escapes,
+Do not suppress warnings, omit roots or hide helpers. The operator subsequently
+removed outer engineering time/memory/file caps while retaining product safety
+bounds. That change does not erase emitted diagnostics or grant runtime custody.
+Compiler/model exploration remains on hold. A new source hypothesis must preserve generic aliases, prior escapes,
 actual error distinctions, send counts and all effect/clock ordering before
 another original-scope attempt is admissible.
 
-The SDK v8 full run exited `124` under its original 120-second cap. The final
+The historical SDK v8 full run exited `124` under its original 120-second cap. The final
 unfinished method names where the cumulative run stopped; it does not prove
 that method caused the timeout. All original cleanup calls and observable
-effects remain required. A diagnostic can inform a distinct repair, but cannot
-stand in for successful complete qualification.
+effects remain required. Under the revised engineering policy the unchanged
+complete roster passed all 182 tests. The exact approved exception correspondence
+also passed its original seven controls; strict raw analysis remains NONPASS
+with its three approved findings.
+
+A subsequent actual installed SDK observation used only a fresh cohort-input
+root and private invocation directories. Its preflight and observation exited
+zero with matching source bindings, 142 module records, 28 mapped file origins
+and empty diagnostics. A failed predecessor launcher and its narrow identity
+comparison repair remain retained. See the source-bound observation receipt
+linked above. This completes that selected observation, not the missing custody
+interface, a general consumer gate, whole SDK ABI proof or worker admission.
 
 **Next implementation decision:** keep the existing route and frozen worker;
-first identify a concrete, preservation-supported repair of the native or SDK
-prerequisite. Before connecting that qualified prerequisite to worker dispatch,
+the selected SDK fixture/observation prerequisites now have evidence at their
+declared scope. Resolve the remaining native strict-analysis obligation without
+reopening unapproved compiler/model research. Before connecting qualified prerequisites to worker dispatch,
 fill every missing consumer/enforcer/reconciliation cell above with actual
 source and evidence. Compiler success is necessary for this candidate but is
 not sufficient for dispatch. If no such repair can be justified, record the
@@ -100,7 +116,8 @@ waiver, or turn this map into another passing classifier.
 
 ## Acceptance evidence still required
 
-Retain the complete original native/SDK/static/proof scopes and limits. Then
+Retain the complete original native/SDK/static/proof scopes and production safety
+bounds; apply the operator's revised outer engineering policy separately. Then
 exercise the existing finite root-profile matrix: failure before/after
 acquisition, supervisor and observer death, manager re-exec, leader exit with
 descendants, startup failure, original deadline exhaustion, partial/missing

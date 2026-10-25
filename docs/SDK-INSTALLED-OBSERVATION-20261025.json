@@ -1,0 +1,83 @@
+{
+  "archive": {
+    "bytes": 358565,
+    "members": 50,
+    "path": "docs/evidence/sdk-installed-observation-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "9140682fb4eaf36efa1692715a33008d801b32cdc12a0030a090c90e69b81eb5"
+  },
+  "authority": "NONE",
+  "historical_failure_retained": true,
+  "mapped_origins": 28,
+  "modules": 142,
+  "observation": {
+    "elapsed_ns": 951940799,
+    "exit": 0,
+    "stderr": {
+      "identity": {
+        "st_ctime_ns": 1792936782767795962,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14990611,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792936782767795962,
+        "st_nlink": 1,
+        "st_size": 0,
+        "st_uid": 1000
+      },
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "identity": {
+        "st_ctime_ns": 1792936783709929160,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14990610,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792936783709929160,
+        "st_nlink": 1,
+        "st_size": 26563,
+        "st_uid": 1000
+      },
+      "sha256": "8b3a6d3a151eab2cc3aa7a5ab5a161981498d509a15cbfcb03a03dc2a32d37ec"
+    }
+  },
+  "preflight": {
+    "elapsed_ns": 383496621,
+    "exit": 0,
+    "stderr": {
+      "identity": {
+        "st_ctime_ns": 1792936782383296960,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14990605,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792936782383296960,
+        "st_nlink": 1,
+        "st_size": 0,
+        "st_uid": 1000
+      },
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stdout": {
+      "identity": {
+        "st_ctime_ns": 1792936782759923289,
+        "st_dev": 64768,
+        "st_gid": 1000,
+        "st_ino": 14990604,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792936782759923289,
+        "st_nlink": 1,
+        "st_size": 501,
+        "st_uid": 1000
+      },
+      "sha256": "14b2f6a6472e227210a046877ed546b5ddf92808927e6dfcff911e005c87bde2"
+    }
+  },
+  "runtime_admission": false,
+  "schema": "sia.selected-installed-sdk-evidence.v1",
+  "source_sha256": "712f8501ca8da5d6904a111ceb8603a75751acff9b41ec8d222bc39120e09b65",
+  "status": "OBSERVED_SELECTED_SDK_ORIGINS_ROOT_READBACK_COMPLETE",
+  "unchanged": true,
+  "whole_system_acceptance": false
+}
