@@ -26,6 +26,11 @@ be empty. Originally absent legacy records must already be covered by the prior
 pack. The selected count equals represented plus fallback counts. The producer
 must additionally establish complete selection/fallback membership, disjointness,
 source truth and exact prior content. These are **ASSUMED**, not proved from counts.
+The inactive [manifest partition validator](EVENT-PACK-MANIFEST-PARTITION.md)
+now supplies separately proved per-step correspondence and completion contracts
+for supplied ordered streams. Until a protected adapter binds those streams to
+the actual authenticated plan and source, this policy's producer assumptions
+remain open; the validator alone does not discharge them.
 A fallback-only plan with an empty target is outside this retirement slice; this
 does not invalidate the transport planner's legitimate no-pack outcome.
 
