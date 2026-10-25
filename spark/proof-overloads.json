@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "sources": {
+    "sia_continuity_observation_wire.ads": {
+      "overloads": {
+        "sia_continuity_observation_wire.decode": [
+          139,
+          148,
+          157
+        ],
+        "sia_continuity_observation_wire.decoded_as": [
+          106,
+          113,
+          120
+        ],
+        "sia_continuity_observation_wire.valid": [
+          85,
+          91,
+          97
+        ]
+      },
+      "sha256": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084"
+    },
+    "sia_continuity_record_wire.ads": {
+      "overloads": {
+        "sia_continuity_record_wire.decode": [
+          108,
+          115,
+          123
+        ],
+        "sia_continuity_record_wire.decoded_as": [
+          76,
+          88,
+          99
+        ],
+        "sia_continuity_record_wire.valid": [
+          59,
+          66,
+          71
+        ]
+      },
+      "sha256": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac"
+    }
+  }
+}

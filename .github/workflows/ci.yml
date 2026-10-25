@@ -50,7 +50,9 @@ jobs:
               raw_rules = rules.read(65537)
           if len(raw_rules) > 65536 or hashlib.sha256(raw_rules).hexdigest() != '0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741':
               raise SystemExit('Frozen analyzer rule identity mismatch')
-          names = ('scripts/assurance_acceptance_manifest.py', 'tests/test_assurance_acceptance_manifest.py')
+          names = ('scripts/assurance_acceptance_manifest.py', 'tests/test_assurance_acceptance_manifest.py',
+                   'spark/check-proof-summary.py', 'spark/tests/test_proof_summary.py',
+                   'spark/tests/test_proof_summary_overloads.py')
           forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
           for name in names:
               with Path(name).open('rb') as source:
@@ -69,6 +71,9 @@ jobs:
             --no-respect-gitignore --no-force-exclude --output-format json \
             scripts/assurance_acceptance_manifest.py \
             tests/test_assurance_acceptance_manifest.py \
+            spark/check-proof-summary.py \
+            spark/tests/test_proof_summary.py \
+            spark/tests/test_proof_summary_overloads.py \
             > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
           # Bounded previews only; the exit/stderr/complete-JSON gates below
           # still reject a failure even when its diagnostic output is larger.
@@ -93,6 +98,7 @@ jobs:
           PYTHONWARNINGS: error::ResourceWarning
         run: |
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary_overloads.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_request_packet.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_grant_record.py -v
           timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_scoped_grant_record.py -v
