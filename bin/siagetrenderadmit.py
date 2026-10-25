@@ -175,7 +175,8 @@ def _same(value, snapshot):
 
 def _containers(value):
     """Identify mutable containers only after the bounded plain check."""
-    if type(value) not in (dict, list):
+    kind = type(value)
+    if kind is not dict and kind is not list:
         return set()
     found = {id(value)}
     children = value.values() if type(value) is dict else value

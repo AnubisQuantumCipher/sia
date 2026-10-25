@@ -64,7 +64,7 @@ def _live_memo_bytes(value):
         if depth > 64:
             _live_refuse("native memo JSON nesting exceeds its boundary")
         kind = type(item)
-        if kind in (dict, list):
+        if kind is dict or kind is list:
             if id(item) in active:
                 _live_refuse("native memo JSON is cyclic")
             active.add(id(item))
@@ -77,7 +77,8 @@ def _live_memo_bytes(value):
                 for child in item:
                     admit(child, depth + 1)
             active.remove(id(item))
-        elif kind not in (str, int, bool, float, type(None)) \
+        elif (kind is not str and kind is not int and kind is not bool
+              and kind is not float and item is not None) \
                 or kind is float and not math.isfinite(item):
             _live_refuse("native memo contains a non-JSON value")
 

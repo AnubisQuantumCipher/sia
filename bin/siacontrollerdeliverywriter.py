@@ -80,11 +80,11 @@ def _plain_pin(value):
     spelling distinguishes signed zero and exact type distinguishes booleans.
     """
     kind = type(value)
-    if value is None or kind in (bool, int, str):
+    if value is None or kind is bool or kind is int or kind is str:
         return kind, value
     if kind is float:
         return kind, value.hex()
-    if kind in (list, tuple):
+    if kind is list or kind is tuple:
         return kind, tuple(_plain_pin(child) for child in value)
     if kind is dict and all(type(key) is str for key in value):
         return kind, tuple((key, _plain_pin(child)) for key, child in value.items())
@@ -101,7 +101,7 @@ def _plain_same(value, pin):
             and all(type(key) is str for key in value) \
             and all(key in value and _plain_same(value[key], child)
                     for key, child in expected)
-    if kind in (list, tuple):
+    if kind is list or kind is tuple:
         return len(value) == len(expected) \
             and all(_plain_same(child, child_pin)
                     for child, child_pin in zip(value, expected))
