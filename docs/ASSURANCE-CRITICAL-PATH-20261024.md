@@ -1,3 +1,20 @@
+# Whole declared-project flow passes; deductive proof remains open — 2026-10-26
+
+The [complete declared-project flow check](PROJECT-FLOW-20261026.md) reports
+1,522 flow checks across all 50 Ada units with complete reported entity coverage.
+Source/tool/command bindings and tracked cleanup were independently read by actual
+GPT-6.1. Deductive proof is explicitly omitted by flow mode; separate projects,
+native custody, compaction and all whole-system obligations remain open.
+
+The staging failures and exact failed-setup disposition remain retained. The new
+successful flow invocation has its own unresolved pending intent: first reconcile
+that exact operation, then obtain complete project deductive evidence. No replay
+or successor authority follows from the passing flow result. The native compiler
+hold and original-record/receiver gaps remain; no new native execution is admitted.
+R05 BOTH, judge, installed/release and marketplace gates are unchanged.
+
+---
+
 # Exact post-entry fixture reconciled; native pre-entry gap remains — 2026-10-26
 
 The [exact post-entry reconciliation](ORDINARY-POST-RECONCILIATION-20261026.md)
