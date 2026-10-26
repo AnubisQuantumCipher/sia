@@ -1,3 +1,21 @@
+# Persistent pending refusal tested; reconciliation remains open — 2026-10-26
+
+The [ordinary recovery latch](ORDINARY-RECOVERY-LATCH-20261026.md) records intent
+before launch under the existing heavy lock. Component37 and actual-wrapper37
+controls pass. A subsequent fresh-output invocation refuses at the existing
+pending record, runs no payload, and preserves the predecessor bytes. Independent
+GPT-6.1 readback confirms source, acknowledgment, tracked cleanup and refusal.
+Failed static drafts and unexecuted test snapshots remain visible.
+
+The root-owned engineering ledger deliberately remains unresolved. No clearing or
+retirement protocol is qualified; do not substitute a new ledger or infer retry
+permission from a free lock. The next existing recovery join is an explicit,
+verified reconciliation decision followed by actual observer-loss fault cuts.
+Intent persistence is not pre-entry custody. Native C14, R05 BOTH, compaction,
+judge, installed/release and all original mission gates remain open.
+
+---
+
 # Receipt persistence tested; observer-loss recovery remains next — 2026-10-26
 
 The [ordinary receipt repair](ORDINARY-RECEIPT-PERSISTENCE-20261026.md) adds
