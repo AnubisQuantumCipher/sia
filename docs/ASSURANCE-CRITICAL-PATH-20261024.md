@@ -1,3 +1,20 @@
+# Exact interrupted fixture reconciled; remaining cuts stay open — 2026-10-26
+
+The [interrupted-fixture reconciliation](ORDINARY-CUT-RECONCILIATION-20261026.md)
+passed 54 component methods, one exact root invocation and separate readback.
+The original pending inode/bytes are archived with their matching decision;
+pending is absent and previous history/epoch are unchanged. The readback encoding
+repair, unexecuted draft and independent GPT-6.1 review are retained. Earlier
+statements below that this fixture remains unresolved are now historical.
+
+No replay or successor is authorized by this decision. Next: qualify one actual
+post-admission observer cut with a separate payload-entry acknowledgment and a
+tracked descendant, observing termination before witness cleanup. Pre-entry,
+witness-loss custody, native C14, repeated compaction, R05 BOTH, judge, installed
+and release gates remain open. No original obligation or failure is retired.
+
+---
+
 # Actual pre-admission observer cut and pending refusal tested — 2026-10-26
 
 The [instrumented observer-loss campaign](ORDINARY-OBSERVER-CUT-20261026.md)
