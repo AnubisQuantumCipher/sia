@@ -1,3 +1,23 @@
+# Current R05 experiment disposition — 2026-10-26
+
+The [fixed UTF-8 pool experiment](R05-UTF8-POOL-EXPERIMENT-20261026.md) passes
+its focused controls and original retained regression selection. Fresh complete
+delivery and resident observations also finish, but all miss the historical
+timing target and establish no material benefit. The candidate remains archived,
+not adopted. R05 BOTH is still open; no original test or policy requirement is
+retired. Current-source profiling identifies repeated sizing/traversal cost, but
+does not yet identify a closed derivation safe to reuse. The next bounded causal
+observation must distinguish actual capture work from fixtures and retain its
+current callback/refusal boundaries.
+
+The [selected recovery proof checkpoint](RECOVERY-SELECTED-PROOF-20261026.md)
+separately records the completed exact-source core and complete selected harness
+proofs and original runtime tests. Its limited scope does not close custody,
+compaction, judge, installed, release or marketplace gates. Earlier entries below
+remain historical evidence and must not override these newer source-bound results.
+
+---
+
 # Compiler diagnostic plugin build failed — 2026-10-25
 
 The [isolated plugin experiment](NATIVE-FORTIFIED-PLUGIN-20261025.md) failed
