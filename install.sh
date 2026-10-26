@@ -7999,7 +7999,8 @@ fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
 
 def read_journal():
-    descriptor = os.open(journal_name, file_flags, dir_fd=parent_fd)
+    descriptor = os.open(journal_name, file_flags | os.O_NONBLOCK,
+                         dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
@@ -8163,10 +8164,10 @@ try:
     try:
         rename_noreplace(staged_name, target_name)
         sync_parent()
-    except OSError:
+    except OSError as error:
         retained(record, "tree CAS publication preserved a concurrent target")
         clear_journal()
-        raise SystemExit("tree CAS target changed during publication")
+        raise SystemExit("tree CAS target changed during publication") from error
     installed = tree_token(target_name)
     if not moved_matches(installed, desired):
         retained(record, "tree CAS target changed after publication")
@@ -8176,10 +8177,10 @@ try:
         try:
             rename_noreplace(archive, backup_name)
             sync_parent()
-        except OSError:
+        except OSError as error:
             retained(record, "tree CAS could not return the prior tree")
             clear_journal()
-            raise SystemExit("tree CAS backup changed during publication")
+            raise SystemExit("tree CAS backup changed during publication") from error
         if not moved_matches(tree_token(backup_name), expected) \
                 or not moved_matches(tree_token(target_name), installed):
             print(f"prior tree retained at {backup}", file=sys.stderr)

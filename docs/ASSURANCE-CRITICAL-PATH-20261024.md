@@ -1,3 +1,18 @@
+# Tree-CAS journal FIFO admission repaired — 2026-10-26
+
+The [journal repair](TREE-JOURNAL-ADMISSION-20261026.md) preserves two actual
+baseline FIFO timeouts and passes fourteen candidate methods, seven unchanged
+recovery/race/isolation methods, the complete CI static step and fifteen
+extraction controls. Three inherited exception-cause findings are resolved
+without suppressions. Source review by actual GPT-6.1 found no unresolved issue.
+
+This closes the two demonstrated journal-open hangs, not the complete R13/R40
+matrix or system acceptance. Whole-project proof, qualified aggregate storage,
+native custody, actual compaction, R05 BOTH, judge, installed/release and every
+remaining original obligation stay open. The interrupted proof is not a pass.
+
+---
+
 # Admission-test isolation regression repaired — 2026-10-26
 
 The [test-home repair](ADMISSION-TEST-ISOLATION-20261026.md) corrects two missing

@@ -62,7 +62,8 @@ jobs:
                    'tests/test_backup_upload_diagnostics.py',
                    'tests/test_fenced_metadata_admission.py',
                    'tests/test_release_metadata_admission.py', 'bin/siarelease.py',
-                   'tests/test_corpus_root_admission.py')
+                   'tests/test_corpus_root_admission.py',
+                   'tests/test_tree_journal_admission.py')
           # Analyze the complete corpus-root reader, including its error paths.
           with Path('install.sh').open('rb') as installer:
               raw_installer = installer.read(1048577)
@@ -77,6 +78,22 @@ jobs:
               if embedded.write(body + b'\n') != len(body) + 1:
                   raise SystemExit('Incomplete corpus-root reader extraction')
           names += (str(embedded_path),)
+          # Include both complete tree-CAS recovery consumers, not just opens.
+          tree_marker = b"owned_tree_cas() {\n  python3 - \"$@\" <<'PY'\n"
+          tree_end = b'\nPY\n}\n\nowned_tree_generation() {\n'
+          for source_name in ('install.sh', 'uninstall.sh'):
+              with Path(source_name).open('rb') as source:
+                  raw = source.read(1048577)
+              if len(raw) > 1048576 or raw.count(tree_marker) != 1:
+                  raise SystemExit('Tree-CAS reader extraction mismatch: ' + source_name)
+              body, ending, _tail = raw.split(tree_marker, 1)[1].partition(tree_end)
+              if not ending or not body or len(body) > 32768:
+                  raise SystemExit('Tree-CAS reader body mismatch: ' + source_name)
+              embedded_path = Path(os.environ['RUNNER_TEMP']) / ('sia-' + source_name[:-3] + '-tree-cas.py')
+              with embedded_path.open('xb') as embedded:
+                  if embedded.write(body + b'\n') != len(body) + 1:
+                      raise SystemExit('Incomplete tree-CAS reader extraction')
+              names += (str(embedded_path),)
           forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
           for name in names:
               with Path(name).open('rb') as source:
@@ -112,7 +129,10 @@ jobs:
             tests/test_release_metadata_admission.py \
             bin/siarelease.py \
             tests/test_corpus_root_admission.py \
+            tests/test_tree_journal_admission.py \
             "$RUNNER_TEMP/sia-corpus-root-reader.py" \
+            "$RUNNER_TEMP/sia-install-tree-cas.py" \
+            "$RUNNER_TEMP/sia-uninstall-tree-cas.py" \
             > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
           # Bounded previews only; the exit/stderr/complete-JSON gates below
           # still reject a failure even when its diagnostic output is larger.

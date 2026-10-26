@@ -1286,7 +1286,8 @@ fcntl.flock(lock_fd, fcntl.LOCK_EX)
 def read_journal():
     descriptor = os.open(journal_name, os.O_RDONLY
                          | getattr(os, "O_CLOEXEC", 0)
-                         | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_fd)
+                         | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
+                         dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
@@ -1396,9 +1397,9 @@ def recover_journal():
         try:
             rename_noreplace(record["archive"], record["backup"])
             sync_parent()
-        except OSError:
+        except OSError as error:
             retained(record, "tree CAS recovery could not finish archival")
-            raise SystemExit("tree CAS recovery retained an incomplete journal")
+            raise SystemExit("tree CAS recovery retained an incomplete journal") from error
         if not moved_matches(tree_token(record["backup"]), prior):
             retained(record, "tree CAS recovery found a changed archive")
             raise SystemExit("tree CAS recovery retained an incomplete journal")
