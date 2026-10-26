@@ -1,3 +1,20 @@
+# Scoped fence-reader static findings repaired — 2026-10-26
+
+The [separate static repair](FENCED-STATIC-REPAIR-20261026.md) resolves the six
+B904 findings in three complete fence heredocs and the full release module's
+B905 finding. The unchanged analyzer profile reports zero findings for those
+sources and the new FIFO test; both shell syntax checks pass. The sixteen FIFO
+cases and nine selected regressions pass. Actual GPT-6.1 source/receipt review
+found no concrete blocker; it is not a second fresh execution of this increment.
+
+Earlier static failures below remain historical evidence. This result does not
+close the complete reader inventory, full R13/R40, proof or system acceptance.
+The interrupted proof, eleven non-SPARK exclusions, native custody, actual
+compaction, R05 BOTH, judge, installed and release gates remain as recorded.
+Safe storage capacity is still required before a new full proof.
+
+---
+
 # Four fenced-metadata FIFO readers repaired; assurance remains open — 2026-10-26
 
 The [fenced-metadata repair](FENCED-METADATA-FIFO-20261026.md) makes four opens

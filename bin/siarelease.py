@@ -509,7 +509,7 @@ def _version_parts(value, label):
 
 
 def _compare_versions(left, right):
-    for left_part, right_part in zip(left, right):
+    for left_part, right_part in zip(left, right, strict=True):
         if len(left_part) != len(right_part):
             return -1 if len(left_part) < len(right_part) else 1
         if left_part != right_part:

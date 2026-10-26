@@ -3255,8 +3255,8 @@ try:
     contents = read_owned(receipt, 65_536).decode("utf-8")
     current = os.lstat(target)
 except (FileNotFoundError, OSError, RuntimeError, UnicodeError,
-        ValueError, json.JSONDecodeError):
-    raise SystemExit(1)
+        ValueError, json.JSONDecodeError) as error:
+    raise SystemExit(1) from error
 if not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
         or not isinstance(payload, dict) \
         or payload.get("schema") != "sia-launch-fence-v1" \

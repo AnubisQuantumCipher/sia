@@ -6828,8 +6828,8 @@ try:
     current = os.lstat(target)
     marker = os.lstat(tombstone)
 except (FileNotFoundError, OSError, ValueError, TypeError,
-        json.JSONDecodeError):
-    raise SystemExit(1)
+        json.JSONDecodeError) as error:
+    raise SystemExit(1) from error
 if action not in {"check", "generation"} \
         or not isinstance(payload, dict) \
         or set(payload) != {"schema", "runtime_before_digest",
@@ -6876,8 +6876,8 @@ if action == "generation":
     raise SystemExit(0)
 try:
     contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
-except (FileNotFoundError, OSError, UnicodeError, ValueError):
-    raise SystemExit(1)
+except (FileNotFoundError, OSError, UnicodeError, ValueError) as error:
+    raise SystemExit(1) from error
 expected = (f"managed-by=khephri.sia\nkind={kind}\npath={target}\n"
             f"sha256={entry['sha256']}\n")
 if contents != expected:
@@ -6936,8 +6936,8 @@ try:
     payload = json.loads(read_owned(journal, 1_048_576))
     marker = os.lstat(tombstone)
 except (FileNotFoundError, OSError, ValueError, TypeError,
-        json.JSONDecodeError):
-    raise SystemExit(1)
+        json.JSONDecodeError) as error:
+    raise SystemExit(1) from error
 if not isinstance(payload, dict) \
         or set(payload) != {"schema", "runtime_before_digest",
                             "runtime_digest", "cli_digest", "entries"} \
@@ -6972,8 +6972,8 @@ for candidate in payload["entries"]:
     entries[candidate["path"]] = candidate
 try:
     contents = read_owned(receipt, 65_536).decode("utf-8", "strict")
-except (FileNotFoundError, OSError, UnicodeError, ValueError):
-    raise SystemExit(1)
+except (FileNotFoundError, OSError, UnicodeError, ValueError) as error:
+    raise SystemExit(1) from error
 expected = (f"managed-by=khephri.sia\nkind=runtime\npath={runtime}\n"
             f"sha256={before_digest}\n")
 if contents != expected:
@@ -6993,8 +6993,8 @@ for name in ("sia-brainstem", "sia-mcp"):
         raise SystemExit(1)
     try:
         stable = os.lstat(path)
-    except OSError:
-        raise SystemExit(1)
+    except OSError as error:
+        raise SystemExit(1) from error
     if generation(stable) != generation(current):
         raise SystemExit(1)
 PY
