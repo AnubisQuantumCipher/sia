@@ -18,6 +18,11 @@ import tempfile
 import time
 import unittest
 
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
 
 REPO = Path(__file__).resolve().parents[1]
 MAX_SOURCE_BYTES = 1_048_576
@@ -97,6 +102,7 @@ def collect(child, command, output):
 
 class FencedMetadataAdmission(unittest.TestCase):
     def setUp(self):
+        self.assertEqual(os.path.expanduser('~'), sia_test_home.ISOLATED_HOME)
         self.assertTrue(stat.S_ISDIR(Path('/dev/shm').lstat().st_mode))
         fixture = tempfile.TemporaryDirectory(
             prefix='sia-fenced-metadata-', dir='/dev/shm')

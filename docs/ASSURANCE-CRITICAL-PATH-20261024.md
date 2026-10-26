@@ -1,3 +1,17 @@
+# Admission-test isolation regression repaired — 2026-10-26
+
+The [test-home repair](ADMISSION-TEST-ISOLATION-20261026.md) corrects two missing
+standard isolation imports exposed by the unchanged suite-wide guard. Both
+baseline failures remain retained. The two original isolation methods and all
+32 admission fixture methods pass, and the existing full CI static block passes
+locally. An initial missing-dependency runner error is also preserved.
+
+This closes the scoped test integration regression, not R05 BOTH or full system
+acceptance. Proof storage qualification, native custody, actual compaction,
+judge, installed/release and all remaining original gates stay open.
+
+---
+
 # Corpus-root FIFO admission repaired — 2026-10-26
 
 The [corpus-root receipt repair](CORPUS-ROOT-ADMISSION-20261026.md) preserves one

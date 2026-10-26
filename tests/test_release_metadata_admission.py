@@ -17,6 +17,11 @@ import tempfile
 import time
 import unittest
 
+try:
+    import sia_test_home
+except ModuleNotFoundError:
+    from tests import sia_test_home
+
 
 REPO = Path(__file__).resolve().parents[1]
 PROGRAM = REPO / 'bin/siarelease.py'
@@ -92,6 +97,7 @@ def close_pipes(child):
 
 class ReleaseMetadataAdmission(unittest.TestCase):
     def setUp(self):
+        self.assertEqual(os.path.expanduser('~'), sia_test_home.ISOLATED_HOME)
         self.assertTrue(stat.S_ISDIR(Path('/dev/shm').lstat().st_mode))
         fixture = tempfile.TemporaryDirectory(
             prefix='sia-release-metadata-', dir='/dev/shm')
