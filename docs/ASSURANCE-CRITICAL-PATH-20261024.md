@@ -1,3 +1,21 @@
+# Exact post-entry fixture reconciled; native pre-entry gap remains — 2026-10-26
+
+The [exact post-entry reconciliation](ORDINARY-POST-RECONCILIATION-20261026.md)
+passed 94 component methods, one root invocation and separate readback. Original
+pending inode/bytes are retained with an explicit aborted-after-entry decision;
+the seven-record ledger preserves earlier history and pending is absent. The
+failed syntax draft, raw results and actual GPT-6.1 reviews remain retained.
+Earlier unresolved-pending entries for this exact fixture are now historical.
+
+No replay, successful-work or successor authority follows. The next native-path
+repair is an acknowledged custody/operation transfer before payload release.
+Current native dispatch remains refused; witness-loss and original-record joins
+are also unqualified. C14, repeated compaction, R05 BOTH, judge, installed and
+release obligations remain unchanged. A scoped engineering fixture is not native
+adapter acceptance or whole-system assurance.
+
+---
+
 # Actual post-admission cut and pending refusal tested — 2026-10-26
 
 The [post-admission fixture](ORDINARY-POST-ADMISSION-CUT-20261026.md) now has
