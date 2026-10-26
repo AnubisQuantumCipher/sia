@@ -5208,11 +5208,11 @@ import sys
 
 path, corpus = sys.argv[1], sys.argv[2]
 flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-         | getattr(os, "O_NOFOLLOW", 0))
+         | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
 try:
     descriptor = os.open(path, flags)
-except OSError:
-    raise SystemExit(1)
+except OSError as error:
+    raise SystemExit(1) from error
 try:
     info = os.fstat(descriptor)
     if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() \
@@ -5223,8 +5223,8 @@ finally:
     os.close(descriptor)
 try:
     text = raw.decode("utf-8", "strict")
-except UnicodeError:
-    raise SystemExit(1)
+except UnicodeError as error:
+    raise SystemExit(1) from error
 expected = "managed-by=khephri.sia\nkind=corpus-v2\npath=" + corpus + "\nroot="
 if not text.startswith(expected):
     raise SystemExit(1)

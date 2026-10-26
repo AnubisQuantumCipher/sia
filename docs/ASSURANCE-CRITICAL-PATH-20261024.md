@@ -1,3 +1,18 @@
+# Corpus-root FIFO admission repaired — 2026-10-26
+
+The [corpus-root receipt repair](CORPUS-ROOT-ADMISSION-20261026.md) preserves one
+actual baseline FIFO timeout and passes five repaired cases, a separate actual
+GPT-6.1 execution, and two unchanged original corpus migration methods. The
+complete updated CI static block passes locally; six extraction controls verify
+its additive fail-closed source admission. Earlier static failures remain saved.
+
+This is one extracted helper's tested repair. The complete R13/R40 matrices,
+whole-project proof, native custody, actual compaction, R05 BOTH, judge, installed
+composition, recovery and release remain open. Proof output still needs qualified
+persistent aggregate containment and reserve before fresh exact-source admission.
+
+---
+
 # Remaining release-module FIFO read opens repaired — 2026-10-26
 
 The [release-metadata repair](RELEASE-METADATA-FIFO-20261026.md) adds nonblocking

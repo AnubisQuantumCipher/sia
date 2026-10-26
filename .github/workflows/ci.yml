@@ -45,6 +45,7 @@ jobs:
           python3 -B - <<'PY'
           from pathlib import Path
           import hashlib
+          import os
           import re
           with Path('docs/evidence/assurance-ruff-rules-v1.txt').open('rb') as rules:
               raw_rules = rules.read(65537)
@@ -60,7 +61,22 @@ jobs:
                    'tests/test_event_pack_proposal.py', 'tests/test_event_pack_admission.py',
                    'tests/test_backup_upload_diagnostics.py',
                    'tests/test_fenced_metadata_admission.py',
-                   'tests/test_release_metadata_admission.py', 'bin/siarelease.py')
+                   'tests/test_release_metadata_admission.py', 'bin/siarelease.py',
+                   'tests/test_corpus_root_admission.py')
+          # Analyze the complete corpus-root reader, including its error paths.
+          with Path('install.sh').open('rb') as installer:
+              raw_installer = installer.read(1048577)
+          marker = b"corpus_receipt_recorded_root() {\n  python3 - \"${1:-$CORPUS_RECEIPT}\" \"$SHARE/corpus\" <<'PY'\n"
+          if len(raw_installer) > 1048576 or raw_installer.count(marker) != 1:
+              raise SystemExit('Corpus-root reader extraction mismatch')
+          body, ending, _tail = raw_installer.split(marker, 1)[1].partition(b'\nPY\n}')
+          if not ending or not body or len(body) > 4096:
+              raise SystemExit('Corpus-root reader body mismatch')
+          embedded_path = Path(os.environ['RUNNER_TEMP']) / 'sia-corpus-root-reader.py'
+          with embedded_path.open('xb') as embedded:
+              if embedded.write(body + b'\n') != len(body) + 1:
+                  raise SystemExit('Incomplete corpus-root reader extraction')
+          names += (str(embedded_path),)
           forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
           for name in names:
               with Path(name).open('rb') as source:
@@ -95,6 +111,8 @@ jobs:
             tests/test_fenced_metadata_admission.py \
             tests/test_release_metadata_admission.py \
             bin/siarelease.py \
+            tests/test_corpus_root_admission.py \
+            "$RUNNER_TEMP/sia-corpus-root-reader.py" \
             > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
           # Bounded previews only; the exit/stderr/complete-JSON gates below
           # still reject a failure even when its diagnostic output is larger.
