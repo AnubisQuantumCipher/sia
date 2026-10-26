@@ -398,7 +398,7 @@ def _read_fence_owned(path, limit, uid, flags):
 def authorize_fenced_runtime(journal, tombstone, receipt, runtime):
     """Validate an uninstall fence, including mode-zero runtime members."""
     uid = os.geteuid()
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     encoded = _read_fence_owned(journal, 1_048_576, uid, flags)
     try:

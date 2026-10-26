@@ -1,3 +1,22 @@
+# Four fenced-metadata FIFO readers repaired; assurance remains open — 2026-10-26
+
+The [fenced-metadata repair](FENCED-METADATA-FIFO-20261026.md) makes four opens
+nonblocking so their existing regular-file checks can reject a no-writer FIFO.
+The baseline reproduced eight hangs. All sixteen candidate cases and a separate
+actual GPT-6.1 execution pass; eight unchanged selected regressions also pass.
+Fixture state and source identities remain preserved. Six inherited B904 findings
+and one inherited B905 finding remain FAILED, with no waiver or suppression.
+
+The operator-interrupted full proof remains interrupted, with payload exit 143;
+its exact pending reconciliation does not turn it into a proof pass or grant
+successor authority. The proof has not been restarted. Full-project deductive
+evidence, the eleven non-SPARK exclusions, native custody, actual compaction,
+R05 BOTH, judge, installed acceptance and release/publication gates remain open.
+Next: repair the inherited scoped static findings, preserve these exact-source
+receipts, and establish safe storage capacity before a new full proof.
+
+---
+
 # Completed flow disposition; non-SPARK scope explicit — 2026-10-26
 
 The [exact completed-flow disposition](FLOW-DISPOSITION-20261026.md) passed its

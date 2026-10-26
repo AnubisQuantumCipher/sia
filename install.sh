@@ -6787,7 +6787,7 @@ import sys
 
 journal, receipt, kind, target, action, tombstone = sys.argv[1:]
 uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
 
 def generation(value):
@@ -6896,7 +6896,7 @@ import sys
 
 journal, receipt, runtime, tombstone = sys.argv[1:]
 uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
 
 def generation(value):
