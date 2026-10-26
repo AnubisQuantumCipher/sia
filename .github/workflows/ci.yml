@@ -63,7 +63,8 @@ jobs:
                    'tests/test_fenced_metadata_admission.py',
                    'tests/test_release_metadata_admission.py', 'bin/siarelease.py',
                    'tests/test_corpus_root_admission.py',
-                   'tests/test_tree_journal_admission.py')
+                   'tests/test_tree_journal_admission.py',
+                   'tests/test_tree_sync_admission.py', 'tests/tree_sync_child.py')
           # Analyze the complete corpus-root reader, including its error paths.
           with Path('install.sh').open('rb') as installer:
               raw_installer = installer.read(1048577)
@@ -130,6 +131,8 @@ jobs:
             bin/siarelease.py \
             tests/test_corpus_root_admission.py \
             tests/test_tree_journal_admission.py \
+            tests/test_tree_sync_admission.py \
+            tests/tree_sync_child.py \
             "$RUNNER_TEMP/sia-corpus-root-reader.py" \
             "$RUNNER_TEMP/sia-install-tree-cas.py" \
             "$RUNNER_TEMP/sia-uninstall-tree-cas.py" \

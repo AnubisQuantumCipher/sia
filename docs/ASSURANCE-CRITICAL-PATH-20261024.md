@@ -1,3 +1,19 @@
+# Tree-CAS synchronized-member FIFO admission repaired — 2026-10-26
+
+The [synchronized-member repair](TREE-SYNC-ADMISSION-20261026.md) preserves an
+actual native blocked-open counterexample and passes six candidate methods,
+seven unchanged original methods and the complete local CI static step. The
+existing mode-zero generation assertion remains unchanged; an initial candidate
+that failed it is retained. Independent actual GPT-6.1 source and receipt review
+found no unresolved issue in the final repair.
+
+Whole-system acceptance remains open. The disposable storage controller and
+bootstrap have ordinary-user controls, but no root storage trial or fresh full
+proof is claimed. R13/R40 completion, R05 BOTH, native custody, actual compaction,
+judge, installed and release gates remain mandatory.
+
+---
+
 # Tree-CAS journal FIFO admission repaired — 2026-10-26
 
 The [journal repair](TREE-JOURNAL-ADMISSION-20261026.md) preserves two actual
