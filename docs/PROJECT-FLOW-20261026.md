@@ -4,8 +4,10 @@ Status: **FLOW_SCOPE_PASS_NO_DEDUCTIVE_PROOF**. Exact tested source is
 `ddfe2690256a475b5164a6489efa85acca36a9d8`. This checkpoint changes evidence and
 documentation only; it is not installed acceptance or a release.
 
-GNATprove analyzed all 50 declared Ada units of `spark/sia_assurance.gpr`, with
-complete reported entity coverage. The summary reports 1,522 flow checks:
+GNATprove's report lists all 50 declared Ada units of `spark/sia_assurance.gpr`,
+with complete coverage of the reported SPARK entities. Eleven test/support units
+explicitly use `SPARK_Mode => Off` and report zero entities; their bodies were
+not flow-analyzed or proved. The summary reports 1,522 flow checks:
 data dependencies, flow dependencies, initialization and termination. There are
 no reported errors, warnings, justified checks or `pragma Assume` records.
 The exact invocation uses `-U --mode=flow --assumptions --no-inlining
@@ -16,6 +18,14 @@ mode was requested. This result establishes neither run-time safety nor
 functional contracts. Separate transport/allocation projects are outside this
 project's declared source scope. Earlier selected recovery proofs and runtime
 tests remain separate evidence, not a whole-project deductive proof.
+
+The non-SPARK units are `continuity_approval_test_support`,
+`continuity_approval_tests`, `continuity_descriptor_test_support`,
+`continuity_descriptor_tests`, `pack_manifest_tests`,
+`pack_plan_wire_test_support`, `pack_plan_wire_tests`, `pack_proposal_probe`,
+`pack_proposal_tests`, `pack_retirement_test_support` and `pack_retirement_tests`.
+Their zero-entity report rows are scope exclusions, not coverage passes. The
+original archive retains their source declarations and raw `.spark` records.
 
 All 79 Ada/GPR/ADC input files match the final selected recovery-proof snapshot
 and the published source. Source, execution configuration and tool identities
@@ -34,12 +44,14 @@ readback preserved its original pending inode and bytes under the retired name.
 That disposition records failed setup, not successful work or general custody.
 The corrected invocation adds only the two empty mount points.
 
-The successful flow invocation has its own pending intent, still unresolved.
-Neither its passing result nor the prior retirement authorizes replay or a
-successor. Reconcile this exact completed invocation against the retained evidence
-before admitting the next execution. Then obtain whole-project deductive evidence
-under the existing strict settings; preserve any failures rather than weakening
-the gate. The [manifest](PROJECT-FLOW-EVIDENCE-20261026.json) and
+At the original flow readback, this successful invocation had its own unresolved
+pending intent. The later [exact completed-flow disposition](FLOW-DISPOSITION-20261026.md)
+reconciled that invocation and preserved its original pending inode and bytes.
+Neither the passing result nor its retirement authorizes replay or a successor.
+A later proof invocation has separate admission and operation state; it must not
+inherit this earlier pending-absence observation. Whole-project deductive evidence
+still requires its own complete result under the existing strict settings, with
+failures preserved. The [manifest](PROJECT-FLOW-EVIDENCE-20261026.json) and
 [raw archive](evidence/project-flow-20261026-v1.tar.gz) bind the source, commands,
 reports, failed attempts, reconciliation controls and independent readback.
 

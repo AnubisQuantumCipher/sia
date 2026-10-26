@@ -1,0 +1,93 @@
+{
+  "archive": {
+    "bytes": 239321,
+    "name": "flow-disposition-20261026-v1.tar.gz",
+    "sha256": "dadba8624c63a13757684612f43c889370f8b289046919afb02c6c402757ff02"
+  },
+  "members": {
+    "flow-normal-reconciliation-20261026-v1/RESULT-REVIEW.json": {
+      "bytes": 592,
+      "sha256": "328afc5ad5d08417c11215c2a4de8da95b0307d0e60dfaf930d3b684ed3a654d"
+    },
+    "flow-normal-reconciliation-20261026-v1/SOURCE-REVIEW.json": {
+      "bytes": 646,
+      "sha256": "7b17d8bd4c4675cf8c1a213307461b268e550acef61990b78a5bb2d68ae17dd2"
+    },
+    "flow-normal-reconciliation-20261026-v1/STATIC.json": {
+      "bytes": 2500,
+      "sha256": "2419e7fbe3503cad6c789a7c5a3d12c85aad523bb77fbbcbb1ee6f3bfb4bef1c"
+    },
+    "flow-normal-reconciliation-20261026-v1/TESTS.json": {
+      "bytes": 4678,
+      "sha256": "c57c5cba4e072afaffc75e31f76fe5ea7b8712461b2aae756e5579415aa1670a"
+    },
+    "flow-normal-reconciliation-20261026-v1/actual-tool-result.json": {
+      "bytes": 775,
+      "sha256": "ce2d1b8acdd038f6e2db2f971419029cdf009f938255ddec68a81ae914b073bc"
+    },
+    "flow-normal-reconciliation-20261026-v1/candidate.py": {
+      "bytes": 15055,
+      "sha256": "aee6fd5047505fb523359e666f49966e75409f8b3b5d748a7848e33e9b7d8b6d"
+    },
+    "flow-normal-reconciliation-20261026-v1/decision.json": {
+      "bytes": 5745,
+      "sha256": "05df10f95cd7cde3c08a3a6c5c038b136a04942abcfef0b33762a2dac19ec1d9"
+    },
+    "flow-normal-reconciliation-20261026-v1/flow_audit.py": {
+      "bytes": 5425,
+      "sha256": "280d834adf73f2798320a85a732b1b066fa6fe098ce8b7e200706ae5698de5c4"
+    },
+    "flow-normal-reconciliation-20261026-v1/flow_reconcile.py": {
+      "bytes": 6982,
+      "sha256": "fef15c01adde17f3e46c1c5ae1e47f0f646b7738b75bedaef0ed4a8d01e4e6bd"
+    },
+    "flow-normal-reconciliation-20261026-v1/normal_reconcile.py": {
+      "bytes": 10254,
+      "sha256": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f"
+    },
+    "flow-normal-reconciliation-20261026-v1/readback-tool-result.json": {
+      "bytes": 2866,
+      "sha256": "88fe7689a6f81bcbf9147517860ce0fb75065823cf6fb9f17e7c0a2642df14a4"
+    },
+    "flow-normal-reconciliation-20261026-v1/readback.py": {
+      "bytes": 2876,
+      "sha256": "165ed58519a0754ca2d22c9c4d1d0435872e3a1969c54186bd394318ed70df05"
+    },
+    "flow-normal-reconciliation-20261026-v1/source.json": {
+      "bytes": 706,
+      "sha256": "ebf5df9d8cec662a2c24b5d9cea1e2b00a0ee04798d4ce52973390b453e18172"
+    },
+    "flow-normal-reconciliation-20261026-v1/test_flow.py": {
+      "bytes": 5229,
+      "sha256": "df6474fd0a7f484a950ebc891fa4783d46078e5034fdf73030b500903077c347"
+    },
+    "flow-normal-reconciliation-20261026-v1/test_normal.py": {
+      "bytes": 15792,
+      "sha256": "59065b85aeff11ab317adea2fdc20aa2184d404016271fd3ad7bdb63f6d96aa5"
+    },
+    "package_flow_disposition_20261026.py": {
+      "bytes": 3315,
+      "sha256": "0e9001ef71ddda983242e6116078eadbbdca1245a171e3de588c978302895da8"
+    },
+    "project-flow-package-20261026-v1/project-flow-20261026-v1.tar.gz": {
+      "bytes": 213491,
+      "sha256": "c6e3159ffb019245eff59f4fe108ddad6409654aeca8ec0b56281686a66ea19e"
+    },
+    "project-proof-20261026-v1/FLOW-SCOPE-CLARIFICATION.json": {
+      "bytes": 11277,
+      "sha256": "b52cea5d107b69240c9faab22393afd5f52a7d75be977a5dd67c31734c518099"
+    }
+  },
+  "non_claims": [
+    "No replay or successor authority",
+    "No active deductive proof result is packaged",
+    "No full custody, native compaction, system or release acceptance"
+  ],
+  "provenance": "Unsigned owner observations and actual GPT-6.1 independent readback",
+  "reconciliation_source_sha256": "ebf5df9d8cec662a2c24b5d9cea1e2b00a0ee04798d4ce52973390b453e18172",
+  "result": "30 component methods pass; actual root disposition and separate readback exit zero; original pending identity and bytes retained",
+  "scope_correction": "Eleven non-SPARK test/support units have zero reported entities; roster presence is not proof coverage",
+  "source_head": "bc7f32afa393285ca2ca817ff6651739643de580",
+  "status": "EXACT_COMPLETED_FLOW_DISPOSITION_ONLY",
+  "temporal_boundary": "Pending absence applies after the completed flow disposition and before subsequent proof admission"
+}

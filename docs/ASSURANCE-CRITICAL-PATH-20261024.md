@@ -1,3 +1,18 @@
+# Completed flow disposition; non-SPARK scope explicit — 2026-10-26
+
+The [exact completed-flow disposition](FLOW-DISPOSITION-20261026.md) passed its
+30 component methods and actual root/readback checks. It preserves the original
+pending inode and bytes and grants no replay or successor authority. Pending
+absence at that readback applies before any subsequent invocation.
+
+The flow report now names eleven test/support units explicitly outside SPARK.
+Their zero-entity rows are exclusions, not proof coverage. The original raw
+archive is unchanged. Whole-project deductive evidence must separately establish
+the actual SPARK boundary, coverage, assumptions and results. Native custody,
+compaction, R05 BOTH, judge and all installed/release obligations remain open.
+
+---
+
 # Whole declared-project flow passes; deductive proof remains open — 2026-10-26
 
 The [complete declared-project flow check](PROJECT-FLOW-20261026.md) reports
