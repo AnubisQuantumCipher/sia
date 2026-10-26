@@ -1,3 +1,22 @@
+# Actual post-admission cut and pending refusal tested — 2026-10-26
+
+The [post-admission fixture](ORDINARY-POST-ADMISSION-CUT-20261026.md) now has
+independent payload and child entry records, followed by five tracked roles
+terminal/reaped before cleanup, with no cleanup signals or errors. The subsequent
+fresh-output invocation refused at the unresolved pending record before launch;
+separate root readback matched its bytes. The 27 component controls and actual
+GPT-6.1 source/result reviews are retained with exact-source evidence.
+
+The earlier pre-admission fixture remains reconciled. This new post-admission
+fixture has its own unresolved intent; earlier pending-absence statements apply
+only to the prior state. Next: retain an exact disposition for this harmless
+interrupted fixture, then qualify the remaining custody/lifecycle boundaries.
+No replay or successor authority follows. Witness loss, pre-entry custody,
+arbitrary descendants, native C14, repeated compaction, R05 BOTH, judge,
+installed and release gates remain open. No original obligation is retired.
+
+---
+
 # Exact interrupted fixture reconciled; remaining cuts stay open — 2026-10-26
 
 The [interrupted-fixture reconciliation](ORDINARY-CUT-RECONCILIATION-20261026.md)
