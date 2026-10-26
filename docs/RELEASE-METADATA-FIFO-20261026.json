@@ -1,0 +1,330 @@
+{
+  "schema": 1,
+  "status": "NON_FINAL_SCOPED_TESTED_REPAIR",
+  "authority": "NONE",
+  "whole_system_accepted": false,
+  "audit_sha256": "ceb044d127e4fc6e59d37102ffe402ee82ad2f5307a4be105408d05e9cb348aa",
+  "independent_review_sha256": "568b47a1c894713f750f7503349449ef09c2d6856536504bb3aae44e28cd0499",
+  "audit": {
+    "schema": 1,
+    "time": "2026-10-26T17:43:50.835639+00:00",
+    "status": "SCOPED_TESTED_REPAIR_NOT_SYSTEM_ACCEPTANCE",
+    "baseline_commit": "57fa2a1e03f0e1daa384f252771743036a9b3e4f",
+    "baseline_cases": [
+      {
+        "case": "optional_absent",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "completion_fifo",
+        "child_timeout": true,
+        "child_exit": -9,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "completion_newer",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "resident_newer",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "resident_fifo",
+        "child_timeout": true,
+        "child_exit": -9,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-authorize-fence-fifo",
+        "child_timeout": true,
+        "child_exit": -9,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-authorize-fence-regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-tree-digest-fifo",
+        "child_timeout": true,
+        "child_exit": -9,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-tree-digest-regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "source_fifo",
+        "child_timeout": true,
+        "child_exit": -9,
+        "child_reap_state": "REAPED"
+      }
+    ],
+    "candidate_cases": [
+      {
+        "case": "optional_absent",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "completion_fifo",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "completion_newer",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "resident_newer",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "resident_fifo",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-authorize-fence-fifo",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-authorize-fence-regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-tree-digest-fifo",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "runtime-tree-digest-regular",
+        "child_timeout": false,
+        "child_exit": 0,
+        "child_reap_state": "REAPED"
+      },
+      {
+        "case": "source_fifo",
+        "child_timeout": false,
+        "child_exit": 2,
+        "child_reap_state": "REAPED"
+      }
+    ],
+    "fixture_preservation": "All 11 baseline, 11 candidate, and 16 unchanged fence reports preserve compared fixture state. Test methods compare actual bytes as well as metadata and digests.",
+    "original_selection_methods": 25,
+    "source": {
+      "bin/siarelease.py": "6f82dd18911f5b85629f1ee91d894de2b9e58e523266d25c980a6ee828444695",
+      "tests/test_release_metadata_admission.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676",
+      ".github/workflows/ci.yml": "c3749291c3f127dfdeb764b9f3ad5f8d87288c5e9bab17bef50e9dd8623634a0"
+    },
+    "files": {
+      "BASELINE-siarelease.py": "86f3389990ff2e6a7d8009fa580c94a346b46959d11b799e269b442442074bf1",
+      "TEST-SOURCE.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676",
+      "run_cases.py": "7a07c5eeb3a2bcdccad6e5c15d54e382b94dcbb83f5248142bff5eec48f78b12",
+      "BASELINE-EXECUTION.json": "5928fa7d0c4a74a50ef3adab82dbf95215920d719841f653b61dfdd649d4eb03",
+      "BASELINE-STDOUT.txt": "51b9636506c0b8935c68fea4eb4da52563956deb9355a5d5a28a056bd55cf9fe",
+      "BASELINE-STDERR.txt": "93228e611f2a5cd3c35a06668512ffd4f8de0c5f3ff685b96855d60329956739",
+      "CANDIDATE-EXECUTION.json": "b8874cafa48c3fb822d91510107124d846ba82659050142a890eb97696f23d30",
+      "CANDIDATE-STDOUT.txt": "dba106d9bbfc24796cb73130862c8cc67704f65dfa0523df6c156d5a24e390de",
+      "CANDIDATE-STDERR.txt": "ed2d7da453136f3f743ba3b25f61a660e7e8549def3a32e685a44d151d4b732b",
+      "ORIGINAL-EXECUTION.json": "4df99853d8986f435e414c5960fbe9b0011cbba557f190ff286b574267b57aca",
+      "ORIGINAL-STDOUT.txt": "3e90d645a2882f035afbf5bf47794f0e3b46abab5afd1c632c5d06029770b2e3",
+      "ORIGINAL-STDERR.txt": "787393444dc753305aee539ae664e1f88f743fbd835f1052801357a340e36f5f",
+      "BASELINE-STATIC.json": "56fae9a960ce9ee0b13b0c1e377f3d4205f3862d570046377e7690c79e6a0f00",
+      "CANDIDATE-STATIC.json": "d3b8b3121ce748147500b3074dfc335bf13ba0af4cc2f5e14a681490920b45c9",
+      "OBSERVER-STATIC.json": "718a120c16b4f385268013d854461b32d93946fb32a5f82e6fa51da84844973a",
+      "CI-STATIC-STEP.sh": "a5d736bab1096f8d0d7a78e0d7f0748e081bdb62c95fdef91f0fb1ac38bfd1b2",
+      "CI-STATIC-EXECUTION.json": "e7aeaeb5b81419c39c0616df49068674b44b37474e8332a195ab5798cf3d1847"
+    },
+    "ci_boundary": "Functional executions bind CI hash 2f7b32ba0d07958bebabad5ce5268876ddac9f6a65c0774bd2bf90cb0ef87bd2. Final CI additionally enforces bin/siarelease.py; the exact final CI static block separately executes with exit 0. Product and test hashes are unchanged.",
+    "unproved": [
+      "Universal device or filesystem latency",
+      "Incompatible file leases",
+      "Complete R13 non-FIFO/ownership/substitution/short-read inventory",
+      "Installed lifecycle",
+      "Whole repository static analysis",
+      "Full project deductive proof and 11 non-SPARK exclusions",
+      "Native custody and actual compaction",
+      "R05 BOTH and Astra/max judge",
+      "Installed acceptance and release gates"
+    ]
+  },
+  "independent_review": {
+    "acceptance": {
+      "explicit_static_profile": "TESTED",
+      "formal_proof": "UNRUN",
+      "independent_execution": "TESTED",
+      "local_final_CI_static_step": "TESTED",
+      "named_FIFO_behavior_repair": "TESTED",
+      "proof_dispatch_authorized": false,
+      "whole_R13": "OPEN",
+      "whole_system_accepted": false
+    },
+    "authority": "NONE",
+    "base_commit": "57fa2a1e03f0e1daa384f252771743036a9b3e4f",
+    "blockers": [],
+    "current_source_sha256": {
+      ".github/workflows/ci.yml": "c3749291c3f127dfdeb764b9f3ad5f8d87288c5e9bab17bef50e9dd8623634a0",
+      "bin/siarelease.py": "6f82dd18911f5b85629f1ee91d894de2b9e58e523266d25c980a6ee828444695",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_marketplace_first_light.py": "3dd8f32d5a80cd51b35a740e6ded97d7c825ebdbe9c473f678b7d40eb6a81618",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "tests/test_release_metadata_admission.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676"
+    },
+    "evidence_sha256": {
+      "BASELINE-EXECUTION.json": "5928fa7d0c4a74a50ef3adab82dbf95215920d719841f653b61dfdd649d4eb03",
+      "BASELINE-STATIC.json": "56fae9a960ce9ee0b13b0c1e377f3d4205f3862d570046377e7690c79e6a0f00",
+      "BASELINE-STDERR.txt": "93228e611f2a5cd3c35a06668512ffd4f8de0c5f3ff685b96855d60329956739",
+      "BASELINE-STDOUT.txt": "51b9636506c0b8935c68fea4eb4da52563956deb9355a5d5a28a056bd55cf9fe",
+      "BASELINE-siarelease.py": "86f3389990ff2e6a7d8009fa580c94a346b46959d11b799e269b442442074bf1",
+      "CANDIDATE-EXECUTION.json": "b8874cafa48c3fb822d91510107124d846ba82659050142a890eb97696f23d30",
+      "CANDIDATE-STATIC.json": "d3b8b3121ce748147500b3074dfc335bf13ba0af4cc2f5e14a681490920b45c9",
+      "CANDIDATE-STDERR.txt": "ed2d7da453136f3f743ba3b25f61a660e7e8549def3a32e685a44d151d4b732b",
+      "CANDIDATE-STDOUT.txt": "dba106d9bbfc24796cb73130862c8cc67704f65dfa0523df6c156d5a24e390de",
+      "CI-STATIC-EXECUTION.json": "e7aeaeb5b81419c39c0616df49068674b44b37474e8332a195ab5798cf3d1847",
+      "CI-STATIC-STEP.sh": "a5d736bab1096f8d0d7a78e0d7f0748e081bdb62c95fdef91f0fb1ac38bfd1b2",
+      "INDEPENDENT-EXECUTION.json": "34b07ba26d1b954fb36bc80c79ba93d80b91d626263dccc149c792a1f6c95f44",
+      "INDEPENDENT-STDERR.txt": "716ae41456d56eae5438ed461db13ca640c2172d55fc5d69e6fe1adffdb04ea1",
+      "INDEPENDENT-STDOUT.txt": "2e0fc36ec87fa21bac3c5d14ef081c2c1d1fe26794692c8c3c130000205a78b6",
+      "ORIGINAL-EXECUTION.json": "4df99853d8986f435e414c5960fbe9b0011cbba557f190ff286b574267b57aca",
+      "ORIGINAL-STDERR.txt": "787393444dc753305aee539ae664e1f88f743fbd835f1052801357a340e36f5f",
+      "ORIGINAL-STDOUT.txt": "3e90d645a2882f035afbf5bf47794f0e3b46abab5afd1c632c5d06029770b2e3",
+      "PREPARATION.json": "9aa47a371c178d0088c7291572b908cb087cbc717c8906581918372ee07e5678",
+      "TEST-SOURCE.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676",
+      "run_cases.py": "7a07c5eeb3a2bcdccad6e5c15d54e382b94dcbb83f5248142bff5eec48f78b12"
+    },
+    "executed_source_sha256": {
+      ".github/workflows/ci.yml": "2f7b32ba0d07958bebabad5ce5268876ddac9f6a65c0774bd2bf90cb0ef87bd2",
+      "bin/siarelease.py": "6f82dd18911f5b85629f1ee91d894de2b9e58e523266d25c980a6ee828444695",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_marketplace_first_light.py": "3dd8f32d5a80cd51b35a740e6ded97d7c825ebdbe9c473f678b7d40eb6a81618",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "tests/test_release_metadata_admission.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676"
+    },
+    "execution_evidence": {
+      "baseline": {
+        "all_timed_out_children_killed_exit_minus9_and_reaped": true,
+        "fifo_deadline_failures": 5,
+        "fixture_state_preserved": true,
+        "observer_failure": null,
+        "reports": 11,
+        "six_controls_correct": true,
+        "suite_exit": 1
+      },
+      "candidate": {
+        "all_children_reaped": true,
+        "all_expected_exits": true,
+        "fixture_state_preserved": true,
+        "observer_failure": null,
+        "reports": 11,
+        "source_preserved": true,
+        "suite_exit": 0,
+        "timeouts": false
+      },
+      "independent": {
+        "actual_suite_exit": 0,
+        "all_CLI_children_and_suite_reaped": true,
+        "all_eleven_reported_private_fixture_roots_removed": true,
+        "all_expected_exits": true,
+        "cleanup_error": null,
+        "distinct_primary_and_independent_captures": true,
+        "existing_lock_identity_preserved": true,
+        "fixture_state_preserved": true,
+        "observer_failure": null,
+        "reports": 11,
+        "source_preserved": true,
+        "timeouts": false
+      },
+      "original_selection": {
+        "scope": "Existing sixteen fenced-metadata cases, eight selected release methods and one existing downgrade method; no full-suite claim",
+        "sixteen_original_FIFO_case_reports_preserved_and_reaped": true,
+        "suite_exit": 0,
+        "tests": 25
+      }
+    },
+    "limits": [
+      "Only five native no-writer FIFO refusals and six controls are tested in the new module; no peer-stream, device-driver, namespace-race or universal filesystem timing qualification.",
+      "Root O_DIRECTORY and mode-zero O_PATH behavior was source-reviewed here; prior tests remain separately scoped.",
+      "An outer observer timeout supports only its direct-test-process cleanup observation; no descendant cleanup is inferred. Accepted runs have all individual CLI child reap records.",
+      "No formal proof, native custody, protected ledger, installation, services or live store was exercised.",
+      "Broader R13/R40, mandatory mission obligations, installed whole-system acceptance and release/publication remain open.",
+      "Earlier baseline failures and all prior evidence remain retained; no warning, requirement or policy waiver."
+    ],
+    "model": "gpt-6.1-sol",
+    "provenance": "Unsigned model-origin independent source and retained-evidence judgment, including one actual independent unprivileged eleven-case execution; not formal proof or platform attestation",
+    "reviewer": "/root/reconcile_review",
+    "schema": 1,
+    "scope": "Two O_NONBLOCK additions in _stable_owned_read and ordinary _measure_runtime_tree member flags; new eleven-case actual-CLI tests; add new test and full release module to existing CI static and suppression rosters",
+    "smallest_sound_next_step": "Bind the exact source epochs and preserved negative evidence into the non-final checkpoint; continue remaining mission obligations without inferring proof or system acceptance.",
+    "source_epoch_boundary": {
+      "explanation": "After all fixture test runs, CI alone added bin/siarelease.py to both existing rosters. Product and test bytes were unchanged; the exact final static run block was separately executed.",
+      "final_enforcement_CI_sha256": "c3749291c3f127dfdeb764b9f3ad5f8d87288c5e9bab17bef50e9dd8623634a0",
+      "test_executions_CI_sha256": "2f7b32ba0d07958bebabad5ce5268876ddac9f6a65c0774bd2bf90cb0ef87bd2"
+    },
+    "source_review": [
+      "The two changed opens reject nonregular descriptors before reading; existing type, ownership, link, mode, size, generation, digest, receipt and version checks remain intact.",
+      "The three other opens in the reviewed five-site file inventory use O_DIRECTORY, guarded O_PATH, or previously repaired nonblocking metadata flags. This is not a repository-wide reader inventory.",
+      "Fence runtime FIFO controls use nonzero0600 members and valid empty fence entries, reaching the ordinary-member path rather than O_PATH.",
+      "The runtime positives independently construct the complete supported legacy-eight-member digest from literal fixture bytes.",
+      "O_NONBLOCK can also cause lease-related regular-file refusal; this remains fail-closed and does not justify universal I/O timing claims."
+    ],
+    "static_evidence": {
+      "final_CI_run_block_extracted_whole_and_source_bytes_matched": true,
+      "final_CI_script_sha256": "a5d736bab1096f8d0d7a78e0d7f0748e081bdb62c95fdef91f0fb1ac38bfd1b2",
+      "final_CI_workflow_sha256": "c3749291c3f127dfdeb764b9f3ad5f8d87288c5e9bab17bef50e9dd8623634a0",
+      "findings": [],
+      "frozen_profile_unchanged": true,
+      "hosted_CI_complete": false,
+      "independent_static_tool_rerun": false,
+      "local_final_CI_static_step_exit": 0,
+      "local_final_CI_static_step_stderr": "",
+      "local_final_CI_static_step_stdout": "[]",
+      "recorded_exit": 0,
+      "stderr": "",
+      "three_explicit_sources": "Full bin/siarelease.py, new release-metadata test, existing fenced-metadata helper"
+    },
+    "status": "SCOPED_RELEASE_ADMISSION_FIFO_REPAIR_TESTED_WITH_INDEPENDENT_EXECUTION",
+    "utc": "2026-10-26T17:44:42.497260+00:00"
+  },
+  "raw_evidence_policy": "Original stdout, stderr, execution records, snapshots and independent captures remain preserved locally under the existing evidence-root storage pin. Hashes bind those retained files; this JSON is not itself formal proof."
+}

@@ -59,7 +59,8 @@ jobs:
                    'bin/siaeventpackcapture.py', 'bin/siaeventpackproposal.py',
                    'tests/test_event_pack_proposal.py', 'tests/test_event_pack_admission.py',
                    'tests/test_backup_upload_diagnostics.py',
-                   'tests/test_fenced_metadata_admission.py')
+                   'tests/test_fenced_metadata_admission.py',
+                   'tests/test_release_metadata_admission.py', 'bin/siarelease.py')
           forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
           for name in names:
               with Path(name).open('rb') as source:
@@ -92,6 +93,8 @@ jobs:
             tests/test_event_pack_admission.py \
             tests/test_backup_upload_diagnostics.py \
             tests/test_fenced_metadata_admission.py \
+            tests/test_release_metadata_admission.py \
+            bin/siarelease.py \
             > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
           # Bounded previews only; the exit/stderr/complete-JSON gates below
           # still reject a failure even when its diagnostic output is larger.

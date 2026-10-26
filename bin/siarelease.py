@@ -295,7 +295,7 @@ def _measure_runtime_tree(root, fenced_entries=None):
     uid = os.geteuid()
     root_descriptor, root_before = _open_runtime_root(root, uid)
     opened = []
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     path_flags = getattr(os, "O_PATH", 0) \
         | getattr(os, "O_CLOEXEC", 0) \
@@ -460,7 +460,7 @@ def authorize_fenced_runtime(journal, tombstone, receipt, runtime):
 
 
 def _stable_owned_read(path, label, limit, *, required):
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) \
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) \
         | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)

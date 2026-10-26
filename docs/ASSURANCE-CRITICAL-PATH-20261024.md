@@ -1,3 +1,22 @@
+# Remaining release-module FIFO read opens repaired — 2026-10-26
+
+The [release-metadata repair](RELEASE-METADATA-FIFO-20261026.md) adds nonblocking
+admission to stable metadata and ordinary runtime-member reads. Five actual
+baseline FIFO hangs remain retained; all eleven candidate cases, a separate
+actual GPT-6.1 execution, and twenty-five unchanged selected methods pass. The
+full release module and new tests now participate in the existing frozen CI
+static checks; the complete updated static step passes locally.
+
+This does not close the complete R13 matrix, R40, installed acceptance or the
+mission. The proof remains interrupted, and its exact reconciliation grants no
+successor authority. A fresh proof needs a reviewed aggregate output-space
+budget as well as capacity beyond the reserve; periodic free-space checks and
+the small stopped partial output do not establish that bound. The reconnected
+iPad does not change retention rules or WORLDLINE's separate reservation. Native
+custody, compaction, R05 BOTH, judge, installed and release gates remain open.
+
+---
+
 # Scoped fence-reader static findings repaired — 2026-10-26
 
 The [separate static repair](FENCED-STATIC-REPAIR-20261026.md) resolves the six
