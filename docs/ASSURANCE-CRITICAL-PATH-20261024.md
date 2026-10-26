@@ -1,3 +1,22 @@
+# Actual pre-admission observer cut and pending refusal tested — 2026-10-26
+
+The [instrumented observer-loss campaign](ORDINARY-OBSERVER-CUT-20261026.md)
+observed all four tracked roles terminal and reaped before witness cleanup, with
+no cleanup signals and no payload entry. A fresh-output invocation subsequently
+refused at the existing pending record. Separate root readback confirms unchanged
+pending bytes. The exact-manifest history guard passes 44 component methods;
+instrumentation passes eight. Failed and unexecuted drafts remain archived.
+
+The completed normal fixture was reconciled earlier; this new interrupted
+fixture remains unresolved. Earlier pending-absence and unrun-cut statements
+below are historical. No automatic retirement, semantic replay or successor
+authority follows. Reconcile this exact fixture against its retained termination
+evidence, then qualify the remaining boundary cuts. Pre-entry, post-admission,
+witness-loss custody, native C14, repeated compaction, R05 BOTH, judge, installed
+composition and release obligations remain open. No original gate is retired.
+
+---
+
 # Completed fixture reconciled; observer-death test remains next — 2026-10-26
 
 The [exact manual reconciliation](ORDINARY-MANUAL-RECONCILIATION-20261026.md)
