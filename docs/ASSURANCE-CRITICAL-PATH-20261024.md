@@ -1,3 +1,24 @@
+# Closed R05 experiment; continuity recovery remains next — 2026-10-26
+
+The [capture observation and traversal experiment](R05-CAUSAL-TRAVERSAL-20261026.md)
+are complete at their declared diagnostic scope. The valid capture observation
+and original workload tests passed; earlier partial-capacity and preflight failures
+are retained. The traversal candidate showed no demonstrated benefit and is
+NOT ADOPTED. This experiment is closed. R05 BOTH remains open and its original
+executable assertion is unchanged.
+
+The next existing continuity gap is recovery after the actual observer dies:
+its local lock and process handles disappear, and a successor needs durable
+operation identity plus independently established prior-work termination before
+retrying. Existing creator-death tests do not discharge that recovery join.
+Native Codex lifecycle extraction, receiver selection, association persistence,
+repeated compaction tests, Astra judge, installed composition and release gates
+remain open. No new dispatch is admitted by this documentation checkpoint.
+Earlier entries below retain their historical scope and do not override this
+newer disposition. All original mission obligations remain.
+
+---
+
 # Current R05 experiment disposition — 2026-10-26
 
 The [fixed UTF-8 pool experiment](R05-UTF8-POOL-EXPERIMENT-20261026.md) passes
