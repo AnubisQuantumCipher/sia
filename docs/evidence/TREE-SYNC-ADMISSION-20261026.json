@@ -1,0 +1,47 @@
+{
+  "schema": "sia-tree-sync-checkpoint-evidence-v1",
+  "status": "TESTED_SCOPED_NATIVE_FIFO_ADMISSION_REPAIR",
+  "scope": "Complete extracted installer tree-CAS program, ordinary uid1000 private fixtures",
+  "sources": {
+    "install.sh": "a8d5ef3ab331a30df21ef3f0cdefcd8fe210995810eb6e88f169dae659925115",
+    "uninstall.sh": "f0f42cfe2ad119d35c83d9e54a13462ffaee92a8e0877913d1461dffb8506729",
+    "bin/siarelease.py": "6f82dd18911f5b85629f1ee91d894de2b9e58e523266d25c980a6ee828444695",
+    "tests/test_test_state_isolation.py": "61e2a69514e93277867a9634009a5dffc914f4a1a7ad36005d092de189e078e5",
+    "tests/test_corpus_root_admission.py": "f1b044d37d1dfba8b7de9657cf2acb0c2f76e5f00a598e95789e2f4dfbd0e7ac",
+    "tests/test_tree_journal_admission.py": "25e31c52764e5245116dd0b358236a17ece45e7e3872553c98197c39ae5e6193",
+    "tests/test_tree_sync_admission.py": "122e0ab53c3c191da109219d45d92e3640c6c5308bd6ffa783f7d60ed5daf27f",
+    "tests/tree_sync_child.py": "07ef81cc10220256ffebbedfbb35573545b52e75f88b0bb13fccb269d8e43cf9",
+    "tests/test_release_metadata_admission.py": "78d111e64da379650a3e97b08bc8b29c88ea95264b6c145256eb2888049294bd",
+    "tests/test_fenced_metadata_admission.py": "2dcbef04d27c542a0e57e99fb6458745b30c4b519ed17b246a1840e6129a2a2a",
+    "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+    "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+    ".github/workflows/ci.yml": "03a3dba96d1070538f90021ffddbdb0847e763e3412e7c03c0c88c0c3c1fd4f6",
+    "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741"
+  },
+  "evidence_audit": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-admission-20261026-v1/EVIDENCE-AUDIT.json",
+    "sha256": "33fff0df231d8d348388fde1a635b26a1dfcd47e73693e104dcc7a28cd985ff7"
+  },
+  "independent_review": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-production-review-20261026-v1/INDEPENDENT-REVIEW.json",
+    "sha256": "ca54520fd5d23edcf95f0cef1036449d5c0dc35b7c864b5a61984520c19bda2b"
+  },
+  "baseline": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-admission-preparation-20261026-v2/run-6fa00b2e08784bc2b413076188f16f9f/RESULT.json",
+    "sha256": "584901bccc862d2e1dff6cf7b54423a5eef14b3b837c985e03f1c41828cba7ea"
+  },
+  "candidate": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-admission-20261026-v1/CANDIDATE-02-EXECUTION.json",
+    "sha256": "eacaacd5b34d8bff8118ccbe0e83c2ca963799c834d700654d8af6ea6a247c84"
+  },
+  "original": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-admission-20261026-v1/ORIGINAL-02-EXECUTION.json",
+    "sha256": "bf8f0464b0bcc12d4781dd2340f3cd638792f1488c3e082cca996a0c65404530"
+  },
+  "qualification": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-tree-sync-admission-20261026-v1/QUALIFICATION-02.json",
+    "sha256": "4a83ca65434a22dd85a529a8f91f13cca7c8ec42970df5d56946226c90e79cab"
+  },
+  "full_system_accepted": false,
+  "proof_pass": false
+}

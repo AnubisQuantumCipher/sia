@@ -1,0 +1,79 @@
+{
+  "archive": "native-fortified-plugin-20261025.tar.gz",
+  "archive_bytes": 102644,
+  "archive_sha256": "1f0e519c4e207d3fb6cfd1759cbd790932960fb9ad91fec6432f090050d78a9b",
+  "carrier_base": "d7740bd79bc7ebed69071a82fc246f98b54b5a4f",
+  "compiler_result": "exit1: installed GCC header diagnostics under strict warnings",
+  "compiler_source": "301eb08fa2c5b6f3045260bf1294c2e2bacbcd90",
+  "controls": "UNRUN; no shared library produced",
+  "limitations": "No plugin loaded, compiler qualification, full SIA convergence, installation or release; original plugin-free gate unchanged.",
+  "members": {
+    "FINDING.md": {
+      "bytes": 3143,
+      "sha256": "8e249f4f2ce5a592359b5e09cb7803ed23c681e4377bcf73d2921ddecb7c259e"
+    },
+    "build/dependencies.d": {
+      "bytes": 29267,
+      "sha256": "29bf0923d7bc47ec83fdd917465a14f10e445d857a835b0e82e8c2c5d8d9f7ef"
+    },
+    "build/result.json": {
+      "bytes": 190347,
+      "sha256": "95b1ea03192791770938ee4909a9275b843c5623bc175f90bbec11755cf7cf2b"
+    },
+    "build/stderr": {
+      "bytes": 475606,
+      "sha256": "bf51730fc457c2a2d9fe343003aeb73377a9456202201313f1e7ab1b1c05a984"
+    },
+    "build/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build_evidence.py": {
+      "bytes": 3316,
+      "sha256": "7478a1afee732b507f2c90b33d60b4071de1d24dbb004ccca86419ee93e0bd66"
+    },
+    "checked_memset_model.cc": {
+      "bytes": 4218,
+      "sha256": "429aa6f12a9d6bd4d99929ba9d4965bf9a35c35deaf39a861e750955dcbe184c"
+    },
+    "checked_memset_model.initial.cc": {
+      "bytes": 3775,
+      "sha256": "e6b57c7496eefcb02076c9a8caf87fc61501483efc7c281e29ec500cebf6beed"
+    },
+    "finding.json": {
+      "bytes": 1384,
+      "sha256": "900568b5cb59733452747bc829493faa81998c5e3cb3dd453d1f6c950528ceb4"
+    },
+    "independent-source-review.txt": {
+      "bytes": 1104,
+      "sha256": "19801d19825651c425bb7d35915d8dfe20a644515e52b124ac8cab8146974a4a"
+    },
+    "run_build.py": {
+      "bytes": 3366,
+      "sha256": "621bce8af13a92c964ec719ebb277df2b41eef770374b0303570754473100055"
+    },
+    "runner-static-result.json": {
+      "bytes": 1803,
+      "sha256": "e384a45f4d8c321c79818801ece422bb9efbe9b15d7624e4d7868db8fc615a69"
+    },
+    "runner-static.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runner-static.stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "storage-pin-readback.json": {
+      "bytes": 506,
+      "sha256": "904660a6177aeb127ed93bda93ee3f160068f2e7fad2ee057bd03b85ed3b0e28"
+    },
+    "storage-preflight.json": {
+      "bytes": 843,
+      "sha256": "b3c74b83ecd948ead6993100f75543e757e10e350f7b985db487579f9695df88"
+    }
+  },
+  "review": "ActualGPT6.1 read-only source/raw review; no independent execution",
+  "static": "Frozen167-rule partial profile exit0 for runner; no whole-tree claim",
+  "status": "FAILED_STRICT_PLUGIN_BUILD_NOT_ADOPTED"
+}

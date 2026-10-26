@@ -155,7 +155,7 @@ def _json_size(value, maximum, *, text_limit=None):
             used += len("true" if item else "false")
         elif item is None:
             used += len("null")
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if id(item) in active or len(item) > maximum:
                 _refuse("input-container-capacity")
             used += len("{}" if kind is dict else "[]") + max(len(item) - 1, 0)

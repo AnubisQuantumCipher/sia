@@ -34,7 +34,7 @@ unsupported claim. This roadmap records no per-mechanism win yet.
 
 ## Historical project snapshot (measured 2026-09-02)
 
-**Proven and usable today — capture and recall.** Origin-labeled capture across nine source
+**Observed in the historical deployment — capture and recall.** Origin-labeled capture across nine source
 adapters, the git-versioned corpus (1,604 pages), local recall, the Ed25519 signed ledger
 (seq 4,600+, chains passing), the cockpit, the MCP surface, and — as of v1.5.1 — a nightly
 SM-2 rehearsal that actually grades: the first two real cycles recorded
@@ -44,11 +44,12 @@ SM-2 rehearsal that actually grades: the first two real cycles recorded
 `tests/test_gbrain_contract.py` against the real binary, locally and in CI.
 
 **Unproven, honestly labeled — the retrieval and rehearsal policies.** The whitepaper
-states it plainly: the associative tie-breaker matched the unmodified hybrid query on the historical
-probe set and did not beat it, and this release contains no controlled evidence that
+states it plainly: the associative tie-breaker tied the initial historical
+probe set and underperformed the unmodified hybrid query on the expanded set;
+it ships disabled by default. This release contains no controlled evidence that
 rehearsal improves answer quality.
 
-**The instruments, read today:**
+**The instruments, as recorded on 2026-09-02:**
 
 | Instrument | Baseline (2026-09-02) | What it needs |
 |---|---|---|

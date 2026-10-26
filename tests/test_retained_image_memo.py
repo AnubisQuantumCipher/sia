@@ -1,9 +1,9 @@
-"""A byte-identical retained image validated once is not re-derived.
+"""Required R05 reuse regression, restored after the approval correction.
 
-Transactions re-validate the retained capture and batch at every consistency
-check; on a 12 MB capture each derivation cost 78 seconds while the identity
-digest cost about one. The memo keeps the digest (every call) and skips only
-the derivation of an image already validated under the same constants.
+The original fixture and derivation-count assertions remain binding. Separate
+current-policy tests must also pass; cached success must not bypass them.
+The earlier experimental opposite-count test is retained as historical evidence.
+This test alone proves neither useful speed nor complete resource qualification.
 """
 
 try:
@@ -13,6 +13,7 @@ except ModuleNotFoundError:
 
 import copy
 import importlib
+import os
 import unittest
 from unittest import mock
 
@@ -21,6 +22,7 @@ from tests import test_controller_source_idle as idle_tests
 
 class RetainedImageMemo(unittest.TestCase):
     def setUp(self):
+        self.assertEqual(os.path.expanduser("~"), sia_test_home.ISOLATED_HOME)
         self.idle = idle_tests.ControllerSourceIdle(methodName="runTest")
         self.idle.setUp()
         self.addCleanup(self.idle.doCleanups)

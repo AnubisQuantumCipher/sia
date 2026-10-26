@@ -295,7 +295,7 @@ def current_generation(path):
 
 
 def open_owned_regular(path):
-    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
              | getattr(os, "O_NOFOLLOW", 0))
     descriptor = os.open(path, flags)
     value = os.fstat(descriptor)
@@ -1286,7 +1286,8 @@ fcntl.flock(lock_fd, fcntl.LOCK_EX)
 def read_journal():
     descriptor = os.open(journal_name, os.O_RDONLY
                          | getattr(os, "O_CLOEXEC", 0)
-                         | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent_fd)
+                         | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
+                         dir_fd=parent_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) \
@@ -1396,9 +1397,9 @@ def recover_journal():
         try:
             rename_noreplace(record["archive"], record["backup"])
             sync_parent()
-        except OSError:
+        except OSError as error:
             retained(record, "tree CAS recovery could not finish archival")
-            raise SystemExit("tree CAS recovery retained an incomplete journal")
+            raise SystemExit("tree CAS recovery retained an incomplete journal") from error
         if not moved_matches(tree_token(record["backup"]), prior):
             retained(record, "tree CAS recovery found a changed archive")
             raise SystemExit("tree CAS recovery retained an incomplete journal")
@@ -3214,7 +3215,7 @@ import sys
 
 journal, tombstone, receipt, kind, target = sys.argv[1:]
 uid = os.geteuid()
-flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+flags = (os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
          | getattr(os, "O_NOFOLLOW", 0))
 
 def generation(value):
@@ -3255,8 +3256,8 @@ try:
     contents = read_owned(receipt, 65_536).decode("utf-8")
     current = os.lstat(target)
 except (FileNotFoundError, OSError, RuntimeError, UnicodeError,
-        ValueError, json.JSONDecodeError):
-    raise SystemExit(1)
+        ValueError, json.JSONDecodeError) as error:
+    raise SystemExit(1) from error
 if not stat.S_ISREG(marker.st_mode) or marker.st_uid != uid \
         or not isinstance(payload, dict) \
         or payload.get("schema") != "sia-launch-fence-v1" \
@@ -3711,7 +3712,9 @@ complete_uninstall_launch_fence() {
       || [ -e "$RUNTIME_BIN_DIR" ] || [ -L "$RUNTIME_BIN_DIR" ]; then
     public_remains=1
   fi
-  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY'
+  # The caller handles failure with ||, which disables errexit in this function.
+  # Retain the recovery marker and armed state unless finalization succeeds.
+  python3 - "$LAUNCH_FENCE_JOURNAL" "$public_remains" <<'PY' || return 1
 import json
 import os
 import stat

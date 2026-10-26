@@ -1,0 +1,89 @@
+{
+  "schema": "sia.corpus-origin-admission-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "2093e13b1603669a86348d8780b87462990fbaec",
+  "problem": "Opening a corpus-origin leaf FIFO for reading blocked before the existing regular-file validation when no writer was connected.",
+  "change": "Open the leaf with O_NONBLOCK before fstat. Preserve no-follow directory traversal, regular-file refusal, bounded byte read and conservative origin classification.",
+  "source_sha256": {
+    "bin/sialib.py": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+    "tests/test_corpus_origin_admission.py": "6e34f416703d001faf6ddc3d916a4f923699441e762230b3d244e8cb76f0b198",
+    "tests/test_sia.py": "5f6459634ec640a827f5a81301a3495abc8d2d51edd75a9ae7d2da753037948b"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 5,
+    "failure": "No-writer FIFO exceeded five-second child-process timeout; other four methods passed.",
+    "source_sha256": {
+      "bin/sialib.py": "e6327b85dcba3b06c53e84dfc09b98598b38196160cf79754dce00659e252682",
+      "tests/test_corpus_origin_admission.py": "6e34f416703d001faf6ddc3d916a4f923699441e762230b3d244e8cb76f0b198"
+    },
+    "log": "evidence/corpus-origin-admission-20261024/baseline-origin-admission.log.gz"
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 9,
+    "elapsed_seconds": 0.899,
+    "source_unchanged": true
+  },
+  "test_scope": "Five new actual filesystem subprocess controls plus four unchanged original CorpusOriginLabels methods. FIFO with and without peer; non-consumption; descriptor counts; directory and symlink refusal; regular-file origins.",
+  "test_recipe": "python3 -B -W error::ResourceWarning -m unittest -v tests.test_corpus_origin_admission tests.test_sia.CorpusOriginLabels",
+  "execution": "Read-only source/root; private tmp/home/run/dev/proc; unshared network/PID namespaces; 60s timeout and 5s kill grace. Explicit isolated test-home bootstrap. Each new child uses -I -B and a five-second timeout. No installed state writes.",
+  "static": {
+    "product_status": "NONPASS_EXISTING_DIAGNOSTICS_UNCHANGED",
+    "product_findings": 154,
+    "comparison": "Same rules, messages, columns and exact affected source lines; no new diagnostic signatures.",
+    "new_test_and_runner_status": "PASS_ZERO_DIAGNOSTICS",
+    "syntax_status": "PASS_COMPILE_ONLY",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "tool": "ruff 0.17.1",
+    "no_suppressions_added": true
+  },
+  "review": {
+    "model": "GPT-6.1",
+    "result": "No blocker for narrow repair checkpoint",
+    "scope": "Source and retained raw evidence",
+    "independent_execution": false
+  },
+  "artifacts": {
+    "baseline-origin-admission.log.gz": {
+      "bytes": 978,
+      "sha256": "1c5343090fe8be6cfa11a052889070756220f847e00ed27fa86e98be95d89c24",
+      "encoding": "gzip",
+      "uncompressed_bytes": 3119,
+      "uncompressed_sha256": "b30c202541f03e1f544516a06818716d67a854c9e156c316be8c4dc4532048da"
+    },
+    "candidate-final-origin-admission.log": {
+      "bytes": 1542,
+      "sha256": "a5205ed1803a95696c5998e28857bfab74b84ce2d8954dbce6ffac5d84853f2e"
+    },
+    "origin-baseline-ruff.stdout.json.gz": {
+      "bytes": 4432,
+      "sha256": "4f722acc05cb207389f2476356703246de92c1087a3afd786639976bde6c5af5",
+      "encoding": "gzip",
+      "uncompressed_bytes": 86007,
+      "uncompressed_sha256": "f8f193f046977e9011c2f5e90b373600a402e5f390225192569255bb1a03c625"
+    },
+    "origin-candidate-ruff.stdout.json.gz": {
+      "bytes": 4337,
+      "sha256": "d13aa065bd4b1bb6692565903934699d09a65acb36239961a553978517685877",
+      "encoding": "gzip",
+      "uncompressed_bytes": 78461,
+      "uncompressed_sha256": "5f6e429b93657be1b13bbe84c46862bc2902ecd025ae8f8bd0deae62fcd24071"
+    },
+    "origin-tests-ruff.stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "origin-tests-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "limits": [
+    "O_NONBLOCK does not establish bounded regular-file or storage latency.",
+    "This reproduces one possible hang, not the historical installed recall timeout.",
+    "No installed recall, indexing, whole-system proof, static compliance or release acceptance.",
+    "Original assurance, recovery, continuity and release gates remain open."
+  ]
+}

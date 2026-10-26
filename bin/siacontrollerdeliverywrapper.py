@@ -150,7 +150,8 @@ def _owner_basis(owner):
     if type(owner.get("_SENSE_ORGAN")) is not dict:
         _refuse("owner-source-catalog-contract")
     claims = owner.get("LIVE_PUBLICATION_NON_CLAIMS")
-    if type(claims) not in (list, tuple) or not claims \
+    claims_kind = type(claims)
+    if (claims_kind is not list and claims_kind is not tuple) or not claims \
             or len(claims) > capacities["MAX_STATE_JSON_BYTES"]:
         _refuse("owner-live-nonclaims-contract")
     if any(type(claim) is not str for claim in claims):

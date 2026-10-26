@@ -1,0 +1,14 @@
+test_directory_refuses_and_releases_descriptors (tests.test_corpus_origin_admission.CorpusOriginAdmission.test_directory_refuses_and_releases_descriptors) ... ok
+test_fifo_with_peer_refuses_without_consuming_evidence (tests.test_corpus_origin_admission.CorpusOriginAdmission.test_fifo_with_peer_refuses_without_consuming_evidence) ... ok
+test_fifo_without_writer_refuses_without_waiting (tests.test_corpus_origin_admission.CorpusOriginAdmission.test_fifo_without_writer_refuses_without_waiting) ... ok
+test_regular_model_page_keeps_its_origin_and_releases_descriptors (tests.test_corpus_origin_admission.CorpusOriginAdmission.test_regular_model_page_keeps_its_origin_and_releases_descriptors) ... ok
+test_symlink_cannot_supply_origin (tests.test_corpus_origin_admission.CorpusOriginAdmission.test_symlink_cannot_supply_origin) ... ok
+test_declared_origins_win_and_legacy_is_conservative (tests.test_sia.CorpusOriginLabels.test_declared_origins_win_and_legacy_is_conservative) ... ok
+test_legacy_jackal_pages_are_non_evidence_and_false_prose_is_inert (tests.test_sia.CorpusOriginLabels.test_legacy_jackal_pages_are_non_evidence_and_false_prose_is_inert) ... ok
+test_linked_parent_cannot_supply_origin (tests.test_sia.CorpusOriginLabels.test_linked_parent_cannot_supply_origin) ... ok
+test_unlabeled_origin_requires_matching_namespace_and_type (tests.test_sia.CorpusOriginLabels.test_unlabeled_origin_requires_matching_namespace_and_type) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.899s
+
+OK

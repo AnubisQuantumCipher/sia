@@ -1,0 +1,97 @@
+{
+  "schema": "sia.cas-journal-admission-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "d9d370992a5be2332f2275f7d16b3fc11643fb84",
+  "finding": "Audit finding30 / existing R13: installer owned_file_cas recovery journal open can wait on FIFO before regular-file admission while replacement lock is held.",
+  "change": "Add O_NONBLOCK to this journal open; retain descriptor type/owner/size/generation checks, cleanup, locking, journal protocol and all other file opens.",
+  "source_sha256": {
+    "install.sh": "127dcf5aa6f59939b20d69885f384c9fd899962bb38b1858695ca776f486b3bc",
+    "tests/test_cas_journal_admission.py": "445635c49ceedf2aaa32a902fa8d3d0fa181ed9d285094912b2413694f521e49"
+  },
+  "baseline": {
+    "status": "FAILED",
+    "tests_reported": 10,
+    "result": "One no-peer FIFO deadline failure; other cases passed. Identical test source."
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 10,
+    "elapsed_seconds": 0.646,
+    "source_unchanged": true
+  },
+  "execution_scope": "Exact installer CAS helper in private files; FIFO, symlink, malformed and normal/recovery controls. No installed lifecycle or physical fault qualification.",
+  "controls": [
+    "FIFO without peer refusal",
+    "FIFO with peer non-consumption",
+    "Symlink/referent and directory preservation",
+    "Invalid JSON, UTF-8, shape and oversized regular journals",
+    "Missing journal no-op",
+    "Valid v1 completed publication recovery",
+    "Normal publication/archive bytes",
+    "Original concurrent generation, crash recovery, short write and fenced mode-zero controls unchanged"
+  ],
+  "static": {
+    "helper": "NONPASS: four unchanged B904 findings, exact locations and messages preserved",
+    "new_tests_and_runner": "PASS frozen strict rules, zero diagnostics, no suppression",
+    "syntax": "Python compile-only and bash -n PASS",
+    "shellcheck": "Unavailable; not executed"
+  },
+  "independent_review": {
+    "model": "GPT-6.1",
+    "result": "No narrow blocker, conditional on static qualification; NONPASS retained, not waived",
+    "independent_execution": false
+  },
+  "limitations": [
+    "No whole helper compliance: existing routine length, dynamic runtime and static findings remain.",
+    "No bound on lock contention or regular storage latency.",
+    "Other journal and lifecycle readers not qualified by this repair.",
+    "No installed recovery, physical crash durability, adversarial same-user confinement or full R13 acceptance.",
+    "No diagnosis of earlier recall timeouts or release acceptance."
+  ],
+  "artifacts": {
+    "baseline-cas-journal-admission.json": {
+      "sha256": "1d5568a5577d47b45aa4bebe72e68f056c902dd6b7787de3e9b8814a6e4777c0",
+      "bytes": 2464
+    },
+    "baseline-cas-journal-admission.log": {
+      "sha256": "ec58d76243c1a2f065144ff5a7e6e3f68483b2faf75ee1aacaa912a14955b831",
+      "bytes": 41183
+    },
+    "candidate-cas-journal-admission.json": {
+      "sha256": "ba450650d73fa9d2566a24cb1f07dd35e7da5d066ae317bd2f66169204791cd4",
+      "bytes": 2463
+    },
+    "candidate-cas-journal-admission.log": {
+      "sha256": "f54e5600bbf4b81579fcd09b16b2b2e57555fbe989a131ec4c3354eb6aec9349",
+      "bytes": 1749
+    },
+    "cas-journal-static-receipt.json": {
+      "sha256": "3ceb021b28a446c67e8689cb9789830acfe20bbef529d2fa6fba0ecce48a8363",
+      "bytes": 14038
+    },
+    "cas-journal-baseline-ruff.json": {
+      "sha256": "ec300c66a341e824ce555feeac9dd77f6c26b7914496d3d404decb73b893aec3",
+      "bytes": 2650
+    },
+    "cas-journal-candidate-ruff.json": {
+      "sha256": "0558a095cdc8d0c457040463b99452d878ba10d510f8da7a0885883b50e65da8",
+      "bytes": 2654
+    },
+    "cas-journal-baseline-ruff.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "cas-journal-candidate-ruff.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "run_cas_journal_admission.py": {
+      "sha256": "83cdf59e196807dec9a46277792b75a8d97274cd6c71fc820207673872fcf41c",
+      "bytes": 3495
+    },
+    "cas-journal-independent-review.txt": {
+      "sha256": "c4000915491e02dae0afdf7f18609e45aac5ae9c1a25b0269ba3ffe105c20d62",
+      "bytes": 1285
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "audit": {
+    "authority": "NONE",
+    "evidence_sha256": {
+      "ATTEMPT-01-PREFLIGHT-FAILURE.json": "011eee85d028745a44e4b2f93428e42449c31f43493f7881f49f612b46b82b54",
+      "EXECUTION.json": "66fef95738d9d5f2f406f2569aa850513b9368e671d1fe8fdcb777c918711e08",
+      "FIFO-EXECUTION.json": "a470c6becc593970c5f3e1f29659b47559bcb1fce95918b3ab5cfce780f8ed96",
+      "FIFO-STDERR.txt": "fde38c41fe4e8c2315b419a657f642624cdd23f686a0d1070275a337c47c2eb5",
+      "FIFO-STDOUT.txt": "5564b97e3e6e3d4f694055e39e1ef1f02fc9437284b08286109ebb1e36a7c49d",
+      "REGRESSION-EXECUTION.json": "39a60cbaa758ad7e95a559b1384ebce5b01d3386f2539dd0842d1e7bee24f9b4",
+      "REGRESSION-STDERR.txt": "7d124c88ac81e051c69f8acea2657da33f2cd6b7c2eec8333e39abce2541417d",
+      "REGRESSION-STDOUT.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "STATIC.json": "229fd4a5e7d5777930c99f6a39057dca5052976ec94c38040b59f90af9c74e6e"
+    },
+    "fifo_all_children_reaped": true,
+    "fifo_case_reports": 16,
+    "fifo_exact_roster": true,
+    "fifo_fixtures_preserved": true,
+    "fifo_timeout": false,
+    "limits": "Unprivileged disposable selection only. No full suite, direct sixth-catch fault injection, independent fresh execution, proof, protected or installed operation.",
+    "regression_tests": 9,
+    "schema": 1,
+    "shell_syntax_exits": [
+      0,
+      0
+    ],
+    "source": {
+      ".github/workflows/ci.yml": "c16e9bb92c9976d50689e7043bc84fa234c5f8899207769b112898d763feebe3",
+      "bin/siarelease.py": "86f3389990ff2e6a7d8009fa580c94a346b46959d11b799e269b442442074bf1",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "install.sh": "14f3da68ceceb4a814913f64170749958594cf941a5a94c503796aab601555f7",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_marketplace_first_light.py": "3dd8f32d5a80cd51b35a740e6ded97d7c825ebdbe9c473f678b7d40eb6a81618",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "uninstall.sh": "c86d2ec90e4a729b48f22ad4f79b630c12775d5444ee115056f003de43341add"
+    },
+    "static_findings": [],
+    "status": "SCOPED_STATIC_AND_REGRESSION_CHECKS_PASSED_NOT_SYSTEM_ACCEPTANCE"
+  },
+  "audit_sha256": "795c94eebb2fe0a0eada3f16fca6c69adf76e9d1bd6b154b700abc372b41a0e5",
+  "authority": "NONE",
+  "base_commit": "886a3087e41cdd3a69e3f901e2fcb9fc7b4d4381",
+  "evidence_directory": "r40-fenced-static-20261026-v1",
+  "independent_review": {
+    "acceptance": {
+      "explicit_static_profile": "TESTED",
+      "formal_proof": "UNRUN",
+      "recorded_selected_regressions": "TESTED",
+      "source_correctness_judgment": "NO_CONCRETE_BLOCKER_IN_SCOPED_DELTA",
+      "whole_R13": "OPEN",
+      "whole_R40": "OPEN",
+      "whole_system_accepted": false
+    },
+    "authority": "NONE",
+    "base_commit": "886a3087e41cdd3a69e3f901e2fcb9fc7b4d4381",
+    "blockers": [],
+    "evidence_sha256": {
+      "ATTEMPT-01-PREFLIGHT-FAILURE.json": "011eee85d028745a44e4b2f93428e42449c31f43493f7881f49f612b46b82b54",
+      "EXECUTION.json": "66fef95738d9d5f2f406f2569aa850513b9368e671d1fe8fdcb777c918711e08",
+      "FIFO-EXECUTION.json": "a470c6becc593970c5f3e1f29659b47559bcb1fce95918b3ab5cfce780f8ed96",
+      "FIFO-STDERR.txt": "fde38c41fe4e8c2315b419a657f642624cdd23f686a0d1070275a337c47c2eb5",
+      "FIFO-STDOUT.txt": "5564b97e3e6e3d4f694055e39e1ef1f02fc9437284b08286109ebb1e36a7c49d",
+      "PREPARATION.json": "53250fd14145cf8970bdd1463f8183121f67f76332b307e9695b87c44d434868",
+      "REGRESSION-EXECUTION.json": "39a60cbaa758ad7e95a559b1384ebce5b01d3386f2539dd0842d1e7bee24f9b4",
+      "REGRESSION-STDERR.txt": "7d124c88ac81e051c69f8acea2657da33f2cd6b7c2eec8333e39abce2541417d",
+      "REGRESSION-STDOUT.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "STATIC.json": "229fd4a5e7d5777930c99f6a39057dca5052976ec94c38040b59f90af9c74e6e"
+    },
+    "limits": [
+      "The sixth stable-lstat exception catch was source-reviewed, not directly fault-injected.",
+      "Large decimal version components rely on the unchanged source invariant; no fresh dedicated large-component fixture or formal proof was run.",
+      "Selected original regressions retain their existing mocked ladders and faults; the downgrade method exercises disposable real guard subprocesses.",
+      "The clean profile applies only to the explicitly analyzed sources, not every embedded program or the repository.",
+      "No full R13, full R40, installed qualification, proof, release, publication or system acceptance is established.",
+      "No tests, proof, protected ledger, install, service or live-store operation was executed by this reviewer in this increment."
+    ],
+    "model": "gpt-6.1-sol",
+    "preflight_failure": {
+      "class": "Unsigned parent transcription of actual failed tool execution",
+      "independently_recreated": false,
+      "not_counted_as_test_evidence": true,
+      "reported_status": "PREFLIGHT_FAILED_BEFORE_TEST_EXECUTION",
+      "retained": "ATTEMPT-01-PREFLIGHT-FAILURE.json"
+    },
+    "provenance": "Unsigned model-origin independent read-only source and retained-receipt judgment; not an independent fresh execution, formal proof or platform attestation",
+    "retained_execution_review": {
+      "captured_commands_and_raw_hashes_correspond": true,
+      "exact_roster_and_expected_exits": true,
+      "fifo_children_reaped": true,
+      "fifo_fixture_state_preserved": true,
+      "fifo_reports": 16,
+      "fifo_suite_exit": 0,
+      "fifo_timeouts": false,
+      "independent_fresh_execution_by_this_reviewer": false,
+      "recorded_heavy_lock_identity_preserved": true,
+      "selected_regression_methods": 9,
+      "selected_regression_suite_exit": 0,
+      "source_hashes_match_before_after_and_current": true
+    },
+    "reviewer": "/root/reconcile_review",
+    "schema": 1,
+    "scope": "Six explicit exception causes in three complete fence heredocs and strict=True on the sole version-comparator zip; no other production changes",
+    "smallest_sound_next_step": "Bind this review and exact-source evidence in the non-final checkpoint; preserve old failures and continue separate mandatory acceptance obligations.",
+    "source_findings": [
+      "Exactly six existing catch handlers now bind error and raise SystemExit(1) from error; caught exception classes and exit status are unchanged.",
+      "The sole _compare_versions caller supplies two tuples returned by _version_parts; VERSION_RE has exactly three canonical decimal component groups.",
+      "Length then lexical component comparison remains unchanged; no integer conversion or artificial digit cap was introduced.",
+      "strict=True does not establish arbitrary-input arity validation because early return can precede zip exhaustion.",
+      "The previous four O_NONBLOCK changes remain intact; test, frozen rules and CI source are unchanged."
+    ],
+    "source_sha256": {
+      ".github/workflows/ci.yml": "c16e9bb92c9976d50689e7043bc84fa234c5f8899207769b112898d763feebe3",
+      "bin/siarelease.py": "86f3389990ff2e6a7d8009fa580c94a346b46959d11b799e269b442442074bf1",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "install.sh": "14f3da68ceceb4a814913f64170749958594cf941a5a94c503796aab601555f7",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_marketplace_first_light.py": "3dd8f32d5a80cd51b35a740e6ded97d7c825ebdbe9c473f678b7d40eb6a81618",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "uninstall.sh": "c86d2ec90e4a729b48f22ad4f79b630c12775d5444ee115056f003de43341add"
+    },
+    "static_review": {
+      "bash_install_syntax_exit": 0,
+      "bash_uninstall_syntax_exit": 0,
+      "earlier_six_B904_and_one_B905_failures_remain_historical_evidence": true,
+      "embedded_source_hashes_reconstructed_and_matched": true,
+      "exit": 0,
+      "explicit_sources": "Current test, three complete fence heredocs, full bin/siarelease.py",
+      "findings": [],
+      "frozen_profile_unchanged": true,
+      "stderr": "",
+      "waiver_or_suppression": false
+    },
+    "status": "SCOPED_STATIC_REPAIR_SOURCE_REVIEWED_AND_RECORDED_CONTROLS_PASS",
+    "utc": "2026-10-26T17:02:25.967254+00:00"
+  },
+  "independent_review_sha256": "2d267a7d657557dd15c9ea3e075011e07a952d43d6e328095f01baaed037d853",
+  "limits": "Derived unsigned public summary; exact raw receipts remain local. No full R13/R40, whole-repository, installed, proof or release acceptance.",
+  "schema": 1
+}

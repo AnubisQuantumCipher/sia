@@ -1,0 +1,467 @@
+{
+  "authority": "NONE",
+  "base_commit": "09edd09cd64d2c6af63e326b67ac76a57c684085",
+  "command": [
+    "/usr/bin/python3",
+    "-I",
+    "-S",
+    "-B",
+    "-W",
+    "error",
+    "tests/test_fenced_metadata_admission.py",
+    "-v"
+  ],
+  "derived_from_audit_sha256": "d2365b5594edd81d16dd071b9c3845d20e25060cf9bb760499a97006bf4e5596",
+  "evidence_directory": "r13-fenced-metadata-20261026-v1",
+  "independent_review": {
+    "acceptance": {
+      "formal_proof": "UNRUN_IN_THIS_SCOPE",
+      "installed_whole_system": "UNRUN_IN_THIS_SCOPE",
+      "publication": "UNRUN_IN_THIS_SCOPE",
+      "scoped_fifo_behavior": "TESTED",
+      "whole_R13": "OPEN",
+      "whole_system_accepted": false,
+      "zero_warning_static_gate": "FAILED_OPEN"
+    },
+    "model": "gpt-6.1-sol",
+    "provenance": "Unsigned model-origin independent source and evidence judgment; includes one actual unprivileged independent test execution, not formal proof or platform attestation",
+    "receipt_sha256": "503c960c631a0e5ed5984e92c3703bcff39445e4623c0af1147181d217ddcaab",
+    "status": "TESTED_FIFO_BEHAVIOR_REPAIR_STATIC_ACCEPTANCE_OPEN"
+  },
+  "limits": [
+    "Unsigned derived evidence summary, not an authority grant or formal proof.",
+    "Three actual complete heredocs and one actual CLI use disposable native Linux FIFO fixtures and a supported legacy runtime.",
+    "No claim of installed-system lifecycle, hostile same-user containment, universal I/O deadlines or complete R13 reader inventory.",
+    "Original failed baseline, rejected unexecuted test draft and inherited static failures remain retained.",
+    "Whole A/G/C/P/R/EP, native custody, actual compaction, R05 BOTH, Astra judge, installed acceptance, release and marketplace remain open."
+  ],
+  "original_regressions": {
+    "captures": {
+      "ORIGINAL-STDERR.txt": "ee78414da8935017b696f96571ad2c6b31fe1a22b2848d5cdc00640b92a2bdbb",
+      "ORIGINAL-STDOUT.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "methods": 8,
+    "receipt_sha256": "bb2755929595b8395684282397ce94e4f33a8299b4f50d0a02f48dea18501c69",
+    "scope": "Eight unchanged original selected methods, including declared mocked ladders/faults; not full installed regression acceptance",
+    "status": "TESTED",
+    "suite_exit": 0
+  },
+  "runs": {
+    "baseline": {
+      "captures": {
+        "BASELINE-STDERR.txt": "430dbe9487ac235bc0d5159647b8b613bdd673610e0a15af8c2d49401f51df5e",
+        "BASELINE-STDOUT.jsonl": "790e1b5a571a37e2e5e767b9ed7d75c3f06522b15fe79ccf17e66437cea1c2e7"
+      },
+      "cases": [
+        {
+          "case": "journal_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": -9,
+          "child_reap_state": "REAPED",
+          "child_timeout": true,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        }
+      ],
+      "fixture_state_preserved": true,
+      "raw_reports": 16,
+      "receipt_sha256": "5cc295c09cf4f1a8e55a8d15178faea8b16798370886e4c01b907fc59dac6748",
+      "suite_exit": 1
+    },
+    "candidate": {
+      "captures": {
+        "CANDIDATE-STDERR.txt": "2308d04dbeb205a5c384288aaa77133ef65c0f84565b00896d2008fa79902b87",
+        "CANDIDATE-STDOUT.jsonl": "2d4db46bd935cdfc8813e9f7ada6a2cfe504ce5651dca6e2f7d9a5e89699234e"
+      },
+      "cases": [
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        }
+      ],
+      "fixture_state_preserved": true,
+      "raw_reports": 16,
+      "receipt_sha256": "fe77776412db35a55b0d2326db7476b9fe4074bcded74d087de279ab2a931472",
+      "suite_exit": 0
+    },
+    "independent": {
+      "captures": {
+        "INDEPENDENT-STDERR.txt": "7094e2d99c709225fc562fb02c920c7021a06f6f4dd4538e1fd938b91d486e61",
+        "INDEPENDENT-STDOUT.jsonl": "33ee4a65f84849b85a818132bbe59dd10a786113d6df146b127b023f94321352"
+      },
+      "cases": [
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "install-runtime"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 1,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-managed"
+        },
+        {
+          "case": "journal_fifo",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "mismatch",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "receipt_fifo",
+          "child_exit": 2,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        },
+        {
+          "case": "regular",
+          "child_exit": 0,
+          "child_reap_state": "REAPED",
+          "child_timeout": false,
+          "consumer": "uninstall-runtime"
+        }
+      ],
+      "fixture_state_preserved": true,
+      "raw_reports": 16,
+      "receipt_sha256": "c8286647bf07da81aeaa2309a22326f80faa4ef76a7303ec229daeb148b5bbb1",
+      "suite_exit": 0
+    }
+  },
+  "schema": 1,
+  "source_sha256": {
+    ".github/workflows/ci.yml": "c16e9bb92c9976d50689e7043bc84fa234c5f8899207769b112898d763feebe3",
+    "bin/siarelease.py": "be8c31e1bba5ff5b4d14b96a6035e4f59c6026ca9c5d28a7f13d89bb6888d1ef",
+    "install.sh": "487a01239597f87ac39d121de5a77ff7f8e6f635913eaa63921e74e1fb4db914",
+    "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+    "uninstall.sh": "d02f86ea64faa9ddee8f09fbf5f34d74538faf93dfe047991918a61899fd74a8"
+  },
+  "static": {
+    "analyzer_sha256": "7ac5f222f6b5db43a5551f7d21c3245e6f71f7b17c4271504d656721bb8bce05",
+    "baseline_comparison_sha256": "8f20bd08cdcc76e8d913435e65956d7cd08bbcd86128d8ce2e1945201f31420f",
+    "candidate_receipt_sha256": "1eca5a379df89c17620f400fc26adc58e27fafeb14736e368797e26c8589e90f",
+    "complete_heredocs_exit": 1,
+    "complete_heredocs_findings": "six B904, identical to base after temporary parent normalization",
+    "current_test_exit": 0,
+    "full_siarelease_exit": 1,
+    "full_siarelease_findings": "one B905, also present before repair",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "shell_syntax": [
+      {
+        "command": [
+          "/usr/bin/bash",
+          "-n",
+          "install.sh"
+        ],
+        "exit": 0,
+        "source_sha256": "487a01239597f87ac39d121de5a77ff7f8e6f635913eaa63921e74e1fb4db914",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "command": [
+          "/usr/bin/bash",
+          "-n",
+          "uninstall.sh"
+        ],
+        "exit": 0,
+        "source_sha256": "d02f86ea64faa9ddee8f09fbf5f34d74538faf93dfe047991918a61899fd74a8",
+        "stderr": "",
+        "stdout": ""
+      }
+    ]
+  },
+  "status": "TESTED_FIFO_BEHAVIOR_REPAIR_ASSURANCE_ACCEPTANCE_OPEN"
+}

@@ -1,0 +1,383 @@
+{
+  "artifacts": [
+    {
+      "bytes": 2567,
+      "path": "bounded-read-capture-v1.py",
+      "sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6"
+    },
+    {
+      "bytes": 6015,
+      "path": "commission-ollama-host-v1.py",
+      "sha256": "1d3200c2f4dc6f12a2f2b70cd9a1cf82516e8db7d369b0da8d4463ba1cd693e2"
+    },
+    {
+      "bytes": 782,
+      "path": "installed-note-body-comparison-v8.json",
+      "sha256": "e02424bb0a1a34c44ae408408fb5108f93b7c3e56e5afd39c76d0fdd527c5a78"
+    },
+    {
+      "bytes": 1570,
+      "path": "installed-note-direct-20261021-v8.json",
+      "sha256": "fbd72f13160f7b944e78c0b7d7a0a72b6622333ce2516b3af1c5ab3002c82104"
+    },
+    {
+      "bytes": 844,
+      "path": "installed-readiness-after-restart-v1.json",
+      "sha256": "3d6aa5dfc87328bce86554431c50adbfdc5da848f56728399b76d1663b011052"
+    },
+    {
+      "bytes": 17,
+      "path": "installed-readiness-after-restart-v1.log",
+      "sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-managed-restart-20261021-v1/connections-before.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-managed-restart-20261021-v1/gate-after.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-managed-restart-20261021-v1/gate-before.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 347,
+      "path": "ollama-managed-restart-20261021-v1/manager-after.log",
+      "sha256": "f5ac4a2c3b162e05fb586f4c929ca314b445427377bc6959491392652e753107"
+    },
+    {
+      "bytes": 292,
+      "path": "ollama-managed-restart-20261021-v1/manager-before.log",
+      "sha256": "4b488cd97d354eba33e52f0cfdb1371ac3fbbc26872dbabfad40b38b718d067d"
+    },
+    {
+      "bytes": 624,
+      "path": "ollama-managed-restart-20261021-v1/restart-intent.json",
+      "sha256": "fc07b315cf13f0b20df8aecfea1a936fe2ee648e86e30c5d38a361344314bf4d"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-managed-restart-20261021-v1/restart.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3679,
+      "path": "ollama-managed-restart-20261021-v1/result.json",
+      "sha256": "249f2370a711d557e3d97c0d2d2696f41ecd6d8057c3aace139ff6d33d7b294e"
+    },
+    {
+      "bytes": 312,
+      "path": "ollama-managed-restart-20261021-v1/source.json",
+      "sha256": "8577b50ecef60c86a205020b0ef1afc3b29791c467a90890ad1ababd0a6d215a"
+    },
+    {
+      "bytes": 5011,
+      "path": "ollama-managed-restart-v1.py",
+      "sha256": "549b963a276f0175a2c78d361516eefedb3b6c8e4da1aff242170280781ccfb9"
+    },
+    {
+      "bytes": 32,
+      "path": "ollama-post-restart-probes-20261021-v1/other-account-delegation.log",
+      "sha256": "daa5dd7335e414cb5003f86005684ad5d7c75763b0a409db0d9fa277df601eb2"
+    },
+    {
+      "bytes": 213,
+      "path": "ollama-post-restart-probes-20261021-v1/other-account-denial.log",
+      "sha256": "f8b8f41c0588593d65bc2f3314960e3b05d9f21f8ab0f70fa64c9b088e0a598a"
+    },
+    {
+      "bytes": 115,
+      "path": "ollama-post-restart-probes-20261021-v1/owner-embedding.log",
+      "sha256": "efc8f7fedfebf0e0911f77ba59c87ba93c27cce081d0365e6f34c46e41f87523"
+    },
+    {
+      "bytes": 0,
+      "path": "ollama-post-restart-probes-20261021-v1/owner-gate.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4432,
+      "path": "ollama-post-restart-probes-20261021-v1/result.json",
+      "sha256": "dc8d395ebc37d0103c6acce776b962345b2b0d99157164c51add012a6555914a"
+    },
+    {
+      "bytes": 2438,
+      "path": "ollama-post-restart-probes-v1.py",
+      "sha256": "e91b6d29648d206722530f509d19d1966938f83e608493987dc03f875a1918d5"
+    },
+    {
+      "bytes": 6527,
+      "path": "probe-ollama-host-v1.py",
+      "sha256": "f98aa9f60e4c90f6126bf7e85da634feafb5fadfc6f93fae3ded91bb7e2c47af"
+    },
+    {
+      "bytes": 5607,
+      "path": "retain-managed-restart-evidence-v1.py",
+      "sha256": "cc2e4f91ca3ceb08a25d126258fb397d8fe62283a6e193e5a067745ceb208d5c"
+    }
+  ],
+  "bundle": {
+    "bytes": 11610,
+    "path": "docs/evidence/ollama-managed-restart-20261021-v1.tar.gz",
+    "sha256": "f8110e6d1040c5e6db58be55684dd07e02985667072ebbd32d4a0232b14f8cbe"
+  },
+  "direct_model_note": {
+    "body_sha256": "9aeca64ea6db38db70062175d28fb44eb52e1e464dc4a4c8d1e73dbc8e83d24c",
+    "exact_origin": true,
+    "installed_binaries_unchanged": true,
+    "kind": "OBSERVED exact queued-model-note body; not authority",
+    "limitation": "No complete capture, semantic retrieval, current task restoration or approval claim.",
+    "queued_body_sha256": "9aeca64ea6db38db70062175d28fb44eb52e1e464dc4a4c8d1e73dbc8e83d24c",
+    "request_id": "e76e1062463c40a6b81b233cb37f898e",
+    "request_id_present": true,
+    "returned_origin_line": "[origin:model] notes/2026-10-21-082641-codex-e76e1062463c40a6b81b233cb37f898e",
+    "same_body": true,
+    "source_checkpoint": "f793fba9a4665aaf2ed3c9003467f64c91708ac3",
+    "source_log_sha256": "8c379acee71058a820d4b8c6d23b0a4dbf710804288df28b80fd1e7e91a2fa6b"
+  },
+  "limits": [
+    "Native leases are cooperative; unrelated same-UID programs remain outside this coordination.",
+    "No actual boot, installed upgrade/uninstall, full dependency attestation or complete SIA assurance.",
+    "Exact model-note readback does not establish semantic accuracy or compaction continuity."
+  ],
+  "native_readiness": {
+    "after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "capture_status": "complete",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "ready"
+    ],
+    "elapsed_seconds": 33.9460234940052,
+    "exit": 0,
+    "kind": "OBSERVED native readiness; not full installed acceptance",
+    "observed_at": "2026-10-21T08:48:29.562730+00:00",
+    "output_sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39"
+  },
+  "post_restart": {
+    "checks": [
+      {
+        "argv": [
+          "/usr/bin/runuser",
+          "-u",
+          "sicarii",
+          "--",
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "-c",
+          "import json, urllib.request\nrequest=urllib.request.Request('http://127.0.0.1:11434/api/embed',\n    data=json.dumps({'model':'nomic-embed-text:v1.5',\n        'input':'SIA installed account guard commissioning'}).encode(),\n    headers={'Content-Type':'application/json'})\nwith urllib.request.urlopen(request, timeout=60) as response:\n    raw=response.read(1048577)\n    if response.status!=200 or len(raw)>1048576:\n        raise RuntimeError('embedding response refused')\nvalue=json.loads(raw)\nvectors=value.get('embeddings')\nif not isinstance(vectors,list) or len(vectors)!=1 or not isinstance(vectors[0],list) or not vectors[0]:\n    raise RuntimeError('embedding shape refused')\nprint(json.dumps({'status':'OBSERVED_OWNER_EMBEDDING','model':value.get('model'),\n    'vector_dimensions':len(vectors[0]),'finite':all(isinstance(x,(int,float)) and abs(x)<float('inf') for x in vectors[0])}))\nif not all(isinstance(x,(int,float)) and abs(x)<float('inf') for x in vectors[0]):\n    raise RuntimeError('nonfinite embedding')\n"
+        ],
+        "bytes": 115,
+        "capture_status": "complete",
+        "elapsed_seconds": 0.5847608110052533,
+        "exit": 0,
+        "name": "owner-embedding",
+        "sha256": "efc8f7fedfebf0e0911f77ba59c87ba93c27cce081d0365e6f34c46e41f87523"
+      },
+      {
+        "argv": [
+          "/usr/bin/runuser",
+          "-u",
+          "nobody",
+          "--",
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "-c",
+          "import json, socket, urllib.request, urllib.error\ntry:\n    with socket.create_connection(('127.0.0.1',11434),timeout=3):\n        raise RuntimeError('alternate account connected')\nexcept ConnectionRefusedError:\n    pass\nrequest=urllib.request.Request('http://127.0.0.1:11434/api/delete', method='DELETE',\n    data=b'{\"model\":\"sia-guard-denial-canary-do-not-create:20261021\"}',\n    headers={'Content-Type':'application/json'})\ntry:\n    urllib.request.urlopen(request,timeout=3)\n    raise RuntimeError('alternate account reached HTTP')\nexcept urllib.error.HTTPError:\n    raise RuntimeError('HTTP response proves guard bypass')\nexcept urllib.error.URLError as error:\n    if not isinstance(error.reason, ConnectionRefusedError):\n        raise\nprint(json.dumps({'status':'OBSERVED_OTHER_UID_TRANSPORT_DENIAL','uid':__import__('os').getuid(),\n    'controls':['TCP connect','DELETE nonexistent canary'],\n    'limitation':'No production model deletion attempted; same-UID and root remain trusted.'}))\n"
+        ],
+        "bytes": 213,
+        "capture_status": "complete",
+        "elapsed_seconds": 0.08408060600049794,
+        "exit": 0,
+        "name": "other-account-denial",
+        "sha256": "f8b8f41c0588593d65bc2f3314960e3b05d9f21f8ab0f70fa64c9b088e0a598a"
+      },
+      {
+        "argv": [
+          "/usr/bin/runuser",
+          "-u",
+          "sicarii",
+          "--",
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "/usr/local/libexec/sia-ollama-guard",
+          "gate"
+        ],
+        "bytes": 0,
+        "capture_status": "complete",
+        "elapsed_seconds": 0.06947679398581386,
+        "exit": 0,
+        "name": "owner-gate",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "argv": [
+          "/usr/bin/runuser",
+          "-u",
+          "nobody",
+          "--",
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "-c",
+          "import subprocess; p=subprocess.run(['/usr/bin/sudo','-n','-k','--','/usr/bin/python3','-I','-S','-B','/usr/local/libexec/sia-ollama-guard','check-kernel'],capture_output=True,timeout=15); print('other-account delegation exit',p.returncode); raise SystemExit(0 if p.returncode!=0 else 1)"
+        ],
+        "bytes": 32,
+        "capture_status": "complete",
+        "elapsed_seconds": 0.03983546100789681,
+        "exit": 0,
+        "name": "other-account-delegation",
+        "sha256": "daa5dd7335e414cb5003f86005684ad5d7c75763b0a409db0d9fa277df601eb2"
+      }
+    ],
+    "managed_pid": "3328247",
+    "open": [
+      "actual boot ordering",
+      "installed upgrade/uninstall lifecycle",
+      "complete installed dependency attestation",
+      "marketplace release"
+    ],
+    "status": "OBSERVED_POST_RESTART_OWNER_DENIAL_AND_DELEGATION_PASS"
+  },
+  "private_exclusions": [
+    "Original returned note text",
+    "Private full firewall snapshots"
+  ],
+  "restart": {
+    "after": {
+      "ActiveState": "active",
+      "ExecMainStatus": "0",
+      "ExecStartPre": "{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -I -S -B /usr/local/libexec/sia-ollama-guard gate ; ignore_errors=no ; start_time=[Wed 2026-10-21 04:45:41 EDT] ; stop_time=[Wed 2026-10-21 04:45:42 EDT] ; pid=3328239 ; code=exited ; status=0 }",
+      "MainPID": "3328247",
+      "NeedDaemonReload": "no",
+      "SubState": "running"
+    },
+    "before": {
+      "ActiveState": "active",
+      "ExecMainStatus": "0",
+      "ExecStartPre": "{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -I -S -B /usr/local/libexec/sia-ollama-guard gate ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+      "MainPID": "1316",
+      "NeedDaemonReload": "no",
+      "SubState": "running"
+    },
+    "checks": [
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/ss",
+          "-H",
+          "-tn",
+          "state",
+          "established",
+          "( sport = :11434 or dport = :11434 )"
+        ],
+        "elapsed_seconds": 0.0028533459990285337,
+        "exit": 0,
+        "name": "connections-before",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "/usr/local/libexec/sia-ollama-guard",
+          "gate"
+        ],
+        "elapsed_seconds": 0.08877880603540689,
+        "exit": 0,
+        "name": "gate-before",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/env",
+          "XDG_RUNTIME_DIR=/run/user/1000",
+          "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+          "/usr/bin/systemctl",
+          "--user",
+          "show",
+          "ollama.service",
+          "--property=MainPID,ActiveState,SubState,ExecStartPre,ExecMainStatus,NeedDaemonReload"
+        ],
+        "elapsed_seconds": 0.006633862969465554,
+        "exit": 0,
+        "name": "manager-before",
+        "sha256": "4b488cd97d354eba33e52f0cfdb1371ac3fbbc26872dbabfad40b38b718d067d"
+      },
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/env",
+          "XDG_RUNTIME_DIR=/run/user/1000",
+          "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+          "/usr/bin/systemctl",
+          "--user",
+          "--job-mode=fail",
+          "restart",
+          "ollama.service"
+        ],
+        "elapsed_seconds": 0.1695095759932883,
+        "exit": 0,
+        "name": "restart",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/env",
+          "XDG_RUNTIME_DIR=/run/user/1000",
+          "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+          "/usr/bin/systemctl",
+          "--user",
+          "show",
+          "ollama.service",
+          "--property=MainPID,ActiveState,SubState,ExecStartPre,ExecMainStatus,NeedDaemonReload"
+        ],
+        "elapsed_seconds": 0.005907400976866484,
+        "exit": 0,
+        "name": "manager-after",
+        "sha256": "f5ac4a2c3b162e05fb586f4c929ca314b445427377bc6959491392652e753107"
+      },
+      {
+        "capture_status": "complete",
+        "command": [
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-B",
+          "/usr/local/libexec/sia-ollama-guard",
+          "gate"
+        ],
+        "elapsed_seconds": 0.07316461199661717,
+        "exit": 0,
+        "name": "gate-after",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "status": "OBSERVED_MANAGED_RESTART_AND_STARTUP_GATE"
+  },
+  "status": "OBSERVED_SCOPED_MANAGED_RESTART_AND_POST_RESTART_CONTROLS",
+  "supersedes": "Earlier no-restart and other-account sudo UNRUN observations only; earlier raw evidence remains."
+}

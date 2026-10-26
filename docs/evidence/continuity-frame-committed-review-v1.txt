@@ -1,0 +1,17 @@
+Retained model-generated actual GPT-6.1 read-only correspondence report.
+No independent proof replay, jobs, edits or whole-system acceptance.
+
+No correspondence blocker found for this scoped reproduction.
+
+Verified recorded commit 15b613aec79c7ebb5374941d4c1087b986b1d066, empty
+overlay, matching archive/extracted/current source hashes, equal tool rosters
+and bundle correspondence. Recorded build/fourteen runtimes/core proof
+succeeded. The core report covers 58 checks/all 14 entities, with clean raw
+diagnostics and empty Assume/skip annotations.
+
+Public bundle excludes the identified private storage/firewall/note artifacts.
+Complete harness and full-project failures remain unclosed.
+
+Reviewed SHA-256:
+manifest b2abf128b83191e0f6b55070e20fc396e6a7d26b0fd46fb884de2a459a4dec52
+bundle   25fca67c5bff5234f2e22c49d978aa618f149a3aa7a928cee63bf7fc594d2ae5

@@ -1,0 +1,1172 @@
+{
+  "archived_sources_unchanged": true,
+  "bundle": {
+    "bytes": 241547,
+    "path": "docs/evidence/continuity-response-committed-reproduction-v1.tar.gz",
+    "sha256": "fa0f0d95e0077cc8a11cfe60f786f3bae1191513efd03fe894eb9447b8142fb5"
+  },
+  "checks": [
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gprbuild-aarch64-linux-26.0.0-1/bin/gprbuild",
+        "-p",
+        "-P",
+        "spark/sia_assurance.gpr"
+      ],
+      "elapsed_seconds": 20.579122014984023,
+      "exit": 0,
+      "name": "strict-build",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/policy_tests"
+      ],
+      "elapsed_seconds": 0.0036694209557026625,
+      "exit": 0,
+      "name": "policy-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/transaction_tests"
+      ],
+      "elapsed_seconds": 0.011075054993852973,
+      "exit": 0,
+      "name": "transaction-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_wire_tests"
+      ],
+      "elapsed_seconds": 0.00794550304999575,
+      "exit": 0,
+      "name": "request_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_admission_tests"
+      ],
+      "elapsed_seconds": 0.0051311569986864924,
+      "exit": 0,
+      "name": "request_admission-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/grant_lifetime_tests"
+      ],
+      "elapsed_seconds": 0.0053263630252331495,
+      "exit": 0,
+      "name": "grant_lifetime-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/retraction_tests"
+      ],
+      "elapsed_seconds": 0.002027230046223849,
+      "exit": 0,
+      "name": "retraction-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/consolidation_tests"
+      ],
+      "elapsed_seconds": 0.1271453420049511,
+      "exit": 0,
+      "name": "consolidation-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_tests"
+      ],
+      "elapsed_seconds": 0.006307978008408099,
+      "exit": 0,
+      "name": "continuity-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_transition_tests"
+      ],
+      "elapsed_seconds": 0.011876714008394629,
+      "exit": 0,
+      "name": "continuity_transition-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_record_wire_tests"
+      ],
+      "elapsed_seconds": 0.0062827279907651246,
+      "exit": 0,
+      "name": "continuity_record_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_observation_wire_tests"
+      ],
+      "elapsed_seconds": 0.010030815028585494,
+      "exit": 0,
+      "name": "continuity_observation_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_checkpoint_wire_tests"
+      ],
+      "elapsed_seconds": 0.25010593596380204,
+      "exit": 0,
+      "name": "continuity_checkpoint_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_current_wire_tests"
+      ],
+      "elapsed_seconds": 0.6002979049808346,
+      "exit": 0,
+      "name": "continuity_current_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_frame_wire_tests"
+      ],
+      "elapsed_seconds": 0.3012436729623005,
+      "exit": 0,
+      "name": "continuity_frame_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_response_wire_tests"
+      ],
+      "elapsed_seconds": 0.008731912006624043,
+      "exit": 0,
+      "name": "continuity_response_wire-runtime",
+      "passed": true
+    },
+    {
+      "command": [
+        "/usr/bin/timeout",
+        "--kill-after=5s",
+        "120s",
+        "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "continuity_response_wire_tests.adb",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10",
+        "-j1"
+      ],
+      "elapsed_seconds": 19.795333792979363,
+      "exit": 0,
+      "fresh_summary_present": true,
+      "name": "complete-response-harness",
+      "passed": true
+    }
+  ],
+  "complete_response_harness_scope": {
+    "assumptions": "Ordinary modular dependencies retained verbatim in raw report and summary",
+    "full_project_coverage": "NOT ESTABLISHED",
+    "justified": 0,
+    "pragma_assume": [],
+    "raw_diagnostics": "No non-information warn_error/flow/proof entries",
+    "reported_all_entities": [
+      [
+        "Continuity_Response_Wire_Tests.Check_Process_Correlation",
+        161
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Literal_Results",
+        44
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Header",
+        99
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Values",
+        69
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Refuse",
+        28
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Families",
+        90
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Codes",
+        127
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Reserved",
+        150
+      ],
+      [
+        "Continuity_Response_Wire_Tests",
+        7
+      ]
+    ],
+    "reported_total": 90,
+    "skip_flow_proof": [],
+    "skip_proof": [],
+    "source_declarations": [
+      [
+        "Continuity_Response_Wire_Tests",
+        7
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Refuse",
+        28
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Literal_Results",
+        44
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Values",
+        69
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Families",
+        90
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Header",
+        99
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Codes",
+        127
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Reserved",
+        150
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Process_Correlation",
+        161
+      ]
+    ],
+    "total_row": "Total                            90    25 (28%)    65 (72%)           .          .",
+    "unit": "continuity_response_wire_tests",
+    "unproved": 0
+  },
+  "full_project_proof": "UNRUN for this commit; inherited failed all-unit proof remains OPEN",
+  "installed_continuity_and_protected_authority": "OPEN; no installed action or authority grant",
+  "kind": "FRESH COMMITTED COMPLETE RESPONSE-HARNESS REPRODUCTION; scoped conditional proof only",
+  "members": [
+    {
+      "bytes": 1749,
+      "path": "README.md",
+      "sha256": "8e9915270b304a6d4ea33234404f42267c153e0223274711d44d947037ae4b95"
+    },
+    {
+      "bytes": 12438,
+      "path": "committed/archive-correspondence.json",
+      "sha256": "067ead8ecc88b7a5c3aa5c264e8ec9a5b554afb87487bad26f54394f844b0cd3"
+    },
+    {
+      "bytes": 220,
+      "path": "committed/archive.command.json",
+      "sha256": "e857d19a726274f7d4363a84f1d00ed7f3eba5a37b82bd5653fae8a541cca886"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/archive.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/archive.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/archive.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 244,
+      "path": "committed/complete-response-harness/command",
+      "sha256": "7f383953c2db3ece813cdebd019564fe6a9b35302f8374c82c5ccda87910003f"
+    },
+    {
+      "bytes": 317,
+      "path": "committed/complete-response-harness/command.json",
+      "sha256": "e5ddc703e823af596a60bd8e88366fddc8a42463d8d7676fbe8e21eac93dda73"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/complete-response-harness/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 6353,
+      "path": "committed/complete-response-harness/inspection.json",
+      "sha256": "7ffb7aebd279f0d17404f122e8247f01106885f635554efe42ee9ef258bcf99d"
+    },
+    {
+      "bytes": 167788,
+      "path": "committed/complete-response-harness/raw/continuity_response_wire_tests.spark",
+      "sha256": "9a3dc531ed1e54483ed77a130c26e2202b061b06a9a8d27b134474486fa56729"
+    },
+    {
+      "bytes": 10179,
+      "path": "committed/complete-response-harness/raw/gnatprove.out",
+      "sha256": "1ed17c467ecab0ad943c5612a4a384dc4a44ef0b6d7767dba303bd67ae21ec13"
+    },
+    {
+      "bytes": 508,
+      "path": "committed/complete-response-harness/result.json",
+      "sha256": "cce18c5806d00ac57be6efacd2a02764e45b06744075b1a44814d21c809c1026"
+    },
+    {
+      "bytes": 9103,
+      "path": "committed/complete-response-harness/stderr",
+      "sha256": "8435ea29f23daee647c19c770e72a7a967a39a529213111ff1caa5cd8dca543a"
+    },
+    {
+      "bytes": 349,
+      "path": "committed/complete-response-harness/stdout",
+      "sha256": "d5de7c518eb46470a40807464ef29f59a11bf0d2a753ee6517ce465e034364c5"
+    },
+    {
+      "bytes": 67,
+      "path": "committed/consolidation-runtime/command",
+      "sha256": "57bddab89a88f46d5b808f51c017f667b4d2d67803ad1e22806bf46da62a418f"
+    },
+    {
+      "bytes": 90,
+      "path": "committed/consolidation-runtime/command.json",
+      "sha256": "5767c2f5922c9d57e3dbf8f97cfbeb9ccb125264a4024e3271f07f109ac1cdab"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/consolidation-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 224,
+      "path": "committed/consolidation-runtime/result.json",
+      "sha256": "3bfda30d44b63fc3cc87d7b10931515ae88818b5c699cbfc04b62c16b2cafe05"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/consolidation-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/consolidation-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 64,
+      "path": "committed/continuity-runtime/command",
+      "sha256": "96668ceff8c1ae1e6ef285d845ecc405ddc72243846518f6b531a9512fea6a33"
+    },
+    {
+      "bytes": 87,
+      "path": "committed/continuity-runtime/command.json",
+      "sha256": "fe405fa6d482fdd41ec648dde9008c8b18098883f0958cc94e93ddfcd8512cc9"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 220,
+      "path": "committed/continuity-runtime/result.json",
+      "sha256": "890f3cb96338e8b35f0c9a7968c9f9cb55ee4820371415ff910690e33ebdf7dc"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 80,
+      "path": "committed/continuity_checkpoint_wire-runtime/command",
+      "sha256": "ee3657eb745eb5860d4a3f005baa560cc0fb9e2e3aa9015ae5a78facd80f92ba"
+    },
+    {
+      "bytes": 103,
+      "path": "committed/continuity_checkpoint_wire-runtime/command.json",
+      "sha256": "0cb3cc12fe190d2b53235a24882a15a2646d6729ef5060479f43ffc3efd25cba"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_checkpoint_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 251,
+      "path": "committed/continuity_checkpoint_wire-runtime/result.json",
+      "sha256": "b43153189442d00d15963ac70f9c87b24b1c96303d16a05e2fde449d9df29f95"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_checkpoint_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_checkpoint_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 77,
+      "path": "committed/continuity_current_wire-runtime/command",
+      "sha256": "82e92f8bc5e76ca0a299aae31934edf3f7adceeb667788dafffeda7d168b30c3"
+    },
+    {
+      "bytes": 100,
+      "path": "committed/continuity_current_wire-runtime/command.json",
+      "sha256": "0d7cdb23ee359db8ed861af1b1513a07cea844e6b9d7a7cd7965482a0e6bdb5a"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_current_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 244,
+      "path": "committed/continuity_current_wire-runtime/result.json",
+      "sha256": "d94967c2ef0ec7f97c8ccc9a7a46a4931396cfba073525f1cab66b47e6a99f03"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_current_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_current_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 75,
+      "path": "committed/continuity_frame_wire-runtime/command",
+      "sha256": "74d0761ff244cc3ea21cb9bac9a37f9939f3deb63a90f7b5315f55c9708da2af"
+    },
+    {
+      "bytes": 98,
+      "path": "committed/continuity_frame_wire-runtime/command.json",
+      "sha256": "766dbc068ff3ae45bd5b2aa13c5d5676cc3a82985190e944e67ee1141b1b924e"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_frame_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 240,
+      "path": "committed/continuity_frame_wire-runtime/result.json",
+      "sha256": "cf2f7a101194696fc1c9aaa316847bbc8c85f0064a0c880952c2e93f75555f11"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_frame_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_frame_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 81,
+      "path": "committed/continuity_observation_wire-runtime/command",
+      "sha256": "d7829526ec3092028e125fca6a09c8d1760384cb314fe6a68dc72c4ccb6ed893"
+    },
+    {
+      "bytes": 104,
+      "path": "committed/continuity_observation_wire-runtime/command.json",
+      "sha256": "c6b4d8101b732ba3000c801f7957582e8c64477f36e9efb767cdcaffd36c08b4"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_observation_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 254,
+      "path": "committed/continuity_observation_wire-runtime/result.json",
+      "sha256": "a3152d37637a55f23aa29c0a8de6e9673098f01af87954bc0f3372b3e9def1a1"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_observation_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_observation_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 76,
+      "path": "committed/continuity_record_wire-runtime/command",
+      "sha256": "13c4e7975cfbe275e4adbe9916f6987a5552ee3467798be5ac71937b501a6719"
+    },
+    {
+      "bytes": 99,
+      "path": "committed/continuity_record_wire-runtime/command.json",
+      "sha256": "5d4e402838ad22306f8b29f28f70cce6d0522de254edf4155d0eb8110f79b909"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_record_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 245,
+      "path": "committed/continuity_record_wire-runtime/result.json",
+      "sha256": "e0dcfd19f793ecfa1b1c74848ffa611376948a7faafb808c574077db4af798dd"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_record_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_record_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 78,
+      "path": "committed/continuity_response_wire-runtime/command",
+      "sha256": "107a4295004f8576d65ccb44a84e65cbbaa3a6c919e55db14c1bbeb972741c5d"
+    },
+    {
+      "bytes": 101,
+      "path": "committed/continuity_response_wire-runtime/command.json",
+      "sha256": "ebde69b6f601254b90cba9ba96ec45a1d0b989849fb1da9a6357300ebb3cb2b4"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_response_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 248,
+      "path": "committed/continuity_response_wire-runtime/result.json",
+      "sha256": "d16226259d1f744ec406782682be64592ce0ab88f25a882decf675f93267e500"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_response_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_response_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 75,
+      "path": "committed/continuity_transition-runtime/command",
+      "sha256": "b568149ec6c8cf3667746225a6c04b13d3fcb582beef4ccfcbfc6725ca4f44e3"
+    },
+    {
+      "bytes": 98,
+      "path": "committed/continuity_transition-runtime/command.json",
+      "sha256": "8219b21b661433d721d667d625c9fcf59597d55a87de5c4be9333042460d5a3a"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/continuity_transition-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 242,
+      "path": "committed/continuity_transition-runtime/result.json",
+      "sha256": "62d3440d2fd79b6fc10c743e8201a9b6a554c3559a07b0c36db1db237a9570b5"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_transition-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/continuity_transition-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11927,
+      "path": "committed/driver.py",
+      "sha256": "8f67d2cf1bfe6a3f4a65078b6b09d76e7c4b1b63d502f17d616edb059180fc29"
+    },
+    {
+      "bytes": 247,
+      "path": "committed/extract.command.json",
+      "sha256": "4289d23530cbfa74572aa6136a1aab7180effe3223c690004b133af2154c30fd"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/extract.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/extract.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/extract.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 82,
+      "path": "committed/gcc-version.command.json",
+      "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/gcc-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/gcc-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 231,
+      "path": "committed/gcc-version.stdout",
+      "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+    },
+    {
+      "bytes": 85,
+      "path": "committed/gnatls-version.command.json",
+      "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/gnatls-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/gnatls-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 222,
+      "path": "committed/gnatls-version.stdout",
+      "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+    },
+    {
+      "bytes": 93,
+      "path": "committed/gnatprove-version.command.json",
+      "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/gnatprove-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/gnatprove-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 396,
+      "path": "committed/gnatprove-version.stdout",
+      "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+    },
+    {
+      "bytes": 91,
+      "path": "committed/gprbuild-version.command.json",
+      "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/gprbuild-version.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/gprbuild-version.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 233,
+      "path": "committed/gprbuild-version.stdout",
+      "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+    },
+    {
+      "bytes": 68,
+      "path": "committed/grant_lifetime-runtime/command",
+      "sha256": "3e47fe72226c43017dea7b278897b27db878a53dadf6c4f1042d7066e8bf08de"
+    },
+    {
+      "bytes": 91,
+      "path": "committed/grant_lifetime-runtime/command.json",
+      "sha256": "e8e834ba2e432293efbaba9c5484c2b6df45a91cf9d069f8873cee6793510cfa"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/grant_lifetime-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 229,
+      "path": "committed/grant_lifetime-runtime/result.json",
+      "sha256": "92678d11dbb4a65a43aff9fe6d37956847672ab3cd0bde077724ed6777cc7273"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/grant_lifetime-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/grant_lifetime-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 37,
+      "path": "committed/head.command.json",
+      "sha256": "0257804243cb49c00dd664cb0726931873f97f66687d7fccbade2b6c70a1504e"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/head.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/head.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 41,
+      "path": "committed/head.stdout",
+      "sha256": "6068ada800c0ebbed32525090cc1d62615f98604e7b80c96b06a2c7c3395c2cf"
+    },
+    {
+      "bytes": 120,
+      "path": "committed/inherited-tool-manifest.command.json",
+      "sha256": "366b3ea60e58b165dc17e97bc481b192745babd9a86f8137e3d6cb50461434d1"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/inherited-tool-manifest.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/inherited-tool-manifest.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 65920,
+      "path": "committed/inherited-tool-manifest.stdout",
+      "sha256": "250b3b9d827212a12f865ee1966ab19d4b7370497ee654a6b2a016102049d7ee"
+    },
+    {
+      "bytes": 403,
+      "path": "committed/launch.sh",
+      "sha256": "1299e80a2e6d4c570b55d053652cdeca5d6ff3834a796b5336c0f0ffa940907e"
+    },
+    {
+      "bytes": 60,
+      "path": "committed/policy-runtime/command",
+      "sha256": "bbb66949d862665ce55b17a6c7aaab55b5bd6874356f8b308994d5572fd5077d"
+    },
+    {
+      "bytes": 83,
+      "path": "committed/policy-runtime/command.json",
+      "sha256": "e427fb4c9fdacbf9f0932ab4b073cef57c778e47282428878080f9ad50787d54"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/policy-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 213,
+      "path": "committed/policy-runtime/result.json",
+      "sha256": "f1d3b150afe063131d2543194eeb7b3b79311d6b104507227a436e47dd061817"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/policy-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/policy-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 5744,
+      "path": "committed/receipt.json",
+      "sha256": "59b74153480c2589918a47bf5ecd483b7fca598cc29caa4b4d6a06b95a0d7e95"
+    },
+    {
+      "bytes": 71,
+      "path": "committed/request_admission-runtime/command",
+      "sha256": "a4927752ca8555107f42d14929d830cff79216052d9e6d235969526f23c62eec"
+    },
+    {
+      "bytes": 94,
+      "path": "committed/request_admission-runtime/command.json",
+      "sha256": "c75bf7140b866ea7c0aae90495bb3fa22cd4b80e1b4f8f16c3d4916823d5662e"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/request_admission-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 235,
+      "path": "committed/request_admission-runtime/result.json",
+      "sha256": "437a2ffdb615125cd988c9798a81a1b72f7677fff478c15263880f1bd660c2e1"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/request_admission-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/request_admission-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 66,
+      "path": "committed/request_wire-runtime/command",
+      "sha256": "83506b8c6141d2f60ffcdcb323397e442c0e764d0d3bcc75c6bcaab16e628d48"
+    },
+    {
+      "bytes": 89,
+      "path": "committed/request_wire-runtime/command.json",
+      "sha256": "821a1f8a55a3e8e0b231913d89389f40beb3529a13c59971461f0706cecce044"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/request_wire-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 223,
+      "path": "committed/request_wire-runtime/result.json",
+      "sha256": "a88d48a28bd8eff0fb17b7fbce25000a1b7da12e1fec122bde87f25bdcbf3bca"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/request_wire-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/request_wire-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 64,
+      "path": "committed/retraction-runtime/command",
+      "sha256": "d4189efd5e8ef39867719dcc681a4a30dfc91a8c2e8854df6e89548d751f1a68"
+    },
+    {
+      "bytes": 87,
+      "path": "committed/retraction-runtime/command.json",
+      "sha256": "339d3faf5b78c59d20f0a7dc0548a15a1503caa1a8a6e03f5d35ac610bff083b"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/retraction-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 220,
+      "path": "committed/retraction-runtime/result.json",
+      "sha256": "9bf735426f5f49e569b9aeaeb64f8112979bfece4eaf7f435640134b208f5121"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/retraction-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/retraction-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1315,
+      "path": "committed/source-binding.json",
+      "sha256": "e58f4af32e28e771605293ceb29a7a9261c1a52acb7890b8d10527a8c6ae7cf6"
+    },
+    {
+      "bytes": 14596,
+      "path": "committed/source-hashes-after.json",
+      "sha256": "fee28e85e6a21e1555a46516ad0faf2c4f3dfa4ce65c49c8ab63bcac415d0074"
+    },
+    {
+      "bytes": 14596,
+      "path": "committed/source-hashes-before.json",
+      "sha256": "fee28e85e6a21e1555a46516ad0faf2c4f3dfa4ce65c49c8ab63bcac415d0074"
+    },
+    {
+      "bytes": 921600,
+      "path": "committed/source.tar",
+      "sha256": "ccf8d01ff0b5b4ea73917aeb4004cdeb17c4a79cd590318321a11a1fa1804274"
+    },
+    {
+      "bytes": 136,
+      "path": "committed/strict-build/command",
+      "sha256": "32c6048ad225110880a795f76cbbc4d5595aae146a472b1269fdfd9f02538d28"
+    },
+    {
+      "bytes": 174,
+      "path": "committed/strict-build/command.json",
+      "sha256": "1920a795f719115469592a4893eeff194b740e18800be1d46f6186aa92fbc6c4"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/strict-build/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 305,
+      "path": "committed/strict-build/result.json",
+      "sha256": "b886d67ee8f1e67d2299c92f3029627cc7c1e00912c6e697ffd210026fe79c04"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/strict-build/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3606,
+      "path": "committed/strict-build/stdout",
+      "sha256": "b162129bc1aa0899773ce340db2146101dc59e11eb32c658f5a26abef664d667"
+    },
+    {
+      "bytes": 2392,
+      "path": "committed/tool-hashes-after.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 2392,
+      "path": "committed/tool-hashes-before.json",
+      "sha256": "b187e1c57f8e29e42176e16da7c789b583cfcf787f900091a97a18e45c2b5530"
+    },
+    {
+      "bytes": 472,
+      "path": "committed/tool-paths.json",
+      "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+    },
+    {
+      "bytes": 65,
+      "path": "committed/transaction-runtime/command",
+      "sha256": "2ba8f78df7a25825e0e6af3704919867b5af9647901a579e6c294421fe1cd7cc"
+    },
+    {
+      "bytes": 88,
+      "path": "committed/transaction-runtime/command.json",
+      "sha256": "c53b7b48d12d3ff8e4ba5032bcf960fe09826c9b223de8715dcf808c17121d09"
+    },
+    {
+      "bytes": 2,
+      "path": "committed/transaction-runtime/exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 222,
+      "path": "committed/transaction-runtime/result.json",
+      "sha256": "76d56ce680a6ca6e97ea0bfe68de703d81ea13c81d5bdc78a37c5e1c5db0bd0d"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/transaction-runtime/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "committed/transaction-runtime/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 15959,
+      "path": "retainer.py",
+      "sha256": "15c39d49e1c7ea5982a54f49592e379c5482fcaf2129437877e4c2871a464f32"
+    },
+    {
+      "bytes": 6736,
+      "path": "selected-members.json",
+      "sha256": "8c3017cb247c878e32bc252d35baef34fbf3f7d525bf2b180f04e26c877e9d4f"
+    },
+    {
+      "bytes": 803,
+      "path": "storage-observations.json",
+      "sha256": "0dff1c796df80567d69f6f1ab08360f559b63f249d301b8c682cd10f3a208a0f"
+    }
+  ],
+  "overlay": [],
+  "prior_development_evidence": {
+    "path": "docs/CONTINUITY-RESPONSE-HARNESS-REPAIR-EVIDENCE-V1.json",
+    "scope": "Separate committed-base plus single-overlay repair evidence, including historical timeout; never relabeled by this reproduction",
+    "sha256": "f1ad7d6d1ec154486dc244eeddb482def3c567290507866e13d2911a28d3c568"
+  },
+  "retainer": {
+    "command": "python3 -B retainer.py --check",
+    "gzip": "level9; mtime0; empty filename",
+    "member": "retainer.py",
+    "selection": "Fixed explicit names; bounded regular-file input; no directory crawl",
+    "tar": "USTAR; sorted names; mode0644; uid/gid/mtime0; empty owner names"
+  },
+  "schema_version": 1,
+  "scope_limits": [
+    "The complete response unit is distinct from all-project proof coverage.",
+    "Ordinary modular dependencies and toolchain/runtime assumptions remain.",
+    "Source correspondence and retained commands do not establish producer authenticity or system correctness.",
+    "This retainer checks correspondence and deterministic packaging; it replays no proof/build/test.",
+    "Original normative Power of Ten remains authoritative; no whole-system compliance or certification follows."
+  ],
+  "source": {
+    "archive_sha256": "ccf8d01ff0b5b4ea73917aeb4004cdeb17c4a79cd590318321a11a1fa1804274",
+    "commit": "1292d328ebc27680a040a263a7445cb04b2d82bd",
+    "expected_declarations": [
+      [
+        "Continuity_Response_Wire_Tests",
+        7
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Refuse",
+        28
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Literal_Results",
+        44
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Values",
+        69
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Unused_Families",
+        90
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Header",
+        99
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Codes",
+        127
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Reserved",
+        150
+      ],
+      [
+        "Continuity_Response_Wire_Tests.Check_Process_Correlation",
+        161
+      ]
+    ],
+    "gnat_env_sha256": "155536a81f8d2be134c6e5cacc0c0bf9b57c94ee33659d2b19ea23c2d6ded388",
+    "harness_sha256": "cf2ebb5c07b90a3c2cacc5829ef29a31be25b2fe83598e587755e5727a11dace",
+    "lock": "Held by launch.sh through flock -n -E75 /home/sicarii/.worldline-heavy.lock",
+    "overlay": [],
+    "platform": "Linux-7.2.6-1-aarch64-ARCH-aarch64-with-glibc2.43",
+    "project_sha256": "d439a1e2908c70643c951d296294a87c3ba2756be6b1d0bb4c9a6bd4814ebe49"
+  },
+  "storage": {
+    "configured_local_reserve_bytes": 10000000000,
+    "final_free_bytes": 41820897280,
+    "kind": "Selected fields from retained local-only storage preflight and final receipt; no new probe",
+    "matching_evidence_pins": [
+      "/home/sicarii/Work/sia-assurance-evidence-20261019"
+    ],
+    "omitted_private_fields": "Other pins, queue, backup snapshot histories and unrelated inventory omitted; no backup/recovery health claim",
+    "preflight_local_disk_bytes": {
+      "free": 41866674176,
+      "total": 686860591104,
+      "used": 637997817856
+    },
+    "storage_preflight_command": [
+      "python3",
+      "/home/sicarii/.codex/skills/project-vault/scripts/storage_status.py"
+    ],
+    "storage_preflight_exit": 0,
+    "storage_preflight_source_sha256": "7ef4c08fc0fd472933a5ccaff2696bf08ec9f888cadf1b08ed55583ecc0679dc"
+  },
+  "tool_rosters_equal": true
+}

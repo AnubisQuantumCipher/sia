@@ -1,0 +1,53 @@
+{
+  "status": "LOCAL_TESTED_HOSTED_UNRUN_NONFINAL",
+  "source_base": "f0022affe2e4e649d82f617018fbd67d421ad9e7",
+  "sources": {
+    ".github/workflows/ci.yml": "280616ef8e69b3f040a35e9e151dce30242c67477135b62b9c9bac79cf469d69",
+    "spark/check-allocation-controls.py": "f5371ca2286898bea966394cf59603be7c57b6026c172bb6523442f15cabec2e",
+    "spark/tests/test_allocation_controls.py": "8b4d11f31632a7f0a129cb7ea425b706c9d5f90ba92ef64814048c9bbd763ae4",
+    "spark/allocation-controls/README.md": "350c97b19d7c99c59dd6a53e0052ed7c26eded637ff73281259b8f60af94d540",
+    "spark/allocation-controls/anonymous_allocator.adb": "e0f8ccce4a40fecc4842197150d7202a41673bef6c8e6b832f9fd59c20e28f04",
+    "spark/allocation-controls/coextension.adb": "f5de8aa614fc866b11296673729fe52fa78041035feea79c3f7686c4283eebd1",
+    "spark/allocation-controls/parameter_allocator.adb": "b0a14954ef10975deaf8b247d886231e14b7bed18759e445ec100fed2be7e986",
+    "spark/allocation-controls/restriction_control.adb": "d75f5572895a32e9f38c9fa8afd11130268712a0762f4094b22cd3465911b221",
+    "spark/allocation-controls/task_allocator.adb": "ef0b4dbfd45bcde50069de2acf7050834f8b312ad81d4a95692fb9248eb5924d"
+  },
+  "results": {
+    "compiler_controls": {
+      "count": 13,
+      "all_expected": true
+    },
+    "gate_tests": {
+      "count": 7,
+      "exit": 0
+    },
+    "frozen_ruff": {
+      "exit": 0,
+      "diagnostics": []
+    },
+    "yaml_and_bash_syntax": "PASS",
+    "hosted_x86_execution": "UNRUN"
+  },
+  "review": {
+    "reviewer": "existing actual GPT-6.1 assurance_architecture_review",
+    "mode": "READ_ONLY_NO_INDEPENDENT_EXECUTION",
+    "checker_sha256": "f5371ca2286898bea966394cf59603be7c57b6026c172bb6523442f15cabec2e",
+    "tests_sha256": "8b4d11f31632a7f0a129cb7ea425b706c9d5f90ba92ef64814048c9bbd763ae4",
+    "decision": "No concrete false-pass blocker within trusted compiler/workspace scope; suitable for non-final CI increment. Exact shared policy, clean positives, exact named negatives and bounded outer wrapper. Hosted x86 execution, download/extraction and imported RTS remain unqualified."
+  },
+  "archive": {
+    "path": "docs/evidence/ada-allocation-ci-20261025.tar.gz",
+    "sha256": "f6e1c5e8c77125b6cad2f742b449ba0cf3be2463d60ff88a7aa4bc60f31d4740",
+    "bytes": 23676,
+    "members": 76,
+    "readback_equal": true
+  },
+  "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/dyn-controls-ci-v1",
+  "nonclaims": [
+    "whole-project compiler/proof CI",
+    "independent execution",
+    "RTS, stack, full DYN02",
+    "installed continuity/recovery/retrieval",
+    "release and marketplace acceptance"
+  ]
+}

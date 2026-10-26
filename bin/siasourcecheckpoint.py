@@ -196,11 +196,8 @@ def project_capture_entry(owner, *, epoch, expected_epoch_sha256, checkpoint, re
                    observed_at=observed_at)
 
 
-# Byte-identical retained images validated earlier in this process, keyed by
-# their pin, their native digest and the owner constants the validation
-# reads. A transaction re-validates the capture at every consistency check;
-# the identity digest (about a second on a 12 MB capture) still runs each
-# time, only the 78-second re-derivation of an unchanged image is skipped.
+# Compatibility slots for existing diagnostic cleanup. Admission never reads
+# or publishes cached success; every call checks the current policy.
 _VALIDATED_CAPTURES = {}
 _VALIDATED_CAPTURES_LIMIT = 8
 
@@ -211,14 +208,9 @@ def _capture_memo_key(owner, batch, expected_batch_sha256):
 
 
 def validate_capture(owner, batch, expected_batch_sha256):
-    """Pure retained-image validation; do not authenticate its root or archive."""
-    memo_key = _capture_memo_key(owner, batch, expected_batch_sha256)
-    if memo_key in _VALIDATED_CAPTURES:
-        return None
+    """Validate retained input against current policy on every call."""
+    _capture_memo_key(owner, batch, expected_batch_sha256)
     _validate_capture_image(owner, batch, expected_batch_sha256)
-    if len(_VALIDATED_CAPTURES) >= _VALIDATED_CAPTURES_LIMIT:
-        _VALIDATED_CAPTURES.clear()
-    _VALIDATED_CAPTURES[memo_key] = True
     return None
 
 

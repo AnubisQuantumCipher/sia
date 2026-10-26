@@ -1,0 +1,13 @@
+{
+  "TLC": {
+    "version": "1.7.4",
+    "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+    "source": "https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4",
+    "release_sha1_checked": true
+  },
+  "Java": {
+    "version": "21.0.12.1+1",
+    "archive_sha256": "14be1f35ebdbd1f6e8d57eb911a3ffb74d6d9aa255abc5daf2b1302002cf2cf2",
+    "source": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12.1%2B1"
+  }
+}

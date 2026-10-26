@@ -1,0 +1,24 @@
+--  Test adapter only; unchanged production decoder/policy source.
+project Pack_Proposal_Probe is
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "tests");
+   for Source_Files use
+     ("sia_policy.ads", "sia_policy.adb", "sia_pack_retirement.ads",
+      "sia_pack_retirement.adb", "sia_continuity.ads", "sia_continuity.adb",
+      "sia_continuity_record_wire.ads", "sia_continuity_record_wire.adb",
+      "sia_pack_plan_wire.ads", "sia_pack_plan_wire.adb",
+      "pack_plan_wire_test_support.ads", "pack_plan_wire_test_support.adb",
+      "sia_pack_manifest_wire.ads", "sia_pack_manifest_wire.adb",
+      "sia_pack_partition.ads", "sia_pack_partition.adb",
+      "sia_pack_proposal.ads", "sia_pack_proposal.adb",
+      "pack_proposal_probe.adb");
+   for Object_Dir use "pack-proposal-obj";
+   for Exec_Dir use "pack-proposal-bin";
+   for Main use ("pack_proposal_probe.adb");
+   package Compiler is
+      for Default_Switches ("Ada") use
+        ("-gnat2022", "-gnatwae", "-gnatVa", "-gnata", "-gnatf",
+         "-gnatw.o", "-O2", "-g");
+      for Local_Configuration_Pragmas use "restrictions.adc";
+   end Compiler;
+end Pack_Proposal_Probe;

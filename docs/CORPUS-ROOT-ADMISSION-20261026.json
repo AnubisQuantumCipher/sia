@@ -1,0 +1,311 @@
+{
+  "audit": {
+    "authority": "NONE",
+    "base_commit": "3555ec7506268345ea0076114bbaec28f9eae4f7",
+    "ci_extraction_controls": [
+      {
+        "case": "valid",
+        "diagnostic": "",
+        "exit": 0,
+        "fixture_removed": true
+      },
+      {
+        "case": "missing_marker",
+        "diagnostic": "Corpus-root reader extraction mismatch\n",
+        "exit": 1,
+        "fixture_removed": true
+      },
+      {
+        "case": "duplicate_marker",
+        "diagnostic": "Corpus-root reader extraction mismatch\n",
+        "exit": 1,
+        "fixture_removed": true
+      },
+      {
+        "case": "missing_terminator",
+        "diagnostic": "Corpus-root reader body mismatch\n",
+        "exit": 1,
+        "fixture_removed": true
+      },
+      {
+        "case": "oversize_input",
+        "diagnostic": "Corpus-root reader extraction mismatch\n",
+        "exit": 1,
+        "fixture_removed": true
+      },
+      {
+        "case": "helper_suppression",
+        "diagnostic": "Oversized source or suppression directive: /dev/shm/sia-ci-extraction-mlc1xe0l/runner/sia-corpus-root-reader.py\n",
+        "exit": 1,
+        "fixture_removed": true
+      }
+    ],
+    "evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r13-corpus-root-admission-20261026-v1",
+    "evidence_sha256": {
+      "BASELINE-EXECUTION.json": "0c5865b39c6dd4817deed3fa051a34a995000a8b96dc381b6a8d0047e898cdb9",
+      "BASELINE-HELPER.py": "dead326736f0e0ff47f4068c9f550f68ba794709c4320afff74236913a108f6e",
+      "BASELINE-STATIC-02-EXIT.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "BASELINE-STATIC-02-STDERR.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "BASELINE-STATIC-02.json": "7f0f7c2eeae2a888908097448abb1a6a8b9376fa77887aa1164e6f11486cb1dd",
+      "BASELINE-STATIC-EXIT.txt": "743c7850cccfba5e53a9002663ec1ddd1079315a98bdbfdde10e6044f56abefe",
+      "BASELINE-STATIC-STDERR.txt": "da6b7097ad59ea8e34fc3eef7abf5208a5c5bfd56ac124a2cfc5b2c61621e699",
+      "BASELINE-STATIC.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "BASELINE-STDERR.txt": "d84c6ff02ec52c4bf4fe1b3023e7eb67a183373caaf82ddd7dff2baa39b0e9b8",
+      "BASELINE-STDOUT.txt": "0db92c9014d06c113a1e3de2539d453994dbd30c639685a524032df1a83e6404",
+      "BASELINE-install.sh": "14f3da68ceceb4a814913f64170749958594cf941a5a94c503796aab601555f7",
+      "CANDIDATE-EXECUTION.json": "90699af4ac4b9469385b35b2e59f01d893a65c967e9472905ce33be4e5b7dbfd",
+      "CANDIDATE-HELPER.py": "8dbbb72866a10ff8dae30acf6c7449e83fea531d8de70cbeecef2679d000ea50",
+      "CANDIDATE-STDERR.txt": "477b0bc6be19907c49e1fa7e2f3c54e10a32dbb34ff8c9030fb42ce0a0870386",
+      "CANDIDATE-STDOUT.txt": "3f89177b195a28aa6f70068c289ca67dd1382b84f59d7db8b6aeeec486804987",
+      "CI-EXTRACTION-CONTROLS-01.json": "ad100ac143cca61ebf628392f462f04604a16ed0d314d84013ecb04880cc5a6b",
+      "CI-EXTRACTION-CONTROLS-BLOCK-01.py": "d60d13d5a1fc4f194fcda42ad28f6e1556a73b6ed3c5ad1b56494556e7420119",
+      "CI-STATIC-EXECUTION.json": "2bae1c9502c084a9699ef263742a39a783d0a3d786381d558970ed3bf59766dc",
+      "CI-STATIC-STEP.sh": "1093804633ce55389ed2f676012e47c096cb80484e2125e501e60d16f399a3b5",
+      "INDEPENDENT-EXECUTION.json": "6d0dbf4c91b808f88a1a0867dc956ffbc27df6464eb9c292571d394b08f9248c",
+      "INDEPENDENT-REVIEW.json": "6ade051d09c421b682c17a420eaf2791dd2727b45c90df07690b4f42d9a249a3",
+      "INDEPENDENT-STDERR.txt": "0eb0d6b9c81884896a333fcc00364f622cf1251b005aa9b1cea10089afe27bf7",
+      "INDEPENDENT-STDOUT.txt": "2c88286c3963e661d26ace59531423027eaca55a6e49edd3316d0107a82e0d9b",
+      "OBSERVER-STATIC.json": "f17844e2866a9d560d75d9f27bd453b1d33f52de4c698268dd940da4f9462bd5",
+      "ORIGINAL-EXECUTION.json": "2149f318879dbcf9708d0713f1ee3f1461f931e2eba5c9861e1ca1f624031227",
+      "ORIGINAL-STDERR.txt": "dc56328ccae7551f3181a9c941e0474c707c80cab03e4234811ed96960d1fbee",
+      "ORIGINAL-STDOUT.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "SYNTAX-AND-DIFF-CHECKS.json": "940f20fe0e3c6734a7b6bae975a75ffd4166864941992167ddcaebfc0a438cdd",
+      "TEST-SOURCE.py": "f1b044d37d1dfba8b7de9657cf2acb0c2f76e5f00a598e95789e2f4dfbd0e7ac",
+      "run_cases.py": "623667063fd21c798379849416f92c4936bc5c632612c6fe3cbe8b0a85c11450"
+    },
+    "limits": [
+      "Behavioral evidence covers one no-writer FIFO and four finite controls for the exact extracted helper; it is not execution of whole installer or archive caller lifecycle.",
+      "No formal proof, whole R13/R40 closure, system acceptance, installed-state qualification, live custody operation, native/proof dispatch or successor authorization.",
+      "No universal device/filesystem latency guarantee, hostile namespace/concurrent mutation qualification, or complete-read/short-read/stability repair is claimed.",
+      "Original two-method suite has outer exit/source evidence but no individual JSON child records; no per-child preservation/reaping claim is inferred for it.",
+      "Outer observer cleanup observes direct test process only; accepted independent run has all five actual helper-child REAPED records.",
+      "Local exact CI static-block execution does not establish hosted CI completion or whole-repository zero warnings.",
+      "Python parses and returns a recorded token; this repair grants no consequential authority or approval."
+    ],
+    "observed": {
+      "baseline_case_count": 5,
+      "baseline_fifo": "Actual native no-writer FIFO exceeded3s; killed exit-9 and reaped; other4 controls returned expected results; all5 fixture before/after snapshots equal.",
+      "baseline_suite_exit": 1,
+      "candidate_case_count": 5,
+      "candidate_cases": "FIFO refuses1 without timeout; regular returns exact private corpus token; wrong corpus, absence and invalid UTF-8 refuse1; all5 reaped and preserved.",
+      "candidate_suite_exit": 0,
+      "current_static": "Parent-retained whole updated workflow static block local execution exit0, stdout[], stderr empty; tool SHA pinned in receipt. Independently reviewed receipt/script/source correspondence, not rerun by reviewer.",
+      "independent_case_count": 5,
+      "independent_cases": {
+        "absent": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "fifo": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "invalid_utf8": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "regular": {
+          "exit": 0,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "wrong_corpus": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        }
+      },
+      "independent_cleanup_error": null,
+      "independent_lock_identity": [
+        64768,
+        457925,
+        33188,
+        1000,
+        1000,
+        1
+      ],
+      "independent_observer_failure": null,
+      "independent_recorded_private_roots_removed": true,
+      "independent_source_unchanged": true,
+      "independent_suite_exit": 0,
+      "independent_suite_reaped": true,
+      "original_individual_child_records": 0,
+      "original_methods": [
+        "test_moved_corpus_receipt_is_named_and_rebound_only_by_consent",
+        "test_corpus_receipt_v2_is_root_bound_and_lock_migrated"
+      ],
+      "original_suite_exit": 0,
+      "static_baseline_corrected_attempt": "FAILED exit1, exactly two B904 findings in complete helper, preserved.",
+      "static_baseline_initial_attempt": "FAILED exit127, ruff command unavailable, preserved; empty diagnostic file is not a static pass.",
+      "syntax": "Parent-retained bash -n install.sh/uninstall.sh/bin/sia-setup and git diff --check all exit0; reviewed receipts, not rerun by reviewer."
+    },
+    "remaining": [
+      "Full R13 per-call matrix",
+      "Comprehensive R40 static/proof CI",
+      "Whole-project proof and explicit non-SPARK boundary",
+      "Native custody and actual compaction",
+      "R05 BOTH",
+      "Astra/max judge",
+      "Installed composition, recovery/retrieval and release/marketplace acceptance"
+    ],
+    "schema": 1,
+    "source_review": {
+      "ci_delta": "Additive complete exact-heredoc extraction bounded by 1MiB installer and 4KiB body, unique literal marker, required terminator, exclusive temporary output, checked write length; helper and new test added to existing frozen static/suppression rosters.",
+      "ci_script_exactly_matches_workflow_block": true,
+      "harness": "Actual complete extracted helper in isolated native Python subprocess; five private tmpfs fixtures; finite input/pipe/deadline bounds; explicit one-attempt bounded reap and explicit pipe closure; source/bytes/identity/directory snapshots.",
+      "production_delta": "install.sh corpus_receipt_recorded_root only: O_NONBLOCK added to readonly nofollow open, plus explicit causes on existing OSError and UnicodeError SystemExit(1) refusals; all admission/parser conditions unchanged.",
+      "reachability": "Archive fallback in retire_migrated_legacy_corpus_receipt_stage via corpus_prior_receipt_recognized can reach this reader for a FIFO after the safer legacy-receipt check refuses. The direct corpus_receipt_state regular-file guard does not remove this fallback defect."
+    },
+    "source_sha256": {
+      ".github/workflows/ci.yml": "7474f1327cfbdc7c5f6eaabc40b9e6a7a6cb9f0d9502e33d01e0c7b5a480454e",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "install.sh": "cc9c19976b0a499973c31b6b8d7eec414bfb9a6496441edf5263cdf427d9c6c4",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_corpus_root_admission.py": "f1b044d37d1dfba8b7de9657cf2acb0c2f76e5f00a598e95789e2f4dfbd0e7ac",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "tests/test_release_metadata_admission.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676"
+    },
+    "status": "TESTED_SCOPED_REPAIR_NOT_SYSTEM_ACCEPTANCE",
+    "utc": "2026-10-26T18:26:28.892009+00:00"
+  },
+  "audit_sha256": "a6b4a7baab856e589c97244f52c2e65412bddcad1f1bf7985c28200fcca6c708",
+  "independent_review": {
+    "authority": "NONE",
+    "blockers": [],
+    "evidence_sha256": {
+      "BASELINE-EXECUTION.json": "0c5865b39c6dd4817deed3fa051a34a995000a8b96dc381b6a8d0047e898cdb9",
+      "BASELINE-HELPER.py": "dead326736f0e0ff47f4068c9f550f68ba794709c4320afff74236913a108f6e",
+      "BASELINE-STATIC-02-EXIT.txt": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "BASELINE-STATIC-02-STDERR.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "BASELINE-STATIC-02.json": "7f0f7c2eeae2a888908097448abb1a6a8b9376fa77887aa1164e6f11486cb1dd",
+      "BASELINE-STATIC-EXIT.txt": "743c7850cccfba5e53a9002663ec1ddd1079315a98bdbfdde10e6044f56abefe",
+      "BASELINE-STATIC-STDERR.txt": "da6b7097ad59ea8e34fc3eef7abf5208a5c5bfd56ac124a2cfc5b2c61621e699",
+      "BASELINE-STATIC.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "BASELINE-STDERR.txt": "d84c6ff02ec52c4bf4fe1b3023e7eb67a183373caaf82ddd7dff2baa39b0e9b8",
+      "BASELINE-STDOUT.txt": "0db92c9014d06c113a1e3de2539d453994dbd30c639685a524032df1a83e6404",
+      "BASELINE-install.sh": "14f3da68ceceb4a814913f64170749958594cf941a5a94c503796aab601555f7",
+      "CANDIDATE-EXECUTION.json": "90699af4ac4b9469385b35b2e59f01d893a65c967e9472905ce33be4e5b7dbfd",
+      "CANDIDATE-HELPER.py": "8dbbb72866a10ff8dae30acf6c7449e83fea531d8de70cbeecef2679d000ea50",
+      "CANDIDATE-STDERR.txt": "477b0bc6be19907c49e1fa7e2f3c54e10a32dbb34ff8c9030fb42ce0a0870386",
+      "CANDIDATE-STDOUT.txt": "3f89177b195a28aa6f70068c289ca67dd1382b84f59d7db8b6aeeec486804987",
+      "CI-STATIC-EXECUTION.json": "2bae1c9502c084a9699ef263742a39a783d0a3d786381d558970ed3bf59766dc",
+      "CI-STATIC-STEP.sh": "1093804633ce55389ed2f676012e47c096cb80484e2125e501e60d16f399a3b5",
+      "INDEPENDENT-EXECUTION.json": "6d0dbf4c91b808f88a1a0867dc956ffbc27df6464eb9c292571d394b08f9248c",
+      "INDEPENDENT-STDERR.txt": "0eb0d6b9c81884896a333fcc00364f622cf1251b005aa9b1cea10089afe27bf7",
+      "INDEPENDENT-STDOUT.txt": "2c88286c3963e661d26ace59531423027eaca55a6e49edd3316d0107a82e0d9b",
+      "ORIGINAL-EXECUTION.json": "2149f318879dbcf9708d0713f1ee3f1461f931e2eba5c9861e1ca1f624031227",
+      "ORIGINAL-STDERR.txt": "dc56328ccae7551f3181a9c941e0474c707c80cab03e4234811ed96960d1fbee",
+      "ORIGINAL-STDOUT.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "SYNTAX-AND-DIFF-CHECKS.json": "940f20fe0e3c6734a7b6bae975a75ffd4166864941992167ddcaebfc0a438cdd",
+      "TEST-SOURCE.py": "f1b044d37d1dfba8b7de9657cf2acb0c2f76e5f00a598e95789e2f4dfbd0e7ac",
+      "run_cases.py": "623667063fd21c798379849416f92c4936bc5c632612c6fe3cbe8b0a85c11450"
+    },
+    "limits": [
+      "Behavioral evidence covers one no-writer FIFO and four finite controls for the exact extracted helper; it is not execution of whole installer or archive caller lifecycle.",
+      "No formal proof, whole R13/R40 closure, system acceptance, installed-state qualification, live custody operation, native/proof dispatch or successor authorization.",
+      "No universal device/filesystem latency guarantee, hostile namespace/concurrent mutation qualification, or complete-read/short-read/stability repair is claimed.",
+      "Original two-method suite has outer exit/source evidence but no individual JSON child records; no per-child preservation/reaping claim is inferred for it.",
+      "Outer observer cleanup observes direct test process only; accepted independent run has all five actual helper-child REAPED records.",
+      "Local exact CI static-block execution does not establish hosted CI completion or whole-repository zero warnings.",
+      "Python parses and returns a recorded token; this repair grants no consequential authority or approval."
+    ],
+    "model": "gpt-6.1-sol",
+    "next_step": "Publish only a non-final scoped tested-repair checkpoint with retained failures and exact evidence; pursue remaining assurance inventory and independent whole-system acceptance gates separately.",
+    "observed": {
+      "baseline_case_count": 5,
+      "baseline_fifo": "Actual native no-writer FIFO exceeded3s; killed exit-9 and reaped; other4 controls returned expected results; all5 fixture before/after snapshots equal.",
+      "baseline_suite_exit": 1,
+      "candidate_case_count": 5,
+      "candidate_cases": "FIFO refuses1 without timeout; regular returns exact private corpus token; wrong corpus, absence and invalid UTF-8 refuse1; all5 reaped and preserved.",
+      "candidate_suite_exit": 0,
+      "current_static": "Parent-retained whole updated workflow static block local execution exit0, stdout[], stderr empty; tool SHA pinned in receipt. Independently reviewed receipt/script/source correspondence, not rerun by reviewer.",
+      "independent_case_count": 5,
+      "independent_cases": {
+        "absent": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "fifo": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "invalid_utf8": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "regular": {
+          "exit": 0,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        },
+        "wrong_corpus": {
+          "exit": 1,
+          "fixture_unchanged": true,
+          "reap": "REAPED",
+          "timeout": false
+        }
+      },
+      "independent_cleanup_error": null,
+      "independent_lock_identity": [
+        64768,
+        457925,
+        33188,
+        1000,
+        1000,
+        1
+      ],
+      "independent_observer_failure": null,
+      "independent_recorded_private_roots_removed": true,
+      "independent_source_unchanged": true,
+      "independent_suite_exit": 0,
+      "independent_suite_reaped": true,
+      "original_individual_child_records": 0,
+      "original_methods": [
+        "test_moved_corpus_receipt_is_named_and_rebound_only_by_consent",
+        "test_corpus_receipt_v2_is_root_bound_and_lock_migrated"
+      ],
+      "original_suite_exit": 0,
+      "static_baseline_corrected_attempt": "FAILED exit1, exactly two B904 findings in complete helper, preserved.",
+      "static_baseline_initial_attempt": "FAILED exit127, ruff command unavailable, preserved; empty diagnostic file is not a static pass.",
+      "syntax": "Parent-retained bash -n install.sh/uninstall.sh/bin/sia-setup and git diff --check all exit0; reviewed receipts, not rerun by reviewer."
+    },
+    "provenance": "Unsigned model-origin independent source/evidence judgment with one separately observed fixture execution",
+    "reviewer": "/root/reconcile_review",
+    "schema": 1,
+    "source_review": {
+      "ci_delta": "Additive complete exact-heredoc extraction bounded by 1MiB installer and 4KiB body, unique literal marker, required terminator, exclusive temporary output, checked write length; helper and new test added to existing frozen static/suppression rosters.",
+      "ci_script_exactly_matches_workflow_block": true,
+      "harness": "Actual complete extracted helper in isolated native Python subprocess; five private tmpfs fixtures; finite input/pipe/deadline bounds; explicit one-attempt bounded reap and explicit pipe closure; source/bytes/identity/directory snapshots.",
+      "production_delta": "install.sh corpus_receipt_recorded_root only: O_NONBLOCK added to readonly nofollow open, plus explicit causes on existing OSError and UnicodeError SystemExit(1) refusals; all admission/parser conditions unchanged.",
+      "reachability": "Archive fallback in retire_migrated_legacy_corpus_receipt_stage via corpus_prior_receipt_recognized can reach this reader for a FIFO after the safer legacy-receipt check refuses. The direct corpus_receipt_state regular-file guard does not remove this fallback defect."
+    },
+    "source_sha256": {
+      ".github/workflows/ci.yml": "7474f1327cfbdc7c5f6eaabc40b9e6a7a6cb9f0d9502e33d01e0c7b5a480454e",
+      "docs/evidence/assurance-ruff-rules-v1.txt": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+      "install.sh": "cc9c19976b0a499973c31b6b8d7eec414bfb9a6496441edf5263cdf427d9c6c4",
+      "tests/sia_test_home.py": "e3d36d14eed6fcf764c9443f93796622eeac3c876ad44d255001059ca0a4574f",
+      "tests/test_corpus_root_admission.py": "f1b044d37d1dfba8b7de9657cf2acb0c2f76e5f00a598e95789e2f4dfbd0e7ac",
+      "tests/test_fenced_metadata_admission.py": "21e90e0b5c1471a05cfb6e205fae4240d12e90d9249709de8c713035107d65ed",
+      "tests/test_release.py": "9e6f4a5f7439bc411418936d65b288b56400d336231f7b4a4236a56e2efa5794",
+      "tests/test_release_metadata_admission.py": "2290e25e2aeb277b67615f81eb159b94bd236883d6e7b05216aefcc43ec9f676"
+    },
+    "status": "TESTED_SCOPED_REPAIR_NO_CONCRETE_BLOCKER",
+    "utc": "2026-10-26T18:17:40.575779+00:00"
+  }
+}

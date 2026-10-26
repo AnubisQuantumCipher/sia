@@ -1,0 +1,334 @@
+{
+  "archive": {
+    "bytes": 113550,
+    "path": "docs/evidence/ordinary-receipt-repair-20261026-v1.tar.gz",
+    "sha256": "6192e121112dd692612b6004127828ec3f33dadd9f1bd974977fff7fd82d8369"
+  },
+  "authority": "NONE",
+  "carrier_head": "4ff2268179610297f67b1fd586e725c22ab66d12",
+  "limitations": [
+    "Component and one normal actual-wrapper integration only.",
+    "Model-recorded tool exit note is not a signed platform receipt.",
+    "No hardware durability, complete crash/fault campaign or authenticated directory ancestry.",
+    "Private existing directory and nonhostile ordinary execution premises remain.",
+    "Full source snapshots are bound, not all reproduced here; local paths retained.",
+    "Observer-loss/successor recovery, C14 and all mandatory mission gates remain open.",
+    "No installed product, service, release or marketplace change."
+  ],
+  "members": {
+    "runs/component/EXECUTION-DECISION.json": {
+      "bytes": 2658,
+      "sha256": "be23584020d16f48964488b8ad6a18792c6f0e7bc5b34696e85f0b786c7344bc"
+    },
+    "runs/component/OWNER-AUDIT.json": {
+      "bytes": 1182,
+      "sha256": "deb51e0a212778c55bf46a884b7c23947f3c5ba2470ad5844fabd129c82cae1c"
+    },
+    "runs/component/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 516,
+      "sha256": "d645248381e7a80935cb470d4ae2a3af60a333c438d673e92fadba5fa96455c1"
+    },
+    "runs/component/active.json": {
+      "bytes": 304,
+      "sha256": "4852d2fc137f12ca1c15c7a37e997bc7e5d663a51beb430b0fec22a856e65fa0"
+    },
+    "runs/component/config.json": {
+      "bytes": 17967,
+      "sha256": "4c275c53b0b7bc40f65a107bab1b52dee8a0f4f31d00b9d0fa34069091ecdb0e"
+    },
+    "runs/component/controller.py": {
+      "bytes": 16467,
+      "sha256": "fd1f3033072b837e9ec6c81de54fbb70345ba1cc0003467e32ad9a43e39a6512"
+    },
+    "runs/component/entry.json": {
+      "bytes": 7115,
+      "sha256": "85507f9b88c183dedb2b599e5887213fab866f877cb9852c520bf9403e6880f0"
+    },
+    "runs/component/execution-result.json": {
+      "bytes": 2158,
+      "sha256": "49548f1ee46416c2490d8a6fb680ea2d3b88c1cb782b0f00155e169dbd478eb6"
+    },
+    "runs/component/execution-source.json": {
+      "bytes": 1289,
+      "sha256": "7cb7822417372aff49023df0c645fd61b0e4382bf36eefffda2de35823569631"
+    },
+    "runs/component/proof.stderr": {
+      "bytes": 2597,
+      "sha256": "ca8623f648e0af7bdbbc0c9d68503af792d9861643767b0e18e0a031580c7b02"
+    },
+    "runs/component/proof.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/component/proof_payload.py": {
+      "bytes": 913,
+      "sha256": "2bf3dad227a84a492e7df1c996ac1ed870ad5b5e093f23da1dd42b8fcead2eb7"
+    },
+    "runs/component/proof_wrapper.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/component/proxy.py": {
+      "bytes": 3485,
+      "sha256": "c439b24636ee07a7ae577e5ed78234796ada28e44459c90c600a5ac2d599d1d4"
+    },
+    "runs/component/receipt_baseline.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/component/receipt_candidate.py": {
+      "bytes": 9552,
+      "sha256": "c56335a5ea898f94335136aa2b605f99876a42be7ef65821ae864f01ffd19384"
+    },
+    "runs/component/source-binding.json": {
+      "bytes": 119724,
+      "sha256": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+    },
+    "runs/component/test_error_paths.py": {
+      "bytes": 3150,
+      "sha256": "ef7d6dc9a0d653a34558753d8b8fd6bea27cc116f1815a2347de21832fa2e41f"
+    },
+    "runs/component/test_receipt_durability.py": {
+      "bytes": 8216,
+      "sha256": "5afb6eef75da3c97a999770d9e17d575145724718c7c1f8ea5cd286abb64cd38"
+    },
+    "runs/integration/EXECUTION-DECISION.json": {
+      "bytes": 3039,
+      "sha256": "62a346c7e6672c8f5c2117054894074293716fff4c85db9ae860bd81ac9be2a2"
+    },
+    "runs/integration/OWNER-AUDIT.json": {
+      "bytes": 1514,
+      "sha256": "fa47cf0a9afd75fa0722724c4363e7167237f46734d820cc57602688d4b90e84"
+    },
+    "runs/integration/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 929,
+      "sha256": "8454ed4b43884a479bbfb005bbd83127509f5f1a26b955f862afad397e1705e8"
+    },
+    "runs/integration/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 281,
+      "sha256": "e1d5c3d37f7c5b93544db8bc63ddc563138708404f54e00e3c0b4bb3af45b877"
+    },
+    "runs/integration/active.json": {
+      "bytes": 304,
+      "sha256": "cc3a9c9a6d556e889e419bdcf7678462284325d61df2688d3a924cba1739f4a9"
+    },
+    "runs/integration/config.json": {
+      "bytes": 18081,
+      "sha256": "5fa27847b5a6b3a31ecfe036ecc613b326e0e28c1328dbc7aefc1108c5945d18"
+    },
+    "runs/integration/controller.py": {
+      "bytes": 16467,
+      "sha256": "fd1f3033072b837e9ec6c81de54fbb70345ba1cc0003467e32ad9a43e39a6512"
+    },
+    "runs/integration/entry.json": {
+      "bytes": 7257,
+      "sha256": "08e1792e42964dd8c0818173ea07f311e44b36efc17a345f3bc164ea4d757564"
+    },
+    "runs/integration/execution-result.json": {
+      "bytes": 2158,
+      "sha256": "44a089abf1feccbc1e728d414a71f540c8554aa310bb6e06212c5e13c3536e12"
+    },
+    "runs/integration/execution-source.json": {
+      "bytes": 1372,
+      "sha256": "99a15edc36e709dec918f6891aac0156263f18167fbe1def15fb7d2bac9f3818"
+    },
+    "runs/integration/invoke.py": {
+      "bytes": 2249,
+      "sha256": "e6196351eb1686e1283d848cd76e708cc9fd7d7734af3c0d7813720f601fac81"
+    },
+    "runs/integration/outer-result.json": {
+      "bytes": 638,
+      "sha256": "22a798f76197ea5a1622623e27d1122c161fd0bf8cb96dba089eb784d383da83"
+    },
+    "runs/integration/outer.stdout": {
+      "bytes": 1362,
+      "sha256": "c7d5b16c8916c5f74022dcdd6fe4e8b9c561c30ffc4e25029cdfed10ef6db49c"
+    },
+    "runs/integration/proof.stderr": {
+      "bytes": 2615,
+      "sha256": "b55bf7959c0787411124c123c4d0b37e599c043bd32a4a20afd315211db23a92"
+    },
+    "runs/integration/proof.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/integration/proof_payload.py": {
+      "bytes": 913,
+      "sha256": "2bf3dad227a84a492e7df1c996ac1ed870ad5b5e093f23da1dd42b8fcead2eb7"
+    },
+    "runs/integration/proof_wrapper.py": {
+      "bytes": 9552,
+      "sha256": "e7073af38712d38a6257c539ae24c1c54516869200f2b559fdc3e6b44d440a60"
+    },
+    "runs/integration/proxy.py": {
+      "bytes": 3485,
+      "sha256": "c439b24636ee07a7ae577e5ed78234796ada28e44459c90c600a5ac2d599d1d4"
+    },
+    "runs/integration/receipt_baseline.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/integration/receipt_candidate.py": {
+      "bytes": 9552,
+      "sha256": "e7073af38712d38a6257c539ae24c1c54516869200f2b559fdc3e6b44d440a60"
+    },
+    "runs/integration/source-binding.json": {
+      "bytes": 119724,
+      "sha256": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+    },
+    "runs/integration/test_error_paths.py": {
+      "bytes": 3150,
+      "sha256": "ef7d6dc9a0d653a34558753d8b8fd6bea27cc116f1815a2347de21832fa2e41f"
+    },
+    "runs/integration/test_receipt_durability.py": {
+      "bytes": 8225,
+      "sha256": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+    },
+    "source/AUDITOR-STATIC.json": {
+      "bytes": 1725,
+      "sha256": "42dd6310ba6366a2a32d3bee7e352bd40b1d90d123115f57c28d5b5ec20495d8"
+    },
+    "source/MODE-REPAIR-DISPOSITION.json": {
+      "bytes": 640,
+      "sha256": "cb693ec59dbcfbc1e7a2a362585a8017e9000ebb856ff12f50db6bbd0a7fd3ec"
+    },
+    "source/STATIC-v1.json": {
+      "bytes": 2058,
+      "sha256": "c3038200b15f369206095f13e5a33e7b7b2476cf309a9408cf831a4831ed7e44"
+    },
+    "source/STATIC-v2.json": {
+      "bytes": 2264,
+      "sha256": "10e7ce963aa22a786b8ff26d535384c83e298dea43873c31d8c572dd307d3434"
+    },
+    "source/STATIC-v3.json": {
+      "bytes": 2722,
+      "sha256": "46864623baa2c68ff14e4353c63543c9df97066880b5912175a2f73f27d60a36"
+    },
+    "source/baseline_proof_wrapper.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "source/component-tested-v2-proof_wrapper.py": {
+      "bytes": 9552,
+      "sha256": "c56335a5ea898f94335136aa2b605f99876a42be7ef65821ae864f01ffd19384"
+    },
+    "source/component-tested-v2-test_receipt_durability.py": {
+      "bytes": 8216,
+      "sha256": "5afb6eef75da3c97a999770d9e17d575145724718c7c1f8ea5cd286abb64cd38"
+    },
+    "source/invoke.py": {
+      "bytes": 2249,
+      "sha256": "e6196351eb1686e1283d848cd76e708cc9fd7d7734af3c0d7813720f601fac81"
+    },
+    "source/proof_wrapper.py": {
+      "bytes": 9552,
+      "sha256": "e7073af38712d38a6257c539ae24c1c54516869200f2b559fdc3e6b44d440a60"
+    },
+    "source/reviewed-v1-proof_wrapper.py": {
+      "bytes": 9035,
+      "sha256": "63e06b13b6e8e0e2c2f12318d10f63d1a61cd5b55c27de3c2a79beb94cc3a003"
+    },
+    "source/reviewed-v1-test_receipt_durability.py": {
+      "bytes": 8113,
+      "sha256": "22df9d5dc165b50068b7c60d706914232602eb12e8ab49d8a5984792b475e4dd"
+    },
+    "source/test_receipt_durability.py": {
+      "bytes": 8225,
+      "sha256": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+    },
+    "tools/audit_receipt_controls_20261026.py": {
+      "bytes": 4255,
+      "sha256": "271b2ddcf098178c8f75a3a6fc716f287257e30803f13f43094a2fcef3677c4b"
+    },
+    "tools/audit_receipt_integration_20261026.py": {
+      "bytes": 5364,
+      "sha256": "9aa455aad52ecb48882446b77cd21d6f34c23f2be9f967120518276658d956a7"
+    },
+    "tools/package_receipt_repair_20261026.py": {
+      "bytes": 7175,
+      "sha256": "ff398e6859172dcdcfd481bc4fdfd4a8f230c0f4fcbdb5bbe3e09aa1c7069b82"
+    },
+    "tools/prepare_receipt_controls_20261026.py": {
+      "bytes": 2308,
+      "sha256": "906f561514b5e388dc1eeeee244499133119029482f823f83eea8987322c23ef"
+    },
+    "tools/prepare_receipt_integration_20261026.py": {
+      "bytes": 2446,
+      "sha256": "ab4bce61050ab9b74ae702b24438372f970b0587dc8f495e06a94bf410215aa5"
+    },
+    "unrun/UNRUN-DISPOSITION.json": {
+      "bytes": 408,
+      "sha256": "96dc0f63f0bcbc7450d35ef6cc959d9bb51a6db5f057939ece47d628ceab0d55"
+    },
+    "unrun/config.json": {
+      "bytes": 17967,
+      "sha256": "0a47f9cd06ea782140cee168b9b029497ca3e49317315217ed0bb674ec351a06"
+    },
+    "unrun/execution-source.json": {
+      "bytes": 1289,
+      "sha256": "2f1a29b1d54ac178fb1f31c8e2f2252d8786ab5f37c430bc19d0b16043938c58"
+    }
+  },
+  "results": {
+    "component": {
+      "adoption": false,
+      "evidence_sha256": {
+        "execution-result.json": "49548f1ee46416c2490d8a6fb680ea2d3b88c1cb782b0f00155e169dbd478eb6",
+        "execution-source.json": "7cb7822417372aff49023df0c645fd61b0e4382bf36eefffda2de35823569631",
+        "proof.stderr": "ca8623f648e0af7bdbbc0c9d68503af792d9861643767b0e18e0a031580c7b02",
+        "proof.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "receipt_candidate.py": "c56335a5ea898f94335136aa2b605f99876a42be7ef65821ae864f01ffd19384",
+        "source-binding.json": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3",
+        "test_receipt_durability.py": "5afb6eef75da3c97a999770d9e17d575145724718c7c1f8ea5cd286abb64cd38"
+      },
+      "independent_review": "PENDING",
+      "limitations": [
+        "Candidate main not dispatched.",
+        "Not hardware crash durability or authenticated directory ancestry.",
+        "Observer-loss recovery UNKNOWN; no C14 or whole-system acceptance."
+      ],
+      "output": {
+        "elapsed_seconds": "0.054",
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests": 18
+      },
+      "source_rows": 478,
+      "status": "RECEIPT_COMPONENT_CONTROLS_PASS",
+      "tracked_terminal_cleanup": true
+    },
+    "integration": {
+      "adoption": false,
+      "evidence_sha256": {
+        "TOOL-EXIT-OBSERVATION.json": "e1d5c3d37f7c5b93544db8bc63ddc563138708404f54e00e3c0b4bb3af45b877",
+        "execution-result.json": "44a089abf1feccbc1e728d414a71f540c8554aa310bb6e06212c5e13c3536e12",
+        "execution-source.json": "99a15edc36e709dec918f6891aac0156263f18167fbe1def15fb7d2bac9f3818",
+        "outer-result.json": "22a798f76197ea5a1622623e27d1122c161fd0bf8cb96dba089eb784d383da83",
+        "outer.stdout": "c7d5b16c8916c5f74022dcdd6fe4e8b9c561c30ffc4e25029cdfed10ef6db49c",
+        "proof.stderr": "b55bf7959c0787411124c123c4d0b37e599c043bd32a4a20afd315211db23a92",
+        "proof.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "receipt_candidate.py": "e7073af38712d38a6257c539ae24c1c54516869200f2b559fdc3e6b44d440a60",
+        "source-binding.json": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3",
+        "test_receipt_durability.py": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+      },
+      "independent_review": "PENDING",
+      "limitations": [
+        "One normal actual-wrapper integration; failure cuts remain unqualified.",
+        "Not hardware crash durability or authenticated directory ancestry.",
+        "Observer-loss recovery UNKNOWN; no C14 or whole-system acceptance."
+      ],
+      "output": {
+        "elapsed_seconds": "0.041",
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests": 18
+      },
+      "source_rows": 478,
+      "status": "RECEIPT_WRAPPER_NORMAL_INTEGRATION_PASS",
+      "tracked_terminal_cleanup": true
+    }
+  },
+  "status": "TESTED_ORDINARY_RECEIPT_REPAIR_NOT_CUSTODY_ACCEPTANCE"
+}

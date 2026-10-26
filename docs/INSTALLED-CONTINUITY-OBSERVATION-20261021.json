@@ -1,0 +1,166 @@
+{
+  "evidence_root": "/home/sicarii/Work/sia-assurance-evidence-20261019",
+  "generator_sha256": "117664c8c00907259e7b02f60de65a1a7b12e162a829cb52a3723b60bf6ae80e",
+  "limitations": [
+    "The CLI hash identifies that executable, not its entire installed dependency closure.",
+    "Readiness and no-touch recall do not establish account-guard commissioning.",
+    "The ad-hoc query returned older derived/model content without the current checkpoint marker.",
+    "That retrieval observation is not a held-out evaluation or proof that storage lacks the checkpoint.",
+    "A successful request within its budget does not guarantee universal latency.",
+    "Raw retrieved memory contents remain in the local evidence file; only its digest is published.",
+    "The selected user unit is ollama.service; sia-ollama.service was inactive in the initial name probe."
+  ],
+  "receipts": {
+    "installed-ollama-readback-20261021-v1.json": {
+      "receipt": {
+        "checks": [
+          {
+            "command": [
+              "systemctl",
+              "--user",
+              "list-unit-files",
+              "*ollama*",
+              "--no-pager"
+            ],
+            "exit": 0,
+            "stderr": "",
+            "stdout": "UNIT FILE      STATE   PRESET\nollama.service enabled enabled\n\n1 unit files listed.\n"
+          },
+          {
+            "command": [
+              "systemctl",
+              "--user",
+              "show",
+              "ollama.service",
+              "-p",
+              "Id",
+              "-p",
+              "ActiveState",
+              "-p",
+              "SubState",
+              "-p",
+              "NRestarts",
+              "-p",
+              "FragmentPath"
+            ],
+            "exit": 0,
+            "stderr": "",
+            "stdout": "Id=ollama.service\nActiveState=active\nSubState=running\nFragmentPath=/home/sicarii/.config/systemd/user/ollama.service\nNRestarts=0\n"
+          },
+          {
+            "command": [
+              "ss",
+              "-ltnp",
+              "sport = :11434"
+            ],
+            "exit": 0,
+            "stderr": "",
+            "stdout": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096       127.0.0.1:11434      0.0.0.0:*    users:((\"ollama\",pid=1316,fd=4))\n"
+          }
+        ],
+        "observed_at": "2026-10-21T04:07:03.029994+00:00",
+        "origin": "read-only installed Ollama route observation; not account-guard commissioning"
+      },
+      "sha256": "551250b7a8a1369e42b0ad46055a0c0941e46b244bd9e25c7b543ee4ab33b659"
+    },
+    "installed-ready-20261021-v2.json": {
+      "receipt": {
+        "cli_sha256_after": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+        "cli_sha256_before": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "240s",
+          "/home/sicarii/.local/bin/sia",
+          "ready"
+        ],
+        "elapsed_seconds": 23.129825116018765,
+        "exit": 0,
+        "log_sha256": "bf5cdb6415143b9f2dd91c8600db69c273dc516829c248039715b1caee498f39",
+        "observed_at": "2026-10-21T04:03:38.196608+00:00",
+        "origin": "observed installed CLI command; not guard commissioning or whole installed-source qualification"
+      },
+      "sha256": "2f871f8676a2e6038ee62e8066c4bf545cb9f7c25a36fb8ae566963940e87229"
+    },
+    "installed-recall-20261021-v2.json": {
+      "receipt": {
+        "cli_sha256_after": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+        "cli_sha256_before": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "240s",
+          "/home/sicarii/.local/bin/sia",
+          "ask",
+          "SIA assurance continuity worktree Power of Ten current proof evidence",
+          "--no-touch"
+        ],
+        "elapsed_seconds": 92.3463054280146,
+        "exit": 0,
+        "log_sha256": "f2598b5c59bddfc64658a03ef6713b2e934ab44973998df7fc18030a30e28878",
+        "observed_at": "2026-10-21T04:05:44.301225+00:00",
+        "origin": "observed installed no-touch CLI request; not retrieval completeness or answer-accuracy qualification",
+        "output_bytes": 2364
+      },
+      "sha256": "2246efbbec2637ccadf49b77f9fda60e54bfb21b778b41d63fb88c16c4641a50"
+    },
+    "installed-recall-relevance-20261021-v1.json": {
+      "receipt": {
+        "current_commit_present_in_result_text": false,
+        "current_evidence_manifest_present_in_result_text": false,
+        "expected_current_commit": "4a05d6c5a53926a5a2f0ca9e765a23e6fa8e59af",
+        "interpretation": "Command completion does not establish restoration of the current checkpoint; absence from this result does not establish absence from storage.",
+        "origin": "ad-hoc exact-marker diagnostic; not held-out semantic evaluation",
+        "query_receipt": "installed-recall-20261021-v2.json",
+        "result_log_sha256": "f2598b5c59bddfc64658a03ef6713b2e934ab44973998df7fc18030a30e28878"
+      },
+      "sha256": "8f8b68a4c22a69a039b1201a2c2f5165ff7db9ac1faa268fa07f779f03bb90eb"
+    },
+    "installed-recall-route-20261021-v1.json": {
+      "receipt": {
+        "candidate_cwd_plain_sia": "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/sia",
+        "installed_guidance_outer_timeout_seconds": 240,
+        "installed_mcp_cli_target": "/home/sicarii/.local/bin/sia",
+        "installed_mcp_default_timeout_seconds": 240,
+        "observed_at": "2026-10-21T04:00:26.701471+00:00",
+        "origin": "read-only source observation; not full installed dependency qualification",
+        "required_installed_test_command": "Use the absolute installed CLI path and identify source; PATH lookup in the worktree is candidate-specific.",
+        "sha256": {
+          "/home/sicarii/.agents/skills/sia/SKILL.md": "0d53b79e43a346fc3357d5c5d0b9ca0086aa88f7b6acd7d67385afa2d053f6c3",
+          "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+          "/home/sicarii/.local/share/sia/bin/sia-mcp": "960b2b5294ac7e59119f625514de53cbf2b565fec1d07fae3c0fc457a8bdbe1f",
+          "/home/sicarii/Work/sia-assurance-kernel-20261019/bin/sia": "abf6de1d5ceb281ca641a46c8530d036343f47b9ce9d39b88185049813de754d"
+        }
+      },
+      "sha256": "608da2204668ffe49768bcf603fedf181990d0cb67b0ecd191b4758cf7073a21"
+    },
+    "installed-service-readback-20261021-v2.json": {
+      "receipt": {
+        "command": [
+          "systemctl",
+          "--user",
+          "show",
+          "sia-brainstem.service",
+          "sia-ollama.service",
+          "-p",
+          "Id",
+          "-p",
+          "ActiveState",
+          "-p",
+          "SubState",
+          "-p",
+          "NRestarts"
+        ],
+        "exit": 0,
+        "initial_probe": "unavailable because caller environment omitted user bus; not a service failure",
+        "origin": "read-only live user-service status",
+        "stderr": "",
+        "stdout": "Id=sia-brainstem.service\nActiveState=active\nSubState=running\nNRestarts=0\n\nId=sia-ollama.service\nActiveState=inactive\nSubState=dead\nNRestarts=0\n",
+        "user_bus": "/run/user/1000/bus"
+      },
+      "sha256": "a185115bf73485feebf7ec0642cbd961655cd56ea890f76843f992121fd63208"
+    }
+  },
+  "schema_version": 1,
+  "status": "OBSERVED installed command success; current-task restoration UNQUALIFIED"
+}

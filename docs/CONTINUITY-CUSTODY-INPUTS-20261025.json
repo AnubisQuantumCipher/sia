@@ -1,0 +1,126 @@
+{
+  "archive": "evidence/continuity-custody-inputs-20261025.tar.gz",
+  "archive_bytes": 67273,
+  "archive_sha256": "b1affd4a3b7bdff59021846c18a95958eb020618ffda79d7207138a64a9f5dfb",
+  "authority": "NONE",
+  "complete_execution_dependency_closure": false,
+  "inputs": [
+    {
+      "bytes": 25169,
+      "member": "native/manager_image_witness.c",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/manager_image_witness.c",
+      "sha256": "0a462628a234ef853b3181cc07ae21d7bff88d81efc5ac18f6dee70470f0ae20"
+    },
+    {
+      "bytes": 12724,
+      "member": "native/witness_measure.c",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/witness_measure.c",
+      "sha256": "3e54fed54b17b7626ce4660e6e2a9c9d489f1a18dc216d41eacc98acd0938b02"
+    },
+    {
+      "bytes": 34251,
+      "member": "native/witness_io.c",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/witness_io.c",
+      "sha256": "b8c03325f33b392e251f98bacf39fb57fb688c95f6ed36e37e3ebac6792d5edb"
+    },
+    {
+      "bytes": 5066,
+      "member": "native/witness.h",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/witness.h",
+      "sha256": "3986f0bda76a072dea4cb1d90f4bd22cab88377512270e69647de8446dff8cfe"
+    },
+    {
+      "bytes": 9401,
+      "member": "native/ADMISSION-FORMAT.json",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/ADMISSION-FORMAT.json",
+      "sha256": "7be6bedfac201f206210b222d20cb7e11b276e39e951ce77c5ad07fa46bfe8c6"
+    },
+    {
+      "bytes": 1376,
+      "member": "native/sia-manager-image-witness@.service",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-source-v1/source/sia-manager-image-witness@.service",
+      "sha256": "70a1180b0c120df00e0dbdb05ce4a44c274d877985f19e17362930cf50d640a5"
+    },
+    {
+      "bytes": 17574,
+      "member": "adapter/supervise.py",
+      "original_path": "/home/sicarii/Documents/Codex/2026-10-24/task/sia-codex-adapter/docs/evidence/codex-continuity-adapter-20261024/stage-packet-v1/supervise.py",
+      "sha256": "1a319e94ac6c9c2bd9c17564c4ae7831a8bcadca4cce50677f5d88a915d66367"
+    },
+    {
+      "bytes": 13296,
+      "member": "adapter/terminal_observer.py",
+      "original_path": "/home/sicarii/Documents/Codex/2026-10-24/task/sia-codex-adapter/docs/evidence/codex-continuity-adapter-20261024/stage-packet-v1/terminal_observer.py",
+      "sha256": "f96d755fb58b9b9eefe6b2b26770930642dbefa23531f35f9a8c0bf3a72b3d3d"
+    },
+    {
+      "bytes": 9701,
+      "member": "adapter/root-profile-lifecycle-contract.md",
+      "original_path": "/home/sicarii/Documents/Codex/2026-10-24/task/sia-codex-adapter/docs/evidence/codex-continuity-adapter-20261024/stage-packet-v1/root-profile-lifecycle-contract.md",
+      "sha256": "b0f9389c973884772694c35b27bc6669d8890d9f86cf81722d060e9050638fdc"
+    },
+    {
+      "bytes": 13550,
+      "member": "product/PROTECTED-SLOT-CONTRACT.md",
+      "original_path": "/home/sicarii/Work/sia-assurance-checkpoint-20261023/spark/PROTECTED-SLOT-CONTRACT.md",
+      "sha256": "3cefbbfb753ae773cfa642cc456d769c8faccc75865210c92061128e7cf7f689"
+    },
+    {
+      "bytes": 1123,
+      "member": "product/sia_grant_lifetime.ads",
+      "original_path": "/home/sicarii/Work/sia-assurance-checkpoint-20261023/spark/src/sia_grant_lifetime.ads",
+      "sha256": "d4422783fe86bda25bfe600c606dc9a2b34cb4c18346931d6b9238fcbbaed8a8"
+    },
+    {
+      "bytes": 40939,
+      "member": "product/sialifetime.py",
+      "original_path": "/home/sicarii/Work/sia-assurance-checkpoint-20261023/bin/sialifetime.py",
+      "sha256": "5f0a4b43cb9478db50517f10c0ce836c137abe9c3312ba0f580157d06ca72ef4"
+    },
+    {
+      "bytes": 5910,
+      "member": "evidence/native-result.json",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-compiler-preparation-v1/run/result.json",
+      "sha256": "6f1e7ccc49ec608cf72a3136760e85bd62ee73d1122648be041c78dd0abe1cf4"
+    },
+    {
+      "bytes": 5748,
+      "member": "evidence/native-stderr.txt",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/manager-send-lifetime-compiler-preparation-v1/run/stderr",
+      "sha256": "979548353de143315916e5c6ae8d8907719fbbb0730ef98ac74dba4b1a50bcf4"
+    },
+    {
+      "bytes": 13016,
+      "member": "evidence/sdk-full-result.json",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/sdk-loop-finally-v8/full-result.json",
+      "sha256": "07eb461eb8e0fd956ed39ed12b2afac29fcc087c4298675f63089ba0e90da057"
+    },
+    {
+      "bytes": 21071,
+      "member": "evidence/sdk-full-stderr.txt",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/sdk-loop-finally-v8/full.stderr",
+      "sha256": "4f27c88ec1cabd4eabfb9b63377c3fdab0da3f319cdf11b8b191f50824023583"
+    },
+    {
+      "bytes": 9163,
+      "member": "evidence/directbirth-credential-blocker.json",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/takeover-standalone-directbirth-autokill-credential-preservation-blocker-v1.json",
+      "sha256": "43b49e8de98ba178b52e9391d7fac819bfa28ff479a8e667bad0f62cb77a3c79"
+    },
+    {
+      "bytes": 3762,
+      "member": "evidence/worker-disposition.md",
+      "original_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/continuity-worker-5c61b7a-next-stage.md",
+      "sha256": "6e5ef00fed022c6f4a1e9aab2c590a0da6d0acd7a3927f0f2256de7131a9abb3"
+    },
+    {
+      "bytes": 15865,
+      "member": "evidence/custody-review.txt",
+      "original_path": "/home/sicarii/Documents/Codex/2026-10-24/task-3/process-custody-review.txt",
+      "sha256": "2b58e56547b0512e2e51a45ef87c1481c0a29dc3e56862b655cb8b2ad58ba95d"
+    }
+  ],
+  "repeated_pack_equal": true,
+  "schema": "sia.continuity-custody-inspection.v1",
+  "status": "SOURCE_INSPECTION_ONLY_NOT_QUALIFICATION"
+}

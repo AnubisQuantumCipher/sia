@@ -1,0 +1,266 @@
+{
+  "schema": "sia-writer-cost-evidence-v1",
+  "status": "FAILED_FULL_WRITER_QUALIFICATION_NOT_ADOPTED",
+  "base_commit": "b2d89c37e85445765d4d531bc77a57247c07f18a",
+  "prior_candidate_manifest": "docs/OWNERSHIP-TYPE-IDENTITY-20261024.json",
+  "prior_candidate_manifest_sha256": "2b4e2c52bea9c537c5bb938524925a1d173f5e7386c0bb83049f7d37e3ab9515",
+  "scalar_source_sha256": {
+    "original.py": "be9ed7177d0512080616092f13e1030e1cc081cc19e9d0a896f3ed25ccddc4f0",
+    "candidate.py": "67fd4f3d62782187a6c5d937734b52b97e419b13b17635299588fa4811bceb0e"
+  },
+  "members": [
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/profile_case.py.gz",
+      "sha256": "f7d4d3a3e4075ecd44d5e4348831ec5540259fe8efd6bcb052530796fecaa194",
+      "original_sha256": "b52d4c9a40d602931e3a2ebe70daaa9ba271d2443609678cfc49061c49522d1c",
+      "original_bytes": 645
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/SCOPE.md.gz",
+      "sha256": "944918dd43a90007937e1c1e762e04be3777ab169ec178a684bb7c9d33a3c068",
+      "original_sha256": "f3d17c3237a0bb4d6a5ffbd3f44c5e8cdb97a272f9ed76e0d302a13750bdf36a",
+      "original_bytes": 379
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/workload-result.json.gz",
+      "sha256": "cad5805a0e9bc846eee9544ef7b87739035f3386cba83b387b7e92e880c13630",
+      "original_sha256": "89a6b1cb9a5f6099715ba650c54bbce8c49dd050a000fe35f27ab870bae56706",
+      "original_bytes": 152502
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-stack-diagnostic-v1/workload.stderr.gz",
+      "sha256": "090c54993f22bb49006ab67ef8a53c68a41fbc095d303ab902cb9669b8ca2bb1",
+      "original_sha256": "18219d3c643f06be3648a65179fdf2e7e2fa25b2d8cee42c227299d98a545206",
+      "original_bytes": 6519
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/profile_case.py.gz",
+      "sha256": "a3d398ddf1953f0517be7cbfdea855f85926049a14f522a8718022365d8ce0fc",
+      "original_sha256": "ca9aa6e326f34663f4bdd8d144af5e3bb46200cb07c256d58fc16b473bf98ced",
+      "original_bytes": 2527
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/SCOPE.md.gz",
+      "sha256": "4b5116930b6f2be4183bb07eff4210f01382706f23bc057145968230d6ee9dd9",
+      "original_sha256": "bce746b85a4a759e7bafe1f2ee7ea38bda7daab763fb604a641de742f8324bdb",
+      "original_bytes": 288
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/workload-result.json.gz",
+      "sha256": "130ea4af047f716efe3c7736e51ab0608f1d7b2ddd1f19f9f766443b3fed5af4",
+      "original_sha256": "9b53e85c16d1ccbb905d4265ef25fc29f651f9662284b07a5871a4a7d7e199b5",
+      "original_bytes": 152495
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/workload.stdout.gz",
+      "sha256": "1b27ae7ce7c02e0c9e3a992448197cc6e670c1669078eb619bfcd57a7d810691",
+      "original_sha256": "c8298a2b82a1e9e86e44155b3a434079aaac1583cdff223746ab2021349b8078",
+      "original_bytes": 1223
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-next-capture-cost-diagnostic-v1/workload.stderr.gz",
+      "sha256": "cbe9d993ebbe566131d7afed022ad7a62cc0bd351352bc04f9b164247ff69c8b",
+      "original_sha256": "03c744dd9a5cff3f99889097bb53a4a0cfcb4615c1d7f01b270a4229baeb3505",
+      "original_bytes": 330
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/profile_case.py.gz",
+      "sha256": "c229f2a31cd7611c42d71561798cbdd04cfca0e781387e51eae1524a9d7f86a9",
+      "original_sha256": "11cd8927e08b636921e50bd97dfdc891c8417e7233ab2d72aaed7ce3152a7d6b",
+      "original_bytes": 1861
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/SCOPE.md.gz",
+      "sha256": "f1d665e0c8af73cf4b6b208acb07c074a16074394b8b8ea5e6b40fc1dd5bb832",
+      "original_sha256": "9a9074d6282d896ac0e31b17d388930cb9e3855d28f287c75aeaef21134def62",
+      "original_bytes": 338
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/workload-result.json.gz",
+      "sha256": "ff85842458bed2e11d91c6985019f0d26b499a2fe45b35da474622dbcdb6538f",
+      "original_sha256": "bedd0b8cf62cf24665055ffb1921dcdf2bdda3773a037b91ac7e420377ac7d84",
+      "original_bytes": 152446
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/workload.stdout.gz",
+      "sha256": "a113265e519b44152850d80d5b22fd412321d9b793bb64018e4601aa433d165c",
+      "original_sha256": "074dae2f88bee5382d12ad21a226340bf285860c5a58b6203ca6c2441695b4f4",
+      "original_bytes": 2933
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/workload.stderr.gz",
+      "sha256": "8d29fe834ea44b4e45bd5309cf2a9c3275f0fa4ce16aa2e20ce5ba3f6623a243",
+      "original_sha256": "08bd35fcd8d89c3b4715bcc136c43086ab0934145cc460171b7e4e857c683344",
+      "original_bytes": 330
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/tooling-static-result.json.gz",
+      "sha256": "b823c4fd4027676b63ed50384cf1e514bcf59dd773f7cce74931fc03fde5c2c2",
+      "original_sha256": "5a9270fd4df9e84470a5b4daf7e7e16f8e56e1f8fa89275ca6a03d5ff4e03bae",
+      "original_bytes": 3636
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/tooling-static.stdout.gz",
+      "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+      "original_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "original_bytes": 2
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-size-internal-profile-v1/tooling-static.stderr.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/profile_case.py.gz",
+      "sha256": "76a22878119c64532ae64957d55190ad44881ea3874029da315482d28a65eb9a",
+      "original_sha256": "5988bf126fd3fc29d873670e9b0717c88fcfba9d794e754ed0c2db57bc893463",
+      "original_bytes": 4316
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/run_profile.py.gz",
+      "sha256": "f77538d4fbb3f317fbb4794ba27b65bd84c1b5a744f95cafa50834bcaccaa95a",
+      "original_sha256": "f9802a3f780ee429e8f19211c73f68651dc0e055a27ea1e7635f6167502be722",
+      "original_bytes": 2689
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/SCOPE.md.gz",
+      "sha256": "c1ad630db5bef4aa1845393dadf85c1da53b4d4c629d75aad6b44da7ea840b62",
+      "original_sha256": "5034c3710a129849f41bdc01787e23ea7a7ad3cd8aac1adc10e895ee775401b2",
+      "original_bytes": 436
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/workload-result.json.gz",
+      "sha256": "2ba149a018d6ece1f61d8cff3c82d01ecd11b76a98c7c3898be8bc8572ed1fb4",
+      "original_sha256": "fe6a8da8544c4088e1dd47727170a1fd02fbbc7200a89290b805d3090644f23b",
+      "original_bytes": 153670
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/workload.stderr.gz",
+      "sha256": "d4806e3d9dea5e6d9636193ed6e6446b7cc6cd6dc2bf8ef6e7abe89cd779fc1b",
+      "original_sha256": "5b8a51cc344a7b0c894221079fd54e3310c5d0ea9ed6d8dc7558dd0581f51c2f",
+      "original_bytes": 44954
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/original.py.gz",
+      "sha256": "c8c68008cc638144ce09ad695e1c6fbdcdc5b6b0208e6f7b4cb09553b022135b",
+      "original_sha256": "be9ed7177d0512080616092f13e1030e1cc081cc19e9d0a896f3ed25ccddc4f0",
+      "original_bytes": 114688
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/candidate.py.gz",
+      "sha256": "459e8cf7a606ad02bbcf44f4e624aa92764812fddab1be8d99fe0d34b4dd7f1a",
+      "original_sha256": "67fd4f3d62782187a6c5d937734b52b97e419b13b17635299588fa4811bceb0e",
+      "original_bytes": 114688
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/SOURCE-REVIEW.json.gz",
+      "sha256": "4e3028f81fbd0cfa8ad2568e658dd14982bf1f065fe5d68bd3eb5766250104d2",
+      "original_sha256": "d1294094b0a6df4bbd026dc56c0d9dd746d652d64604855b823756571d11007f",
+      "original_bytes": 919
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/static-result.json.gz",
+      "sha256": "1582e1f302a9e6afd3a9916bf63e2ff00ca17260a01b34ef58c5d8b28d18bef6",
+      "original_sha256": "d75ea73d87a21587a4b8808d1d81be44e202cc9b3daaf7a0ccc3031db53ed22a",
+      "original_bytes": 2436
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/static.stdout.gz",
+      "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+      "original_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "original_bytes": 2
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-candidate-v1/static.stderr.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/profile_case.py.gz",
+      "sha256": "b2e66ee2bf3632ac198deb77aaa7dc0dd9f0d28b6da36614a6313459d3b702e1",
+      "original_sha256": "3ec7481f969a1cb5f806811306b9513a99a4965f5c8270afdae42c6527793486",
+      "original_bytes": 463
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/run_profile.py.gz",
+      "sha256": "f77538d4fbb3f317fbb4794ba27b65bd84c1b5a744f95cafa50834bcaccaa95a",
+      "original_sha256": "f9802a3f780ee429e8f19211c73f68651dc0e055a27ea1e7635f6167502be722",
+      "original_bytes": 2689
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/SCOPE.md.gz",
+      "sha256": "211481e3890894c9377d864dd8ddda6aa2897eeaa0c689d9b44409a89b546605",
+      "original_sha256": "289211e2fb213892124ee46d6948ff4a3779bee8ae3e3731ed2b17f6822487d4",
+      "original_bytes": 348
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/workload-result.json.gz",
+      "sha256": "b8c81fc00ba788324b31c1338c54b69c585dd88eb3033f72811df1da45d28d03",
+      "original_sha256": "2d8a0c4595e7f896a615aa4c9b01ef9d4db8e16ab127f3feeed2e19de0d8c1cd",
+      "original_bytes": 153698
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/workload.stderr.gz",
+      "sha256": "b9fb1f59c658c8d6d02a237f536cfd9c7d49d29a9ab82e64d927cc8d75b8f45d",
+      "original_sha256": "c4da775309c608c2304774eca208925c3758df078c4766eca144c615e0d29715",
+      "original_bytes": 1463
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/original.py.gz",
+      "sha256": "c8c68008cc638144ce09ad695e1c6fbdcdc5b6b0208e6f7b4cb09553b022135b",
+      "original_sha256": "be9ed7177d0512080616092f13e1030e1cc081cc19e9d0a896f3ed25ccddc4f0",
+      "original_bytes": 114688
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/writer-scalar-dispatch-full-writer-v1/candidate.py.gz",
+      "sha256": "459e8cf7a606ad02bbcf44f4e624aa92764812fddab1be8d99fe0d34b4dd7f1a",
+      "original_sha256": "67fd4f3d62782187a6c5d937734b52b97e419b13b17635299588fa4811bceb0e",
+      "original_bytes": 114688
+    },
+    {
+      "path": "docs/evidence/writer-cost-20261024/build-writer-cost-evidence.py.gz",
+      "sha256": "8d210f0f377bfc23fc0b14bbbe3e4b2c3ed086d347b210986e3d6e5c28912c27",
+      "original_sha256": "62ca56f2d78fd4187a6dcc5f7765f0e1ecc70abac0bb9af42df46a46180e89c8",
+      "original_bytes": 3287
+    }
+  ],
+  "limits": "Original runtime caps unchanged. No release authority."
+}

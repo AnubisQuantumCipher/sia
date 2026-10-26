@@ -1,0 +1,26 @@
+Independent read-only review by /root/assurance_architecture_review,
+actual model gpt-6.1-sol. Source review only; no jobs executed by the reviewer.
+
+No new semantic blocker found.
+
+The explicit empty aggregates match the original typed empties, with equality
+assertions retained. All four payload helpers use fixed ranges and exact
+byte-correspondence postconditions; validation, decoding and Decoded_As
+consistently use those helpers. No scalar guard, padding check or policy-invalid
+value preservation was removed.
+
+The added state-preservation test closes the prior gap across all availability
+states. Original vectors and negative controls remain. No warning suppression,
+assumption or exclusion was found in this refactor.
+
+Reviewer-reported SHA-256:
+ads   019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084
+adb   a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c
+tests d8aa7ca7201d0f723411cd54da648d643ca71bc3e69f195f3cea5993c06139b3
+spec  49810d1ac01ee95cc3d3dc0b6ed6c10a3aebcff1a1ccfd6438c1999bb76aef9f
+
+The spec hash covers the document before the subsequent diagnostic-result
+update. This report does not cover later edits by implication.
+
+Complete focused diagnostics and fresh full-project proof remain separate
+gates. No installed integration or whole-system acceptance is established.

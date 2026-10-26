@@ -1,0 +1,95 @@
+{
+  "schema": "sia.source-git-environment-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "aeb62c3087a1d1fe681e9b6e6ef324935e122f3b",
+  "obligations": [
+    "R08",
+    "R38",
+    "P06",
+    "P07",
+    "P08"
+  ],
+  "problem": "Inherited GIT_DIR/GIT_WORK_TREE redirected the descriptor-bound corpus operation to a foreign repository; GIT_INDEX_FILE redirected the index.",
+  "change": "Discard inherited GIT_* variables before adding owned global/system configuration and noninteractive prompt settings. Preserve non-Git environment.",
+  "source_sha256": {
+    "bin/siasourcegit.py": "1f31542fbb1a945c32e0f28dbea76b519d928cd21cf6fe1cf62ad9e843118f0d",
+    "tests/test_controller_source_git_generation.py": "ad6ab8b7acb36d243b1306ade2fdd39cadad9a124e035a0c5e6d8392436110dc",
+    "tests/test_controller_source_git_content.py": "5061fdb7b2f98e8398a7512f56185fd3bb58f80aac37a3b84a684b97843ec65b"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 15,
+    "failure_count": 6,
+    "log": "evidence/source-git-environment-20261024/baseline-git-environment.log",
+    "scope": "Same three new test methods exercised through two APIs; final test-only import cleanup and isolated-HOME assertion followed this negative run."
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 15,
+    "log": "evidence/source-git-environment-20261024/candidate-final-git-environment.log",
+    "source_unchanged": true
+  },
+  "original_test_methods_unchanged": [
+    "test_clean_retry_returns_the_exact_current_generation_without_a_commit",
+    "test_exact_generation_uses_pinned_executable_and_repository_descriptors",
+    "test_named_repository_replacement_refuses_without_switching_authority",
+    "test_symlinked_repository_or_executable_refuses_before_subprocess"
+  ],
+  "static": {
+    "status": "PASS",
+    "tool": "ruff 0.17.1",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "rules_sha256": "0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741",
+    "scope": [
+      "bin/siasourcegit.py",
+      "tests/test_controller_source_git_generation.py",
+      "private evidence runner"
+    ],
+    "result": "No Ruff diagnostics or stderr; compile-only syntax passed. Original three unused-import findings retained in private baseline evidence, corrected without suppression."
+  },
+  "execution": {
+    "environment": "Read-only source/root; private tmp/home/run/dev/proc; unshared network and PID namespaces. Git byte-identical user-owned copy mounted as /usr/bin/git to preserve owner admission in user namespace.",
+    "git_sha256": "83ac7a82150b3c8dc03830ab10e3dd1500b54ad9d5f02cbf4f95da65afc326ce",
+    "timeout_seconds": 60,
+    "kill_after_seconds": 5,
+    "outer_observation_seconds": 70,
+    "recipe": "python3 -B -W error::ResourceWarning -m unittest -v tests.test_controller_source_git_generation tests.test_controller_source_git_content",
+    "recipe_note": "Portable inner recipe; actual retained runner loads these same modules after test-home initialization inside the namespace."
+  },
+  "review": {
+    "model": "GPT-6.1",
+    "role": "independent source and raw-evidence review",
+    "finding": "No scoped blocker found, including final isolated-HOME assertion/import cleanup.",
+    "independent_execution": false,
+    "reviewed_source_sha256": {
+      "bin/siasourcegit.py": "1f31542fbb1a945c32e0f28dbea76b519d928cd21cf6fe1cf62ad9e843118f0d",
+      "tests/test_controller_source_git_generation.py": "ad6ab8b7acb36d243b1306ade2fdd39cadad9a124e035a0c5e6d8392436110dc",
+      "tests/test_controller_source_git_content.py": "5061fdb7b2f98e8398a7512f56185fd3bb58f80aac37a3b84a684b97843ec65b"
+    }
+  },
+  "artifacts": {
+    "baseline-git-environment.log": {
+      "bytes": 13599,
+      "sha256": "68c66b8679ff1a5de689f9622df7c8609c8f4bf3c21658793ed75da7e0acace3"
+    },
+    "candidate-final-git-environment.log": {
+      "bytes": 3168,
+      "sha256": "a72563ce23f0bd016cb3fdb1453c57a68374652ebcf486e567bda71ccc85925a"
+    },
+    "candidate-final-ruff.stdout.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "candidate-final-ruff.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "limits": [
+    "Not a complete source-to-publication or installed-path campaign",
+    "No whole-system proof, resource, confidentiality, or release acceptance",
+    "Non-Git loader environment and repository-local configuration/filters remain outside this repair",
+    "Existing original mission obligations, failures, limits and independent execution requirements remain open"
+  ],
+  "inherited_dirty_files": "Seven inherited unfinished files preserved byte-for-byte; not included in this checkpoint"
+}

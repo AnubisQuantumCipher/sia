@@ -1,0 +1,68 @@
+{
+  "schema": "sia-backup-record-bound-diagnostic-v1",
+  "acceptance": false,
+  "status": "TESTED_DIAGNOSTIC_REPAIR_NOT_INSTALLED",
+  "source_base": "145b62271208221beaa4ddb706b4d4a0d1f8f37a",
+  "changed_sources": {
+    "bin/siabackup.py": "8cb4eb270a3a7003897b479d7b47ac8d3e9859598bb6f7f908af3caddffe5a7c",
+    "tests/test_backup_restore.py": "91c8ee67028b8a14bd1666c06e2a0f09d6cc983b79ae6ab91d2a5d02803f1626"
+  },
+  "tests": {
+    "modules": [
+      "tests.test_backup_restore",
+      "tests.test_continuity"
+    ],
+    "tests_run": 160,
+    "elapsed_reported_seconds": "3.979",
+    "exit": 0,
+    "inputs_unchanged": true,
+    "whole_job_elapsed_ns": 4494922747,
+    "deadline_seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_size_bytes": 536870912,
+    "isolation": "bubblewrap read-only source, private HOME/tmp/run, unshared network/PID; existing heavy lock",
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "7962745ddfd4b649efeaf7fbfbcde37be47b0c894289189b8dec780b7b5136f9",
+    "source_inventory_receipt_sha256": "103254092ce95c255a3d03106946fc09c463292ec113ecc13789139cd813c0f9"
+  },
+  "static": {
+    "selected_profile": "existing167 rules; ignore-noqa",
+    "status": "FAILED_INHERITED_DIAGNOSTICS",
+    "baseline_diagnostics": 25,
+    "candidate_diagnostics": 25,
+    "same_diagnostic_multiset": true
+  },
+  "installed_observation": {
+    "status": "failed",
+    "operation_kind": "backup-upload",
+    "phase": "failed",
+    "queued_service_success_is_not_worker_success": true,
+    "worker_exit": 1,
+    "prior_failure_cause": "UNKNOWN; no exception class retained",
+    "installed_backup_sha256": "8cd5de4e519ff0e4f441cf077db1a52789a453b35076613eb665574c35323681",
+    "metadata_only": {
+      "observed_entries": 65537,
+      "observed_files": 62693,
+      "observed_file_bytes": 2514692568,
+      "pending_directories": 6,
+      "source_sha256": "4362df36aed9d51c73d203c680dd0db6d02a10e45e8277a397d2eb76f6ef9893",
+      "source_unchanged": true
+    },
+    "limitations": "Unlocked non-atomic metadata scan; diagnostic record limit reached. Not snapshot, content check, credential check, recovery verification or proof of the earlier failure cause."
+  },
+  "review": {
+    "model": "actual GPT-6.1",
+    "scope": "source/raw read-only; no independent execution",
+    "finding": "No concrete blocker in narrow diagnostic fix",
+    "receipt_sha256": "15280576bc66c2fd1cd7744d37fcc2d3962a85d813fcdf3e954bec8ea9306543"
+  },
+  "remaining": [
+    "Bounded complete capture for growing history",
+    "Full writer original60s failure",
+    "Full strict proof and protected runtime",
+    "Fault-injected off-host recovery",
+    "Actual harness continuity qualification",
+    "Installed path qualification and release/marketplace readback"
+  ],
+  "policy": "No cap or selection change; no R05 waiver; no main merge, install or release."
+}

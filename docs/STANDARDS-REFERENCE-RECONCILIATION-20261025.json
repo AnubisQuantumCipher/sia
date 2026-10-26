@@ -1,0 +1,158 @@
+{
+  "schema": "sia-standards-reference-reconciliation-v1",
+  "observed_at": "2026-10-25T04:50:49.116855+00:00",
+  "status": "REFERENCE_IDENTITY_VERIFIED_COMPLIANCE_OPEN",
+  "carrier_before_edit": "48cb7b9fe90d8903cc785850b0081f383c6c5cad",
+  "received_addendum_sha256": "3196212769d7f417e9943c41ca3229e722c73544f617fc0fdf350635bc204090",
+  "references": [
+    {
+      "title": "Ada 95 Quality and Style SPC-94093-CMC Version 01.00.10 October 1995",
+      "expected_sha256": "99fa731c2919b05979fcc8b403893a9dc73df2e0a6f4a6d5647e60402f54f542",
+      "observed_sha256": "99fa731c2919b05979fcc8b403893a9dc73df2e0a6f4a6d5647e60402f54f542",
+      "bytes": 1139923,
+      "url": "https://www.adaic.org/resources/add_content/docs/95style/95style.pdf",
+      "http_status": 200,
+      "local_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/standards-reference-reconciliation-v1/ada95.pdf",
+      "status": "EXACT_REQUIRED_BYTES_RECOVERED"
+    },
+    {
+      "title": "Rogers/Frank Guidelines for Safe and Secure Ada/SPARK Release 2026-09 September 26 2026",
+      "expected_sha256": "275000573798eac672dd60b4bb4f4997a9ff37c66eeee535503f0e858662b4e4",
+      "observed_sha256": "275000573798eac672dd60b4bb4f4997a9ff37c66eeee535503f0e858662b4e4",
+      "bytes": 511055,
+      "url": "https://learn.adacore.com/pdf_books/courses/Guidelines_for_Safe_and_Secure_Ada_SPARK.pdf",
+      "http_status": 200,
+      "local_path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/standards-reference-reconciliation-v1/modern.pdf",
+      "status": "EXACT_REQUIRED_BYTES_RECOVERED"
+    }
+  ],
+  "power_of_ten": {
+    "path": "/home/sicarii/Documents/sia-definition-of-done-20261021/Power-of-Ten-original.pdf",
+    "sha256": "2217f41df961b9ed25cc072700b6332d6193799ed09d83be48bf791d05025f54",
+    "status": "EXACT_REQUIRED_BYTES_RECHECKED"
+  },
+  "semantic_correction": {
+    "guide": "modern.pdf",
+    "section": "8.7.2",
+    "printed_page": 74,
+    "finding": "The guide reverses class-wide precondition and postcondition combination.",
+    "authority_url": "https://www.adaic.org/resources/add_content/standards/22rm/html/RM-6-1-1.html",
+    "authority_paragraphs": [
+      "33/3",
+      "34/5",
+      "35/3"
+    ],
+    "interpretation": "Enabled applicable class-wide preconditions accept if any holds; enabled applicable postconditions must all hold. This does not replace the separate specific-precondition check or prescribe evaluation order.",
+    "status": "TEXT_COMPARED_NO_COMPILER_EXECUTION"
+  },
+  "required_coverage": [
+    "Power of Ten all ten rules",
+    "DYN01-06",
+    "RCL01-03",
+    "CON01-03",
+    "RPP01-14",
+    "EXU01-04",
+    "OOP01-07",
+    "SWE01-04",
+    "Applicable Ada95 Chapters2-10"
+  ],
+  "mapping_fields": [
+    "existing A01-A24/G1-G6/C01-C14/R01-R46 obligation",
+    "component",
+    "exact source composition",
+    "applicability",
+    "chosen policy",
+    "enforcement",
+    "unchanged budget",
+    "command/tool/configuration",
+    "receipt",
+    "outcome",
+    "remaining blocker"
+  ],
+  "classification": [
+    "literal compliance",
+    "language adaptation",
+    "justified non-applicability",
+    "approved deviation",
+    "unresolved gap"
+  ],
+  "limits": [
+    "Exact reference recovery does not prove implementation compliance.",
+    "No new build, test, proof, installed qualification or release acceptance.",
+    "Complete guideline applicability and exact-source semantic mapping remain open.",
+    "The different pre-existing local modern PDF was not overwritten or accepted as the specified edition.",
+    "Original resource limits, acceptance gates and explicit deviation approval requirements remain unchanged."
+  ],
+  "retained_artifacts": [
+    {
+      "path": "ada95.headers",
+      "bytes": 362,
+      "sha256": "28c94c6edb6e8c21305ef5618ae6b2fb152a8c1a0598069f0d6aff8bec0fb6be"
+    },
+    {
+      "path": "ada95.info.txt",
+      "bytes": 632,
+      "sha256": "1435211671fbf46ace276a45250f2445d9c796387699511bfad48507f44aeb0d"
+    },
+    {
+      "path": "ada95.pdf",
+      "bytes": 1139923,
+      "sha256": "99fa731c2919b05979fcc8b403893a9dc73df2e0a6f4a6d5647e60402f54f542"
+    },
+    {
+      "path": "ada95.transfer.json",
+      "bytes": 17374,
+      "sha256": "43682b991be688d0b36edcb5a06cc34250d2680d006248c1cc8c8c741a900878"
+    },
+    {
+      "path": "ada95.txt",
+      "bytes": 933176,
+      "sha256": "50921edad2f672211279121ff67bb6fbdbbd3b47cb25f2812a8ab5b4e225a71f"
+    },
+    {
+      "path": "modern-cover.txt",
+      "bytes": 186,
+      "sha256": "45ec80eb79ad1ff187eb45c60f2d1a6f34e02599fda2f711c30f8f98b76931c9"
+    },
+    {
+      "path": "modern.headers",
+      "bytes": 645,
+      "sha256": "ecf7f283a444693897e2b2fcabfec5544e4775025777d61523f334a231b1d8d9"
+    },
+    {
+      "path": "modern.info.txt",
+      "bytes": 436,
+      "sha256": "f0d8136d03200a54978508fa970140ea5d6e729e7539d0d6dda50e428fea4fe8"
+    },
+    {
+      "path": "modern.pdf",
+      "bytes": 511055,
+      "sha256": "275000573798eac672dd60b4bb4f4997a9ff37c66eeee535503f0e858662b4e4"
+    },
+    {
+      "path": "modern.transfer.json",
+      "bytes": 17479,
+      "sha256": "0e3bfa55a3c2e7d607ac8e5634945fd0fc41d2dc8a0f6e8b31b03f3ff370e3e8"
+    },
+    {
+      "path": "modern.txt",
+      "bytes": 181637,
+      "sha256": "d02c9d7d16ae69ef88e7dfcdbdb38479214d9a2643ed868f1e37d564b2568930"
+    },
+    {
+      "path": "rm-6-1-1.headers",
+      "bytes": 375,
+      "sha256": "9221912ae9df56ebfa3fffdcec072dd6ad939fdcfa06bec1732459ec888ea38e"
+    },
+    {
+      "path": "rm-6-1-1.html",
+      "bytes": 39347,
+      "sha256": "9b24c69fcda8468c1a162494fe4d8395e9f2e6e488bb75d6dfc100962ceedd44"
+    },
+    {
+      "path": "rm-6-1-1.transfer.json",
+      "bytes": 17403,
+      "sha256": "16024e00a8efb1d0623fd1b75025955bac8bce33da214b84a6add47e6489f4fd"
+    }
+  ]
+}

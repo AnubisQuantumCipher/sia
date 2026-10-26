@@ -1,0 +1,9 @@
+Actual GPT-6.1; read-only source/raw review.
+
+No concrete blocker found in the three-file guidance change. The installer only prints instructions; it does not edit configuration. Guidance correctly says to add one field to the existing SIA table while preserving command, arguments and approval settings.
+
+Official OpenAI documentation confirms tool_timeout_sec and its default of 60 seconds. https://learn.chatgpt.com/docs/extend/mcp?surface=cli
+
+Retained evidence supports configuration readback of 240 from both executables and one installed CLI completion in 102.84651241602842 seconds with unchanged executable hashes. These do not prove the active MCP connection reloaded, behavior beyond 60 seconds through MCP, universal timeout causality or a latency guarantee. The documentation states the reload limitation appropriately.
+
+The published additions contain generic configuration guidance, not private recall output or credentials. Server budgets, proof/test caps and consistency leases remain unchanged. This is client-timeout alignment, not qualification of underlying lock contention, installed continuity or R05.

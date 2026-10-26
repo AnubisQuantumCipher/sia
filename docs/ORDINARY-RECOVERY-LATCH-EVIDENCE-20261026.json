@@ -1,0 +1,558 @@
+{
+  "archive": {
+    "bytes": 201675,
+    "path": "docs/evidence/ordinary-recovery-latch-20261026-v1.tar.gz",
+    "sha256": "a46c7d1b75e54c5f902fe4777b5908a2d768d919781b32f380cd4718351ec5b2"
+  },
+  "authority": "NONE",
+  "carrier_head": "ba6a451193bded8faa6401e6eb085bc6ee78b39e",
+  "limitations": [
+    "No observer-death cut, reconciliation/retirement or safe successor protocol.",
+    "Root pending remains unresolved; no clearing API and no automatic retry.",
+    "Ordinary nonhostile host/root premises; old wrappers outside latch scope.",
+    "No hardware crash durability, formal Python proof, C14 or whole-system acceptance.",
+    "Full source snapshots bound but not reproduced; local paths retained.",
+    "Tool observations not signed platform evidence; epoch is a public identity, not a secret.",
+    "One disposable root-owned engineering ledger created; no installed product/service/provider change."
+  ],
+  "members": {
+    "provision/v1/STATIC.json": {
+      "bytes": 2332,
+      "sha256": "b85f3cc78cf09af5eaefd17e036664272ed91e6ca923d9c4a4f0d6b34600b09d"
+    },
+    "provision/v1/UNRUN-DISPOSITION.json": {
+      "bytes": 164,
+      "sha256": "3c6794dcd4335a733de9b2887d335113efc1f24f3b22abb65cc324aa2933ed8f"
+    },
+    "provision/v1/candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "provision/v1/epoch.txt": {
+      "bytes": 65,
+      "sha256": "0aa2e79c86baae70207c78c033b4cefd0ab1b86b723c67e27d029b5a2dfe9816"
+    },
+    "provision/v1/host-config.json": {
+      "bytes": 18469,
+      "sha256": "df518035987f347a943cc3972522fca8102eb5ddcfbd3d104856e8e57d45ab4c"
+    },
+    "provision/v1/provision.py": {
+      "bytes": 3604,
+      "sha256": "6acdf5d444757698323f2e412c6df20e89cd53edb2eb3f8d72906f846c92b218"
+    },
+    "provision/v1/source.json": {
+      "bytes": 348,
+      "sha256": "a7b5b51f0c88f396caefdd8a55dc60b35696187f407943fefcf6d58bb7988840"
+    },
+    "provision/v2/EXECUTION-DECISION.json": {
+      "bytes": 1866,
+      "sha256": "937209dea3beed5a4e4e5c80a1d15d3978103197dab62edd04cda6bca4a5b2cf"
+    },
+    "provision/v2/STATIC.json": {
+      "bytes": 1666,
+      "sha256": "8239806e08f34a7a4e1a03ab1f0165d5759dae2dc2058d7ce711738b1fa45f63"
+    },
+    "provision/v2/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 364,
+      "sha256": "d29a256c0100f4e5b914441dda9f6b8c4385c678a14b162987c844d0c2d62cc3"
+    },
+    "provision/v2/candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "provision/v2/epoch.txt": {
+      "bytes": 65,
+      "sha256": "0aa2e79c86baae70207c78c033b4cefd0ab1b86b723c67e27d029b5a2dfe9816"
+    },
+    "provision/v2/host-config.json": {
+      "bytes": 18469,
+      "sha256": "df518035987f347a943cc3972522fca8102eb5ddcfbd3d104856e8e57d45ab4c"
+    },
+    "provision/v2/provision.py": {
+      "bytes": 3596,
+      "sha256": "4e6915735b62cfbc1a617b879a616054559f1c55665c2f5a83a6bfbecb73e3e0"
+    },
+    "provision/v2/provision.stdout": {
+      "bytes": 350,
+      "sha256": "c5eb405b6949887c282ff741d3c71d3edd57ffec4c4779d3d72c352af67cf8f2"
+    },
+    "provision/v2/source.json": {
+      "bytes": 348,
+      "sha256": "43160a20b92bf9c747e08188656537969b98e5d67828eca61edf72a358e37c35"
+    },
+    "runs/component/EXECUTION-DECISION.json": {
+      "bytes": 2726,
+      "sha256": "8911969b9cb81090d32c1a8c34e5ec75cab32f9ddd48dcac17d924f8b4afbeb1"
+    },
+    "runs/component/OWNER-AUDIT.json": {
+      "bytes": 1642,
+      "sha256": "6df53b4c4e10a0f79e5dac00b569ec185b7b5abdd8c5fe22058ff179bdb2a632"
+    },
+    "runs/component/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 625,
+      "sha256": "699282cc66bd968b20e0cdd29ff0513c53537e41576e40f00ac6fe76f095d73f"
+    },
+    "runs/component/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 320,
+      "sha256": "27789b59c5d6a3ea8d9684966523d18dbe1c6472b91c1eea7322496d6227a8fa"
+    },
+    "runs/component/active.json": {
+      "bytes": 304,
+      "sha256": "b593f96ac3dae4dd53e9d78f6ccb6698c99f0258c18a8f4a1ad5a1afa3a2cf3b"
+    },
+    "runs/component/config.json": {
+      "bytes": 18469,
+      "sha256": "df518035987f347a943cc3972522fca8102eb5ddcfbd3d104856e8e57d45ab4c"
+    },
+    "runs/component/controller.py": {
+      "bytes": 16467,
+      "sha256": "fd1f3033072b837e9ec6c81de54fbb70345ba1cc0003467e32ad9a43e39a6512"
+    },
+    "runs/component/entry.json": {
+      "bytes": 7637,
+      "sha256": "0543f801d17b3ca85eea426eed45a98857876331a79996136b9866dd6b895e42"
+    },
+    "runs/component/execution-result.json": {
+      "bytes": 2158,
+      "sha256": "5e3816a9ecf3ecbced35b74a4d23f683cc43e035ed248a9bc2195bb449539e53"
+    },
+    "runs/component/execution-source.json": {
+      "bytes": 1468,
+      "sha256": "97e904de69f7bb83b864e03a90f500d8bc36f1400a9ce1312a5022f7bcf57bdd"
+    },
+    "runs/component/invoke.py": {
+      "bytes": 2249,
+      "sha256": "e6196351eb1686e1283d848cd76e708cc9fd7d7734af3c0d7813720f601fac81"
+    },
+    "runs/component/outer-result.json": {
+      "bytes": 642,
+      "sha256": "fcae57116648581c79ef884591984011abac8bf17c76d003fc037f3d16c6bb60"
+    },
+    "runs/component/outer.stdout": {
+      "bytes": 1362,
+      "sha256": "d4086f009f3ffc7308109bc6446b58e6e6752a8756ca79f98366e054c132ed55"
+    },
+    "runs/component/proof.stderr": {
+      "bytes": 5203,
+      "sha256": "1e6f770be83cff97c0a7e16291ad66e444b731af1e27c5f8949de0c4508cbb9b"
+    },
+    "runs/component/proof.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/component/proof_payload.py": {
+      "bytes": 913,
+      "sha256": "2bf3dad227a84a492e7df1c996ac1ed870ad5b5e093f23da1dd42b8fcead2eb7"
+    },
+    "runs/component/proof_wrapper.py": {
+      "bytes": 9552,
+      "sha256": "e7073af38712d38a6257c539ae24c1c54516869200f2b559fdc3e6b44d440a60"
+    },
+    "runs/component/proxy.py": {
+      "bytes": 3485,
+      "sha256": "c439b24636ee07a7ae577e5ed78234796ada28e44459c90c600a5ac2d599d1d4"
+    },
+    "runs/component/receipt_baseline.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/component/receipt_candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "runs/component/source-binding.json": {
+      "bytes": 119724,
+      "sha256": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+    },
+    "runs/component/test_error_paths.py": {
+      "bytes": 3150,
+      "sha256": "ef7d6dc9a0d653a34558753d8b8fd6bea27cc116f1815a2347de21832fa2e41f"
+    },
+    "runs/component/test_receipt_durability.py": {
+      "bytes": 8225,
+      "sha256": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+    },
+    "runs/component/test_recovery_latch.py": {
+      "bytes": 12369,
+      "sha256": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+    },
+    "runs/integration/EXECUTION-DECISION.json": {
+      "bytes": 2383,
+      "sha256": "79f744dbf889aed7d3c38ef63174a9443c297eb5308a37829951ade6a7d7e684"
+    },
+    "runs/integration/OWNER-AUDIT.json": {
+      "bytes": 1654,
+      "sha256": "c0b8cad68f372051690bfd22469691076df52544d32883d2f0f04309b51cee4c"
+    },
+    "runs/integration/PENDING-READBACK.json": {
+      "bytes": 1157,
+      "sha256": "fe3f8bca30dfd95fcd6e1cadbb653153381ebe99c8d94a764bc0954df81c88b5"
+    },
+    "runs/integration/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 811,
+      "sha256": "7133dad6005f008c7f453d0535a53851be6dca7fef139d74fdb149083051a404"
+    },
+    "runs/integration/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 185,
+      "sha256": "96f1a7a49f006800dd4cb6917e29a0c05d73e8c395d01015ebb53170aa850d4d"
+    },
+    "runs/integration/active.json": {
+      "bytes": 304,
+      "sha256": "0accb9e66d027e3b530fab93f27d684dd024018dff144f776860784950b47ebf"
+    },
+    "runs/integration/config.json": {
+      "bytes": 18792,
+      "sha256": "f6d57182b06acc8c8e676110309b291f425462aea91f779306590d9857c6888d"
+    },
+    "runs/integration/controller.py": {
+      "bytes": 16467,
+      "sha256": "fd1f3033072b837e9ec6c81de54fbb70345ba1cc0003467e32ad9a43e39a6512"
+    },
+    "runs/integration/entry.json": {
+      "bytes": 7697,
+      "sha256": "fe087f5056adf8ccfe3975d264a2cd33baa9194b654070baa6542df4b352fbb6"
+    },
+    "runs/integration/execution-result.json": {
+      "bytes": 2158,
+      "sha256": "0a7ea9caf091eee8531a01fa7f0b70dd18f59ae58199ffe0ac5cb54fcf7a217f"
+    },
+    "runs/integration/execution-source.json": {
+      "bytes": 1468,
+      "sha256": "27dfb8d87c9381a5e5768149b8168e85348d6b000a327afe94e89bd95f196d28"
+    },
+    "runs/integration/invoke.py": {
+      "bytes": 2249,
+      "sha256": "e6196351eb1686e1283d848cd76e708cc9fd7d7734af3c0d7813720f601fac81"
+    },
+    "runs/integration/outer-result.json": {
+      "bytes": 645,
+      "sha256": "909d36ad2cd395f631b3d37648fb2950951fe69b0355e49bfbda979efc86c5a1"
+    },
+    "runs/integration/outer.stdout": {
+      "bytes": 1362,
+      "sha256": "d806911fdf52ab19f1ba09a25b33b37211aaa9602d3003667aef2838306c1c7f"
+    },
+    "runs/integration/pending-before.json": {
+      "bytes": 757,
+      "sha256": "61b0198e55a845a4d84a0711189071ed11a7d7140816252c52637cfb480ebf0f"
+    },
+    "runs/integration/proof.stderr": {
+      "bytes": 5203,
+      "sha256": "c37e29fdee3af4731867f58706dc5a174381b030c83c96b312a865909f72ee9b"
+    },
+    "runs/integration/proof.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/integration/proof_payload.py": {
+      "bytes": 913,
+      "sha256": "2bf3dad227a84a492e7df1c996ac1ed870ad5b5e093f23da1dd42b8fcead2eb7"
+    },
+    "runs/integration/proof_wrapper.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "runs/integration/proxy.py": {
+      "bytes": 3485,
+      "sha256": "c439b24636ee07a7ae577e5ed78234796ada28e44459c90c600a5ac2d599d1d4"
+    },
+    "runs/integration/receipt_baseline.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/integration/receipt_candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "runs/integration/source-binding.json": {
+      "bytes": 119724,
+      "sha256": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+    },
+    "runs/integration/test_error_paths.py": {
+      "bytes": 3150,
+      "sha256": "ef7d6dc9a0d653a34558753d8b8fd6bea27cc116f1815a2347de21832fa2e41f"
+    },
+    "runs/integration/test_receipt_durability.py": {
+      "bytes": 8225,
+      "sha256": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+    },
+    "runs/integration/test_recovery_latch.py": {
+      "bytes": 12369,
+      "sha256": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+    },
+    "runs/refusal/EXECUTION-DECISION.json": {
+      "bytes": 2371,
+      "sha256": "6c5b2c48f1376df12482d74a75de9e55e2a3904520834b9d057094da7a99d899"
+    },
+    "runs/refusal/OWNER-AUDIT.json": {
+      "bytes": 1499,
+      "sha256": "e7c9ce7a648f7dec2b8a3982e5db5aade7751bba71e486d6d9114278e77a7d14"
+    },
+    "runs/refusal/PENDING-READBACK.json": {
+      "bytes": 345,
+      "sha256": "74becc97ffde3a97f95c9acc2cbe04cd3426a6b775629a66b1567c65f46b645e"
+    },
+    "runs/refusal/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 802,
+      "sha256": "f41faf2d264b896e62ac713bc74aac7620ed8d9c593f767afc0b0b45558157e2"
+    },
+    "runs/refusal/TOOL-RESULT-READBACK.json": {
+      "bytes": 1920,
+      "sha256": "1f48bf71999134d76696b69af5c26ae4e86f0a4ba032a882d6349b0f91cf16ec"
+    },
+    "runs/refusal/config.json": {
+      "bytes": 18636,
+      "sha256": "bce7c39a53d3158efd0a3c65e6d077c3b05201f291ec043b1c461c21b24550f7"
+    },
+    "runs/refusal/controller.py": {
+      "bytes": 16467,
+      "sha256": "fd1f3033072b837e9ec6c81de54fbb70345ba1cc0003467e32ad9a43e39a6512"
+    },
+    "runs/refusal/entry.json": {
+      "bytes": 7617,
+      "sha256": "5e4809a8e3f1f7889ab6fbd821a42d6d4c550174736d744af702d3d106e782ca"
+    },
+    "runs/refusal/execution-source.json": {
+      "bytes": 1468,
+      "sha256": "cae88d6cab560cd44546c118fa4c776b72957a90b217600de3609743a4dca0f4"
+    },
+    "runs/refusal/invoke.py": {
+      "bytes": 2249,
+      "sha256": "e6196351eb1686e1283d848cd76e708cc9fd7d7734af3c0d7813720f601fac81"
+    },
+    "runs/refusal/outer-result.json": {
+      "bytes": 641,
+      "sha256": "df48390bb5fb7ae89e52192e328d6ec785e8afb9bdd576a25e832c55822b1614"
+    },
+    "runs/refusal/outer.stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "runs/refusal/pending-after.json": {
+      "bytes": 757,
+      "sha256": "61b0198e55a845a4d84a0711189071ed11a7d7140816252c52637cfb480ebf0f"
+    },
+    "runs/refusal/proof_payload.py": {
+      "bytes": 913,
+      "sha256": "2bf3dad227a84a492e7df1c996ac1ed870ad5b5e093f23da1dd42b8fcead2eb7"
+    },
+    "runs/refusal/proof_wrapper.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "runs/refusal/proxy.py": {
+      "bytes": 3485,
+      "sha256": "c439b24636ee07a7ae577e5ed78234796ada28e44459c90c600a5ac2d599d1d4"
+    },
+    "runs/refusal/receipt_baseline.py": {
+      "bytes": 6793,
+      "sha256": "481969d16ff13a4ac8439dbcc07818cc033ec19b20c8a1956767530e9b85f9a9"
+    },
+    "runs/refusal/receipt_candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "runs/refusal/source-binding.json": {
+      "bytes": 119724,
+      "sha256": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+    },
+    "runs/refusal/test_error_paths.py": {
+      "bytes": 3150,
+      "sha256": "ef7d6dc9a0d653a34558753d8b8fd6bea27cc116f1815a2347de21832fa2e41f"
+    },
+    "runs/refusal/test_receipt_durability.py": {
+      "bytes": 8225,
+      "sha256": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89"
+    },
+    "runs/refusal/test_recovery_latch.py": {
+      "bytes": 12369,
+      "sha256": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+    },
+    "source/STATIC-v1.json": {
+      "bytes": 2013,
+      "sha256": "ec3719297006c564a704553b5708f5a1a70bbd087cf18cddab934abc3179d1dd"
+    },
+    "source/STATIC-v2.json": {
+      "bytes": 3277,
+      "sha256": "dd5ff55bf854f2fc9d60240b81587bf7533a77b0ef8db9b9aea1b650423c9d04"
+    },
+    "source/STATIC-v3.json": {
+      "bytes": 2262,
+      "sha256": "2f2da056cd7881e943d80494a411290c4e3ad27f3dea1a871911305b339701c1"
+    },
+    "source/proof_wrapper.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "source/test_recovery_latch.py": {
+      "bytes": 12369,
+      "sha256": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+    },
+    "tools/audit_recovery_latch_controls_20261026.py": {
+      "bytes": 5434,
+      "sha256": "ae70042b13c10c4c96ae8599c67b53e05a89847ba35905b903d3de23610b16e1"
+    },
+    "tools/audit_recovery_latch_integration_20261026.py": {
+      "bytes": 5446,
+      "sha256": "64b5f42cb31b43b99f48a9bd375a5ad7f9dbb22ba454700192b78c7ac1536040"
+    },
+    "tools/audit_recovery_latch_refusal_20261026.py": {
+      "bytes": 5132,
+      "sha256": "8d4d8700dd677f5e283855a632a06e979c8b9b52b273fae42f2d5c1f1c89085f"
+    },
+    "tools/package_recovery_latch_20261026.py": {
+      "bytes": 7745,
+      "sha256": "5f4c844e984444d271d0f352f16761b2a53b3c9dfd3b33d5d2248430c218a0f4"
+    },
+    "tools/prepare_recovery_latch_controls_20261026.py": {
+      "bytes": 2934,
+      "sha256": "26d38ee4464ad51e3a7c2ac45b88fc16f51000219572d995a66a903bfa5915de"
+    },
+    "tools/prepare_recovery_latch_controls_20261026_v1.py": {
+      "bytes": 2934,
+      "sha256": "30758392223d169eea6d090b8a3dfc4eb8b3146822d0b6d37ba7447a8935834b"
+    },
+    "tools/prepare_recovery_latch_controls_20261026_v2.py": {
+      "bytes": 2934,
+      "sha256": "4f55fef884e9140aaf2c8935e9522c21d860032ff328f07f2ab1f5d4bb20b77e"
+    },
+    "tools/prepare_recovery_latch_integration_20261026.py": {
+      "bytes": 3186,
+      "sha256": "7d3f5ad58c5a8c950865c029888b3d2c27391e4cb574b8c2d2e9aba27c7c0886"
+    },
+    "unrun/controls-v1/UNRUN-DISPOSITION.json": {
+      "bytes": 382,
+      "sha256": "4e6e301f885a387973e100e9feb0c01dba12398f7bf84be6d45ae7dad729e8fc"
+    },
+    "unrun/controls-v1/config.json": {
+      "bytes": 18469,
+      "sha256": "60530f6526820ee1db1913cd74b1e8ea0b4f227b039a0043a0e9add6aba99f3b"
+    },
+    "unrun/controls-v1/execution-source.json": {
+      "bytes": 1468,
+      "sha256": "4f5df99396970d8f54c306cdf582488c9706f788ff2bd1a3359be4f7f8dbf588"
+    },
+    "unrun/controls-v1/test_recovery_latch.py": {
+      "bytes": 9214,
+      "sha256": "096c7c391f0ae8c74cb8e4f4c102b948402ba001aa5b399928f8dde055c2bc13"
+    },
+    "unrun/controls-v2/UNRUN-DISPOSITION.json": {
+      "bytes": 376,
+      "sha256": "0e5759224601b71acdf364a50b71bf90b4011b34c8d45810980168324cdc4bc8"
+    },
+    "unrun/controls-v2/config.json": {
+      "bytes": 18469,
+      "sha256": "5d73de51a5c027e2c75b8abe04952652475bf767f21fc3b0cd3b47886c565f8d"
+    },
+    "unrun/controls-v2/execution-source.json": {
+      "bytes": 1468,
+      "sha256": "9a3e30730a7973d7430742870f8e34c5be973ccb016f21a6de980b00929584c7"
+    },
+    "unrun/controls-v2/test_recovery_latch.py": {
+      "bytes": 12322,
+      "sha256": "7df72b224b5b38eb23505b55b0891d115003750410abd8545f045cbe42c0d194"
+    }
+  },
+  "results": {
+    "component": {
+      "adoption": false,
+      "evidence_sha256": {
+        "TOOL-EXIT-OBSERVATION.json": "27789b59c5d6a3ea8d9684966523d18dbe1c6472b91c1eea7322496d6227a8fa",
+        "execution-result.json": "5e3816a9ecf3ecbced35b74a4d23f683cc43e035ed248a9bc2195bb449539e53",
+        "execution-source.json": "97e904de69f7bb83b864e03a90f500d8bc36f1400a9ce1312a5022f7bcf57bdd",
+        "outer-result.json": "fcae57116648581c79ef884591984011abac8bf17c76d003fc037f3d16c6bb60",
+        "outer.stdout": "d4086f009f3ffc7308109bc6446b58e6e6752a8756ca79f98366e054c132ed55",
+        "proof.stderr": "1e6f770be83cff97c0a7e16291ad66e444b731af1e27c5f8949de0c4508cbb9b",
+        "proof.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "receipt_candidate.py": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625",
+        "source-binding.json": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3",
+        "test_receipt_durability.py": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89",
+        "test_recovery_latch.py": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+      },
+      "independent_review": "PENDING",
+      "limitations": [
+        "Candidate imported as module; mocked main ordering is not actual root main dispatch.",
+        "No root ledger provision, hardware crash durability, custody or retirement protocol.",
+        "Observer-loss recovery UNKNOWN; no C14 or whole-system acceptance."
+      ],
+      "output": {
+        "elapsed_seconds": "0.073",
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests": 37
+      },
+      "source_rows": 478,
+      "status": "RECOVERY_LATCH_COMPONENT_CONTROLS_PASS",
+      "tracked_terminal_cleanup": true
+    },
+    "integration": {
+      "adoption": false,
+      "evidence_sha256": {
+        "TOOL-EXIT-OBSERVATION.json": "96f1a7a49f006800dd4cb6917e29a0c05d73e8c395d01015ebb53170aa850d4d",
+        "execution-result.json": "0a7ea9caf091eee8531a01fa7f0b70dd18f59ae58199ffe0ac5cb54fcf7a217f",
+        "execution-source.json": "27dfb8d87c9381a5e5768149b8168e85348d6b000a327afe94e89bd95f196d28",
+        "outer-result.json": "909d36ad2cd395f631b3d37648fb2950951fe69b0355e49bfbda979efc86c5a1",
+        "outer.stdout": "d806911fdf52ab19f1ba09a25b33b37211aaa9602d3003667aef2838306c1c7f",
+        "proof.stderr": "c37e29fdee3af4731867f58706dc5a174381b030c83c96b312a865909f72ee9b",
+        "proof.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "receipt_candidate.py": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625",
+        "source-binding.json": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3",
+        "test_receipt_durability.py": "08afdfc1fc00857e02f288ca2aff41a0abb0cc8f5fd48b025c6ec052f4047c89",
+        "test_recovery_latch.py": "903c0255f356e67d07619ca7baa59835d651a1353186908bef43d6640315f33c"
+      },
+      "independent_review": "PENDING",
+      "limitations": [
+        "One actual normal candidate-wrapper run; no observer-loss fault injection.",
+        "Root ledger initialized and intent retained; no hardware crash durability, custody or retirement protocol.",
+        "Observer-loss recovery UNKNOWN; no C14 or whole-system acceptance."
+      ],
+      "output": {
+        "elapsed_seconds": "0.197",
+        "errors": 0,
+        "failures": 0,
+        "skips": 0,
+        "tests": 37
+      },
+      "source_rows": 478,
+      "status": "RECOVERY_LATCH_NORMAL_INTEGRATION_PASS",
+      "tracked_terminal_cleanup": true
+    },
+    "refusal": {
+      "adoption": false,
+      "evidence_sha256": {
+        "TOOL-RESULT-READBACK.json": "1f48bf71999134d76696b69af5c26ae4e86f0a4ba032a882d6349b0f91cf16ec",
+        "entry.json": "5e4809a8e3f1f7889ab6fbd821a42d6d4c550174736d744af702d3d106e782ca",
+        "execution-source.json": "cae88d6cab560cd44546c118fa4c776b72957a90b217600de3609743a4dca0f4",
+        "outer-result.json": "df48390bb5fb7ae89e52192e328d6ec785e8afb9bdd576a25e832c55822b1614",
+        "outer.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "pending-after.json": "61b0198e55a845a4d84a0711189071ed11a7d7140816252c52637cfb480ebf0f",
+        "source-binding.json": "d95d801bd2479db99296d34770b121ab41f40c683ed30e3e0972844442a1e7c3"
+      },
+      "independent_review": "PENDING",
+      "limitations": [
+        "Observed normal-then-refused path; no observer-death injection.",
+        "Refusal intentionally leaves recovery debt unresolved.",
+        "Tool readback is not signed platform evidence.",
+        "No retirement, whole-job custody, C14 or system acceptance."
+      ],
+      "payload_artifacts_absent": true,
+      "retained_refusal": {
+        "errors": [
+          {
+            "errno": 17,
+            "message": "[Errno 17] File exists: 'pending.json'",
+            "stage": "create-pending",
+            "type": "FileExistsError"
+          }
+        ],
+        "status": "UNCERTAIN_DO_NOT_RETRY"
+      },
+      "source_rows": 478,
+      "status": "EXPECTED_PENDING_REFUSAL_PASS",
+      "tests_executed": 0,
+      "unchanged_pending_sha256": "61b0198e55a845a4d84a0711189071ed11a7d7140816252c52637cfb480ebf0f"
+    }
+  },
+  "status": "TESTED_NORMAL_THEN_REFUSED_NOT_RECOVERY_ACCEPTANCE"
+}

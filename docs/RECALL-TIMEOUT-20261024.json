@@ -1,0 +1,62 @@
+{
+  "active_mcp_timeout_reload": "UNVERIFIED",
+  "base_commit": "95c368bb2d37986de5d562719d1979b210117702",
+  "files": {
+    "docs/MANUAL.md": {
+      "bytes": 145053,
+      "sha256": "d7f3ecf8f7ec468d00dacd410020d1fa602abbe5d37ec9608da41c2f2a432ef9"
+    },
+    "docs/RECALL-TIMEOUT-20261024.md": {
+      "bytes": 3501,
+      "sha256": "83a342decaf40fb13ffe60fd3beb33457873a990b0b89bb21087754c125ceef3"
+    },
+    "docs/evidence/recall-timeout-20261024/config-repair.json": {
+      "bytes": 704,
+      "sha256": "095520c2017d367659e4b83e6dc18d18fe59d22fb3bbbd474b9d8e0aa35aadc8"
+    },
+    "docs/evidence/recall-timeout-20261024/guidance-check.json": {
+      "bytes": 1611,
+      "sha256": "08d8fe24b44eb55c3cc70032007dae15a1c03f47d74612d80b7448dd255c8c47"
+    },
+    "docs/evidence/recall-timeout-20261024/installed-source-comparison-v2.json": {
+      "bytes": 2804,
+      "sha256": "6fb06aa5d1164aed6f743d8ff8126dc327a62b509919293055120c4497cf58c6"
+    },
+    "docs/evidence/recall-timeout-20261024/lease-observation.json": {
+      "bytes": 1879,
+      "sha256": "e021a23457951e47a088c14ed98ad3f5bda21a1a1a394eb0ae029afa04fd0477"
+    },
+    "docs/evidence/recall-timeout-20261024/mcp-readback.json": {
+      "bytes": 488,
+      "sha256": "7a3f6a8a31c67537405a404e7f1bbaa3cbb168858782e4fd926271c1127770c0"
+    },
+    "docs/evidence/recall-timeout-20261024/registration-regression.json": {
+      "bytes": 2467,
+      "sha256": "cbf4e1e607de708a85602f5da9b0f495b1327cbdd86c178a819cf700d68ab144"
+    },
+    "docs/evidence/recall-timeout-20261024/registration-regression.stderr": {
+      "bytes": 251,
+      "sha256": "bd766dab7890535e8cf93331a2adfe7a12e07c91a6c95ac5d45cc3edd46a2279"
+    },
+    "docs/evidence/recall-timeout-20261024/result.json": {
+      "bytes": 822,
+      "sha256": "5b969adb552070eb20f01863d03298abb808e00b35690485dbbb91b0e367d535"
+    },
+    "docs/evidence/recall-timeout-20261024/reviewer.txt": {
+      "bytes": 1125,
+      "sha256": "6f3cc89f6196b8a85e9fd8c8070cef1cd741098a8feee67bcc6ef85cd0b54179"
+    },
+    "install.sh": {
+      "bytes": 466478,
+      "sha256": "d5b029d8e8a3764078b9c9e7d2c5a5c056acdf27ca180e12011c9bf6bbf96e7f"
+    },
+    "skill/SKILL.md": {
+      "bytes": 7311,
+      "sha256": "b0ec727cbb07754de4621baebd8c9bdb043860d445046f182d02738a2a7464f1"
+    }
+  },
+  "private_memory_content_included": false,
+  "schema": "sia-recall-timeout-evidence-v1",
+  "status": "SCOPED_OBSERVATION_AND_CONFIGURATION_REPAIR",
+  "whole_system_acceptance": false
+}

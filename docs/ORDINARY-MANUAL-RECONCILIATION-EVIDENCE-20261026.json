@@ -1,0 +1,182 @@
+{
+  "archive": {
+    "bytes": 25602,
+    "path": "docs/evidence/ordinary-manual-reconciliation-20261026-v1.tar.gz",
+    "sha256": "7dfdfe1eaa79738fe568959710845a02e4ae4fddbdd4fe6467dc1abc90ea3c90"
+  },
+  "authority": "NONE",
+  "carrier_head": "fa78271acec7f9aea6dac6fe7043a53d129cc06b",
+  "limitations": [
+    "One exact known-normal fixture only; no automatic reconciliation, replay or successor.",
+    "Pending archived with matching bytes; original unresolved status requires its separate decision.",
+    "No observer-death cut, hardware crash test, whole-job custody or C14 acceptance.",
+    "Ordinary nonhostile root and host assumptions; unsigned tool observations.",
+    "Original source snapshots and normal raw evidence remain bound in prerequisite checkpoint.",
+    "No installed product, service, firewall, provider, release or marketplace change."
+  ],
+  "members": {
+    "run/AUDITOR-STATIC.json": {
+      "bytes": 1780,
+      "sha256": "a4432d26aa811e719957df0eb31d189e66359d198604369c22088704498f6c03"
+    },
+    "run/EXECUTION-DECISION.json": {
+      "bytes": 3282,
+      "sha256": "d9afe3fe0c2685a77348784f3509fe67650e9618ec8dbc56e95f1f625a84a985"
+    },
+    "run/INVOKER-STATIC.json": {
+      "bytes": 1763,
+      "sha256": "5dd4ff6ff82bc156a165968dabafe5e6434d759f6b7705a3de7ffde849974914"
+    },
+    "run/OWNER-AUDIT.json": {
+      "bytes": 2713,
+      "sha256": "51ad336b14fd6e7312e8599d1e3aa8f17185295ec0c6241ac99fff268821928c"
+    },
+    "run/PRE-EXECUTION-REVIEW.json": {
+      "bytes": 645,
+      "sha256": "4b0deedb981f9f982b1d1b8b0213b37d3049d0aec5693a575092d36d3a079bce"
+    },
+    "run/READBACK-STATIC.json": {
+      "bytes": 1767,
+      "sha256": "9c080b9f5dd37c6dab8afeeed6e7a31f69fa52d70cbd3057629b77476bb4dd79"
+    },
+    "run/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 636,
+      "sha256": "b8a58dd60f4e3fbba4b10ac888dc705556425d02d94268cdb702d0211a596198"
+    },
+    "run/STATIC-v1.json": {
+      "bytes": 2268,
+      "sha256": "b2e7ebd633bf4fef9ac284c0b95b62698a4f31a78fdea82515ee0dbc10df1a87"
+    },
+    "run/STATIC-v2.json": {
+      "bytes": 2469,
+      "sha256": "b089c42dffc75273e481981ff3650849c751d07af065509df2f79aa4ad7eb2a1"
+    },
+    "run/TEST-EXECUTION-DECISION.json": {
+      "bytes": 1479,
+      "sha256": "e12cefa6d3124d4bf8e374600c5293b69bc9796be7d4b43aa654b2c73570a897"
+    },
+    "run/TEST-RESULT.json": {
+      "bytes": 702,
+      "sha256": "d07adf74e53e999a1d1c35efe8ced30633d8d39f0f21d495ff1214f468ef3a20"
+    },
+    "run/TEST-TOOL-OBSERVATION.json": {
+      "bytes": 118,
+      "sha256": "9179cb63e8757bf0a849a5ea99cd08b115187bc23d629167cdaad173fbdcabbc"
+    },
+    "run/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 394,
+      "sha256": "6d98f4b5069cbb2dbd8088ff9f79c3904ea32d73c1c6167173350e0a9a78036c"
+    },
+    "run/candidate.py": {
+      "bytes": 14500,
+      "sha256": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625"
+    },
+    "run/decision.json": {
+      "bytes": 3096,
+      "sha256": "e8574c1c54dc1f4a5aadb88413859791316ee3413cef9b371f9b34c194964aca"
+    },
+    "run/invoke.py": {
+      "bytes": 2276,
+      "sha256": "821623a78b281f7f4eaa05c0be09e0379a6fdce2e6a5ea90ef3cd4ff974711d5"
+    },
+    "run/outer-result.json": {
+      "bytes": 688,
+      "sha256": "f72066815e6170793262bac8512b2b0e9df4a52a266c59e3bdccef1a1f4ea4ab"
+    },
+    "run/outer.stdout": {
+      "bytes": 406,
+      "sha256": "11b7c279ddf079b54bfa09f1c78b635811f206984be2413b36b5a4ffbaa78aa8"
+    },
+    "run/readback.py": {
+      "bytes": 2007,
+      "sha256": "f4dd00a9622725d860fb6620ae95de9d2244c6fbc37f105023fe912bf4212950"
+    },
+    "run/readback.stdout": {
+      "bytes": 735,
+      "sha256": "90fee07bd2d3b845977e7d077dd3f9fef4b978f7ed8a98e94199939456e2d0f5"
+    },
+    "run/reconcile.py": {
+      "bytes": 10254,
+      "sha256": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f"
+    },
+    "run/run_tests.py": {
+      "bytes": 2595,
+      "sha256": "215a4095cbaece610eb4b042b49d79cbf4b971128ffb8e8c000f14f1794cfa27"
+    },
+    "run/source.json": {
+      "bytes": 353,
+      "sha256": "af8e5c1cb15ab3980491eb3956856e524783888d287624ebcda711bd1d8f88fc"
+    },
+    "run/test_reconcile.py": {
+      "bytes": 15772,
+      "sha256": "deeb57148f6b9b128e50968078487c231c17df6392b9b18512eea38ac7c2a354"
+    },
+    "run/tests.stderr": {
+      "bytes": 3270,
+      "sha256": "6b5a128493965ea0dc6d002b4ad9d6570a180d2eb099f7b3dea07dc108fc8cac"
+    },
+    "tools/audit_manual_reconciliation_20261026.py": {
+      "bytes": 3627,
+      "sha256": "c878d9f5553c96e9807a0701f7973c61cd94bbfbd802c25d799a9d998ca3142b"
+    },
+    "tools/package_manual_reconciliation_20261026.py": {
+      "bytes": 5509,
+      "sha256": "7db97e39977d7cbcf21c3ba3a9e21056bb723ac107e0c762bede77cc006a9965"
+    },
+    "unrun-v1/STATIC-v1.json": {
+      "bytes": 2268,
+      "sha256": "b2e7ebd633bf4fef9ac284c0b95b62698a4f31a78fdea82515ee0dbc10df1a87"
+    },
+    "unrun-v1/STATUS.json": {
+      "bytes": 251,
+      "sha256": "146d950ee93d0323b4f45cc4236871c1535d7303b5cc0b894d3f1614b48ea21d"
+    },
+    "unrun-v1/reconcile.py": {
+      "bytes": 8770,
+      "sha256": "7197f044d46b56098be0202c1e4bd4726c486babfe4b33e93a90e19fb20e27d7"
+    },
+    "unrun-v1/test_reconcile.py": {
+      "bytes": 10079,
+      "sha256": "74b9c39e95eb53ca69203193058d764fc8f53c95d7b6e9ee2ba8ba2025fde1ed"
+    }
+  },
+  "prerequisite_checkpoint": "fa78271acec7f9aea6dac6fe7043a53d129cc06b",
+  "result": {
+    "authority": "NONE",
+    "component_tests": 21,
+    "evidence_sha256": {
+      "AUDITOR-STATIC.json": "a4432d26aa811e719957df0eb31d189e66359d198604369c22088704498f6c03",
+      "EXECUTION-DECISION.json": "d9afe3fe0c2685a77348784f3509fe67650e9618ec8dbc56e95f1f625a84a985",
+      "INVOKER-STATIC.json": "5dd4ff6ff82bc156a165968dabafe5e6434d759f6b7705a3de7ffde849974914",
+      "PRE-EXECUTION-REVIEW.json": "4b0deedb981f9f982b1d1b8b0213b37d3049d0aec5693a575092d36d3a079bce",
+      "READBACK-STATIC.json": "9c080b9f5dd37c6dab8afeeed6e7a31f69fa52d70cbd3057629b77476bb4dd79",
+      "STATIC-v1.json": "b2e7ebd633bf4fef9ac284c0b95b62698a4f31a78fdea82515ee0dbc10df1a87",
+      "STATIC-v2.json": "b089c42dffc75273e481981ff3650849c751d07af065509df2f79aa4ad7eb2a1",
+      "TEST-EXECUTION-DECISION.json": "e12cefa6d3124d4bf8e374600c5293b69bc9796be7d4b43aa654b2c73570a897",
+      "TEST-RESULT.json": "d07adf74e53e999a1d1c35efe8ced30633d8d39f0f21d495ff1214f468ef3a20",
+      "TEST-TOOL-OBSERVATION.json": "9179cb63e8757bf0a849a5ea99cd08b115187bc23d629167cdaad173fbdcabbc",
+      "TOOL-EXIT-OBSERVATION.json": "6d98f4b5069cbb2dbd8088ff9f79c3904ea32d73c1c6167173350e0a9a78036c",
+      "candidate.py": "3daea759925941d53d26df84067d3ca5fe7e5c997d18c1e8577511085da5a625",
+      "decision.json": "e8574c1c54dc1f4a5aadb88413859791316ee3413cef9b371f9b34c194964aca",
+      "invoke.py": "821623a78b281f7f4eaa05c0be09e0379a6fdce2e6a5ea90ef3cd4ff974711d5",
+      "outer-result.json": "f72066815e6170793262bac8512b2b0e9df4a52a266c59e3bdccef1a1f4ea4ab",
+      "outer.stdout": "11b7c279ddf079b54bfa09f1c78b635811f206984be2413b36b5a4ffbaa78aa8",
+      "readback.py": "f4dd00a9622725d860fb6620ae95de9d2244c6fbc37f105023fe912bf4212950",
+      "readback.stdout": "90fee07bd2d3b845977e7d077dd3f9fef4b978f7ed8a98e94199939456e2d0f5",
+      "reconcile.py": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f",
+      "run_tests.py": "215a4095cbaece610eb4b042b49d79cbf4b971128ffb8e8c000f14f1794cfa27",
+      "source.json": "af8e5c1cb15ab3980491eb3956856e524783888d287624ebcda711bd1d8f88fc",
+      "test_reconcile.py": "deeb57148f6b9b128e50968078487c231c17df6392b9b18512eea38ac7c2a354",
+      "tests.stderr": "6b5a128493965ea0dc6d002b4ad9d6570a180d2eb099f7b3dea07dc108fc8cac"
+    },
+    "limits": [
+      "One manual known-normal fixture only; no replay or successor authorization",
+      "No actual observer-death injection or hardware crash durability test",
+      "Ordinary root/host assumptions; unsigned tool readback is not platform authority",
+      "C14, R05 BOTH, native continuity, Astra judge, installed/release acceptance remain open"
+    ],
+    "source_manifest": "af8e5c1cb15ab3980491eb3956856e524783888d287624ebcda711bd1d8f88fc",
+    "status": "EXACT_NORMAL_FIXTURE_RECONCILIATION_PASS"
+  },
+  "status": "EXACT_NORMAL_FIXTURE_RECONCILIATION_PASS"
+}

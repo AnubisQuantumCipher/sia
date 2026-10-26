@@ -1,0 +1,49 @@
+{
+  "status": "TESTED_EXPERIMENTAL_PREREQUISITE_NOT_ACTIVATED",
+  "base_commit": "872c7d31fd67342e2d4a9e519ca8f544d1b4651c",
+  "source_sha256": {
+    "bin/siaeventpackreader.py": "acce5c7c8c1553694ef5cce9a200465eb0de4566ce51b647ec3eaacb66255ed0",
+    "bin/siathought.py": "bee51af71e1f5aa40a7706eff8216832bb580dd876e24ae6de5905f6d20e275e",
+    "tests/test_event_pack_reader.py": "9318aaad1e29f2950b8afabbe930ed6c4481a4e671248db26c7a799046e2912e",
+    "docs/EVENT-INDEX-PACK-READER-20261024.md": "af80c993aef244153310f467a0d1aa02d38fe091f603b7631d99a38ed9a10c0c"
+  },
+  "test_result": "70 PASS6.481s; exit0; original roster retained, equal source endpoints",
+  "whole_job_elapsed_ns": 7089065356,
+  "test_envelope": {
+    "seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_bytes": 536870912,
+    "core_bytes": 0,
+    "isolation": "Read-only source, private HOME/tmp/run, network/PID namespaces, existing heavy lock"
+  },
+  "static": {
+    "selected_profile_rules": 167,
+    "new_reader_tests_final_drivers": 0,
+    "thought_existing_findings": 530,
+    "thought_baseline_findings": 535,
+    "new_code_message_findings": 0,
+    "status": "INHERITED_FINDINGS_OPEN_NOT_ZERO_WARNING_ACCEPTANCE"
+  },
+  "independent_review": "Actual GPT6.1 source/raw final delta; no independent execution; no new concrete blocker at experimental scope",
+  "private_evidence_sha256": {
+    "reader_v3-result.json": "0a087f7bf7d8185a6db0d63ead9c51293e2618fb250fc233d805c1e4c5434204",
+    "reader_v3.stderr": "331dc43dbed433d18ba711311c5e9c572a01f9b729955525576663b26049b506",
+    "reader_v3.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "static-v3-result.json": "e222a87657923cb85e418cff9f63ed6b5c02d3ffe8d8340230820fac32afb206",
+    "static-v3.stdout": "8f34f4a15fcd7c60caf3558af64286d38b6f4564e426818c0200e01d38ec0ead",
+    "REVIEW-v3.md": "ce802a391fd2b323dfe4f88d9f9c113d698914e12f28da94c09f61b35915a2a8"
+  },
+  "open": [
+    "complete capture plus held lease in runtime path",
+    "before-view replay integration",
+    "aggregate bounded lookup/dependency cost",
+    "SPARK protected authority and proofs",
+    "durable coverage publication and crash recovery",
+    "verified exact legacy retirement",
+    "installed capsule/off-path restore/replay",
+    "full-system release and marketplace acceptance"
+  ],
+  "r05": "No approval or original-obligation change",
+  "installed_change": false,
+  "acceptance": false
+}

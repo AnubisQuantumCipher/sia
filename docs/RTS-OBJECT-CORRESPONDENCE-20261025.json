@@ -1,0 +1,161 @@
+{
+  "status": "OBSERVED_DEBUG_EXCLUDED_OBJECT_CORRESPONDENCE",
+  "SIA_head": "1ab505cfc6fe6d24fb652d2416f4c3ad0eed93d8",
+  "SIA_changes": "none",
+  "comparison": {
+    "classification": "OBSERVED_SINGLE_OBJECT_CORRESPONDENCE_DEBUG_EXCLUDED",
+    "objects": [
+      {
+        "unit": "s-secsta",
+        "comparison": {
+          "strip_commands": [
+            {
+              "argv": [
+                "objcopy",
+                "--strip-debug",
+                "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/original.o",
+                "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/original.nodebug.o"
+              ],
+              "exit": 0,
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "objcopy",
+                "--strip-debug",
+                "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/rebuilt/s-secsta.o",
+                "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/rebuilt.nodebug.o"
+              ],
+              "exit": 0,
+              "stderr": ""
+            }
+          ],
+          "comparison": "entire objcopy --strip-debug outputs; no selective executable-section filtering",
+          "original_sha256": "67d883f99de008d1fabfe4557620de5d039a56ebbc22ee11a1952bd5ab0d6eb8",
+          "rebuilt_sha256": "67d883f99de008d1fabfe4557620de5d039a56ebbc22ee11a1952bd5ab0d6eb8",
+          "original_bytes": 9640,
+          "rebuilt_bytes": 9640,
+          "bytes_equal": true,
+          "cmp_exit": 0,
+          "cmp_stdout": "",
+          "cmp_stderr": "",
+          "scope": "single secondary-stack runtime archive member; debug data deliberately excluded; original/full object retained; not whole runtime equivalence or stack bound"
+        },
+        "rows": 24,
+        "nonstatic": [],
+        "source_endpoint_equal": true,
+        "stdout_empty": true,
+        "stderr_empty": true
+      },
+      {
+        "unit": "s-memory",
+        "comparison": {
+          "bytes_equal": true,
+          "original_sha256": "1c6b2bf2e5bd90b92257aafc7e5e9c88dd677d2e5dad7e51f692275739709b23",
+          "rebuilt_sha256": "1c6b2bf2e5bd90b92257aafc7e5e9c88dd677d2e5dad7e51f692275739709b23",
+          "cmp_exit": 0,
+          "cmp_stdout": "",
+          "cmp_stderr": "",
+          "comparison": "whole objcopy --strip-debug output; debug excluded only"
+        },
+        "rows": 3,
+        "nonstatic": [],
+        "source_endpoint_equal": true,
+        "stdout_empty": true,
+        "stderr_empty": true
+      },
+      {
+        "unit": "a-except",
+        "comparison": {
+          "bytes_equal": true,
+          "original_sha256": "454894e372fc29d6729abbfe75c965a35b3aa3ace506a7e93b2146f3314bf78b",
+          "rebuilt_sha256": "454894e372fc29d6729abbfe75c965a35b3aa3ace506a7e93b2146f3314bf78b",
+          "cmp_exit": 0,
+          "cmp_stdout": "",
+          "cmp_stderr": "",
+          "comparison": "whole objcopy --strip-debug output; debug excluded only"
+        },
+        "rows": 151,
+        "nonstatic": [
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:258:4:Append_Info_Basic_Exception_Information",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:318:4:Append_Info_Exception_Message",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:340:4:Append_Info_Exception_Name",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:510:4:Exception_Information",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:558:4:Untailored_Exception_Traceback",
+            "bytes_reported": 64,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-exexda.adb:573:4:Untailored_Exception_Information",
+            "bytes_reported": 64,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-except.adb:1209:4:Raise_From_Controlled_Operation",
+            "bytes_reported": 144,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-except.adb:1898:4:Wide_Exception_Name",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-except.adb:1910:4:Wide_Exception_Name",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-except.adb:1926:4:Wide_Wide_Exception_Name",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          },
+          {
+            "function": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1/a-except/inputs/a-except.adb:1938:4:Wide_Wide_Exception_Name",
+            "bytes_reported": 80,
+            "qualifier": "dynamic"
+          }
+        ],
+        "source_endpoint_equal": true,
+        "stdout_empty": true,
+        "stderr_empty": true
+      }
+    ],
+    "libgnat_endpoint_equal": true,
+    "continuous_custody": "NOT_ESTABLISHED",
+    "SIA_source_or_flags_changed": false
+  },
+  "independent_review": {
+    "reviewer": "existing actual GPT-6.1 assurance_architecture_review",
+    "mode": "read-only; no independent compilation/execution",
+    "result": "No correction; all three entire debug-stripped object pairs equal; report rows and unbounded-qualifier omissions match. Next reachable exception/callback closure justified; no whole-runtime stack acceptance.",
+    "report_sha256": "2beec07d7ebd3167525b1bc590dfc94d4d9677b1884b08df1773ac0ab3651df7"
+  },
+  "archive": {
+    "path": "docs/evidence/rts-object-correspondence-20261025.tar.gz",
+    "sha256": "109904a6c236c51a03cf792e62c69eed02152e28a09bd91bf462c56bcbc4a552",
+    "bytes": 30222,
+    "members": 34,
+    "readback": "all members equal"
+  },
+  "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/rts-secondary-correspondence-v1",
+  "public_scope": "metadata, source hashes, commands, compiler reports, comparisons and review; original runtime source, ALI and object bytes retained locally, not bundled",
+  "acceptance": "full stack/allocation/system/installed/release gates OPEN"
+}

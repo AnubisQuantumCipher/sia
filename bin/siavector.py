@@ -307,6 +307,7 @@ def invoke_adapter(executable, expected_sha256, request, snapshot_directory,
                     command, env=environment, timeout=timeout, cwd=launch,
                     pass_fds=(code.fd, request_fd, database_fd),
                     label="raw-vector adapter", output_limit=MAX_RESPONSE_BYTES,
+                    require_pid_namespace=True,
                     isolate_process_tree=True)
                 wall_elapsed_ns = time.monotonic_ns() - started_ns
                 code.assert_current()

@@ -1,0 +1,307 @@
+{
+  "schema": "sia-ownership-type-identity-evidence-v1",
+  "status": "FAILED_FULL_WRITER_QUALIFICATION_NOT_ADOPTED",
+  "base_commit": "dbc7ffe6fddad7d471919093db8e59f53188f78e",
+  "candidate_source_sha256": {
+    "bin/siacognitiveregistry.py": "c7792180fad5836c92a1c760c8efac8d1be9e6efe022589334e7b7637fea7f9d",
+    "bin/siacontrollerdeliverywrapper.py": "e0263069dca76e4251befd64d1a48b31ecefc276e6503d13028a049a2eee3f08",
+    "bin/siacontrollerdeliverywriter.py": "0f30ff5e58c330145b1ff77459a7fe23c5c6c237b1f73c4a7694c3de7ea8f5e8",
+    "bin/siagetrenderadmit.py": "84d2b37d8362f45e4cfc326989fd07fde412995b34e1a0c10b5fbd28ad88a4e4",
+    "bin/siainstalledengine.py": "a80e6ea8edc7bae0b467d4702368a642eccfb7671c8581299e65c94fad8a277e",
+    "bin/sialivepublication.py": "b80c27063342d8c3620b96cdbe77eddf69beed130015385efa6117858d9262ed",
+    "tests/test_ownership_exact_type_admission.py": "ce58701048becbe4e4fb1aed5377eef2758e2945799216312dc5b00e7af95276"
+  },
+  "base_source_sha256": {
+    "bin/siacognitiveregistry.py": "2ecb654f968ac248d70bc87544b885d730411876dab339b366b878d6fb81faf0",
+    "bin/siacontrollerdeliverywrapper.py": "7ba3b91ebf0e9c328359bf4cb1ddc8fb6da3bb11051030ca3a00a9659270173e",
+    "bin/siacontrollerdeliverywriter.py": "8f4b5c6246732afcdaa21a92400a71b9113b044b10a1659c67c3d2ff6c3f1adc",
+    "bin/siagetrenderadmit.py": "b48d41952d2c3045e42afb70f5dc599b5960191d9fd5bb68634570b09f07713f",
+    "bin/siainstalledengine.py": "5cfed3cb75759e6efd4eb2d411f4ffd08d95885004b4ad9042d902f3ba643fe0",
+    "bin/sialivepublication.py": "93ba3aecc7cdb7c6bd5501b9038c9817f78ad98df1e96027452e661120a29230"
+  },
+  "members": [
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/profile_case.py.gz",
+      "sha256": "406c2473b55d071c02b0790ee509740f8e79b7a4b8d35ad91de971105bea6333",
+      "original_sha256": "ce58701048becbe4e4fb1aed5377eef2758e2945799216312dc5b00e7af95276",
+      "original_bytes": 6621
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/run_profile.py.gz",
+      "sha256": "fca86bd51ce2e8076ad16f51d05198a9a0167e43daffbc4292e21a802315c047",
+      "original_sha256": "af7562354c3cdc257b0fd44bbee669c69c86df8a1c54e9c0cd307fe24ce5cd4c",
+      "original_bytes": 2303
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/workload-result.json.gz",
+      "sha256": "4f384300bd4ef00950d9f5d49a9b136f9c8301bad116197cd8b45082b66e02e3",
+      "original_sha256": "98bb9ef13a0673f9c87ecacc4f892dcc5867f4a66f9ea5be984ece2ccc98842e",
+      "original_bytes": 152118
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/workload.stderr.gz",
+      "sha256": "c3862f15450d46199740c25eba77a5b45822a34ebc084f77b151616a2e303742",
+      "original_sha256": "ee65c77c767ca6f405687c18693f34a370494ef670ae9e962639b0b71d81af43",
+      "original_bytes": 52872
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/siacognitiveregistry.py.gz",
+      "sha256": "c58479325b498497a3ba2bda443e593ef4b296ee4242c9a5a4ff963086bea65e",
+      "original_sha256": "2ecb654f968ac248d70bc87544b885d730411876dab339b366b878d6fb81faf0",
+      "original_bytes": 77331
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/siacontrollerdeliverywrapper.py.gz",
+      "sha256": "7fae4be7b2b79726dd67688970a88d779d52a4d1d971631bdf75e9f09c9a53bd",
+      "original_sha256": "7ba3b91ebf0e9c328359bf4cb1ddc8fb6da3bb11051030ca3a00a9659270173e",
+      "original_bytes": 39866
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/siacontrollerdeliverywriter.py.gz",
+      "sha256": "68ed98bc0ee2550978d60f5daae1fde2a2761f318e3cd6c9faabf7127690ce54",
+      "original_sha256": "8f4b5c6246732afcdaa21a92400a71b9113b044b10a1659c67c3d2ff6c3f1adc",
+      "original_bytes": 34090
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/siagetrenderadmit.py.gz",
+      "sha256": "f8cf65e60f83b309cc4a7605af2b0ae8ee6f166cc9fd53e3ea9035d1753a8ce2",
+      "original_sha256": "b48d41952d2c3045e42afb70f5dc599b5960191d9fd5bb68634570b09f07713f",
+      "original_bytes": 18824
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/siainstalledengine.py.gz",
+      "sha256": "ead9d1cd941f0d3c8a7327741c152067c55fed350b4be4cb189719e7cfa707e7",
+      "original_sha256": "5cfed3cb75759e6efd4eb2d411f4ffd08d95885004b4ad9042d902f3ba643fe0",
+      "original_bytes": 50062
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-baseline-v1/originals/sialivepublication.py.gz",
+      "sha256": "35ca03c7abc07835fdfc7e92b044427059bdba7a037bdba584714ba20bbf943d",
+      "original_sha256": "93ba3aecc7cdb7c6bd5501b9038c9817f78ad98df1e96027452e661120a29230",
+      "original_bytes": 38426
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/profile_case.py.gz",
+      "sha256": "406c2473b55d071c02b0790ee509740f8e79b7a4b8d35ad91de971105bea6333",
+      "original_sha256": "ce58701048becbe4e4fb1aed5377eef2758e2945799216312dc5b00e7af95276",
+      "original_bytes": 6621
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/workload-result.json.gz",
+      "sha256": "511a23c27564737817e7301315b6aaa4dfdfada48cedd9fa8f8ec12190beb9a7",
+      "original_sha256": "82f731e1a5c82d223ac0d1bb9a5a458b843df23bb56c515659ae511536784078",
+      "original_bytes": 152479
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/workload.stderr.gz",
+      "sha256": "0b3bedfa34b655045b093ae933a6657475e67c2e56ef63cde8d24fae8ec6858e",
+      "original_sha256": "b1533683ce0f4ccf2d5c2ba8e19bc2b1f26eed85a8bd84796f4f5714f42c65d8",
+      "original_bytes": 1129
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/baseline-static-result.json.gz",
+      "sha256": "78268f499b98fda9fecbe0928cc954b2812c0c0bcece786718d504b77674cf4d",
+      "original_sha256": "f8326b09c5132f29fac27ae943116cc20b64ab8357b928ad24124f62768a40e5",
+      "original_bytes": 2462
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/baseline-static.stdout.gz",
+      "sha256": "973c813c0b9a75cbb4a2101ce2dc3cfbfbe5fcd78d900ca5a823eab53321e260",
+      "original_sha256": "856a386ff1f33730e67783697855fa9334ee14779da6f50f06f2d4f1aaf7e134",
+      "original_bytes": 99309
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate-static-result.json.gz",
+      "sha256": "f3677e21cdd1990bda6a9f92835b1fb0e70c0c5bc2d399228b34fd37dba1f152",
+      "original_sha256": "0332824d311748c93e0c8aef2d34e60a6883e68b9b1fdc054862caee70efe99b",
+      "original_bytes": 2187
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate-static.stdout.gz",
+      "sha256": "728627972aad61ad6d425fe7b48cad9ac9fc3f47ae7fc88a5755ccc70bc21a5c",
+      "original_sha256": "20842d0df1dad3ff54820e89cb97766ce7bdd1312d880ca2f94aaab0bdcb6c9d",
+      "original_bytes": 87789
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/STATIC-DISPOSITION.md.gz",
+      "sha256": "589d3293a401a62801b7d69f0ab93573e6ac60a5642c72c210178cd05d677465",
+      "original_sha256": "cdea8ec8df272f7e0842bac289dda9b2361e57d202f9c0fb62eb3481d08327a8",
+      "original_bytes": 453
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/SOURCE-REVIEW.txt.gz",
+      "sha256": "dd41a87838d6719388ee5e00ee682716802c6ed7372497ae301ad5e053024288",
+      "original_sha256": "a0a9bbeab5f2a5bfe3a686e45f87cee32ff5b58e59e8862ec99759ecf78c6634",
+      "original_bytes": 764
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/FINAL-BINDING.json.gz",
+      "sha256": "32c461db51fb410780a38d0dbb6f332aeb8611c961c86ae948a9886f5b87c18f",
+      "original_sha256": "dbdc0e2db92105e5fa1e85c742e409093e9513a38791859ac760b802840a4612",
+      "original_bytes": 1486
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate.patch.gz",
+      "sha256": "d480b751138eb6d3134d0221b44c472756457381f1dc2bf8b5003b8179b36b96",
+      "original_sha256": "022e456453dbb44df89677d14c4a7904754bd8b10c96812858398582417a3f1f",
+      "original_bytes": 4914
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/siacognitiveregistry.py.gz",
+      "sha256": "79ef1a56522fb86287566827518d305ea87064f5e6ad9b8aba939db661db1e67",
+      "original_sha256": "c7792180fad5836c92a1c760c8efac8d1be9e6efe022589334e7b7637fea7f9d",
+      "original_bytes": 77391
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/siacontrollerdeliverywrapper.py.gz",
+      "sha256": "99326ba4e4f4ca59df7e2673934abbbc99681b2f47ac914a7407c3739e3731d0",
+      "original_sha256": "e0263069dca76e4251befd64d1a48b31ecefc276e6503d13028a049a2eee3f08",
+      "original_bytes": 39918
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/siacontrollerdeliverywriter.py.gz",
+      "sha256": "98b192ef1e6483d541ea227f0d54165f3c502fb28444b090cd66f3d170e90480",
+      "original_sha256": "0f30ff5e58c330145b1ff77459a7fe23c5c6c237b1f73c4a7694c3de7ea8f5e8",
+      "original_bytes": 34124
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/siagetrenderadmit.py.gz",
+      "sha256": "1f5a62f29d939941f0e205d319e9eb6d632ac59a0d4fcf6f6b2d5efd70ecc419",
+      "original_sha256": "84d2b37d8362f45e4cfc326989fd07fde412995b34e1a0c10b5fbd28ad88a4e4",
+      "original_bytes": 18853
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/siainstalledengine.py.gz",
+      "sha256": "38374933ab4b1be9a95eb0fa62314d04d698cde5389c420f445f8387668f523c",
+      "original_sha256": "a80e6ea8edc7bae0b467d4702368a642eccfb7671c8581299e65c94fad8a277e",
+      "original_bytes": 50080
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/bin/sialivepublication.py.gz",
+      "sha256": "150d725159551921335cc4400009f86b65a6d0fea9d7a511374505c791e9dd74",
+      "original_sha256": "b80c27063342d8c3620b96cdbe77eddf69beed130015385efa6117858d9262ed",
+      "original_bytes": 38502
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-candidate-v1/candidate/tests/test_ownership_exact_type_admission.py.gz",
+      "sha256": "406c2473b55d071c02b0790ee509740f8e79b7a4b8d35ad91de971105bea6333",
+      "original_sha256": "ce58701048becbe4e4fb1aed5377eef2758e2945799216312dc5b00e7af95276",
+      "original_bytes": 6621
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-publication-v1/profile_case.py.gz",
+      "sha256": "b692eb45e8a5ac6dcaa1a264a6fa57ea63e45f12090c3ec6324a7e22337192b9",
+      "original_sha256": "915f0239cd6e5431c08e53bb850ae3968765c039a7bea72fa6baaa2b83ebd2b1",
+      "original_bytes": 509
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-publication-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-publication-v1/workload-result.json.gz",
+      "sha256": "ae2cb0fdef77f24a81321005f9d409032d5c7a7971ccf30cefab879725490282",
+      "original_sha256": "f5f8fea1d53e3f7e18106c86e415f1e5ccd6ae125523cdf264d334f524d096b8",
+      "original_bytes": 152494
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-publication-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-publication-v1/workload.stderr.gz",
+      "sha256": "839a9b311e43f995007ec696853f37d20b919390c0ea92331e3d1b56e7cbcfb1",
+      "original_sha256": "1cebdb640618f50edb567096d08e4734859a237d9c773454d91ae346475d13b6",
+      "original_bytes": 13420
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-installed-v1/profile_case.py.gz",
+      "sha256": "ec15d14ddb2b97903776a259722287760c48f3384d7b0bc34be5f4d3536898a4",
+      "original_sha256": "1b8dcac0f93623692a73d6f4aa964f73835242a3beabac0b659406fb0f29d568",
+      "original_bytes": 398
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-installed-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-installed-v1/workload-result.json.gz",
+      "sha256": "0611ed32dd40654b1da307732c9470bf0a1536f858e4e87af7b81c1f535eef9c",
+      "original_sha256": "0453d34526493681d0ec5e853b9f3ba6aa345f9378dd0fde788e8a6c8769646a",
+      "original_bytes": 152479
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-installed-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-installed-v1/workload.stderr.gz",
+      "sha256": "f29c245cbb646927a2e2b66a874ca18a0ea6f128e5818dff2e58c66b71a6bb8a",
+      "original_sha256": "872e339999b00fc1d2b094d158efdb90b23ae7113ae02068fd2a02cd8b8953ae",
+      "original_bytes": 4389
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-writer-v1/profile_case.py.gz",
+      "sha256": "b2e66ee2bf3632ac198deb77aaa7dc0dd9f0d28b6da36614a6313459d3b702e1",
+      "original_sha256": "3ec7481f969a1cb5f806811306b9513a99a4965f5c8270afdae42c6527793486",
+      "original_bytes": 463
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-writer-v1/run_profile.py.gz",
+      "sha256": "81782f3c2d4b9ebff3f576ded5043c1142a6d26ef10290c38945b3457b4a2311",
+      "original_sha256": "e65313ace7f39031792887338ca2e1e0170503220970301ae6ed0c7a81498432",
+      "original_bytes": 2378
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-writer-v1/workload-result.json.gz",
+      "sha256": "d656ab72a73166906b4fb5dcce5c8f0e536db274fa2dd0d8c2046cd5b461c8f8",
+      "original_sha256": "6d4817ebd33871f22032b8a2fc12427e264d4dd0c65f0d4c3cdf0e0ccd850b62",
+      "original_bytes": 152462
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-writer-v1/workload.stdout.gz",
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/ownership-type-identity-writer-v1/workload.stderr.gz",
+      "sha256": "b9fb1f59c658c8d6d02a237f536cfd9c7d49d29a9ab82e64d927cc8d75b8f45d",
+      "original_sha256": "c4da775309c608c2304774eca208925c3758df078c4766eca144c615e0d29715",
+      "original_bytes": 1463
+    },
+    {
+      "path": "docs/evidence/ownership-type-identity-20261024/build-ownership-type-identity-evidence.py.gz",
+      "sha256": "050385a1ad478c2b6b274e0c465f1e5804a7ab4f80b154673d7ddc19ce472c38",
+      "original_sha256": "b3002a1b9e7d5a67d80ed623e50b3fbebc22731fee8f40dc0a38a9046788a1d3",
+      "original_bytes": 4164
+    }
+  ],
+  "limits": "Original runtime caps unchanged; no release authority."
+}

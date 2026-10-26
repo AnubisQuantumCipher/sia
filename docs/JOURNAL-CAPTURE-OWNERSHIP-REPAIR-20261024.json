@@ -1,0 +1,189 @@
+{
+  "schema": "sia.journal-capture-ownership-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "f26e7349a1732ae9b4162b66eb8659b23b979aae",
+  "problem": "Directory and scratch descriptors could leak when post-open metadata failed before ownership registration. Failed seed I/O could leave a capture usable.",
+  "change": "Register descriptors before metadata, retain pending scratch identity for cleanup only, abort capture after seed metadata/write/sync failure. Close owned descriptors and unlink only when the retained inode matches the regular named entry at the cleanup check.",
+  "source_sha256": {
+    "bin/siajournalcapture.py": "9ccfaa4d77d21cb2c5fc0acd9d213c37d1f841a32ebf5a4adac1a089a2b60940",
+    "bin/sialib.py": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+    "bin/siasenses.py": "9a352e959ff48f920cfe5f89e916f8e8f9a3c3542e4ca7614a0e8db96f5ca6d7",
+    "bin/siaeventplan.py": "c8e2761c39d0c0bde40580e6a4117b210033ee12b6ee43430a3270889eda7eb5",
+    "tests/test_journal_capture_ownership.py": "6ddde62000eaa2135534ef6dfc36e6883a66595b5e23e3c3753260db4d30d4d3",
+    "tests/test_journal_capture_context.py": "1097323caf220228091823645dd88158b8860bf3c13a566ed3cd56b1e5219af6",
+    "tests/test_sia.py": "5f6459634ec640a827f5a81301a3495abc8d2d51edd75a9ae7d2da753037948b"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 29,
+    "failures_reported": 23,
+    "elapsed_seconds": 1.987,
+    "source_sha256": {
+      "bin/siajournalcapture.py": "0ef2364d36a0e90b0f5e6b99e6ae452d24aa45c622a3edaafcc2201de5cb81ea",
+      "bin/sialib.py": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+      "bin/siasenses.py": "9a352e959ff48f920cfe5f89e916f8e8f9a3c3542e4ca7614a0e8db96f5ca6d7",
+      "bin/siaeventplan.py": "c8e2761c39d0c0bde40580e6a4117b210033ee12b6ee43430a3270889eda7eb5",
+      "tests/test_journal_capture_ownership.py": "6ddde62000eaa2135534ef6dfc36e6883a66595b5e23e3c3753260db4d30d4d3",
+      "tests/test_journal_capture_context.py": "1097323caf220228091823645dd88158b8860bf3c13a566ed3cd56b1e5219af6",
+      "tests/test_sia.py": "5f6459634ec640a827f5a81301a3495abc8d2d51edd75a9ae7d2da753037948b"
+    },
+    "scope": "All directory acquisition cuts and sys/user catalog/full seed cuts, replacement/persistent failure cleanup, seed write/sync failure and short-write invalidation."
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 29,
+    "elapsed_seconds": 1.884,
+    "source_unchanged": true
+  },
+  "command": [
+    "/usr/bin/timeout",
+    "--kill-after=5s",
+    "60s",
+    "/usr/bin/bwrap",
+    "--ro-bind",
+    "/",
+    "/",
+    "--ro-bind",
+    "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+    "/usr/bin/git",
+    "--tmpfs",
+    "/tmp",
+    "--ro-bind",
+    "/home/sicarii/Work/sia-assurance-kernel-20261019",
+    "/tmp/sia-review-source",
+    "--tmpfs",
+    "/home",
+    "--tmpfs",
+    "/run",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--dir",
+    "/home/audit",
+    "--unshare-net",
+    "--unshare-pid",
+    "--die-with-parent",
+    "--new-session",
+    "--chdir",
+    "/tmp/sia-review-source",
+    "--setenv",
+    "HOME",
+    "/home/audit",
+    "/usr/bin/python3",
+    "-B",
+    "-W",
+    "error::ResourceWarning",
+    "-c",
+    "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_journal_capture_ownership', 'tests.test_journal_capture_context']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)"
+  ],
+  "runner_sha256": "6b8e0af6ab89b18e312437c3f837c7e4475c028e8bb3158dcc26ca32704c1547",
+  "tests": "Eight new ownership/failure methods and21 unchanged original journal context methods with bounded synthetic journal processes and private files. No host journal or source ACK. Final baseline and candidate use identical test bytes.",
+  "corrections": [
+    "Initial baseline fixture shared an operation directory across failing seed subcases, contaminating later cases. Retained initial output is diagnostic only; per-case private directories corrected this before final predecessor/candidate comparison.",
+    "Initial candidate strict scan caught a loop-variable reassignment. Replaced with a local expected_identity, retained initial diagnostic, and reran original strict scan and tests without suppression."
+  ],
+  "static": {
+    "status": "PASS_ZERO_DIAGNOSTICS_SCOPED",
+    "scope": [
+      "bin/siajournalcapture.py",
+      "tests/test_journal_capture_ownership.py",
+      "private runner"
+    ],
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt",
+    "syntax": "PASS_COMPILE_ONLY",
+    "no_suppressions_added": true
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "result": "No blocker for scoped ownership and seed invalidation",
+    "independent_execution": false
+  },
+  "power_of_ten": "P03 ownership at acquisition; P07 checked failure propagation and conservative recovery; P06 pending identity is not usable capture authority; P10 strict source checks. No whole-system proof.",
+  "limitations": [
+    "Named identity check and unlink are not atomic. Replacement refusal covers the observed pre-check case, not hostile concurrent directory mutation.",
+    "Persistent metadata failure leaves uncertain scratch on disk and later capture refuses that preexisting file; cleanup is deliberately incomplete.",
+    "Arbitrary asynchronous interruption, allocation failure and close failure remain unqualified.",
+    "No real host journal, acknowledgment, physical durability, installed continuity, full formal proof or release acceptance."
+  ],
+  "artifacts": {
+    "baseline-journal-capture-ownership.log.gz": {
+      "bytes": 1899,
+      "sha256": "38667d4f8d6956d0825476424c6dc3f02ffdb8c2b0b7c5d5ced93ac2242de9da",
+      "encoding": "gzip",
+      "uncompressed_bytes": 26543,
+      "uncompressed_sha256": "43a1b06b2800154ce7a2df04e5d475b1fddd533d24bf0e355ff91eb67685a20c"
+    },
+    "baseline-journal-capture-ownership.json": {
+      "bytes": 3212,
+      "sha256": "a76b5984d596db61c928dca475583b25151477fb24be0e5a32640ba0f72528f6"
+    },
+    "baseline-qualified-journal-capture-ownership.log.gz": {
+      "bytes": 1743,
+      "sha256": "7d174769587c08fc37a233915d079985ae3d7409811498563fdf68af92a44256",
+      "encoding": "gzip",
+      "uncompressed_bytes": 26749,
+      "uncompressed_sha256": "7777ace4ce1e77f35ee62139ab181ece0cf1ea04eab5751e1c25a3f92efef278"
+    },
+    "baseline-qualified-journal-capture-ownership.json": {
+      "bytes": 3222,
+      "sha256": "4eff31f0483577e95c2d3f9684c8a5c7e99e9e95f97f9a1a844ea46f75c25573"
+    },
+    "baseline-final-journal-capture-ownership.log.gz": {
+      "bytes": 1949,
+      "sha256": "16f28132357a6c72544c45f8dad0ca6046999c496430dbfbd7f324c474ca5d44",
+      "encoding": "gzip",
+      "uncompressed_bytes": 31954,
+      "uncompressed_sha256": "2587e3f5c03e17d95c3560c171770491f42f21300aa0ca182b7310f77717e6f0"
+    },
+    "baseline-final-journal-capture-ownership.json": {
+      "bytes": 3226,
+      "sha256": "5e6efe31e5be791dcb41ca1367aa6007442c1b97fd678e3ea33d7928fd52306e"
+    },
+    "candidate-journal-capture-ownership.log": {
+      "bytes": 5413,
+      "sha256": "b000b6848cd48b82b923323d6e5d1f9184044cd979ca6861fc01967a1f987976"
+    },
+    "candidate-journal-capture-ownership.json": {
+      "bytes": 3209,
+      "sha256": "0df4ed51d8c0007e4984391d313b7a5d78a25bdf80f78c5c301bbbaa99d36ad0"
+    },
+    "candidate-final-journal-capture-ownership.log": {
+      "bytes": 5719,
+      "sha256": "84b61759accc9f925bbeeda8f8291c51135ab1adfd95aee0299e1faac0785d35"
+    },
+    "candidate-final-journal-capture-ownership.json": {
+      "bytes": 3217,
+      "sha256": "569abffd51f6f346677c283f4039fb5ed2fd0b6cf656a63fc16e6973a499c457"
+    },
+    "candidate-qualified-journal-capture-ownership.log": {
+      "bytes": 5719,
+      "sha256": "0616c8a61e1140aa898137ab31c66c60c847d33e564a2055a5c28464cd5a1f67"
+    },
+    "candidate-qualified-journal-capture-ownership.json": {
+      "bytes": 3221,
+      "sha256": "a418f1c1e8d5b9fc7df09100f7c15d5d418a841e81f5a819dd326686222e6032"
+    },
+    "journal-capture-static-receipt.json": {
+      "bytes": 8131,
+      "sha256": "5be19102b43ad635d9cc7dbaa72c433f4688e3de52f274e0dd00a899340c0cc3"
+    },
+    "journal-capture-final-static-receipt.json": {
+      "bytes": 5447,
+      "sha256": "fdf8e43b4fa54f91dd22386e44e4e8965eef4a5e73f26bec93e7fed2590b35f2"
+    },
+    "journal-capture-independent-review.txt": {
+      "bytes": 1372,
+      "sha256": "f43beb1ddd9f65a3994006dab768defb9e60f5a2e4aa547f0b3b55e30dcea469"
+    },
+    "run_journal_capture_ownership-final.py": {
+      "bytes": 3537,
+      "sha256": "6b8e0af6ab89b18e312437c3f837c7e4475c028e8bb3158dcc26ca32704c1547"
+    },
+    "run_journal_capture_ownership-baseline-final.py": {
+      "bytes": 3540,
+      "sha256": "e0272131604a3bc2079422181142a30dec9e9e510d794cfa09b9807ad6c47d0f"
+    }
+  },
+  "acceptance": false
+}

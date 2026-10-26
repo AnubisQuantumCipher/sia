@@ -1,0 +1,86 @@
+{
+  "status": "TESTED_COMPILER_POLICY_NOT_SYSTEM_ACCEPTANCE",
+  "source_base": "369bc98a4a275f6fc601e98afdd8c8e4cdc5aa79",
+  "changed_source_paths": [
+    "spark/restrictions.adc"
+  ],
+  "adc_sha256": "179b4668868d2d4a0c22f1c56931ec58fa9ec98d7bbae0f773f6df7bfbb5af9e",
+  "archive": {
+    "path": "docs/evidence/ada-allocation-policy-20261025.tar.gz",
+    "sha256": "3c44b8652cba9408c922a86934bc86e3897a66b4cab57906fff702cb8c3a51ce",
+    "bytes": 318248,
+    "member_count": 370,
+    "all_members_readback_equal": true
+  },
+  "manifest_sha256": "186d53f8fd08716a85228f7fba3eb0621592fe9ed12c5cf68b625ee3aa2cf77c",
+  "local_evidence": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/dyn-restrictions-v1",
+  "results": {
+    "compile-result.json": {
+      "returncode": 0,
+      "elapsed_ns": 23232222640,
+      "source_unchanged": true,
+      "status": "COMPILE_ONLY_NOT_PROOF_OR_RUNTIME",
+      "stdout_bytes": 0,
+      "stderr_bytes": 0
+    },
+    "link-result.json": {
+      "returncode": 0,
+      "argv": [
+        "gprbuild",
+        "-q",
+        "-p",
+        "-j1",
+        "-P",
+        "source/spark/sia_assurance.gpr"
+      ],
+      "deadline_seconds": 60,
+      "grace_seconds": 5,
+      "scope": "main project original mains build/link; no proof or runtime execution"
+    },
+    "protocol-result.json": {
+      "returncode": 0,
+      "elapsed_ns": 15685164265,
+      "inputs_unchanged": true
+    },
+    "pack-protocol-result.json": {
+      "returncode": 0,
+      "elapsed_ns": 43449198049,
+      "inputs_unchanged": true
+    },
+    "review.json": {
+      "reviewer": "existing /root/assurance_architecture_review actual GPT-6.1",
+      "mode": "READ_ONLY_NO_INDEPENDENT_EXECUTION",
+      "decision": "no blocker to non-final additive configuration checkpoint",
+      "adc_sha256": "179b4668868d2d4a0c22f1c56931ec58fa9ec98d7bbae0f773f6df7bfbb5af9e",
+      "reviewed": [
+        "compile/link/runtime/remaining-project records",
+        "V3 allocator controls and raw diagnostics",
+        "V4 task clean differential",
+        "110 protocol PASS",
+        "378 pack protocol PASS and admission"
+      ],
+      "limitations": [
+        "some endpoint records are observed Booleans, not both full maps",
+        "link/remaining summaries do not independently establish full tool/input custody",
+        "first three unrestricted control baselines fail allocator warnings",
+        "Immediate_Reclamation semantics unproved",
+        "full DYN02, stack/RTS, fresh full proof and independent execution unproved"
+      ]
+    }
+  },
+  "open": [
+    "full semantic DYN02 enforcement",
+    "Immediate_Reclamation runtime oracle",
+    "stack and RTS bounds",
+    "compiler-control CI",
+    "fresh full proof",
+    "independent execution",
+    "all original integrated acceptance and release gates"
+  ],
+  "final_document_review": {
+    "reviewer": "existing /root/assurance_architecture_review actual GPT-6.1",
+    "mode": "READ_ONLY_NO_INDEPENDENT_EXECUTION",
+    "report_sha256": "f2bf8e9b462b175723227c08578b08282e9e300eda97c4b507dcdd1677883be7",
+    "decision": "No concrete overclaim or policy drift; suitable for a non-final checkpoint. DYN alternatives, concurrency applicability, original failures, custody, proof, CI and RTS/stack gaps remain explicit."
+  }
+}

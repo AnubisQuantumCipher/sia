@@ -175,6 +175,87 @@ class BlockedError(RuntimeError):
     """A safe, operator-visible terminal refusal rather than a failed write."""
 
 
+class _ResticExitFailure(RuntimeError):
+    """Keep the exit status without copying provider output into diagnostics."""
+
+    def __init__(self, returncode):
+        super().__init__("restic operation was refused")
+        self.returncode = returncode
+
+
+class _UploadFailure(RuntimeError):
+    """An upload's primary and independent cleanup failures, never authority."""
+
+    def __init__(self, attempt, primary):
+        super().__init__("continuity upload failed")
+        self.phase = attempt.phase
+        self.remote = attempt.remote
+        self.primary = primary
+        self.cleanup = attempt.cleanup
+
+
+class _BlockedUploadFailure(_UploadFailure, BlockedError):
+    """Preserve the original blocked classification, including uncertainty."""
+
+
+class _UploadAttempt:
+    """Fixed local diagnostic state; no persisted secrets or success grant."""
+
+    __slots__ = ("phase", "remote", "cleanup")
+
+    def __init__(self):
+        self.phase, self.remote = "capsule-capture", "not-attempted"
+        self.cleanup = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _kind, error, _traceback):
+        if error is None or not issubclass(type(error), Exception):
+            return False
+        failure = (_BlockedUploadFailure if issubclass(type(error), BlockedError)
+                   else _UploadFailure)
+        raise failure(self, error) from error
+
+
+_UPLOAD_PHASES = frozenset({
+    "capsule-capture", "capsule-validation", "upload-status-publication",
+    "repository-upload", "upload-response", "repository-check",
+    "offpath-verification", "result-construction", "capsule-cleanup",
+})
+_UPLOAD_OUTCOMES = frozenset({
+    "not-attempted", "outcome-unknown", "snapshot-reported",
+})
+
+
+def _upload_failure_clause(failure):
+    """Closed vocabulary only: do not stringify either retained exception."""
+    phase = (failure.phase if type(failure.phase) is str
+             and failure.phase in _UPLOAD_PHASES else "unknown")
+    remote = (failure.remote if type(failure.remote) is str
+              and failure.remote in _UPLOAD_OUTCOMES else "outcome-unknown")
+    primary = failure.primary
+    if type(primary) is _ResticExitFailure:
+        code = primary.returncode
+        reason = ("restic-exit-" + str(code) if type(code) is int
+                  and -255 <= code <= 255 else "restic-status-unavailable")
+    elif type(primary) is ValueError or type(primary) is TypeError or type(primary) is KeyError:
+        reason = "invalid-data"
+    elif issubclass(type(primary), OSError):
+        reason = "os-error"
+    elif type(primary) is subprocess.TimeoutExpired:
+        reason = "process-timeout"
+    elif issubclass(type(primary), BlockedError):
+        reason = "blocked"
+    else:
+        reason = "exception"
+    cleanup = "failed" if failure.cleanup is not None else "no-secondary-error"
+    code = _upload_named_failure_code(primary)
+    named = " Reason: " + code + "." if code else ""
+    return (" Upload phase: " + phase + "; remote: " + remote
+            + "; error: " + reason + "; cleanup: " + cleanup + "." + named)
+
+
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
@@ -1122,8 +1203,30 @@ _NAMED_FAILURE_PREFIXES = (
 _SAFE_CLAUSE = re.compile(r"[A-Za-z0-9 _.:;=,()/'-]*")
 
 
+def _upload_named_failure_code(failure):
+    """Preserve fixed SIA refusal codes without calling exception text hooks."""
+    if not isinstance(failure, BaseException):
+        return ""
+    arguments = BaseException.args.__get__(failure)
+    if len(arguments) != 1 or type(arguments[0]) is not str:
+        return ""
+    text = arguments[0]
+    if text == "capsule source tree exceeds its record bound":
+        return "capsule-record-bound"
+    for prefix, code in _NAMED_FAILURE_PREFIXES:
+        if text.startswith(prefix):
+            return code
+    return ""
+
+
 def _named_failure_clause(failure):
+    if issubclass(type(failure), _UploadFailure):
+        return _upload_failure_clause(failure)
     text = str(failure)
+    # This fixed refusal has no safe operator suffix. Match the whole value
+    # so neither paths nor provider text can become a diagnostic payload.
+    if text == "capsule source tree exceeds its record bound":
+        return " Reason: capsule-record-bound."
     for prefix, code in _NAMED_FAILURE_PREFIXES:
         if text.startswith(prefix):
             clause = text[len(prefix):].strip()
@@ -1547,7 +1650,7 @@ def _execute_restic(arguments, *, config, key_path, cwd, restic_path,
         label="restic adapter",
         output_limit=sialib.MAX_STATE_JSON_BYTES)
     if result.returncode != 0:
-        raise RuntimeError("restic operation was refused")
+        raise _ResticExitFailure(result.returncode)
     return result.stdout
 
 
@@ -3293,62 +3396,69 @@ def _validate_completed_capsule(path, expected):
     return path, verified
 
 
+def _upload_capsule(args, request_id, path, attempt, *, restic_path=None):
+    frozen = siacapsule.freeze(path)
+    attempt.phase = "capsule-validation"
+    path, verified = _validate_completed_capsule(path, frozen)
+    classification = verified["classification"]
+    attempt.phase = "upload-status-publication"
+    _publish_status(
+        state="uploading",
+        detail="Signed portable capsule completed; uploading offsite.",
+        repository_display="External recovery repository",
+        operation=_operation(request_id, "backup-upload", "running"))
+    attempt.phase, attempt.remote = "repository-upload", "outcome-unknown"
+    output = _run_restic(
+        ["backup", "--json", "--quiet", "--tag", "sia-capsule",
+         "--tag", "sia-readiness=" + classification, "--host",
+         "sia-continuity", "--tag", "sia-brain=" + verified["public_key"],
+         os.path.basename(path)],
+        cwd=CAPSULES_DIR, restic_path=restic_path)
+    attempt.phase = "upload-response"
+    snapshot_id = None
+    for row in _json_documents(output, "restic backup response"):
+        if isinstance(row, dict) and row.get("message_type") == "summary" \
+                and isinstance(row.get("snapshot_id"), str):
+            snapshot_id = row["snapshot_id"]
+    if not _valid_status_identifier(snapshot_id):
+        raise ValueError("restic did not return a snapshot identity")
+    attempt.remote = "snapshot-reported"
+    scheduled = args["scheduled"]
+    if not scheduled:
+        attempt.phase = "repository-check"
+        _run_restic(["check"], restic_path=restic_path)
+        attempt.phase = "offpath-verification"
+        restored = _verify_snapshot_offpath(
+            snapshot_id, expected=verified, restic_path=restic_path)
+    else:
+        restored = verified
+    attempt.phase = "result-construction"
+    return {"snapshot_id": snapshot_id, "created_at": _now(),
+            "verified": not scheduled, "readiness": restored["classification"],
+            "profile": PROFILE, "identity_matches": True}
+
+
 def _perform_upload(args, request_id, *, restic_path=None):
     if set(args) != {"scheduled"} or type(args.get("scheduled")) is not bool:
         raise ValueError("backup capture request is malformed")
     path = os.path.join(CAPSULES_DIR, ".capsule-" + request_id)
     if os.path.lexists(path):
         raise BlockedError("A prior managed capsule requires review.")
-    try:
-        frozen = siacapsule.freeze(path)
-        path, verified = _validate_completed_capsule(path, frozen)
-        classification = verified["classification"]
-        _publish_status(
-            state="uploading",
-            detail="Signed portable capsule completed; uploading offsite.",
-            repository_display="External recovery repository",
-            operation=_operation(
-                request_id, "backup-upload", "running"))
-        output = _run_restic(
-            ["backup", "--json", "--quiet", "--tag", "sia-capsule",
-             "--tag", "sia-readiness=" + classification, "--host",
-             "sia-continuity", "--tag",
-             "sia-brain=" + verified["public_key"],
-             os.path.basename(path)],
-            cwd=CAPSULES_DIR, restic_path=restic_path)
-        snapshot_id = None
-        for row in _json_documents(output, "restic backup response"):
-            if isinstance(row, dict) \
-                    and row.get("message_type") == "summary" \
-                    and isinstance(row.get("snapshot_id"), str):
-                snapshot_id = row["snapshot_id"]
-        if not _valid_status_identifier(snapshot_id):
-            raise ValueError("restic did not return a snapshot identity")
-        scheduled = args["scheduled"]
-        if not scheduled:
-            _run_restic(["check"], restic_path=restic_path)
-            restored = _verify_snapshot_offpath(
-                snapshot_id, expected=verified, restic_path=restic_path)
-        else:
-            restored = verified
-        result = {
-            "snapshot_id": snapshot_id,
-            "created_at": _now(),
-            "verified": not scheduled,
-            "readiness": restored["classification"],
-            "profile": PROFILE,
-            "identity_matches": True,
-        }
-    except BaseException:
-        if os.path.lexists(path):
+    with _UploadAttempt() as attempt:
+        try:
+            result = _upload_capsule(
+                args, request_id, path, attempt, restic_path=restic_path)
+        except BaseException:
             try:
-                _retire_private_tree(path, CAPSULES_DIR)
-            except Exception:
-                pass
-        raise
-    if os.path.lexists(path):
-        _retire_private_tree(path, CAPSULES_DIR)
-    return result
+                if os.path.lexists(path):
+                    _retire_private_tree(path, CAPSULES_DIR)
+            except Exception as cleanup_error:
+                attempt.cleanup = cleanup_error
+            raise
+        attempt.phase = "capsule-cleanup"
+        if os.path.lexists(path):
+            _retire_private_tree(path, CAPSULES_DIR)
+        return result
 
 
 def _perform_check(*, restic_path=None):
@@ -3891,7 +4001,7 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
                         "Restore requires the exclusive stable-launcher path.")
                 restore_result = _perform_apply(
                     request["args"], capability=capability)
-        except BlockedError:
+        except BlockedError as failure:
             _publish_status(
                 state="blocked",
                 detail=(
@@ -3899,7 +4009,9 @@ def _run_request_locked(request, *, restic_path=None, enable_schedules=None,
                     "request was retained for exact reconciliation."
                     if action in {"setup", "connect"} else
                     "Continuity operation was safely blocked; no live memory-state "
-                    "mutation was committed."),
+                    "mutation was committed." + (
+                        _upload_failure_clause(failure)
+                        if issubclass(type(failure), _UploadFailure) else "")),
                 operation=_operation(request["id"], kind, "blocked",
                                      prepared_id=prepared_id))
             if action in {"setup", "connect"}:

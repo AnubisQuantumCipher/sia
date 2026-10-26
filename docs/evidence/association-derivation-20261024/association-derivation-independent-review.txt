@@ -1,0 +1,13 @@
+Actual GPT-6.1 read-only review: **no blocker for this prerequisite extraction**.
+
+The caller preserves first-occurrence-only hashing, observation/association order and original refusal reason for semantic conflict. Repeats retain the original observation clock/version while carrying current admission. Page/version processing is unchanged. Copying scalar observation/admission records removes aliases without changing represented values.
+
+The helper’s purity is conditional on its documented trusted domain: ordinary already-admitted records containing scalar fields. It is not an arbitrary-object admission API or authenticated evidence boundary.
+
+New controls meaningfully cover duplicate/cross-source hashing order, cross-entry first-observation preservation, refusal and detached records. Retained commands include actual legacy intake and checkpoint capture suites plus the original reuse oracle. Raw hashes match receipts: original 88 PASS; candidate 96 PASS. No independent execution performed.
+
+Reviewed hashes:
+- Product: `4fc0aa536d695824aba5e4f318e4a969450ac47d4c1c1d197c39d92a3f08d702`
+- Tests: `3216917f76faddbd12192501ab992304dcfdf63f3a0cc4541e73d831cf5f287c`
+
+No performance improvement, complete context boundary or R05 closure follows. Outer admission caches remain unsound; exact committed-source reproduction and further dependency separation remain required.

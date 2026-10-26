@@ -1,0 +1,97 @@
+{
+  "authorization": "UNVERIFIED_FOR_R05_REQUIREMENT_CHANGE",
+  "records": [
+    {
+      "call_id": null,
+      "classification": "assistant exception-policy explanation",
+      "event_type": "response_item",
+      "id": "msg_0a75da10e610b700016adc3b3d52d8819db23f1625901635df",
+      "line": 47954,
+      "payload_type": "message",
+      "raw_line_sha256": "2d62b61c1ae953d8202aa2fd710c0495640e3d825af570a179cbeda62b5e10f5",
+      "role": "assistant",
+      "timestamp": "2026-10-24T04:59:44.222Z"
+    },
+    {
+      "call_id": "call_834919f2fcce4467bcd9826c00a11369",
+      "classification": "SDK BLE001 question",
+      "event_type": "response_item",
+      "id": "fc_0a75da10e610b700016adc3b402dec819d86a4f85ce647db1c",
+      "line": 47955,
+      "payload_type": "function_call",
+      "raw_line_sha256": "9a25eda9694aa9b3b54397406ded990d33816a499bdf5405ebe735ffcde6ea21",
+      "role": null,
+      "timestamp": "2026-10-24T04:59:47.068Z"
+    },
+    {
+      "call_id": null,
+      "classification": "human delegation after SDK question",
+      "event_type": "response_item",
+      "id": "msg_01a16c48-6153-7352-a99f-c8a4c716097c",
+      "line": 48017,
+      "payload_type": "message",
+      "raw_line_sha256": "1a45ed4b11f65556dc2b09061beabd7504eda00b5762e5f58bf86f3fcb6aa663",
+      "role": "user",
+      "timestamp": "2026-10-24T05:00:45.267Z"
+    },
+    {
+      "call_id": "call_4b20c737b53a4deea3bb2ac3cfea4b7a",
+      "classification": "later conditional R05 question",
+      "event_type": "response_item",
+      "id": "fc_0a75da10e610b700016adcc34c4b24819d8821b39fc7c47be0",
+      "line": 60145,
+      "payload_type": "function_call",
+      "raw_line_sha256": "0272b5047435259f26d060162eb26048844232e8eb82458ae9c21ef0e6fc15e7",
+      "role": null,
+      "timestamp": "2026-10-24T14:40:17.913Z"
+    },
+    {
+      "call_id": "call_c4698dbb1ec54155bd27446745517b20",
+      "classification": "later R05 retirement question",
+      "event_type": "response_item",
+      "id": "fc_0a75da10e610b700016adce1ad56e0819d9446c502197c195f",
+      "line": 62317,
+      "payload_type": "function_call",
+      "raw_line_sha256": "9129bf6487be853fa18df5341a2636879316f0da7ceefa5653c834e7af676ff0",
+      "role": null,
+      "timestamp": "2026-10-24T16:49:51.932Z"
+    },
+    {
+      "call_id": "call_c4698dbb1ec54155bd27446745517b20",
+      "classification": "tool acknowledgment; not human approval",
+      "event_type": "response_item",
+      "id": "fco_01a16ed1-974f-76a0-9871-46673e531ba2",
+      "line": 62320,
+      "payload_type": "function_call_output",
+      "raw_line_sha256": "b9b46311284b67b53904963e8ee0d4e06c7804f5bff840700bf32d0c40135bd3",
+      "role": null,
+      "timestamp": "2026-10-24T16:49:51.951Z"
+    },
+    {
+      "call_id": null,
+      "classification": "automatic goal continuation; not approval",
+      "event_type": "response_item",
+      "id": "msg_01a16ed3-4226-78d1-8434-b0f080864ebf",
+      "line": 62346,
+      "payload_type": "message",
+      "raw_line_sha256": "12632f7605cb6f2aed1a8a68f829932b512f261231b6c0bb3944f622205e6cc2",
+      "role": "user",
+      "timestamp": "2026-10-24T16:51:41.222Z"
+    },
+    {
+      "call_id": null,
+      "classification": "automatic goal continuation; not approval",
+      "event_type": "response_item",
+      "id": "msg_01a16ee7-15e9-7a80-88bc-9b74f7e01a6a",
+      "line": 62856,
+      "payload_type": "message",
+      "raw_line_sha256": "0d734278b7997d3e04cf70a41c2eb47546ff5e1032cf1ff4ba12df1551a8c9a1",
+      "role": "user",
+      "timestamp": "2026-10-24T17:13:20.617Z"
+    }
+  ],
+  "scope": "Selected original records; no claim of complete capture or cryptographic authorship authentication",
+  "source_commit": "8a84b06ec4c8a06c072513c57af93c669e21d5f7",
+  "source_session_file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+  "status": "OBSERVED_AUTHORIZATION_MISBINDING"
+}

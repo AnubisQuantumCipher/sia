@@ -1,0 +1,1288 @@
+{
+  "bundle": {
+    "bytes": 370598,
+    "members": [
+      {
+        "bytes": 25316,
+        "portable_path": "campaign/archive-correspondence.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "63d2610f723f8529c34d696515f2edc60cf1cd45160471bf1a9e592320195388"
+      },
+      {
+        "bytes": 217,
+        "portable_path": "campaign/archive.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9d5e30584f77d34356e57bb6ba95493ed10ce2ec260f39364e6ad6cf3589f5fd"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/archive.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/archive.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/archive.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 16345,
+        "portable_path": "campaign/base-current-overlay-9e.adb",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9e635024e603b6e3c90edfe4927a3980d0836d449a2fd6a023f92bd4ffaf525c"
+      },
+      {
+        "bytes": 107,
+        "portable_path": "campaign/base-tree.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "20a07879df5fc80c8d475f36619e93c23eeec7659062771cf44fcdea13453fdf"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/base-tree.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/base-tree.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 11913,
+        "portable_path": "campaign/base-tree.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "2390d53682cae50bf916d2133b9b431bc22a5ce08077b7b335a3015d45de6c2e"
+      },
+      {
+        "bytes": 1509,
+        "portable_path": "campaign/candidate.patch",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "bfac9f6408e9a8e6af45f0a3b8ce2b70ef4f18aa1608b2d1695d199233142a93"
+      },
+      {
+        "bytes": 19580,
+        "portable_path": "campaign/driver.py",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "ae4442181781c4f37d7767e00d58d293923ae278de7d1e1621f1eceee9e0f9a3"
+      },
+      {
+        "bytes": 241,
+        "portable_path": "campaign/extract.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e40cfdcc3ebf2f498e07cf0b18856fd5ca743709f374b51aa796116ff61a896f"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/extract.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/extract.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/extract.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 82,
+        "portable_path": "campaign/gcc-version.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "6904fdec22d98fa2f13ae04be99aa2f61b917a40c437ac87e5e9d28aaeced68c"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gcc-version.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gcc-version.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 231,
+        "portable_path": "campaign/gcc-version.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "6808b84b61eeddc8bcedf3687cec4875007df49c9c5ceface588062e8926764b"
+      },
+      {
+        "bytes": 85,
+        "portable_path": "campaign/gnatls-version.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "b7244d26868930dd687a1bd05b122b7ac46afaf5e4e9814428863707285d094f"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gnatls-version.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gnatls-version.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 222,
+        "portable_path": "campaign/gnatls-version.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "ab3b70e7381b9f2a7ad8112030afdebfefff21d59eddacc17fe1c6dd2ab3627c"
+      },
+      {
+        "bytes": 93,
+        "portable_path": "campaign/gnatprove-version.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "694a5f4b5eaecd2096f35e3f7c7a470aa4971ffb252be54feb468853e176b370"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gnatprove-version.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gnatprove-version.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 396,
+        "portable_path": "campaign/gnatprove-version.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "7003362a89b06f3a9c9a771071d1237ccc46748c17629f304b093362ebad8abe"
+      },
+      {
+        "bytes": 91,
+        "portable_path": "campaign/gprbuild-version.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "5dd61ac9936a21834682baf1bd7454957f1c78061dae6af97a0006dd43dc20ec"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/gprbuild-version.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/gprbuild-version.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 233,
+        "portable_path": "campaign/gprbuild-version.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "b7af7e2e658742c57dd28432908a28d9a29893959c4580b877eea0c855e3c8b7"
+      },
+      {
+        "bytes": 1784,
+        "portable_path": "campaign/independent-source-review.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "728debe4f83a1e4859d0e3aeab3af42f0bee39c9b1296410ed08f413704c7f8c"
+      },
+      {
+        "bytes": 120,
+        "portable_path": "campaign/inherited-tool-manifest.command.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "d4e3d1a98b1e1872cb3c11362f4babe963a5da78d365ce48e2fbc0a5fc9aa0d4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/inherited-tool-manifest.exit",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/inherited-tool-manifest.stderr",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 65920,
+        "portable_path": "campaign/inherited-tool-manifest.stdout",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "250b3b9d827212a12f865ee1966ab19d4b7370497ee654a6b2a016102049d7ee"
+      },
+      {
+        "bytes": 4625,
+        "portable_path": "campaign/intended-coverage.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "8b8a9bda5b2f9392d61cf6cdcf7e79c9fd321786bfe5e3798c3cdfe2da392e5f"
+      },
+      {
+        "bytes": 561,
+        "portable_path": "campaign/launch.sh",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "d8a0911ebb69efd3e157bcc825ddf441814d72a42ced7b9a72d52f5b866d3fa2"
+      },
+      {
+        "bytes": 1249,
+        "portable_path": "campaign/mapping.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "1e416f85afdfa33fc076dd871a06dff31e64eefb7d9c518db4920370f665b8e7"
+      },
+      {
+        "bytes": 16805,
+        "portable_path": "campaign/overlay-continuity_current_wire_tests.adb",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "0e5f6192940b1927bbae80d2e4d86a71075981cd75ede204369e8574ebc0c288"
+      },
+      {
+        "bytes": 4209,
+        "portable_path": "campaign/preparation.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "6680cf2472505b9a6dd47758b696ba4c782dea509ed93097bc5b735fb9358bb1"
+      },
+      {
+        "bytes": 5956,
+        "portable_path": "campaign/proposal.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "64134683aa278ed3d58a02fdecfa0ff5666087fb202556120a3d2c0cb1b2c839"
+      },
+      {
+        "bytes": 6393,
+        "portable_path": "campaign/receipt.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "a26b739768b0670c060734e183a7abfaa662755e05319dac6f71f6204ac831ba"
+      },
+      {
+        "bytes": 510,
+        "portable_path": "campaign/review-request.md",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "461ec7b69b17b9454371128feb0e4f29efb467201ef09bfe027966e7f879dae4"
+      },
+      {
+        "bytes": 159840,
+        "portable_path": "campaign/scoped-helper-wrapper-independent-audit.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "9a582ac7580a67d4b52cc09f2d2ebb03568706c3880819b98cb9962f847e210f"
+      },
+      {
+        "bytes": 3835,
+        "portable_path": "campaign/source-binding.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "f645139faa07bb27ba43770a9dd78f75999acd67cf67dc8235986848cf7c462d"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "campaign/source-hashes-after.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "68afca32016cc252f2e4ab7872c01ae9d26a13e9870a361a7459448749a03278"
+      },
+      {
+        "bytes": 14596,
+        "portable_path": "campaign/source-hashes-before.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "68afca32016cc252f2e4ab7872c01ae9d26a13e9870a361a7459448749a03278"
+      },
+      {
+        "bytes": 57336,
+        "portable_path": "campaign/source-output-hashes.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "51f3f2c1fdbf51fe68b62fcd364f83fe348be063dbf878955baf7d7802f744d2"
+      },
+      {
+        "bytes": 921600,
+        "portable_path": "campaign/source.tar",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d"
+      },
+      {
+        "bytes": 798,
+        "portable_path": "campaign/storage-preflight.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "7d452d95cf9001da77261986c4c68b5e306e4a0f5b60b99257842851f279907b"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "campaign/tool-hashes-after.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 2495,
+        "portable_path": "campaign/tool-hashes-before.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "f7a2223e0369e7a3c6628163a91f6f6bc1b496fc1b6f25e308652ba7e9f52a8d"
+      },
+      {
+        "bytes": 472,
+        "portable_path": "campaign/tool-paths.json",
+        "role": "campaign identity/source/tool/receipt",
+        "sha256": "977bdc6c25997dea11f3db0a84242f3ecb6b73ed6a3c23db5ca64c6c20ece85f"
+      },
+      {
+        "bytes": 140,
+        "portable_path": "campaign/strict-build/command",
+        "role": "raw executed command/result",
+        "sha256": "468a55fdfbd1e49640cbff738a477e52c1903daf0f23025a92bc4e94d88df7bb"
+      },
+      {
+        "bytes": 183,
+        "portable_path": "campaign/strict-build/command.json",
+        "role": "raw executed command/result",
+        "sha256": "e1e554b20e5682763cd026fc1a27895b7584d1cc62e005efa9c5e2799faed3fd"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/strict-build/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 316,
+        "portable_path": "campaign/strict-build/result.json",
+        "role": "raw executed command/result",
+        "sha256": "f7ec0395830feda859226781426ec734d0a39f495c89efc4e4c93e77d1b0d36b"
+      },
+      {
+        "bytes": 3606,
+        "portable_path": "campaign/strict-build/stdout",
+        "role": "raw executed command/result",
+        "sha256": "b162129bc1aa0899773ce340db2146101dc59e11eb32c658f5a26abef664d667"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/strict-build/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 60,
+        "portable_path": "campaign/policy-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "bbb66949d862665ce55b17a6c7aaab55b5bd6874356f8b308994d5572fd5077d"
+      },
+      {
+        "bytes": 83,
+        "portable_path": "campaign/policy-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "e427fb4c9fdacbf9f0932ab4b073cef57c778e47282428878080f9ad50787d54"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/policy-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 213,
+        "portable_path": "campaign/policy-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "5e2a3e5f281a5a74673a6778107c69181da542e4b8748ff27bf0e0c059ae3b2c"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/policy-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/policy-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 65,
+        "portable_path": "campaign/transaction-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "2ba8f78df7a25825e0e6af3704919867b5af9647901a579e6c294421fe1cd7cc"
+      },
+      {
+        "bytes": 88,
+        "portable_path": "campaign/transaction-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "c53b7b48d12d3ff8e4ba5032bcf960fe09826c9b223de8715dcf808c17121d09"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/transaction-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 223,
+        "portable_path": "campaign/transaction-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "209f611fa4ccf5eef5ad90df7b447b2b8ff22d4a9d7f3f8bc940fab9e349b89d"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/transaction-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/transaction-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 66,
+        "portable_path": "campaign/request_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "83506b8c6141d2f60ffcdcb323397e442c0e764d0d3bcc75c6bcaab16e628d48"
+      },
+      {
+        "bytes": 89,
+        "portable_path": "campaign/request_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "821a1f8a55a3e8e0b231913d89389f40beb3529a13c59971461f0706cecce044"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/request_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 225,
+        "portable_path": "campaign/request_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "8440c299ae75a24527061e2a62580fcca7a0708d3bf86a09442a4e6acf6ec5fa"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 71,
+        "portable_path": "campaign/request_admission-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "a4927752ca8555107f42d14929d830cff79216052d9e6d235969526f23c62eec"
+      },
+      {
+        "bytes": 94,
+        "portable_path": "campaign/request_admission-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "c75bf7140b866ea7c0aae90495bb3fa22cd4b80e1b4f8f16c3d4916823d5662e"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/request_admission-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 234,
+        "portable_path": "campaign/request_admission-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "d30d1a41d3e905e1ebd2527de242f8751fc4561adadcd06858cb1d1ca9e74538"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_admission-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/request_admission-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 68,
+        "portable_path": "campaign/grant_lifetime-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "3e47fe72226c43017dea7b278897b27db878a53dadf6c4f1042d7066e8bf08de"
+      },
+      {
+        "bytes": 91,
+        "portable_path": "campaign/grant_lifetime-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "e8e834ba2e432293efbaba9c5484c2b6df45a91cf9d069f8873cee6793510cfa"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/grant_lifetime-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 229,
+        "portable_path": "campaign/grant_lifetime-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "f1ac9a4263322bb32f7577fa089ec73a7e3eea599872c96def79edaa789e074d"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/grant_lifetime-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/grant_lifetime-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 64,
+        "portable_path": "campaign/retraction-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "d4189efd5e8ef39867719dcc681a4a30dfc91a8c2e8854df6e89548d751f1a68"
+      },
+      {
+        "bytes": 87,
+        "portable_path": "campaign/retraction-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "339d3faf5b78c59d20f0a7dc0548a15a1503caa1a8a6e03f5d35ac610bff083b"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/retraction-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 220,
+        "portable_path": "campaign/retraction-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "20c93ac1b34e659490f62492ba6ef622a91e099588f13cc18e0b6d740bbcd91d"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/retraction-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/retraction-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 67,
+        "portable_path": "campaign/consolidation-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "57bddab89a88f46d5b808f51c017f667b4d2d67803ad1e22806bf46da62a418f"
+      },
+      {
+        "bytes": 90,
+        "portable_path": "campaign/consolidation-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "5767c2f5922c9d57e3dbf8f97cfbeb9ccb125264a4024e3271f07f109ac1cdab"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/consolidation-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 225,
+        "portable_path": "campaign/consolidation-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "1231737944f70c6ce14694acc701831193d0166200a4319cbb049904af6d97d5"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/consolidation-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/consolidation-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 64,
+        "portable_path": "campaign/continuity-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "96668ceff8c1ae1e6ef285d845ecc405ddc72243846518f6b531a9512fea6a33"
+      },
+      {
+        "bytes": 87,
+        "portable_path": "campaign/continuity-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "fe405fa6d482fdd41ec648dde9008c8b18098883f0958cc94e93ddfcd8512cc9"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 221,
+        "portable_path": "campaign/continuity-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "57d29871d730581d7d5c61575ea810ed4f6a7275101dca101bf665e2afce594b"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 75,
+        "portable_path": "campaign/continuity_transition-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "b568149ec6c8cf3667746225a6c04b13d3fcb582beef4ccfcbfc6725ca4f44e3"
+      },
+      {
+        "bytes": 98,
+        "portable_path": "campaign/continuity_transition-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "8219b21b661433d721d667d625c9fcf59597d55a87de5c4be9333042460d5a3a"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_transition-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 242,
+        "portable_path": "campaign/continuity_transition-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "e266ebf0fc77fa094331d918d181950d9ebc1e13e70e0d347d5fa5daac8b4c3c"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_transition-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_transition-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 76,
+        "portable_path": "campaign/continuity_record_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "13c4e7975cfbe275e4adbe9916f6987a5552ee3467798be5ac71937b501a6719"
+      },
+      {
+        "bytes": 99,
+        "portable_path": "campaign/continuity_record_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "5d4e402838ad22306f8b29f28f70cce6d0522de254edf4155d0eb8110f79b909"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_record_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 244,
+        "portable_path": "campaign/continuity_record_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "af50336a2a8ddf02f3f5443174beae0f97b15529925186a5b8b848f80e69f6bb"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_record_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_record_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 81,
+        "portable_path": "campaign/continuity_observation_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "d7829526ec3092028e125fca6a09c8d1760384cb314fe6a68dc72c4ccb6ed893"
+      },
+      {
+        "bytes": 104,
+        "portable_path": "campaign/continuity_observation_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "c6b4d8101b732ba3000c801f7957582e8c64477f36e9efb767cdcaffd36c08b4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_observation_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 254,
+        "portable_path": "campaign/continuity_observation_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "1904abee5517ae339dfe8681de47868df3fb5c6b4f4d6efa13c131a3b088674b"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_observation_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_observation_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 80,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "ee3657eb745eb5860d4a3f005baa560cc0fb9e2e3aa9015ae5a78facd80f92ba"
+      },
+      {
+        "bytes": 103,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "0cb3cc12fe190d2b53235a24882a15a2646d6729ef5060479f43ffc3efd25cba"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 251,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "a412ac95f19dfe8796239d9839d17542ba8ebce7055a03d34680ff31025bc4bb"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_checkpoint_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 77,
+        "portable_path": "campaign/continuity_current_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "82e92f8bc5e76ca0a299aae31934edf3f7adceeb667788dafffeda7d168b30c3"
+      },
+      {
+        "bytes": 100,
+        "portable_path": "campaign/continuity_current_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "0d7cdb23ee359db8ed861af1b1513a07cea844e6b9d7a7cd7965482a0e6bdb5a"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_current_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 245,
+        "portable_path": "campaign/continuity_current_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "b025daf335961016f5df06a596e2d6893e0ded71684ed8f0e314a1fac207a898"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_current_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_current_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 75,
+        "portable_path": "campaign/continuity_frame_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "74d0761ff244cc3ea21cb9bac9a37f9939f3deb63a90f7b5315f55c9708da2af"
+      },
+      {
+        "bytes": 98,
+        "portable_path": "campaign/continuity_frame_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "766dbc068ff3ae45bd5b2aa13c5d5676cc3a82985190e944e67ee1141b1b924e"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_frame_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 240,
+        "portable_path": "campaign/continuity_frame_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "82c3d614a27aa5300e0df40d08f79cc7918a5bcb6ae1a4afcb74cb9fb9979d32"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_frame_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_frame_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 78,
+        "portable_path": "campaign/continuity_response_wire-runtime/command",
+        "role": "raw executed command/result",
+        "sha256": "107a4295004f8576d65ccb44a84e65cbbaa3a6c919e55db14c1bbeb972741c5d"
+      },
+      {
+        "bytes": 101,
+        "portable_path": "campaign/continuity_response_wire-runtime/command.json",
+        "role": "raw executed command/result",
+        "sha256": "ebde69b6f601254b90cba9ba96ec45a1d0b989849fb1da9a6357300ebb3cb2b4"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/continuity_response_wire-runtime/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 248,
+        "portable_path": "campaign/continuity_response_wire-runtime/result.json",
+        "role": "raw executed command/result",
+        "sha256": "0ddf12943d2972df2618ef76b683fbed91961950ad870de09f8444c271a3f8cf"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_response_wire-runtime/stdout",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/continuity_response_wire-runtime/stderr",
+        "role": "raw executed command/result",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 243,
+        "portable_path": "campaign/complete-current-harness/command",
+        "role": "raw executed command/result",
+        "sha256": "e16ee0a757b2c5da40bf97a2ba65013353e4482a6fec05859f0617451f962fdb"
+      },
+      {
+        "bytes": 316,
+        "portable_path": "campaign/complete-current-harness/command.json",
+        "role": "raw executed command/result",
+        "sha256": "e4aafb15eec9c99048a47e945fef543d7a4e64339d3f7380d51ab1545cc1e4b5"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "campaign/complete-current-harness/exit",
+        "role": "raw executed command/result",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      {
+        "bytes": 505,
+        "portable_path": "campaign/complete-current-harness/result.json",
+        "role": "raw executed command/result",
+        "sha256": "d3abee8e73956def404da896c8616fb131410ecafe0f35fdc2edb31e5c8124b7"
+      },
+      {
+        "bytes": 347,
+        "portable_path": "campaign/complete-current-harness/stdout",
+        "role": "raw executed command/result",
+        "sha256": "f89a6e7601aa9c75fa03c90c1f7075ba22f65694f50d385e526bcb184c1f63a0"
+      },
+      {
+        "bytes": 12199,
+        "portable_path": "campaign/complete-current-harness/stderr",
+        "role": "raw executed command/result",
+        "sha256": "524c6f83ff9e64c3ef5f0b61081f712d8f4c158e03672bd35168d52b6ad4f144"
+      },
+      {
+        "bytes": 96123,
+        "portable_path": "campaign/complete-current-harness/inspection.json",
+        "role": "complete coverage/output inventory",
+        "sha256": "80124f67db42b321ca24894a93f7b559fdb0e4ef3525c0919bfc76cb05effe17"
+      },
+      {
+        "bytes": 16377,
+        "portable_path": "campaign/complete-current-harness/generated-proof-output-hashes.json",
+        "role": "complete coverage/output inventory",
+        "sha256": "441ec260e0851e6631168c79c4d02b6b58b9bceac91905ed2540f5f6867f638c"
+      },
+      {
+        "bytes": 193674,
+        "portable_path": "campaign/complete-current-harness/raw/continuity_current_wire_tests.spark",
+        "role": "raw complete GNATprove report",
+        "sha256": "0dfeae765596421ec52d16aa2400b89979506491df4cbac7d813451a9029e036"
+      },
+      {
+        "bytes": 21843,
+        "portable_path": "campaign/complete-current-harness/raw/gnatprove.out",
+        "role": "raw complete GNATprove report",
+        "sha256": "c7ff308df44ea153e67b7f477ffbcc47214732f166e4c978f610ecbc07b8013b"
+      },
+      {
+        "bytes": 12200,
+        "portable_path": "campaign/complete-current-harness/retained-generated/continuity_current_wire_tests.adb.stderr",
+        "role": "raw GNATprove internal stdout/stderr",
+        "sha256": "88aad62678cec63c4e32f4a1204db7c6e58df38dfdd6fa04f07cc4a2c0b80d34"
+      },
+      {
+        "bytes": 0,
+        "portable_path": "campaign/complete-current-harness/retained-generated/continuity_current_wire_tests.adb.stdout",
+        "role": "raw GNATprove internal stdout/stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 2977,
+        "portable_path": "independent-audit/review.json",
+        "role": "independent source/evidence audit",
+        "sha256": "732506780eac3769219e89961bbe6445002ba3363d96a488dea101402a91c18c"
+      },
+      {
+        "bytes": 5404,
+        "portable_path": "independent-audit/source-preservation.json",
+        "role": "independent source/evidence audit",
+        "sha256": "c7a44464d1a9df39635e0bfbe3c3b5ef584bd16559d6a0aec1a2b7d8b1f65b21"
+      },
+      {
+        "bytes": 86525,
+        "portable_path": "independent-audit/coverage-audit.json",
+        "role": "independent source/evidence audit",
+        "sha256": "b03dadc4a7c21e60aae5fda8bb00841d41760f06c479bbfb79b4a593b70a631c"
+      },
+      {
+        "bytes": 77598,
+        "portable_path": "independent-audit/session-audit.json",
+        "role": "independent source/evidence audit",
+        "sha256": "039f2b3098b5d0d4366676cfe074282d2c9854aa1960d91f1467944667c82d7f"
+      },
+      {
+        "bytes": 12756,
+        "portable_path": "independent-audit/stage-audit.json",
+        "role": "independent source/evidence audit",
+        "sha256": "a3b2c63b3f78503e2f134217b36dd815f0aeccd7b91ccf73f9d4b07f67dd89aa"
+      },
+      {
+        "bytes": 95321,
+        "portable_path": "independent-audit/input-sha256.json",
+        "role": "independent source/evidence audit",
+        "sha256": "9a9d65700463db598454e1cd37e8674e83db80a880b1dc8bff6d10b4f47b6d29"
+      },
+      {
+        "bytes": 767,
+        "portable_path": "independent-audit/diagnostic-scan.json",
+        "role": "independent source/evidence audit",
+        "sha256": "ab1b78348970ac2577c992fbcc413ea9748843c562989520161defddf39dc59d"
+      },
+      {
+        "bytes": 2135,
+        "portable_path": "independent-audit/engineering-controls.json",
+        "role": "independent source/evidence audit",
+        "sha256": "74549ba7b3026b91c74fbac27b458cef6666ae9186eb1eb9354e1f0a37b1fccd"
+      },
+      {
+        "bytes": 2743,
+        "portable_path": "independent-audit/historical-failure-index.json",
+        "role": "independent source/evidence audit",
+        "sha256": "4569374d2191c4e2f0ebaeea474c5c36c171b9e61c044c92df4f8a34bd15f4f8"
+      },
+      {
+        "bytes": 19383,
+        "portable_path": "preparation/campaign-driver-delta.patch",
+        "role": "executed preparation provenance",
+        "sha256": "9f9e2530bf833d0bc079b96730b33e012af70ca57700e5fd070fcf3edbaad947"
+      },
+      {
+        "bytes": 4914,
+        "portable_path": "preparation/intended-coverage.json",
+        "role": "executed preparation provenance",
+        "sha256": "9f01d7596cc221838f8419ee33cb826d10a97962f90990ba26914a584f7865f5"
+      },
+      {
+        "bytes": 7989,
+        "portable_path": "history/takeover-current-harness-repair-v1/receipt.json",
+        "role": "historical negative receipt",
+        "sha256": "0924c7a1478209e1b0753aadef5d6473438a0cc4d5dc7d23265114b1abf0ff6f"
+      },
+      {
+        "bytes": 465,
+        "portable_path": "history/takeover-current-harness-repair-v1/complete-current-harness/command.json",
+        "role": "historical negative raw result",
+        "sha256": "adc86b6c1c9b1301dddec8ac3b8b2b4915adc7ca298c0e68760691e51ffa74be"
+      },
+      {
+        "bytes": 4,
+        "portable_path": "history/takeover-current-harness-repair-v1/complete-current-harness/exit",
+        "role": "historical negative raw result",
+        "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+      },
+      {
+        "bytes": 562,
+        "portable_path": "history/takeover-current-harness-repair-v1/complete-current-harness/result.json",
+        "role": "historical negative raw result",
+        "sha256": "406b8ae84af979626e52d4e0233156993ebca6d316181df47070cf6c2239e591"
+      },
+      {
+        "bytes": 155,
+        "portable_path": "history/takeover-current-harness-repair-v1/complete-current-harness/stdout-stderr.log",
+        "role": "historical negative raw result",
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+      },
+      {
+        "bytes": 9443,
+        "portable_path": "history/takeover-current-harness-repair-v2/receipt.json",
+        "role": "historical negative receipt",
+        "sha256": "c9a1ce06a74ef89f54897e094c79bda9b0f7b67d697f9a6e764648bcfb6f8853"
+      },
+      {
+        "bytes": 465,
+        "portable_path": "history/takeover-current-harness-repair-v2/complete-current-harness/command.json",
+        "role": "historical negative raw result",
+        "sha256": "c726483c6d4b15d4ec3566af2f36edd606789e4109cca2e031c928cf2de2149b"
+      },
+      {
+        "bytes": 4,
+        "portable_path": "history/takeover-current-harness-repair-v2/complete-current-harness/exit",
+        "role": "historical negative raw result",
+        "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff"
+      },
+      {
+        "bytes": 675,
+        "portable_path": "history/takeover-current-harness-repair-v2/complete-current-harness/result.json",
+        "role": "historical negative raw result",
+        "sha256": "14298425d5e4b5e5b8af6547a0790bdb5698d14a31b87452f458f708ebf5966d"
+      },
+      {
+        "bytes": 155,
+        "portable_path": "history/takeover-current-harness-repair-v2/complete-current-harness/stdout-stderr.log",
+        "role": "historical negative raw result",
+        "sha256": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d"
+      },
+      {
+        "bytes": 1210,
+        "portable_path": "history/takeover-current-available-availability-diagnostics-v1/02-availability/receipt.json",
+        "role": "historical negative receipt",
+        "sha256": "8c99a34b2a94e83415e6ca95935bbc58a4456c84a4af1b4de82cf2c489e39f31"
+      },
+      {
+        "bytes": 559,
+        "portable_path": "history/takeover-current-available-availability-diagnostics-v1/02-availability/command.json",
+        "role": "historical negative raw result",
+        "sha256": "3246ac153855b0132452f41179ffa390a2bf022d273c45ca673497e18790f906"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "history/takeover-current-available-availability-diagnostics-v1/02-availability/exit",
+        "role": "historical negative raw result",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "bytes": 1570,
+        "portable_path": "history/takeover-current-available-availability-diagnostics-v1/02-availability/stdout-stderr.log",
+        "role": "historical negative raw result",
+        "sha256": "1faf5c275d84de4f494aabcacec07625aa8a7d33ca25dbfaa7fea026df9292ea"
+      },
+      {
+        "bytes": 1782,
+        "portable_path": "history/takeover-current-composed-helper-availability-diagnostics-v1/04-availability/receipt.json",
+        "role": "historical negative receipt",
+        "sha256": "344c4b935fae7c8ee330a1820efb75e1e11895b65fc730a265a27e31235949fb"
+      },
+      {
+        "bytes": 565,
+        "portable_path": "history/takeover-current-composed-helper-availability-diagnostics-v1/04-availability/command.json",
+        "role": "historical negative raw result",
+        "sha256": "5ce9d478525870fc3e8b3395a6126b7e71c33aafce642466eeb58fe353fcbcba"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "history/takeover-current-composed-helper-availability-diagnostics-v1/04-availability/exit",
+        "role": "historical negative raw result",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "bytes": 1646,
+        "portable_path": "history/takeover-current-composed-helper-availability-diagnostics-v1/04-availability/stdout-stderr.log",
+        "role": "historical negative raw result",
+        "sha256": "83f499b412fae2aca9ae615ba92aaf7bcf87bff0310b591e387f9606fd7b4fad"
+      },
+      {
+        "bytes": 1896,
+        "portable_path": "history/takeover-current-validity-boundary-preparation-v1/04-availability/receipt.json",
+        "role": "historical negative receipt",
+        "sha256": "c39436fe13c2353e9eb0485e8a7176574b9d161a551b1f7849b634eb444b60cd"
+      },
+      {
+        "bytes": 554,
+        "portable_path": "history/takeover-current-validity-boundary-preparation-v1/04-availability/command.json",
+        "role": "historical negative raw result",
+        "sha256": "863b284713bcfe561181c2299adbb82f9f359c0f3724144c68415a0f916bce82"
+      },
+      {
+        "bytes": 2,
+        "portable_path": "history/takeover-current-validity-boundary-preparation-v1/04-availability/exit",
+        "role": "historical negative raw result",
+        "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+      },
+      {
+        "bytes": 1715,
+        "portable_path": "history/takeover-current-validity-boundary-preparation-v1/04-availability/stdout-stderr.log",
+        "role": "historical negative raw result",
+        "sha256": "e179fd59259c2e666864bad79049a8a9bac2a5449c4a92979a7de9d6191d8cd3"
+      }
+    ],
+    "path": "docs/evidence/continuity-current-complete-v1.tar.gz",
+    "sha256": "9d2a5141357b10249d013a2ca5160c255bd65b2a75d557779e5876e050f8cad2"
+  },
+  "change": "Preserve original fixture bodies, domains, order and all assertions; add explicit facts and narrow helper state. No production change.",
+  "committed_source_reproduction": "OPEN; evidence is exact base plus one overlay",
+  "historical_failures": "Five distinct source-pinned negative receipts and logs are retained in the bundle; their outcomes are unchanged.",
+  "independent_complete_campaign_audit": {
+    "acceptance_scope": "Overlay0e5 complete Current test harness/build/runtime only. Same-branch publication/committed reproduction, full-project proof, resource qualification and installed-path acceptance remain OPEN.",
+    "actual_model": "gpt-6.1-sol",
+    "archive_sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d",
+    "assumptions": "No explicit pragmaAssume/skipProof/skipFlow; modular contract/effect/AORTE dependency claims remain and are retained verbatim in coverage-audit.json. No whole-project proof inferred.",
+    "auditor_actions": "Read-only bounded evidence/source inspection and external audit artifacts only; no worktree mutation/proof/build/runtime/lock/storage command.",
+    "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+    "next_step": "Prepare minimal deterministic portable evidence bundle from explicit roster, independent package review, controlled samebranch commit, then separately authorized exact committed reproduction. No further proof/build/runtime rerun in this audit.",
+    "only_overlay": {
+      "spark/tests/continuity_current_wire_tests.adb": "0e5f6192940b1927bbae80d2e4d86a71075981cd75ede204369e8574ebc0c288"
+    },
+    "original_source": "29 original assertions preserved in original order among44; six procedures byte-identical; other original fault/fixture bodies, constants, Code/slot domains, wrapper order and main suffix preserved by recorded comparisons. Production files/contracts unchanged.",
+    "power_of_ten_mapping": "Ada/SPARK original bounded types/domains, all meaningful contracts/oracles, narrow helper state and strict analysis gates preserved. Python only orchestrates bounded checked evidence; consequential authority stays SPARK. Application, not a Holzmann quotation.",
+    "proof": "127 totalchecks;44 assertion sites;15 termination checks;16 exact source-declared entities allSPARK; zero justified/unproved. Every original/new helper and oracle present; no test-unit Posts or explicit loop invariants omitted.",
+    "provenance": "Executed driverae444218\u2026,launchd8a091\u2026,preparation6680\u2026 exact hashes verified. Root inspected/authorized run; no independent preparation review before execution is claimed. This is an independent post-run source/evidence audit; copied PREPARED/UNPROVEN source-review metadata remains historical preparation state.",
+    "results": {
+      "all15_runtime_exits": 0,
+      "complete_Current_exit": 0,
+      "complete_Current_seconds": 74.99873660999583,
+      "free_after_bytes": 40114970624,
+      "strict_build_seconds": 16.691245972993784
+    },
+    "retained_negatives": "Earlier completeCurrent and selected failures remain historical FAILED on their own source pins; this result never rewrites them.",
+    "status": "INDEPENDENT COMPLETE CURRENT UNIT + STRICT BUILD + ALL15 ORIGINAL RUNTIMES PASS",
+    "supporting_files": [
+      "source-preservation.json",
+      "coverage-audit.json",
+      "session-audit.json",
+      "stage-audit.json",
+      "input-sha256.json"
+    ]
+  },
+  "independent_package_correspondence_audit": {
+    "actual_model": "gpt-6.1-sol",
+    "auditor_actions": "Read-only package/input inspection and this new external receipt only. No worktree/package mutation,proof,build,runtime,lock,installation,publication or other-thread messaging.",
+    "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+    "checks": {
+      "all_roster_source_archive_existing_readback_bytes_and_hashes_equal": true,
+      "archive_bytes": 370598,
+      "archive_metadata": "Sorted regular members;0644;uid/gid/mtime0;empty user/group names;one normal PAX path extension only;gzipmtime0",
+      "archive_regenerated_in_memory_byte_identically": true,
+      "derived_manifest_members_roles_sizes_hashes_exact_roster_projection": true,
+      "exclusions": "No ELF/compiledobj/bin/Why3 sessions or caches in selected payload or nested source archive; original tools/environment contents excluded. Tool hashes/paths/versions and raw.spark trees retained.",
+      "explicit_members": 196,
+      "historical_index": "All five source-pinned negative receipts match index hashes; rawcommands/logs and exits124,124,1,1,1 retained; no prior failure relabelled PASS.",
+      "nested_source_archive_members": 142,
+      "nested_source_archive_sha256": "49d06e57ec3aa182c75260c0c2c283e3249421ac0da83ac607e004fba36c783d",
+      "packager": "Fixed reviewed196row roster; bounded16MiBmember/32MiBaggregate; exclusive creation;regular files;safe paths;no externalprocess/network;functions8/19/23/45/9lines.",
+      "provenance": "Root preparation inspection/authorization and independent POST-RUN source/evidence audit remain distinct; no independent pre-run preparation approval invented.",
+      "retained_complete_audit_sha256": "732506780eac3769219e89961bbe6445002ba3363d96a488dea101402a91c18c",
+      "retained_complete_scope": "127 checks/16entities/44assertions/15termination; zerojustified/unproved; strictbuild and all15originalruntime programs. Original modular dependencies/info diagnostics retained. Only source0e5 completeCurrent overlay campaign."
+    },
+    "engineering_controls": "Power of Ten applied through explicit bounded members/loops,checked identities/statuses,narrow read-only authority and retained negative evidence. Ada/SPARK guarantees unchanged; Python grants no consequential authorization. No Holzmann text quoted.",
+    "input_sha256": {
+      "continuity-current-complete-v1.tar.gz": "9d2a5141357b10249d013a2ca5160c255bd65b2a75d557779e5876e050f8cad2",
+      "package-manifest.json": "7f023724fc6471a1fc68a31a39e999424eac6eb83e7010f9cdfa281a3264ca22",
+      "package-readback.json": "ceaba19d2b2c370855dab37a76b4b2975ef4d0c2aafe3b8271b110874f5e82f3",
+      "package.py": "cd75fbcabe35888c6cfdb630edce765a288a53e7290607ecfbb6daf68dce1afe"
+    },
+    "limitations": [
+      "Reviewer used read-only source/archive/existing-readback comparisons plus independent in-memory byte reproduction. Reviewer did not rerun package.py or create another physical extraction; root fresh-extraction receipt is retained unchanged.",
+      "package.py --check depends on the original sibling roster with pinned SHA846e67...; archive+manifest+script alone are not a self-contained relocated checker.",
+      "Current --check validates actual members against the pinned roster but not every mutable manifest field. This review independently verified the present exact manifest projection, source/scope/packager/roster bindings and exclusions.",
+      "Hashes demonstrate correspondence, not authentication or whole-system correctness. Retained commands retain original local paths. Historical negative payloads are minimal receipts, not complete old-source replay packages.",
+      "No full-project proof, committed reproduction/publication, resource qualification, final offline verifier or installed-path acceptance is granted."
+    ],
+    "only_overlay": {
+      "spark/tests/continuity_current_wire_tests.adb": "0e5f6192940b1927bbae80d2e4d86a71075981cd75ede204369e8574ebc0c288"
+    },
+    "package_directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/takeover-current-portable-package-v1",
+    "reviewed_at_utc": "2026-10-21T14:08:57.305613+00:00",
+    "roster_sha256": "846e67a1e4f71c96ae74e9dbb86136080328648869cdc2c94a6834a3ebf5e8e3",
+    "smallest_next_step": "Root may preserve this independently checked package for controlled source-bound checkpoint. If a standalone relocated retainer is required, first make its pinned portable roster available beside the script and validate manifest projection; no proof/build/test rerun is required for that packaging repair.",
+    "status": "INDEPENDENT PRESENT PACKAGE CORRESPONDENCE PASS; STANDALONE CHECKER NOT CLAIMED"
+  },
+  "input_sha256": {
+    "takeover-current-case-helper-complete-independent-audit-v1/review.json": "732506780eac3769219e89961bbe6445002ba3363d96a488dea101402a91c18c",
+    "takeover-current-portable-package-independent-review-v1/review.json": "4c1064998140215bfc93be22cd3cd0fead1d52c17ddd1651cd58cb03cf7295c8",
+    "takeover-current-portable-package-v1/continuity-current-complete-v1.tar.gz": "9d2a5141357b10249d013a2ca5160c255bd65b2a75d557779e5876e050f8cad2",
+    "takeover-current-portable-package-v1/package-manifest.json": "7f023724fc6471a1fc68a31a39e999424eac6eb83e7010f9cdfa281a3264ca22"
+  },
+  "limits": [
+    "No compiled objects/binaries/source obj orbin trees",
+    "No Why3 sessions/config/caches; full session outcome audit and raw.sparktrees retained",
+    "No unrelated/private data or live dirty worktree files",
+    "No original tool executables/environment contents; exact hashes/paths/versions retained",
+    "Hashes provide correspondence, not authentication or semantic acceptance. Retained commands use original local paths; offline reproduction needs the documented pinned toolchain and path adaptation. Not the final system offline verifier.",
+    "The historical package manifest says review pending; the later independent package audit embedded here records the final correspondence result.",
+    "No full-project proof, whole-system Power of Ten compliance, resource qualification, installed safety, release or certification is claimed.",
+    "No weakening of original fixtures, contracts, domains, warning gates or approved proof resource limits is accepted."
+  ],
+  "problem": "The original complete test-unit proof exceeded the fixed cap. Typed per-case helpers and explicit byte/validity facts make the original exhaustive obligations locally provable.",
+  "schema_version": 1,
+  "source": {
+    "base_commit": "9bd84d19ae2e9907c7129f1e555bf45f9e162eac",
+    "only_overlay": {
+      "spark/tests/continuity_current_wire_tests.adb": "0e5f6192940b1927bbae80d2e4d86a71075981cd75ede204369e8574ebc0c288"
+    }
+  },
+  "status": "COMPLETE_CURRENT_UNIT_SCOPED_PASS; SYSTEM_ACCEPTANCE_OPEN"
+}

@@ -4,6 +4,8 @@
   sia status            current indexed-memory and evidence-source state
   sia live [--json]     inspect the retained source-authorized live loop
   sia version           print the installed SIA runtime release
+  sia cockpit [--window | --overlay]
+                        show the existing cockpit in the running Omarchy shell
   sia ready             exit successfully only when memory is reconciled
   sia ask "question" [--no-touch]
                         query local memory; ordinary results record later use
@@ -29,6 +31,7 @@
   sia ledger            show SIA's own signed run ledger head + verify
   sia note "text" [--from author]
                         queue a labeled, model-origin note for the brainstem
+                        use sia note --from author -- "text" for option-like text
   sia ponder [question] model-assisted analysis by the configured, tool-free Claude
                         judge over recalled memories; writes a
                         clearly-labeled synthesis page + generated entry — and may
@@ -2579,6 +2582,9 @@ def cmd_note(argv):
     author, text = "agent", []
     i = 0
     while i < len(argv):
+        if argv[i] == "--":
+            text.extend(argv[i + 1:])
+            break
         if argv[i] == "--from":
             if i + 1 >= len(argv):
                 print("usage: sia note \"what the next session should know\" "
@@ -2586,8 +2592,8 @@ def cmd_note(argv):
                 return 2
             author = argv[i + 1]; i += 2
         elif argv[i].startswith("-") and not text:
-            # An option-shaped first token is never note text. Before this
-            # guard, `sia note --help` queued a note whose body was "--help"
+            # Without a separator, an option-shaped first token is not text.
+            # Before this guard, `sia note --help` queued the body "--help"
             # — three such pages sit in the maintainer corpus.
             print("usage: sia note \"what the next session should know\" "
                   "[--from <author>]")
@@ -2902,10 +2908,40 @@ def _main_under_lifecycle(argv):
     return _dispatch(argv, cmd)
 
 
+def cmd_cockpit(args):
+    """Select one existing UI instance; never open a database or a new shell."""
+    if args not in ([], ["--window"], ["--overlay"]):
+        print("usage: sia cockpit [--window | --overlay]", file=sys.stderr)
+        return 2
+    presentation = "window" if args == ["--window"] else "overlay"
+    try:
+        result = sialib._run_bounded_text_process(
+            ["omarchy-shell", "shell", "call", "khephri.sia",
+             "showPresentation", presentation],
+            env=os.environ.copy(), timeout=6, cwd=None,
+            output_limit=4096, label="cockpit IPC")
+    except (OSError, RuntimeError, ValueError, OverflowError,
+            subprocess.SubprocessError):
+        print("SIA cockpit request could not be confirmed. Check the running "
+              "Omarchy shell; a timed-out request may still have opened it.",
+              file=sys.stderr)
+        return 1
+    expected = "sia-cockpit-v1:" + presentation
+    if result.returncode != 0 or result.stdout.strip() != expected:
+        print("SIA cockpit request was not confirmed by the loaded plugin. "
+              "Enable or update khephri.sia in the running Omarchy shell.",
+              file=sys.stderr)
+        return 1
+    print("SIA cockpit " + presentation + " requested in the running shell.")
+    return 0
+
+
 def _dispatch(argv, cmd):
     if cmd == "version":
         print(sialib.VERSION)
         return 0
+    if cmd == "cockpit":
+        return cmd_cockpit(argv[2:])
     if cmd == "status":
         return cmd_status()
     if cmd == "live":

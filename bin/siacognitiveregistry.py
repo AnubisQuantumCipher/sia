@@ -372,9 +372,12 @@ def _validate_json_tree(value, *, active: set[int] | None = None,
                         depth: int = 0) -> None:
     if depth > MAX_JSON_DEPTH:
         raise _BoundaryError("evidence-not-canonical-bounded-json")
-    if value is None or type(value) in (str, int, bool):
+    if value is None:
         return
-    if type(value) not in (dict, list):
+    kind = type(value)
+    if kind is str or kind is int or kind is bool:
+        return
+    if kind is not dict and kind is not list:
         raise _BoundaryError("evidence-not-canonical-bounded-json")
     if active is None:
         active = set()

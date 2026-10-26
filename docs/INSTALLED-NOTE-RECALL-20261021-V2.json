@@ -1,0 +1,95 @@
+{
+  "artifacts": [
+    {
+      "path": "installed-note-direct-20261021-v4.json",
+      "sha256": "3a8dc43705a101bdce5232690961d121f4bb7ff079aa3c2a9ff03b9b9a5a638d"
+    },
+    {
+      "path": "installed-note-direct-20261021-v4.log",
+      "sha256": "a2e0755dc63eaadd70d5a820a4a3275569acfa0ef058d140e076d3a1269e09fa"
+    },
+    {
+      "path": "installed-note-body-comparison-v4.json",
+      "sha256": "f083bbc5618fe3fd08aa4439656d99b221952064d20051a9d9a99b7fda305efa"
+    },
+    {
+      "path": "continuity-note-20261021-v5.json",
+      "sha256": "82e5174e94c89ef74f880a7283745f18457e7a14aa3d4e8682fdeb9cb45a1705"
+    },
+    {
+      "path": "continuity-note-20261021-v5.log",
+      "sha256": "b5f629c567c06dd52420a7797ec628e3d66b6848ffe78595ff66b223405c7e8c"
+    },
+    {
+      "path": "read-queued-note-direct-v4.py",
+      "sha256": "955616c4ec36e1652a902ce19424e9d3ffcb914c6d42be6e39e1baf74a5a2aec"
+    },
+    {
+      "path": "compare-queued-note-readback-v4.py",
+      "sha256": "e27c0a9f07f386c36de7338275be6130fd8bbd0464663005a16ed06e7d1bda6c"
+    },
+    {
+      "path": "bounded-read-capture-v1.py",
+      "sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6"
+    },
+    {
+      "path": "retain-installed-note-readback-v4.py",
+      "sha256": "39e57f3a1fa9be92070845c4a33a63ffda3ec8030b49ed1a84dcaea7ce7ef9f9"
+    }
+  ],
+  "body_comparison": {
+    "body_sha256": "1aaf87c138e807978e967b8bf0c68f567d6ad5813d9fee1b7ade38649584c8ce",
+    "exact_origin": true,
+    "installed_binaries_unchanged": true,
+    "kind": "OBSERVED exact queued-model-note body; not authority",
+    "limitation": "No complete capture, semantic retrieval, current task restoration or approval claim.",
+    "queued_body_sha256": "1aaf87c138e807978e967b8bf0c68f567d6ad5813d9fee1b7ade38649584c8ce",
+    "request_id": "69b90b6bbcab4e088d461d20a26896d4",
+    "request_id_present": true,
+    "returned_origin_line": "[origin:model] notes/2026-10-21-061000-codex-69b90b6bbcab4e088d461d20a26896d4",
+    "same_body": true,
+    "source_checkpoint": "ab81aeb2d90d96e81fb06a504d732d25916b1e32",
+    "source_log_sha256": "a2e0755dc63eaadd70d5a820a4a3275569acfa0ef058d140e076d3a1269e09fa"
+  },
+  "direct_read": {
+    "capture_helper_sha256": "e647b40e9cf1aa705c107c54535889b3f08b6651ec989a07add5cf371d6dc5b6",
+    "capture_status": "complete",
+    "command": [
+      "/home/sicarii/.local/bin/sia",
+      "recall",
+      "notes/2026-10-21-061000-codex-69b90b6bbcab4e088d461d20a26896d4",
+      "--no-touch"
+    ],
+    "elapsed_seconds": 3.3912494049873203,
+    "executable_after": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "executable_before": {
+      "/home/sicarii/.local/bin/sia": "d011bd3f93d290a4e51c8f832b1c937891989aeeadf312b2dda66712b4b446ed",
+      "/home/sicarii/.local/share/sia/bin/sia-cli": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5"
+    },
+    "exit": 0,
+    "kind": "OBSERVED installed direct-read; not continuity acceptance",
+    "limitations": [
+      "Model-origin note, not authorization or truth.",
+      "Direct recall does not establish semantic retrieval.",
+      "No full installed dependency-closure attestation.",
+      "Output pipe bound does not alter backend file limits."
+    ],
+    "log_sha256": "a2e0755dc63eaadd70d5a820a4a3275569acfa0ef058d140e076d3a1269e09fa",
+    "maximum_log_bytes": 1048576,
+    "observed_at": "2026-10-21T06:26:59.606540+00:00",
+    "queue_receipt_sha256": "82e5174e94c89ef74f880a7283745f18457e7a14aa3d4e8682fdeb9cb45a1705",
+    "request_id": "69b90b6bbcab4e088d461d20a26896d4",
+    "runner_sha256": "955616c4ec36e1652a902ce19424e9d3ffcb914c6d42be6e39e1baf74a5a2aec"
+  },
+  "kind": "OBSERVED installed exact model-note readback; no continuity qualification",
+  "limitations": [
+    "No complete capture, semantic retrieval or task restoration claim.",
+    "Queued model prose is not user authorization or established truth.",
+    "No future latency guarantee; earlier failed/confounded probes remain retained.",
+    "Executable hashes do not attest the complete installed dependency closure."
+  ],
+  "retained_root": "/home/sicarii/Work/sia-assurance-evidence-20261019"
+}

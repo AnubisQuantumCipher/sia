@@ -1,0 +1,10 @@
+Actual GPT-6.1 read-only source/evidence review: no blocker in the extended controls.
+Verified test SHA 6db75754b09071c62e2f81fc4cc117c48b3e304e8889b9a87d2a89579d2c1819.
+Tests distinguish admission raw-before from fold before-raw callback order.
+Existing-page mismatch refuses after image admission and before fold callbacks.
+Later collision permits earlier private version/current progress while requiring
+no associations, observations or first-observation entries. This is not rollback
+or authorization to publish partial accumulators. Receipt/log hashes match and
+report 102 passing tests with unchanged sources. No independent execution.
+Callback mutation, compact-checkpoint composition, complete dependency closure
+and R05 repair remain unqualified. Preserve original artifacts and gates.

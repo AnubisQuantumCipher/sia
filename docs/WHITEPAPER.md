@@ -39,12 +39,13 @@ records. The reference deployment goes further: it runs a family of
 evidence-producing subsystems:
 JACKAL (a deterministic mathematical kernel whose own front door can produce
 and verify multiple declared result classes and retained certificates), SEKHMET (a
-SPARK-proved self-healing fabric), Custos (a proof-carrying file
+self-healing system with its own claimed SPARK assurance boundary), Custos (a proof-carrying file
 custodian), AEGIS, WORLDLINE (a branchable-reality system with a causal
 event store), omarchy-guardian, plus pacman, journald, git, desktop
 notifications, and Omarchy Quattro agent usage meters. Each stream has its
-own provenance and assurance boundary;
-none is queryable together. SIA's JACKAL sense does not call that front-door
+own provenance and assurance boundary. This whitepaper does not independently
+certify those systems' proof artifacts or inherit their proofs for SIA.
+SIA's JACKAL sense does not call that front-door
 verifier: it observes the bounded convenience result ledger and receipt
 filenames as `derived`, unverified recall, excludes them from grading evidence,
 and suppresses categorical assurance inherited from legacy pages. Artifact
@@ -254,7 +255,7 @@ predecessor of `SHA-256("custos-genesis-v1")`, and each later predecessor and
 head equal to SHA-256 of the complete previous signed TSV line without its
 newline. A same-user attacker who coordinates rollback of both ledger and pin
 is outside that tripwire's claim. SIA re-verifies each chain with *its own
-keeper's verifier* (Custos via the SPARK-proved `attest` binary) on a rolling
+keeper's verifier* (Custos via its `attest` binary) on a rolling
 cadence;
 verification-state *transitions* — including pass→absent — become
 thoughts, and failures are urgent. SIA's ledger records its own acts

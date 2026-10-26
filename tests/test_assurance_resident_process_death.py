@@ -1,0 +1,145 @@
+"""Kill workers before/after WAL adoption, then resume in another worker.
+
+The real owning entry, leases, WAL, publication and ACK run. Git/index and
+clock observations retain the existing controlled fixture. Forked workers
+inherit test configuration; this is not a fresh service exec or power-loss
+campaign, and does not close the full resident acceptance obligation.
+"""
+import copy
+import json
+import multiprocessing
+import os
+from pathlib import Path
+import signal
+import unittest
+from unittest import mock
+
+from tests import sia_test_home  # noqa: F401 -- isolate before runtime imports
+from tests import test_controller_source_resident_v3 as resident_tests
+
+
+def die_after_wal(resident, fixture, phase):
+    with resident.instrument(fixture) as trace:
+        boundary = trace.owner._controller_source_rollover_boundary
+        adopt = trace.owner._recover_orphan_controller_source_successor_batch
+
+        def cut(stage):
+            boundary(stage)
+            if phase == "wal" and stage == "successor-batch-durable":
+                os.kill(os.getpid(), signal.SIGKILL)
+
+        def adopting(**kwargs):
+            result = adopt(**kwargs)
+            if result and phase == "adopted":
+                os.kill(os.getpid(), signal.SIGKILL)
+            return result
+
+        with mock.patch.object(trace.owner, "_controller_source_rollover_boundary", cut), \
+                mock.patch.object(trace.owner, "_recover_orphan_controller_source_successor_batch", adopting):
+            trace.invoke(None)
+    raise AssertionError("durable WAL death boundary not reached")
+
+
+def recover(resident, fixture, reserved, raw, pin):
+    with resident.instrument(fixture, recovery=True) as trace:
+        status = trace.invoke(pin)
+    durable = resident.assert_completed(fixture, status, trace)
+    resident.assertEqual(durable["pulse_seq"], reserved["pulse_seq"])
+    resident.assertEqual(fixture.case.archive_path(fixture.batch).read_bytes(), raw)
+    resident.assertEqual(trace.prepares, [])
+    resident.assertEqual(trace.captures, [])
+    resident.assertEqual(trace.retained, [])
+    resident.assertNotIn("reserve", trace.stages)
+    resident.assertNotIn("clock", trace.stages)
+
+
+def refuse_wrong_adoption(resident, fixture):
+    before = resident.capture.images(fixture)
+    wrong_pin = "0" * 64
+    resident.assertNotEqual(wrong_pin, fixture.adopted["expected_adoption_sha256"])
+    blocked = resident.forbidden("mismatched adoption reached recovery/write")
+    with resident.instrument(fixture, recovery=True) as trace, \
+            mock.patch.object(trace.owner, "_recover_orphan_controller_source_successor_batch", blocked), \
+            mock.patch.object(trace.owner, "_write_memo", blocked), \
+            mock.patch.object(trace.owner, "atomic_write", blocked), \
+            resident.assertRaisesRegex(RuntimeError, "v3-original-adoption-pin-differs"):
+        trace.invoke(wrong_pin)
+    blocked.assert_not_called()
+    resident.assertEqual(resident.capture.images(fixture), before)
+
+
+@unittest.skipUnless("fork" in multiprocessing.get_all_start_methods(),
+                     "Linux fork worker fixture required")
+class AssuranceResidentProcessDeath(unittest.TestCase):
+    def worker(self, target, arguments, expected):
+        child = multiprocessing.get_context("fork").Process(target=target, args=arguments)
+        child.start()
+        try:
+            child.join(timeout=60)
+            if child.is_alive():
+                child.kill()
+                child.join(timeout=5)
+                self.fail("resident fixture worker exceeded deadline")
+            self.assertEqual(child.exitcode, expected)
+        finally:
+            if child.is_alive():
+                child.kill()
+                child.join(timeout=5)
+            child.close()
+
+    def death_case(self, phase):
+        resident = resident_tests.ControllerSourceResidentV3(methodName="runTest")
+        self.addCleanup(resident.doCleanups)
+        resident.setUp()
+        with resident.legacy() as fixture:
+            parent_ready = copy.deepcopy(fixture.case.live.memo["ready"])
+            self.worker(die_after_wal, (resident, fixture, phase), -signal.SIGKILL)
+            # Child mutations cannot populate these parent-process attributes.
+            self.assertIsNone(fixture.batch)
+            self.assertIsNone(fixture.adopted)
+            raw = Path(fixture.case.producer.source_path).read_bytes()
+            fixture.batch = json.loads(raw)
+            fixture.adopted = copy.deepcopy(
+                fixture.batch["delivery_input"]["epoch_view"]["epoch_adoption"])
+            with resident.resident_owner(fixture) as owner:
+                reserved = owner.load_memo()
+            fixture.case.live.memo.clear()
+            fixture.case.live.memo.update(copy.deepcopy(reserved))
+            # The durable WAL precedes adoption: the previous generation
+            # remains recorded, not a ready acknowledgment for the successor.
+            if phase == "wal":
+                self.assertEqual(reserved["ready"], parent_ready)
+                self.assertEqual(reserved["controller_source_committed"], fixture.committed)
+                self.assertNotEqual(fixture.batch["batch_sha256"],
+                                    reserved["controller_source_committed"]["source_batch_sha256"])
+            else:
+                self.assertNotIn("ready", reserved)
+                self.assertIn("controller_source_pending", reserved)
+            self.assertFalse(fixture.case.archive_path(fixture.batch).exists())
+            pin = fixture.adopted["expected_adoption_sha256"]
+            if phase == "wal":
+                before_refusal = resident.capture.images(fixture)
+                self.worker(refuse_wrong_adoption, (resident, fixture), 0)
+                self.assertEqual(resident.capture.images(fixture), before_refusal)
+            else:
+                # Adopted pending work resumes its retained authority. A new
+                # rollover pin must not alter that transaction or recapture.
+                self.assertNotEqual(pin, "0" * 64)
+                pin = "0" * 64
+            self.worker(recover, (resident, fixture, reserved, raw, pin), 0)
+            self.assertEqual(fixture.case.archive_path(fixture.batch).read_bytes(), raw)
+            with resident.resident_owner(fixture) as owner:
+                completed = owner.load_memo()
+            self.assertIn("controller_source_committed", completed)
+            self.assertNotIn("controller_source_pending", completed)
+            self.assertEqual(completed["pulse_seq"], reserved["pulse_seq"])
+
+    def test_killed_wal_worker_recovers_without_recapture(self):
+        self.death_case("wal")
+
+    def test_killed_adoption_worker_recovers_without_recapture(self):
+        self.death_case("adopted")
+
+
+if __name__ == "__main__":
+    unittest.main()

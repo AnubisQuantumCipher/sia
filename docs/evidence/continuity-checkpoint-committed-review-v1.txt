@@ -1,0 +1,16 @@
+Actual GPT-6.1 reviewer: /root/assurance_architecture_review
+Read-only committed scoped evidence correspondence review, 2026-10-21 UTC.
+
+No correspondence blocker found for this committed scoped reproduction.
+
+Verified recorded base ac0a35857180381ff07feff7eef5046ed25789e3, empty overlay, listed source hashes matching archive/extracted/current files, matching before/after tool hashes, and original/copied raw-product equality. Bundle members match recorded hashes; private storage evidence is absent.
+
+The recorded command remains a focused core proof. Complete harness proof and full-project coverage are correctly unproved; this does not convert their earlier timeouts into passes.
+
+Checked SHA-256:
+manifest 28dba650d9f3eee6dbffed68040e9d38b3858d28aaac1a3261160152943ba6a6
+bundle   8d40210ba0fd756599a29dd7730cde49f1504f03a8f10bc5676ef74c6360d15c
+
+Caveat: the retainer checks command names and the stability flag, rather than generically enforcing exact command arguments and roster equality. I separately inspected those current receipt values; this review does not qualify it as a general hardened acceptance gate.
+
+No proof replay, jobs or edits performed. No installed-adapter or whole-system acceptance follows.

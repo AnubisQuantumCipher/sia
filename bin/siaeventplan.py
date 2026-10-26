@@ -7,10 +7,12 @@ before-view for validation. No source, index, cursor or delivery is committed.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
 import stat
+import sys
 
 
 NON_CLAIMS = [
@@ -40,10 +42,15 @@ def _refuse(reason):
 
 
 _CONTROL_LONG_ESCAPES = re.compile("[\\x00-\\x07\\x0b\\x0e-\\x1f]")
+_TEXT_CHUNK_CHARACTERS = 4096
+_SURROGATE = re.compile("[\ud800-\udfff]")
+_JSON_UTF8_ASCII_ESCAPE = re.compile(r'["\\\x00-\x1f]')
 
 
 def _utf8_length(value):
-    """UTF-8 byte count with C-speed encoding, or None for a lone surrogate."""
+    """Encode only a bounded scratch chunk; None denotes a lone surrogate."""
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _refuse("text-chunk-capacity")
     try:
         return len(value.encode("utf-8", "strict"))
     except UnicodeEncodeError:
@@ -58,6 +65,8 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
     non-ASCII BMP character is six bytes and every astral character twelve.
     No serializer runs and no JSON text is allocated.
     """
+    if len(value) > _TEXT_CHUNK_CHARACTERS:
+        _refuse("text-chunk-capacity")
     short = sum(value.count(character) for character in '"\\\b\f\n\r\t')
     long_control = sum(1 for _match in _CONTROL_LONG_ESCAPES.finditer(value))
     if not ascii_only:
@@ -71,37 +80,54 @@ def _json_string_bytes(value, utf8_length, *, ascii_only=False):
 
 
 def _text_size(value, limit, *, quoted=True):
+    """Count before serialization with fixed-size UTF-8/escape scratch."""
     if type(value) is not str:
         _refuse("text-type")
-    # Fast path: arithmetic over C-speed string primitives, identical to the
-    # per-character accounting below (which stays as the reference and the
-    # surrogate refusal path); no serializer runs before the bound.
-    utf8_length = _utf8_length(value)
-    if utf8_length is not None:
-        size = (_json_string_bytes(value, utf8_length) if quoted else utf8_length)
-        if size > limit:
-            _refuse("complete-byte-capacity")
-        return size
     size = 2 if quoted else 0
-    for character in value:
-        code = ord(character)
-        if 0xD800 <= code <= 0xDFFF:
+    if len(value) + size > limit:
+        _refuse("complete-byte-capacity")
+    # ASCII is already valid UTF-8. With no JSON escapes, its character
+    # count is its byte count; the current limit was checked above.
+    if value.isascii() and (not quoted or _JSON_UTF8_ASCII_ESCAPE.search(value) is None):
+        return len(value) + size
+    if _SURROGATE.search(value) is not None:
+        _refuse("invalid-unicode")
+    for offset in range(0, len(value), _TEXT_CHUNK_CHARACTERS):
+        chunk = value[offset:offset + _TEXT_CHUNK_CHARACTERS]
+        utf8_length = _utf8_length(chunk)
+        if utf8_length is None:
             _refuse("invalid-unicode")
-        if quoted and (character in '\\"' or character in "\b\f\n\r\t"):
-            size += 2
-        elif quoted and code < 0x20:
-            size += 6
-        else:
-            size += 1 if code < 0x80 else 2 if code < 0x800 else 3 if code < 0x10000 else 4
+        size += (_json_string_bytes(chunk, utf8_length) - 2
+                 if quoted else utf8_length)
         if size > limit:
             _refuse("complete-byte-capacity")
     return size
 
 
-def _size(value, limit, active=None, depth=0):
-    """Admission before serialization/copy/hash, retaining native stat ints."""
-    if type(limit) is not int or limit <= 0 or depth > 64:
-        _refuse("complete-byte-capacity")
+class _PageSizeFrame:
+    """One active native container; no queue proportional to its width."""
+
+    __slots__ = ("identity", "container", "mapping", "entries", "size", "limit", "depth")
+
+    def __init__(self, value, limit, depth):
+        self.depth = depth
+        self.identity, self.container = id(value), value
+        self.mapping, self.entries = type(value) is dict, enumerate(value)
+        self.size, self.limit = 2, limit
+
+    def next_child(self, end):
+        entry = next(self.entries, end)
+        if entry is end:
+            return end
+        position, item = entry
+        self.size += bool(position)
+        if self.mapping:
+            self.size += _text_size(item, self.limit - self.size) + 1
+            item = self.container[item]
+        return item, self.limit - self.size, self.depth + 1
+
+
+def _scalar_size(value, limit):
     kind = type(value)
     if value is None:
         size = 4
@@ -116,33 +142,93 @@ def _size(value, limit, active=None, depth=0):
             _refuse("native-integer-capacity")
     elif kind is str:
         return _text_size(value, limit)
-    elif kind in (dict, list):
-        if len(value) > limit:
-            _refuse("complete-byte-capacity")
-        active = set() if active is None else active
-        identity = id(value)
-        if identity in active:
-            _refuse("cyclic-json")
-        active.add(identity)
-        try:
-            size = 2
-            for position, item in enumerate(value):
-                size += bool(position)
-                if kind is dict:
-                    size += _text_size(item, limit - size) + 1
-                    child = value[item]
-                else:
-                    child = item
-                size += _size(child, limit - size, active, depth + 1)
-                if size > limit:
-                    _refuse("complete-byte-capacity")
-        finally:
-            active.remove(identity)
     else:
         _refuse("non-native-json")
     if size > limit:
         _refuse("complete-byte-capacity")
     return size
+
+
+def _open_size_frame(value, limit, depth, active, frames):
+    if len(value) > limit:
+        _refuse("complete-byte-capacity")
+    identity = id(value)
+    if identity in active:
+        _refuse("cyclic-json")
+    active.add(identity)
+    retained = False
+    try:
+        frames.append(_PageSizeFrame(value, limit, depth))
+        retained = True
+    finally:
+        if not retained:
+            active.remove(identity)
+
+
+def _unwind_size_frames(frames, active):
+    """Attempt each outer cleanup once, preserving exception precedence."""
+    pending = None
+    while frames:
+        try:
+            try:
+                if pending is not None:
+                    context = BaseException.__context__.__get__(pending)
+                    try:
+                        raise pending
+                    finally:
+                        # Re-raising under the original sizing exception must
+                        # not replace the intervening cleanup-failure chain.
+                        BaseException.__context__.__set__(pending, context)
+            finally:
+                frame = frames.pop()
+                active.remove(frame.identity)
+        except BaseException as error:
+            # As with nested finally blocks, cleanup does not swallow even
+            # interpreter-exit exceptions. The outermost failure propagates.
+            if not frames:
+                raise
+            pending = error
+
+
+def _size(value, limit, active=None, depth=0):
+    """Iterative admission with the original local byte and ancestry bounds.
+
+    Each frame preserves its parent's remaining budget and lookup ordering.
+    Only active ancestors occupy scratch; no descendants are queued. Native
+    container growth still consumes the original finite byte budget. This is
+    not a fixed-allocation or hostile-interpreter guarantee.
+    """
+    frames, end = [], object()
+    active = set() if active is None else active
+    try:
+        while True:
+            if type(limit) is not int or limit <= 0 or depth > 64:
+                _refuse("complete-byte-capacity")
+            kind = type(value)
+            if kind is dict or kind is list:
+                _open_size_frame(value, limit, depth, active, frames)
+                size = None
+            else:
+                size = _scalar_size(value, limit)
+            while frames:
+                frame = frames[-1]
+                if size is not None:
+                    frame.size += size
+                    if frame.size > frame.limit:
+                        _refuse("complete-byte-capacity")
+                child = frame.next_child(end)
+                if child is not end:
+                    value, limit, depth = child
+                    break
+                size = frame.size
+                frames.pop()
+                active.remove(frame.identity)
+                if size > frame.limit:
+                    _refuse("complete-byte-capacity")
+            else:
+                return size
+    finally:
+        _unwind_size_frames(frames, active)
 
 
 def _json(owner, value):
@@ -155,6 +241,29 @@ def _same(owner, first, second):
     return _json(owner, first) == _json(owner, second)
 
 
+def _paired_rows(left, right, reason):
+    """Preserve live reads, but refuse length drift within the initial bound."""
+    limit = len(left)
+    if len(right) != limit:
+        _refuse(reason)
+    pairs = zip(left, right, strict=True)
+    for _position in range(limit):
+        try:
+            pair = next(pairs)
+        except (StopIteration, ValueError):
+            _refuse(reason)
+        yield pair
+    if len(left) != limit or len(right) != limit:
+        _refuse(reason)
+    try:
+        next(pairs)
+    except StopIteration:
+        return
+    except ValueError:
+        _refuse(reason)
+    _refuse(reason)
+
+
 def _hash(owner, raw):
     return owner["hashlib"].sha256(raw).hexdigest()
 
@@ -162,7 +271,7 @@ def _hash(owner, raw):
 def _generation(info):
     return dict(zip(F_KEYS, (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
                             info.st_gid, info.st_nlink, info.st_size,
-                            info.st_mtime_ns, info.st_ctime_ns)))
+                            info.st_mtime_ns, info.st_ctime_ns), strict=True))
 
 
 def _directory(info):
@@ -208,6 +317,23 @@ def _flags(directory=False):
             | (os.O_DIRECTORY if directory else 0))
 
 
+def _close_descriptor_once(descriptor, first_error, errors):
+    """Linux releases a valid descriptor even when close reports an error."""
+    if descriptor is not None:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            return exc if first_error is None else first_error, errors + 1
+    return first_error, errors
+
+
+def _close_failed_capture(capture, primary):
+    try:
+        capture.close()
+    except OSError as cleanup:
+        raise BaseExceptionGroup("capture operation and cleanup failed", [primary, cleanup]) from None
+
+
 class _Budget:
     def __init__(self, owner, initial):
         self.limit = owner["MAX_STATE_JSON_BYTES"]
@@ -237,16 +363,24 @@ class _Capture:
             _owned_directory(info)
             self.root_identity = _directory(info)
             self.named_current()
-        except BaseException:
-            os.close(self.root_fd)
+        except BaseException as primary:
+            _close_failed_capture(self, primary)
             raise
 
     def close(self):
+        # Consume ownership before close: retrying a Linux close error can
+        # close an unrelated descriptor that has reused the same number.
+        first_error, errors = None, 0
         for collection in (self.files, self.directories):
             for item in collection.values():
                 if item is not None:
-                    os.close(item["fd"])
-        os.close(self.root_fd)
+                    descriptor, item["fd"] = item["fd"], None
+                    first_error, errors = _close_descriptor_once(descriptor, first_error, errors)
+        descriptor, self.root_fd = self.root_fd, None
+        first_error, errors = _close_descriptor_once(descriptor, first_error, errors)
+        if first_error is not None:
+            first_error.add_note(f"capture cleanup reported {errors} descriptor close errors")
+            raise first_error
 
     def relative(self, path):
         path = os.path.abspath(path)
@@ -539,7 +673,7 @@ def prepare(owner, *, organ, date, events):
     try:
         event_roster = tuple(events)
         records = [owner["_event_replay_record"](event) for event in event_roster]
-        event_records = {id(event): record for event, record in zip(event_roster, records)}
+        event_records = {id(event): record for event, record in zip(event_roster, records, strict=True)}
         planned = owner["_plan_event_day_update"](
             organ, date, event_roster, dependency_capture=capture)
         selected = {shard["slug"] for shard in planned["shards"]
@@ -736,6 +870,31 @@ def _decode(owner, value):
     return raw
 
 
+def _checked_version(owner, page, raw, *, before=False):
+    """Bind a projector result to an admitted image before it enters replay.
+
+    The caller has already checked page shape, raw capacity and raw digest.
+    This is source-byte binding, not authentication of the source's claims.
+    """
+    image = page["before"] if before else page
+    identity = {"subject": page["slug"], "origin": page["origin"],
+                "source_sha256": image["raw_sha256"],
+                "content_sha256": image["raw_sha256"]}
+    wire = json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False).encode("utf-8")
+    expected = {**identity, "content": raw.decode("utf-8", errors="strict"),
+                "version_sha256": hashlib.sha256(wire).hexdigest()}
+    version = owner["_corpus_page_version_from_bytes"](slug=identity["subject"], raw=raw)
+    if type(version) is not dict or len(version) != len(expected) \
+            or any(type(key) is not str or type(value) is not str
+                   for key, value in version.items()) \
+            or version != expected:
+        _refuse("projected-version-source-binding")
+    # Preserve alias visibility for existing late-mutation refusal checks.
+    # The public projection boundary performs the final checked detachment.
+    return version
+
+
 def _images(owner, plan):
     files = {row["relative"]: row["before"] for row in plan["read_dependencies"]["files"]}
     result = {}
@@ -753,11 +912,11 @@ def _images(owner, plan):
             _refuse("nonwrite-page-byte-change")
         if page["write"] and raw == old:
             _refuse("write-without-appended-image")
-        version = owner["_corpus_page_version_from_bytes"](slug=page["slug"], raw=raw)
+        version = _checked_version(owner, page, raw)
         if version["version_sha256"] != page["version_sha256"] or version["origin"] != page["origin"]:
             _refuse("target-version-binding")
         if old is not None:
-            previous = owner["_corpus_page_version_from_bytes"](slug=page["slug"], raw=old)
+            previous = _checked_version(owner, page, old, before=True)
             if previous["origin"] != version["origin"]:
                 _refuse("retained-page-origin-change")
         result[relative] = {"raw": raw, "before": old, "page": page}
@@ -769,9 +928,74 @@ def _observe(owner, plan, images, required_targets=frozenset()):
     return _observe_closure(owner, plan["read_dependencies"], images, required_targets)
 
 
+def _directory_entry_delta(owner, path, old, now, before_dirs, capture):
+    """An intended ancestor delta still requires its complete child closure."""
+    if path not in before_dirs or path not in capture.directories:
+        _refuse("missing-directory-delta-closure")
+    before, actual = before_dirs[path], capture.directories[path]
+    if now is None or not stat.S_ISDIR(now["mode"]) \
+            or actual is None or actual["entries"] is None:
+        _refuse("incomplete-directory-delta-closure")
+    if before is None:
+        if old is not None:
+            _refuse("directory-delta-absence-binding")
+    elif old is None or before["entries"] is None \
+            or not _same(owner, {key: old[key] for key in D_KEYS}, before["identity"]) \
+            or not _same(owner, {key: now[key] for key in D_KEYS}, before["identity"]):
+        _refuse("directory-delta-identity-binding")
+    if not _same(owner, now, actual["generation"]):
+        _refuse("directory-delta-scan-binding")
+
+
+def _check_closure_directories(owner, deps, capture, writes, allowed_dirs, targets,
+                               allow_directory_entry_deltas):
+    before_dirs = ({row["relative"]: row["before"] for row in deps["directories"]}
+                   if allow_directory_entry_deltas else None)
+    for row in deps["directories"]:
+        relative, before = row["relative"], row["before"]
+        actual = capture.directories[relative]
+        if actual is None:
+            continue
+        if before is not None and before["entries"] is None:
+            continue
+        entries = actual["entries"]
+        if before is None:
+            for entry in entries:
+                path = relative + "/" + entry["name"]
+                if path not in writes and path not in allowed_dirs:
+                    _refuse("foreign-created-directory-member")
+                if path in allowed_dirs and not stat.S_ISDIR(entry["generation"]["mode"]):
+                    _refuse("created-directory-kind")
+                if allow_directory_entry_deltas and path in allowed_dirs:
+                    _directory_entry_delta(
+                        owner, path, None, entry["generation"], before_dirs, capture)
+        else:
+            old = {entry["name"]: entry["generation"] for entry in before["entries"]}
+            now = {entry["name"]: entry["generation"] for entry in entries}
+            exempt = {os.path.basename(path) for path in writes if os.path.dirname(path) == relative}
+            for name in set(old) | set(now):
+                path = relative + "/" + name
+                if name in exempt and path in targets:
+                    continue
+                if allow_directory_entry_deltas and path in allowed_dirs:
+                    _directory_entry_delta(
+                        owner, path, old.get(name), now.get(name), before_dirs, capture)
+                    continue
+                if name not in old or name not in now or not _same(owner, old[name], now[name]):
+                    _refuse("complete-directory-roster")
+        for entry in entries:
+            path = relative + "/" + entry["name"]
+            if path in capture.files and capture.files[path] is not None \
+                    and not _same(owner, entry["generation"], capture.files[path]["generation"]):
+                _refuse("scan-file-generation-binding")
+
+
 def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
-                     allow_target_deltas=True, budget=None):
+                     allow_target_deltas=True, budget=None,
+                     allow_directory_entry_deltas=False):
     """Observe one complete closure under an explicit original/delta policy."""
+    if type(allow_directory_entry_deltas) is not bool:
+        _refuse("directory-delta-policy")
     writes = {relative for relative, image in images.items()
               if allow_target_deltas and image["page"]["write"]}
     allowed_dirs = {ancestor for relative in writes for ancestor in _ancestors(relative)}
@@ -812,40 +1036,12 @@ def _observe_closure(owner, deps, images, required_targets=frozenset(), *,
             else:
                 # Verified dependency: its observation stays, its bytes go.
                 capture.release_bytes(capture.path(relative))
-        for row in deps["directories"]:
-            relative, before = row["relative"], row["before"]
-            actual = capture.directories[relative]
-            if actual is None:
-                continue
-            if before is not None and before["entries"] is None:
-                continue
-            entries = actual["entries"]
-            if before is None:
-                for entry in entries:
-                    path = relative + "/" + entry["name"]
-                    if path not in writes and path not in allowed_dirs:
-                        _refuse("foreign-created-directory-member")
-                    if path in allowed_dirs and not stat.S_ISDIR(entry["generation"]["mode"]):
-                        _refuse("created-directory-kind")
-            else:
-                old = {entry["name"]: entry["generation"] for entry in before["entries"]}
-                now = {entry["name"]: entry["generation"] for entry in entries}
-                exempt = {os.path.basename(path) for path in writes if os.path.dirname(path) == relative}
-                for name in set(old) | set(now):
-                    path = relative + "/" + name
-                    if name in exempt and path in targets:
-                        continue
-                    if name not in old or name not in now or not _same(owner, old[name], now[name]):
-                        _refuse("complete-directory-roster")
-            for entry in entries:
-                path = relative + "/" + entry["name"]
-                if path in capture.files and capture.files[path] is not None \
-                        and not _same(owner, entry["generation"], capture.files[path]["generation"]):
-                    _refuse("scan-file-generation-binding")
+        _check_closure_directories(
+            owner, deps, capture, writes, allowed_dirs, targets, allow_directory_entry_deltas)
         capture.current()
         return capture, targets
-    except BaseException:
-        capture.close()
+    except BaseException as primary:
+        _close_failed_capture(capture, primary)
         raise
 
 
@@ -991,7 +1187,7 @@ def _semantic_join(owner, plan, images, live):
     pages = {page["slug"]: page for page in plan["pages"]}
     additions, appended = {}, []
     prior_appended_part = None
-    for values, admission in zip(prepared, plan["admissions"]):
+    for values, admission in _paired_rows(prepared, plan["admissions"], "complete-admission-roster"):
         event_id, semantic, line, payload, base_line = values
         slug = admission["slug"]
         if slug not in pages or admission["semantic_id"] != semantic \
@@ -1070,6 +1266,43 @@ def _result(plan):
                               for page in plan["pages"]], "non_claims": plan["non_claims"]}
 
 
+def _close_known(captures):
+    """Attempt independent owners and retain primary plus cleanup failures."""
+    primary = sys.exception()
+    failures = []
+    for capture in captures:
+        if capture is not None:
+            try:
+                capture.close()
+            except OSError as exc:
+                failures.append(exc)
+    if failures:
+        if primary is not None:
+            raise BaseExceptionGroup("index delta and cleanup failed", [primary] + failures)
+        raise ExceptionGroup("index delta cleanup failed", failures)
+
+
+def _replace_capture(state, new, targets, *, files=frozenset(), directories=frozenset()):
+    """Keep every acquired capture owned through validation and close failure."""
+    old = state["live"]
+    try:
+        old.named_current(exempt_files=files, exempt_directories=directories)
+        state["retired"] = old
+        state["live"] = new
+        state["targets"] = targets
+    except BaseException:
+        if state["live"] is not new:
+            _close_known((new,))
+        raise
+    old.close()
+    state["retired"] = None
+
+
+def _close_state(state):
+    retired, live = state["retired"], state["live"]
+    _close_known((retired, live if live is not retired else None))
+
+
 def _publish_images(owner, deps, images, write_paths, state, *, shared_budget=None):
     """The single guarded write engine; state always owns the latest handles.
 
@@ -1090,26 +1323,15 @@ def _publish_images(owner, deps, images, write_paths, state, *, shared_budget=No
         live.current(exempt_directories=affected_dirs)
         interim, interim_targets = _observe_closure(
             owner, deps, images, targets, budget=shared_budget)
-        try:
-            live.named_current(exempt_directories=affected_dirs)
-        except BaseException:
-            interim.close()
-            raise
-        live.close()
-        live, targets = interim, interim_targets
-        state.update(live=live, targets=targets)
+        _replace_capture(state, interim, interim_targets, directories=affected_dirs)
+        live, targets = state["live"], state["targets"]
         live.current()
         owner["atomic_write"](path, images[relative]["raw"].decode("utf-8", errors="strict"))
         live.current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
         refreshed, refreshed_targets = _observe_closure(
             owner, deps, images, targets | {relative}, budget=shared_budget)
-        try:
-            live.named_current(exempt_files=frozenset({relative}), exempt_directories=affected_dirs)
-        except BaseException:
-            refreshed.close()
-            raise
-        live.close()
-        state.update(live=refreshed, targets=refreshed_targets)
+        _replace_capture(state, refreshed, refreshed_targets,
+                         files=frozenset({relative}), directories=affected_dirs)
 
 
 def publish(owner, *, plan, expected_plan_sha256):
@@ -1128,7 +1350,7 @@ def publish(owner, *, plan, expected_plan_sha256):
         _refuse("input-copy-change")
     images = _images(owner, admitted)
     live, targets = _observe(owner, admitted, images)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         _semantic_join(owner, admitted, images, live)
         live.current()
@@ -1144,7 +1366,7 @@ def publish(owner, *, plan, expected_plan_sha256):
         state["live"].current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)
 
 
 BATCH_KEYS = frozenset({"schema", "organ", "members", "read_dependencies",
@@ -1186,12 +1408,12 @@ def _member_structure(owner, plans):
 def _member_pins(owner, plans, expected):
     if type(expected) is not list or len(expected) != len(plans):
         _refuse("batch-independent-member-pins")
-    for plan, pin in zip(plans, expected):
+    for plan, pin in _paired_rows(plans, expected, "batch-independent-member-pins"):
         _hex(pin)
         if plan["plan_sha256"] != pin:
             _refuse("batch-independent-member-pins")
     # Caller order is checked above, before the deterministic output sort.
-    for plan, pin in zip(plans, expected):
+    for plan, pin in _paired_rows(plans, expected, "batch-independent-member-pins"):
         body = {key: value for key, value in plan.items() if key != "plan_sha256"}
         if _hash(owner, _json(owner, body)) != pin:
             _refuse("batch-member-digest")
@@ -1377,7 +1599,7 @@ def publish_batch(owner, *, batch, expected_batch_sha256):
     images = _union_images(owner, admitted["members"])
     budget = _Budget(owner, 4096)
     live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         for member in admitted["members"]:
             _semantic_join(owner, member, images, live)
@@ -1393,7 +1615,7 @@ def publish_batch(owner, *, batch, expected_batch_sha256):
         state["live"].current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)
 
 
 CLOSURE_KEYS = frozenset({"schema", "batches", "read_dependencies", "write_order",
@@ -1485,11 +1707,11 @@ def _batch_pins(owner, batches, expected):
     if type(expected) is not list or len(expected) != len(batches):
         _refuse("closure-independent-batch-pins")
     # Check caller order before the deterministic organ sort or any digest.
-    for batch, pin in zip(batches, expected):
+    for batch, pin in _paired_rows(batches, expected, "closure-independent-batch-pins"):
         _hex(pin)
         if batch["batch_sha256"] != pin:
             _refuse("closure-independent-batch-pins")
-    for batch, pin in zip(batches, expected):
+    for batch, pin in _paired_rows(batches, expected, "closure-independent-batch-pins"):
         body = {key: value for key, value in batch.items() if key != "batch_sha256"}
         if _hash(owner, _json(owner, body)) != pin:
             _refuse("closure-batch-digest")
@@ -1577,7 +1799,7 @@ def publish_closure(owner, *, closure, expected_closure_sha256):
     _closure_current(owner, request, original_request)
     budget = _Budget(owner, 4096)
     live, targets = _observe_closure(owner, admitted["read_dependencies"], images, budget=budget)
-    state = {"live": live, "targets": targets}
+    state = {"live": live, "targets": targets, "retired": None}
     try:
         for member in members:
             _semantic_join(owner, member, images, live)
@@ -1603,4 +1825,4 @@ def publish_closure(owner, *, closure, expected_closure_sha256):
         state["live"].named_current()
         return detached
     finally:
-        state["live"].close()
+        _close_state(state)

@@ -1,0 +1,43 @@
+{
+  "base": "768cf50df69e09a5a2bff7ab781aabde8ef59fdd",
+  "files": {
+    "docs/ADMISSION-CLOCK-SOURCE-20261021.json": "df1bdd7847b77090c25946942d630889993d72ba4c5bc862a7746fa766cd21ed",
+    "docs/ASSURANCE-GOAL.md": "026423bc182d2bffe6c1de3d88b33d7aa1fa59b253e51cd3165a1313964ca25c",
+    "docs/evidence/admission-time-design-review-v1.txt": "4e56806377ea50cc9677fb5cc4eee7725a1d2611d3d1c2a7fd26f42d67011dae",
+    "spark/PROTECTED-SLOT-ADMISSION-TIME.md": "d2ab5255f25679c0e358380ae3f6f34ecfa6e265a5c2e6a1f5b366fd0a9b431d",
+    "spark/PROTECTED-SLOT-CONTRACT.md": "3cefbbfb753ae773cfa642cc456d769c8faccc75865210c92061128e7cf7f689",
+    "spark/PROTECTED-SLOT-RECOVERY.md": "671ca52287ce8c7b481d53894c27541223567709a2b3f9c5411689789f0b5b3c",
+    "spark/PROTECTED-SLOT-WIRE.md": "77c60023f36d21f3d15d3491a99853614c9da6a080d51fd14f0b5239d0a2a7c6",
+    "spark/model/ADMISSION-RECOVERY.md": "5401ddec9b9f832e2f2987ff353fcdf56b8d525c563e124dd87e7a841d202daa"
+  },
+  "kind": "DESIGN REVIEW and API smoke observation; not proof or commissioning",
+  "open": [
+    "Clock/domain authentication and schemas",
+    "Current independent freshness/fencing",
+    "Phase budgets and numeric boundary/fault execution",
+    "Query disclosure timing",
+    "Complete SPARK/runtime/installed system acceptance"
+  ],
+  "primary_source": {
+    "bytes": 30379,
+    "clock_selection": "Linux CLOCK_BOOTTIME, integer nanoseconds; new disposable protocol design only",
+    "headers": {
+      "Content-Type": "text/html",
+      "ETag": "\"76ab-65d57b70ec3c0\"",
+      "Last-Modified": "Thu, 08 Oct 2026 17:39:35 GMT"
+    },
+    "limits": [
+      "API availability is not clock-producer authentication.",
+      "No suspend, VM rollback, protected provider or timing-bound execution was qualified."
+    ],
+    "local_observation": {
+      "CLOCK_BOOTTIME_available": true,
+      "clock_gettime_ns_available": true,
+      "nonnegative_sample": true
+    },
+    "observed_at": "2026-10-21T09:31:42.743413+00:00",
+    "source_sha256": "7d7948bcf8400a786c2795b24e8da979d6e01610f7b8ea6bf1ab97f06205fb69",
+    "url": "https://man7.org/linux/man-pages/man2/clock_gettime.2.html"
+  },
+  "unchanged_executable_model": ""
+}

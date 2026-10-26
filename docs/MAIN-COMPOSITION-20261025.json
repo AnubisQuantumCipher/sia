@@ -1,0 +1,36 @@
+{
+  "archive": {
+    "bytes": 88963,
+    "members": 31,
+    "path": "docs/evidence/main-composition-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "35e263aeeb1f45f49ea319f058bb65d946cb60ecc14f7a7d28aa8bdde05408dd"
+  },
+  "carrier_parent": "b54317e3b8d8b1795883a778c121e0c050eeff0a",
+  "endpoint_pins": {
+    "count": 505,
+    "limit": "Selected endpoints, not continuous loaded-code custody",
+    "unchanged": true
+  },
+  "main_parent": "514779ddf9ba6dcd4b5d1dafabac602910751cb3",
+  "remaining": "All original A/G/C/P/R/EP controls including R05 BOTH, full proofs, SDK/native, actual compaction, off-host recovery, retrieval, judge, installed lifecycle, full composition and release/marketplace gates",
+  "review": "Actual GPT-6.1 source/raw review; no independent execution",
+  "scope": "Exact executable composition before evidence-only additions",
+  "static": {
+    "findings": 10,
+    "installer_syntax_exit": 0,
+    "limit": "Unresolved findings; no waiver or whole-tree zero-warning claim",
+    "new_against_parents": 0,
+    "product_exit": 1,
+    "runner_exit": 0
+  },
+  "status": "TESTED_SELECTED_COMPOSITION; FULL_ACCEPTANCE_INCOMPLETE",
+  "tested_tree": "66016ccd4c76b03302cda6e31b23365742ad11dd",
+  "tests": {
+    "count": 57,
+    "exit": 0,
+    "outer_elapsed_ns": 43564691015,
+    "skips": 0,
+    "unittest_seconds": "43.389"
+  }
+}

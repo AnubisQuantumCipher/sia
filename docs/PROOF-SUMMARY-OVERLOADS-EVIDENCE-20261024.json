@@ -1,0 +1,68 @@
+{
+  "archive": {
+    "bytes": 46410,
+    "path": "docs/evidence/proof-summary-overloads-20261024.tar.gz",
+    "sha256": "d69d6b140cdcdf7b937e65573de2822f24727a9e1423b9d3af0425be8c8967d9"
+  },
+  "base_commit": "3c8a4720bde3071ebd551ae109b19363f0bf5d3b",
+  "limits": [
+    "Not an Ada parser or proof authenticity checker",
+    "No fresh GNATprove campaign; retained report structure only",
+    "No whole Python memory/time proof or hostile-filesystem custody",
+    "Full native/writer/proof/harness/recovery/installed/release gates remain open",
+    "No installation, main merge, release or marketplace acceptance"
+  ],
+  "members": {
+    "baseline.json": "3f9612fd0e975f4b2be44d247241c513c0442fe5e1dcd42a07885719230c5058",
+    "baseline/.github/workflows/ci.yml": "90eaa6caf62cedfa6d518cff453c05df451f55a37c382bff2e16a8aa92b7a319",
+    "baseline/spark/check-proof-summary.py": "579ce21dd36e3dabe4f36dee82f500eb6456564aa69747573f3d241726061e59",
+    "baseline/spark/tests/test_proof_summary.py": "4501cfed9578e79f860a485bd81e7d24f2d1609322094462bd934a24421a0670",
+    "candidate-pins.json": "6539b789963fca9dfbaea69914c04febb76058956305b301b8dd5d70395f26f8",
+    "candidate/.github/workflows/ci.yml": "59863d2f2ee4e153177c26002f7420214937bbc2d94cce2368a13e550c6b72e9",
+    "candidate/docs/PROOF-SUMMARY-OVERLOADS.md": "beef6a8e31f518a1fe084057f6b41f8c6efd39233189e9f65defe7e72ec93a27",
+    "candidate/spark/check-proof-summary.py": "9852d56a2379ab00e81469f495ed30d2bfde0ff5584cf236960ad90a4f61ab45",
+    "candidate/spark/proof-overloads.json": "0b0d6b5444d90d9459986f489090f3b76b4bd740dd48a36a4ba31f591c4b3751",
+    "candidate/spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+    "candidate/spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+    "candidate/spark/tests/test_proof_summary.py": "4501cfed9578e79f860a485bd81e7d24f2d1609322094462bd934a24421a0670",
+    "candidate/spark/tests/test_proof_summary_overloads.py": "edbc20bdeda837aa00400e75777a36b5c011537bbcf56706b1be1ec7ffdd454c",
+    "final-static.json": "806ece45cc2eca7d95b4264c9d3a338ffddce3080f258d6f17fca3e3bc4f72a4",
+    "final-static.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "final-static.stdout": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "final-tests.json": "30c645719da8f0e0e7e6f55a4e750a7c1c31593b91855dfb5f014713c14426fe",
+    "final-tests.stderr": "1b5ac33c583ea3a092faf9aee1f4d6eabab84e507fe2507ce427a3f1aa072690",
+    "final-tests.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "focused-fixture/report.txt": "6c75603099fae90277394635d54f22e5e6280875e9c9e1aba5fea50c85881803",
+    "focused-fixture/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+    "package.py": "c1cd37739a1e7c49c074aeee83ac4616a400697a61d491023db0e02c275dc8ef",
+    "reproduce_report.py": "8a01f8333f45c418269aca0757993e00ca35fb49f8bfb3857098dffb39206191",
+    "reproduced-report-controls.json": "b3e36876f0eb8ea325d5158b62bb76225298534b34ede1cb9f70bbe0766482d4",
+    "retained-report-controls.json": "dc81a2b01623870bc56f035787aa2b5defa04cca58247cac6e9640b4bbf33989",
+    "review-v1.json": "478a4c0ed4c7d04f085ca44903151b8686d26c6bb7f9cbbbcd8552e152c33aad",
+    "review-v2.json": "339109e164ba2894f9ccc723754d39f59e50a1382effb4c7d2dfe05254d8fbe3",
+    "static-v1.json": "8d0c6a1e9218db3be305e6dd9bc69a475fc120897495648d415a36633a0696e9",
+    "static-v1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "static-v1.stdout": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "tests-v1.log": "300b1a1283256492599ae6c52ad1bf030644ba6fbbb1caa1def0a331570c49e2",
+    "verification.json": "99ebd36fe643f627de1dae80c5e7c59c114dc7cce21fa8c1d2a341d27764dbb2",
+    "verify.py": "13caaa98c5a92dc007fe4129c510d0d198c9d316955251b56db9c7aebb82f232"
+  },
+  "original_tests": "UNCHANGED",
+  "results": {
+    "retained_report": "overload details PASS; full gate still REFUSES",
+    "static": "pinned partial profile; no findings",
+    "tests": "32 PASS"
+  },
+  "review": "actual GPT-6.1 read-only source/evidence review; no independent execution",
+  "sources": {
+    ".github/workflows/ci.yml": "59863d2f2ee4e153177c26002f7420214937bbc2d94cce2368a13e550c6b72e9",
+    "docs/PROOF-SUMMARY-OVERLOADS.md": "beef6a8e31f518a1fe084057f6b41f8c6efd39233189e9f65defe7e72ec93a27",
+    "spark/check-proof-summary.py": "9852d56a2379ab00e81469f495ed30d2bfde0ff5584cf236960ad90a4f61ab45",
+    "spark/proof-overloads.json": "0b0d6b5444d90d9459986f489090f3b76b4bd740dd48a36a4ba31f591c4b3751",
+    "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+    "spark/src/sia_continuity_record_wire.ads": "5b96aade7b75d9213db83670a4a9743e2a7e87780d4c27bf6e9fe9fa85b65eac",
+    "spark/tests/test_proof_summary.py": "4501cfed9578e79f860a485bd81e7d24f2d1609322094462bd934a24421a0670",
+    "spark/tests/test_proof_summary_overloads.py": "edbc20bdeda837aa00400e75777a36b5c011537bbcf56706b1be1ec7ffdd454c"
+  },
+  "status": "TESTED_CHECKER_ONLY_FULL_ASSURANCE_INCOMPLETE"
+}

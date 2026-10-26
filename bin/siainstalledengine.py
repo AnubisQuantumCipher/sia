@@ -136,7 +136,7 @@ def _keys(value, keys, reason):
 
 def _plain_pin(value):
     kind = type(value)
-    if value is None or kind in (bool, int, str):
+    if value is None or kind is bool or kind is int or kind is str:
         return kind, value
     if kind is list:
         return kind, tuple(_plain_pin(child) for child in value)

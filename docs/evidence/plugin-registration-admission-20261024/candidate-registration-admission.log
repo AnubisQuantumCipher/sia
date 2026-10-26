@@ -1,0 +1,15 @@
+test_absence_returns_false (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_absence_returns_false) ... ok
+test_acquired_child_closes_after_metadata_error_or_interrupt (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_acquired_child_closes_after_metadata_error_or_interrupt) ... ok
+test_directory_and_symlink_refuse (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_directory_and_symlink_refuse) ... ok
+test_fifo_with_peer_refuses_without_reading_stream (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_fifo_with_peer_refuses_without_reading_stream) ... ok
+test_fifo_without_writer_refuses_and_closes_descriptors (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_fifo_without_writer_refuses_and_closes_descriptors) ... ok
+test_regular_wrong_plugin_is_not_registration (tests.test_plugin_registration_admission.PluginRegistrationAdmission.test_regular_wrong_plugin_is_not_registration) ... ok
+test_plugin_registration_observer_is_exact_and_link_safe (tests.test_cli.MutationBoundaries.test_plugin_registration_observer_is_exact_and_link_safe) ... ok
+test_plugin_registration_observer_refuses_hierarchy_swap (tests.test_cli.MutationBoundaries.test_plugin_registration_observer_refuses_hierarchy_swap) ... ok
+test_missing_plugin_stops_before_brainstem_ownership (tests.test_cli.MutationBoundaries.test_missing_plugin_stops_before_brainstem_ownership) ... ok
+test_plugin_removal_stops_before_the_next_resident_pulse (tests.test_cli.MutationBoundaries.test_plugin_removal_stops_before_the_next_resident_pulse) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 3.383s
+
+OK

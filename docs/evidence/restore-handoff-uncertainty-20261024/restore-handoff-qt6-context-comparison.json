@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/usr/bin/timeout",
+    "--kill-after=5s",
+    "30s",
+    "/usr/lib/qt6/bin/qmllint",
+    "--ignore-settings",
+    "--max-warnings",
+    "0",
+    "--json",
+    "-",
+    "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/restore-handoff-static-baseline/Cockpit.qml"
+  ],
+  "returncode": 255,
+  "baseline_root_context": {
+    "Cockpit.qml": "c3771f6049b32b5d79ad58b403b10569983efd454e73b15b108125104335fc51",
+    "LiveView.qml": "bc60c89bc794890126126905305848c4e8998dfb424593023ef135a5291a550c",
+    "Model.js": "c7f2f92b8b372b04c1b88c10e6cc7afdf4c6ae6dece60292ce9a2baeb09e7798",
+    "Panel.qml": "7f13d83d21d9628d12b9ccfa6151c16819ca8e7e70931a586e336c131e2793bc"
+  },
+  "baseline_diagnostics": 568,
+  "candidate_diagnostics": 568,
+  "new_diagnostics": [],
+  "removed_diagnostics": [],
+  "scope": "Raw Qt6 NONPASS. Complete root QML/JS sibling context restored for comparison after initial baseline lacked LiveView. Runtime qs.Commons/qs.Ui imports unresolved; no GUI qualification.",
+  "stdout_sha256": "d23fe1b5ea554002bed1e3cb2bcd99080da17ef4f5b88cdc9a35933300947609"
+}

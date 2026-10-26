@@ -1,0 +1,8 @@
+Actual GPT-6.1 read-only review: no blocker for the scoped descriptor-ownership and seed-invalidation repair.
+Registering acquired descriptors before metadata inspection closes the identified leak paths. Pending scratch identity is cleanup-only; failed seeding marks the context failed before propagating the original exception. Persistent metadata failure preserves uncertain scratch while the tested close succeeds.
+Tests meaningfully cover directory acquisition cuts, seed metadata/write/sync failures, replacement preservation and unchanged cursor bytes. Corrected baseline and candidate use the same test hash. Raw hashes match receipts: baseline reports 23 failures; candidate reports 29 tests passing. No independent execution performed.
+Reviewed hashes:
+Product: 9ccfaa4d77d21cb2c5fc0acd9d213c37d1f841a32ebf5a4adac1a089a2b60940
+Tests: 6ddde62000eaa2135534ef6dfc36e6883a66595b5e23e3c3753260db4d30d4d3
+Race limitation: named-inode comparison followed by unlink is not atomic. A concurrent directory writer could replace the name between those calls; the tests establish replacement refusal before the check, not hostile concurrent-mutation safety. Phrase cleanup claims accordingly.
+Arbitrary interruption, allocation/close failures, real journal capture, ACK and durability remain unqualified. Next step is exact committed-source reproduction under existing gates.

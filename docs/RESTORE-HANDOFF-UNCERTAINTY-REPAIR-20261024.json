@@ -1,0 +1,184 @@
+{
+  "schema": "sia.restore-handoff-uncertainty-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "base_commit": "eb517083255b189990349815dee27570c65b8050",
+  "problem": "A nonzero launcher exit could clear restore uncertainty while durable backend request authority remained. The same cached prepared status could also erase the uncertainty guard.",
+  "change": "Retain expected preparation and uncertain outcome after nonzero restore exit; do not show success. Only a different authenticated current preparation can reset the UI guard. Existing valid-receipt verification and non-restore action semantics remain.",
+  "source_sha256": {
+    "Cockpit.qml": "dd2401165966136ecb613a473a6f376b88c03377cca3e783597254287d7fe6c4",
+    "Model.js": "c7f2f92b8b372b04c1b88c10e6cc7afdf4c6ae6dece60292ce9a2baeb09e7798",
+    "bin/siabackup.py": "8cd5de4e519ff0e4f441cf077db1a52789a453b35076613eb665574c35323681",
+    "tests/test_restore_handoff_uncertainty.py": "9ba37faf9f77aa07762e4808bc67cc3a40684306cbc6fb351fe7b5d5bc9846dd",
+    "tests/test_cockpit_boundary_horizon.py": "e698491cf3f32fe92e16b7a58e4644e5c897569a69ca547c410f6c9e1211ca09",
+    "tests/test_cockpit_integrity_boundaries.py": "7545a29b5ff1cad48dba9acc66881fe33b396231dd2b050411a6120332940619",
+    "tests/test_continuity_ui_contract.py": "b8f20ec29e8708c937694082578741f551c8feee2644b1ee88dab52ee600d5bf",
+    "tests/test_continuity.py": "25243268b13110a50a329c88d50e3dfcf3883254a25681839d6e61ddc57f47d6"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 8,
+    "failures_reported": 16,
+    "elapsed_seconds": 0.695,
+    "source_sha256": {
+      "Cockpit.qml": "c3771f6049b32b5d79ad58b403b10569983efd454e73b15b108125104335fc51",
+      "Model.js": "c7f2f92b8b372b04c1b88c10e6cc7afdf4c6ae6dece60292ce9a2baeb09e7798",
+      "bin/siabackup.py": "8cd5de4e519ff0e4f441cf077db1a52789a453b35076613eb665574c35323681",
+      "tests/test_restore_handoff_uncertainty.py": "9ba37faf9f77aa07762e4808bc67cc3a40684306cbc6fb351fe7b5d5bc9846dd",
+      "tests/test_cockpit_boundary_horizon.py": "e698491cf3f32fe92e16b7a58e4644e5c897569a69ca547c410f6c9e1211ca09",
+      "tests/test_cockpit_integrity_boundaries.py": "7545a29b5ff1cad48dba9acc66881fe33b396231dd2b050411a6120332940619",
+      "tests/test_continuity_ui_contract.py": "b8f20ec29e8708c937694082578741f551c8feee2644b1ee88dab52ee600d5bf",
+      "tests/test_continuity.py": "25243268b13110a50a329c88d50e3dfcf3883254a25681839d6e61ddc57f47d6"
+    }
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 88,
+    "elapsed_seconds": 13.15,
+    "source_unchanged": true
+  },
+  "command": [
+    "/usr/bin/timeout",
+    "--kill-after=5s",
+    "60s",
+    "/usr/bin/bwrap",
+    "--ro-bind",
+    "/",
+    "/",
+    "--ro-bind",
+    "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+    "/usr/bin/git",
+    "--tmpfs",
+    "/tmp",
+    "--ro-bind",
+    "/home/sicarii/Work/sia-assurance-kernel-20261019",
+    "/tmp/sia-review-source",
+    "--tmpfs",
+    "/home",
+    "--tmpfs",
+    "/run",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--dir",
+    "/home/audit",
+    "--unshare-net",
+    "--unshare-pid",
+    "--die-with-parent",
+    "--new-session",
+    "--chdir",
+    "/tmp/sia-review-source",
+    "--setenv",
+    "HOME",
+    "/home/audit",
+    "/usr/bin/python3",
+    "-B",
+    "-W",
+    "error::ResourceWarning",
+    "-c",
+    "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_restore_handoff_uncertainty', 'tests.test_cockpit_boundary_horizon', 'tests.test_cockpit_integrity_boundaries', 'tests.test_continuity_ui_contract', 'tests.test_continuity.ContinuityTransport.test_ambiguous_launch_retains_request_and_restore_debt', 'tests.test_continuity.ContinuityTransport.test_failed_liveness_probe_never_retires_worker_authority']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)"
+  ],
+  "runner_sha256": "9d5d4538ac45e43ac4f916504e908ed4bdc54127959d48d83b00f7d91fd1a3f4",
+  "scope": "Exact lifted QML/Model.js functions run in bounded Node fixtures; eight new methods, unchanged full UI boundary/integrity/contract modules and two actual private backend ambiguous-launch/liveness controls. No rendered GUI, systemd worker or restore execution.",
+  "static": {
+    "python_tests_and_runner": "PASS_ZERO_DIAGNOSTICS_ORIGINAL_RULES",
+    "qml": "NONPASS",
+    "qt6_version": "6.11.2",
+    "baseline_diagnostics": 568,
+    "candidate_diagnostics": 568,
+    "new_diagnostics": [],
+    "comparison": "Multiset id/type/message with complete root QML/JS siblings; unresolved qs.Commons/qs.Ui runtime imports and other warnings retained. Initial baseline lacked LiveView and was corrected. Older system qmllint result also retained; no suppression."
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "scope": "Source and raw evidence, not independent execution",
+    "result": "No narrow blocker subject to QML qualification; QML qualification remains NONPASS."
+  },
+  "power_of_ten": "P07 checked outcomes: nonzero is not proof of non-admission. P05 conservative UI state and exact correlation. P10 static failures retained. No assurance-core proof claim.",
+  "limitations": [
+    "Different preparation identity does not prove causal ordering after this handoff. A still-fresh older different authenticated record can satisfy reset; current backend publication/reconciliation remains trusted.",
+    "Uncertainty is component-local; restart persistence and markLaunchFailure lifecycle behavior remain outside new tests.",
+    "QML static qualification remains NONPASS. No GUI lifecycle, actual restore, duplicated-operation exclusion, full continuity or release acceptance."
+  ],
+  "artifacts": {
+    "baseline-restore-handoff.json": {
+      "bytes": 3292,
+      "sha256": "e14bf82d8884d748715e8035dc34f582133a035a2f743e89a3ee6a7be28ca6e1"
+    },
+    "baseline-restore-handoff.log.gz": {
+      "bytes": 963,
+      "sha256": "3bd523339a13fa303cbc61066eebd29ac24d6cccf43d7f9ddc8a10a440f1d810",
+      "encoding": "gzip",
+      "uncompressed_bytes": 18224,
+      "uncompressed_sha256": "3c9ded3944597189406ef815821086a45f03c587021b17681d8adfeffa99799d"
+    },
+    "candidate-restore-handoff.json": {
+      "bytes": 3614,
+      "sha256": "a95c45e67556c54cbf913d24daed135f016729371a14599621f788d114fa20cc"
+    },
+    "candidate-restore-handoff.log": {
+      "bytes": 16536,
+      "sha256": "f823a837001edfe0f73b8281460d3b567bbd0b4de9bb92b7d6eb70a5dcd8f2de"
+    },
+    "restore-handoff-static-receipt.json": {
+      "bytes": 4759,
+      "sha256": "48698583d08f36ed2deb9934ec63583b71bfcc94ec15483302152baf5d5215c9"
+    },
+    "restore-handoff-qt6-receipt.json": {
+      "bytes": 1334,
+      "sha256": "c72d4b237567926d8f5a3b953db2086b4230c21685c379ca874ad811e27dfaca"
+    },
+    "restore-handoff-qt6-context-comparison.json": {
+      "bytes": 1122,
+      "sha256": "9e878cc310213711d60cb39292c7d7316f54e5567b3fcd7305f8a1e7f02e021d"
+    },
+    "restore-handoff-baseline-qmllint.stderr.gz": {
+      "bytes": 627,
+      "sha256": "3a408b7e0b880b662f3a05c581d90184cf9a238aa4643b4ec0aaba4a93e1d49d",
+      "encoding": "gzip",
+      "uncompressed_bytes": 21919,
+      "uncompressed_sha256": "d857146d747881d5b0f8f1e6db2a54f91d2a221689533a8213604d03d6cca662"
+    },
+    "restore-handoff-candidate-qmllint.stderr.gz": {
+      "bytes": 628,
+      "sha256": "f4f48c907fbc31a5fcfbcbf24671c589a8716af134062efaa968d0820f13e9cd",
+      "encoding": "gzip",
+      "uncompressed_bytes": 21916,
+      "uncompressed_sha256": "5a18e6a252d6d42dc70a6ad101f9d9d71524a6213135af202af2a0f8ddd74d7a"
+    },
+    "restore-handoff-baseline-qt6.json.gz": {
+      "bytes": 8753,
+      "sha256": "1be4c6ee7facebd098527f4ab128b0a4524b8ebeaac72980987d4e38bd72957e",
+      "encoding": "gzip",
+      "uncompressed_bytes": 142896,
+      "uncompressed_sha256": "bcb78e4267366465bbc062c6a5764b92024c495a5c64e802dece3479793c3a69"
+    },
+    "restore-handoff-candidate-qt6.json.gz": {
+      "bytes": 8637,
+      "sha256": "7919d4cfa7b21a936108db483df6c02b477adb27b2627e26b53e2f8828ac1411",
+      "encoding": "gzip",
+      "uncompressed_bytes": 142504,
+      "uncompressed_sha256": "388c627a5417ae68270b6d7273551d0327cd5a35a0a637ca7d5d10212302d895"
+    },
+    "restore-handoff-baseline-context-qt6.json.gz": {
+      "bytes": 8704,
+      "sha256": "6e977d307208d094f36988a1e81456dab997faf35e17d045d8e2b6c94d5df7d3",
+      "encoding": "gzip",
+      "uncompressed_bytes": 142566,
+      "uncompressed_sha256": "d23fe1b5ea554002bed1e3cb2bcd99080da17ef4f5b88cdc9a35933300947609"
+    },
+    "restore-handoff-independent-review.txt": {
+      "bytes": 1728,
+      "sha256": "da002c5d82db080829b40b7ab26f6962db0df2c98d4598bc8201629a094b8b36"
+    },
+    "run_restore_handoff.py": {
+      "bytes": 3409,
+      "sha256": "9d62b7aa7eab7709da6a74379a236501c2c1fa5c67a0fb1e37363c00529ef81f"
+    },
+    "run_restore_handoff-expanded.py": {
+      "bytes": 3731,
+      "sha256": "9d5d4538ac45e43ac4f916504e908ed4bdc54127959d48d83b00f7d91fd1a3f4"
+    }
+  },
+  "acceptance": false
+}

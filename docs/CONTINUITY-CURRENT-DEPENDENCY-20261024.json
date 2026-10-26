@@ -1,0 +1,69 @@
+{
+  "status": "SOURCE_BOUND_HANDOFF_CORRECTION_NOT_ACCEPTANCE",
+  "acceptance": false,
+  "observed_utc": "2026-10-24T19:35:27.538940+00:00",
+  "source_commit": "5c61b7afcb02af9ebfded2c5d2ada8f322822ba1",
+  "source_tree": "908bc01d2388b0d77ca7584b7d6a3808110bbcc4",
+  "source_clean": true,
+  "original_mocked_run": {
+    "utc": "2026-10-24T11:11:02.411543+00:00",
+    "exit": 0,
+    "tests": 58,
+    "seconds_literal": "0.034",
+    "source_unchanged": true,
+    "scope": "Injected supervisor and observer controls only; processes, signals, pipes and reaping mocked. Temporary test files only; no real stage dispatch.",
+    "receipt_sha256": "38dc3991cc82802d3bfd61eec8a7107cb00ab7b62a2b2fd56a8870bf77024cdd",
+    "stderr_sha256": "0c90aa07b0aa7d0d3e25fecf19aff11af7397b282f9465f06053df82734eef8b",
+    "source_sha256": {
+      "supervise.py": "1a319e94ac6c9c2bd9c17564c4ae7831a8bcadca4cce50677f5d88a915d66367",
+      "test_supervisor_controls.py": "51539f4499cf21af441055fbf310c4f7b8bb98fdf05670cc313669c3957d28a4",
+      "terminal_observer.py": "f96d755fb58b9b9eefe6b2b26770930642dbefa23531f35f9a8c0bf3a72b3d3d",
+      "test_terminal_observer.py": "baef60e898375255a95b175a9f578154be609ecc85099ae9f1e1c17e70ccd6b4",
+      "stages.json": "27389353bf1e2151b91663d03f4c74f244991e9b5060f6c87f3bdc4ed91ea9e7"
+    }
+  },
+  "current_named_source_matches_original_run": true,
+  "dispatch": "REFUSES_NOT_ADMITTED",
+  "next_owner_dependency": "Protected fresh-manager-image producer and whole privileged lifetime interface, then original strict C/SDK/native qualification and finite root-profile fault matrix. Preserve complete credentials, original deadlines and terminal/recovery evidence.",
+  "latest_native_failure": {
+    "status": "FAILED_STRICT_ANALYSIS_AND_OUTPUT_CAP",
+    "acceptance": false,
+    "source_sha256": "3ddd56e9cb22bb0bbe9ce8fa31052e276d6dcbeef8fe4c87b30a388c490f144f",
+    "inner_exit": -25,
+    "signal_name": "SIGXFSZ",
+    "inner_elapsed_ns": 5209453675,
+    "outer_exit": 1,
+    "outer_elapsed_ns": 6188605422,
+    "outer_pins_equal": true,
+    "outer_current_inputs": 424,
+    "inner_all_before_after_equal": true,
+    "dump": {
+      "bytes": 536870912,
+      "sha256": "d5c197f5d42ac9a175b6b3a31695ad9e1c1b8f00c4cb8c156f3de01d09fa3fff",
+      "at_original_file_cap": true,
+      "complete": false
+    },
+    "reported_diagnostic_counts": {
+      "analyzer-too-complex": 19,
+      "analyzer-symbol-too-complex": 0
+    },
+    "dependencies": {
+      "status": "MISSING_NONPASS"
+    },
+    "stderr_sha256": "135db36f9a93b5157cf7613f5d260a46a06e2224dc3468f72d9f5f3ffdee776a",
+    "disposition": "Retain failure and capped partial dump. No automatic retry or source adoption. Reported frontiers now send_packet/mw_send_namespace; absence of descriptor helper diagnostics in partial run is not helper qualification. No larger cap, removed warning, root/domain narrowing or native/SPARK acceptance."
+  },
+  "original_owner_disposition_sha256": "6e5ef00fed022c6f4a1e9aab2c590a0da6d0acd7a3927f0f2256de7131a9abb3",
+  "evidence_availability": "Original receipts remain locally retained by the owner; this summary is not a complete independently executable evidence bundle.",
+  "unproved": [
+    "actual compaction",
+    "real process custody",
+    "death-resistant whole-job deadlines",
+    "formatter/import runtime",
+    "installed adapter",
+    "native/SPARK qualification",
+    "complete source capture",
+    "complete system assurance"
+  ],
+  "no_new_runtime_execution": true
+}

@@ -1,0 +1,6 @@
+test_agent_config_mutations_are_owned_and_fail_visibly (tests.test_release.ReleaseContract.test_agent_config_mutations_are_owned_and_fail_visibly) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK

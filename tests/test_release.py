@@ -37,7 +37,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 import types
 import unittest
@@ -47,6 +46,9 @@ try:
     import sia_test_home  # test-only import-time path isolation
 except ModuleNotFoundError:
     from tests import sia_test_home  # type: ignore
+
+if os.path.expanduser("~") != sia_test_home.ISOLATED_HOME:
+    raise RuntimeError("release tests require the isolated test home")
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -850,8 +852,9 @@ class ReleaseContract(unittest.TestCase):
 
         for relative, document in (("README.md", readme),
                                    ("docs/MANUAL.md", documents["docs/MANUAL.md"])):
-            self.assertIn("SIA memory read refused", document)
-            self.assertIn("readiness line", document)
+            with self.subTest(readiness_document=relative):
+                self.assertIn("SIA memory read refused", document)
+                self.assertIn("readiness line", document)
 
         for relative in ("docs/WHITEPAPER.md", "SECURITY.md"):
             document = documents[relative].casefold()
@@ -3289,7 +3292,8 @@ retain_unowned_cli_before_fence
                 with self.subTest(label=label):
                     calls = []
 
-                    def systemctl(arguments, _label, *, capture=False):
+                    def systemctl(arguments, _label, *, capture=False,
+                                  calls=calls, fragment=fragment, drop_in=drop_in):
                         calls.append(list(arguments))
                         output = (_brainstem_show(fragment, drop_in=drop_in)
                                   if capture else b"")
@@ -3963,6 +3967,8 @@ retain_unowned_cli_before_fence
             "_event_shard_trial", "_event_source_parts", "_event_payload_digest",
             "_event_index_relative", "_canonical_event_index_entry",
             "_event_index_encoded", "_read_event_index_entry",
+            "_validate_event_index_raw", "_join_event_index_occurrences",
+            "_verify_event_index_entries",
             "_preflight_event_index_entries", "_publish_event_index_entries",
             "_missing_event_index_expectations", "_other_event_occurrences",
             "_retained_source_text", "_event_ids_in_source_text",
@@ -3974,6 +3980,8 @@ retain_unowned_cli_before_fence
             "_bind_consolidation_ledger",
             "_bounded_event_directory_entries",
             "_canonical_consolidation_day",
+            "_canonical_consolidation_queue",
+            "_canonical_consolidation_claims",
             "_canonical_consolidation_scan",
             "_canonical_epoch_event_ids",
             "_canonical_epoch_source_manifest",
@@ -3987,6 +3995,20 @@ retain_unowned_cli_before_fence
             "_fresh_consolidation_scan", "_load_consolidation_scan",
             "_mark_consolidation_applied", "_mark_consolidation_pending",
             "_merge_epoch_event_ids", "_merge_epoch_source_manifest",
+            "_observe_consolidation_claims",
+            "_consolidation_pending_summary",
+            "_extend_consolidation_summary",
+            "_render_consolidation_epoch",
+            "_plan_consolidation_group",
+            "_apply_consolidation_groups",
+            "_execute_consolidation_claims",
+            "_consolidation_day_paths",
+            "_consolidation_day_lineage",
+            "_consolidation_day_is_durable",
+            "_read_consolidation_source",
+            "_consolidation_day_items",
+            "_group_consolidation_claims",
+            "_unlink_consolidation_source",
             "_pending_consolidation_marker",
             "_prepare_consolidation_claims", "_read_epoch_state",
             "_recover_pending_consolidation", "_render_bounded_epoch",
@@ -5408,10 +5430,9 @@ ollama_runtime_receipt_valid
             managed = os.path.join(state, "managed-install")
             os.makedirs(share, exist_ok=True)
             os.makedirs(managed, exist_ok=True)
-            active_prefix = (_owned_metadata_shell(installer) + tree +
-                             (selected_functions
-                              if selected_functions is not None else functions) +
-                             "\nstep() { :; }\n")
+            active_prefix = (prefix if selected_functions is None else
+                             _owned_metadata_shell(installer) + tree +
+                             selected_functions + "\nstep() { :; }\n")
             variables = f'''
 SHARE={shlex.quote(share)}
 STATE={shlex.quote(state)}
@@ -7210,6 +7231,7 @@ SIA_CORPUS_EARLY_RECEIPT_JOURNAL_STATE=absent
         file_source = uninstaller.split(
             "owned_file_cas() {\n  python3 - \"$@\" <<'PY'\n", 1)[1].split(
                 "\nPY\n}", 1)[0]
+        self.assertIn(file_source, file_function)
         tree_body = uninstaller.split("owned_tree_cas() {", 1)[1].split(
             "\n}\n\nowned_tree_generation()", 1)[0]
         tree_function = "owned_tree_cas() {" + tree_body + "\n}\n"
@@ -8777,7 +8799,13 @@ remove_managed_skill
         self.assertIn(
             "shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup",
             workflow)
-        self.assertIn("bash -n install.sh uninstall.sh bin/sia-setup", workflow)
+        self.assertEqual(_workflow_run_block("shell syntax").splitlines(), [
+            "set -euo pipefail",
+            "bash -n install.sh",
+            "bash -n uninstall.sh",
+            "bash -n bin/sia-setup",
+            "bash -n spark/check-event-pack-model.sh",
+        ])
         uses = re.findall(r"uses:\s+([^@\s]+)@([^\s#]+)", workflow)
         self.assertTrue(uses)
         for action, revision in uses:
@@ -8798,6 +8826,33 @@ remove_managed_skill
             workflow)
         self.assertIn("https://pypi.org/pypi/cryptography/50.0.1/json",
                       workflow)
+
+    def test_ci_shell_syntax_checks_every_script_without_execution(self):
+        script = _workflow_run_block("shell syntax")
+        names = ("install.sh", "uninstall.sh", "bin/sia-setup",
+                 "spark/check-event-pack-model.sh")
+        for damaged in (None,) + names:
+            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as root:
+                for name in names:
+                    content = "printf 'unexpected execution\\n' > executed\n"
+                    if name == damaged:
+                        content += "if then\n"
+                    _write(os.path.join(root, name), content)
+                result = subprocess.run(
+                    ("bash", "--noprofile", "--norc", "-e", "-o", "pipefail",
+                     "-c", script), cwd=root,
+                    env={"PATH": os.defpath, "HOME": root, "LC_ALL": "C"},
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    timeout=3, check=False)
+                self.assertFalse(os.path.exists(os.path.join(root, "executed")))
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.returncode, 0 if damaged is None else 2,
+                                 result.stderr)
+                if damaged is None:
+                    self.assertEqual(result.stderr, "")
+                else:
+                    self.assertIn(damaged + ": line 2:", result.stderr)
+                    self.assertIn("syntax error", result.stderr)
 
     def test_ci_release_artifact_block_checks_committed_tree_damage(self):
         script = _workflow_run_block("release artifact contracts")

@@ -1,0 +1,48 @@
+{
+  "archive": {
+    "bytes": 479436,
+    "members": 67,
+    "path": "docs/evidence/ownership-type-admission-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "712fa28af03631f69a4054bc2c11c1110327a46c55681934d54e5ef6e50b558f"
+  },
+  "authority": "NONE",
+  "base_commit": "c84133a44c6bbb13e1aef044d52a6223829241ed",
+  "baseline": {
+    "errors": 3,
+    "exit": 1,
+    "failures": 45,
+    "seconds": "0.468",
+    "tests": 7
+  },
+  "capture_and_resident_composition": {
+    "exit": 0,
+    "seconds": "152.770",
+    "source_endpoints_unchanged": true,
+    "tests": 29,
+    "wrapper_elapsed_ns": 153506278382
+  },
+  "installed_qualification": false,
+  "schema": "sia.ownership-type-admission-repair.v1",
+  "selected_static": "NONPASS; unchanged code/message multiplicities by filename",
+  "source_endpoints_unchanged": true,
+  "sources": {
+    "bin/siacognitiveregistry.py": "c7792180fad5836c92a1c760c8efac8d1be9e6efe022589334e7b7637fea7f9d",
+    "bin/siacontrollerdeliverywrapper.py": "e0263069dca76e4251befd64d1a48b31ecefc276e6503d13028a049a2eee3f08",
+    "bin/siacontrollerdeliverywriter.py": "0f30ff5e58c330145b1ff77459a7fe23c5c6c237b1f73c4a7694c3de7ea8f5e8",
+    "bin/siagetrenderadmit.py": "84d2b37d8362f45e4cfc326989fd07fde412995b34e1a0c10b5fbd28ad88a4e4",
+    "bin/siainstalledengine.py": "a80e6ea8edc7bae0b467d4702368a642eccfb7671c8581299e65c94fad8a277e",
+    "bin/sialivepublication.py": "b80c27063342d8c3620b96cdbe77eddf69beed130015385efa6117858d9262ed",
+    "tests/test_ownership_exact_type_admission.py": "20ea35f6c87c5830f3d398f73c5157ecfc3b7809f03b7addf4e457927b157538"
+  },
+  "status": "RUNTIME_REPAIR_TESTED_STATIC_NONPASS_SYSTEM_INCOMPLETE",
+  "tested_tree": "ab756bbbb641a6ba5bc1ac94bc4f9a6b0edef880",
+  "tests": {
+    "count": 107,
+    "exit": 0,
+    "seconds": "192.367",
+    "skips": 0,
+    "wrapper_elapsed_ns": 193512344564
+  },
+  "whole_system_acceptance": false
+}

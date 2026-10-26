@@ -1,0 +1,215 @@
+{
+  "status": "OBSERVED_RUNTIME_DEFAULTS_NOT_LIFETIME_PROOF",
+  "matched_objects": [
+    {
+      "unit": "s-soflin",
+      "row_count": 30,
+      "nonstatic": [],
+      "stripped_sha256": "91817ac9c48b856f2b8a73d56d7c29e146c10a16d45bd4c8b77d23e7f516d4a1"
+    },
+    {
+      "unit": "s-stalib",
+      "row_count": 5,
+      "nonstatic": [],
+      "stripped_sha256": "ff6e69323bf963b3f47baa7a5d45bd1ff4e3d57b8e035ae86706d7afc6cec9d2"
+    },
+    {
+      "unit": "a-elchha",
+      "row_count": 1,
+      "nonstatic": [
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/runtime-callback-closure-v1/a-elchha/inputs/a-elchha.adb:37:1:Last_Chance_Handler\t112\tdynamic"
+      ],
+      "stripped_sha256": "1294646c83aa25130542d21f8f1c647b92a2fcb3a598c47ff2638fa0cae7df86"
+    }
+  ],
+  "graph": {
+    "main": {
+      "direct_reached": 153,
+      "unresolved": 47,
+      "nonstatic": {
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/src/sia_continuity_checkpoint_wire.adb:sia_continuity_checkpoint_wire__decode_header": {
+          "bytes_reported": 9696,
+          "qualifier": "dynamic,bounded"
+        },
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/src/sia_continuity_current_wire.adb:sia_continuity_current_wire__decode_header": {
+          "bytes_reported": 10288,
+          "qualifier": "dynamic,bounded"
+        },
+        "__gnat_last_chance_handler": {
+          "bytes_reported": 112,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__exception_informationXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "__gnat_append_info_e_msg": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__append_info_basic_exception_informationXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__untailored_exception_tracebackXn": {
+          "bytes_reported": 64,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__append_info_exception_nameXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        }
+      }
+    },
+    "_ada_continuity_probe": {
+      "direct_reached": 127,
+      "unresolved": 28,
+      "nonstatic": {
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/src/sia_continuity_checkpoint_wire.adb:sia_continuity_checkpoint_wire__decode_header": {
+          "bytes_reported": 9696,
+          "qualifier": "dynamic,bounded"
+        },
+        "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/src/sia_continuity_current_wire.adb:sia_continuity_current_wire__decode_header": {
+          "bytes_reported": 10288,
+          "qualifier": "dynamic,bounded"
+        },
+        "__gnat_last_chance_handler": {
+          "bytes_reported": 112,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__exception_informationXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "__gnat_append_info_e_msg": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__append_info_basic_exception_informationXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__untailored_exception_tracebackXn": {
+          "bytes_reported": 64,
+          "qualifier": "dynamic"
+        },
+        "ada__exceptions__exception_data__append_info_exception_nameXn": {
+          "bytes_reported": 80,
+          "qualifier": "dynamic"
+        }
+      }
+    }
+  },
+  "post_elaboration": {
+    "argv": [
+      "flock",
+      "-n",
+      "/home/sicarii/.worldline-heavy.lock",
+      "timeout",
+      "--kill-after=5s",
+      "60s",
+      "prlimit",
+      "--as=2147483648",
+      "--fsize=536870912",
+      "--core=0",
+      "--",
+      "gdb",
+      "--batch",
+      "-nx",
+      "-nh",
+      "-iex",
+      "set auto-load off",
+      "-iex",
+      "set debuginfod enabled off",
+      "-ex",
+      "set confirm off",
+      "-ex",
+      "set disable-randomization off",
+      "-ex",
+      "set language c",
+      "-ex",
+      "set exec-wrapper /usr/bin/prlimit --as=268435456 --stack=16777216 --cpu=10 --nofile=16 --nproc=0 --fsize=0 --core=0",
+      "-ex",
+      "break _ada_continuity_probe",
+      "-ex",
+      "run < /dev/null",
+      "-ex",
+      "print *(int*)&__gl_exception_tracebacks_symbolic",
+      "-ex",
+      "print *(int*)&__gl_exception_tracebacks",
+      "-ex",
+      "print *(unsigned char*)&system__standard_library__exception_trace",
+      "-ex",
+      "print *(void**)&system__soft_links__traceback_decorator_wrapper",
+      "-ex",
+      "print *(void**)&system__soft_links__get_sec_stack",
+      "-ex",
+      "print *(void**)&system__soft_links__get_current_excep",
+      "-ex",
+      "print *(void**)&system__soft_links__task_termination_handler",
+      "-ex",
+      "print *(void**)&__gnat_exception_actions_global_action",
+      "-ex",
+      "print *(void**)&__gnat_exception_actions_global_unhandled_action",
+      "-ex",
+      "print *(unsigned char*)&__gnat_exception_actions_initialized",
+      "-ex",
+      "python import pathlib; print(pathlib.Path('/proc', str(gdb.selected_inferior().pid), 'limits').read_text())",
+      "-ex",
+      "kill",
+      "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/bin/continuity_probe"
+    ],
+    "env": {
+      "PATH": "/usr/bin:/bin",
+      "LANG": "C",
+      "LC_ALL": "C"
+    },
+    "exit": 0,
+    "binary_before": "39eb8de4dca2f9c3c401becba6cf9dba9b1dd053847574f88b4ce29624559451",
+    "binary_after": "39eb8de4dca2f9c3c401becba6cf9dba9b1dd053847574f88b4ce29624559451",
+    "scope": "disposable debugger run; stopped at continuity entrypoint after elaboration, before input; inferior killed; not installed or real supervisor-path qualification"
+  },
+  "no_io_rewrite": "Ada.Exceptions -> System.Traceback.Symbolic -> System.OS_Lib remains independent of direct adapter Read/Write edge",
+  "warnings": [
+    "GDB current language/frame mismatch",
+    "GDB could not determine index cache path"
+  ],
+  "diagnostic_failures": [
+    "initial graph grammar rejected triangle node; retained v1; repaired grammar retains unknown frames",
+    "textual named-symbol scan returned no matches; does not resolve GOT/register references and cannot establish no writers"
+  ],
+  "acceptance": "no whole stack/heap/callback invariant, current-runtime-path harness, new proof or installed/system/release acceptance; all original gates remain",
+  "next": "source/object-bound native runtime initialization and setter reachability; no callback pruning from snapshots",
+  "evidence_directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/runtime-callback-closure-v1",
+  "source_binding": {
+    "current_commit": "128ba0ce2de35c14192178be0007f08a250d3979",
+    "linked_probe_source": "f3511696c9b1de80ab9fe3389a2aff051426bfdb",
+    "argv": [
+      "git",
+      "diff",
+      "--name-only",
+      "f3511696c9b1de80ab9fe3389a2aff051426bfdb",
+      "HEAD",
+      "--",
+      "spark/src",
+      "spark/transport/ada",
+      "spark/transport/continuity_probe.gpr",
+      "spark/restrictions.adc"
+    ],
+    "diff_output": "",
+    "scope": "same Ada source/project/restrictions for reused linked binary; later Python descriptor change is not part of this debugger run"
+  },
+  "public_archive": {
+    "path": "docs/evidence/runtime-callback-closure-20261025.tar.gz",
+    "sha256": "270dafc3d3d455da10c2cb003d31941bc3031814fea30ce155fcf390783908cc",
+    "members": 95,
+    "readback": "every member byte/hash matched"
+  },
+  "review": {
+    "reviewer": "/root/assurance_architecture_review",
+    "model": "gpt-6.1-sol",
+    "kind": "read-only source and evidence review; no independent execution",
+    "finding": "No concrete correction found in report scope. Observed defaults are not lifetime invariants. Named-writer absence is not writer absence. Native initialization and relocation-resolved writer/foreign-code assumptions remain open.",
+    "report_sha256": "0e90e35c2d7711674065b0e40844022b26ab2e001c6ff9bf79e5a29b0a565548"
+  }
+}

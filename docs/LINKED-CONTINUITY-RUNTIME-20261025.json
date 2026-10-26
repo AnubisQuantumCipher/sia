@@ -1,0 +1,35 @@
+{
+  "status": "TESTED_EXPERIMENTAL_ADAPTER_NOT_SYSTEM_ACCEPTANCE",
+  "source_commit": "f3511696c9b1de80ab9fe3389a2aff051426bfdb",
+  "source_changes": "none",
+  "binary": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/linked-stack-v1/source/spark/bin/continuity_probe",
+    "bytes": 1759776,
+    "sha256": "39eb8de4dca2f9c3c401becba6cf9dba9b1dd053847574f88b4ce29624559451"
+  },
+  "build": "complete continuity project -c -U then original main bind/link; exit0",
+  "runtime": "complete original test_continuity_process.py:17 tests OK, no skips; literal vectors and live limits retained",
+  "allocation": "compiled call chain to malloc observed; execution of this path NOT_ESTABLISHED; bound UNPROVEN",
+  "independent_review": {
+    "reviewer": "existing actual GPT-6.1 assurance_architecture_review",
+    "mode": "read-only; no independent execution",
+    "result": "No concrete claim correction. Compile/link,17-test module, binary identity, binder/map/disassembly support the scoped report; no runtime execution of allocation path, stack maximum or continuous build/load custody established.",
+    "report_sha256": "3e96b001934a8cb185d9f7e1b98ee5b203bd127125b3694f854cb21fb4285760"
+  },
+  "archive": {
+    "path": "docs/evidence/linked-continuity-runtime-20261025.tar.gz",
+    "sha256": "a445a481a4829caa2e1bc52e4b98dc6677df28d609a4b06c9971700ed9ad0bd2",
+    "bytes": 449824,
+    "members": 114,
+    "readback": "all member bytes and hashes equal"
+  },
+  "limitations": [
+    "post-link input hashes not continuous custody",
+    "prebuilt RTS source correspondence unresolved",
+    "whole-stack and fixed allocation guarantee unproved",
+    "no new proof",
+    "not complete original transport/system suite",
+    "no installed entrypoint or authority",
+    "all original acceptance and release gates open"
+  ]
+}

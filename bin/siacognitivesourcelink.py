@@ -118,7 +118,7 @@ def _measure(value, maximum):
             take(4 if item else 5)
         elif item is None:
             take(4)
-        elif kind in (dict, list):
+        elif kind is dict or kind is list:
             if id(item) in active or len(item) > maximum - used:
                 _fail("JSON container is cyclic or excessive")
             take(2)

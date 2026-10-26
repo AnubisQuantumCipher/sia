@@ -1,0 +1,185 @@
+=========================
+Summary of SPARK analysis
+=========================
+
+----------------------------------------------------------------------------------
+SPARK Analysis results        Total        Flow     Provers   Justified   Unproved
+----------------------------------------------------------------------------------
+Data Dependencies                16          16           .           .          .
+Flow Dependencies                 3           3           .           .          .
+Initialization                    9           9           .           .          .
+Non-Aliasing                      .           .           .           .          .
+Run-time Checks                  25           .     25 (Z3)           .          .
+Assertions                        4           .      4 (Z3)           .          .
+Functional Contracts             11           .     11 (Z3)           .          .
+LSP Verification                  .           .           .           .          .
+Termination                      16          16           .           .          .
+Concurrency                       .           .           .           .          .
+----------------------------------------------------------------------------------
+Total                            84    44 (52%)    40 (48%)           .          .
+
+
+max steps used for successful proof: 1
+
+============================
+Most difficult proved checks
+============================
+
+No check found with max time greater than 1 second
+
+========================
+Detailed analysis report
+========================
+
+Analyzed 1 unit
+in unit sia_continuity_observation_wire, 17 subprograms and packages out of 17 analyzed
+  SIA_Continuity_Observation_Wire at sia_continuity_observation_wire.ads:7 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire fully established
+  SIA_Continuity_Observation_Wire.After_Payload at sia_continuity_observation_wire.ads:78 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Continuity_Observation_Wire.After_Payload fully established
+absence of run-time errors of SIA_Continuity_Observation_Wire.After_Payload fully established
+  SIA_Continuity_Observation_Wire.Availability_Value at sia_continuity_observation_wire.ads:41 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Availability_Value fully established
+  SIA_Continuity_Observation_Wire.Before_Payload at sia_continuity_observation_wire.ads:71 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Before_Payload fully established
+absence of run-time errors of SIA_Continuity_Observation_Wire.Before_Payload fully established
+  SIA_Continuity_Observation_Wire.Claim_Payload at sia_continuity_observation_wire.ads:57 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Claim_Payload fully established
+absence of run-time errors of SIA_Continuity_Observation_Wire.Claim_Payload fully established
+  SIA_Continuity_Observation_Wire.Context_Value at sia_continuity_observation_wire.ads:33 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Context_Value fully established
+  SIA_Continuity_Observation_Wire.Decode at sia_continuity_observation_wire.ads:139 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Claim_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Claim_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Decode at sia_continuity_observation_wire.ads:148 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Operation_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Operation_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Decode at sia_continuity_observation_wire.ads:157 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (13 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.After_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Before_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Event_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Word_Value
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decode depends on
+  the postcondition of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.After_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Before_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Event_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decode
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Observation_Wire.Decoded_As at sia_continuity_observation_wire.ads:106 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Claim_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Decoded_As at sia_continuity_observation_wire.ads:113 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Operation_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Decoded_As at sia_continuity_observation_wire.ads:120 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.After_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Availability_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Before_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Event_Value
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Observation_Wire.Event_Value at sia_continuity_observation_wire.ads:48 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Event_Value fully established
+  SIA_Continuity_Observation_Wire.Operation_Payload at sia_continuity_observation_wire.ads:64 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (1 checks)
+the postcondition of SIA_Continuity_Observation_Wire.Operation_Payload fully established
+absence of run-time errors of SIA_Continuity_Observation_Wire.Operation_Payload fully established
+  SIA_Continuity_Observation_Wire.Valid at sia_continuity_observation_wire.ads:85 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Valid depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Claim_Payload
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Valid at sia_continuity_observation_wire.ads:91 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Valid depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Operation_Payload
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Observation_Wire.Valid at sia_continuity_observation_wire.ads:97 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Observation_Wire.Valid depends on
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.After_Payload
+  effects on parameters and Global variables of SIA_Continuity_Observation_Wire.Before_Payload
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity_Record_Wire.Valid

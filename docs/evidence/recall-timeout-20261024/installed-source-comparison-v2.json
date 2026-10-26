@@ -1,0 +1,67 @@
+[
+  {
+    "repository_path": "bin/sia",
+    "installed_path": "/home/sicarii/.local/share/sia/bin/sia-cli",
+    "installed_sha256": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5",
+    "514779ddf9ba6dcd4b5d1dafabac602910751cb3": {
+      "sha256": "658896e7eada72e1dc61166441b5f7a45fd8d525b612f33b9aaa85c0b965dbe5",
+      "matches_installed": true
+    },
+    "95c368bb2d37986de5d562719d1979b210117702": {
+      "sha256": "06ebdd60a0073664c481c85945d785e0cc13d84aaa7f06051704d463a423462c",
+      "matches_installed": false
+    }
+  },
+  {
+    "repository_path": "bin/sia-brainstem",
+    "installed_path": "/home/sicarii/.local/share/sia/bin/sia-brainstem.py",
+    "installed_sha256": "a89b1ada8f04116feb796598fa3432d1988d3dc4dce9ef226984095870f5832f",
+    "514779ddf9ba6dcd4b5d1dafabac602910751cb3": {
+      "sha256": "a89b1ada8f04116feb796598fa3432d1988d3dc4dce9ef226984095870f5832f",
+      "matches_installed": true
+    },
+    "95c368bb2d37986de5d562719d1979b210117702": {
+      "sha256": "2c111d71b0e115cb266676bdf42b97ccb4e1928b7a71487b74748b603d66e746",
+      "matches_installed": false
+    }
+  },
+  {
+    "repository_path": "bin/sialib.py",
+    "installed_path": "/home/sicarii/.local/share/sia/bin/sialib.py",
+    "installed_sha256": "ab3feca9822180cf8c0023ecd20a65dccae198193273041031f7b214be42025c",
+    "514779ddf9ba6dcd4b5d1dafabac602910751cb3": {
+      "sha256": "ab3feca9822180cf8c0023ecd20a65dccae198193273041031f7b214be42025c",
+      "matches_installed": true
+    },
+    "95c368bb2d37986de5d562719d1979b210117702": {
+      "sha256": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+      "matches_installed": false
+    }
+  },
+  {
+    "repository_path": "bin/siasourceengine.py",
+    "installed_path": "/home/sicarii/.local/share/sia/bin/siasourceengine.py",
+    "installed_sha256": "a07a13cc5fc525f639b48db809ec860b779f68a0d0e371fe63ec26d0cb7393ec",
+    "514779ddf9ba6dcd4b5d1dafabac602910751cb3": {
+      "sha256": "a07a13cc5fc525f639b48db809ec860b779f68a0d0e371fe63ec26d0cb7393ec",
+      "matches_installed": true
+    },
+    "95c368bb2d37986de5d562719d1979b210117702": {
+      "sha256": "a07a13cc5fc525f639b48db809ec860b779f68a0d0e371fe63ec26d0cb7393ec",
+      "matches_installed": true
+    }
+  },
+  {
+    "repository_path": "bin/sia-mcp",
+    "installed_path": "/home/sicarii/.local/share/sia/bin/sia-mcp",
+    "installed_sha256": "960b2b5294ac7e59119f625514de53cbf2b565fec1d07fae3c0fc457a8bdbe1f",
+    "514779ddf9ba6dcd4b5d1dafabac602910751cb3": {
+      "sha256": "960b2b5294ac7e59119f625514de53cbf2b565fec1d07fae3c0fc457a8bdbe1f",
+      "matches_installed": true
+    },
+    "95c368bb2d37986de5d562719d1979b210117702": {
+      "sha256": "aa896723ad094ef29a7e7ba800c3c835552650940404e6793ef7c33de4a85a92",
+      "matches_installed": false
+    }
+  }
+]

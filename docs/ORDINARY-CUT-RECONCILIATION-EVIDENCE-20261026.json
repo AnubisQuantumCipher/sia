@@ -1,0 +1,230 @@
+{
+  "archive": {
+    "bytes": 44840,
+    "path": "docs/evidence/ordinary-cut-reconciliation-20261026-v1.tar.gz",
+    "sha256": "a1f6b923ef567b933d01d274cb2cace47422332d9278e2cd3f5b0e8476a746f1"
+  },
+  "authority": "NONE",
+  "carrier_head": "c61d43cb291274f4904295423dbda9aa00e5d849",
+  "limitations": [
+    "One exact interrupted pre-admission fixture; no replay or successor authority.",
+    "Original pending inode and bytes preserved; previous history checked by bytes/metadata.",
+    "Prior actual cut/refusal evidence and baseline snapshot retained in prerequisite checkpoint.",
+    "Ordinary nonhostile root/host; unsigned tool observations; no hardware crash proof.",
+    "Post-admission/pre-entry/witness-loss custody, native C14, compaction and R05 BOTH remain open.",
+    "No installed product, service, firewall, provider, release or marketplace change."
+  ],
+  "members": {
+    "run/AUDITOR-STATIC.json": {
+      "bytes": 1774,
+      "sha256": "e6ddb8e8bc4a328efb71618724e05011e0c1ba698ca609b3f13f39fd48bf045d"
+    },
+    "run/EXECUTION-DECISION.json": {
+      "bytes": 1344,
+      "sha256": "3d250ead5384600248063b7ba29a28383bd40ed4deafc12603315d8a7c9c0347"
+    },
+    "run/EXECUTION-PLAN.json": {
+      "bytes": 1794,
+      "sha256": "304630949d3efe098fa7cb4913c24d9646ce398417477e93619073ee135ea838"
+    },
+    "run/OWNER-AUDIT.json": {
+      "bytes": 2727,
+      "sha256": "b8ea91bb9ef870e21d031cb82ed8f8931eb4301f33911ccbb6ff7f8ecd82ff40"
+    },
+    "run/PRE-EXECUTION-REVIEW.json": {
+      "bytes": 704,
+      "sha256": "dca5a490e813eb6a3e9265ed6c4fce726c55061b904f65c93667ac0a7383149c"
+    },
+    "run/RESULT-INDEPENDENT-REVIEW.json": {
+      "bytes": 734,
+      "sha256": "fb2b0b8c31a1e19a96ca20be91a33109cae15403cfba7ad81a050d7251a436d0"
+    },
+    "run/STATIC-v1.json": {
+      "bytes": 3375,
+      "sha256": "977ec77a80c9c71a240055f0da6a7f484079a445ff19e216860114a2bb2f2fc7"
+    },
+    "run/TEST-EXECUTION-DECISION.json": {
+      "bytes": 1215,
+      "sha256": "43e3ec6e434faac7565d4909cf903c749d27daf1b76a7d7bc0d50116c962c8a8"
+    },
+    "run/TEST-RESULT.json": {
+      "bytes": 1059,
+      "sha256": "df05125a3a0387e9fef3720fdd2ee7b13fc32896a3eb4edc7a0aecc0758776fe"
+    },
+    "run/TEST-TOOL-OBSERVATION.json": {
+      "bytes": 123,
+      "sha256": "9c7a41ae5b8bf2d6ca72e938d06a5ee66ec0107f6efe57a0bb01a02ad749792d"
+    },
+    "run/TOOL-EXIT-OBSERVATION.json": {
+      "bytes": 349,
+      "sha256": "26a1fe9d4fdd58faba471139702bec9fcc68d19625407d918867c18fc00e1d83"
+    },
+    "run/candidate.py": {
+      "bytes": 15055,
+      "sha256": "aee6fd5047505fb523359e666f49966e75409f8b3b5d748a7848e33e9b7d8b6d"
+    },
+    "run/decision.json": {
+      "bytes": 4441,
+      "sha256": "ad0cccb2b6597e4905bd55658c2a3a20287e11b7d7b69b4d849eba4cd9e5bfb7"
+    },
+    "run/invoke.py": {
+      "bytes": 2276,
+      "sha256": "821623a78b281f7f4eaa05c0be09e0379a6fdce2e6a5ea90ef3cd4ff974711d5"
+    },
+    "run/normal_reconcile.py": {
+      "bytes": 10254,
+      "sha256": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f"
+    },
+    "run/outer-result.json": {
+      "bytes": 685,
+      "sha256": "89b19bc29ce9919bd587c380c87ae716b9752c801ac7afb3efdb1c97fc31da15"
+    },
+    "run/outer.stdout": {
+      "bytes": 409,
+      "sha256": "379b946a21f3a22ef5899562323c78cd108f14021363ffe4508e76ed29e41b3c"
+    },
+    "run/readback.py": {
+      "bytes": 2880,
+      "sha256": "cbcb225edaf92ac78e47331e8fe8e09c9a094e330278eb4b2a1b47eb60380cd1"
+    },
+    "run/readback.stdout": {
+      "bytes": 1181,
+      "sha256": "0065df26b3152b3a45cb2162af4cb18942650dd6644a9731149328ef96b0f098"
+    },
+    "run/reconcile.py": {
+      "bytes": 14875,
+      "sha256": "04efebd54eb057fc2578de7c3ecd5843dffc513c0f1045b6df6f30596e327426"
+    },
+    "run/run_tests.py": {
+      "bytes": 2772,
+      "sha256": "63dea6bf24eb352d4b22598c42775653fc650b917f30ebcd2a0057dfc3e53c1d"
+    },
+    "run/source.json": {
+      "bytes": 788,
+      "sha256": "b6a26b85408b4ed60180fb4b1509551e9c7444d01fa5d0023918d5d05d048311"
+    },
+    "run/test_normal.py": {
+      "bytes": 15792,
+      "sha256": "59065b85aeff11ab317adea2fdc20aa2184d404016271fd3ad7bdb63f6d96aa5"
+    },
+    "run/test_reconcile.py": {
+      "bytes": 19957,
+      "sha256": "149b2638fbe4e8534421a772a390fa8d8907db062074919f704ec5586e824019"
+    },
+    "run/tests.stderr": {
+      "bytes": 7591,
+      "sha256": "5d58b0d42177f0d6505ba803596ba918c4ff88a36307a5d9a4b8bcb9eaf1bcf6"
+    },
+    "tools/audit_cut_reconciliation_20261026.py": {
+      "bytes": 4153,
+      "sha256": "e523f625e6f4a622d385b1cbd601b243295316eec56e874f42e7a17be61d2c9d"
+    },
+    "tools/package_cut_reconciliation_20261026.py": {
+      "bytes": 5790,
+      "sha256": "27a1e860b0f00d0374c85aee32373eaa94f177ae7e39846db78f5ec0efb678bc"
+    },
+    "unrun-v1/EXECUTION-PLAN.json": {
+      "bytes": 1693,
+      "sha256": "9b77537c822655d1fffba3832fb41527798f605a747df3a4bee16d8ec944be2c"
+    },
+    "unrun-v1/STATIC-v1.json": {
+      "bytes": 3375,
+      "sha256": "b3e28c9cb38fb445ac40dcc2c0046b4703806a9dff9a5470221518fac1a21434"
+    },
+    "unrun-v1/TEST-EXECUTION-DECISION.json": {
+      "bytes": 1215,
+      "sha256": "e9bec19ad0e2a1f6e804c992132f959909e9464dcc22b06c225bd80f262dee15"
+    },
+    "unrun-v1/TEST-RESULT.json": {
+      "bytes": 1059,
+      "sha256": "19dfc7216c8f89634d2c449149dfff229fa1325c37f8237d1557f74e1cd80cd8"
+    },
+    "unrun-v1/UNRUN-DISPOSITION.json": {
+      "bytes": 485,
+      "sha256": "c75fdec1c32cc302e439cb3435d4fedc6124dc26741213ce40c22297ac40d391"
+    },
+    "unrun-v1/candidate.py": {
+      "bytes": 15055,
+      "sha256": "aee6fd5047505fb523359e666f49966e75409f8b3b5d748a7848e33e9b7d8b6d"
+    },
+    "unrun-v1/decision.json": {
+      "bytes": 4441,
+      "sha256": "19c78648a0354b89414d4c8fc9a795afda1af964cd714b4e3c35409fd79ffc3c"
+    },
+    "unrun-v1/invoke.py": {
+      "bytes": 2276,
+      "sha256": "821623a78b281f7f4eaa05c0be09e0379a6fdce2e6a5ea90ef3cd4ff974711d5"
+    },
+    "unrun-v1/normal_reconcile.py": {
+      "bytes": 10254,
+      "sha256": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f"
+    },
+    "unrun-v1/readback.py": {
+      "bytes": 2760,
+      "sha256": "b5780e5b288f10f0e14148b6d26bd784e9a9e77b6807bc5a0859cd3f7a834de9"
+    },
+    "unrun-v1/reconcile.py": {
+      "bytes": 14875,
+      "sha256": "04efebd54eb057fc2578de7c3ecd5843dffc513c0f1045b6df6f30596e327426"
+    },
+    "unrun-v1/run_tests.py": {
+      "bytes": 2772,
+      "sha256": "63dea6bf24eb352d4b22598c42775653fc650b917f30ebcd2a0057dfc3e53c1d"
+    },
+    "unrun-v1/source.json": {
+      "bytes": 788,
+      "sha256": "f360460854c6d1d03c91361921a8255cbd30f1b510a0190ea50c37f49cb310e9"
+    },
+    "unrun-v1/test_normal.py": {
+      "bytes": 15792,
+      "sha256": "59065b85aeff11ab317adea2fdc20aa2184d404016271fd3ad7bdb63f6d96aa5"
+    },
+    "unrun-v1/test_reconcile.py": {
+      "bytes": 19331,
+      "sha256": "cc8902f1a11f61e29110db271d89da45c73f9d17b76f8534b986003c0dd7f427"
+    },
+    "unrun-v1/tests.stderr": {
+      "bytes": 7432,
+      "sha256": "e87544a07f1ebae52451eaa85ba61022433c48be8c76a888ea2b82b8e1a7a99c"
+    }
+  },
+  "prerequisite_checkpoint": "c61d43cb291274f4904295423dbda9aa00e5d849",
+  "result": {
+    "authority": "NONE",
+    "component_tests": 54,
+    "evidence_sha256": {
+      "AUDITOR-STATIC.json": "e6ddb8e8bc4a328efb71618724e05011e0c1ba698ca609b3f13f39fd48bf045d",
+      "EXECUTION-DECISION.json": "3d250ead5384600248063b7ba29a28383bd40ed4deafc12603315d8a7c9c0347",
+      "EXECUTION-PLAN.json": "304630949d3efe098fa7cb4913c24d9646ce398417477e93619073ee135ea838",
+      "PRE-EXECUTION-REVIEW.json": "dca5a490e813eb6a3e9265ed6c4fce726c55061b904f65c93667ac0a7383149c",
+      "STATIC-v1.json": "977ec77a80c9c71a240055f0da6a7f484079a445ff19e216860114a2bb2f2fc7",
+      "TEST-EXECUTION-DECISION.json": "43e3ec6e434faac7565d4909cf903c749d27daf1b76a7d7bc0d50116c962c8a8",
+      "TEST-RESULT.json": "df05125a3a0387e9fef3720fdd2ee7b13fc32896a3eb4edc7a0aecc0758776fe",
+      "TEST-TOOL-OBSERVATION.json": "9c7a41ae5b8bf2d6ca72e938d06a5ee66ec0107f6efe57a0bb01a02ad749792d",
+      "TOOL-EXIT-OBSERVATION.json": "26a1fe9d4fdd58faba471139702bec9fcc68d19625407d918867c18fc00e1d83",
+      "candidate.py": "aee6fd5047505fb523359e666f49966e75409f8b3b5d748a7848e33e9b7d8b6d",
+      "decision.json": "ad0cccb2b6597e4905bd55658c2a3a20287e11b7d7b69b4d849eba4cd9e5bfb7",
+      "invoke.py": "821623a78b281f7f4eaa05c0be09e0379a6fdce2e6a5ea90ef3cd4ff974711d5",
+      "normal_reconcile.py": "0767399d481db3bc12f84f156791fed63f8eeefb9acff94a25865722d1c5d99f",
+      "outer-result.json": "89b19bc29ce9919bd587c380c87ae716b9752c801ac7afb3efdb1c97fc31da15",
+      "outer.stdout": "379b946a21f3a22ef5899562323c78cd108f14021363ffe4508e76ed29e41b3c",
+      "readback.py": "cbcb225edaf92ac78e47331e8fe8e09c9a094e330278eb4b2a1b47eb60380cd1",
+      "readback.stdout": "0065df26b3152b3a45cb2162af4cb18942650dd6644a9731149328ef96b0f098",
+      "reconcile.py": "04efebd54eb057fc2578de7c3ecd5843dffc513c0f1045b6df6f30596e327426",
+      "run_tests.py": "63dea6bf24eb352d4b22598c42775653fc650b917f30ebcd2a0057dfc3e53c1d",
+      "source.json": "b6a26b85408b4ed60180fb4b1509551e9c7444d01fa5d0023918d5d05d048311",
+      "test_normal.py": "59065b85aeff11ab317adea2fdc20aa2184d404016271fd3ad7bdb63f6d96aa5",
+      "test_reconcile.py": "149b2638fbe4e8534421a772a390fa8d8907db062074919f704ec5586e824019",
+      "tests.stderr": "5d58b0d42177f0d6505ba803596ba918c4ff88a36307a5d9a4b8bcb9eaf1bcf6"
+    },
+    "limits": [
+      "One exact pre-admission interrupted fixture only; no replay or successor authority",
+      "Previous history checked by bytes/metadata; original pending inode pinned",
+      "Ordinary nonhostile root/host; unsigned observations; no hardware crash proof",
+      "Whole custody, native C14, repeated compaction, R05 BOTH, judge and release remain open"
+    ],
+    "source_manifest": "b6a26b85408b4ed60180fb4b1509551e9c7444d01fa5d0023918d5d05d048311",
+    "status": "EXACT_INTERRUPTED_FIXTURE_RECONCILIATION_PASS"
+  },
+  "status": "EXACT_INTERRUPTED_FIXTURE_RECONCILIATION_PASS"
+}

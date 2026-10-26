@@ -1,0 +1,116 @@
+{
+  "archive": "native-fortified-model-20261025.tar.gz",
+  "archive_bytes": 57690,
+  "archive_sha256": "b978ad67a72b04284b56c0b826ab960bf1faf19dfa2456cdbb83e9fe97331980",
+  "carrier_base": "721e6a14668205a80e544530f6740cb9995d422d",
+  "compiler_result": "exit1: intentional analyzer query errors under unchanged Werror",
+  "compiler_source": "301eb08fa2c5b6f3045260bf1294c2e2bacbcd90",
+  "limitations": "No patched compiler build, capacity/failure model qualification, whole-TU convergence, SIA repair, install or release.",
+  "members": {
+    "FINDING.md": {
+      "bytes": 6163,
+      "sha256": "4594a0554cdf381b886d0280a9c246949c79d71de6f1f278906acfde99972c85"
+    },
+    "build_evidence.py": {
+      "bytes": 3778,
+      "sha256": "8b4121bd5204e807dce0d4649922714d168c5bd120ae5020ba68259a010dc6c5"
+    },
+    "extract_bounded.py": {
+      "bytes": 3418,
+      "sha256": "2450c2ba5f6dbdc087450f9e82030b04996ac7b449f6173b9008b5e0b6417802"
+    },
+    "extract_frontier.py": {
+      "bytes": 1847,
+      "sha256": "6c65651eb882a2415d58f5c4f251cad9553db3b35fefb195ae68cdd1bed29515"
+    },
+    "fortified-frontier.json": {
+      "bytes": 525,
+      "sha256": "c720ba425e057e1d9e2187eea7032707e1ac9338d608be319981184dbe35df34"
+    },
+    "fortified-frontier.txt": {
+      "bytes": 30868,
+      "sha256": "ab8e4196d91f80c7b785cff9c513b881e63e11161c69863c2d65af137a573ec1"
+    },
+    "fortified_probe.c": {
+      "bytes": 968,
+      "sha256": "c46238a186bc1c6bdd38708377508499567db4172985371567df65160bd4579b"
+    },
+    "gcc-references.json": {
+      "bytes": 572,
+      "sha256": "db6fe7b174e626eaea4c4214ab39bf1a95f1265cf7e043b17c6feaf224533cb2"
+    },
+    "gcc-source/kf.cc": {
+      "bytes": 75743,
+      "sha256": "e1e8cf2deb180dd4cd1fe586dcd867f6a4d85e857f9bd101deafdca77a78a08c"
+    },
+    "gcc-source/known-function-manager.cc": {
+      "bytes": 5574,
+      "sha256": "364e0c43987a5276b8136b0feeaa66f3bc3592420cd920cd31e207586f6ee316"
+    },
+    "independent-source-review.txt": {
+      "bytes": 1655,
+      "sha256": "9da7d35b823b9123e0c984d2318979ba4493c6f554a9cd6fabab160ab946e08a"
+    },
+    "kf.cc.proposed": {
+      "bytes": 75770,
+      "sha256": "bb71cbe425035b74d91ad14a51ad97c5c91072d19529b51e09a29a94e85c2d02"
+    },
+    "nodes-77-78-79.json": {
+      "bytes": 961,
+      "sha256": "9719316611ae27bd9979cd560bec7328cf1c83f70a9dcf6e361050ff52416415"
+    },
+    "nodes-77-78-79.txt": {
+      "bytes": 52447,
+      "sha256": "78574b233d2adce0dcdf2b2baa007c366df988a3ce569c35608b9eda2726f399"
+    },
+    "postcheck-results.json": {
+      "bytes": 1326,
+      "sha256": "e87b82282e18b97e9c8396c71e57f0cc046bc674296e03c28e23cbb69b285aac"
+    },
+    "proposed-kf-memset-arity.patch": {
+      "bytes": 440,
+      "sha256": "157134816e094b1d7d1ae3df3f33e4b14f169c68308375e986f1db3217e87821"
+    },
+    "run/fortified_probe.c.analyzer.txt": {
+      "bytes": 266621,
+      "sha256": "8071cc0378dec638a34ceb4c513644269d876a2f229e0f3f76aea40c8df66ff3"
+    },
+    "run/fortified_probe.s": {
+      "bytes": 1829,
+      "sha256": "688ba82df7b08f63f6b79fa19dc00042ac76125feb0bce522fff668b284043a9"
+    },
+    "run/result.json": {
+      "bytes": 3549,
+      "sha256": "1b45aebadb74f7718c0072e0eb55334509660ae5929b51d5ad5a8168a4fdf4f6"
+    },
+    "run/stderr": {
+      "bytes": 1377,
+      "sha256": "53ba75102f7482036201c2d5303e2935de4fd3342bc834705cdff32d4183f526"
+    },
+    "run/stdout": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "run_probe.py": {
+      "bytes": 2714,
+      "sha256": "3e1a8e9de9e8fa88cf17cc476f6d66aa6fb75243b0735b5e77654f4cf953957b"
+    },
+    "scripts-static-result.json": {
+      "bytes": 2495,
+      "sha256": "13b238222b8598dca894f691b5a714c441ed7d6c6e21c531f493e55193f491b5"
+    },
+    "scripts-static.stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scripts-static.stdout": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "observation": "Checked fill uses unknown-effect fallback; ordinary fill models its writes",
+  "query_limit": "Marker queries folded TRUE; both variable first-byte queries UNKNOWN",
+  "review": "ActualGPT6.1 read-only source/raw review; no independent execution",
+  "static": "Frozen167-rule partial profile exit0; no whole-tree claim",
+  "status": "COMPILER_MODEL_DIAGNOSTIC_PATCH_UNBUILT_NOT_ADOPTED"
+}

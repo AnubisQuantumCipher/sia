@@ -1,0 +1,158 @@
+{
+  "status": "OBSERVED_REPEATED_AUTHORIZATION_MISBINDING",
+  "authorization": "UNVERIFIED_PENDING_FOR_R05_REQUIREMENT_CHANGE",
+  "question_call_id": "call_081affc1e32b4ff493b62f818b43a66d",
+  "original_event_recheck": {
+    "records": [
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 47955,
+        "timestamp": "2026-10-24T04:59:47.068Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_834919f2fcce4467bcd9826c00a11369",
+        "payload_type": "function_call",
+        "text": "",
+        "arguments": "{\"questions\":[{\"title\":\"Do you approve the three exact BLE001 exceptions described in /home/sicarii/Work/sia-assurance-evidence-20261019/takeover-sdk-three-BLE001-exceptions-operator-proposal-v1.json? They cover run_main\u2019s final error handler and read_checked\u2019s read/close handlers, preserve error identity and cleanup, and require exact-source validation and adversarial tests. No global suppression, other gate waiver, or zero-warning claim. Your AGENTS.md explicitly requires approval for policy deviations.\",\"options\":[\"Approve only these three exact exceptions\",\"Keep strict policy; continue seeking a redesign\"]}]}",
+        "raw_line_sha256": "9a25eda9694aa9b3b54397406ded990d33816a499bdf5405ebe735ffcde6ea21"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 47958,
+        "timestamp": "2026-10-24T04:59:47.106Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_834919f2fcce4467bcd9826c00a11369",
+        "payload_type": "function_call_output",
+        "text": "",
+        "arguments": null,
+        "raw_line_sha256": "78b59d8ddbae2ff6d8175f5a126fbcb4c3388fc0ccc889def54b156e5af3f544"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 48017,
+        "timestamp": "2026-10-24T05:00:45.267Z",
+        "record_type": "response_item",
+        "role": "user",
+        "call_id": null,
+        "payload_type": "message",
+        "text": "That desision is up to you use your best judgment",
+        "arguments": null,
+        "raw_line_sha256": "1a45ed4b11f65556dc2b09061beabd7504eda00b5762e5f58bf86f3fcb6aa663"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 65774,
+        "timestamp": "2026-10-24T19:20:21.180Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_081affc1e32b4ff493b62f818b43a66d",
+        "payload_type": "function_call",
+        "text": "",
+        "arguments": "{\"questions\":[{\"title\":\"Approve this specific R05 change: require fresh current-policy validation on every call and retire the mandatory expensive-reuse/call-count requirement? The reviewed proposal is at /home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/r05-current-admission-proposal-v2/PROPOSAL.md. This approves a requirement change only: all safety checks, resource limits, full writer tests, installation and release gates remain required. Full writer qualification still fails.\",\"options\":[\"Approve fresh-validation requirement\",\"Keep mandatory reuse requirement\"]}]}",
+        "raw_line_sha256": "7f6913ed4d5b8b57ae59033b4747e65b76ed8986370afb8e2fc8ebe1c720442b"
+      },
+      {
+        "file": "rollout-2026-10-19T10-54-57-01a1548c-e4bd-7d10-a4df-b68d11e2b70b_01a154a8-999b-70d2-838d-9189935929d0.jsonl",
+        "line": 65777,
+        "timestamp": "2026-10-24T19:20:21.193Z",
+        "record_type": "response_item",
+        "role": null,
+        "call_id": "call_081affc1e32b4ff493b62f818b43a66d",
+        "payload_type": "function_call_output",
+        "text": "",
+        "arguments": null,
+        "raw_line_sha256": "8f165c086b6563ae8dec5be969c71e9eebaa15fcddc7e6b99afcf2463592feae"
+      }
+    ],
+    "scope": "Two identified owner-session JSONL files searched for exact delegation text and named question IDs; not global authorship proof"
+  },
+  "later_user_event_inventory": {
+    "scope": "Current identified owner rollout after explicit R05 question; no global authorship assurance",
+    "observed_at": "2026-10-24T22:02:54.720464+00:00",
+    "records": [
+      {
+        "line": 66288,
+        "timestamp": "2026-10-24T19:39:42.353Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "0c7291f8d992da0086156016594247da649711db98b48330598a649365f77c30",
+        "text": null
+      },
+      {
+        "line": 66768,
+        "timestamp": "2026-10-24T19:59:43.929Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "d1e41bf76a343cd08a442e7aa91ef48ec98151b1ba114618aa55fbe2d2568a43",
+        "text": null
+      },
+      {
+        "line": 67368,
+        "timestamp": "2026-10-24T20:29:25.495Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "598caec0069119e2907c1f354139597ce560d4d4d08f92b5002fe90905cd324b",
+        "text": null
+      },
+      {
+        "line": 67637,
+        "timestamp": "2026-10-24T20:41:26.132Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "30911b323b9f24578190d058b61853e2baae261f3b1959a59a20ea11b8f935f2",
+        "text": null
+      },
+      {
+        "line": 67951,
+        "timestamp": "2026-10-24T20:53:49.296Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "ec32097c4584ab5047bf0abea236a6355396541f01e631076645a63dc0779775",
+        "text": null
+      },
+      {
+        "line": 68253,
+        "timestamp": "2026-10-24T21:08:54.437Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "9dc66223b9e97bc96a64d0441bbbe15f4eaee637dc0b487fd8addec71023f944",
+        "text": null
+      },
+      {
+        "line": 68504,
+        "timestamp": "2026-10-24T21:20:28.189Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "3451372816befb253e64ccd7cb9b918a12511e6175cf50355bf060e1a571d19b",
+        "text": null
+      },
+      {
+        "line": 69149,
+        "timestamp": "2026-10-24T21:47:44.548Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "666536e3dbe8e657d96113e346370c81f72b5996c59391bdb48da15d7dae3f24",
+        "text": null
+      },
+      {
+        "line": 69415,
+        "timestamp": "2026-10-24T21:54:53.719Z",
+        "kind": "automatic_goal_continuation",
+        "raw_line_sha256": "d7c58a35e79e6f2682307666fdbb72924ca20f4e58507e88166cc5f7091dc50e",
+        "text": null
+      }
+    ]
+  },
+  "superseded_owner_record": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/ownership-transfer-20261024/event-index-delta-v1/R05-DELEGATED-DECISION.json",
+    "sha256": "dc01b940b7204dc16ed58c9164b953714575e9fc86e7377ad2e03f50daa4c5c5",
+    "classification": "Owner-authored interpretation, not original human authorization"
+  },
+  "superseded_public_claims": [
+    "c00e3c0d9202595c805052bf3164874dc1eb2ab0 docs/EVENT-INDEX-DELTA-20261024.md final R05 paragraph",
+    "c00e3c0d9202595c805052bf3164874dc1eb2ab0 docs/EVENT-INDEX-DELTA-EVIDENCE-20261024.json r05_decision",
+    "6669e0ff7cc12f97662d3a9adc86263939399686 docs/CONSOLIDATION-INDEX-BARRIER-20261024.md selected-policy reference",
+    "PR43 descriptions and owner summaries asserting a new R05 delegation",
+    "Model-origin SIA notes a1339de1c8d8497ca60893853f537914 and a8dd7ba191504989be93a4650c9e89ed"
+  ],
+  "current_requirements": [
+    "Original mandatory useful expensive reuse and its test obligation remain open",
+    "Fresh current-policy validation remains required; stale success reuse is not authorized",
+    "Original performance, memory, source/proof, installed, release and marketplace gates remain binding"
+  ],
+  "preserve_experiment_and_evidence": true,
+  "scope": "Current two identified owner-session files; no claim of complete external capture or cryptographic human authorship; owner timestamps and model notes are not approval"
+}

@@ -1,0 +1,56 @@
+SIA completion contract
+Draft for incorporation by the existing implementation owner
+Snapshot reviewed: assurance 74efd05673719ce5a740d83510c652c5a956c930; main 514779ddf9ba6dcd4b5d1dafabac602910751cb3
+Prepared 2026-10-21. This is a proposed completion contract, not acceptance evidence.
+
+GOAL
+
+Deliver and qualify one installed SIA release for the declared Linux/Omarchy environment and the selected Codex desktop harness. It must preserve authorized captured history and provenance; provide bounded, source-linked retrieval and conservative task restoration; enforce consequential policy through Ada/SPARK and Linux protection; recover under the declared fault model; and publish only claims supported by reproducible evidence.
+
+Preserve every existing A01-A24 obligation in docs/ASSURANCE-GOAL.md, the G1-G6 gates, C01-C14 continuity contracts, original fixtures, accepted cases, negative controls, compatibility requirements and retained failures. This contract organizes closure; it grants no deviation or reduction of scope. It grants no new spending, security privilege, concurrency cap or network authority and does not authorize installation of the draft SOUL.md.
+
+FREEZE THE ACCEPTANCE MANIFEST FIRST
+
+Maintain one versioned manifest mapping every existing obligation to its exact requirement, supported platform/harness, threat/fault model, source/configuration, executable test or proof command, expected outcome and retained receipt. Include the complete source/proof roster and third-party assumptions. Freeze byte/event/queue/disk/process/memory limits, workload, latency/recovery deadlines, observation window, benchmark splits, ground truth and scoring criteria before final acceptance. Preserve existing approved limits. An unresolved value or missing oracle remains OPEN; do not choose thresholds retrospectively to fit a run.
+
+Use one implementation owner and the existing branch/evidence ledger. Reconcile that branch with the intended release source under existing release gates. Every implementation task must identify the existing obligation or demonstrated defect it closes. New unrelated capabilities require a later goal; the approved detachable cockpit and Codex continuity remain in scope.
+
+MANDATORY ACCEPTANCE
+
+1. Provenance and lifecycle: A01, A02, A16, A17, A18, A21.
+   Enrolled original capture preserves source identity, ordering, redaction lineage, origin and explicit gaps. Unknown, unavailable and observed-empty remain distinct. Signing never promotes model prose into factual evidence. Current read/retire authorization is enforced. Retraction, tombstones and rebuild propagate through derived summaries, embeddings and checkpoints without unauthorized loss or resurrection of originals. Every requirement traces to contracts, implementation and evidence.
+
+2. Protected authority: A04, A06, A07, A11, A12.
+   The restricted actuator actually owns protected state and signing authority. Authenticated producers supply the facts checked by SPARK. Exercise legitimate effects and authorized outcome reads, alongside hostile same-user bypass attempts, forged or expired grants, revocation races, stale epochs, joint rollback, missing/mismatched kernel, malformed IPC and forbidden network paths. A refusal produces no unauthorized effect or disclosure. Independent freshness, resource admission and OS limits are commissioned and tested; Python cannot turn its own Boolean into authority.
+
+3. Durable operation and installed integration: A03, A05, A09, A15, A20.
+   Bind the selected installed executables, effective configuration, retained state and actual dispatch. Run the real source-to-corpus-to-index-to-graph-to-ledger-to-ACK path. Inject the declared crashes and I/O faults at every actual durable transition in the selected path, mapped to the frozen model, including torn/reordered writes and acknowledgment cuts; exercise fresh process/service restart, replay, corruption, contention, quota exhaustion and ongoing arrivals. Acknowledged captured records survive within the declared durability assumptions; uncertain outcomes are reconciled by exact operation identity before retry. For qualifying recoverable cases, recovery completes within frozen bounds under the declared workload. Declared unrecoverable or out-of-envelope cases refuse explicitly within the applicable deadline. An explicit failure does not satisfy a required positive recovery case. No clearing recovery debt except through its specified, evidenced settlement/recovery transition; no substitute inactive code path or mock-only acceptance.
+
+4. Off-host recovery and lifecycle: A05, A10, A13, A20.
+   Restore into an isolated target from the selected backup path, compare authoritative content and provenance, and rebuild derived indexes through supported interfaces. Retain damaged-data, tampered-receipt and revoked/compromised-credential controls. Qualify installation, upgrade/migration, restart, ordinary uninstall and recovery of interrupted lifecycle operations without damaging live evidence. Report the exact recovery assumptions and supported path.
+
+5. Agent continuity: A22, A23, plus C01-C14.
+   Qualify explicit checkpoint/resume and the actual selected Codex desktop lifecycle, including supported automatic/manual compaction and restart/resume events. A fresh continuation receives the correct task, current goal and acceptance criteria, corrections, constraints, source/dirty-state bindings, rejected approaches, pending/uncertain operations and evidence references. It preserves approval scope without creating new permission. Missing originals, stale checkpoints, cross-session input, revoked records, malicious retrieved instructions and failed hooks refuse actionable restoration.
+   Reject omission or reset of unresolved operations, unsupported supersession/conflicting writers, stale or simultaneous restoration markers, and stopped-hook completion. Bind restoration to the current session, checkpoint/head, retention generation, lifecycle occurrence and target turn; recheck head and retention before use.
+   Run the frozen repeated-compaction campaign against an uncompacted baseline. Every mandatory deterministic safety case must pass; a lost mandatory constraint, invented approval/completion, unauthorized disclosure or duplicate consequential effect fails the campaign. Retain model-continuation outcomes separately from protocol proof and meet the preregistered quality/resource thresholds. Do not infer universal model reliability or qualify another harness by analogy.
+
+6. Retrieval and cognitive claims: A08, A19, also A15.
+   Run independently frozen held-out questions on real admitted history with independent expected answers, explicit abstentions and the dense baseline. Preserve every per-query result, false acceptance, false refusal, miss, latency and resource observation; use JACKAL where required for metrics and retain its status classes/refusals. Meet the frozen basic retrieval/abstention criteria. For each claimed cognitive improvement, either independently reproduce the required win or withdraw that improvement claim and apply the existing policy for its default/name/surface. A negative research result may close the claim evaluation; it cannot excuse failure of required core retrieval or continuity.
+
+7. Usable cockpit and honest documentation: A14, A24.
+   Qualify the existing cockpit and approved detachable window on the installed path, including presentation changes and lifecycle ownership. Preserve one runtime/database owner. UI and docs distinguish current readiness, last-published diagnostics, gaps and refusal. Remove unsupported proof, retrieval, cognitive and deployment claims; label illustrative material.
+
+8. Final assurance and release: A13, A21 and every preceding row.
+   Reproduce the strict build, static analysis, complete intended all-unit proof, original runtime/regression/real-engine suites and required fault campaigns from the exact final source. No unresolved intended proof obligation, hidden warning/assumption, unapproved exception or mandatory UNRUN test may be counted as accepted. Retain raw failures and exact toolchain identities. Supply an offline verifier with missing/mismatched/corrupted-evidence refusal controls. Obtain independent actual GPT-6.1 review with its scope recorded; evidence checking and independent execution must be distinguished. Perform the independent reproductions required by the existing gates; a source/evidence correspondence review cannot substitute for those executions. Bind installed readback, tag/release, reporter credit and exact-commit marketplace approval/catalog readback to the qualifying source. Marketplace submission alone is not publication.
+
+STOP RULE
+
+The mission is DONE only when all A01-A24 acceptance rows have their required exact-source evidence and independent acceptance, required installed/release checks pass, and required external publication is confirmed. Known blocking defects, OPEN/UNRUN/FAILED mandatory rows or missing dependencies prevent completion.
+
+When engineering acceptance is complete but marketplace review is outstanding, report ENGINEERING ACCEPTED / PUBLICATION PENDING. Preserve the frozen release and existing marketplace process; do not call the whole mission done or add features to fill the wait.
+
+After all gates pass, provide one closure report linking the manifest, proof/test/fault results, review, installed identity and publication evidence, then mark the goal complete and stop. Reopen only for a demonstrated defect/regression affecting the accepted contract or an explicit new user request. Routine future maintenance is separate work.
+
+SMALLEST SOUND NEXT STEP
+
+Turn the existing ledger into the executable, frozen acceptance manifest without creating a competing goal. Preserve the current owner’s safe in-flight increment. Close the unresolved protected-slot temporal/schema/freshness design obligations, then demonstrate one disposable protected publication and authorized outcome query with positive and hostile bypass controls before live authority transfer. Component codec progress remains useful, but it cannot close the system acceptance gates by itself.

@@ -1,0 +1,46 @@
+{
+  "schema": "sia.sdk-fixture-qualification-checkpoint.v1",
+  "status": "NON_FINAL_COMPLETE_SUITE_FAILED",
+  "base_commit": "baaa05f199bd6dd133c67ca64048d770c6522617",
+  "archive_member_count": 199,
+  "packaging": "Two deterministic constructions and check mode byte-matched; every archive member digest rechecked without extraction or execution.",
+  "hygiene": "No match to bounded common private-key/token patterns; not a proof of absence of secrets.",
+  "targeted_final": {
+    "status": "PASS",
+    "tests_reported": 17,
+    "elapsed_seconds_reported": 13.78,
+    "source_unchanged": true
+  },
+  "full_candidate": {
+    "status": "FAILED",
+    "exit": 124,
+    "work_cap_seconds": 120,
+    "source_unchanged": true,
+    "final_successor_full_suite": "UNRUN"
+  },
+  "review": "ActualGPT6.1 read-only source reviews; no independent execution",
+  "artifacts": {
+    "docs/evidence/sdk-fixture-qualification-20261024/build_snapshot.py": {
+      "sha256": "f1845e60c908c8a6781a9f7233daba02621619d97d7eae34263877989729e6aa",
+      "bytes": 4056
+    },
+    "docs/evidence/sdk-fixture-qualification-20261024/builder-static.json": {
+      "sha256": "a8c464824e956ceea9095dffd52db8cde386cc0113518e600807d584a2cd10e3",
+      "bytes": 1768
+    },
+    "docs/evidence/sdk-fixture-qualification-20261024/inventory.json": {
+      "sha256": "a2b9cb7c49fc24c041d8d9bf1cf235acb073b852af42cc4fd36dec22c0e3c99a",
+      "bytes": 33028
+    },
+    "docs/evidence/sdk-fixture-qualification-20261024/snapshot.tar.gz": {
+      "sha256": "5ed4b8fcfc9e592d2af8d387a19e461d9ff7680724138fc83f0f40427f763cea",
+      "bytes": 434319
+    }
+  },
+  "nonclaims": [
+    "Not SDK observer admission",
+    "Not complete original suite success",
+    "Not proof or installed acceptance",
+    "No release or marketplace publication"
+  ]
+}

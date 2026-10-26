@@ -1,0 +1,30 @@
+{
+  "approval": "Direct one-run 120s approval consumed; all other budgets unchanged",
+  "archive": {
+    "bytes": 249718,
+    "members": 38,
+    "path": "docs/evidence/integration-test-scope-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "ea6a8dc1238be536ca31b2354d56bb7abbb74bd79a0d24aef82e9fcf65efd17d"
+  },
+  "base_commit": "dc195aee736db59680c824f56a4c7f19c1306384",
+  "endpoint_pins": {
+    "count": 505,
+    "limit": "Selected endpoints, not continuous loaded-code custody",
+    "unchanged": true
+  },
+  "prior_results": "Original 60s timeout retained; separate two-case diagnostic pass",
+  "remaining": "All original A/G/C/P/R/EP obligations beyond this test-file repair, including R05 BOTH, full proofs, custody, SDK, compaction, recovery, retrieval, judge, installed qualification and release/marketplace",
+  "review": "Actual GPT-6.1 source/raw review; no independent execution",
+  "scope": "Exact executable tree before three evidence-only additions",
+  "static": "Selected frozen 167-rule profile: zero findings; full-repository warnings not closed",
+  "status": "SELECTED_TEST_REPAIR_PASS_FULL_ASSURANCE_INCOMPLETE",
+  "tested_tree": "abb5e13c3850eac98264d50ea3a903556d545a50",
+  "tests": {
+    "count": 61,
+    "exit": 0,
+    "seconds": "75.735",
+    "skips": 0,
+    "wrapper_ns": 75956687115
+  }
+}

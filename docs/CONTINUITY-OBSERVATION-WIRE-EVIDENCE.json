@@ -1,0 +1,483 @@
+{
+  "status": "PARTIAL_DIAGNOSTIC_NOT_ACCEPTED",
+  "base_commit": "a861e0f78837c7f2bd3c22478223181adb72c49f",
+  "source_overlay_sha256": {
+    "spark/sia_assurance.gpr": "61689697d786392e39ffd80c72c78dd20309eae97b62cb882d3bd8dd44bd0e1d",
+    "spark/verify-policy.sh": "719b54d5e73ed7d5917d006076c195e9c1e21aa720205f70f901372673875086",
+    "spark/src/sia_continuity_observation_wire.ads": "019b2efbc1c7b24d773949ae47f7c27aa4a2a15de1518847819bc6938d3b9084",
+    "spark/src/sia_continuity_observation_wire.adb": "a8f9923ba61208b97b1b12b734b403844ae7274cb343767998631267cd0c296c",
+    "spark/tests/continuity_observation_wire_tests.adb": "d8aa7ca7201d0f723411cd54da648d643ca71bc3e69f195f3cea5993c06139b3"
+  },
+  "source_identity": "diagnostics executed an exact uncommitted overlay on base; a subsequent source checkpoint does not establish committed-source reproduction",
+  "checks": [
+    {
+      "name": "build",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gprbuild",
+        "-p",
+        "-P",
+        "spark/sia_assurance.gpr"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 11.116770230990369
+    },
+    {
+      "name": "policy-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/policy_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0014669770025648177
+    },
+    {
+      "name": "transaction-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/transaction_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0016066459938883781
+    },
+    {
+      "name": "request-wire-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_wire_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.001426726987119764
+    },
+    {
+      "name": "request-admission-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/request_admission_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0014738529862370342
+    },
+    {
+      "name": "grant-lifetime-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/grant_lifetime_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0013894769945181906
+    },
+    {
+      "name": "retraction-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/retraction_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0013853090058546513
+    },
+    {
+      "name": "consolidation-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/consolidation_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.043696438980987296
+    },
+    {
+      "name": "continuity-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.002402698009973392
+    },
+    {
+      "name": "continuity-transition-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_transition_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0018092730024363846
+    },
+    {
+      "name": "continuity-record-wire-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_record_wire_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.0015326040156651288
+    },
+    {
+      "name": "continuity-observation-wire-tests",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "30s",
+        "spark/bin/continuity_observation_wire_tests"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.005798325000796467
+    },
+    {
+      "name": "core-proof",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "sia_continuity_observation_wire.adb",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 11.357720225001685
+    },
+    {
+      "name": "harness-proof",
+      "command": [
+        "timeout",
+        "--kill-after=5s",
+        "120s",
+        "gnatprove",
+        "-P",
+        "spark/sia_assurance.gpr",
+        "-u",
+        "continuity_observation_wire_tests.adb",
+        "--mode=all",
+        "--assumptions",
+        "--no-inlining",
+        "--memlimit=512",
+        "--timeout=10"
+      ],
+      "exit": 124,
+      "elapsed_seconds": 120.00407712199376
+    }
+  ],
+  "proof_tools_sha256": {
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/bin/gnatprove": "11db5cc1032d51474c2b84cc8567095c4ec4f5ae4428ff525b7bac92e7d86bc9",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/alt-ergo": "09f93d6ed6f6d70ff916185ff36bbc8a41d486ce6100f2ad0d7e3d03feb7671e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/cvc5": "010d7adf505f4bd27822fbb31a6e8999c6af2a5b8339d7c0fefccd4b38978814",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gcc": "ef4d2c23a77857bed0b8f86b7878451da2be9023988d5f5358d37f04fa3ec0fe",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/gnatwhy3": "4a3b9e6cd3dc542ddb72dc82cfddbaa8b5da075aa27eb11f6d6a3e57fb148368",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/spark_report": "9b42b75d08018c7caf9fed3b3727f3e697d7880a65316dad25e4b1d0050de396",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3": "c3b3004479b0415bb5b8966a664cf06372238de3a0ace480a80fd610edb58e6d",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3cpulimit": "8ef66f1307eaf05b7e703aebfc865045cc66ebaa492c59c764e0faa471fd197a",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/why3server": "c778280b8b4303e99344d0ff969b589a2e0e4df9a78aab27464a7177c830ae6e",
+    "/home/sicarii/opt/gnat/gnatprove-aarch64-linux-16.1.0-1/libexec/spark/bin/z3": "d718168cd9b69b5e73ad7124f6e5083c047c28f1b3165ddd04e3b89191319a78"
+  },
+  "tools_unchanged": true,
+  "raw_evidence_directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-observation-wire-development-v4",
+  "raw_evidence_sha256": {
+    "receipt.json": "cb38e798cd1cf277af83660e104c1c9cfae11aa6ef63547040d9d5ab772b551e",
+    "build.log": "a22c52acd37bccdf6192248969bf07f6dc738dde001c22766eb2820a4ac26a4d",
+    "core-proof.log": "bb286fbce904decb937b32688691969bf913afe75c55f379530661a3ff1fd20f",
+    "core-proof-gnatprove.out": "9c8c6b55e607028928fa1a0246e6de3fb8617e652438cef558abc46af0b7fcd2",
+    "harness-proof.log": "69a3389efb77199c9dd6f5aaf376dbcced2e7ef1d4edbca98643c88cb7d3578d",
+    "harness-proof-gnatprove.out": "9c8c6b55e607028928fa1a0246e6de3fb8617e652438cef558abc46af0b7fcd2"
+  },
+  "scope": {
+    "core": "one observation unit; 84 reported checks, no justified or unproved checks; modular dependency assumptions apply",
+    "runtime": "all eleven harness commands exit 0",
+    "harness_proof": "FAILED_INCOMPLETE: exit 124 at 120 seconds; no complete harness summary",
+    "stale_summary": "harness-proof-gnatprove.out is byte-identical to preceding core summary; invalid as harness evidence",
+    "full_project": "FAILED_INCOMPLETE: development-v5 all-unit proof exited 124 at 600 seconds; no fresh final summary; coverage validator unrun",
+    "installed": "UNRUN; no checkpoint restore integration qualified"
+  },
+  "retained_failures": [
+    "continuity-observation-wire-development-v1",
+    "continuity-observation-wire-development-v2",
+    "continuity-observation-wire-development-v3",
+    "continuity-observation-wire-development-v4",
+    "continuity-observation-wire-development-v5"
+  ],
+  "review": "docs/evidence/continuity-observation-wire-review-v4.txt",
+  "driver_repair": {
+    "path": "/home/sicarii/Work/sia-assurance-evidence-20261019/run-continuity-observation-wire-development-v2.py",
+    "sha256": "300b12f0255aa2cfa0befcab320eb5480516f73fd084583f36cb9bdfcfe22ecd",
+    "test": "/home/sicarii/Work/sia-assurance-evidence-20261019/observation-driver-fresh-summary-v2/validation.json",
+    "scope": "mocked fresh/stale report controls; no additional prover run"
+  },
+  "focused_diagnostics": [
+    {
+      "directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-observation-context-diagnostic-v1",
+      "scope": "DIAGNOSTIC_ONLY: Check_Context at line 37; not full harness/project proof",
+      "checks": [
+        {
+          "name": "context-proof",
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_observation_wire_tests.adb",
+            "--limit-subp=continuity_observation_wire_tests.adb:37",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "elapsed_seconds": 16.007682858005865
+        }
+      ],
+      "receipt_sha256": "6e738e6365f2d53ec68d73b9c1def5fb9656bcae496086a0eaeb0555daf39c57",
+      "summary_sha256": "5f3f448998cb99867ee7c1a80fe2b1c98e6acee2e9d720dab30099156d4b60d7",
+      "proof_outputs": {
+        "context-proof": {
+          "gnatprove.out": "5f3f448998cb99867ee7c1a80fe2b1c98e6acee2e9d720dab30099156d4b60d7",
+          "continuity_observation_wire_tests.spark": "60a17451b48bc02fbdda015f375eca9bdaf54d577ceada7e8236c76d72f53b85"
+        }
+      }
+    },
+    {
+      "directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-observation-availability-diagnostic-v1",
+      "scope": "DIAGNOSTIC_ONLY: Check_Availability at line 60; not full harness/project proof",
+      "checks": [
+        {
+          "name": "availability-proof",
+          "command": [
+            "timeout",
+            "--kill-after=5s",
+            "120s",
+            "gnatprove",
+            "-P",
+            "spark/sia_assurance.gpr",
+            "-u",
+            "continuity_observation_wire_tests.adb",
+            "--limit-subp=continuity_observation_wire_tests.adb:60",
+            "--mode=all",
+            "--assumptions",
+            "--no-inlining",
+            "--memlimit=512",
+            "--timeout=10"
+          ],
+          "exit": 0,
+          "fresh_proof_summary": true,
+          "elapsed_seconds": 4.2786419189942535
+        }
+      ],
+      "receipt_sha256": "0e5b3ea66957046451bcab15373b38023a70829efbe95b34a3388a9ff5a13c55",
+      "summary_sha256": "f828a73bf2b373ea37fd1174a7594001f3d146ec354bfc6e0faa0082925abbd7",
+      "proof_outputs": {
+        "availability-proof": {
+          "gnatprove.out": "f828a73bf2b373ea37fd1174a7594001f3d146ec354bfc6e0faa0082925abbd7",
+          "continuity_observation_wire_tests.spark": "2bf153d910d81851906bfd0ce0cca6bc75cd57b73da5066c4a5c9def29c57f76"
+        }
+      }
+    }
+  ],
+  "full_scope_attempt": {
+    "directory": "/home/sicarii/Work/sia-assurance-evidence-20261019/continuity-observation-wire-development-v5",
+    "checks": [
+      {
+        "name": "build",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "120s",
+          "gprbuild",
+          "-p",
+          "-P",
+          "spark/sia_assurance.gpr"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 11.140954965987476
+      },
+      {
+        "name": "policy-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/policy_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.00167168999905698
+      },
+      {
+        "name": "transaction-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/transaction_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.001401728019118309
+      },
+      {
+        "name": "request-wire-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_wire_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0014372699952218682
+      },
+      {
+        "name": "request-admission-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/request_admission_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0013696440146304667
+      },
+      {
+        "name": "grant-lifetime-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/grant_lifetime_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0013171010068617761
+      },
+      {
+        "name": "retraction-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/retraction_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0013396440190263093
+      },
+      {
+        "name": "consolidation-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/consolidation_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.04233800299698487
+      },
+      {
+        "name": "continuity-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0024690760183148086
+      },
+      {
+        "name": "continuity-transition-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_transition_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.0019151929882355034
+      },
+      {
+        "name": "continuity-record-wire-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_record_wire_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.00152247998630628
+      },
+      {
+        "name": "continuity-observation-wire-tests",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "30s",
+          "spark/bin/continuity_observation_wire_tests"
+        ],
+        "exit": 0,
+        "fresh_proof_summary": null,
+        "elapsed_seconds": 0.006126377003965899
+      },
+      {
+        "name": "all-proof",
+        "command": [
+          "timeout",
+          "--kill-after=5s",
+          "600s",
+          "gnatprove",
+          "-P",
+          "spark/sia_assurance.gpr",
+          "-U",
+          "--mode=all",
+          "--assumptions",
+          "--no-inlining",
+          "--memlimit=512",
+          "--timeout=10"
+        ],
+        "exit": 124,
+        "fresh_proof_summary": false,
+        "elapsed_seconds": 600.0040104289947
+      }
+    ],
+    "receipt_sha256": "3271aca08a3810ffa7f39e5c19821f032477880d9c6a2d7a573316360d301594",
+    "driver_sha256": "09ffe220e1051a4553e85d541c84da5ee05fad0e221abe2826c877d196ab6cda",
+    "tools_unchanged": true,
+    "coverage": "UNRUN: all-proof exit 124; no fresh final summary"
+  }
+}

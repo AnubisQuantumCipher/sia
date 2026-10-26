@@ -1,5 +1,11 @@
 name: ci
 on: [push, pull_request]
+# Serialize experimental snapshots without discarding a running verification.
+# GitHub may replace the one pending snapshot; release/main/PR runs retain
+# distinct groups and must finish their own qualification.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/codex/sia-assurance-kernel-20261019' && github.ref || github.run_id }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -22,13 +28,186 @@ jobs:
             'cryptography==50.0.1 --hash=sha256:ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef --hash=sha256:51593d180cf6d179bde5c5d065bed81386b1f381656ae7d042b7ffc87a9895ad --hash=sha256:51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a --hash=sha256:e22dfed744bd4002e909464cb23d2f0b05c6f3113a79ef2e9864a53db737c733 --hash=sha256:407fe2b6db00939c05c0e945e9914238f2f0a430974839429dafc82b1ee6bee5 --hash=sha256:9dde0a357190eb3b1da1bb9ab750e9c85cba82ca5977aa0836cbb94e92611239' \
             'cffi==2.0.0 --hash=sha256:3e17ed538242334bf70832644a32a7aae3d83b57567f9fd60a26257e992b79ba' \
             'pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992' \
+            'ruff==0.17.1 --hash=sha256:872e03dd231744d6c5ec5c8af6be52b71323fc6ee096e4c8b34d9f844ee3b978 --hash=sha256:a6ef98e51de8ef38082f90653ceeb84944bd7673783eea13e1647c5b9b064189' \
             > "$RUNNER_TEMP/sia-ci-requirements.txt"
           python -m pip install --only-binary=:all: --require-hashes \
             -r "$RUNNER_TEMP/sia-ci-requirements.txt"
+      # Partial correctness lane; comprehensive Power of Ten analysis remains OPEN.
+      - name: experimental assurance checker static analysis
+        env:
+          RAYON_NUM_THREADS: "1"
+          PYTHONWARNINGS: error
+        run: |
+          set -euo pipefail
+          test "$(ruff --version)" = 'ruff 0.17.1'
+          # Reject all suppression directives, including the newer Ruff forms.
+          # This conservative byte scan also refuses directive-like text in strings.
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import os
+          import re
+          with Path('docs/evidence/assurance-ruff-rules-v1.txt').open('rb') as rules:
+              raw_rules = rules.read(65537)
+          if len(raw_rules) > 65536 or hashlib.sha256(raw_rules).hexdigest() != '0fea46b8e04811e2b1142cc0517f8152d1c7f36641ca13e14d8b94ea9b3c0741':
+              raise SystemExit('Frozen analyzer rule identity mismatch')
+          names = ('scripts/assurance_acceptance_manifest.py', 'tests/test_assurance_acceptance_manifest.py',
+                   'spark/check-proof-summary.py', 'spark/tests/test_proof_summary.py',
+                   'spark/tests/test_proof_summary_overloads.py',
+                   'spark/check-allocation-controls.py', 'spark/tests/test_allocation_controls.py',
+                   'spark/transport/continuity_process.py', 'spark/tests/test_continuity_command.py',
+                   'spark/tests/test_startup_guard.py',
+                   'bin/siaeventpackcapture.py', 'bin/siaeventpackproposal.py',
+                   'tests/test_event_pack_proposal.py', 'tests/test_event_pack_admission.py',
+                   'tests/test_backup_upload_diagnostics.py',
+                   'tests/test_fenced_metadata_admission.py',
+                   'tests/test_release_metadata_admission.py', 'bin/siarelease.py',
+                   'tests/test_corpus_root_admission.py',
+                   'tests/test_tree_journal_admission.py',
+                   'tests/test_tree_sync_admission.py', 'tests/tree_sync_child.py')
+          # Analyze the complete corpus-root reader, including its error paths.
+          with Path('install.sh').open('rb') as installer:
+              raw_installer = installer.read(1048577)
+          marker = b"corpus_receipt_recorded_root() {\n  python3 - \"${1:-$CORPUS_RECEIPT}\" \"$SHARE/corpus\" <<'PY'\n"
+          if len(raw_installer) > 1048576 or raw_installer.count(marker) != 1:
+              raise SystemExit('Corpus-root reader extraction mismatch')
+          body, ending, _tail = raw_installer.split(marker, 1)[1].partition(b'\nPY\n}')
+          if not ending or not body or len(body) > 4096:
+              raise SystemExit('Corpus-root reader body mismatch')
+          embedded_path = Path(os.environ['RUNNER_TEMP']) / 'sia-corpus-root-reader.py'
+          with embedded_path.open('xb') as embedded:
+              if embedded.write(body + b'\n') != len(body) + 1:
+                  raise SystemExit('Incomplete corpus-root reader extraction')
+          names += (str(embedded_path),)
+          # Include both complete tree-CAS recovery consumers, not just opens.
+          tree_marker = b"owned_tree_cas() {\n  python3 - \"$@\" <<'PY'\n"
+          tree_end = b'\nPY\n}\n\nowned_tree_generation() {\n'
+          for source_name in ('install.sh', 'uninstall.sh'):
+              with Path(source_name).open('rb') as source:
+                  raw = source.read(1048577)
+              if len(raw) > 1048576 or raw.count(tree_marker) != 1:
+                  raise SystemExit('Tree-CAS reader extraction mismatch: ' + source_name)
+              body, ending, _tail = raw.split(tree_marker, 1)[1].partition(tree_end)
+              if not ending or not body or len(body) > 32768:
+                  raise SystemExit('Tree-CAS reader body mismatch: ' + source_name)
+              embedded_path = Path(os.environ['RUNNER_TEMP']) / ('sia-' + source_name[:-3] + '-tree-cas.py')
+              with embedded_path.open('xb') as embedded:
+                  if embedded.write(body + b'\n') != len(body) + 1:
+                      raise SystemExit('Incomplete tree-CAS reader extraction')
+              names += (str(embedded_path),)
+          forbidden = re.compile(rb'#\s*(?:noqa\b|(?:ruff|flake8)\s*:\s*(?:noqa\b|ignore\b|file-ignore\b|disable\b|enable\b))', re.I)
+          for name in names:
+              with Path(name).open('rb') as source:
+                  raw = source.read(1048577)
+              if len(raw) > 1048576 or forbidden.search(raw):
+                  raise SystemExit('Oversized source or suppression directive: ' + name)
+          PY
+          task_ruff_rules="$(paste -sd, docs/evidence/assurance-ruff-rules-v1.txt)"
+          task_ruff_json="$RUNNER_TEMP/sia-assurance-checker-ruff.json"
+          task_ruff_stderr="$RUNNER_TEMP/sia-assurance-checker-ruff.stderr"
+          task_ruff_exit=0
+          timeout --kill-after=5s 30s ruff check \
+            --isolated --no-cache --target-version py312 \
+            --select "$task_ruff_rules" \
+            --ignore-noqa --no-fix --no-fix-only --no-unsafe-fixes --no-preview \
+            --no-respect-gitignore --no-force-exclude --output-format json \
+            scripts/assurance_acceptance_manifest.py \
+            tests/test_assurance_acceptance_manifest.py \
+            spark/check-proof-summary.py \
+            spark/tests/test_proof_summary.py \
+            spark/tests/test_proof_summary_overloads.py \
+            spark/check-allocation-controls.py \
+            spark/tests/test_allocation_controls.py \
+            spark/transport/continuity_process.py \
+            spark/tests/test_continuity_command.py \
+            spark/tests/test_startup_guard.py \
+            bin/siaeventpackcapture.py \
+            bin/siaeventpackproposal.py \
+            tests/test_event_pack_proposal.py \
+            tests/test_event_pack_admission.py \
+            tests/test_backup_upload_diagnostics.py \
+            tests/test_fenced_metadata_admission.py \
+            tests/test_release_metadata_admission.py \
+            bin/siarelease.py \
+            tests/test_corpus_root_admission.py \
+            tests/test_tree_journal_admission.py \
+            tests/test_tree_sync_admission.py \
+            tests/tree_sync_child.py \
+            "$RUNNER_TEMP/sia-corpus-root-reader.py" \
+            "$RUNNER_TEMP/sia-install-tree-cas.py" \
+            "$RUNNER_TEMP/sia-uninstall-tree-cas.py" \
+            > "$task_ruff_json" 2> "$task_ruff_stderr" || task_ruff_exit=$?
+          # Bounded previews only; the exit/stderr/complete-JSON gates below
+          # still reject a failure even when its diagnostic output is larger.
+          head -c 65536 "$task_ruff_json"
+          head -c 65536 "$task_ruff_stderr" >&2
+          test "$task_ruff_exit" -eq 0
+          test ! -s "$task_ruff_stderr"
+          python3 -B - "$task_ruff_json" <<'PYJSON'
+          from pathlib import Path
+          import json
+          import sys
+          with Path(sys.argv[1]).open('rb') as source:
+              raw = source.read(1048577)
+          if len(raw) > 1048576:
+              raise SystemExit('Analyzer output exceeds byte limit')
+          value = json.loads(raw.decode('utf-8'))
+          if type(value) is not list or value:
+              raise SystemExit('Analyzer diagnostics are not empty')
+          PYJSON
+      - name: experimental assurance boundary controls
+        env:
+          PYTHONWARNINGS: error::ResourceWarning
+        run: |
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_proof_summary_overloads.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_allocation_controls.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_continuity_command.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_startup_guard.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_request_packet.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_grant_record.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/tests -p test_scoped_grant_record.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/isolation -p test_committed_export.py -v
+          timeout --kill-after=5s 60s python3 -m unittest discover -s spark/resources -p test_cgroup_results.py -v
+          timeout --kill-after=5s 30s python3 -B spark/tests/test_continuity_process.py ContinuityEnvelope -v
+          timeout --kill-after=5s 30s env PYTHONWARNINGS=error python3 -B -m unittest tests.test_assurance_acceptance_manifest -v
+      # Compile-only controls in the existing job; no new concurrency or proof claim.
+      - name: pinned GNAT allocation compiler controls
+        run: |
+          set -euo pipefail
+          task_gnat_root="$RUNNER_TEMP/sia-allocation-gnat"
+          mkdir "$task_gnat_root"
+          curl --fail --location --silent --show-error --connect-timeout 10 --max-time 60 \
+            --max-filesize 402244219 \
+            https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnat-16.1.0-1/gnat-x86_64-linux-16.1.0-1.tar.gz \
+            --output "$task_gnat_root/toolchain.tar.gz"
+          printf '%s  %s\n' \
+            9f74f58a827a2ad40dd84c72a413e75ea52888e0d8f7e252fba4d26762402703 \
+            "$task_gnat_root/toolchain.tar.gz" | sha256sum -c -
+          timeout --kill-after=5s 60s tar --extract --gzip --no-same-owner --no-same-permissions \
+            --file "$task_gnat_root/toolchain.tar.gz" --directory "$task_gnat_root"
+          task_gnat_compiler="$task_gnat_root/gnat-x86_64-linux-16.1.0-1/bin/gcc"
+          test "$("$task_gnat_compiler" -dumpfullversion)" = '16.1.0'
+          sha256sum "$task_gnat_compiler" spark/restrictions.adc
+          task_control_exit=0
+          prlimit --as=2147483648 --fsize=536870912 --core=0 \
+            timeout --kill-after=5s 60s python3 -B -W error \
+            spark/check-allocation-controls.py --compiler "$task_gnat_compiler" \
+            --output "$RUNNER_TEMP/sia-allocation-results" || task_control_exit=$?
+          # Results and expected negative diagnostics remain in the hosted log.
+          find "$RUNNER_TEMP/sia-allocation-results" -maxdepth 2 -type f \
+            \( -name results.json -o -name stdout -o -name stderr \) \
+            -exec head -c 16384 {} \;
+          test "$task_control_exit" -eq 0
       - name: compile all python
         run: python3 -m py_compile bin/*.py bin/sia bin/sia-brainstem bin/sia-ledger bin/sia-mcp bin/sia-intent-review
       - name: shell syntax
-        run: bash -n install.sh uninstall.sh bin/sia-setup
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n bin/sia-setup
+          bash -n spark/check-event-pack-model.sh
       - name: release artifact contracts
         run: |
           python3 -m json.tool manifest.json >/dev/null
@@ -46,7 +225,8 @@ jobs:
             --security-opt no-new-privileges --read-only \
             -v "$PWD:/mnt:ro" \
             koalaman/shellcheck-alpine@sha256:5921d946dac740cbeec2fb1c898747b6105e585130cc7f0602eec9a10f7ddb63 \
-            shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup
+            shellcheck /mnt/install.sh /mnt/uninstall.sh /mnt/bin/sia-setup \
+            /mnt/spark/check-event-pack-model.sh
       - name: real btrfs remount readmission
         run: |
           sudo apt-get update -qq
@@ -84,26 +264,139 @@ jobs:
           chmod 0755 "$BUN_BIN"
           test "$("$BUN_BIN" --version)" = "$BUN_VERSION"
           echo "BUN_BIN=$BUN_BIN" >> "$GITHUB_ENV"
-      - name: build the exact pinned gbrain (mirrors install.sh)
+      - name: build the exact pinned SIA gbrain overlay (mirrors install.sh)
         run: |
           set -euo pipefail
-          PIN="$(sed -n 's/^commit=//p' GBRAIN_PIN)"
-          PIN_VERSION="$(sed -n 's/^version=//p' GBRAIN_PIN)"
-          PIN_LOCK_SHA256="$(sed -n 's/^bun_lock_sha256=//p' GBRAIN_PIN)"
+          # CI binds the same six-field pin and overlay as the installer.
+          # This checkout check is not the installer's hostile-filesystem policy.
+          PIN_PATH="$PWD/GBRAIN_PIN"
+          OVERLAY="$PWD/GBRAIN_OVERLAY.patch"
+          PIN_VALUES="$(python3 -B - "$PIN_PATH" "$OVERLAY" <<'PYPIN'
+          import datetime
+          import hashlib
+          import os
+          import re
+          import stat
+          import sys
+
+          def generation(info):
+              return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_uid,
+                      info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+          def read_regular(path, maximum):
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+              try:
+                  before = os.fstat(fd)
+                  if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                          or before.st_uid != os.geteuid()
+                          or not 0 <= before.st_size <= maximum):
+                      raise ValueError('Unsafe CI pin input')
+                  chunks, remaining = [], before.st_size
+                  while remaining:
+                      chunk = os.read(fd, min(1048576, remaining))
+                      if not chunk:
+                          raise ValueError('Short CI pin input')
+                      chunks.append(chunk)
+                      remaining -= len(chunk)
+                  if os.read(fd, 1) or generation(os.fstat(fd)) != generation(before):
+                      raise ValueError('CI pin input changed')
+                  return b''.join(chunks)
+              finally:
+                  os.close(fd)
+
+          pin = read_regular(sys.argv[1], 65536)
+          overlay = read_regular(sys.argv[2], 16777216)
+          fields = {}
+          for line in pin.decode('utf-8', errors='strict').splitlines():
+              if not line or line.startswith('#'):
+                  continue
+              if line.count('=') != 1:
+                  raise ValueError('Malformed CI pin assignment')
+              key, value = line.split('=', 1)
+              if key in fields:
+                  raise ValueError('Duplicate CI pin field')
+              fields[key] = value
+          patterns = {
+              'commit': r'[0-9a-f]{40}', 'version': r'[0-9]+(?:[.][0-9]+)+',
+              'bun_lock_sha256': r'[0-9a-f]{64}', 'overlay_sha256': r'[0-9a-f]{64}',
+              'overlay_tree_oid': r'[0-9a-f]{40}',
+              'verified': r'[0-9]{4}-[0-9]{2}-[0-9]{2}',
+          }
+          if (fields.keys() != patterns.keys()
+                  or any(re.fullmatch(pattern, fields[key]) is None
+                         for key, pattern in patterns.items())):
+              raise ValueError('Missing, unknown or invalid CI pin field')
+          if (datetime.date.fromisoformat(fields['verified']).isoformat() != fields['verified']
+                  or hashlib.sha256(overlay).hexdigest() != fields['overlay_sha256']):
+              raise ValueError('CI pin date or overlay digest mismatch')
+          selected = ('commit', 'version', 'bun_lock_sha256',
+                      'overlay_sha256', 'overlay_tree_oid')
+          print('\t'.join(fields[key] for key in selected)
+                + '\t' + hashlib.sha256(pin).hexdigest())
+          PYPIN
+          )"
+          IFS=$'\t' read -r PIN PIN_VERSION PIN_LOCK_SHA256 PIN_OVERLAY_SHA256 PIN_OVERLAY_TREE_OID PIN_SHA256 <<< "$PIN_VALUES"
+          task_build_home="$RUNNER_TEMP/gbrain-build-home"
+          mkdir -p "$task_build_home/.config" "$task_build_home/.cache" "$task_build_home/.local/state"
+          task_build_env=(
+            /usr/bin/env -i HOME="$task_build_home" GBRAIN_HOME="$task_build_home"
+            XDG_CONFIG_HOME="$task_build_home/.config" XDG_CACHE_HOME="$task_build_home/.cache"
+            XDG_STATE_HOME="$task_build_home/.local/state" TMPDIR="$RUNNER_TEMP"
+            BUN_INSTALL_CACHE_DIR="$RUNNER_TEMP/bun-cache" PATH=/usr/bin:/bin
+            LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC DO_NOT_TRACK=1 NO_COLOR=1
+            GBRAIN_SKIP_STARTUP_HOOKS=1 GBRAIN_SYNC_NO_DELEGATE=1
+            GBRAIN_NO_BANNER=1 GBRAIN_SELF_UPGRADE_MODE=off
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
+          )
           SRC="$RUNNER_TEMP/gbrain-src"
-          git init -q "$SRC"
-          git -C "$SRC" remote add origin https://github.com/garrytan/gbrain
-          git -C "$SRC" fetch -q --depth 1 origin "$PIN"
-          git -C "$SRC" checkout -q --detach FETCH_HEAD
-          test "$(git -C "$SRC" rev-parse HEAD)" = "$PIN"
+          "${task_build_env[@]}" git init -q "$SRC"
+          "${task_build_env[@]}" git -C "$SRC" remote add origin https://github.com/garrytan/gbrain
+          "${task_build_env[@]}" git -C "$SRC" fetch -q --depth 1 --no-tags origin "$PIN"
+          "${task_build_env[@]}" git -C "$SRC" checkout -q --detach FETCH_HEAD
+          task_head="$("${task_build_env[@]}" git -C "$SRC" rev-parse HEAD)"
+          test "$task_head" = "$PIN"
+          "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+          "${task_build_env[@]}" git -C "$SRC" diff --cached --quiet --no-ext-diff
+          task_untracked="$("${task_build_env[@]}" git -C "$SRC" ls-files --others --exclude-standard)"
+          test -z "$task_untracked"
           printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
-          "$BUN_BIN" install --cwd "$SRC" --frozen-lockfile --production \
-            --ignore-scripts --no-progress
+          task_package_sha256="$(sha256sum "$SRC/package.json" | cut -d' ' -f1)"
+          "${task_build_env[@]}" "$BUN_BIN" install --no-env-file --cwd "$SRC" \
+            --frozen-lockfile --production --ignore-scripts --no-progress
           printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
-          "$BUN_BIN" build --compile --outfile "$RUNNER_TEMP/gbrain-bin" "$SRC/src/cli.ts"
+          printf '%s  %s\n' "$task_package_sha256" "$SRC/package.json" | sha256sum -c -
+          "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+          "${task_build_env[@]}" git -C "$SRC" diff --cached --quiet --no-ext-diff
+          printf '%s  %s\n' "$PIN_OVERLAY_SHA256" "$OVERLAY" | sha256sum -c -
+          "${task_build_env[@]}" git -C "$SRC" apply --check --index --whitespace=error-all "$OVERLAY"
+          "${task_build_env[@]}" git -C "$SRC" apply --index --whitespace=error-all "$OVERLAY"
+          task_source_identity() {
+            task_head="$("${task_build_env[@]}" git -C "$SRC" rev-parse HEAD)"
+            test "$task_head" = "$PIN"
+            task_tree="$("${task_build_env[@]}" git -C "$SRC" write-tree)"
+            test "$task_tree" = "$PIN_OVERLAY_TREE_OID"
+            "${task_build_env[@]}" git -C "$SRC" diff --quiet --no-ext-diff
+            task_untracked="$("${task_build_env[@]}" git -C "$SRC" ls-files --others --exclude-standard)"
+            test -z "$task_untracked"
+            printf '%s  %s\n' "$PIN_LOCK_SHA256" "$SRC/bun.lock" | sha256sum -c -
+            printf '%s  %s\n' "$task_package_sha256" "$SRC/package.json" | sha256sum -c -
+            printf '%s  %s\n' "$PIN_SHA256" "$PIN_PATH" | sha256sum -c -
+            printf '%s  %s\n' "$PIN_OVERLAY_SHA256" "$OVERLAY" | sha256sum -c -
+          }
+          task_source_identity
+          "${task_build_env[@]}" "$BUN_BIN" build --no-env-file --no-install \
+            --no-compile-autoload-dotenv --no-compile-autoload-bunfig --compile \
+            --outfile "$RUNNER_TEMP/gbrain-bin" "$SRC/src/cli.ts"
+          task_source_identity
           chmod 0755 "$RUNNER_TEMP/gbrain-bin"
-          test "$("$RUNNER_TEMP/gbrain-bin" --version)" = "gbrain $PIN_VERSION"
+          task_version="$("${task_build_env[@]}" "$RUNNER_TEMP/gbrain-bin" --version)"
+          test "$task_version" = "gbrain $PIN_VERSION"
+          printf 'gbrain_base=%s\ngbrain_lock=%s\ngbrain_overlay=%s\ngbrain_tree=%s\n' \
+            "$PIN" "$PIN_LOCK_SHA256" "$PIN_OVERLAY_SHA256" "$PIN_OVERLAY_TREE_OID"
+          sha256sum "$BUN_BIN" "$RUNNER_TEMP/gbrain-bin" "$PIN_PATH" "$OVERLAY"
+          task_binary_sha256="$(sha256sum "$RUNNER_TEMP/gbrain-bin" | cut -d' ' -f1)"
           echo "SIA_GBRAIN_BIN=$RUNNER_TEMP/gbrain-bin" >> "$GITHUB_ENV"
+          echo "SIA_GBRAIN_SHA256=$task_binary_sha256" >> "$GITHUB_ENV"
       - name: real-gbrain contract lane
         env:
           PYTHONWARNINGS: error::ResourceWarning
@@ -112,9 +405,11 @@ jobs:
           PYTHON_COLORS: "0"
         run: |
           set -euo pipefail
-          output="$(python3 -m unittest tests.test_gbrain_contract -v 2>&1)" || {
+          printf '%s  %s\n' "$SIA_GBRAIN_SHA256" "$SIA_GBRAIN_BIN" | sha256sum -c -
+          output="$(python3 -m unittest tests.test_gbrain_contract tests.test_gbrain_overlay_contract -v 2>&1)" || {
             printf '%s\n' "$output"; exit 1; }
           printf '%s\n' "$output"
+          printf '%s  %s\n' "$SIA_GBRAIN_SHA256" "$SIA_GBRAIN_BIN" | sha256sum -c -
           # A skip here would mean SIA_GBRAIN_BIN was ignored — the lane must actually run.
           # The one declared exception is GbrainCompiledRenderContract, which needs
           # operator-supplied pinned expectation artifacts (SIA_GBRAIN_COMPILED_*)

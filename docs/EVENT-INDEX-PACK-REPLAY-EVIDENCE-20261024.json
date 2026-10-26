@@ -1,0 +1,75 @@
+{
+  "status": "TESTED_EXPERIMENTAL_GROUP_AND_REPLAY_NOT_RUNTIME_ACTIVATION",
+  "base_commit": "f82e2479e64f6fe733b3a263ad4e1749badaf1cf",
+  "source_sha256": {
+    "bin/siaeventpackreader.py": "c3a330026ad5faaa8e945639c5769fcb6b1106f129691c3213ba68a52731f342",
+    "tests/test_event_pack_group.py": "3664d722936e85842e2c50d0e7b905c9bc9c0bd5ab514e8dbe73b87253ea9208",
+    "tests/test_event_pack_replay.py": "a5f19e40e7666797bef5bb339e31bbfb1474c7fcb8a1771f163f6ff95ff9558f",
+    "docs/EVENT-INDEX-PACK-REPLAY-20261024.md": "4df1ef766dd15ae398078d6ea86c3a0239785dfba15e9a436a4b65212bd7b131"
+  },
+  "tests": "123 PASS9.427s; source inventory equal; full existing selected rosters retained",
+  "whole_job_elapsed_ns": 9861096214,
+  "test_envelope": {
+    "seconds": 60,
+    "address_space_bytes": 2147483648,
+    "file_bytes": 536870912,
+    "core_bytes": 0,
+    "isolation": "Original heavy lock, read-only source, private HOME/tmp/run, isolated network/PID"
+  },
+  "static": "Existing167 selected profile0 diagnostics in named final scoped source/tests/drivers; no inherited system-finding waiver",
+  "cost_observation": {
+    "scope": "One full canonical fixture group; not captured occurrence truth or maximum request",
+    "legacy": {
+      "retained_budget_bytes": 182498,
+      "file_observations": 65,
+      "directory_observations": 5,
+      "elapsed_ns": 40085814,
+      "epoch_calls": 64,
+      "lookup_count": 64,
+      "process_high_water_rss_kib": 61640
+    },
+    "packed_singleton": {
+      "retained_budget_bytes": 126575,
+      "file_observations": 66,
+      "directory_observations": 8,
+      "elapsed_ns": 1677030484,
+      "epoch_calls": 4096,
+      "lookup_count": 64,
+      "process_high_water_rss_kib": 61640
+    },
+    "packed_group": {
+      "retained_budget_bytes": 126575,
+      "file_observations": 66,
+      "directory_observations": 8,
+      "elapsed_ns": 42612356,
+      "epoch_calls": 64,
+      "lookup_count": 64,
+      "process_high_water_rss_kib": 61640
+    },
+    "exact_decisions_equal": true
+  },
+  "independent_review": "ActualGPT6.1 source/raw only; no concrete blocker at experimental checkpoint scope; no independent execution",
+  "evidence_sha256": {
+    "replay_v3-result.json": "b6c2b85c11bae4bf57c5afaaae918a42fa9eaf611fe27052c6341c3aea6aa110",
+    "replay_v3.stderr": "d29a86e328a81c5972b5eea4e79cf9be80f97e93d07e20d39ccd5fa27bb5272a",
+    "cost-result.json": "c0457623dc5ae6d3ae1791e21ccce6ae6577f040e294a9232630db1b4b305c23",
+    "cost.stdout": "2a7dea6c4f33aad253d09d4169a5b22219210d05bf176fa04d698f701f467588",
+    "cost_group-result.json": "3cb9a1835bd11ced4032d00d40bdbed6fbb53fb870ab6bc06d7a8e1f4e8e73c8",
+    "cost_group.stdout": "fe0f55329ccc728380f24b0aa581e0640251ea34830dd3cbdc5e045cbf2aa837",
+    "static-final-result.json": "a3fc19128552634c358633a4310adea6e397ce983c63f6b814c2a23502e41dcd",
+    "FINAL-REVIEW.md": "a5cbd6f4106af493a414c2c8124da0d43bbab57f0ea213e9123c4eaa03f91d6e"
+  },
+  "operation_contract": "Bounded group is a new operation, not trace-equivalence to repeated singleton calls. Validate every present requested legacy duplicate; no inter-call success cache.",
+  "open": [
+    "actual occurrence caller integration without losing original semantics or whole-roster limits",
+    "whole-request aggregate costs",
+    "SPARK protected authority and native admission",
+    "durable pack publication and exact coverage",
+    "crash-reconciled migration and verified legacy retirement",
+    "actual installed capsule/off-path restore/replay",
+    "all original system assurance and release/catalog gates"
+  ],
+  "r05": "Original requirements and specific pending approval unchanged",
+  "installed_change": false,
+  "acceptance": false
+}

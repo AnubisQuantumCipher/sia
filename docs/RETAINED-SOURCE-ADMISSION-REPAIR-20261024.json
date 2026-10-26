@@ -1,0 +1,178 @@
+{
+  "schema": "sia.retained-source-admission-repair.v1",
+  "status": "SCOPED_TESTED_REVIEWED_NOT_SYSTEM_ACCEPTANCE",
+  "utc": "2026-10-24T06:15:37.345154+00:00",
+  "base_commit": "8b2348dfcf2d41fee851b87a288de28ba6d4c03e",
+  "problem": "Retained consolidation source open could wait for a FIFO writer or EOF before bounded reading and type admission. A symlink could supply live bytes.",
+  "change": "Open Linux leaf with O_NONBLOCK/O_NOFOLLOW/O_CLOEXEC, validate regular type using existing descriptor-owning stream helper, retain exact digest and history fallback behavior for ordinary sources. Explicit os/siaqueue imports support static analysis while bind/invoke still supplies owner context.",
+  "source_sha256": {
+    "bin/siathought.py": "34f8e28903e0f036f67da0ce220839aa9dd1f7a109cfc65c652e6800f06b4d85",
+    "bin/sialib.py": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+    "bin/siaqueue.py": "dfcbb3f1f098cc238bc1fd294be7b6295da7c19f6cd8e7a76c3fc966868950cd",
+    "tests/test_retained_source_admission.py": "99183ee3ca8e269023f042bafd836bf81b6bb55087c0e7ecab28896cdde3ffa0",
+    "tests/test_sia.py": "5f6459634ec640a827f5a81301a3495abc8d2d51edd75a9ae7d2da753037948b",
+    "tests/test_epoch_completeness_integrity.py": "ab542b8e00e60ae6c6a927444510ce23d9fe3c98a7cb3b5cd57c3746ecee55ba",
+    "tests/test_epoch_exemplar_coverage.py": "04f5bd3de1efc8818b29c24a7068c5ad56845d4e1b74791b4fad50efb2e9629f",
+    "tests/test_epoch_module_ownership.py": "36f8ae4854cbe6370b9695a95393a7247167aeb9f4e8d7090609db5974813fb5"
+  },
+  "predecessor": {
+    "status": "FAILED",
+    "tests_reported": 29,
+    "elapsed_seconds": 13.306,
+    "failures_reported": 1,
+    "errors_reported": 7,
+    "interpretation": "Two real FIFO child timeouts. Directory exception differed from intended typed refusal; symlink and four injected validation/conversion fault checks received no expected exception under old open implementation. These are negative controls, not seven distinct runtime defects.",
+    "source_sha256": {
+      "bin/siathought.py": "779f2e22d383dfa1823ca0bef4fa163ce35353d279c73efbe0e662e7d0b74cb5",
+      "bin/sialib.py": "a3b6576148d7c5bc720f183b17313c779df8e61f9f70431e4d2ea365a03cea02",
+      "bin/siaqueue.py": "dfcbb3f1f098cc238bc1fd294be7b6295da7c19f6cd8e7a76c3fc966868950cd",
+      "tests/test_retained_source_admission.py": "99183ee3ca8e269023f042bafd836bf81b6bb55087c0e7ecab28896cdde3ffa0",
+      "tests/test_sia.py": "5f6459634ec640a827f5a81301a3495abc8d2d51edd75a9ae7d2da753037948b",
+      "tests/test_epoch_completeness_integrity.py": "ab542b8e00e60ae6c6a927444510ce23d9fe3c98a7cb3b5cd57c3746ecee55ba",
+      "tests/test_epoch_exemplar_coverage.py": "04f5bd3de1efc8818b29c24a7068c5ad56845d4e1b74791b4fad50efb2e9629f"
+    }
+  },
+  "candidate": {
+    "status": "PASS",
+    "tests_reported": 42,
+    "elapsed_seconds": 5.71,
+    "source_unchanged": true
+  },
+  "command": [
+    "/usr/bin/timeout",
+    "--kill-after=5s",
+    "60s",
+    "/usr/bin/bwrap",
+    "--ro-bind",
+    "/",
+    "/",
+    "--ro-bind",
+    "/home/sicarii/Documents/sia-repository-audit-20261024/git-review-executable",
+    "/usr/bin/git",
+    "--tmpfs",
+    "/tmp",
+    "--ro-bind",
+    "/home/sicarii/Work/sia-assurance-kernel-20261019",
+    "/tmp/sia-review-source",
+    "--tmpfs",
+    "/home",
+    "--tmpfs",
+    "/run",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--dir",
+    "/home/audit",
+    "--unshare-net",
+    "--unshare-pid",
+    "--die-with-parent",
+    "--new-session",
+    "--chdir",
+    "/tmp/sia-review-source",
+    "--setenv",
+    "HOME",
+    "/home/audit",
+    "/usr/bin/python3",
+    "-B",
+    "-W",
+    "error::ResourceWarning",
+    "-c",
+    "import sys,unittest; sys.path.insert(0,\"/tmp/sia-review-source/bin\"); from tests import sia_test_home; suite=unittest.defaultTestLoader.loadTestsFromNames(['tests.test_retained_source_admission', 'tests.test_epoch_completeness_integrity', 'tests.test_epoch_exemplar_coverage', 'tests.test_sia.EpochMerge.test_manifest_only_epoch_reconstructs_completeness_from_retained_sources', 'tests.test_epoch_module_ownership', 'tests.test_sia.ChildModuleBindSeam']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(0 if result.wasSuccessful() else 1)"
+  ],
+  "runner_sha256": "b2c0a254532e9fc4e5fc934bf7b76e52fdede858d0c27e1c5bb75803a1f13ff5",
+  "static": {
+    "status": "PRODUCT_NONPASS_REMAINING_DIAGNOSTICS",
+    "baseline_counts": {
+      "F821": 775,
+      "B904": 1,
+      "B905": 1,
+      "BLE001": 1,
+      "E741": 2,
+      "PLW2901": 1
+    },
+    "candidate_counts": {
+      "F821": 529,
+      "B904": 1,
+      "B905": 1,
+      "BLE001": 1,
+      "E741": 2,
+      "PLW2901": 1
+    },
+    "new_diagnostics": [],
+    "removed_diagnostics": 246,
+    "comparison": "Multiset of diagnostic code/message/cell; source diff manually reviewed. Initial added unresolved references retained in raw initial receipt, then resolved through explicit imports. No suppression added.",
+    "tests_and_runner": "PASS_ZERO_DIAGNOSTICS",
+    "syntax": "PASS_COMPILE_ONLY",
+    "rules": "docs/evidence/assurance-ruff-rules-v1.txt"
+  },
+  "review": {
+    "model": "gpt-6.1-sol",
+    "result": "No blocker for narrow repair checkpoint",
+    "independent_execution": false
+  },
+  "power_of_ten": "P02 avoids FIFO rendezvous at admission; P03/P07 descriptor ownership and checked file type/results; P10 explicit dependency declarations. No whole-system compliance claim.",
+  "limitations": [
+    "Leaf-only no-follow is not parent-path confinement.",
+    "Python dynamic allocation, arbitrary interruption and close failures remain outside this scoped evidence.",
+    "Regular-file and filesystem I/O have no proven latency bound; original per-Git-operation deadlines and history-count bound unchanged.",
+    "No installed recall/recovery test or historical recall-timeout cause established.",
+    "No complete continuity, protected effect, formal proof, release or marketplace acceptance."
+  ],
+  "artifacts": {
+    "candidate-retained-source-admission.log": {
+      "sha256": "8dd87b2b9cfd59ea0b936a32abfcccf831f4edd641885b6930e99914b3b26145",
+      "bytes": 5200
+    },
+    "candidate-final-retained-source-admission.log": {
+      "sha256": "fb09e99d878d7b8ee2d49ca03a3fa7fbfb7f3ef8bfae9de2ae93d4dd8792cf39",
+      "bytes": 7386
+    },
+    "baseline-retained-source-admission.json": {
+      "sha256": "170238bf8d80ee769d3fb012e418e5f84f29ed27f5b02bb40374cd4afe295961",
+      "bytes": 3356
+    },
+    "candidate-retained-source-admission.json": {
+      "sha256": "8c0b5466d5f0c1aedb634390f89dd59fabc45b9633172b9139e563bbc007ab6b",
+      "bytes": 3354
+    },
+    "candidate-final-retained-source-admission.json": {
+      "sha256": "43025f4184f7a5ce51ab31b74149f552adc3dcb16afc2269f9012b6803ed0f46",
+      "bytes": 3658
+    },
+    "retained-static-receipt.json.gz": {
+      "sha256": "ef5179d6a954596e52298e021f7f9f6c63d8e34f118e0d6fc4d34f37311dfa2b",
+      "bytes": 30417,
+      "encoding": "gzip",
+      "uncompressed_sha256": "f5230be9b937b4dfd0db9341e3d996325bc8e64aa225b76e91128aa17f1a0253",
+      "uncompressed_bytes": 894694
+    },
+    "retained-final-static-receipt.json.gz": {
+      "sha256": "2f1a6ec5b542012dc67e897a835afa422089770a309641ce582879d03785170f",
+      "bytes": 27114,
+      "encoding": "gzip",
+      "uncompressed_sha256": "75bd77be798ac4dab1496a54645a8c029d40a9c6425946ddac9c75a45a068e90",
+      "uncompressed_bytes": 777302
+    },
+    "retained-independent-review.txt": {
+      "sha256": "0ecd828a60b786858667b5e15fb1059187c7c4d90dfa7ac431e1471d4c7bc5b6",
+      "bytes": 1342
+    },
+    "run_retained_source_admission.py": {
+      "sha256": "d65f070060e3534210fdb508ec6591b9c9b9fff568e1168b342d3a7dae95f412",
+      "bytes": 3685
+    },
+    "run_retained_source_admission-expanded.py": {
+      "sha256": "b2c0a254532e9fc4e5fc934bf7b76e52fdede858d0c27e1c5bb75803a1f13ff5",
+      "bytes": 3800
+    },
+    "baseline-retained-source-admission.log.gz": {
+      "sha256": "c5648419c44e2225be6992cea2455971450bf941372a22577751316ab88ee7b0",
+      "bytes": 2416,
+      "encoding": "gzip",
+      "uncompressed_sha256": "e93c64f7bc1e81d5d26707691b11b239abd008c771b83f6403eaee64cad0d90e",
+      "uncompressed_bytes": 17693
+    }
+  },
+  "acceptance": false
+}

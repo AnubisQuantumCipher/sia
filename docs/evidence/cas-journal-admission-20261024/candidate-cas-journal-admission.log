@@ -1,0 +1,16 @@
+test_directory_is_refused (tests.test_cas_journal_admission.CasJournalAdmission.test_directory_is_refused) ... ok
+test_fifo_with_peer_is_not_consumed (tests.test_cas_journal_admission.CasJournalAdmission.test_fifo_with_peer_is_not_consumed) ... ok
+test_fifo_without_peer_is_refused_before_waiting (tests.test_cas_journal_admission.CasJournalAdmission.test_fifo_without_peer_is_refused_before_waiting) ... ok
+test_invalid_regular_journals_are_preserved (tests.test_cas_journal_admission.CasJournalAdmission.test_invalid_regular_journals_are_preserved) ... ok
+test_missing_journal_is_a_successful_noop (tests.test_cas_journal_admission.CasJournalAdmission.test_missing_journal_is_a_successful_noop) ... ok
+test_normal_publication_and_archive_preserve_bytes (tests.test_cas_journal_admission.CasJournalAdmission.test_normal_publication_and_archive_preserve_bytes) ... ok
+test_symlink_is_refused_without_touching_referent (tests.test_cas_journal_admission.CasJournalAdmission.test_symlink_is_refused_without_touching_referent) ... ok
+test_valid_journal_reconciles_completed_publication (tests.test_cas_journal_admission.CasJournalAdmission.test_valid_journal_reconciles_completed_publication) ... ok
+test_owned_file_cas_preserves_concurrent_generations (tests.test_release.ReleaseContract.test_owned_file_cas_preserves_concurrent_generations) ... CAS canonical target changed after publication; prior generation retained at /tmp/tmpljkwkfww/.sia-cas-prior.f1008186b7c359b9b72f4385
+ok
+test_owned_file_cas_replaces_exact_fenced_mode_zero_generation (tests.test_release.ReleaseContract.test_owned_file_cas_replaces_exact_fenced_mode_zero_generation) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.646s
+
+OK

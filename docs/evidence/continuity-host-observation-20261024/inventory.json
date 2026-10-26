@@ -1,0 +1,75 @@
+{
+  "schema": "sia.continuity-host-observation-snapshot.v1",
+  "scope": "Forensic source/evidence snapshot, not an executable acceptance bundle.",
+  "archive_sha256": "56cbf5e6f7bee3f39e7dceb62065e30280f47a9ce5e805840ca8ec60fb8d4fbd",
+  "files": {
+    "continuity-host-input-manifests-v1/administrative-seed330.json": {
+      "bytes": 75343,
+      "sha256": "e2197f6814c8631a6bfd059903b8901c0ffc0ef2651beafd91064699c40bdb35"
+    },
+    "continuity-host-input-manifests-v1/prospective-crypto-inputs.json": {
+      "bytes": 133757,
+      "sha256": "5784bf25f54f36affd3a87786b23fb81604b1c09c554f52938cffae4f2d5ee89"
+    },
+    "continuity-host-input-manifests-v1/prospective-native-dependencies.json": {
+      "bytes": 21925,
+      "sha256": "28f7bffd8409f777a448395bb35fa89193ffbc9c5f1db3a1c2cd871ca85133d9"
+    },
+    "continuity-host-input-manifests-v1/prospective-stdlib-inputs.json": {
+      "bytes": 446478,
+      "sha256": "b43bd93f7af467d04e82723d91faccaccdb41e309dad07b0e1663d048dc0bd02"
+    },
+    "continuity-host-input-manifests-v1/startup-context-inputs.json": {
+      "bytes": 1323,
+      "sha256": "7b7b901aa1d1420133a26bb9f5eab33963b8de2d1bd471de388b2729c6c03df2"
+    },
+    "continuity-host-observation-v1/admission.json": {
+      "bytes": 1102,
+      "sha256": "768cd95fbb31ec98013c62869ade93ecaae46d18080840e00ea7812a43297657"
+    },
+    "continuity-host-observation-v1/namespace-ownership-reproducer.json": {
+      "bytes": 2524,
+      "sha256": "f14dd665cdf66f9556a9aa46350b93a86a4bc36cb65a69bb8d8b414a18fbc4d1"
+    },
+    "continuity-host-observation-v1/observe_host.py": {
+      "bytes": 7662,
+      "sha256": "e6af96d210960d7539dfa382d5eaec7f329ee66956c7d7d9318817edec5daa6a"
+    },
+    "continuity-host-observation-v1/result.json": {
+      "bytes": 1403,
+      "sha256": "22662a48588a9732090a33addb4a2fe1d91852f47bda1d222b8eec1b23d9298c"
+    },
+    "continuity-host-observation-v1/static.json": {
+      "bytes": 1775,
+      "sha256": "b70ddfa0c268af12f3368cfef2ce5be4cda3207764fa0eea8a7e11e4cee56bb1"
+    },
+    "continuity-host-observation-v1/stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "continuity-host-observation-v1/stdout.json": {
+      "bytes": 279193,
+      "sha256": "15fc410d1ac1f2b997c0eb4e2123a8cff00cd6172d5cb062ca8fe71a190483ca"
+    },
+    "continuity-host-observation-v2/admission.json": {
+      "bytes": 1238,
+      "sha256": "1097fbaeac926c4cdb04a62ce00194af57c8938d495912b5b8bb353fe64d20c3"
+    },
+    "continuity-host-observation-v2/independent-review.txt": {
+      "bytes": 936,
+      "sha256": "0ce0b6f5f1fa43c0739d5a06287fb109795735657aaee9cf12fa66001cd358e4"
+    },
+    "continuity-host-observation-v2/result.json": {
+      "bytes": 1539,
+      "sha256": "f4631cc1ed8eec6f8727aeb9690f6d4c4a53ebf58b1ef08a51a708ba42cce6ff"
+    },
+    "continuity-host-observation-v2/stderr": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "continuity-host-observation-v2/stdout.json": {
+      "bytes": 592208,
+      "sha256": "5f3ba046eb48aad8f538a3601ad8c271ac07eef36b53aa5c2a51794e95fd9c2a"
+    }
+  }
+}

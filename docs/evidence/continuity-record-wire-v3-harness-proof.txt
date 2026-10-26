@@ -1,0 +1,236 @@
+=========================
+Summary of SPARK analysis
+=========================
+
+-------------------------------------------------------------------------------------------------
+SPARK Analysis results        Total        Flow                    Provers   Justified   Unproved
+-------------------------------------------------------------------------------------------------
+Data Dependencies                24          24                          .           .          .
+Flow Dependencies                 3           3                          .           .          .
+Initialization                   37          37                          .           .          .
+Non-Aliasing                      .           .                          .           .          .
+Run-time Checks                  79           .                    79 (Z3)           .          .
+Assertions                       56           .    56 (Trivial 2%, Z3 98%)           .          .
+Functional Contracts              7           .                     7 (Z3)           .          .
+LSP Verification                  .           .                          .           .          .
+Termination                      24          24                          .           .          .
+Concurrency                       .           .                          .           .          .
+-------------------------------------------------------------------------------------------------
+Total                           230    88 (38%)                  142 (62%)           .          .
+
+
+max steps used for successful proof: 2049
+
+============================
+Most difficult proved checks
+============================
+
+No check found with max time greater than 1 second
+
+========================
+Detailed analysis report
+========================
+
+Analyzed 2 units
+in unit continuity_record_wire_tests, 11 subprograms and packages out of 11 analyzed
+  Continuity_Record_Wire_Tests at continuity_record_wire_tests.adb:5 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+effects on parameters and Global variables of Continuity_Record_Wire_Tests depends on
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Codes
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Reserved
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Values
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Digest_Fields
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Generations
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Codes
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Reserved
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Values
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Witness
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Witness_Reserved
+absence of run-time errors of Continuity_Record_Wire_Tests depends on
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Codes
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Reserved
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Claim_Values
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Digest_Fields
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Generations
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Codes
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Reserved
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Operation_Values
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Witness
+  effects on parameters and Global variables of Continuity_Record_Wire_Tests.Check_Witness_Reserved
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  absence of run-time errors of SIA_Continuity.Valid_Claim
+  absence of run-time errors of SIA_Continuity.Valid_Operation
+  absence of run-time errors of SIA_Policy.Bound_Durable
+  Continuity_Record_Wire_Tests.Check_Claim_Codes at continuity_record_wire_tests.adb:111 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (11 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Claim_Codes depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  Continuity_Record_Wire_Tests.Check_Claim_Reserved at continuity_record_wire_tests.adb:247 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Claim_Reserved depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  Continuity_Record_Wire_Tests.Check_Claim_Values at continuity_record_wire_tests.adb:79 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (12 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Claim_Values depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Claim
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  absence of run-time errors of SIA_Continuity.Valid_Claim
+  Continuity_Record_Wire_Tests.Check_Digest_Fields at continuity_record_wire_tests.adb:34 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (37 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Digest_Fields depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  Continuity_Record_Wire_Tests.Check_Generations at continuity_record_wire_tests.adb:144 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Generations depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  Continuity_Record_Wire_Tests.Check_Operation_Codes at continuity_record_wire_tests.adb:197 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Operation_Codes depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  Continuity_Record_Wire_Tests.Check_Operation_Reserved at continuity_record_wire_tests.adb:261 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Operation_Reserved depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  Continuity_Record_Wire_Tests.Check_Operation_Values at continuity_record_wire_tests.adb:170 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Operation_Values depends on
+  effects on parameters and Global variables of SIA_Continuity.Valid_Operation
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  absence of run-time errors of SIA_Continuity.Valid_Operation
+  Continuity_Record_Wire_Tests.Check_Witness at continuity_record_wire_tests.adb:218 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Witness depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  effects on parameters and Global variables of SIA_Policy.Bound_Durable
+  absence of run-time errors of SIA_Policy.Bound_Durable
+  Continuity_Record_Wire_Tests.Check_Witness_Reserved at continuity_record_wire_tests.adb:275 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (2 checks)
+absence of run-time errors of Continuity_Record_Wire_Tests.Check_Witness_Reserved depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decode
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+in unit sia_continuity_record_wire, 15 subprograms and packages out of 15 analyzed
+  SIA_Continuity_Record_Wire at sia_continuity_record_wire.ads:5 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire fully established
+  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:108 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (10 checks)
+the postcondition of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+absence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:115 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (6 checks)
+the postcondition of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+absence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Record_Wire.Decode at sia_continuity_record_wire.ads:123 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (4 checks)
+the postcondition of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+absence of run-time errors of SIA_Continuity_Record_Wire.Decode depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Decoded_As
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:76 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (9 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Kind_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Origin_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Role_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:88 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (5 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Phase_Value
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  SIA_Continuity_Record_Wire.Decoded_As at sia_continuity_record_wire.ads:99 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (3 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Decoded_As depends on
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Valid
+  effects on parameters and Global variables of SIA_Continuity_Record_Wire.Word_Value
+  SIA_Continuity_Record_Wire.Kind_Value at sia_continuity_record_wire.ads:32 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Kind_Value fully established
+  SIA_Continuity_Record_Wire.Origin_Value at sia_continuity_record_wire.ads:41 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Origin_Value fully established
+  SIA_Continuity_Record_Wire.Phase_Value at sia_continuity_record_wire.ads:53 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Phase_Value fully established
+  SIA_Continuity_Record_Wire.Role_Value at sia_continuity_record_wire.ads:47 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Role_Value fully established
+  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:59 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established
+  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:66 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established
+  SIA_Continuity_Record_Wire.Valid at sia_continuity_record_wire.ads:71 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (0 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Valid fully established
+  SIA_Continuity_Record_Wire.Word_Value at sia_continuity_record_wire.ads:21 flow analyzed (0 errors, 0 checks, 0 warnings and 0 pragma Assume statements) and proved (8 checks)
+absence of run-time errors of SIA_Continuity_Record_Wire.Word_Value fully established
