@@ -3967,6 +3967,8 @@ retain_unowned_cli_before_fence
             "_event_shard_trial", "_event_source_parts", "_event_payload_digest",
             "_event_index_relative", "_canonical_event_index_entry",
             "_event_index_encoded", "_read_event_index_entry",
+            "_validate_event_index_raw", "_join_event_index_occurrences",
+            "_verify_event_index_entries",
             "_preflight_event_index_entries", "_publish_event_index_entries",
             "_missing_event_index_expectations", "_other_event_occurrences",
             "_retained_source_text", "_event_ids_in_source_text",
@@ -8802,6 +8804,7 @@ remove_managed_skill
             "bash -n install.sh",
             "bash -n uninstall.sh",
             "bash -n bin/sia-setup",
+            "bash -n spark/check-event-pack-model.sh",
         ])
         uses = re.findall(r"uses:\s+([^@\s]+)@([^\s#]+)", workflow)
         self.assertTrue(uses)
@@ -8826,7 +8829,8 @@ remove_managed_skill
 
     def test_ci_shell_syntax_checks_every_script_without_execution(self):
         script = _workflow_run_block("shell syntax")
-        names = ("install.sh", "uninstall.sh", "bin/sia-setup")
+        names = ("install.sh", "uninstall.sh", "bin/sia-setup",
+                 "spark/check-event-pack-model.sh")
         for damaged in (None,) + names:
             with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as root:
                 for name in names:
@@ -8842,7 +8846,8 @@ remove_managed_skill
                     timeout=3, check=False)
                 self.assertFalse(os.path.exists(os.path.join(root, "executed")))
                 self.assertEqual(result.stdout, "")
-                self.assertEqual(result.returncode, 0 if damaged is None else 2)
+                self.assertEqual(result.returncode, 0 if damaged is None else 2,
+                                 result.stderr)
                 if damaged is None:
                     self.assertEqual(result.stderr, "")
                 else:

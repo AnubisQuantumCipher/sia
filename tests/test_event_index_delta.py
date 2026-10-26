@@ -287,7 +287,8 @@ class IndexDelta(unittest.TestCase):
             if item.root_fd is not None:
                 held.add(item.root_fd)
             if item is captures[0] and not injected:
-                with mock.patch.object(delta.os, "close", failed_close):
+                shim = SimpleNamespace(**(vars(module.os) | {"close": failed_close}))
+                with mock.patch.object(module, "os", shim):
                     return close(item)
             return close(item)
 
@@ -339,12 +340,14 @@ class IndexDelta(unittest.TestCase):
             if descriptor in descriptors[:2]:
                 raise OSError(errno.EIO, "injected descriptor close error")
 
-        with mock.patch.object(delta.plan.os, "close", close):
+        shim = SimpleNamespace(**(vars(os) | {"close": close}))
+        with mock.patch.object(delta.plan, "os", shim):
             with self.assertRaises(OSError) as raised:
                 capture.close()
         self.assertEqual(attempted, descriptors)
         self.assertIn("capture cleanup reported 2 descriptor close errors", raised.exception.__notes__)
-        with mock.patch.object(delta.plan.os, "close", side_effect=AssertionError("descriptor retried")):
+        shim.close = mock.Mock(side_effect=AssertionError("descriptor retried"))
+        with mock.patch.object(delta.plan, "os", shim):
             capture.close()
         for descriptor in descriptors:
             with self.assertRaises(OSError) as gone:
@@ -424,7 +427,8 @@ class IndexDelta(unittest.TestCase):
             raise OSError(errno.EIO, "reported after descriptor reuse")
 
         try:
-            with mock.patch.object(delta.plan.os, "close", close):
+            shim = SimpleNamespace(**(vars(os) | {"close": close}))
+            with mock.patch.object(delta.plan, "os", shim):
                 with self.assertRaises(OSError):
                     capture.close()
             capture.close()

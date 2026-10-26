@@ -6,6 +6,7 @@ runtime is changed; page publication is not source acknowledgement or readiness.
 
 import copy
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -132,8 +133,9 @@ class PackedEventReplay(unittest.TestCase):
                 capture.read_file(str(self.pack), lookup.siaeventpack.MAX_BYTES)
                 capture.release_bytes(str(self.pack))
                 capture.budget.limit = capture.budget.total
-                with mock.patch.object(siaeventplan.os, "pread",
-                                       side_effect=AssertionError("unreserved read")), \
+                shim = SimpleNamespace(**vars(siaeventplan.os))
+                shim.pread = mock.Mock(side_effect=AssertionError("unreserved read"))
+                with mock.patch.object(siaeventplan, "os", shim), \
                         mock.patch.object(lookup.siaeventpack, "decode",
                                           side_effect=AssertionError("unreserved decode")):
                     with self.assertRaisesRegex(ValueError, "complete-byte-capacity"):

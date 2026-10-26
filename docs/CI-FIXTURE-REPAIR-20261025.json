@@ -1,0 +1,28 @@
+{
+  "archive": {
+    "bytes": 468329,
+    "members": 19,
+    "path": "docs/evidence/ci-fixture-repair-20261025.tar.gz",
+    "reproduced": true,
+    "sha256": "8f790f80453c27605b3cf2216ac479774946ce3acbe7a63b852be5d8a2e6b2ab"
+  },
+  "base_commit": "25d706b74d3ed961a4f0d8663428c34bb5a8fe95",
+  "endpoint_pins": {
+    "count": 506,
+    "limit": "Endpoint correspondence, not continuous loaded-code custody",
+    "unchanged": true
+  },
+  "prior_ci": "Both original exact25d706b suites failed5 with4439 tests and34 skips; full raw logs retained in archive",
+  "remaining": "R05 BOTH, fresh full-suite CI, all original A/G/C/P/R/EP obligations, full proofs, custody, SDK, compaction, recovery, retrieval, judge, installed qualification and release/marketplace",
+  "review": "Actual GPT-6.1 source and retained-evidence review; no independent execution",
+  "scope": "Exact test and executable tree before evidence-only additions",
+  "static": "Selected frozen 167-rule profile: zero findings",
+  "status": "SELECTED_FIXTURE_REPAIR_PASS_FULL_ASSURANCE_INCOMPLETE",
+  "tested_tree": "735a84bc0e4db3485d02caaab4200b626de45bca",
+  "tests": {
+    "count": 11,
+    "exit": 0,
+    "seconds": "3.622",
+    "skips": 0
+  }
+}
