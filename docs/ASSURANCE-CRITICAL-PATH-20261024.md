@@ -1,3 +1,18 @@
+# Completed fixture reconciled; observer-death test remains next — 2026-10-26
+
+The [exact manual reconciliation](ORDINARY-MANUAL-RECONCILIATION-20261026.md)
+passed 21 disposable storage/admission controls and one actual reviewed root
+invocation. Separate readback confirmed the original pending bytes under their
+archive name, the matching decision and unchanged ledger/epoch. Pending is absent.
+Earlier entries below describing that normal fixture as unresolved are historical.
+
+This is not replay or successor authority. Add exact retired-manifest refusal
+before admitting the next fixed observer-death test; observe termination before
+witness cleanup and preserve any uncertain intent. No native C14, compaction,
+R05 BOTH, judge, installed/release or whole-system gate is closed by this result.
+
+---
+
 # Persistent pending refusal tested; reconciliation remains open — 2026-10-26
 
 The [ordinary recovery latch](ORDINARY-RECOVERY-LATCH-20261026.md) records intent
