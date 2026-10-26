@@ -1,3 +1,21 @@
+# Receipt persistence tested; observer-loss recovery remains next — 2026-10-26
+
+The [ordinary receipt repair](ORDINARY-RECEIPT-PERSISTENCE-20261026.md) adds
+directory synchronization and explicit uncertain-write handling to the private
+engineering wrapper. Component controls and a fresh normal actual-wrapper
+integration each pass all 18 methods. The latter requires observed successful
+wrapper exit as well as matching receipts; a complete file alone is insufficient.
+Superseded source and its scoped results remain visible. This is neither installed
+product behavior nor custody acceptance.
+
+The existing next boundary is recovery after actual observer loss. A successor
+must establish prior work termination before admission; ordinary receipt
+persistence is only one prerequisite. Native Codex lifecycle/receiver joins,
+repeated compaction evidence, R05 BOTH, Astra judge and installed/release gates
+remain open. No obligation or original failing test is retired by this checkpoint.
+
+---
+
 # Closed R05 experiment; continuity recovery remains next — 2026-10-26
 
 The [capture observation and traversal experiment](R05-CAUSAL-TRAVERSAL-20261026.md)
