@@ -1859,6 +1859,70 @@ class PulseSyncRetry(unittest.TestCase):
         self.assertIn(("commit", True), self.barrier_trace)
         self.assertIn(("sync", True), self.barrier_trace)
 
+    def test_repeated_observation_repairs_a_missing_entity_page(self):
+        stamp = self.sialib.datetime.datetime(
+            2026, 8, 30, 12, 0, tzinfo=self.sialib.datetime.timezone.utc)
+        event = self.sialib.Event(
+            "journal", stamp, "error", "worker failed",
+            {"units/worker"}, {"coredump"},
+            occurrence="journal:worker")
+        staged = []
+        original_stage = self.sialib._stage_pulse_source_publication
+        original_entity = self.sialib.ensure_entity
+        real_atomic_write = self.sialib.atomic_write
+
+        def sense_journal(_cursors):
+            return [event]
+
+        def update_day_page(organ, date, new_events, dry_run=False):
+            return [], [], []
+
+        def stage(*args, **kwargs):
+            staged.append(kwargs.get("dry_run", False))
+            return original_stage(*args, **kwargs)
+
+        def ensure_entity(slug, ptype, title, body_lines):
+            # The barrier harness records memo writes and drops every other
+            # atomic_write. Keep that memo capture, and let the entity page
+            # itself reach the corpus.
+            current = self.sialib.atomic_write
+
+            def writing(path, data, mode=None):
+                if path == self.sialib.MEMO_PATH:
+                    return current(path, data, mode=mode)
+                return real_atomic_write(path, data, mode=mode)
+
+            with mock.patch.object(self.sialib, "atomic_write", writing):
+                return original_entity(slug, ptype, title, body_lines)
+
+        self.assertFalse(self.sialib.page_exists("units/worker"))
+        with mock.patch.object(
+                self.sialib, "update_day_page", update_day_page), \
+                mock.patch.object(
+                    self.sialib, "verify_chains",
+                    return_value={"sia": "pass"}), \
+                mock.patch.object(
+                    self.sialib, "gbrain_call", return_value=[]), \
+                mock.patch.object(self.sialib, "_preflight_event_lookup"), \
+                mock.patch.object(self.sialib, "_preflight_event_path_plan"), \
+                mock.patch.object(self.sialib, "ensure_entity", ensure_entity), \
+                mock.patch.object(
+                    self.sialib, "_stage_pulse_source_publication", stage):
+            status = self._run_barrier_pulse(
+                page_activity=False, senses=[sense_journal],
+                initial_graph=self._complete_graph())
+        self.assertIn(False, staged)
+        self.assertEqual(status["events_pulse"], 1)
+        self.assertNotIn("corpus_write", status["errors"])
+        self.assertTrue(self.sialib.page_exists("units/worker"))
+        page = os.path.join(self.sialib.CORPUS, "units", "worker.md")
+        with open(page, encoding="utf-8") as stream:
+            body = stream.read()
+        self.assertIn(
+            "systemd unit observed by [[organs/journal]].", body)
+        self.assertIn(("commit", True), self.barrier_trace)
+        self.assertFalse(self.sialib._event_entity_repair_pending([event]))
+
     def test_malformed_sync_intent_refuses_before_sensing(self):
         with mock.patch.object(self.sialib, "ensure_dirs"), \
                 mock.patch.object(self.sialib, "load_cursors",
