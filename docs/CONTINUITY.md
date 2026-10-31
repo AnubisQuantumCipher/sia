@@ -42,7 +42,10 @@ They are authorities, not instructions for a backup program to walk them
 live. `sia continuity freeze` acquires SIA's owner leases, copies the portable
 subset into a private completed capsule, releases the live leases, verifies
 the copied SIA ledger, and signs a closed manifest of paths, metadata, digests,
-corpus head, ledger head, omissions, and source receipt identity. Use
+corpus head, ledger head, omissions, and source receipt identity. A corpus
+that fits in one document keeps that single signed manifest. A larger corpus
+keeps the same rows in digest-bound catalog pages and signs the page index,
+so growth adds pages instead of failing the freeze. Use
 `sia continuity roots --json` for the versioned machine-readable contract. It
 publishes the three absolute authority paths, exact scoped selection and
 exclusion rules, and `do_not_walk_live: true`; adapters consume capsules and
@@ -54,11 +57,19 @@ snapshot identity through SIA's `prepare_binding` boundary, producing a
 `sia-prepared-capsule-v1` receipt. Only that core-bound receipt can enter the
 guarded thaw path; there is intentionally no raw live-thaw CLI.
 
-Freeze and verify traverse the capsule exactly. Their per-directory fan-out
-uses the same finite envelope as the capsule's whole-tree record budget; it is
-not coupled to the smaller source-tail sampling limit used by ingestion.
-Reaching the whole-tree, depth, path-byte, or directory envelope is an honest
-refusal before publication, never permission to omit entries from a capsule.
+Freeze and verify traverse the capsule exactly. Directory fan-out, path
+length, and tree depth each keep a finite hostile-input ceiling. Those
+ceilings are not a quota on the whole corpus, and they are not coupled to
+the smaller source-tail sampling limit used by ingestion. When the signed
+manifest would pass the existing JSON document ceiling, freeze writes
+catalog pages that each stay inside that ceiling and signs their digests.
+Verify accepts both the single-document capsule and the paged one. Reaching
+a directory, depth, or path ceiling, or a catalog that itself cannot fit in
+one signed document, is an honest refusal before publication, never
+permission to omit entries from a capsule. Restore cleanup catalogs the
+frozen capsule and the replaced live tree before the first unlink, so a
+capsule that freeze accepted can still be retired. An over-bound private
+tree is refused intact.
 
 ## Why the first adapter is restic
 
