@@ -120,14 +120,17 @@ _CAPSULE_CATALOG_DOCUMENT_BYTES = MAX_DOCUMENT_BYTES
 # sample. The record ceiling is the most records one signed catalog can name.
 # It is assigned once the canonical page encoding below is known. A tree past
 # it is refused before publication; a tree inside it is paged, not truncated.
-# Cleanup may reuse SIA's published finite scan/path ceilings.  It catalogs the
-# whole candidate before the first unlink, so an over-bound tree is preserved
-# and refused rather than partly erased.
-_OPERATION_DIRECTORY_ENTRY_LIMIT = sialib.MAX_SOURCE_SCAN_ENTRIES
-# add rollback/capsule/staging prefixes around already-bounded portable roots,
-# so they need a separate finite deletion-preflight depth policy.
+# Cleanup catalogs the whole candidate before the first unlink, so an
+# over-bound tree is preserved and refused rather than partly erased.
+# A directory a freeze accepts must be countable here, including inside
+# target-capsule and replaced-live. The rollback root uses the same ceiling.
+_OPERATION_DIRECTORY_ENTRY_LIMIT = _CAPSULE_DIRECTORY_ENTRY_LIMIT
+# Rollback, capsule, and staging prefixes wrap portable roots that already
+# have their own depth ceiling, so deletion preflight keeps a separate
+# finite depth policy.
 _OPERATION_TREE_DEPTH_LIMIT = 64
-_OPERATION_TREE_RECORD_LIMIT = sialib.MAX_CONFIG_BYTES
+# Journal, adoption, key, and projection-stage names around the two trees.
+_OPERATION_AUXILIARY_RECORDS = 4096
 
 
 def _now():
@@ -256,6 +259,27 @@ def _signed_document_fits(unsigned):
     return size <= ceiling and size + _SIGNATURE_OVERHEAD <= ceiling
 
 
+def _entries_document_size(envelope, entries):
+    """Canonical size of envelope plus an entries array, without building it.
+
+    The empty document already contains ``"entries":[]``. Each row fills that
+    array; later rows add a comma. This is the inline-manifest fit check, so
+    a corpus that must be paged is never serialized as one document.
+    """
+    empty = dict(envelope)
+    empty["entries"] = []
+    base = len(_canonical_bytes(empty))
+    if not entries:
+        return base
+    return base + sum(_json_wire_bytes(row) for row in entries) + len(entries) - 1
+
+
+def _inline_manifest_fits(envelope, entries):
+    size = _entries_document_size(envelope, entries)
+    ceiling = _document_ceiling()
+    return size <= ceiling and size + _SIGNATURE_OVERHEAD <= ceiling
+
+
 def _minimum_catalog_entry():
     # Shorter than any path verify accepts. Using it makes the record ceiling
     # an upper bound: a real entry is larger, so the byte ceiling fires first.
@@ -340,8 +364,30 @@ def _catalog_capacity():
     return page_limit, page_limit * records_per_page
 
 
+def _check_entries_document_size():
+    envelope = {"omissions": ["a"], "schema": CAPSULE_SCHEMA}
+    rows = [_minimum_catalog_entry(), _minimum_catalog_entry()]
+    full = dict(envelope)
+    full["entries"] = rows
+    if _entries_document_size(envelope, []) != len(
+            _canonical_bytes(dict(envelope, entries=[]))) \
+            or _entries_document_size(envelope, rows[:1]) != len(
+                _canonical_bytes(dict(envelope, entries=rows[:1]))) \
+            or _entries_document_size(envelope, rows) != len(
+                _canonical_bytes(full)):
+        raise RuntimeError("capsule inline manifest size accounting drifted")
+
+
+_check_entries_document_size()
 _SIGNATURE_OVERHEAD = _signature_overhead()
 _CAPSULE_CATALOG_PAGE_LIMIT, _CAPSULE_TREE_RECORD_LIMIT = _catalog_capacity()
+# Retirement preflights the frozen capsule and the replaced live tree, then
+# refuses before the first unlink. Both trees can be as large as one capsule,
+# and the capsule also carries its catalog pages.
+_OPERATION_TREE_RECORD_LIMIT = (
+    (2 * _CAPSULE_TREE_RECORD_LIMIT)
+    + _CAPSULE_CATALOG_PAGE_LIMIT
+    + _OPERATION_AUXILIARY_RECORDS)
 
 
 def _write_catalog_pages(stage_path, entries):
@@ -460,7 +506,8 @@ def _read_catalog_entries(capsule_path, catalog):
         if not isinstance(document, dict) \
                 or set(document) != {"schema", "index", "entries"} \
                 or document.get("schema") != CATALOG_PAGE_SCHEMA \
-                or document.get("index") != page["index"] \
+                or type(document.get("index")) is not int \
+                or document["index"] != page["index"] \
                 or not isinstance(rows, list) \
                 or len(rows) != page["records"]:
             raise ValueError("capsule catalog page schema is invalid")
@@ -1304,16 +1351,14 @@ def freeze(output_path):
                 },
                 "roots": present_roots,
                 "omissions": list(OMISSIONS),
-                "entries": ordered,
             }
-            # A corpus that fits keeps the single-document schema, byte for
-            # byte the historical manifest. A larger corpus spills the same
-            # rows into digest-bound pages and signs the page index instead.
-            if not _signed_document_fits(unsigned):
+            # A corpus that fits keeps the single-document schema. The fit
+            # uses row sizes, so a larger corpus is paged without first
+            # building the document that does not fit.
+            if _inline_manifest_fits(unsigned, ordered):
+                unsigned["entries"] = ordered
+            else:
                 pages = _write_catalog_pages(stage_path, ordered)
-                unsigned = {
-                    key: value for key, value in unsigned.items()
-                    if key != "entries"}
                 unsigned["schema"] = CAPSULE_SCHEMA_PAGED
                 unsigned["catalog"] = {
                     "schema": CATALOG_SCHEMA,

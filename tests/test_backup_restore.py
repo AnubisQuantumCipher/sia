@@ -598,6 +598,54 @@ class CapsuleBoundaryTests(unittest.TestCase):
             name.startswith(".sia-capsule-stage-")
             for name in os.listdir(self.output)))
 
+    def test_catalog_page_index_rejects_json_values_equal_to_an_int(self):
+        capsule = os.path.join(self.output, "ambiguous-page-index")
+        catalog_dir = os.path.join(capsule, "catalog")
+        os.makedirs(catalog_dir, mode=0o700)
+
+        def publish(index, body_index):
+            document = {
+                "entries": [{}],
+                "index": body_index,
+                "schema": siacapsule.CATALOG_PAGE_SCHEMA,
+            }
+            raw = siacapsule._canonical_bytes(document)
+            name = f"{index:08d}.json"
+            self._write(os.path.join(catalog_dir, name),
+                        raw.decode("ascii"))
+            return {
+                "index": index,
+                "name": name,
+                "records": 1,
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "size": len(raw),
+            }
+
+        valid = {
+            "schema": siacapsule.CATALOG_SCHEMA,
+            "pages": [publish(0, 0), publish(1, 1)],
+        }
+        loaded = siacapsule._read_catalog_entries(capsule, valid)
+        self.assertEqual(len(loaded), 2)
+        for ambiguous in (True, 1.0):
+            with self.subTest(index=ambiguous):
+                catalog = {
+                    "schema": siacapsule.CATALOG_SCHEMA,
+                    "pages": [publish(0, 0), publish(1, ambiguous)],
+                }
+                with self.assertRaisesRegex(
+                        ValueError, "page schema is invalid"):
+                    siacapsule._read_catalog_entries(capsule, catalog)
+
+    def test_operation_cleanup_covers_capsule_and_replaced_tree(self):
+        self.assertGreaterEqual(
+            siacapsule._OPERATION_DIRECTORY_ENTRY_LIMIT,
+            siacapsule._CAPSULE_DIRECTORY_ENTRY_LIMIT)
+        self.assertGreaterEqual(
+            siacapsule._OPERATION_TREE_RECORD_LIMIT,
+            (2 * siacapsule._CAPSULE_TREE_RECORD_LIMIT)
+            + siacapsule._CAPSULE_CATALOG_PAGE_LIMIT)
+
     def test_gbrain_substrate_refuses_managed_receipt_parent_symlink(self):
         managed = siacapsule.MANAGED_ROOT
         parked = managed + ".real"

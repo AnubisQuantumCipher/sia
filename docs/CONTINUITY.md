@@ -66,7 +66,10 @@ catalog pages that each stay inside that ceiling and signs their digests.
 Verify accepts both the single-document capsule and the paged one. Reaching
 a directory, depth, or path ceiling, or a catalog that itself cannot fit in
 one signed document, is an honest refusal before publication, never
-permission to omit entries from a capsule.
+permission to omit entries from a capsule. Restore cleanup catalogs the
+frozen capsule and the replaced live tree before the first unlink, so a
+capsule that freeze accepted can still be retired. An over-bound private
+tree is refused intact.
 
 ## Why the first adapter is restic
 
