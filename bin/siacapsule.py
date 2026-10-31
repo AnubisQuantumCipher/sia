@@ -29,6 +29,12 @@ import sialib
 
 
 CAPSULE_SCHEMA = "sia-portable-capsule-v1"
+# A corpus that does not fit in one signed document uses digest-bound pages.
+# Older capsules stay on the single-document schema and still verify.
+CAPSULE_SCHEMA_PAGED = "sia-portable-capsule-v2"
+CATALOG_SCHEMA = "sia-capsule-catalog-v1"
+CATALOG_PAGE_SCHEMA = "sia-capsule-catalog-page-v1"
+CATALOG_DIR_NAME = "catalog"
 ROOTS_SCHEMA = "sia-portable-roots-v1"
 IDENTITY_SCHEMA = "sia-offline-identity-v1"
 VERIFIED_SCHEMA = "sia-verified-capsule-v1"
@@ -102,13 +108,18 @@ _INACTIVE_COMPLETE_PHASES = frozenset({
     "rolled-back", "committed", "retiring-rollback", "retiring-commit",
 })
 _CAPSULE_TREE_DEPTH_LIMIT = sialib.MAX_CONFIG_TAGS
-_CAPSULE_TREE_RECORD_LIMIT = sialib.MAX_CONFIG_BYTES
-_CAPSULE_DIRECTORY_ENTRY_LIMIT = _CAPSULE_TREE_RECORD_LIMIT
+# One directory stays a hostile-input guard: the scan sorts every name before
+# copying. It is not a quota on the corpus. A corpus grows across directories,
+# and the signed catalog grows by adding pages instead of failing the freeze.
+_CAPSULE_DIRECTORY_ENTRY_LIMIT = sialib.MAX_CONFIG_BYTES
 _CAPSULE_PATH_BYTE_LIMIT = sialib.MAX_CONFIG_BYTES
+# Pages and the signed manifest stay inside the existing JSON document ceiling.
+# Tests may lower this. They cannot raise it past the ceiling readers enforce.
+_CAPSULE_CATALOG_DOCUMENT_BYTES = MAX_DOCUMENT_BYTES
 # Capsule traversal is an exact whole-tree operation, not a bounded source-tail
-# sample.  A directory may therefore use the capsule's existing whole-tree
-# record envelope; the shared budget below still refuses the first record past
-# that envelope before publication.
+# sample. The record ceiling is the most records one signed catalog can name.
+# It is assigned once the canonical page encoding below is known. A tree past
+# it is refused before publication; a tree inside it is paged, not truncated.
 # Cleanup may reuse SIA's published finite scan/path ceilings.  It catalogs the
 # whole candidate before the first unlink, so an over-bound tree is preserved
 # and refused rather than partly erased.
@@ -190,6 +201,283 @@ def _root_identity(value):
 def _canonical_bytes(value):
     return (json.dumps(value, ensure_ascii=True, sort_keys=True,
                        separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def _json_wire_bytes(value):
+    """Byte length of one canonical JSON value, without the document newline."""
+    return len(json.dumps(
+        value, ensure_ascii=True, sort_keys=True,
+        separators=(",", ":")).encode("utf-8"))
+
+
+def _signature_overhead():
+    """Bytes a canonical object grows when the ed25519 signature key is added."""
+    sample = {"schema": CAPSULE_SCHEMA}
+    signed = dict(sample, signature={
+        "algorithm": "ed25519",
+        "value": "00" * 64,
+    })
+    return len(_canonical_bytes(signed)) - len(_canonical_bytes(sample))
+
+
+def _catalog_page_document(index, entries):
+    return {
+        "entries": entries,
+        "index": index,
+        "schema": CATALOG_PAGE_SCHEMA,
+    }
+
+
+def _page_wire_size(index, entry_wire_sizes):
+    """Exact canonical size of one page, from the empty document plus each row.
+
+    The empty page already contains ``[]`` and the trailing newline. The first
+    entry fills the array; every later entry adds a comma.
+    """
+    empty = len(_canonical_bytes(_catalog_page_document(index, [])))
+    if not entry_wire_sizes:
+        return empty
+    return empty + sum(entry_wire_sizes) + (len(entry_wire_sizes) - 1)
+
+
+def _document_ceiling():
+    """The catalog may use a lower test ceiling, never a higher one."""
+    configured = _CAPSULE_CATALOG_DOCUMENT_BYTES
+    if type(configured) is not int or configured < 1:
+        return 1
+    if configured > MAX_DOCUMENT_BYTES:
+        return MAX_DOCUMENT_BYTES
+    return configured
+
+
+def _signed_document_fits(unsigned):
+    size = len(_canonical_bytes(unsigned))
+    ceiling = _document_ceiling()
+    return size <= ceiling and size + _SIGNATURE_OVERHEAD <= ceiling
+
+
+def _minimum_catalog_entry():
+    # Shorter than any path verify accepts. Using it makes the record ceiling
+    # an upper bound: a real entry is larger, so the byte ceiling fires first.
+    return {
+        "mode": 0,
+        "path": "a/b",
+        "sha256": "0" * 64,
+        "size": 0,
+        "type": "file",
+    }
+
+
+def _minimum_page_row(index):
+    return {
+        "index": index,
+        "name": f"{index:08d}.json",
+        "records": 1,
+        "sha256": "0" * 64,
+        "size": 1,
+    }
+
+
+def _minimum_paged_manifest(pages):
+    """Smallest envelope used only to size the hostile-input page ceiling."""
+    return {
+        "capsule_id": "0" * 32,
+        "captured_at": "1970-01-01T00:00:00Z",
+        "catalog": {"pages": pages, "schema": CATALOG_SCHEMA},
+        "chains": {"sia": "pass"},
+        "classification": "ready",
+        "corpus_head": "0" * 40,
+        "identity": {
+            "fingerprint": "0" * 64,
+            "public_key": "0" * 64,
+        },
+        "ledger": {"head": "0" * 64, "sequence": 1},
+        "omissions": [""],
+        "readiness": {"ready": True, "reason": ""},
+        "root_contract_schema": ROOTS_SCHEMA,
+        "roots": {"state": True},
+        "schema": CAPSULE_SCHEMA_PAGED,
+        "sia_version": "0",
+        "source": {
+            "corpus_receipt": {"mode": 0, "sha256": "0" * 64},
+            "corpus_root": {
+                "device": 0, "inode": 0, "mode": 0, "owner": 0},
+        },
+    }
+
+
+def _catalog_capacity():
+    """Most pages and records one signed document can name.
+
+    The figures are upper bounds from the smallest canonical records. Freeze
+    still refuses when the actual signed manifest would pass the document
+    ceiling. A larger real corpus adds pages until that ceiling, and does not
+    stop at the old 64 KiB config-byte quota.
+    """
+    entry = _minimum_catalog_entry()
+    entry_wire = _json_wire_bytes(entry)
+    one = _canonical_bytes(_catalog_page_document(0, [entry]))
+    two = _canonical_bytes(_catalog_page_document(0, [entry, entry]))
+    if _page_wire_size(0, [entry_wire]) != len(one) \
+            or _page_wire_size(0, [entry_wire, entry_wire]) != len(two):
+        raise RuntimeError("capsule catalog page size accounting drifted")
+    marginal_entry = len(two) - len(one)
+    ceiling = MAX_DOCUMENT_BYTES
+    if marginal_entry < 1 or len(one) > ceiling:
+        raise RuntimeError("capsule catalog page capacity is incoherent")
+    records_per_page = 1 + (ceiling - len(one)) // marginal_entry
+    first = _canonical_bytes(
+        _minimum_paged_manifest([_minimum_page_row(0)]))
+    second = _canonical_bytes(_minimum_paged_manifest([
+        _minimum_page_row(0), _minimum_page_row(1)]))
+    marginal_page = len(second) - len(first)
+    room = ceiling - _SIGNATURE_OVERHEAD - len(first)
+    if marginal_page < 1 or room < 0 or records_per_page < 1:
+        raise RuntimeError("capsule catalog page capacity is incoherent")
+    page_limit = 1 + room // marginal_page
+    if page_limit >= 100_000_000:
+        raise RuntimeError("capsule catalog page names exceed 8 digits")
+    return page_limit, page_limit * records_per_page
+
+
+_SIGNATURE_OVERHEAD = _signature_overhead()
+_CAPSULE_CATALOG_PAGE_LIMIT, _CAPSULE_TREE_RECORD_LIMIT = _catalog_capacity()
+
+
+def _write_catalog_pages(stage_path, entries):
+    """Spill a sorted entry table into digest-bound pages under the ceiling."""
+    if not entries:
+        raise ValueError("capsule catalog entry exceeds its size bound")
+    catalog_dir = os.path.join(stage_path, CATALOG_DIR_NAME)
+    os.mkdir(catalog_dir, 0o700)
+    pages = []
+    pending = []
+    pending_sizes = []
+    ceiling = _document_ceiling()
+
+    def flush():
+        nonlocal pending, pending_sizes
+        index = len(pages)
+        if index >= _CAPSULE_CATALOG_PAGE_LIMIT:
+            raise ValueError("capsule catalog exceeds its page bound")
+        raw = _canonical_bytes(_catalog_page_document(index, pending))
+        if len(raw) != _page_wire_size(index, pending_sizes):
+            raise RuntimeError("capsule catalog page size accounting drifted")
+        if len(raw) > ceiling:
+            raise ValueError("capsule catalog entry exceeds its size bound")
+        name = f"{index:08d}.json"
+        _write_exclusive(os.path.join(catalog_dir, name), raw, 0o600)
+        pages.append({
+            "index": index,
+            "name": name,
+            "records": len(pending),
+            "size": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        })
+        pending = []
+        pending_sizes = []
+
+    for row in entries:
+        wire = _json_wire_bytes(row)
+        trial_sizes = pending_sizes + [wire]
+        trial_size = _page_wire_size(len(pages), trial_sizes)
+        if pending and trial_size > ceiling:
+            flush()
+            trial_sizes = [wire]
+            trial_size = _page_wire_size(len(pages), trial_sizes)
+        if trial_size > ceiling:
+            raise ValueError("capsule catalog entry exceeds its size bound")
+        pending.append(row)
+        pending_sizes = trial_sizes
+    flush()
+    _fsync_dir(catalog_dir)
+    if not pages or len(pages) > _CAPSULE_CATALOG_PAGE_LIMIT:
+        raise ValueError("capsule catalog exceeds its page bound")
+    return pages
+
+
+def _catalog_shape_valid(catalog):
+    if not isinstance(catalog, dict) \
+            or set(catalog) != {"schema", "pages"} \
+            or catalog.get("schema") != CATALOG_SCHEMA:
+        return False
+    pages = catalog.get("pages")
+    if not isinstance(pages, list) or not pages \
+            or len(pages) > _CAPSULE_CATALOG_PAGE_LIMIT:
+        return False
+    records = 0
+    ceiling = _document_ceiling()
+    for index, page in enumerate(pages):
+        if not isinstance(page, dict) or set(page) != {
+                "index", "name", "records", "size", "sha256"}:
+            return False
+        name = page.get("name")
+        if type(page.get("index")) is not int or page["index"] != index \
+                or name != f"{index:08d}.json" \
+                or type(page.get("records")) is not int \
+                or page["records"] < 1 \
+                or type(page.get("size")) is not int \
+                or page["size"] < 1 or page["size"] > ceiling \
+                or not isinstance(page.get("sha256"), str) \
+                or re.fullmatch(r"[0-9a-f]{64}", page["sha256"]) is None:
+            return False
+        records += page["records"]
+        if records > _CAPSULE_TREE_RECORD_LIMIT:
+            return False
+    return True
+
+
+def _read_catalog_entries(capsule_path, catalog):
+    """Load page rows after their signed digests match the bytes on disk."""
+    if not _catalog_shape_valid(catalog):
+        raise ValueError("capsule catalog schema is invalid")
+    catalog_dir = os.path.join(capsule_path, CATALOG_DIR_NAME)
+    if os.path.realpath(catalog_dir) != catalog_dir:
+        raise ValueError("capsule catalog path contains a symbolic link")
+    info = os.lstat(catalog_dir)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise ValueError("capsule catalog is not an owned real directory")
+    names = []
+    with os.scandir(catalog_dir) as scan:
+        for child in scan:
+            names.append(child.name)
+            if len(names) > _CAPSULE_CATALOG_PAGE_LIMIT:
+                raise ValueError("capsule catalog exceeds its page bound")
+    expected = [page["name"] for page in catalog["pages"]]
+    if sorted(names) != sorted(expected) or len(names) != len(expected):
+        raise ValueError(
+            "capsule catalog pages do not match the signed manifest")
+    entries = []
+    for page in catalog["pages"]:
+        raw, _page_info = _read_regular(
+            os.path.join(catalog_dir, page["name"]),
+            "capsule catalog page", maximum=page["size"])
+        if len(raw) != page["size"] \
+                or hashlib.sha256(raw).hexdigest() != page["sha256"]:
+            raise ValueError("capsule catalog page digest does not match")
+        document = _strict_json(raw, "capsule catalog page")
+        rows = document.get("entries") if isinstance(document, dict) else None
+        if not isinstance(document, dict) \
+                or set(document) != {"schema", "index", "entries"} \
+                or document.get("schema") != CATALOG_PAGE_SCHEMA \
+                or document.get("index") != page["index"] \
+                or not isinstance(rows, list) \
+                or len(rows) != page["records"]:
+            raise ValueError("capsule catalog page schema is invalid")
+        entries.extend(rows)
+    return entries
+
+
+def _manifest_entries(capsule_path, manifest):
+    schema = manifest.get("schema") if isinstance(manifest, dict) else None
+    if schema == CAPSULE_SCHEMA:
+        entries = manifest.get("entries")
+        if not isinstance(entries, list):
+            raise ValueError("capsule entry table is invalid")
+        return entries
+    if schema == CAPSULE_SCHEMA_PAGED:
+        return _read_catalog_entries(capsule_path, manifest.get("catalog"))
+    raise ValueError("capsule manifest schema is invalid")
 
 
 def _fsync_dir(path):
@@ -991,6 +1279,7 @@ def freeze(output_path):
             classification = "ready" if ready \
                 and chains.get("sia") == "pass" \
                 else "recovery-only"
+            ordered = sorted(entries, key=lambda row: row["path"])
             unsigned = {
                 "schema": CAPSULE_SCHEMA,
                 "root_contract_schema": ROOTS_SCHEMA,
@@ -1015,10 +1304,26 @@ def freeze(output_path):
                 },
                 "roots": present_roots,
                 "omissions": list(OMISSIONS),
-                "entries": sorted(entries, key=lambda row: row["path"]),
+                "entries": ordered,
             }
+            # A corpus that fits keeps the single-document schema, byte for
+            # byte the historical manifest. A larger corpus spills the same
+            # rows into digest-bound pages and signs the page index instead.
+            if not _signed_document_fits(unsigned):
+                pages = _write_catalog_pages(stage_path, ordered)
+                unsigned = {
+                    key: value for key, value in unsigned.items()
+                    if key != "entries"}
+                unsigned["schema"] = CAPSULE_SCHEMA_PAGED
+                unsigned["catalog"] = {
+                    "schema": CATALOG_SCHEMA,
+                    "pages": pages,
+                }
+                if not _signed_document_fits(unsigned):
+                    raise ValueError(
+                        "capsule catalog exceeds its page bound")
             signed_bytes = _canonical_bytes(unsigned)
-            if len(signed_bytes) > MAX_DOCUMENT_BYTES:
+            if len(signed_bytes) > _document_ceiling():
                 raise ValueError("capsule manifest exceeds its size bound")
             manifest = dict(unsigned)
             manifest["signature"] = {
@@ -1026,7 +1331,7 @@ def freeze(output_path):
                 "value": private.sign(signed_bytes).hex(),
             }
             manifest_bytes = _canonical_bytes(manifest)
-            if len(manifest_bytes) > MAX_DOCUMENT_BYTES:
+            if len(manifest_bytes) > _document_ceiling():
                 raise ValueError("signed capsule manifest exceeds its size bound")
             _write_exclusive(os.path.join(stage_path, MANIFEST_NAME),
                              manifest_bytes, 0o600)
@@ -1123,13 +1428,21 @@ def verify(capsule_path):
         raise ValueError("capsule root is not an owned real directory")
     manifest = _read_json(os.path.join(capsule_path, MANIFEST_NAME),
                           "capsule manifest")
+    schema = manifest.get("schema") if isinstance(manifest, dict) else None
+    paged = schema == CAPSULE_SCHEMA_PAGED
     required = {
         "schema", "root_contract_schema", "capsule_id", "captured_at",
         "sia_version",
         "classification", "readiness", "chains", "corpus_head", "ledger",
-        "identity", "source", "roots", "omissions", "entries", "signature",
+        "identity", "source", "roots", "omissions", "signature",
     }
-    if set(manifest) != required or manifest.get("schema") != CAPSULE_SCHEMA \
+    if paged:
+        required.add("catalog")
+    elif schema == CAPSULE_SCHEMA:
+        required.add("entries")
+    else:
+        raise ValueError("capsule manifest schema is invalid")
+    if set(manifest) != required \
             or manifest.get("root_contract_schema") != ROOTS_SCHEMA \
             or manifest.get("omissions") != list(OMISSIONS):
         raise ValueError("capsule manifest schema is invalid")
@@ -1213,7 +1526,10 @@ def verify(capsule_path):
             bytes.fromhex(signature["value"]), _canonical_bytes(unsigned))
     except (InvalidSignature, ValueError) as exc:
         raise ValueError("capsule manifest signature is invalid") from exc
-    entries = manifest.get("entries")
+    if paged:
+        entries = _read_catalog_entries(capsule_path, manifest.get("catalog"))
+    else:
+        entries = manifest.get("entries")
     if not isinstance(entries, list) or any(not isinstance(row, dict)
                                              for row in entries):
         raise ValueError("capsule entry table is invalid")
@@ -1587,7 +1903,9 @@ def _install_capsule_content(capsule_path, binding=None):
     if hashlib.sha256(_canonical_bytes(manifest)).hexdigest() \
             != fresh["manifest_sha256"]:
         raise ValueError("capsule manifest changed before install")
-    signed_entries = {row["path"]: row for row in manifest["entries"]}
+    signed_entries = {
+        row["path"]: row
+        for row in _manifest_entries(capsule_path, manifest)}
     copied_entries = []
     payload = os.path.join(capsule_path, PAYLOAD_NAME)
     share_payload = os.path.join(payload, "share")

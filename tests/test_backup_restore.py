@@ -243,6 +243,16 @@ class CapsuleBoundaryTests(unittest.TestCase):
             os.fsync(stream.fileno())
         os.chmod(path, mode)
 
+    @staticmethod
+    def _read(path):
+        with open(path, encoding="utf-8") as stream:
+            return stream.read()
+
+    @staticmethod
+    def _read_bytes(path):
+        with open(path, "rb") as stream:
+            return stream.read()
+
     def _publish_receipt(self):
         info = os.lstat(self.corpus)
         receipt = (
@@ -518,6 +528,72 @@ class CapsuleBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "record bound"):
                 siacapsule.freeze(record_destination)
         self.assertFalse(os.path.lexists(record_destination))
+        self.assertFalse(any(
+            name.startswith(".sia-capsule-stage-")
+            for name in os.listdir(self.output)))
+
+    def test_small_capsule_stays_one_signed_document(self):
+        path, _result = self._freeze("inline-capsule")
+        manifest = json.loads(self._read(os.path.join(path, "manifest.json")))
+        self.assertEqual(manifest["schema"], siacapsule.CAPSULE_SCHEMA)
+        self.assertIn("entries", manifest)
+        self.assertNotIn("catalog", manifest)
+        self.assertFalse(os.path.lexists(os.path.join(path, "catalog")))
+        verified = siacapsule.verify(path)
+        self.assertEqual(verified["schema"], siacapsule.VERIFIED_SCHEMA)
+
+    def _grow_corpus(self, count):
+        for index in range(count):
+            self._write(
+                os.path.join(self.corpus, f"growth-{index:03d}.md"),
+                f"growth page {index}\n")
+
+    def test_corpus_past_one_document_pages_and_still_verifies(self):
+        self._grow_corpus(80)
+        inline_path, _inline = self._freeze("measure-inline")
+        inline_bytes = os.path.getsize(os.path.join(
+            inline_path, "manifest.json"))
+        # Below the real manifest, above a short page index: the corpus must
+        # spill into pages instead of refusing at the document ceiling.
+        ceiling = max(4096, inline_bytes // 4)
+        self.assertLess(ceiling, inline_bytes)
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_CATALOG_DOCUMENT_BYTES", ceiling):
+            path, _result = self._freeze("paged-capsule")
+            manifest = json.loads(self._read(os.path.join(
+                path, "manifest.json")))
+            self.assertEqual(
+                manifest["schema"], siacapsule.CAPSULE_SCHEMA_PAGED)
+            self.assertNotIn("entries", manifest)
+            pages = manifest["catalog"]["pages"]
+            self.assertGreaterEqual(len(pages), 2)
+            self.assertEqual(
+                [page["name"] for page in pages],
+                [f"{index:08d}.json" for index in range(len(pages))])
+            loaded = siacapsule._manifest_entries(path, manifest)
+            self.assertGreater(len(loaded), 80)
+            self.assertEqual(
+                len({row["path"] for row in loaded}), len(loaded))
+            verified = siacapsule.verify(path)
+            self.assertEqual(verified["capsule_id"], manifest["capsule_id"])
+            page_path = os.path.join(path, "catalog", pages[0]["name"])
+            raw = bytearray(self._read_bytes(page_path))
+            raw[-2] ^= 0x01
+            with open(page_path, "wb") as stream:
+                stream.write(raw)
+            with self.assertRaisesRegex(ValueError, "digest does not match"):
+                siacapsule.verify(path)
+
+    def test_catalog_page_bound_refuses_without_publishing(self):
+        self._grow_corpus(80)
+        destination = os.path.join(self.output, "page-bound")
+        with mock.patch.object(
+                siacapsule, "_CAPSULE_CATALOG_DOCUMENT_BYTES", 4096), \
+                mock.patch.object(
+                    siacapsule, "_CAPSULE_CATALOG_PAGE_LIMIT", 1):
+            with self.assertRaisesRegex(ValueError, "page bound"):
+                siacapsule.freeze(destination)
+        self.assertFalse(os.path.lexists(destination))
         self.assertFalse(any(
             name.startswith(".sia-capsule-stage-")
             for name in os.listdir(self.output)))
@@ -1742,6 +1818,18 @@ class ContinuityFailureNaming(unittest.TestCase):
                 "(/home/x/.local/share/sia/corpus/packages: more than 65536 entries)")),
             " Reason: capsule-entry-bound (/home/x/.local/share/sia/corpus/packages: "
             "more than 65536 entries)")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError(
+                "capsule source tree exceeds its record bound")),
+            " Reason: capsule-record-bound.")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError(
+                "signed capsule manifest exceeds its size bound")),
+            " Reason: capsule-manifest-bound.")
+        self.assertEqual(
+            siabackup._named_failure_clause(ValueError(
+                "capsule catalog exceeds its page bound")),
+            " Reason: capsule-catalog-page-bound.")
         self.assertEqual(
             siabackup._named_failure_clause(ValueError("capsule output already exists")),
             " Reason: capsule-output-exists.")
