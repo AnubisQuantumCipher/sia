@@ -1759,6 +1759,106 @@ class PulseSyncRetry(unittest.TestCase):
         self.assertTrue(all(status["thought"]["origin"] == "model"
                             for status in statuses))
 
+    def test_repeated_day_page_observations_do_not_resync(self):
+        stamp = self.sialib.datetime.datetime(
+            2026, 8, 30, 12, 0, tzinfo=self.sialib.datetime.timezone.utc)
+        event = self.sialib.Event(
+            "codex", stamp, "source-entry-refused",
+            "Codex session example could not be admitted within "
+            "the bounded source state",
+            {"organs/codex"}, {"refusal", "source-entry-refused"},
+            occurrence="source-entry-refused:codex:example")
+        observed = []
+        staged = []
+
+        def sense_codex(_cursors):
+            return [event]
+
+        def update_day_page(organ, date, new_events, dry_run=False):
+            return [], [], []
+
+        def capture(_store, _memo, observations, _chains, _salience,
+                    _anomalies, **_kwargs):
+            observed.append(list(observations))
+            return []
+
+        def stage(*_args, **kwargs):
+            staged.append(kwargs.get("dry_run", False))
+            return ({"v": 1}, {"v": 1})
+
+        verify = mock.Mock(return_value={"sia": "pass"})
+        with mock.patch.object(
+                self.sialib, "update_day_page", update_day_page), \
+                mock.patch.object(self.sialib, "verify_chains", verify), \
+                mock.patch.object(self.sialib, "_preflight_event_lookup"), \
+                mock.patch.object(self.sialib, "_preflight_event_path_plan"), \
+                mock.patch.object(
+                    self.sialib, "_stage_pulse_source_publication", stage):
+            status = self._run_barrier_pulse(
+                page_activity=False, senses=[sense_codex],
+                think_impl=capture,
+                initial_graph=self._complete_graph())
+        self.assertEqual(status["events_pulse"], 0)
+        self.assertEqual(status["errors"], {})
+        self.assertEqual(status["state"], "ok")
+        self.assertNotIn("corpus_write", status["errors"])
+        self.assertEqual(observed, [[]])
+        self.assertEqual(staged, [True])
+        self.assertFalse(any(item[0] == "sync" for item in self.barrier_trace))
+        self.assertFalse(
+            any(item[0] == "commit" for item in self.barrier_trace))
+        self.assertIn(("cursors", True), self.barrier_trace)
+        self.assertNotIn("pulse_publication", self.barrier_persisted)
+        self.assertIsNot(self.barrier_persisted.get("sync_needed"), True)
+        verify.assert_not_called()
+
+    def test_new_day_page_observation_still_stages_publication(self):
+        stamp = self.sialib.datetime.datetime(
+            2026, 8, 30, 12, 0, tzinfo=self.sialib.datetime.timezone.utc)
+        event = self.sialib.Event(
+            "codex", stamp, "source-entry-refused",
+            "Codex session example could not be admitted within "
+            "the bounded source state",
+            {"organs/codex"}, {"refusal", "source-entry-refused"},
+            occurrence="source-entry-refused:codex:example")
+        staged = []
+
+        def sense_codex(_cursors):
+            return [event]
+
+        def update_day_page(organ, date, new_events, dry_run=False):
+            return ["events/codex/2026-08-30"], list(new_events), [
+                (item, "events/codex/2026-08-30") for item in new_events]
+
+        def stage(*_args, **kwargs):
+            dry_run = kwargs.get("dry_run", False)
+            staged.append(dry_run)
+            if not dry_run:
+                raise RuntimeError("publication stage reached")
+            return ({"v": 1}, {"v": 1})
+
+        with mock.patch.object(
+                self.sialib, "update_day_page", update_day_page), \
+                mock.patch.object(
+                    self.sialib, "verify_chains",
+                    return_value={"sia": "pass"}), \
+                mock.patch.object(
+                    self.sialib, "gbrain_call", return_value=[]), \
+                mock.patch.object(self.sialib, "_preflight_event_lookup"), \
+                mock.patch.object(self.sialib, "_preflight_event_path_plan"), \
+                mock.patch.object(
+                    self.sialib, "_stage_pulse_source_publication", stage):
+            status = self._run_barrier_pulse(
+                page_activity=False, senses=[sense_codex],
+                initial_graph=self._complete_graph())
+        self.assertIn(False, staged)
+        self.assertEqual(status["events_pulse"], 1)
+        self.assertIn("corpus_write", status["errors"])
+        # The injected refusal happens after the repeat gate. The event
+        # remains, so the existing publication predicate still commits.
+        self.assertIn(("commit", True), self.barrier_trace)
+        self.assertIn(("sync", True), self.barrier_trace)
+
     def test_malformed_sync_intent_refuses_before_sensing(self):
         with mock.patch.object(self.sialib, "ensure_dirs"), \
                 mock.patch.object(self.sialib, "load_cursors",

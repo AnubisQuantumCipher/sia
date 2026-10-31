@@ -7407,6 +7407,15 @@ class SourceReplayQuarantine(RuntimeError):
     """A durable source batch whose historical authority is unknowable."""
 
 
+class _RepeatedSourceObservation(BaseException):
+    """The sensed batch is already on the day pages.
+
+    This is control flow, not a corpus failure. It must not inherit
+    Exception: the pulse write handler would then discard the sense
+    cursors and record a refused write.
+    """
+
+
 NOTIFY_BASELINE_ATTEMPT_KEY = "notify_baseline_attempt"
 
 
@@ -9624,6 +9633,14 @@ def _pulse_transaction_guarded(
                         planned["last_ts"] = max(
                             planned["last_ts"],
                             iso(max(event.ts for event in appended)))
+            if source_marker is None and not any(planned_appended.values()):
+                # The scan repeated occurrences the day pages already hold.
+                # Staging a publication here would re-sync an unchanged
+                # corpus on every pulse. Codex session-map overflow is the
+                # live case: the same refusal is observed until a slot frees.
+                # A crash replay still stages, even when this dry-run appends
+                # nothing, because that batch's policy admission is pending.
+                raise _RepeatedSourceObservation
             _preflight_event_path_plan(planned_paths_by_organ)
             source_effects = None
             planned_events_pulse = len(events)
@@ -9735,6 +9752,9 @@ def _pulse_transaction_guarded(
                         for event, _slug in planned_cognitive_events]:
                 raise RuntimeError(
                     "event policy admission changed after dry-run")
+    except _RepeatedSourceObservation:
+        events = []
+        admitted_events = []
     except Exception as e:
         write_ok = False
         # Retrieval-policy state is all-or-nothing for the exact source batch. A
