@@ -3847,25 +3847,45 @@ def _prepare_event_live_intake(*, history, expected_history_sha256,
     return siaeventintake.prepare(globals(), **request)
 
 
+def _event_entity_spec(link, organ):
+    """Page `ensure_event_entities` would create for this link, or None."""
+    if link.startswith("units/"):
+        return ("unit", link.split("/", 1)[1], [
+            f"systemd unit observed by [[organs/{organ}]].", ""])
+    if link.startswith("packages/"):
+        return ("package", link.split("/", 1)[1], [
+            "Arch package seen in [[organs/pacman]] events.", ""])
+    if link.startswith("projects/"):
+        return ("project", link.split("/", 1)[1], [
+            "Repository under ~/Projects. Watched by "
+            "[[organs/projects]].", ""])
+    if link.startswith("skills/"):
+        return ("skill", link.split("/", 1)[1], [
+            "Agent skill installed on this box. "
+            "Watched by [[organs/skills]].", ""])
+    return None
+
+
+def _event_entity_repair_pending(events):
+    """A repeated batch still names an entity page that is absent."""
+    for event in events:
+        for link in event.links:
+            if _event_entity_spec(link, event.organ) is not None \
+                    and not page_exists(link):
+                return True
+    return False
+
+
 def ensure_event_entities(events):
     """Create referenced entity pages (units/packages/projects) lazily."""
     made = False
     for ev in events:
-        for l in ev.links:
-            if l.startswith("units/"):
-                made |= ensure_entity(l, "unit", l.split("/", 1)[1],
-                                      [f"systemd unit observed by [[organs/{ev.organ}]].", ""])
-            elif l.startswith("packages/"):
-                made |= ensure_entity(l, "package", l.split("/", 1)[1],
-                                      ["Arch package seen in [[organs/pacman]] events.", ""])
-            elif l.startswith("projects/"):
-                made |= ensure_entity(l, "project", l.split("/", 1)[1],
-                                      ["Repository under ~/Projects. Watched by [[organs/projects]].", ""])
-            elif l.startswith("skills/"):
-                name = l.split("/", 1)[1]
-                made |= ensure_entity(l, "skill", name,
-                                      ["Agent skill installed on this box. "
-                                       "Watched by [[organs/skills]].", ""])
+        for link in ev.links:
+            spec = _event_entity_spec(link, ev.organ)
+            if spec is None:
+                continue
+            ptype, title, body = spec
+            made |= ensure_entity(link, ptype, title, body)
     return made
 
 
@@ -7407,6 +7427,15 @@ class SourceReplayQuarantine(RuntimeError):
     """A durable source batch whose historical authority is unknowable."""
 
 
+class _RepeatedSourceObservation(BaseException):
+    """The sensed batch is already on the day pages.
+
+    This is control flow, not a corpus failure. It must not inherit
+    Exception: the pulse write handler would then discard the sense
+    cursors and record a refused write.
+    """
+
+
 NOTIFY_BASELINE_ATTEMPT_KEY = "notify_baseline_attempt"
 
 
@@ -9624,6 +9653,19 @@ def _pulse_transaction_guarded(
                         planned["last_ts"] = max(
                             planned["last_ts"],
                             iso(max(event.ts for event in appended)))
+            if source_marker is None and not any(planned_appended.values()) \
+                    and not _event_entity_repair_pending(events):
+                # The scan repeated occurrences the day pages already hold,
+                # and every referenced entity page is present. Staging a
+                # publication here would re-sync an unchanged corpus on
+                # every pulse. Codex session-map overflow is the live case:
+                # the same refusal is observed until a slot frees.
+                # A crash replay still stages, even when this dry-run appends
+                # nothing, because that batch's policy admission is pending.
+                # A missing unit, package, project, or skill page also stays
+                # on this path: ensure_event_entities runs only after the
+                # publication marker is durable.
+                raise _RepeatedSourceObservation
             _preflight_event_path_plan(planned_paths_by_organ)
             source_effects = None
             planned_events_pulse = len(events)
@@ -9735,6 +9777,9 @@ def _pulse_transaction_guarded(
                         for event, _slug in planned_cognitive_events]:
                 raise RuntimeError(
                     "event policy admission changed after dry-run")
+    except _RepeatedSourceObservation:
+        events = []
+        admitted_events = []
     except Exception as e:
         write_ok = False
         # Retrieval-policy state is all-or-nothing for the exact source batch. A
